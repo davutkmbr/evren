@@ -14,7 +14,7 @@ import { buildControlsList } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
-import { FlightHints, PhotoHint } from './overlays/hints';
+import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
 import { HelpOverlay } from './overlays/help-overlay';
 import { StatsOverlay } from './overlays/stats-overlay';
 import { Toasts } from './overlays/toasts';
@@ -46,6 +46,10 @@ export class UiSystem implements System {
   private readonly raster = new MapRaster();
   private readonly toasts = new Toasts();
   private readonly hints = new FlightHints();
+  private readonly hoverHints = new HoverHints();
+  private readonly shotCaption = new ShotCaption();
+  /** Flight mode seen last frame (null without a dragon): entering a hover shows its controls. */
+  private lastFlightMode: string | null = null;
   private readonly photoHint = new PhotoHint();
   private readonly viewDir = new THREE.Vector3();
   private loading: LoadingScreen | null = null;
@@ -84,7 +88,7 @@ export class UiSystem implements System {
     this.loading = new LoadingScreen(this.root, { autoStart: this.autoStart, onStart: () => this.onStart() });
 
     this.tracker = new DiscoveryTracker(ctx);
-    this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints);
+    this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints, this.hoverHints, this.shotCaption);
     this.fullMap = new FullMap(this.raster, {
       onTeleport: (target) => this.teleport(target),
       onClose: () => this.closeModal(),
@@ -145,12 +149,14 @@ export class UiSystem implements System {
     });
     void services.when('cameraRig').then((rig) => this.hud.instruments.setCameraMode(rig.mode));
     void services.when('audio').then((audio) => {
-      if (this.prefs.volume !== undefined) {
+      // Older audio services do not keep the volume themselves: restore the UI's saved value into them.
+      if (audio.masterVolume === undefined && this.prefs.volume !== undefined) {
         audio.setMasterVolume(this.prefs.volume);
       }
     });
 
     const onPointerLockChange = (): void => this.onPointerLockChange();
+    // The UI is the single pointer-lock owner (start screen, canvas clicks, closing a menu); cameras only read it.
     const onCanvasClick = (): void => {
       if (this.started && this.modal === 'none' && !this.ctx.input.pointerLocked) {
         this.ctx.input.requestPointerLock();
@@ -183,6 +189,7 @@ export class UiSystem implements System {
     }
     this.fillSnapshot(ctx);
     this.handleInput(ctx);
+    this.updateContextHints(ctx);
 
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
@@ -257,6 +264,8 @@ export class UiSystem implements System {
     this.started = true;
     this.root.classList.remove('is-prestart');
     if (!this.autoStart) {
+      // The start click/key is the user gesture: unlock audio and take the pointer (the UI owns pointer lock).
+      this.ctx.services.tryGet('audio')?.unlock?.();
       this.ctx.events.emit('pause', { paused: this.pausedBeforeStart });
       this.ctx.input.requestPointerLock();
       this.hints.show(HINTS_MS);
@@ -303,6 +312,21 @@ export class UiSystem implements System {
     }
   }
 
+  /** Hover controls when a hover starts; the cinematic camera's shot caption. */
+  private updateContextHints(ctx: EngineContext): void {
+    const mode = ctx.services.tryGet('dragon')?.mode ?? null;
+    if (mode !== this.lastFlightMode) {
+      if (mode === 'hovering') {
+        this.hints.hide();
+        this.hoverHints.show();
+      } else if (this.lastFlightMode === 'hovering') {
+        this.hoverHints.hide();
+      }
+      this.lastFlightMode = mode;
+    }
+    this.shotCaption.update(ctx.services.tryGet('cameraRig')?.shotLabel ?? '');
+  }
+
   private handleInput(ctx: EngineContext): void {
     const input = ctx.input;
     if (this.modal !== 'none') {
@@ -327,6 +351,7 @@ export class UiSystem implements System {
     } else if (input.wasPressed('help') && !this.photo) {
       this.help.setOpen(!this.help.opened);
       this.hints.hide();
+      this.hoverHints.hide();
     } else if (input.wasPressed('photo')) {
       this.setPhoto(!this.photo);
     } else if (input.wasPressed('hud') && !this.photo) {

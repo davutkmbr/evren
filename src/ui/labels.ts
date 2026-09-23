@@ -120,6 +120,7 @@ export const LOADING_TIPS: readonly string[] = [
   'Space ile kanat çırp; tırmanmak ve hızlanmak için ritmi koru.',
   'İstanbul Boğazı yaklaşık 31 km uzunluğunda; Karadeniz ile Marmara’yı birleştirir.',
   'Shift ile kanatları kapat ve dalışa geç; irtifayı hıza çevirirsin.',
+  'Ctrl ile yavaşla ve havada asılı kal; freni bırakıp W’ye basınca uçuşa dönersin.',
   'Süleymaniye Camii’ni Mimar Sinan 1550–1557 yılları arasında inşa etti.',
   'C ile üçüncü şahıs, binici gözü ve sinematik kamera arasında geçiş yap.',
   'Fatih Sultan Mehmet Köprüsü 1988’de açıldı; ana açıklığı 1.090 metredir.',

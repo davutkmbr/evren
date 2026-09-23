@@ -160,7 +160,8 @@ const flapOverWind = (id: string, label: string, camera: CameraMode, minRise: nu
   label,
   seconds: 4,
   measure: 'integrated',
-  target: camera === 'pov' ? [-23, -17] : [-26, -20],
+  // Same window for both cameras: switching with C must not change the cruise loudness.
+  target: [-26, -20],
   camera,
   masker: { step: (_t, _p, f) => cruiseBed(f), minRise },
   step: (t, p, f, e) => {
@@ -269,7 +270,7 @@ export const CASES: RenderCase[] = [
   windCase('wind-cruise-third', 'Rüzgâr seyir 40 m/s (3. şahıs)', 'third', [-26, -20], (_t, f) => {
     f.dragon.airspeed = 40;
   }),
-  windCase('wind-cruise-pov', 'Rüzgâr seyir 40 m/s (POV)', 'pov', [-23, -17], (_t, f) => {
+  windCase('wind-cruise-pov', 'Rüzgâr seyir 40 m/s (POV)', 'pov', [-26, -20], (_t, f) => {
     f.dragon.airspeed = 40;
   }),
   windCase(
@@ -283,7 +284,7 @@ export const CASES: RenderCase[] = [
     },
     36,
   ),
-  windCase('wind-dive-pov', 'Dalış 50→95 m/s (POV)', 'pov', [-17, -11], (t, f) => {
+  windCase('wind-dive-pov', 'Dalış 50→95 m/s (POV)', 'pov', [-19, -13], (t, f) => {
     f.dragon.airspeed = 50 + Math.min(1, t / 4) * 45;
     f.dragon.diving = Math.min(1, t / 1.5);
   }),

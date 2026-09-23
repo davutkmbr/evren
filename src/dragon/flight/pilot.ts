@@ -61,7 +61,7 @@ export class Autopilot {
       return;
     }
     if (sim.mode === 'hovering') {
-      // The hover is latched: push forward to fly out of it.
+      // Hovering: W (brake released) flies out.
       cmd.pitch = 1;
       return;
     }

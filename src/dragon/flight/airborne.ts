@@ -291,8 +291,8 @@ function checkTouchdown(sim: FlightSim, h: number): void {
     return;
   }
   sim.sampleSurface();
-  // A settling landing touches down within a hand's breadth (the wing-beat bob would otherwise keep it hanging).
-  const touch = sim.mode === 'landing' && sim.body.velocity.y < 0.6 ? 0.15 : 0.02;
+  // A settling landing touches down within a foot of the ground (the wing-beat bob would otherwise keep it hanging).
+  const touch = sim.mode === 'landing' && sim.body.velocity.y < 0.6 ? 0.3 : 0.02;
   if (sim.footClearance > touch) {
     return;
   }

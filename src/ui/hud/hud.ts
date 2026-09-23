@@ -1,7 +1,7 @@
 import { el } from '../dom';
 import type { DiscoveryCard } from '../discovery/discovery-card';
 import type { Minimap } from '../map/minimap';
-import type { FlightHints } from '../overlays/hints';
+import type { FlightHints, HoverHints, ShotCaption } from '../overlays/hints';
 import type { FlightSnapshot } from '../types';
 import { CompassTape } from './compass-tape';
 import { Instruments } from './instruments';
@@ -22,6 +22,8 @@ export class Hud {
     readonly minimap: Minimap,
     card: DiscoveryCard,
     hints: FlightHints,
+    hoverHints: HoverHints,
+    shotCaption: ShotCaption,
   ) {
     this.root = el('div', 'ejd-hud', [
       this.compass.root,
@@ -31,6 +33,8 @@ export class Hud {
       this.minimap.root,
       card.root,
       hints.root,
+      hoverHints.root,
+      shotCaption.root,
     ]);
   }
 

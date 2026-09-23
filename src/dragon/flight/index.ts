@@ -78,7 +78,7 @@ export function createFlightSystem(): System {
   }
 
   function configureRig(r: DragonRig): void {
-    const dims = r.dimensions as DragonRig['dimensions'] & { standHeight?: number };
+    const dims = r.dimensions;
     const length = dims.length > 1 ? dims.length : DEFAULT_RIG_LENGTH;
     const height = dims.height > 0.5 ? dims.height : DEFAULT_RIG_HEIGHT;
     const stand = typeof dims.standHeight === 'number' && dims.standHeight > 0.3 ? dims.standHeight : 0.5 * height;

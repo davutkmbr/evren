@@ -87,7 +87,7 @@ export class SettingsPanel {
       min: 0,
       max: 1,
       step: 0.01,
-      value: prefs.volume ?? 1,
+      value: ctx.services.tryGet('audio')?.masterVolume ?? prefs.volume ?? 1,
       format: (v) => percentFormat.format(v),
       onInput: (v) => {
         ctx.services.tryGet('audio')?.setMasterVolume(v);
@@ -164,7 +164,7 @@ export class SettingsPanel {
     this.sensitivity.set(ctx.input.settings.mouseSensitivity);
     this.invertMouse.set(ctx.input.settings.invertMouseY);
     this.invertPitch.set(ctx.input.settings.invertPitch);
-    this.volume.set(this.options.prefs.volume ?? 1);
+    this.volume.set(ctx.services.tryGet('audio')?.masterVolume ?? this.options.prefs.volume ?? 1);
     this.timeOfDay.set(Math.round(ctx.time.timeOfDay * 4) / 4);
     this.timeSpeed.set(ctx.time.dayTimeScale);
     const mode = ctx.services.tryGet('cameraRig')?.mode;

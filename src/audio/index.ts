@@ -132,6 +132,10 @@ export function createAudioSystem(): System {
       saveVolume(volume);
       engine?.setVolume(volume);
     },
+    get masterVolume(): number {
+      return volume;
+    },
+    unlock,
   };
 
   const debugHandle: AudioDebugHandle = {

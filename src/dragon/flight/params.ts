@@ -58,7 +58,7 @@ export const BODY = {
   /** Extra drag of folded wing bundles (fully folded). */
   foldedBundleCdA: 1.5,
   /** Membrane cupped against the flow while braking (m²). */
-  brakeCdA: 14,
+  brakeCdA: 20,
   sideArea: 18,
   sideForceSlope: -0.9,
 } as const;
@@ -201,21 +201,18 @@ export const WINGTIP = {
   lateral: 0.46,
 } as const;
 
-/** Hover (latched after braking to a stop). */
+/**
+ * Hover: brake (Ctrl/X) to a stop, then it holds until the pilot flies out. W/S creep forward/back while the brake
+ * is held, A/D turn on the spot, Q/E strafe, Space/Shift climb/descend; W with the brake released flies out.
+ */
 export const HOVER = {
   climb: 4,
   descend: -5,
-  forward: 9,
-  forwardBraked: 5,
+  /** Forward creep (m/s) with W while braking. */
+  creep: 4,
   back: 3,
   strafe: 4,
   yawRate: 0.8,
-  /** Forward ground speed at which pushing W turns the hover into forward flight. */
-  exitSpeed: 7,
-  /** Forward airspeed at which pushing W flies out (a headwind counts). */
-  exitAirspeed: 13,
-  /** Holding W this long always flies out of the hover. */
-  exitHoldTime: 1.2,
   /** Hover attitude (body pitch with a horizontal stroke plane). */
   attitude: 28 * (Math.PI / 180),
   /** Largest nose-down tilt below the hover attitude (rad) for translating / holding against wind. */
@@ -227,6 +224,58 @@ export const HOVER = {
   weathervaneRate: 0.5,
   /** Below this foot clearance over land an idle hover settles into a landing. */
   settleClearance: 15,
+} as const;
+
+/**
+ * Assisted landing (L): a steep braked approach, a decisive flare and a short settle; ~7 s from 45 m.
+ * Heights are foot clearances (m), speeds m/s, paths rad.
+ */
+export const LANDING = {
+  /** Approach speed schedule: approachSpeed + clearance × perMetre, clamped. */
+  approachSpeed: 15,
+  approachSpeedPerMetre: 0.1,
+  approachSpeedMin: 17,
+  approachSpeedMax: 26,
+  /** Approach glide slope: −(pathBase + clearance / pathReach), clamped to [pathMin, pathMax]. */
+  pathBase: 0.25,
+  pathReach: 130,
+  pathMin: 0.3,
+  pathMax: 0.65,
+  /** Pitch rate (rad/s) of the push-over onto the glide slope. */
+  approachPitchRate: 0.8,
+  /** The flare starts at flareBase + flarePerSink × sink rate + flarePerSpeed × ground speed (clamped), or when slow. */
+  flareBase: 1,
+  flarePerSink: 0.55,
+  flarePerSpeed: 0.1,
+  flareMin: 6,
+  flareMax: 16,
+  flareSpeed: 13,
+  /** Largest nose-up tilt beyond the hover attitude while fast in the flare (rad) and its gain per m/s of excess speed. */
+  flareBackTilt: 0.72,
+  flareGain: 0.1,
+  /** Extra nose-up tilt (rad) while the ground speed is still high a few metres up (tailwind). */
+  groundSpeedBackTilt: 0.25,
+  /** Nose-up tilt allowed over the hover attitude on touchdown (rad): the stroke stays nearly vertical. */
+  touchdownBackTilt: 0.12,
+  /** Airspeed (m/s) below which the flare's deep tilt is gone (full from 5 m/s above it). */
+  flareTiltFadeSpeed: 9,
+  /** Flap effort already running as the flare slows through ~12 m/s. */
+  flareEffort: 0.6,
+  /** Settle: sink rate sqrt(touchdownSink² + 2 × settleDecel × clearance), capped at maxSink; forward creep up to touchdownSpeed. */
+  settleDecel: 1.6,
+  touchdownSink: 0.7,
+  maxSink: 5,
+  touchdownSpeed: 6,
+  /** Above this ground speed the last 2 m stop sinking until the flare has slowed the dragon (the feet run off less). */
+  holdSpeed: 12,
+  /** Lift dump in the fast flare: wing spread given up (0..1) once the vertical speed rises to liftDumpVy (m/s). */
+  liftDump: 0.45,
+  liftDumpVy: 0,
+  /** Pitch rate limit (rad/s) while rearing up into the fast flare. */
+  flarePitchRate: 1.5,
+  /** Mean wind at the dragon (m/s) from which the settle turns into the wind (full turn rate at vaneWindFull). */
+  vaneWindMin: 9.5,
+  vaneWindFull: 12,
 } as const;
 
 export const GROUND = {

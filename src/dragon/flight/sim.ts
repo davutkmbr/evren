@@ -96,8 +96,6 @@ export class FlightSim {
   /** Seconds since the last dust puff from a belly scrape. */
   dustTimer = 0;
   impactCooldown = 0;
-  /** Seconds W has been held in the latched hover. */
-  hoverPushTime = 0;
 
   /* Terrain look-ahead along the ground track (refreshed at 20 Hz while airborne). */
   readonly aheadSurface: number[] = PROXIMITY.lookahead.map(() => 0);
@@ -141,7 +139,6 @@ export class FlightSim {
     this.eventCounts.mode++;
     this.mode = mode;
     this.modeTime = 0;
-    this.hoverPushTime = 0;
     this.controller.onModeEnter(mode);
   }
 
@@ -180,7 +177,6 @@ export class FlightSim {
     this.controller.reset(0);
     this.aheadTimer = 0;
     this.splashDistance = 0;
-    this.hoverPushTime = 0;
     this.wind.reseed(4711);
     this.sampleSurface();
     const envWind = this.wind.override ?? this.world.env?.wind;
@@ -272,7 +268,7 @@ export class FlightSim {
       stepSwimming(this, cmd, h);
     } else {
       this.updateLookahead(h);
-      this.airborneModeTransitions(cmd, h);
+      this.airborneModeTransitions(cmd);
       stepAirborne(this, cmd, h);
     }
 
@@ -289,7 +285,7 @@ export class FlightSim {
     }
   }
 
-  private airborneModeTransitions(cmd: PilotCommand, h: number): void {
+  private airborneModeTransitions(cmd: PilotCommand): void {
     const V = this.airspeed;
     switch (this.mode) {
       case 'takeoff':
@@ -306,22 +302,13 @@ export class FlightSim {
         }
         return;
       case 'hovering': {
-        // The hover is latched: brake to enter, then W/S translate, Space/Shift climb/descend, A/D turn.
+        // Brake to enter; the hover then holds until W is pressed with the brake released (fly out) or L (land).
+        // W/S creep while braking, A/D turn, Space/Shift climb/descend (FlightController).
         if (cmd.landPressed) {
           this.setMode('landing');
           return;
         }
-        // Pushing W flies out: once moving forward (over the ground or through the air, so a headwind counts),
-        // or after W has been held for a moment whatever the wind.
-        const pushing = !cmd.brake && cmd.pitch > 0.3;
-        this.hoverPushTime = pushing ? this.hoverPushTime + h : 0;
-        const yaw = this.axes.yaw();
-        const fx = -Math.sin(yaw);
-        const fz = -Math.cos(yaw);
-        const forward = fx * this.body.velocity.x + fz * this.body.velocity.z;
-        const forwardAir = fx * this.airVelocity.x + fz * this.airVelocity.z;
-        if (pushing && (forward > HOVER.exitSpeed || forwardAir > HOVER.exitAirspeed || this.hoverPushTime > HOVER.exitHoldTime)) {
-          this.hoverPushTime = 0;
+        if (!cmd.brake && cmd.pitch > 0.3) {
           this.controller.holdPath(0.05);
           this.controller.latchForward();
           this.setMode('takeoff');

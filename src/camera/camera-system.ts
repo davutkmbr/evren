@@ -79,18 +79,6 @@ export class CameraSystem implements System, CameraRigHost {
     this.wheelPixels += e.deltaY * unit;
   };
 
-  /**
-   * POV head-look is mouse-driven: a click on the view captures the pointer (on click, i.e. after the button is
-   * released, so the capturing click never registers as fire-breath). Esc releases it as usual.
-   */
-  private readonly onCanvasClick = (e: MouseEvent): void => {
-    const ctx = this.ctx;
-    if (!ctx || e.button !== 0 || this.requested !== 'pov' || !ctx.input.enabled || ctx.time.paused || ctx.input.pointerLocked) {
-      return;
-    }
-    ctx.input.requestPointerLock();
-  };
-
   private firstPersonApplied = false;
   private firstPersonRig: DragonRig | null = null;
   private readonly frame: MutableFrame;
@@ -116,6 +104,10 @@ export class CameraSystem implements System, CameraRigHost {
 
   get currentMode(): CameraMode {
     return this.requested;
+  }
+
+  get currentShotLabel(): string {
+    return this.active === 'cinematic' ? this.cinematic.shotLabel : '';
   }
 
   get currentFov(): number {
@@ -146,7 +138,7 @@ export class CameraSystem implements System, CameraRigHost {
       mode: this.active,
       blending: this.blend.active,
       shot: this.active === 'cinematic' ? (this.cinematic.shotKind ?? '') : '',
-      shotLabel: this.active === 'cinematic' ? this.cinematic.shotLabel : '',
+      shotLabel: this.currentShotLabel,
       cuts: this.cinematic.cutCount,
       zoom: this.chase.zoomDistance,
       orbitYawDeg: this.chase.orbitYawDeg,
@@ -196,10 +188,8 @@ export class CameraSystem implements System, CameraRigHost {
     }
     ctx.services.provide('cameraRig', this.service);
     ctx.canvas.addEventListener('wheel', this.onWheel, { passive: true });
-    ctx.canvas.addEventListener('click', this.onCanvasClick);
     this.unsubscribe.push(
       () => ctx.canvas.removeEventListener('wheel', this.onWheel),
-      () => ctx.canvas.removeEventListener('click', this.onCanvasClick),
     );
 
     this.unsubscribe.push(

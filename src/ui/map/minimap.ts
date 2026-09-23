@@ -87,7 +87,7 @@ export class Minimap {
           this.districtName.set(district.name);
           this.districtSide.set(SIDE_LABELS[district.side]);
         } else {
-          this.districtName.set(this.waterName(s.x, s.z));
+          this.districtName.set(this.geo.waterNameAt?.(s.x, s.z) ?? 'Su');
           this.districtSide.set('Su üzeri');
         }
         this.districtRow.hidden = false;
@@ -100,19 +100,6 @@ export class Minimap {
     }
     this.drawTimer = DRAW_INTERVAL_S;
     this.draw(s);
-  }
-
-  private waterName(x: number, z: number): string {
-    if (x < -3500 && z > -2000 && z < 3300) {
-      return 'Haliç';
-    }
-    if (z > 4200 || (x < -3500 && z > 3300)) {
-      return 'Marmara Denizi';
-    }
-    if (z < -19000) {
-      return 'Karadeniz';
-    }
-    return 'İstanbul Boğazı';
   }
 
   private draw(s: FlightSnapshot): void {

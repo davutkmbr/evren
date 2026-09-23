@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, MASS, PROXIMITY, WING } from './params';
+import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, MASS, PROXIMITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { copyPilotCommand, createPilotCommand } from './types';
@@ -12,6 +12,10 @@ const TWO_PI = Math.PI * 2;
 const TAP_TIMEOUT = 1.3;
 const TAP_EFFORT = 0.95;
 const COS_FF_FADE = Math.cos(75 * DEG);
+/** Cruise governor: speed low-pass (s), bank that counts as a sustained turn, speed kept above the protected minimum. */
+const GOVERNOR_SPEED_TAU = 1;
+const GOVERNOR_TURN_BANK = 25 * DEG;
+const GOVERNOR_TURN_MARGIN = 3;
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -62,6 +66,8 @@ export class FlightController {
   private pitchIdle = 0;
   private burst = false;
   private burstBeats = 0;
+  /** Airspeed low-passed for the cruise governor (0 = take the next sample). */
+  private cruiseSpeed = 0;
   private hoverIntegral = 0;
   flare = false;
   hoverDescent = false;
@@ -87,12 +93,15 @@ export class FlightController {
   /** Largest bank the current speed supports with margin (rad). */
   bankMax: number = ENVELOPE.maxBank;
   private forwardLatch = false;
+  /** Pitch rate limit (rad/s) of the flight-path override (the landing approach pitches over faster). */
+  private pathRateLimit = 0.5;
 
   reset(gamma = 0): void {
     this.gammaHold = gamma;
     this.pitchIdle = 1;
     this.burst = false;
     this.burstBeats = 0;
+    this.cruiseSpeed = 0;
     this.hoverIntegral = 0;
     this.flare = false;
     this.hoverDescent = false;
@@ -168,7 +177,8 @@ export class FlightController {
         } else {
           this.hoverHoldY = null;
         }
-        const vf = cmd.pitch > 0 ? cmd.pitch * (cmd.brake ? HOVER.forwardBraked : HOVER.forward) : cmd.pitch * HOVER.back;
+        // W/S creep forward/back (W without the brake flies out, see FlightSim), A/D turn on the spot, Q/E strafe.
+        const vf = cmd.pitch > 0 ? cmd.pitch * HOVER.creep : cmd.pitch * HOVER.back;
         const bankLimit = 0.08 + 0.22 * smoothstep(2, 12, sim.footClearance);
         this.hoverLaw(sim, h, t, vs, vf, cmd.yaw * HOVER.strafe, -cmd.roll * HOVER.yawRate, bankLimit, 1.2);
         t.legsOut = 0.55;
@@ -275,7 +285,7 @@ export class FlightController {
       pitchRate = clamp(1.6 * (gammaTarget - sim.gamma), -0.4, 0.4) * cosBank;
       this.holdPath(sim.gamma);
     } else if (ov.pathTarget !== null) {
-      pitchRate = clamp(1.6 * (ov.pathTarget - sim.gamma), -0.5, 0.5) * cosBank;
+      pitchRate = clamp(1.6 * (ov.pathTarget - sim.gamma), -this.pathRateLimit, this.pathRateLimit) * cosBank;
       this.holdPath(sim.gamma);
     } else {
       let floor: number;
@@ -373,7 +383,7 @@ export class FlightController {
       t.effort = 0;
       this.burst = false;
     } else {
-      t.effort = this.governor(V, sim.body.velocity.y - sim.wind.updraft, cruise);
+      t.effort = this.governor(sim, V, sim.body.velocity.y - sim.wind.updraft, cruise, h);
     }
 
     // Wing configuration: tuck for dives, flare for braking, otherwise adapt span to speed (keep CL ~0.32)
@@ -463,14 +473,23 @@ export class FlightController {
     this.bankMax = loadAvailable > 1 ? Math.acos(1 / loadAvailable) : 0;
   }
 
-  private governor(V: number, climbRate: number, cruise: number): number {
-    const deficit = cruise - V;
+  /**
+   * Flap-glide cruise governor. Judges speed through a ~1 s low-pass (gusts must not toggle the bursts) and keeps
+   * beating through a steep turn: gliding there bleeds speed onto the protected minimum, and the low-speed
+   * protection would then trade height for it (a 60° turn in gusty wind used to sink ~60 m in 20 s).
+   */
+  private governor(sim: FlightSim, V: number, climbRate: number, cruise: number, h: number): number {
+    this.cruiseSpeed = this.cruiseSpeed > 0 ? this.cruiseSpeed + (V - this.cruiseSpeed) * (1 - Math.exp(-h / GOVERNOR_SPEED_TAU)) : V;
+    const bank = Math.abs(sim.bank);
+    const turning = bank > GOVERNOR_TURN_BANK && bank < 100 * DEG;
+    const target = turning ? Math.max(cruise, this.minSpeed + GOVERNOR_TURN_MARGIN) : cruise;
+    const deficit = target - this.cruiseSpeed;
     if (!this.burst) {
-      if (deficit > 2.5 || (deficit > -3 && climbRate > 2.5)) {
+      if (deficit > 2.5 || (deficit > -3 && climbRate > 2.5) || (turning && deficit > -1.5)) {
         this.burst = true;
         this.burstBeats = 0;
       }
-    } else if (deficit < -2 && climbRate < 2 && this.burstBeats >= 3) {
+    } else if (deficit < -2 && climbRate < 2 && this.burstBeats >= 3 && !turning) {
       this.burst = false;
     }
     if (!this.burst) {
@@ -494,6 +513,10 @@ export class FlightController {
     yawRate: number,
     bankLimit: number,
     airVane: number,
+    backTilt: number = HOVER.maxBackTilt,
+    forwardGain = 0.055,
+    liftFeed = 0,
+    pitchRateLimit = 0.8,
   ): void {
     t.hover = 1;
     t.spread = 1;
@@ -507,7 +530,7 @@ export class FlightController {
     const lateralError = v.x * -fz + v.z * fx - vrTarget;
     this.hoverForwardI = clamp(this.hoverForwardI + 0.03 * forwardError * h, -0.7 * HOVER.maxForwardTilt, 0.7 * HOVER.maxBackTilt);
     this.hoverLateralI = clamp(this.hoverLateralI + 0.03 * lateralError * h, -0.2, 0.2);
-    const pitchTarget = HOVER.attitude + clamp(forwardError * 0.055 + this.hoverForwardI, -HOVER.maxForwardTilt, HOVER.maxBackTilt);
+    const pitchTarget = HOVER.attitude + clamp(forwardError * forwardGain + this.hoverForwardI, -HOVER.maxForwardTilt, backTilt);
     const bankCmd = clamp(-(lateralError * 0.07 + this.hoverLateralI), -bankLimit, bankLimit);
     const bankTarget = this.limitBankNearSurface(sim, bankCmd, PROXIMITY.minAmplitudeHover);
 
@@ -521,12 +544,12 @@ export class FlightController {
     _invQ.copy(sim.body.quaternion).invert();
     _feedForward.set(0, yawRate, 0).applyQuaternion(_invQ);
     const rollRate = -clamp(4 * this.rollError(sim, bankTarget), -1.2, 1.2);
-    const pitchRate = clamp(3.5 * (pitchTarget - sim.pitch), -0.8, 0.8);
+    const pitchRate = clamp(3.5 * (pitchTarget - sim.pitch), -pitchRateLimit, pitchRateLimit);
     t.rate.set(_feedForward.x + pitchRate, _feedForward.y, _feedForward.z + rollRate);
 
     const ratio = (FLAP.forwardRatio + (FLAP.hoverRatio - FLAP.forwardRatio) * sim.hoverBlend) * ceilingFactor(sim.body.position.y);
     const weight = MASS * GRAVITY;
-    const needed = clamp((weight - sim.aeroVertical) / weight, 0, 1.5);
+    const needed = clamp((weight * (1 + liftFeed) - sim.aeroVertical) / weight, 0, 1.5);
     const feed = Math.pow(needed / Math.max(ratio, 0.2), 1 / FLAP.effortExponent);
     this.hoverClimb += (v.y - this.hoverClimb) * (1 - Math.exp(-h / 0.15));
     const err = vsTarget - this.hoverClimb;
@@ -552,68 +575,97 @@ export class FlightController {
     t.rate.set(_feedForward.x + pitchRate, _feedForward.y - 1.2 * sim.beta * clamp(V / 10, 0, 1), _feedForward.z + rollRate);
   }
 
+  /**
+   * Assisted landing, ~7 s from 45 m: a steep braked approach, then a decisive flare (the hover law with the body
+   * pitched far back, wings reaching forward and back-strokes) that takes out the sink rate and the speed together,
+   * and a short settle onto the feet. It never goes around: holding height is the most it does.
+   */
   private landingLaw(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets): void {
     // Approach and flare judge height against the ground coming up ahead (rising terrain, roofs), the
-    // final hover-descent against the ground below.
+    // final settle against the ground below.
     const clearance = Math.min(sim.footClearance, this.clearanceAhead(sim));
     const V = sim.airspeed;
-    if (!this.flare && (clearance < 14 || V < 13)) {
-      this.flare = true;
-    }
-    if (this.flare && !this.hoverDescent && (V < 14 || clearance < 8)) {
-      this.hoverDescent = true;
-      this.hoverIntegral = 0;
+    const v = sim.body.velocity;
+    const groundSpeed = Math.hypot(v.x, v.z);
+    if (!this.hoverDescent) {
+      const flareHeight = clamp(LANDING.flareBase + LANDING.flarePerSink * Math.max(0, -v.y) + LANDING.flarePerSpeed * groundSpeed, LANDING.flareMin, LANDING.flareMax);
+      if (this.flare || clearance < flareHeight || V < LANDING.flareSpeed) {
+        this.flare = true;
+        this.hoverDescent = true;
+        this.hoverIntegral = 0;
+      }
     }
     if (!this.hoverDescent) {
-      // Approach (glide slope + speed schedule) or aerodynamic flare (sink-rate hold, full airbrake).
+      // Steep approach on a glide slope with the airbrake holding a falling speed schedule.
       const ov = sim.overrides;
       const savedPath = ov.pathTarget;
       const savedSpeed = ov.airspeedTarget;
-      const sinkTarget = -clamp(0.25 * clearance + 0.6, 0.8, 3);
-      const speedTarget = clamp(14 + clearance * 0.06, 16, 30);
-      ov.pathTarget = this.flare ? Math.asin(clamp(sinkTarget / Math.max(V, 5), -0.6, 0.2)) : -clamp(0.12 + clearance / 250, 0.14, 0.5);
+      const speedTarget = clamp(LANDING.approachSpeed + clearance * LANDING.approachSpeedPerMetre, LANDING.approachSpeedMin, LANDING.approachSpeedMax);
+      ov.pathTarget = -clamp(LANDING.pathBase + clearance / LANDING.pathReach, LANDING.pathMin, LANDING.pathMax);
       ov.airspeedTarget = null;
+      this.pathRateLimit = LANDING.approachPitchRate;
       this.normalLaw(sim, cmd, h, t, speedTarget);
+      this.pathRateLimit = 0.5;
       ov.pathTarget = savedPath;
       ov.airspeedTarget = savedSpeed;
-      t.brake = this.flare ? 1 : clamp((V - speedTarget - 1) / 5, 0, 1);
-      if (this.flare) {
-        t.effort = sim.body.velocity.y < sinkTarget - 1.5 ? 0.7 : 0;
-      }
+      t.brake = clamp((V - speedTarget - 1) / 4, 0, 1);
       if (t.brake > 0.05) {
         t.sweep = -t.brake;
         t.spread = 1;
       }
-      t.legsOut = clearance < 80 ? 1 : 0.35;
+      t.legsOut = clearance < 60 ? 1 : 0.35;
       return;
     }
-    const v = sim.body.velocity;
-    const groundSpeed = Math.hypot(v.x, v.z);
     // While still moving, judge height against the ground coming up ahead as well (slopes, roofs).
     const below = groundSpeed > 3 ? Math.min(sim.footClearance, this.clearanceAhead(sim) + 0.5) : sim.footClearance;
-    let vsTarget = -clamp(0.35 * below + 0.4, 0.5, 2.5);
-    const vfTarget = clamp(below * 0.3, 0.3, 3) * (1 + 0.8 * clamp(cmd.pitch, -1, 1));
-    if (groundSpeed > 5 && below < 5) {
-      // Still carrying the approach speed: kill it before the last metres instead of touching down running.
-      vsTarget = Math.max(vsTarget, clamp(0.8 * (4 - below), 0, 2));
+    // Sink-rate profile of a constant deceleration the hover stroke can always deliver, ending in a soft touchdown.
+    let vsTarget = -Math.min(Math.sqrt(LANDING.touchdownSink ** 2 + 2 * LANDING.settleDecel * Math.max(below, 0)), LANDING.maxSink);
+    // Forward speed wanted: a few metres per second on touchdown (the feet run it off), W/S adjust it.
+    const vfTarget = clamp(0.5 * LANDING.touchdownSpeed + 0.5 * below, 0.5 * LANDING.touchdownSpeed, LANDING.touchdownSpeed) * (1 + 0.8 * clamp(cmd.pitch, -1, 1));
+    if (groundSpeed > LANDING.holdSpeed && below < 2) {
+      // Still too fast for the feet in the last metres: stop sinking (no climb) until the flare has taken it out.
+      vsTarget = Math.max(vsTarget, -0.3);
     }
-    // Settle facing into the wind, so the last metres need no bank against a crosswind: once slowed down, turn
-    // the nose upwind and hold height below 5 m until it points within ~20° of the wind.
+    // Settle facing into a strong wind only (a light wind is not worth a slow turn on the spot): once slowed down,
+    // turn the nose upwind and hold the height below 3 m until it points within ~20° of the wind.
     let yawRate = -cmd.roll * 0.6;
     const mean = sim.wind.mean;
     const slow = smoothstep(8, 5, groundSpeed);
-    const vane = smoothstep(2, 4, Math.hypot(mean.x, mean.z)) * slow * (Math.abs(cmd.roll) > 0.1 ? 0 : 1);
+    const vane = smoothstep(LANDING.vaneWindMin, LANDING.vaneWindFull, Math.hypot(mean.x, mean.z)) * slow * (Math.abs(cmd.roll) > 0.1 ? 0 : 1);
     if (vane > 0) {
       const err = wrapAngle(Math.atan2(mean.x, mean.z) - sim.axes.yaw());
       yawRate += clamp(1.2 * err, -HOVER.weathervaneRate, HOVER.weathervaneRate) * vane;
-      if (vane > 0.3 && Math.abs(err) > 0.35 && below > 0.8 && below < 5) {
-        vsTarget = Math.max(vsTarget, clamp(0.8 * (4.5 - below), 0, 1.5));
+      if (vane > 0.3 && Math.abs(err) > 0.35 && below > 0.8 && below < 3) {
+        vsTarget = Math.max(vsTarget, 0);
       }
     }
     const bankLimit = 0.08 + 0.22 * smoothstep(2, 12, below);
-    this.hoverLaw(sim, h, t, vsTarget, vfTarget, cmd.yaw * 3, yawRate, bankLimit, 0);
-    // Wings raised and reaching forward for the touchdown (tips well clear of the ground).
-    t.sweep = -0.55 - 0.45 * (1 - smoothstep(2, 7, below));
+    // Decisive flare: pitch far back while fast (up to ~60°). The last metres belong to the vertical speed: the
+    // stroke points nearly straight down again so it can cushion the touchdown (the feet run off what speed is left).
+    // The deep tilt lasts while the wing still carries the weight; below ~10 m/s the stroke has to take over and
+    // needs to point down again.
+    const flareTilt = smoothstep(LANDING.flareTiltFadeSpeed, LANDING.flareTiltFadeSpeed + 5, V) * smoothstep(2, 5, below);
+    // Low and slow through the air but still fast over the ground (a tailwind): tilt further back, the stroke then
+    // pushes against the ground speed the airbrake can no longer take out.
+    const lowTilt =
+      LANDING.touchdownBackTilt +
+      (HOVER.maxBackTilt - LANDING.touchdownBackTilt) * Math.max(smoothstep(0.8, 3, below), smoothstep(4, 7, groundSpeed)) +
+      LANDING.groundSpeedBackTilt * smoothstep(8, 13, groundSpeed) * smoothstep(1, 2.5, below);
+    const backTilt = lowTilt + (LANDING.flareBackTilt - lowTilt) * flareTilt;
+    // Following the sink profile needs a steady upward deceleration on top of the weight.
+    const liftFeed = v.y < -LANDING.touchdownSink ? LANDING.settleDecel / GRAVITY : 0;
+    // Rear up quickly: passing slowly through the high-lift angles at speed balloons the dragon back up, a fast
+    // pitch into the deep stall turns the wing into an airbrake instead.
+    const pitchRateLimit = 0.8 + (LANDING.flarePitchRate - 0.8) * flareTilt;
+    this.hoverLaw(sim, h, t, vsTarget, vfTarget, cmd.yaw * 3, yawRate, bankLimit, 0, backTilt, LANDING.flareGain, liftFeed, pitchRateLimit);
+    // The wings are already beating when the flare's lift fades with the speed (no drop at the end of the flare).
+    t.effort = Math.max(t.effort, LANDING.flareEffort * (1 - smoothstep(LANDING.flareTiltFadeSpeed, LANDING.flareTiltFadeSpeed + 6, V)));
+    // Lift dump: at speed the flare's lift (and the ground effect) would carry the dragon back up, and a balloon only
+    // lengthens the float. The wings partly close while it stops sinking; the cupped membrane keeps braking.
+    t.spread = 1 - LANDING.liftDump * smoothstep(LANDING.liftDumpVy - 1.5, LANDING.liftDumpVy, v.y) * smoothstep(9, 13, V);
+    // Airbrake open while fast; wings raised and reaching forward for the touchdown (tips well clear of the ground).
+    t.brake = Math.max(t.brake, smoothstep(4, 12, groundSpeed));
+    t.sweep = -0.55 - 0.45 * Math.max(1 - smoothstep(2, 7, below), smoothstep(5, 12, groundSpeed));
     t.legsOut = 1;
   }
 

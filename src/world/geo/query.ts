@@ -5,6 +5,7 @@ import { WORLD_BOUNDS } from '../../core/geo-coords';
 import { DENSITY_GRID, DISTRICT_GRID, HEIGHT_GRID, LANDUSE_GRID, NO_DISTRICT, sampleBilinear } from './build/grid';
 import type { GridSpec } from './build/grid';
 import type { BuildOutput } from './types';
+import { WaterNames } from './water-names';
 
 type MosqueSites = GeoQuery['smallMosqueSites'];
 
@@ -59,6 +60,7 @@ export class GeoQueryImpl implements GeoQuery {
   private readonly density: Uint8Array;
   private readonly district: Uint8Array;
   private readonly byId = new Map<string, LandmarkDef>();
+  private readonly waterNames = new WaterNames();
   private heightTex: THREE.DataTexture | null = null;
   private landUseTex: THREE.DataTexture | null = null;
   private coastTex: THREE.DataTexture | null = null;
@@ -100,6 +102,10 @@ export class GeoQueryImpl implements GeoQuery {
 
   isWater(x: number, z: number): boolean {
     return this.heightAt(x, z) < 0;
+  }
+
+  waterNameAt(x: number, z: number): string | null {
+    return this.isWater(x, z) ? this.waterNames.nameAt(x, z) : null;
   }
 
   coastDistance(x: number, z: number): number {

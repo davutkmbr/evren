@@ -688,6 +688,97 @@
   margin-left: 4px;
 }
 
+.hint-plus {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+/* Hover controls: a small caption, the key row and the way out. */
+.hud-hints-hover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.hint-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  background: rgba(13, 15, 19, 0.66);
+  border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  backdrop-filter: blur(12px) saturate(115%);
+}
+
+.hint-panel .hint-row {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.hint-caps {
+  margin: 0;
+  color: var(--accent-2);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.hint-exit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: 10px;
+  background: rgba(13, 15, 19, 0.5);
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* ---------------- cinematic shot caption ---------------- */
+
+.hud-shot {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--gutter) + 64px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+
+.hud-shot.is-out {
+  transform: translate(-50%, 4px);
+}
+
+.hud-dcard:not(.is-out) ~ .hud-shot,
+.hud-hints:not(.is-out) ~ .hud-shot {
+  opacity: 0;
+}
+
+.shot-caps {
+  color: var(--ink-3);
+  letter-spacing: 0.16em;
+}
+
+.shot-label {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+
 /* ---------------- stats ---------------- */
 
 .hud-stats {

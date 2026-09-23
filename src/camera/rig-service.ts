@@ -6,6 +6,8 @@ export interface CameraRigHost {
   addShake(amount: number): void;
   placeFree(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void;
   readonly currentFov: number;
+  /** Caption of the running cinematic shot ('' outside cinematic mode). */
+  readonly currentShotLabel: string;
   readonly debugInfo: CameraDebugInfo;
 }
 
@@ -50,6 +52,10 @@ export class CameraRigService implements CameraRigState {
 
   get fovDeg(): number {
     return this.host.currentFov;
+  }
+
+  get shotLabel(): string {
+    return this.host.currentShotLabel;
   }
 
   /** Non-contract diagnostics used by the camera sandbox and screenshot tooling. */

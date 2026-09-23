@@ -132,6 +132,11 @@ const EXPOSURE_THIRD = 1.2;
 const EXPOSURE_POV = 1;
 const EXPOSURE_FREE = 0.45;
 /**
+ * Level of the whole wind voice in POV (dB): the rider's airstream adds buffeting, hiss and cloth, and without this
+ * trim the cruise bed measured 2.8 LU louder than the chase camera (wind-cruise-pov vs wind-cruise-third).
+ */
+const POV_WIND_TRIM_DB = -2.75;
+/**
  * Flying low and fast, the airstream masks the city and the sea: the ambience bus is lifted by up to this much
  * (dB) and the wind's presence band, where waves, gulls and traffic live, is carved by up to WIND_CARVE_DB.
  */
@@ -152,8 +157,12 @@ function flapLevel(strength: number): number {
   const floored = (x: number): number => 0.45 + 0.55 * x;
   return strength >= FLAP_KNEE ? floored(strength) : (clamp01(strength) / FLAP_KNEE) * floored(FLAP_KNEE);
 }
-/** Riding (POV) flap gain is (1 + boost): the membranes are 2-8 m from the rider and the beat comes through the saddle. */
-const FLAP_RIDER_BOOST = 0.75;
+/**
+ * Riding (POV) flap gain is (1 + boost): the beat comes through the saddle. The membranes are only 2-8 m from the
+ * rider, so distance already makes it louder; the boost keeps POV cruise (flaps over the wind) within ~1 LU of the
+ * chase camera (flap-cruise-pov vs flap-cruise-third).
+ */
+const FLAP_RIDER_BOOST = 0.15;
 /** Chase-camera flap gain (+1.5 dB): keeps the beat as clear over the (EXPOSURE_THIRD) airstream as in POV. */
 const FLAP_CHASE_GAIN = 1.19;
 /** Wind-bed dip per full-strength flap (dB), plus extra when riding. Validated by the flap-cruise-* offline cases. */
@@ -214,7 +223,6 @@ export class AudioEngine {
   private maxVoices = 56;
   private roarUntil = 0;
   private paused = false;
-  private started = false;
 
   constructor(
     readonly ctx: BaseAudioContext,
@@ -253,11 +261,10 @@ export class AudioEngine {
     this.frame = frame;
     const now = this.now;
     const dt = clamp(finiteOr(frame.dt, 0), 0, 0.1);
-    if (!this.started) {
-      this.started = true;
-      this.wind.setLevel(1, now);
-    }
     this.pov += ((frame.cameraMode === 'pov' ? 1 : 0) - this.pov) * (1 - Math.exp(-dt * 5));
+    // The rider's ears keep their buffeting, hiss and cloth, trimmed to the chase camera's loudness (no jump on C).
+    const windLevel = Math.pow(10, (POV_WIND_TRIM_DB * this.pov) / 20);
+    this.wind.setLevel(windLevel, now);
 
     const d = frame.dragon;
     const p = this.windParams;
