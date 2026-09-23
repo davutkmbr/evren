@@ -4,6 +4,7 @@ export interface CameraRigHost {
   readonly currentMode: CameraMode;
   requestMode(mode: CameraMode): void;
   addShake(amount: number): void;
+  placeFree(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void;
   readonly currentFov: number;
   readonly debugInfo: CameraDebugInfo;
 }
@@ -41,6 +42,10 @@ export class CameraRigService implements CameraRigState {
 
   shake(amount: number): void {
     this.host.addShake(amount);
+  }
+
+  placeFree(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void {
+    this.host.placeFree(x, y, z, headingDeg, pitchDeg, fovDeg);
   }
 
   get fovDeg(): number {

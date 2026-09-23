@@ -26,6 +26,11 @@ export class ServiceRegistry {
     return this.map.get(key) as Services[K] | undefined;
   }
 
+  /** Removes a service (e.g. when its system is disposed). */
+  withdraw(key: keyof Services): void {
+    this.map.delete(key);
+  }
+
   has(key: keyof Services): boolean {
     return this.map.has(key);
   }

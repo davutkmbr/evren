@@ -188,21 +188,26 @@ export class CollisionWorld {
     return best > 0 ? res : null;
   }
 
-  /** Ray vs terrain/water/colliders. `dir` must be normalized. */
-  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, includeWater = true): RayHit | null {
+  /**
+   * Ray vs terrain/water/colliders. `dir` must be normalized. Pass `out` to avoid allocations
+   * (the returned object is then `out`).
+   */
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, includeWater = true, out?: RayHit): RayHit | null {
     let bestT = maxDist;
     let hit: RayHit | null = null;
 
     const tTerrain = this.rayTerrain(origin, dir, maxDist, includeWater);
     if (tTerrain !== null && tTerrain < bestT) {
       bestT = tTerrain;
-      const p = origin.clone().addScaledVector(dir, tTerrain);
-      const n = new THREE.Vector3(0, 1, 0);
+      hit = out ?? { distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3(), surface: '' };
+      const p = hit.point.copy(origin).addScaledVector(dir, tTerrain);
       const th = this.terrainHeight(p.x, p.z);
+      hit.normal.set(0, 1, 0);
       if (this.geo && th >= 0) {
-        this.geo.normalAt(p.x, p.z, n);
+        this.geo.normalAt(p.x, p.z, hit.normal);
       }
-      hit = { distance: tTerrain, point: p, normal: n, surface: th >= 0 ? 'ground' : 'water' };
+      hit.distance = tTerrain;
+      hit.surface = th >= 0 ? 'ground' : 'water';
     }
 
     // DDA through cells
@@ -236,7 +241,11 @@ export class CollisionWorld {
             const tt = this.rayCollider(e.collider, origin, dir, _n);
             if (tt !== null && tt >= 0 && tt < bestT) {
               bestT = tt;
-              hit = { distance: tt, point: origin.clone().addScaledVector(dir, tt), normal: _n.clone(), surface: e.tag };
+              hit = hit ?? out ?? { distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3(), surface: '' };
+              hit.distance = tt;
+              hit.point.copy(origin).addScaledVector(dir, tt);
+              hit.normal.copy(_n);
+              hit.surface = e.tag;
             }
           }
         }

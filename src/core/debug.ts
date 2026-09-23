@@ -41,7 +41,7 @@ function preset(label: string, lat: number, lon: number, y: number, headingDeg: 
 
 /** Named spawn/view points (?view=name). The flight system teleports the dragon here. */
 export const VIEW_PRESETS: Record<string, ViewPreset> = {
-  spawn: preset('Sarayburnu üzeri', 41.0065, 28.9555, 260, 70, -4),
+  spawn: preset('Sarayburnu üzeri', 41.0085, 28.9745, 260, 55, -4),
   sultanahmet: preset('Sultanahmet', 41.0035, 28.9645, 180, 75, -6),
   ayasofya: preset('Ayasofya', 41.0125, 28.9905, 140, 215, -8),
   galata: preset('Galata', 41.0185, 28.9625, 160, 60, -5),

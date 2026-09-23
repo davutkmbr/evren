@@ -114,7 +114,7 @@ export interface HdrPassInputs {
  */
 export interface HdrPass {
   readonly name: string;
-  /** Lower runs first. Clouds use 100. */
+  /** Lower runs first. Reserved ranges: clouds 100, transparent effects 150–199. */
   readonly order: number;
   enabled: boolean;
   render(renderer: THREE.WebGLRenderer, inputs: HdrPassInputs, output: THREE.WebGLRenderTarget, ctx: EngineContext): void;
@@ -217,6 +217,11 @@ export interface LandmarkDef {
   height: number;
   /** Extra key points in local meters (bridge tower bases, wall polyline, cluster tower spots...). */
   anchors?: Vec2Like[];
+  /**
+   * Full extent radius (m) of extended landmarks (bridges, walls, aqueduct, tower clusters).
+   * `radius` is only the small pad reserved from the procedural city.
+   */
+  extent?: number;
   /** One or two sentence Turkish info text for the discovery UI. */
   info: string;
   /** Year built (for UI), negative for BCE. */
@@ -285,6 +290,8 @@ export interface GeoQuery {
   getLandUseTexture(): THREE.DataTexture;
   /** Signed coast distance texture (R16F/R32F, meters, LinearFilter). */
   getCoastDistanceTexture(): THREE.DataTexture;
+  /** Name of the water body at x,z ("İstanbul Boğazı", "Haliç", "Marmara Denizi", "Karadeniz"…), or null on land. */
+  waterNameAt?(x: number, z: number): string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -362,7 +369,13 @@ export interface DragonRig {
   readonly wingTipLeft: THREE.Object3D;
   readonly wingTipRight: THREE.Object3D;
   /** Approximate dimensions (m). */
-  readonly dimensions: { length: number; wingspan: number; height: number };
+  readonly dimensions: {
+    length: number;
+    wingspan: number;
+    height: number;
+    /** Height of the body's centre of mass above the ground when standing (m). */
+    standHeight?: number;
+  };
   setPose(pose: Partial<DragonPose>): void;
   getPose(): Readonly<DragonPose>;
   /** Hide parts that would clip into the POV camera (rider head/hood) and show POV-only details (hands on reins). */
@@ -381,6 +394,13 @@ export interface CameraRigState {
   /** Adds screen shake (meters of offset amplitude, decays). */
   shake(amount: number): void;
   readonly fovDeg: number;
+  /** Caption of the current cinematic shot (cinematic mode only). */
+  readonly shotLabel?: string;
+  /**
+   * Switch to the free camera and place it exactly (hard cut). Used by photo mode and screenshot tooling.
+   * Angles in degrees: heading 0 = north (clockwise), pitch + up.
+   */
+  placeFree?(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -404,6 +424,8 @@ export interface EnvironmentState {
   readonly light: THREE.Light;
   /** World wind vector m/s at 100 m. */
   readonly wind: THREE.Vector3;
+  /** Relative humidity 0..1 near the ground (condensation, haze). */
+  readonly humidity?: number;
   setTimeOfDay(hours: number): void;
 }
 
@@ -423,6 +445,21 @@ export interface AudioService {
   play(name: 'roar' | 'flap' | 'splash' | 'fire-start' | 'land' | 'ui-click' | 'discover', volume?: number): void;
   readonly unlocked: boolean;
   setMasterVolume(v: number): void;
+  /** Current master volume 0..1. */
+  readonly masterVolume?: number;
+  /** Unlocks the AudioContext; call from a user gesture (start screen). */
+  unlock?(): void;
+}
+
+/**
+ * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).
+ * Provided by world/landmarks/structures as 'roadSurface'; traffic and landing use it.
+ */
+export interface RoadSurfaceService {
+  /** Deck surface height (m) at x,z if a deck covers that point, otherwise null (use terrain). */
+  deckHeightAt(x: number, z: number): number | null;
+  /** Deck centre lines with per-point heights, for vehicles to follow (world meters). */
+  readonly decks: readonly { id: string; points: { x: number; y: number; z: number }[]; width: number }[];
 }
 
 /** Typed service map. Use ctx.services.get('geo') etc. */
@@ -435,6 +472,7 @@ export interface Services {
   cameraRig: CameraRigState;
   fx: FxService;
   audio: AudioService;
+  roadSurface: RoadSurfaceService;
 }
 
 /* ------------------------------------------------------------------ */

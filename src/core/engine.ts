@@ -8,6 +8,7 @@ import { QualityManager, type QualityPreset } from './quality';
 import { globalUniforms, installGlobalShaderHooks } from './uniforms';
 import { CollisionWorld } from './collision';
 import { parseDebugFlags, VIEW_PRESETS } from './debug';
+import { latLonToLocal } from './geo-coords';
 
 export interface EngineOptions {
   container: HTMLElement;
@@ -66,6 +67,8 @@ export class Engine {
   private fpsFrames = 0;
   private fps = 0;
   private frameMs = 0;
+  private lastDrawCalls = 0;
+  private lastTriangles = 0;
   private cpuMs = 0;
   private readyFrames = -1;
   private resizeObserver: ResizeObserver;
@@ -116,7 +119,7 @@ export class Engine {
       dt: 0,
       realDt: 0,
       frame: 0,
-      timeOfDay: debug.time ?? 18.0,
+      timeOfDay: debug.time ?? (debug.view ? VIEW_PRESETS[debug.view]?.time : undefined) ?? 18.0,
       dayTimeScale: 0,
       dayOfYear: 266,
       paused: debug.freeze,
@@ -250,6 +253,8 @@ export class Engine {
       e.system.preRender?.(ctx);
     }
     ctx.pipeline.render(ctx);
+    this.lastDrawCalls = ctx.renderer.info.render.calls;
+    this.lastTriangles = ctx.renderer.info.render.triangles;
 
     const cpu = performance.now() - frameStart;
     this.cpuMs += (cpu - this.cpuMs) * 0.05;
@@ -305,8 +310,8 @@ export class Engine {
       frameMs: Math.round(this.frameMs * 100) / 100,
       cpuMs: Math.round(this.cpuMs * 100) / 100,
       cpuBySystem,
-      drawCalls: info.render.calls,
-      triangles: info.render.triangles,
+      drawCalls: this.lastDrawCalls,
+      triangles: this.lastTriangles,
       geometries: info.memory.geometries,
       textures: info.memory.textures,
       programs: info.programs?.length ?? 0,
@@ -344,6 +349,14 @@ export class Engine {
         return true;
       },
       views: () => Object.keys(VIEW_PRESETS),
+      /** Hard-cut the free camera to a world position (meters) and orientation (degrees). */
+      shot: (x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number) =>
+        engine.ctx.services.tryGet('cameraRig')?.placeFree?.(x, y, z, headingDeg, pitchDeg, fovDeg),
+      /** Same as shot() with latitude/longitude and altitude above sea level. */
+      shotLatLon: (lat: number, lon: number, alt: number, headingDeg: number, pitchDeg: number, fovDeg?: number) => {
+        const p = latLonToLocal(lat, lon);
+        engine.ctx.services.tryGet('cameraRig')?.placeFree?.(p.x, alt, p.z, headingDeg, pitchDeg, fovDeg);
+      },
     };
     (window as unknown as { __evren: typeof api }).__evren = api;
   }

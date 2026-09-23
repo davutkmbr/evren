@@ -122,6 +122,12 @@ export class CameraSystem implements System, CameraRigHost {
     return this.ctx ? this.ctx.camera.fov : this.finalPose.fov;
   }
 
+  placeFree(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void {
+    this.free.place(x, y, z, headingDeg, pitchDeg, fovDeg);
+    this.requestMode('free');
+    this.snapPending = true;
+  }
+
   requestMode(mode: CameraMode): void {
     if (!VALID_MODES.includes(mode) || mode === this.requested) {
       return;

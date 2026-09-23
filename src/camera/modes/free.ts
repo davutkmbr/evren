@@ -26,6 +26,12 @@ export class FreeController implements CameraController {
   private readonly velocity = new VecSpring();
   private readonly fov = new Spring(60);
   private fovTarget = 60;
+  private placement: { x: number; y: number; z: number; yaw: number; pitch: number; fov?: number } | null = null;
+
+  /** Queues an exact placement, applied on the next update (after any reset). */
+  place(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, fovDeg?: number): void {
+    this.placement = { x, y, z, yaw: -headingDeg * DEG, pitch: clamp(pitchDeg * DEG, -89 * DEG, 89 * DEG), fov: fovDeg };
+  }
 
   enter(_frame: CameraFrame, current: CameraPose): void {
     this.position.copy(current.position);
@@ -54,6 +60,18 @@ export class FreeController implements CameraController {
   update(frame: CameraFrame, out: CameraPose): void {
     const dt = frame.camDt;
     const input = frame.ctx.input;
+    if (this.placement) {
+      const p = this.placement;
+      this.placement = null;
+      this.position.set(p.x, p.y, p.z);
+      this.yaw = p.yaw;
+      this.pitch = p.pitch;
+      this.velocity.reset(_wish.set(0, 0, 0));
+      if (p.fov !== undefined) {
+        this.fovTarget = clamp(p.fov, 15, 100);
+        this.fov.reset(this.fovTarget);
+      }
+    }
 
     if (frame.lookActive) {
       this.yaw += frame.lookYaw;
