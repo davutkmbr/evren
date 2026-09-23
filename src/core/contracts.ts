@@ -175,7 +175,8 @@ export interface District {
   floorsMax: number;
 }
 
-export type LandmarkBuilder = 'mosques' | 'structures' | 'heritage';
+/** Module that builds a landmark. 'districts' = hero spots of detailed districts (src/world/landmarks/districts/<district>/). */
+export type LandmarkBuilder = 'mosques' | 'structures' | 'heritage' | 'districts';
 
 export type LandmarkKind =
   | 'mosque'

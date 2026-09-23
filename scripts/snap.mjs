@@ -11,7 +11,8 @@
  * Prints JSON with console errors/warnings and engine stats. Requires the dev server (npm run dev, port 5199).
  */
 import { chromium } from 'playwright-core';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -50,7 +51,12 @@ async function shoot(browser, job) {
     if (r.status() >= 400 && !r.url().endsWith('/favicon.ico')) errors.push(`HTTP ${r.status()} ${r.url()}`);
   });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
-  const url = job.url.startsWith('http') ? job.url : BASE + job.url;
+  let url = job.url.startsWith('http') ? job.url : BASE + job.url;
+  // Cap the frame rate while waiting/settling so parallel screenshot sessions stay cheap; --perf runs uncapped.
+  const fpsCap = job.fps ?? (job.perf ? '0' : process.env.SNAP_FPS ?? '24');
+  if (fpsCap !== null && fpsCap !== undefined && !/[?&]fps=/.test(url)) {
+    url += (url.includes('?') ? '&' : '?') + `fps=${fpsCap}`;
+  }
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
   const timeout = Number(job.timeout ?? 45000);
@@ -111,7 +117,62 @@ async function shoot(browser, job) {
   return { url: job.url, out: job.out, ready, pending, loadMs: Date.now() - t0, errors, warnings: warnings.slice(0, 15), logs: logs.slice(0, 40), perf, stats };
 }
 
+/**
+ * Machine-wide limit on concurrent GPU browsers (parallel agents share one GPU). Slots are lock directories holding the
+ * owner's pid; stale slots of dead processes are reclaimed. Override with SNAP_MAX_CONCURRENT.
+ */
+const MAX_CONCURRENT = Number(process.env.SNAP_MAX_CONCURRENT ?? 2);
+const LOCK_ROOT = fileURLToPath(new URL('../.shots/.snap-slots', import.meta.url));
+let heldSlot = null;
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function acquireSlot() {
+  mkdirSync(LOCK_ROOT, { recursive: true });
+  for (;;) {
+    for (let i = 0; i < MAX_CONCURRENT; i++) {
+      const dir = `${LOCK_ROOT}/slot-${i}`;
+      try {
+        mkdirSync(dir);
+        writeFileSync(`${dir}/pid`, String(process.pid));
+        heldSlot = dir;
+        return;
+      } catch {
+        let owner = NaN;
+        try {
+          owner = Number(readFileSync(`${dir}/pid`, 'utf8'));
+        } catch {
+          /* being created */
+        }
+        if (Number.isFinite(owner) && owner > 0 && !alive(owner)) {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+function releaseSlot() {
+  if (heldSlot) {
+    rmSync(heldSlot, { recursive: true, force: true });
+    heldSlot = null;
+  }
+}
+process.on('exit', releaseSlot);
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    releaseSlot();
+    process.exit(130);
+  });
+}
+
 await ensureServer();
+await acquireSlot();
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
@@ -129,4 +190,5 @@ try {
   console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 1));
 } finally {
   await browser.close();
+  releaseSlot();
 }

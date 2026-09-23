@@ -63,6 +63,8 @@ export class Engine {
   private sorted: SystemEntry[] = [];
   private running = false;
   private lastTime = 0;
+  /** Optional frame-rate cap from ?fps= (tooling: keeps headless screenshot sessions cheap). 0 = uncapped. */
+  private readonly minFrameMs: number;
   private fpsAcc = 0;
   private fpsFrames = 0;
   private fps = 0;
@@ -103,6 +105,15 @@ export class Engine {
     renderer.setClearColor(0x000000, 1);
 
     const debug = parseDebugFlags();
+    // Automated browsers (screenshot tooling, agents' scripts) default to 24 fps so parallel sessions stay cheap;
+    // ?fps=0 uncaps (performance measurements), ?fps=N sets any cap.
+    const fpsParam = debug.params.get('fps');
+    const automated = typeof navigator !== 'undefined' && navigator.webdriver === true;
+    const fpsCap = fpsParam !== null ? Number(fpsParam) : automated ? 24 : 0;
+    this.minFrameMs = fpsCap > 0 ? 1000 / fpsCap - 1 : 0;
+    if (automated && fpsCap > 0) {
+      console.info(`[engine] automated browser: frame rate capped at ${fpsCap} fps (add ?fps=0 to measure performance)`);
+    }
     const preset = (debug.quality as QualityPreset | undefined) ?? opts.quality ?? QualityManager.detectPreset(renderer, renderer.getContext() as WebGL2RenderingContext);
     const quality = new QualityManager(preset);
 
@@ -212,6 +223,9 @@ export class Engine {
 
   private frame(now: number): void {
     if (!this.running) {
+      return;
+    }
+    if (this.minFrameMs > 0 && now - this.lastTime < this.minFrameMs) {
       return;
     }
     const ctx = this.ctx;

@@ -1,50 +1,64 @@
 import './core/style.css';
 import { Engine } from './core/engine';
-import { createRenderPipeline } from './render/post';
-import { createGeoSystem } from './world/geo';
-import { createSkySystem } from './render/sky';
-import { createCloudSystem } from './render/clouds';
-import { createTerrainSystem } from './world/terrain';
-import { createWaterSystem } from './world/water';
-import { createCitySystem } from './world/city';
-import { createOsmSystem } from './world/osm';
-import { createVegetationSystem } from './world/vegetation';
-import { createMosqueSystem } from './world/landmarks/mosques';
-import { createStructureSystem } from './world/landmarks/structures';
-import { createHeritageSystem } from './world/landmarks/heritage';
-import { createLifeSystem } from './world/life';
-import { createDragonModelSystem } from './dragon/model';
-import { createFlightSystem } from './dragon/flight';
-import { createCameraSystem } from './camera';
-import { createFxSystem } from './fx';
-import { createAudioSystem } from './audio';
-import { createUiSystem } from './ui';
+import type { PipelineFactory, System } from './core/contracts';
+
+/**
+ * Systems are imported dynamically and independently: a module that fails to load (for example while it is being
+ * edited during development) is skipped with a console error instead of leaving the whole game on a blank page.
+ * Registration order = init order (UI first so it can show the loading screen); update order comes from `order`.
+ */
+const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = [
+  { name: 'ui', load: () => import('./ui').then((m) => m.createUiSystem) },
+  { name: 'geo', load: () => import('./world/geo').then((m) => m.createGeoSystem) },
+  { name: 'sky', load: () => import('./render/sky').then((m) => m.createSkySystem) },
+  { name: 'terrain', load: () => import('./world/terrain').then((m) => m.createTerrainSystem) },
+  { name: 'water', load: () => import('./world/water').then((m) => m.createWaterSystem) },
+  { name: 'city', load: () => import('./world/city').then((m) => m.createCitySystem) },
+  { name: 'osm', load: () => import('./world/osm').then((m) => m.createOsmSystem) },
+  { name: 'vegetation', load: () => import('./world/vegetation').then((m) => m.createVegetationSystem) },
+  { name: 'mosques', load: () => import('./world/landmarks/mosques').then((m) => m.createMosqueSystem) },
+  { name: 'structures', load: () => import('./world/landmarks/structures').then((m) => m.createStructureSystem) },
+  { name: 'heritage', load: () => import('./world/landmarks/heritage').then((m) => m.createHeritageSystem) },
+  { name: 'clouds', load: () => import('./render/clouds').then((m) => m.createCloudSystem) },
+  { name: 'dragon-model', load: () => import('./dragon/model').then((m) => m.createDragonModelSystem) },
+  { name: 'flight', load: () => import('./dragon/flight').then((m) => m.createFlightSystem) },
+  { name: 'camera', load: () => import('./camera').then((m) => m.createCameraSystem) },
+  { name: 'life', load: () => import('./world/life').then((m) => m.createLifeSystem) },
+  { name: 'fx', load: () => import('./fx').then((m) => m.createFxSystem) },
+  { name: 'audio', load: () => import('./audio').then((m) => m.createAudioSystem) },
+];
 
 async function boot(): Promise<void> {
   const engine = new Engine({ container: document.getElementById('app')! });
-  engine.setPipeline(createRenderPipeline);
 
-  // Registration order = init order (UI first so it can show the loading screen).
-  // Update order is controlled by each system's `order`.
-  engine
-    .register(createUiSystem())
-    .register(createGeoSystem())
-    .register(createSkySystem())
-    .register(createTerrainSystem())
-    .register(createWaterSystem())
-    .register(createCitySystem())
-    .register(createOsmSystem())
-    .register(createVegetationSystem())
-    .register(createMosqueSystem())
-    .register(createStructureSystem())
-    .register(createHeritageSystem())
-    .register(createCloudSystem())
-    .register(createDragonModelSystem())
-    .register(createFlightSystem())
-    .register(createCameraSystem())
-    .register(createLifeSystem())
-    .register(createFxSystem())
-    .register(createAudioSystem());
+  const [pipeline, ...factories] = await Promise.all([
+    import('./render/post')
+      .then((m): PipelineFactory => m.createRenderPipeline)
+      .catch((e: unknown) => {
+        console.error('[boot] render pipeline failed to load, using the direct pipeline', e);
+        return null;
+      }),
+    ...SYSTEMS.map((s) =>
+      s.load().catch((e: unknown) => {
+        console.error(`[boot] system "${s.name}" failed to load, skipping it`, e);
+        return null;
+      }),
+    ),
+  ]);
+
+  if (pipeline) {
+    engine.setPipeline(pipeline);
+  }
+  factories.forEach((factory, i) => {
+    if (!factory) {
+      return;
+    }
+    try {
+      engine.register(factory());
+    } catch (e) {
+      console.error(`[boot] system "${SYSTEMS[i].name}" failed to construct, skipping it`, e);
+    }
+  });
 
   await engine.start();
 }
