@@ -32,6 +32,11 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
 - **Kadıköy hero spots**: research was interrupted; rerun the research step only and stop before building (user's
   request). A `districts` landmark builder type exists in the contract for it.
 - Details of the remaining review work: [01 — Review and performance](01-review-and-performance.md).
+- **Direction change (24 September 2026): walkable Kadıköy.** The user wants to land, walk as a human, enter cafés,
+  talk to NPCs and drive, with street-level detail that feels like really walking through Kadıköy. Research outcome:
+  a separate street layer built by an offline world compiler, with the runtime (three.js WebGPU or Godot 4.7) chosen
+  by a measured street-level test. See [16 — Street track](16-street-layer.md). Kadıköy hero-spot research is done
+  (`.docs/research/kadikoy-hero-spots.json`).
 
 ## Detail tiers (how Istanbul gets detailed)
 
@@ -62,7 +67,8 @@ Decision: **hybrid**. Lighting and the world stay procedural; licence-clean exte
 | Google Photorealistic 3D Tiles | No | Usage limited to "map visualizations", caching/offline prohibited; lighting and shadows are baked into the photos, so the day/night cycle and dynamic lights cannot work; paid at scale. |
 | Overture Maps / OSM (building footprints, roads, roof shapes) | Yes | Real city fabric; ODbL, free; lighting stays ours. Attribution required. |
 | CC0 PBR textures (Poly Haven, ambientCG) | Yes | Close-range realism for facades, roof tiles, asphalt; no attribution required. |
-| Mixamo animations | Yes (rider) | Free and royalty-free in games, as long as raw files are not redistributed on their own. Far more natural than hand-coded animation. |
+| Mixamo animations | No (was: rider) | Its terms forbid distributing the raw files, which a public MIT repo would do. Replaced by Quaternius UAL clips and characters (CC0). |
+| Quaternius / MPFB2 humans | Candidate (street track) | CC0 characters and animations on one rig; shortlisted for approval before S1. |
 | Music | Licensed | Well-known songs are copyrighted. Royalty-free licensed tracks or generated music with commercial rights; synthesized ambience as a fallback layer. |
 | Vehicle models | Procedural | They are small from dragon altitude; realism comes from traffic behaviour and lights, not the models. |
 
@@ -87,10 +93,15 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 13 | [Living world: weather, seasons, events, activities](13-living-world.md) | E · Variety | L | 01, 07 |
 | 14 | [Multi-dragon foundation](14-multi-dragon-foundation.md) | F · Multiplayer | M | 01, 12 |
 | 15 | [Multiplayer](15-multiplayer.md) | F · Multiplayer | L | 14 |
+| 16 | [Street track S0–S8: walkable Kadıköy](16-street-layer.md) | G · On foot | L×many | 01 (bug fixes only) |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 
-Suggested order: 01 → 02 → B bundle (03, 04, 05, 06, 07 as one release) → 08 → 09 → 10 → 11 → 12 → 13 → 14 → 15.
+Order (since 24 September 2026): 01 (bugs and performance only) → 16 S0–S2 (compiler, one Kadıköy strip, runtime
+decision) → S3–S5 (walk, enter and talk, the heart of Kadıköy) → S6 (sky to street, absorbs the tiling of 08/09 and the
+landing pads of 03/04) → S7 (drive) → S8 (chapter one). Flight-only phases 02 and 05–07 fit in between when they do not
+touch the street layer. Parked until the Kadıköy slice ships: 11, 12, 14, 15. Phase 10's rider becomes a CC0 human
+(Quaternius / MPFB2); Mixamo is dropped because its terms forbid distributing the raw files.
 
 ## Working method
 
