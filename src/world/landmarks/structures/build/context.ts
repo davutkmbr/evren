@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { createRng, hashString } from '../../../../core/math/noise';
-import type { ColliderData, PartData, SiteDef, SiteInput, StructureResult } from '../types';
+import type { ColliderData, DeckData, PartData, SiteDef, SiteInput, StructureResult } from '../types';
 import { BatchKind } from '../types';
 import { HeightSampler } from './height-sampler';
 import { LightList } from './light-list';
@@ -26,6 +26,8 @@ export class StructureBuild {
   readonly wires = new WireList();
   readonly lights = new LightList();
   readonly colliders: ColliderData[] = [];
+  /** Road decks for the 'roadSurface' service. */
+  readonly decks: DeckData[] = [];
   readonly rng: () => number;
   private readonly parts: PartData[] = [];
 
@@ -107,6 +109,7 @@ export class StructureBuild {
     return {
       id: this.def.id,
       parts: this.parts,
+      decks: this.decks,
       wires: this.wires.build(),
       lights: this.lights.build(),
       colliders: this.colliders,

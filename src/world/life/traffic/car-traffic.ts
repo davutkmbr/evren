@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GeoQuery, WorldBounds } from '../../../core/contracts';
+import type { GeoQuery, RoadSurfaceService, WorldBounds } from '../../../core/contracts';
 import { RenderLayers } from '../../../core/contracts';
 import { patchMaterial } from '../../../core/uniforms';
 import { SHARED_GLSL } from '../../../render/shaders';
@@ -93,9 +93,12 @@ export class CarTraffic {
   private readonly lightMaterial: THREE.ShaderMaterial;
   private readonly carMaterial: THREE.MeshStandardMaterial;
 
-  /** `exclude`: optional rectangle where cars are hidden (see RoadNetwork). */
-  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null) {
-    this.network = new RoadNetwork(geo, densityScale, exclude);
+  /**
+   * `exclude`: optional rectangle where cars are hidden; `surface`: the core 'roadSurface' service, the only source
+   * of bridge deck heights (see RoadNetwork).
+   */
+  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null, surface: RoadSurfaceService | null = null) {
+    this.network = new RoadNetwork(geo, densityScale, exclude, surface);
     const cars = this.network.cars;
     const n = cars.length;
     const road = new Float32Array(n * 4);
@@ -104,7 +107,7 @@ export class CarTraffic {
     let prevRoad = -1;
     cars.forEach((c, i) => {
       const tr = this.network.tracks[c.road];
-      road.set([tr.start, tr.count, tr.length, 0], i * 4);
+      road.set([tr.start, tr.count, tr.length, tr.side], i * 4);
       lane.set([c.offset, c.dir, c.speed, c.phase], i * 4);
       style.set([c.style, c.type, c.hide, 0], i * 4);
       if (c.road !== prevRoad) {
@@ -212,6 +215,7 @@ export class CarTraffic {
   private refreshNear(time: number, cam: THREE.Vector3): void {
     const net = this.network;
     const smp = net.samples;
+    const stride = net.stride;
     const cap = this.nearRoad.length / 4;
     const { road, lane, style } = this.roadData;
     let k = 0;
@@ -226,8 +230,8 @@ export class CarTraffic {
         let s = (lane[i * 4 + 3] + lane[i * 4 + 1] * lane[i * 4 + 2] * time) % L;
         if (s < 0) s += L;
         const idx = tr.start + Math.min(Math.floor(s / ROAD_STEP), tr.count - 1);
-        const dx = smp[idx * 4] - cam.x;
-        const dz = smp[idx * 4 + 2] - cam.z;
+        const dx = smp[idx * stride] - cam.x;
+        const dz = smp[idx * stride + 2] - cam.z;
         if (dx * dx + dz * dz > r2) continue;
         this.nearRoad.set(road.subarray(i * 4, i * 4 + 4), k * 4);
         this.nearLane.set(lane.subarray(i * 4, i * 4 + 4), k * 4);

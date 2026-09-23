@@ -12,7 +12,8 @@ import { LightRenderer } from '../render/lights';
 import { createGlassMaterial, createOpaqueMaterial } from '../render/materials';
 import { WireRenderer } from '../render/wires';
 import { BatchKind, LIGHT_STRIDE, WIRE_STRIDE } from '../types';
-import type { PartData, StructureResult, WorkerRequest, WorkerResponse } from '../types';
+import type { DeckData, PartData, StructureResult, WorkerRequest, WorkerResponse } from '../types';
+import { RoadSurface } from './road-surface';
 import { prepareSite } from './site-planner';
 
 export interface StructureSystemOptions {
@@ -36,13 +37,14 @@ export class StructureSystem implements System {
   private readonly root = new THREE.Group();
   private readonly results = new Map<string, StructureResult>();
   private colliderIds: number[] = [];
+  private roadSurface: RoadSurface | null = null;
   private outstanding = 0;
   private expected = 0;
   private generationMs = 0;
 
   constructor(private readonly options: StructureSystemOptions = {}) {
     this.root.name = 'structures';
-    this.root.add(this.batches.group, this.wires.mesh, this.lights.mesh);
+    this.root.add(this.batches.group, this.wires.object, this.lights.mesh);
   }
 
   init(ctx: EngineContext): void {
@@ -88,6 +90,7 @@ export class StructureSystem implements System {
       this.outstanding = Math.max(this.outstanding - 1, 1);
     } else if (msg.type === 'done') {
       this.upload();
+      this.provideRoadSurface();
       this.worker?.terminate();
       this.worker = null;
       this.outstanding = 0;
@@ -113,6 +116,24 @@ export class StructureSystem implements System {
         this.colliderIds.push(collision.add({ kind: 'sphere', center: new THREE.Vector3(...c.center), radius: c.radius }, 'structure'));
       }
     }
+  }
+
+  /** Publishes the bridge road decks as the core 'roadSurface' service (traffic, landing, OSM streets). */
+  private provideRoadSurface(): void {
+    const decks: DeckData[] = [];
+    for (const r of this.results.values()) {
+      decks.push(...r.decks);
+    }
+    if (!this.ctx || decks.length === 0) {
+      return;
+    }
+    this.roadSurface = new RoadSurface(decks);
+    this.ctx.services.provide('roadSurface', this.roadSurface);
+  }
+
+  /** The published road surface (debug). */
+  get roads(): RoadSurface | null {
+    return this.roadSurface;
   }
 
   private upload(): void {
@@ -154,9 +175,9 @@ export class StructureSystem implements System {
   }
 
   preRender(ctx: EngineContext): void {
+    // uResolution is the internal (dynamic-resolution) target size already: no extra render-scale factor.
     const res = globalUniforms.uResolution.value as THREE.Vector2;
-    const scale = ctx.pipeline.renderScale || 1;
-    const pixelAngle = (2 * Math.tan(THREE.MathUtils.degToRad(ctx.camera.fov) / 2)) / Math.max(res.y * scale, 1);
+    const pixelAngle = (2 * Math.tan(THREE.MathUtils.degToRad(ctx.camera.fov) / 2)) / Math.max(res.y, 1);
     this.wires.setPixelAngle(pixelAngle);
     this.lights.setPixelAngle(pixelAngle);
   }
@@ -176,6 +197,10 @@ export class StructureSystem implements System {
     this.worker?.terminate();
     const collision = this.ctx?.services.tryGet('collision');
     collision?.removeMany(this.colliderIds);
+    if (this.roadSurface && this.ctx?.services.tryGet('roadSurface') === this.roadSurface) {
+      this.ctx.services.withdraw('roadSurface');
+    }
+    this.roadSurface = null;
     this.colliderIds = [];
     this.batches.dispose();
     this.wires.dispose();

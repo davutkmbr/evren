@@ -1,9 +1,18 @@
 /**
- * Anti-aliased thin cylinders (main cables, hangers, stays, railings, masts) in ONE instanced draw.
- * Each segment is a camera-facing ribbon that is never thinner than ~1 px; when the real diameter is sub-pixel
+ * Anti-aliased thin cylinders (main cables, hangers, stays, railings, masts): one instanced geometry drawn twice.
+ * Each segment is a camera-facing ribbon that is never thinner than ~1.4 px; when the real diameter is sub-pixel
  * the ribbon keeps its minimum width and its opacity drops to the true coverage (radius / drawn radius), the
- * "phone-wire AA" technique, so a 60 mm hanger 3 km away fades instead of shimmering. Shading treats the ribbon
- * as a lit cylinder (key light, sky ambient, a tight specular lobe) and adds the LED show at night.
+ * "phone-wire AA" technique, so a 70 mm hanger 500 m away reads as a faint continuous line instead of dashes.
+ * Shading treats the ribbon as a lit cylinder (key light, sky ambient, a tight specular lobe) and adds the LED
+ * show at night.
+ *
+ * Depth: the cloud composite marches only up to the scene depth, so a ribbon that writes depth shows cloud-free sky
+ * over its whole width, and one that does not is painted over by the clouds behind it. A depth-only pass writes the
+ * ribbons of wires that cover at least WIRE_DEPTH_MIN of their drawn width (hangers to ~0.7 km, stays to ~2 km,
+ * main cables to ~5 km: continuous ~1.4 px lines in front of the clouds, occluding the wires behind them); fainter
+ * wires write no depth and stay a coverage-weighted tint instead of combs of cut-out clouds. The colour pass then blends
+ * every fragment without writing depth. Both passes are single-sided draws, the same two calls three.js issues for
+ * one double-sided transparent material.
  */
 import * as THREE from 'three';
 import { SHARED_GLSL } from '../../../../render/shaders';
@@ -13,6 +22,7 @@ import { LED_GLSL } from './glsl/led.glsl';
 
 const VERTEX = /* glsl */ `
 ${SHARED_GLSL}
+invariant gl_Position;
 attribute vec2 corner;
 attribute vec3 iA;
 attribute vec3 iB;
@@ -56,6 +66,11 @@ void main() {
   vAlbedo = iColor;
   vLed = vec4(iLed.x, mix(iLed.y, iLed.z, corner.x), iLed.w, corner.x);
   gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+#ifdef WIRE_DEPTH
+  if (vCoverage < WIRE_DEPTH_MIN) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  }
+#endif
 }
 `;
 
@@ -77,6 +92,9 @@ void main() {
   float edge = clamp((1.0 - abs(x)) / fw + 0.35, 0.0, 1.0);
   float alpha = clamp(vCoverage, 0.0, 1.0) * edge;
   if (alpha < 0.004) discard;
+#ifdef WIRE_DEPTH
+  gl_FragColor = vec4(0.0);
+#else
   vec3 V = normalize(cameraPosition - vPos);
   vec3 facing = normalize(V - vDir * dot(V, vDir) + 1e-5);
   // a sub-pixel wire integrates the whole cylinder: fade the across-profile normal toward the mean
@@ -96,13 +114,21 @@ void main() {
   }
   col = applyAtmosphere(col, vPos);
   gl_FragColor = vec4(col, alpha);
+#endif
 }
 `;
 
+/** Smallest wire coverage (true diameter / drawn width) that still writes depth. */
+const WIRE_DEPTH_MIN = 0.05;
+
 export class WireRenderer {
+  /** Both passes (depth, colour); add this to the scene. */
+  readonly object = new THREE.Group();
   readonly mesh: THREE.Mesh;
+  private readonly depthMesh: THREE.Mesh;
   private readonly geometry = new THREE.InstancedBufferGeometry();
   private readonly material: THREE.ShaderMaterial;
+  private readonly depthMaterial: THREE.ShaderMaterial;
   private readonly uniforms = {
     uPixelAngle: { value: 0.001 },
     uMinPixels: { value: 0.7 },
@@ -119,18 +145,42 @@ export class WireRenderer {
       fragmentShader: FRAGMENT,
       uniforms: { ...globalUniforms, ...this.uniforms },
       transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+      forceSinglePass: true,
+      fog: false,
+    });
+    this.depthMaterial = new THREE.ShaderMaterial({
+      name: 'structures.wires-depth',
+      vertexShader: VERTEX,
+      fragmentShader: FRAGMENT,
+      defines: { WIRE_DEPTH: '', WIRE_DEPTH_MIN: WIRE_DEPTH_MIN.toFixed(3) },
+      uniforms: { ...globalUniforms, ...this.uniforms },
+      transparent: true,
+      colorWrite: false,
       depthWrite: true,
       depthTest: true,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       fog: false,
     });
-    this.mesh = new THREE.Mesh(this.geometry, this.material);
-    this.mesh.name = 'structures.wires';
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 2;
-    this.mesh.castShadow = false;
-    this.mesh.receiveShadow = false;
-    this.mesh.visible = false;
+    this.object.name = 'structures.wires';
+    this.depthMesh = this.makeMesh(this.depthMaterial, 'structures.wires-depth', 1.99);
+    this.mesh = this.makeMesh(this.material, 'structures.wires-color', 2);
+    this.object.visible = false;
+  }
+
+  /** Transparent-queue mesh; the depth pass sorts just before the colour pass (renderOrder). */
+  private makeMesh(material: THREE.ShaderMaterial, name: string, renderOrder: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(this.geometry, material);
+    mesh.name = name;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = renderOrder;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    this.object.add(mesh);
+    return mesh;
   }
 
   get count(): number {
@@ -150,7 +200,7 @@ export class WireRenderer {
     this.geometry.setAttribute('iLed', new THREE.InterleavedBufferAttribute(buffer, 4, 10));
     this.geometry.setAttribute('iFade', new THREE.InterleavedBufferAttribute(buffer, 2, 14));
     this.geometry.instanceCount = n;
-    this.mesh.visible = n > 0;
+    this.object.visible = n > 0;
   }
 
   /** Pixel footprint at unit distance for the minimum-width rule. */
@@ -161,5 +211,6 @@ export class WireRenderer {
   dispose(): void {
     this.geometry.dispose();
     this.material.dispose();
+    this.depthMaterial.dispose();
   }
 }

@@ -1,7 +1,7 @@
 /**
  * Vertical alignment of a bridge deck (road surface height vs. axis station s): a parabolic crest over the main
  * span, cubic Hermite side spans down to the end abutments and straight-grade approach viaducts that run on until
- * they meet the terrain.
+ * the road surface meets the terrain.
  */
 import type { BridgeFrame } from '../../build/bridge-frame';
 import type { HeightSampler } from '../../build/height-sampler';
@@ -33,6 +33,9 @@ export interface ProfileSpec {
   /** Lowest allowed road height at the end abutments (quays). */
   minEnd?: number;
 }
+
+/** The approach ends where the road surface is at most this far (m) above the terrain on the axis. */
+const APPROACH_FLUSH = 0.05;
 
 export class DeckProfile {
   readonly hMid: number;
@@ -80,19 +83,32 @@ export class DeckProfile {
     const hEnd = Math.max(Math.min(Math.max(ground + 0.8, hT - g * side * 0.85), hT + g * side * 0.4), this.spec.minEnd ?? -Infinity);
     let gEnd = (hEnd - hT) / side;
     gEnd = Math.max(-g, Math.min(g, gEnd * 1.25));
-    let sApproach = sEnd;
-    const step = 8;
+    // The approach viaduct runs on until the terrain reaches the road surface, so the road meets the ground flush
+    // (the girder below ends buried in the slope).
+    const above = (d: number): number => {
+      const p = frame.point(sEnd + dir * d, 0, 0);
+      return hEnd + gEnd * d - terrain.heightAt(p.x, p.z);
+    };
+    let reach = 0;
+    const step = 4;
     for (let d = step; d <= this.spec.maxApproach; d += step) {
-      const s = sEnd + dir * d;
-      const h = hEnd + gEnd * d;
-      const p = frame.point(s, 0, 0);
-      const t = terrain.heightAt(p.x, p.z);
-      sApproach = s;
-      if (t > h - this.spec.depth * 0.5) {
+      reach = d;
+      if (above(d) <= APPROACH_FLUSH) {
+        let lo = d - step;
+        let hi = d;
+        for (let k = 0; k < 8; k++) {
+          const mid = (lo + hi) / 2;
+          if (above(mid) <= APPROACH_FLUSH) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        reach = hi;
         break;
       }
     }
-    return { sTower, sEnd, sApproach, hEnd, gEnd };
+    return { sTower, sEnd, sApproach: sEnd + dir * reach, hEnd, gEnd };
   }
 
   /** Road surface height at station s. */

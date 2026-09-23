@@ -13,6 +13,9 @@ const scope = self as unknown as {
 
 function transferables(r: StructureResult): Transferable[] {
   const list: Transferable[] = [r.wires.buffer as ArrayBuffer, r.lights.buffer as ArrayBuffer];
+  for (const d of r.decks) {
+    list.push(d.heights.buffer as ArrayBuffer);
+  }
   for (const p of r.parts) {
     for (const g of p.lods) {
       list.push(g.position.buffer as ArrayBuffer, g.normal.buffer as ArrayBuffer, g.uv.buffer as ArrayBuffer);

@@ -306,6 +306,46 @@ export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSe
   if (section.traffic) {
     addTraffic(b, frame, section.traffic, opts);
   }
+  publishRoadDeck(b, frame, section, opts);
+}
+
+/** Height sample spacing of the published road surface (m); the rendered LOD0 deck is linear over <= 8 m. */
+const SURFACE_STEP = 4;
+
+/** Records the carriageway of a road deck (height profile, lanes, raised walkways) for the 'roadSurface' service. */
+function publishRoadDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions): void {
+  const roads = section.strips.filter((st) => st.kind === 'road');
+  if (roads.length === 0 || opts.s1 - opts.s0 < 1) {
+    return;
+  }
+  const n = Math.max(2, Math.ceil((opts.s1 - opts.s0) / SURFACE_STEP) + 1);
+  const step = (opts.s1 - opts.s0) / (n - 1);
+  const heights = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    heights[i] = opts.height(opts.s0 + i * step);
+  }
+  const raised: number[] = [];
+  for (const st of section.strips) {
+    if ((st.raise ?? 0) > 0) {
+      raised.push(st.x0, st.x1, st.raise ?? 0);
+    }
+  }
+  const lanes = section.traffic ? section.traffic.lanes.map((l) => ({ x: l.x, dir: l.dir })) : [];
+  b.decks.push({
+    id: b.decks.length === 0 ? b.def.id : `${b.def.id}#${b.decks.length}`,
+    ox: frame.ox,
+    oz: frame.oz,
+    ax: frame.ax,
+    az: frame.az,
+    s0: opts.s0,
+    step,
+    heights,
+    halfWidth: section.halfWidth,
+    roadX0: Math.min(...roads.map((st) => st.x0)),
+    roadX1: Math.max(...roads.map((st) => st.x1)),
+    raised,
+    lanes,
+  });
 }
 
 /**

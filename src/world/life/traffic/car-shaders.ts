@@ -1,4 +1,4 @@
-import { ROAD_STEP, ROAD_TEX_WIDTH } from './road-network';
+import { ROAD_SAMPLE_TEXELS, ROAD_STEP, ROAD_TEX_WIDTH } from './road-network';
 
 /** Car kinematics shared by the light points and the car meshes (everything is a function of time on the GPU). */
 export const CAR_FRAME_GLSL = /* glsl */ `
@@ -9,9 +9,10 @@ attribute vec4 aRoad;
 attribute vec4 aLane;
 attribute vec4 aStyle;
 
-/* Road sample: centreline point (xyz) and hide weight (w, 1 inside the ?osm=1 slice). */
-vec4 roadSample(float i) {
-  int ii = int(i + 0.5);
+/* Road sample texel k: 0 = centreline point (xyz) and hide weight (w, 1 inside the ?osm=1 slice);
+   1 = lateral surface profile relative to the centre: left / right at aRoad.w m (xy) and at half of it (zw). */
+vec4 roadSample(float i, int k) {
+  int ii = int(i + 0.5) * ${ROAD_SAMPLE_TEXELS} + k;
   return texelFetch(uRoads, ivec2(ii % ${ROAD_TEX_WIDTH}, ii / ${ROAD_TEX_WIDTH}), 0);
 }
 
@@ -23,8 +24,9 @@ float carFrame(out vec3 pos, out vec3 fwd) {
   float i0 = floor(f);
   float fr = f - i0;
   float i1 = min(i0 + 1.0, aRoad.y - 1.0);
-  vec4 s0 = roadSample(aRoad.x + i0);
-  vec4 s1 = roadSample(aRoad.x + i1);
+  vec4 s0 = roadSample(aRoad.x + i0, 0);
+  vec4 s1 = roadSample(aRoad.x + i1, 0);
+  vec4 side = mix(roadSample(aRoad.x + i0, 1), roadSample(aRoad.x + i1, 1), fr);
   vec3 p0 = s0.xyz;
   vec3 p1 = s1.xyz;
   vec3 c = mix(p0, p1, fr);
@@ -32,7 +34,12 @@ float carFrame(out vec3 pos, out vec3 fwd) {
   float tl = length(t);
   t = tl > 1e-3 ? t / tl : vec3(0.0, 0.0, -1.0);
   vec3 right = normalize(vec3(-t.z, 0.0, t.x) + 1e-6);
-  pos = c + right * aLane.x * aLane.y;
+  float lat = aLane.x * aLane.y;
+  pos = c + right * lat;
+  // Follow the surface across the road: piecewise linear through the centre, half and outer profile samples.
+  float u = clamp(abs(lat) / max(aRoad.w, 0.5), 0.0, 1.0) * 2.0;
+  vec2 prof = lat < 0.0 ? side.zx : side.wy;
+  pos.y += u < 1.0 ? prof.x * u : mix(prof.x, prof.y, u - 1.0);
   fwd = t * aLane.y;
   float edge = min(s, L - s);
   return smoothstep(3.0, 30.0, edge) * step(aStyle.z, uTraffic) * (1.0 - mix(s0.w, s1.w, fr));

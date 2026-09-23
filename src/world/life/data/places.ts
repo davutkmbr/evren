@@ -196,13 +196,3 @@ export const PIGEON_MOSQUES: readonly (readonly [string, number])[] = [
   ['ayasofya', 0.7],
   ['nuruosmaniye', 0.6],
 ];
-
-/** Road deck heights (m above sea) of the bridge spans in geo.roads. */
-export const BRIDGE_DECKS: Readonly<Record<string, number>> = {
-  'bogazici-koprusu-yol': 66,
-  'fsm-koprusu-yol': 66,
-  'yss-koprusu-yol': 68,
-  'galata-koprusu-yol': 8.5,
-  'ataturk-koprusu-yol': 7,
-  'halic-koprusu-yol': 23,
-};

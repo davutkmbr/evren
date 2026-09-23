@@ -46,9 +46,37 @@ export const WIRE_STRIDE = 16;
 /** Light sprite instance layout, floats per instance. */
 export const LIGHT_STRIDE = 16;
 
+/**
+ * Road deck of a bridge, published on the main thread through the core 'roadSurface' service. The deck axis is
+ * straight (BridgeFrame): station s along (ax, az) from (ox, oz), lateral x to the right, i.e. along (-az, ax).
+ */
+export interface DeckData {
+  id: string;
+  ox: number;
+  oz: number;
+  ax: number;
+  az: number;
+  /** Station of the first height sample and the sample spacing (m). */
+  s0: number;
+  step: number;
+  /** Road surface height (m) at station s0 + i * step; the deck top is flat across (no crossfall). */
+  heights: Float32Array;
+  /** Half width of the deck top (m). */
+  halfWidth: number;
+  /** Lateral extent of the carriageway (the road strips, m). */
+  roadX0: number;
+  roadX1: number;
+  /** Raised strips (walkway curbs) as flat [x0, x1, raise] triples. */
+  raised: number[];
+  /** Traffic lane centres (lateral m) and travel direction along +s. */
+  lanes: { x: number; dir: 1 | -1 }[];
+}
+
 export interface StructureResult {
   id: string;
   parts: PartData[];
+  /** Road decks (bridges with a carriageway). */
+  decks: DeckData[];
   /** WIRE_STRIDE floats per wire: ax ay az bx by bz radius r g b ledGroup u0 u1 ledStrength fadeStart fadeEnd. */
   wires: Float32Array;
   /** LIGHT_STRIDE floats per light: x y z r g b size mode p0 p1 p2 p3 a0 a1 a2 a3. */

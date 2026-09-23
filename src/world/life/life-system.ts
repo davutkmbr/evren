@@ -76,6 +76,10 @@ export class LifeSystem implements System {
       const t2 = performance.now();
       this.rebuildFleet(ctx.quality.settings);
       this.rebuildTraffic(ctx.quality.settings);
+      // Bridge decks arrive with the structures module; re-lay the roads onto them once they do.
+      if (!ctx.services.has('roadSurface')) {
+        void ctx.services.when('roadSurface').then(() => this.traffic && this.rebuildTraffic(ctx.quality.settings));
+      }
       console.info(`[life] models ${Math.round(t1 - t0)} ms, routes ${Math.round(t2 - t1)} ms, fleet ${Math.round(performance.now() - t2)} ms`);
       this.unsubscribe = ctx.quality.onChange((s) => this.onQuality(s));
     } finally {
@@ -92,7 +96,7 @@ export class LifeSystem implements System {
     }
     this.trafficPreset = s.preset;
     const osmSlice = this.ctx && osmEnabled(this.ctx.debug.params) ? osmExclusionRect() : null;
-    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1, osmSlice);
+    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1, osmSlice, this.ctx?.services.tryGet('roadSurface') ?? null);
     this.root.add(this.traffic.group);
   }
 
