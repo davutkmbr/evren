@@ -79,7 +79,8 @@ vec3 rdPerturb(vec3 surfPos, vec3 n, float h) {
 
 /**
  * Per-vertex material ids (aData.x): 0 wool, 1 leather, 2 iron, 3 skin, 4 dark leather, 5 scarf wool, 6 saddle blanket,
- * 7 cloak/hood, 8 goggle glass, 9 brass. aData.y = authored wear (edges, straps) for leather, t for cloth.
+ * 7 cloak/hood, 8 goggle glass, 9 brass. aData.y = authored wear (edges, straps) for leather, t for cloth, lip
+ * colour for skin.
  * Leather wear also grows with surface curvature (rounded edges, knuckles, strap borders rub pale and smooth).
  */
 const FRAGMENT_MATERIAL = /* glsl */ `
@@ -128,10 +129,11 @@ float rdMetal = 0.0;
     rdRough = 0.34 + 0.4 * rust;
     rdHeight = rust * 0.5 + fine * 0.2;
   } else if (rdMat < 3.5) {
-    // Wind-burnt skin.
-    diffuseColor.rgb = vec3(0.13, 0.075, 0.052) * (0.85 + 0.2 * mid);
-    rdRough = 0.5;
-    rdHeight = fine * 0.2;
+    // Wind-burnt skin; aData.y tints the lips.
+    float lip = clamp(vRData.y, 0.0, 1.0);
+    diffuseColor.rgb = mix(vec3(0.13, 0.075, 0.052) * (0.85 + 0.2 * mid), vec3(0.12, 0.042, 0.036), lip * 0.8);
+    rdRough = 0.5 - 0.1 * lip;
+    rdHeight = fine * 0.2 * (1.0 - lip);
   } else if (rdMat < 5.5) {
     // Scarf: heavy undyed wool, sand-brown.
     vec2 w = vec2(p.x + p.z, p.y) * 1100.0;

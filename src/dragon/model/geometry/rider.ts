@@ -42,18 +42,19 @@ function buildTorso(builder: MeshBuilder, rig: RigSkeleton): void {
       new THREE.Vector3(0, 1.79, -2.675),
     ],
     up: FWD,
+    // V-shaped trunk: narrow waist, broad ribcage and shoulders, trapezius sloping into the neck.
     keys: [
       [0, 0.15, 0.1, 0.125],
       [0.08, 0.172, 0.118, 0.13],
-      [0.3, 0.148, 0.1, 0.098],
-      [0.55, 0.166, 0.118, 0.108],
-      [0.72, 0.186, 0.128, 0.114],
-      [0.83, 0.2, 0.108, 0.112],
-      [0.9, 0.12, 0.074, 0.074],
-      [0.95, 0.066, 0.06, 0.06],
+      [0.3, 0.138, 0.098, 0.096],
+      [0.55, 0.17, 0.12, 0.108],
+      [0.72, 0.198, 0.132, 0.116],
+      [0.83, 0.21, 0.11, 0.114],
+      [0.9, 0.134, 0.078, 0.078],
+      [0.95, 0.068, 0.06, 0.06],
       [1, 0.058, 0.056, 0.056],
     ],
-    segments: 28,
+    segments: 24,
     spacing: 0.017,
     material: (t) => (t < 0.22 ? RIDER_MAT.wool : t < 0.28 ? RIDER_MAT.darkLeather : t < 0.86 ? RIDER_MAT.leather : RIDER_MAT.wool),
     bump: (t, theta) => {
@@ -282,7 +283,7 @@ function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
 function buildCloak(builder: MeshBuilder, rig: RigSkeleton): void {
   const chest = rig.id('riderChest');
   const spine = rig.id('riderSpine');
-  const cols = 26;
+  const cols = 22;
   const rows = 18;
   const length = 1.2;
   const THICK = 0.007;

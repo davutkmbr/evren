@@ -4,7 +4,7 @@ import type { RigSkeleton } from '../skeleton';
 import type { BodySurface } from './body';
 import { MeshBuilder, SkinAccumulator } from './buffers';
 import { Loft } from './loft';
-import { MAT } from './materials-ids';
+import { MAT, mouthField } from './materials-ids';
 import { PathSampler, gauss, smoothstep } from './path';
 import { SectionProfile, type SectionKey } from './profile';
 import { buildThorn } from './thorn';
@@ -66,6 +66,8 @@ function jawDepth(h: number): number {
 }
 
 const JAW_TOP = 0.055;
+/** Half-width of the mouth floor around the top of the jaw section (rad from straight up). */
+const JAW_MOUTH_ANGLE = Math.acos(0.965);
 const JAW_WIDTH_RATIO = 0.74;
 
 function buildJaw(builder: MeshBuilder, body: BodySurface, rig: RigSkeleton): void {
@@ -99,19 +101,22 @@ function buildJaw(builder: MeshBuilder, body: BodySurface, rig: RigSkeleton): vo
   for (let i = 0; i <= n; i++) {
     rings.push(0.003 + (i / n) * (L - 0.006));
   }
+  const segments = 48;
+  const dh = (hs[hs.length - 1] - hs[0]) / n;
   const loft = new Loft({
     path,
     rings,
-    segments: 48,
+    segments,
     section: (s, theta, out) => profile.evaluate(s, theta, out),
     skin: (s, theta, pos, acc) => {
       acc.add(jawBone, 1);
     },
     data: (s, theta, pos, out) => {
-      const top = Math.cos(theta);
+      // Mouth floor along the top of the jaw (within JAW_MOUTH_ANGLE of straight up), as a continuous field.
       const h = hAt(s);
-      const mouth = top > 0.965 && h > HINGE_H - 0.04 && h < 0.975 ? MAT.mouth : MAT.skin;
-      out.set(mouth, h, 0, 0);
+      const fromTop = Math.acos(THREE.MathUtils.clamp(Math.cos(theta), -1, 1));
+      const mouth = mouthField((JAW_MOUTH_ANGLE - fromTop) / ((Math.PI * 2) / segments), (h - (HINGE_H - 0.04)) / dh, (0.975 - h) / dh);
+      out.set(MAT.skin, h, 0, -mouth);
     },
     color: (s, theta, pos, out) => {
       const under = smoothstep(0.2, 0.9, -Math.cos(theta));

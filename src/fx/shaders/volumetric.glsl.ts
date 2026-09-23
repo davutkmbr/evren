@@ -13,12 +13,16 @@ ${PARTICLE_COMMON_GLSL}
 
 attribute float aSlot;
 uniform float uNearFade;
+
+/* Flame shear: sprite half-extension along the flow per m/s of flow speed (s), capped at this multiple of the radius. */
+#define FLAME_SHEAR_TIME 0.085
+#define FLAME_MAX_ASPECT 12.0
 uniform vec3 uFireLightPos0;
 uniform vec3 uFireLightCol0;
 uniform vec3 uFireLightPos1;
 uniform vec3 uFireLightCol1;
 
-varying vec4 vQuad;    // profile uv, radius, view depth
+varying vec4 vQuad;    // profile uv, medium half-depth along the view (radius for round sprites), view depth
 varying vec4 vState;   // age, lifeN, seed, heat
 varying vec4 vExt;     // glow extinction, scatter extinction, noise uv
 flat varying int vType;
@@ -65,6 +69,10 @@ void main() {
   vec3 axX;
   vec3 axY;
   vec2 halfSize = vec2(radius);
+  // Half-depth of the medium along the view ray through the centre, and noise stretch along the sprite's long axis.
+  float halfDepth = radius;
+  float noiseStretch = 1.0;
+  float shearDilute = 1.0;
   if (flatType) {
     float c = cos(spinAngle);
     float s = sin(spinAngle);
@@ -82,7 +90,37 @@ void main() {
       streak = max(streak, radius * clamp(svl * 0.14, 0.0, 3.2));
     }
     vec2 dir = vec2(cos(spinAngle), sin(spinAngle));
-    if (streak > 0.03 * radius) {
+    if (t == 0) {
+      // Flame tongues are sheared out along their flow through the entrained air (not motion blur): each sprite is
+      // an ellipsoid along the flow. Both ends of its axis are projected with perspective onto the plane through
+      // the centre, so a jet seen from behind shows streaks converging on its vanishing point (and a dense column
+      // along the view) instead of a pile of round puffs.
+      vec3 flow = vel - uWindFx * VOL_WIND[0] - P.carrier;
+      float fs = length(flow);
+      float ext = min(fs * FLAME_SHEAR_TIME, radius * FLAME_MAX_ASPECT + 0.6);
+      if (ext > 0.02 * radius) {
+        vec3 axis = flow / fs;
+        vec3 pv = (viewMatrix * vec4(pos, 1.0)).xyz;
+        vec3 av = mat3(viewMatrix) * axis * ext;
+        float d = max(-pv.z, 1e-3);
+        float dMin = max(0.4 * d, uNearFade);
+        vec2 q1 = (pv.xy + av.xy) * (d / max(d - av.z, dMin));
+        vec2 q0 = (pv.xy - av.xy) * (d / max(d + av.z, dMin));
+        vec2 seg = q1 - q0;
+        float segL = length(seg);
+        vec2 mid = (q0 + q1) * 0.5 - pv.xy;
+        pos += cr * mid.x + cu * mid.y;
+        if (segL > 1e-4) {
+          dir = seg / segL;
+        }
+        halfSize.x = radius + 0.5 * segL;
+        float a = radius + ext;
+        float ca = dot(axis, normalize(pos - cameraPosition));
+        halfDepth = radius * inversesqrt(ca * ca * (radius * radius) / (a * a) + 1.0 - ca * ca);
+        noiseStretch = 1.0 + min(0.35 * segL / radius, 2.5);
+        shearDilute = pow(radius / a, 0.35);
+      }
+    } else if (streak > 0.03 * radius) {
       dir = sv / svl;
       halfSize.x = radius + streak * 0.5;
       if (t == 7) {
@@ -119,10 +157,10 @@ void main() {
     // Two-phase cooling: fast white -> yellow (premixed core burns out), then yellow -> orange -> soot.
     heat = P.auxC * (P.auxD * exp(-age / 0.1) + (1.0 - P.auxD) * exp(-age / max(P.auxA, 0.05)));
     float compress = pow(P.size0 / max(radius, 1e-3), 0.55);
-    glow = 1.4 * compress * smoothstep(0.05, 0.4, heat);
+    glow = 1.4 * compress * shearDilute * smoothstep(0.05, 0.4, heat);
     // Cooling gas turns into grey-black soot that gets denser as the tongue dies (then the smoke billows take over).
     float sootDark = smoothstep(0.36, 0.06, heat);
-    scatter = (P.auxB * (0.12 + 0.88 * sootDark) * 0.9 / max(radius, 0.5) * (1.0 - smoothstep(0.6, 1.0, lifeN)) + 0.01) * nearSoot;
+    scatter = (P.auxB * (0.12 + 0.88 * sootDark) * 0.9 / max(radius, 0.5) * (1.0 - smoothstep(0.6, 1.0, lifeN)) + 0.01) * nearSoot * shearDilute;
     albedo = mix(vec3(0.045, 0.04, 0.036), vec3(0.11, 0.105, 0.1), smoothstep(0.3, 1.0, lifeN));
   } else if (t == 1) {
     // auxC = appear delay (s): billows spawned with the jet stay hidden until the flames have burnt out.
@@ -154,9 +192,9 @@ void main() {
     scatter = P.auxB * smoothstep(0.0, 0.03, lifeN) * pow(1.0 - lifeN, 1.4);
   }
 
-  vQuad = vec4(corner, radius, -mv.z);
+  vQuad = vec4(corner, halfDepth, -mv.z);
   vState = vec4(age, lifeN, P.seed, heat);
-  vExt = vec4(glow * cover, scatter * cover, corner * vec2(halfSize.x / radius, 1.0));
+  vExt = vec4(glow * cover, scatter * cover, corner * vec2(halfSize.x / (radius * noiseStretch), 1.0));
   vAlbedo = albedo;
   vWorldPos = worldPos;
   vAxX = axX;
@@ -240,7 +278,7 @@ void main() {
   vec2 uv = vQuad.xy;
   float r2 = dot(uv, uv);
   if (r2 >= 1.0) discard;
-  float radius = vQuad.z;
+  float halfDepth = vQuad.z;
   float depth = vQuad.w;
   float sceneZ = sceneViewDepth();
   int t = vType;
@@ -254,7 +292,7 @@ void main() {
   if (t == 5 || t == 6) {
     chord = clamp((sceneZ - depth) / 0.8 + 1.0, 0.0, 1.0) * smoothstep(uNearFade, uNearFade + 1.0, depth);
   } else {
-    float hh = sqrt(max(1.0 - r2, 0.0)) * radius;
+    float hh = sqrt(max(1.0 - r2, 0.0)) * halfDepth;
     chord = max(min(depth + hh, sceneZ) - max(depth - hh, uNearFade), 0.0);
   }
   if (chord <= 1e-4) discard;
@@ -286,7 +324,7 @@ void main() {
     float ridge = 1.0 - abs(2.0 * (fa * 0.78 + fd * 0.22) - 1.0);
     ridge *= ridge;
     float body = 1.0 - smoothstep(0.0, 1.0, rw);
-    float erode = mix(0.0, 0.38, smoothstep(0.15, 1.0, lifeN));
+    float erode = mix(0.0, 0.5, smoothstep(0.1, 0.9, lifeN));
     float dens = smoothstep(0.14, 0.5, body * (0.42 + 0.9 * fa) + 0.35 * ridge - erode);
     // Hot filaments vs cooler gaps: with radiance ~exp(-c/T) this gives several-fold brightness contrast, which
     // survives the overlap of many sprites when the jet is seen end-on.
@@ -386,7 +424,10 @@ void main() {
   }
 
   // clamp() also sanitizes NaN on GPUs (min/max return the non-NaN operand); isnan() is unreliable under fast-math.
-  gl_FragColor = vec4(clamp(rgb, 0.0, 60000.0), clamp(alpha, 0.0, 1.0));
-  pc_fragHeat = vec4(clamp(haze, 0.0, 4.0), 0.0, 0.0, 0.0);
+  float a = clamp(alpha, 0.0, 1.0);
+  gl_FragColor = vec4(clamp(rgb, 0.0, 60000.0), a);
+  // Heat target (alpha 0 = additive): r haze, g/b = sum of alpha * log depth / sum of alpha, i.e. where the particle
+  // layer's opacity sits in depth. The full-resolution ribbons drawn after the composite use it to hide behind smoke.
+  pc_fragHeat = vec4(clamp(haze, 0.0, 4.0), a * log2(1.0 + depth), a, 0.0);
 }
 `;

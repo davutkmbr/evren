@@ -49,8 +49,11 @@ export class DragonRigImpl implements DragonRig {
   readonly mouth = new THREE.Object3D();
   readonly wingTipLeft = new THREE.Object3D();
   readonly wingTipRight = new THREE.Object3D();
-  /** standHeight: rig origin height above the ground when standing (read by flight). */
-  readonly dimensions = { length: 18.3, wingspan: 24, height: 4.4, standHeight: STANDING_ROOT_HEIGHT };
+  /**
+   * standHeight: the rig origin is the body's centre of mass (anatomy.ts), and standing puts the feet on the ground
+   * STANDING_ROOT_HEIGHT below it (the leg IK plants them there), so that is the standing COM height flight uses.
+   */
+  readonly dimensions: DragonRig['dimensions'] = { length: 18.3, wingspan: 24, height: 4.4, standHeight: STANDING_ROOT_HEIGHT };
   readonly skel: RigSkeleton;
   readonly stats = { bodyTriangles: 0, membraneTriangles: 0, riderTriangles: 0, bones: 0 };
   private readonly pose: DragonPose = { ...DEFAULT_POSE };
@@ -171,6 +174,7 @@ export class DragonRigImpl implements DragonRig {
   setFirstPerson(enabled: boolean): void {
     this.firstPerson = enabled;
     this.riderUniforms.uFirstPerson.value = enabled ? 1 : 0;
+    this.animator.setFirstPerson(enabled);
   }
 
   get isFirstPerson(): boolean {

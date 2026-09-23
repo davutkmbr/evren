@@ -69,6 +69,18 @@ const WRIST_CLEARANCE = 0.13;
 /** Hind foot stance: ball-of-foot joint height and rig-space toe pitch that put pads and claw tips on the ground. */
 const BALL_CLEARANCE = 0.06;
 const FOOT_STANCE_PITCH = 0.33;
+/**
+ * First-person posture: with the rider looking over its head, the dragon flies with its neck stretched forward and
+ * slightly down like a goose (lower neck pitched down, upper neck raised back towards level), so the skull sits
+ * below the saddle eye line and the flight path stays clear above it. The top of the resting head slopes down
+ * about as steeply as the rider's line of sight, so from the saddle it foreshortens to a sliver behind the brow;
+ * the head is therefore carried looking ahead, nose raised by POV_HEAD_RAISE, which turns the brow, horns and the
+ * whole snout top towards the rider. While it breathes fire or roars (jaw open) the head levels out again, so the
+ * fire goes where it does in third person.
+ */
+const POV_NECK_DROP = 0.4;
+const POV_NECK_LIFT = 0.3;
+const POV_HEAD_RAISE = 0.22;
 /** Clamp for the body-frame acceleration fed to secondary motion (teleports, collisions). */
 const MAX_ACCEL = 40;
 const _qa = new THREE.Quaternion();
@@ -139,6 +151,10 @@ export class DragonAnimator {
   private smoothAmp = 0;
   private smoothWalk = 0;
   private smoothJaw = 0;
+  private povTarget = 0;
+  private povBlend = 0;
+  /** 1 while the head is raised to breathe fire (jaw open), eased so the head does not snap. */
+  private povAim = 0;
   private lastVel = new THREE.Vector3();
   private hasLastVel = false;
   private breathPhase = 0;
@@ -222,8 +238,14 @@ export class DragonAnimator {
     this.riderHead = b('riderHead');
   }
 
+  /** Blends the first-person neck posture in (true) or out (false). */
+  setFirstPerson(enabled: boolean): void {
+    this.povTarget = enabled ? 1 : 0;
+  }
+
   update(pose: Readonly<DragonPose>, dt: number, state: DragonState | undefined): void {
     this.time += dt;
+    this.povBlend += (this.povTarget - this.povBlend) * (dt > 0 ? damp(4, dt) : 1);
     const k = dt > 0 ? damp(10, dt) : 1;
     this.smoothSpread += (pose.wingSpread - this.smoothSpread) * (dt > 0 ? damp(7, dt) : 1);
     this.smoothTuck += (pose.legsTuck - this.smoothTuck) * (dt > 0 ? damp(4, dt) : 1);
@@ -274,12 +296,17 @@ export class DragonAnimator {
       const w = NECK_WEIGHTS[i];
       const osc = -bodyPitch * (i < 3 ? 0.5 : 0);
       const lift = groundNeck * (i < 4 ? 0.9 : -0.6);
-      setEuler(this.neck[i], np * w + osc + lift * w + walkNod * w, ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded, 0, 'YXZ');
+      const pov = this.povBlend * (i < 5 ? -POV_NECK_DROP * (w / 0.62) : POV_NECK_LIFT * (w / 0.38));
+      setEuler(this.neck[i], np * w + osc + lift * w + walkNod * w + pov, ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded, 0, 'YXZ');
     }
-    // Head stabilization: counter body pitch/heave so the gaze stays steady.
-    const headStab = -bodyPitch * 0.6 - heave * 0.25;
-    setEuler(this.head, headStab - groundNeck * 0.25, 0, 0, 'YXZ');
     this.smoothJaw += (THREE.MathUtils.clamp(pose.jawOpen, 0, 1) - this.smoothJaw) * (dt > 0 ? damp(14, dt) : 1);
+    const aimTarget = THREE.MathUtils.smoothstep(this.smoothJaw, 0.05, 0.4);
+    this.povAim += (aimTarget - this.povAim) * (dt > 0 ? damp(aimTarget > this.povAim ? 9 : 3, dt) : 1);
+    // Head stabilization: counter body pitch/heave so the gaze stays steady. In first person the head undoes the
+    // neck's net pitch (level, as in third person) and raises its nose unless it is breathing fire.
+    const headStab = -bodyPitch * 0.6 - heave * 0.25;
+    const povHead = this.povBlend * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
+    setEuler(this.head, headStab - groundNeck * 0.25 + povHead, 0, 0, 'YXZ');
     setEuler(this.jaw, -this.smoothJaw * 0.62, 0, 0, 'YXZ');
 
     // --- Tail with lagging springs ---

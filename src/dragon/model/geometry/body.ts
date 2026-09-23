@@ -6,7 +6,12 @@ import { ChainSkinner } from './chain-skin';
 import { Loft } from './loft';
 import { PathSampler, sampleRings, smoothstep, gauss } from './path';
 import { SectionProfile, type Bump, type SectionKey } from './profile';
-import { MAT } from './materials-ids';
+import { MAT, mouthField } from './materials-ids';
+
+/** Ring spacing along the head (m). */
+const HEAD_RING_STEP = 0.03;
+/** Half-width of the palate around the bottom of the upper jaw section (rad from straight down). */
+const PALATE_ANGLE = Math.acos(0.975);
 
 /**
  * The main body surface: one continuous loft from the snout tip through head, neck, torso and tail.
@@ -58,7 +63,7 @@ export class BodySurface {
     const L = this.path.length;
     const rings = sampleRings(0, L, (s) => {
       if (s < this.sSkull) {
-        return 0.03;
+        return HEAD_RING_STEP;
       }
       if (s < this.sNeckBase) {
         return 0.055;
@@ -228,12 +233,18 @@ export class BodySurface {
   private dataAt(s: number, theta: number, out: THREE.Vector4): void {
     const h = this.headParam(s);
     const bottomness = -Math.cos(theta);
-    // Mouth interior: the flat palate under the upper jaw, forward of the hinge.
-    const inMouth = h > JAW_HINGE_H - 0.01 && h < 0.975 && bottomness > 0.975 ? 1 : 0;
+    // Mouth interior: the flat palate under the upper jaw (within PALATE_ANGLE of the bottom), forward of the hinge.
+    // Written as a continuous field (-aData.w) in grid cells: 72 segments around, HEAD_RING_STEP along the head.
+    let palate = 0;
+    if (h > JAW_HINGE_H - 0.1 && bottomness > 0.9) {
+      const dh = HEAD_RING_STEP / this.sSkull;
+      const fromBottom = Math.acos(THREE.MathUtils.clamp(bottomness, -1, 1));
+      palate = mouthField((PALATE_ANGLE - fromBottom) / ((Math.PI * 2) / 72), (h - (JAW_HINGE_H - 0.01)) / dh, (0.975 - h) / dh);
+    }
     // Breathing mask: ribcage and belly.
     const z = this.path.pointAt(s, new THREE.Vector3()).z;
     const breath = gauss(z + 0.4, 0.9) * (0.4 + 0.6 * smoothstep(-0.2, 0.8, bottomness));
-    out.set(inMouth ? MAT.mouth : MAT.skin, THREE.MathUtils.clamp(h, 0, 1), breath, 0);
+    out.set(MAT.skin, THREE.MathUtils.clamp(h, 0, 1), breath, -palate);
   }
 
   private colorAt(s: number, theta: number, out: THREE.Color): void {

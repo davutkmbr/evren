@@ -23,8 +23,14 @@ export interface FireLightState {
   color: [THREE.Color, THREE.Color];
 }
 
-const REACH = 37;
-const JET_DRAG = 1.55;
+const REACH = 40;
+/**
+ * Flame drag (1/s): high, so the jet is fast out of the mouth and gets most of its reach while still hot (a
+ * flamethrower-like rod of fire 25-40 m long) instead of creeping out and piling up into a ball where it stalls.
+ */
+const JET_DRAG = 2.1;
+/** Embers and sparks keep the gentler launch they were tuned for (they have their own, much lower drag). */
+const SHARP_LAUNCH_DRAG = 1.55;
 /**
  * Fraction of the mouth velocity carried by the air around a flying dragon (entrained flow). Flames stay ahead of
  * the dragon; cooled smoke keeps little of it, so it peels off below and behind the rider's line of sight quickly
@@ -134,6 +140,7 @@ export class FireEmitter {
     const along = Math.max(0, this.mouthVel.dot(this.dir)) * (1 - CARRY[1]);
     const reach = REACH * (0.4 + 0.6 * env);
     const jetSpeed = jetSpeedForReach(reach, JET_DRAG, along);
+    const sharpSpeed = jetSpeedForReach(reach, SHARP_LAUNCH_DRAG, along);
     this.flameReach = reach;
     // Jet velocity relative to the entrained air: sets the reach and the surface the flame will splash against.
     this.worldJet.copy(this.dir).multiplyScalar(jetSpeed).addScaledVector(this.mouthVel, 1 - CARRY[1]);
@@ -149,11 +156,11 @@ export class FireEmitter {
     const sharpT = poolThrottle(ctx.sharp);
     // At speed the smoke is stretched over a long trail: less of it per metre.
     const smokeSpread = 1 / (1 + this.mouthVel.length() / 25);
-    this.emitJet(ctx, this.core.take(400 * k * volT, dt), 0, jetSpeed);
-    this.emitJet(ctx, this.body.take(200 * k * volT, dt), 1, jetSpeed);
+    this.emitJet(ctx, this.core.take(420 * k * volT, dt), 0, jetSpeed);
+    this.emitJet(ctx, this.body.take(170 * k * volT, dt), 1, jetSpeed);
     this.emitJet(ctx, this.smoke.take(26 * k * volT * smokeSpread, dt), 2, jetSpeed);
-    this.emitJet(ctx, this.embers.take(40 * k * sharpT, dt), 3, jetSpeed);
-    this.emitJet(ctx, this.sparks.take(42 * k * sharpT, dt), 4, jetSpeed);
+    this.emitJet(ctx, this.embers.take(40 * k * sharpT, dt), 3, sharpSpeed);
+    this.emitJet(ctx, this.sparks.take(42 * k * sharpT, dt), 4, sharpSpeed);
 
     if (this.hitValid && this.hitDistance < reach * 1.25) {
       const closeness = 1 - this.hitDistance / (reach * 1.25);
@@ -230,35 +237,40 @@ export class FireEmitter {
       let jitter: number;
       switch (kind) {
         case 0:
-          // Core: premixed blue root, then the white-yellow sooting core of the jet (first ~10 m).
-          angle = 0.03;
-          speedScale = range(rng, 0.94, 1.04);
-          jitter = 0.6;
+          // Core: premixed blue root, then the white-yellow sooting core that runs down the middle of the jet
+          // (~25 m), sheared into long bright streaks by its speed.
+          angle = 0.022;
+          speedScale = range(rng, 0.95, 1.04);
+          jitter = 0.4;
           s.type = VolType.Flame;
-          s.life = range(rng, 0.2, 0.34);
-          s.size0 = range(rng, 0.14, 0.2);
-          s.size1 = range(rng, 0.5, 0.78);
+          s.life = range(rng, 0.38, 0.6);
+          s.size0 = range(rng, 0.09, 0.14);
+          s.size1 = range(rng, 0.24, 0.38);
           s.drag = JET_DRAG * range(rng, 0.95, 1.05);
           s.buoy = 2.5;
-          s.auxA = range(rng, 0.2, 0.3);
-          s.auxB = range(rng, 0.2, 0.4);
-          s.auxC = range(rng, 0.95, 1.08);
-          s.auxD = 0.42;
+          s.auxA = range(rng, 0.4, 0.55);
+          s.auxB = range(rng, 0.15, 0.3);
+          s.auxC = range(rng, 1.0, 1.1);
+          s.auxD = 0.3;
           break;
         case 1:
-          // Body: turbulent yellow -> orange tongues that burn out within ~1 s and leave soot behind.
-          angle = 0.075;
-          speedScale = range(rng, 0.8, 1.02);
-          jitter = 1.3;
+          // Body: turbulent yellow -> orange tongues that burn out within ~1 s and leave soot behind. Their reach is
+          // spread over the whole jet (slow tongues die early), so the flame reads as one long column rather than
+          // a ball piling up where the fast ones stall.
+          angle = 0.045;
+          speedScale = 0.45 + 0.58 * Math.sqrt(rng());
+          jitter = 0.8;
           s.type = VolType.Flame;
-          s.life = range(rng, 0.75, 1.35);
-          s.size0 = range(rng, 0.24, 0.36);
-          s.size1 = range(rng, 1.1, 1.8);
+          s.life = range(rng, 0.8, 1.2);
+          s.size0 = range(rng, 0.18, 0.28);
+          s.size1 = range(rng, 0.34, 0.55);
           s.drag = JET_DRAG * range(rng, 0.9, 1.1);
           s.buoy = range(rng, 5, 8);
-          s.auxA = range(rng, 0.85, 1.2);
+          // Cooler than the core (yellow-orange, not white), so the white core reads as a streak down the middle,
+          // but slow to cool: the tongues stay alight to the end of the jet.
+          s.auxA = range(rng, 0.85, 1.15);
           s.auxB = range(rng, 0.8, 1.25);
-          s.auxC = range(rng, 0.85, 1.0);
+          s.auxC = range(rng, 0.7, 0.85);
           s.auxD = 0.15;
           break;
         case 2:

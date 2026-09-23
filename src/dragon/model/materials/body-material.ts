@@ -27,11 +27,19 @@ float dgNoise(vec2 p) {
 
 /**
  * Per-vertex material ids (aData.x): 0 scaled skin (texture maps), 1 horn, 2 tooth, 3 eye, 4 mouth, 5 claw, 6 tongue.
- * aData.y: param along horn/tooth (0 base .. 1 tip) or head parameter; aData.z: breathing mask; aData.w: 1 on limbs.
+ * aData.y: param along horn/tooth (0 base .. 1 tip) or head parameter; aData.z: breathing mask; aData.w: 1 on limbs,
+ * -(mouth coverage 0..1) on the head and jaw skin. The ids are flat per triangle, so material changes inside one
+ * surface are blended here instead: the mouth field is thresholded per pixel (smooth palate / jaw boundaries), and
+ * horns and claws grow out of scaled skin over the base of their flare (no hard seam where they meet the head).
  */
 const FRAGMENT_MATERIAL = /* glsl */ `
 float dgMat = floor(vMatId + 0.5);
 float dgSkin = 1.0 - step(0.5, dgMat);
+// Derivatives outside any branch (undefined in non-uniform control flow).
+float dgMouthF = clamp(-vData.w, 0.0, 1.0);
+float dgMouthFw = max(fwidth(dgMouthF), 1e-4);
+float dgMouth = dgSkin * smoothstep(0.5 - dgMouthFw, 0.5 + dgMouthFw, dgMouthF);
+vec3 dgSkinAlbedo = diffuseColor.rgb;
 float dgRough = 0.5;
 float dgCoat = 0.0;
 float dgCoatRough = 0.3;
@@ -59,10 +67,18 @@ vec3 dgEmissive = vec3(0.0);
     }
     c *= (0.75 + 0.5 * streak) * (1.0 - 0.3 * rings);
     c = mix(c, c * 1.6 + vec3(0.02, 0.018, 0.015), chips);
-    diffuseColor.rgb = c;
+    // Base of the flare: scaled skin creeping up the horn along a ragged edge, keratin above. The skin albedo is
+    // read from the dorsal band of the scale atlas (u near 0; around the horn u would also reach the ember belly).
+    float baseEdge = t + (dgNoise(vec2(dgUv.x * 26.0, t * 9.0)) - 0.5) * 0.07;
+    float skinBase = 1.0 - smoothstep(0.03, 0.15, baseEdge);
+    #ifdef USE_MAP
+      dgSkinAlbedo = texture2D(map, vec2(0.36 * (0.5 - abs(fract(dgUv.x) - 0.5)), dgUv.y)).rgb;
+    #endif
+    diffuseColor.rgb = mix(c, dgSkinAlbedo, skinBase);
     dgRough = mix(0.62, 0.45, t) + (streak - 0.5) * 0.12 + rings * 0.06 + chips * 0.15;
     dgCoat = 0.08;
     dgCoatRough = 0.45;
+    dgSkin = skinBase;
   } else if (dgMat > 1.5 && dgMat < 2.5) {
     // Tooth enamel.
     float streak = dgNoise(vec2(dgUv.x * 30.0, dgUv.y * 3.0));
@@ -88,17 +104,20 @@ vec3 dgEmissive = vec3(0.0);
     dgCoat = 1.0;
     dgCoatRough = 0.02;
     dgEmissive = iris * (1.0 - pupil) * (1.0 - limbus) * (0.12 + 2.2 * uNight);
-  } else if (dgMat > 3.5 && dgMat < 4.5 || dgMat > 5.5) {
-    // Mouth interior / tongue: wet dark flesh with soft, low-frequency wetness variation.
+  } else if (dgMat > 3.5 && dgMat < 4.5 || dgMat > 5.5 || dgMouth > 0.0) {
+    // Mouth interior / tongue: wet dark flesh with soft, low-frequency wetness variation. On the head and jaw skin
+    // it is blended in by the mouth coverage.
     float wet = dgNoise(dgUv * vec2(9.0, 4.0)) * 0.6 + dgNoise(dgUv * vec2(21.0, 9.0)) * 0.4;
     vec3 flesh = dgMat > 5.5 ? vec3(0.2, 0.055, 0.05) : vec3(0.16, 0.035, 0.032);
-    diffuseColor.rgb = flesh * (0.8 + 0.35 * wet);
+    float fleshW = dgMat > 0.5 ? 1.0 : dgMouth;
+    diffuseColor.rgb = mix(diffuseColor.rgb, flesh * (0.8 + 0.35 * wet), fleshW);
     dgRough = 0.42 - 0.08 * wet;
     dgCoat = 0.35;
     dgCoatRough = 0.3;
+    dgSkin *= 1.0 - fleshW;
   }
   #ifdef USE_ROUGHNESSMAP
-  if (dgSkin > 0.5 && vData.w > 0.5) {
+  if (dgMat < 0.5 && vData.w > 0.5) {
     // Limbs (wing arms, fingers, legs, toes): no ember belly; the undersides become dark grey leathery pads.
     float bellyW = texture2D(roughnessMap, vRoughnessMapUv).b;
     diffuseColor.rgb *= mix(vec3(1.0), vec3(0.2, 0.36, 0.78), bellyW);

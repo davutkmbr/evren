@@ -75,9 +75,10 @@ function ribbonGeometry(points: number): THREE.InstancedBufferGeometry {
 }
 
 /**
- * HDR pass: (1) sorted volumetric particles -> half-res MRT (premultiplied color + heat), (2) full-res composite
- * with joint-bilateral upsampling and heat haze, (3) trails + sharp particles blended on top. Manual soft depth
- * tests against the scene depth; nothing writes depth. 3-4 draw calls when active, disabled when idle.
+ * HDR pass: (1) sorted volumetric particles -> half-res MRT (premultiplied color + heat/opacity depth), (2) full-res
+ * composite with joint-bilateral upsampling and heat haze, (3) trails + sharp particles blended on top (trails fade
+ * behind the particle layer's opacity where it lies in front of them). Manual soft depth tests against the scene
+ * depth; nothing writes depth. 3-4 draw calls when active, disabled when idle.
  */
 export class FxPass implements HdrPass {
   readonly name = 'fx-particles';
@@ -164,6 +165,9 @@ export class FxPass implements HdrPass {
       uniforms: {
         ...s,
         tTrail: { value: trailTexture },
+        tVol: { value: null },
+        tHeat: { value: null },
+        uHasVol: { value: 0 },
         uPoints: { value: trailPoints },
         uSink: { value: 1.3 },
         uTrailLife: { value: 3 },
@@ -325,6 +329,10 @@ export class FxPass implements HdrPass {
     renderer.render(this.compositeScene, this.orthoCamera);
 
     if (this.trailMesh.visible || this.sharpMesh.visible) {
+      const tu = this.trailMaterial.uniforms;
+      tu.tVol.value = this.lowTarget.textures[0];
+      tu.tHeat.value = this.lowTarget.textures[1];
+      tu.uHasVol.value = hasVol ? 1 : 0;
       renderer.render(this.overlayScene, camera);
     }
 
@@ -394,8 +402,9 @@ export class FxPass implements HdrPass {
       format: THREE.RGBAFormat,
       depthBuffer: false,
       count: 2,
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
+      // Linear: the ribbons take one filtered tap; the composite samples texel centres (same as nearest there).
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
       generateMipmaps: false,
     });
     return rt;

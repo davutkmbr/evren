@@ -54,7 +54,7 @@ const p = (m: MotionProfile): MotionProfile => m;
 
 export const VOL_PROFILES: readonly MotionProfile[] = [
   // Flame: fast jet, buoyant while hot, spreads like a turbulent jet then billows into soot.
-  p({ gravity: 0.35, buoyDecay: 0.9, wind: 0.7, turbAmp: 0.95, turbFreq: 0.065, turbScroll: 0.7, growTime: 0.45, jetSpread: 0.085, spreadRate: 0.6, stretch: 1.0, clearance: 0.45, spin: 1.4 }),
+  p({ gravity: 0.35, buoyDecay: 0.9, wind: 0.7, turbAmp: 0.45, turbFreq: 0.065, turbScroll: 0.7, growTime: 0.45, jetSpread: 0.012, spreadRate: 0.15, stretch: 1.0, clearance: 0.45, spin: 1.4 }),
   // Smoke: persistent billows, slightly buoyant, drifts with the wind.
   p({ gravity: 0.6, buoyDecay: 0.25, wind: 1.0, turbAmp: 0.45, turbFreq: 0.045, turbScroll: 0.22, growTime: 1.6, jetSpread: 0.04, spreadRate: 0.8, stretch: 0.0, clearance: 0.55, spin: 0.3 }),
   // Steam: strongly buoyant, fast dissipation.

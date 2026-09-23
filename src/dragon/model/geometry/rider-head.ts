@@ -36,7 +36,7 @@ function lerpKeys(keys: TubeKey[], t: number): [number, number, number] {
   return [l[1], l[2], l[3]];
 }
 
-/** Head, wool scarf wrapped over nose and mouth, riding goggles and the open hood with a rolled brim (all hidden in first person). */
+/** Head, face, wool scarf wound around the neck, riding goggles and the open hood with a rolled brim (all hidden in first person). */
 export function buildRiderHead(builder: MeshBuilder, rig: RigSkeleton): void {
   const head = rig.id('riderHead');
   const chest = rig.id('riderChest');
@@ -44,47 +44,42 @@ export function buildRiderHead(builder: MeshBuilder, rig: RigSkeleton): void {
     acc.add(head, 1);
   };
 
-  // Skull and face (only the brow and cheekbones show between goggles, scarf and hood).
+  // Skull: a low-resolution backing, recessed under the face sheet (only the hood's opening shows any of it).
   buildTube(builder, {
     points: HEAD_PTS,
     up: FWD,
     keys: HEAD_KEYS,
-    segments: 22,
-    spacing: 0.012,
+    segments: 18,
+    spacing: 0.016,
     material: () => RIDER_MAT.skin,
-    bump: (t, theta) => {
-      const front = Math.cos(theta);
-      const nose = 0.01 * Math.exp(-Math.pow((t - 0.4) / 0.08, 2)) * Math.exp(-Math.pow(theta / 0.22, 2));
-      const brow = 0.006 * Math.exp(-Math.pow((t - 0.62) / 0.04, 2)) * smoothstep(0.3, 0.8, front);
-      const cheek = 0.006 * Math.exp(-Math.pow((t - 0.44) / 0.07, 2)) * Math.exp(-Math.pow((Math.abs(theta) - 0.95) / 0.3, 2));
-      return nose + brow + cheek;
-    },
+    bump: (t, theta) => -0.013 * smoothstep(FACE_HALF_ANGLE + 0.2, FACE_HALF_ANGLE - 0.15, Math.abs(theta)) * smoothstep(FACE_T_TOP + 0.08, FACE_T_TOP, t),
     skin: headSkin,
     hide: true,
     capEnd: true,
   });
+  buildFace(builder, head);
 
-  // Scarf: several wraps of heavy wool around the neck, pulled up over the mouth and nose.
+  // Scarf: several wraps of heavy wool around the neck, its top pulled down under the chin (tilted forward so it
+  // hugs the jaw at the sides and back).
   buildTube(builder, {
-    points: [new THREE.Vector3(0, 1.705, -2.66), new THREE.Vector3(0, 1.82, -2.706), new THREE.Vector3(0, 1.93, -2.712)],
+    points: [new THREE.Vector3(0, 1.705, -2.66), new THREE.Vector3(0, 1.77, -2.69), new THREE.Vector3(0, 1.832, -2.728)],
     up: FWD,
     keys: [
       [0, 0.088, 0.085, 0.088],
-      [0.25, 0.084, 0.092, 0.086],
-      [0.5, 0.082, 0.108, 0.088],
-      [0.8, 0.083, 0.126, 0.098],
-      [1, 0.081, 0.127, 0.1],
+      [0.4, 0.082, 0.09, 0.086],
+      [0.8, 0.079, 0.1, 0.09],
+      [1, 0.077, 0.102, 0.092],
     ],
-    segments: 30,
-    spacing: 0.01,
+    segments: 26,
+    spacing: 0.011,
     material: () => RIDER_MAT.linen,
     bump: (t, theta) => {
-      const wraps = 0.006 * Math.pow(Math.abs(Math.sin(t * Math.PI * 3.5 + theta * 0.35)), 3);
+      const wraps = 0.006 * Math.pow(Math.abs(Math.sin(t * Math.PI * 2.5 + theta * 0.35)), 3);
       const folds = 0.004 * Math.sin(theta * 7 + t * 9) + 0.003 * Math.sin(theta * 13 - t * 5);
-      const lip = 0.004 * smoothstep(0.9, 1, t);
+      const lip = 0.005 * smoothstep(0.85, 1, t);
       return wraps + folds + lip;
     },
-    skin: (t, acc) => blendSkin(acc, chest, head, smoothstep(0.1, 0.55, t)),
+    skin: (t, acc) => blendSkin(acc, chest, head, smoothstep(0.2, 0.8, t)),
     hide: true,
     capStart: true,
   });
@@ -141,8 +136,8 @@ export function buildRiderHead(builder: MeshBuilder, rig: RigSkeleton): void {
     points: [f.point.clone().addScaledVector(f.up, 0).add(new THREE.Vector3(0, -0.011, 0)), f.point.clone().add(new THREE.Vector3(0, 0.011, 0))],
     up: FWD,
     keys: [
-      [0, hwE + 0.005, frE + 0.004, lerpKeys(HEAD_KEYS, tEye)[2] + 0.005],
-      [1, hwE + 0.005, frE + 0.004, lerpKeys(HEAD_KEYS, tEye)[2] + 0.005],
+      [0, hwE + 0.005, frE + faceRelief(tEye, 0) + 0.004, lerpKeys(HEAD_KEYS, tEye)[2] + 0.005],
+      [1, hwE + 0.005, frE + faceRelief(tEye, 0) + 0.004, lerpKeys(HEAD_KEYS, tEye)[2] + 0.005],
     ],
     segments: 24,
     spacing: 0.01,
@@ -152,6 +147,106 @@ export function buildRiderHead(builder: MeshBuilder, rig: RigSkeleton): void {
   });
 
   buildHood(builder, rig);
+}
+
+/** Face sheet coverage: half-angle around the head (rad; the hood opening is at most 1.2) and top (head t). */
+const FACE_HALF_ANGLE = 1.35;
+const FACE_T_TOP = 0.72;
+
+const g = (x: number, sigma: number): number => Math.exp(-(x * x) / (sigma * sigma));
+
+/**
+ * Facial relief (m, outward from the head's keyed ellipse) at head parameter t (0 chin .. 1 crown; eyes at 0.52,
+ * nose tip 0.335, mouth 0.205) and angle theta from the front: nose with bridge and nostril wings, lips, chin,
+ * cheekbones, eye sockets and brow ridge.
+ */
+function faceRelief(t: number, theta: number): number {
+  const a = Math.abs(theta);
+  // Nose: undercut at the base, tip, then a bridge that narrows and flattens up to the brow.
+  const noseH = t < 0.335 ? 0.021 * smoothstep(0.292, 0.335, t) : THREE.MathUtils.lerp(0.021, 0.008, smoothstep(0.335, 0.53, t)) * (1 - smoothstep(0.55, 0.64, t));
+  const noseW = THREE.MathUtils.lerp(0.15, 0.085, smoothstep(0.33, 0.5, t));
+  const nose = noseH * g(a, noseW);
+  const alae = 0.008 * g(t - 0.315, 0.018) * g(a - 0.19, 0.07);
+  // Mouth: maxilla and upper lip, the parting line, lower lip, the fold above the chin and the chin boss.
+  const mouthW = smoothstep(0.4, 0.22, a);
+  const upperLip = 0.006 * g(t - 0.226, 0.014) * mouthW + 0.003 * smoothstep(0.2, 0.3, t) * (1 - smoothstep(0.29, 0.31, t)) * smoothstep(0.5, 0.2, a);
+  const parting = -0.004 * g(t - 0.206, 0.007) * smoothstep(0.37, 0.24, a);
+  const lowerLip = 0.0065 * g(t - 0.187, 0.012) * smoothstep(0.34, 0.18, a);
+  const sulcus = -0.003 * g(t - 0.155, 0.012) * smoothstep(0.4, 0.15, a);
+  const chin = 0.012 * g(t - 0.09, 0.035) * g(a, 0.42);
+  // Mid-face: cheekbones, the hollow under them, eye sockets under the goggles, brow ridge.
+  const cheekbone = 0.008 * g(t - 0.45, 0.05) * g(a - 0.85, 0.25);
+  const hollow = -0.004 * g(t - 0.29, 0.05) * g(a - 0.78, 0.22);
+  const socket = -0.008 * g(t - 0.52, 0.035) * g(a - 0.36, 0.16);
+  const brow = 0.005 * g(t - 0.605, 0.03) * smoothstep(0.8, 0.2, a);
+  return nose + alae + upperLip + parting + lowerLip + sulcus + chin + cheekbone + hollow + socket + brow;
+}
+
+/** Lip colour weight (rider material skin tint, aData.y). */
+function lipWeight(t: number, theta: number): number {
+  const a = Math.abs(theta);
+  return Math.min(1, (g(t - 0.224, 0.011) + g(t - 0.189, 0.012)) * smoothstep(0.34, 0.2, a));
+}
+
+/** Rows of the face sheet in head t: dense over mouth and nose, coarser on the chin and forehead. */
+function faceRows(): number[] {
+  const out: number[] = [];
+  let t = 0.005;
+  while (t < FACE_T_TOP) {
+    out.push(t);
+    t += t > 0.15 && t < 0.37 ? 0.0125 : 0.026;
+  }
+  out.push(FACE_T_TOP);
+  return out;
+}
+
+/**
+ * Face: a dense sheet over the front of the skull (brow to chin, cheek to cheek under the hood), shaped by
+ * faceRelief. Columns crowd towards the midline (theta ~ s^1.5) so the nose and lips get millimetre detail.
+ */
+function buildFace(builder: MeshBuilder, head: number): void {
+  const path = new PathSampler(HEAD_PTS, { type: 'centripetal', up: FWD, samples: 400 });
+  const L = path.length;
+  const frame = createFrame();
+  const rows = faceRows();
+  const cols = 26;
+  const thetaAt = (u: number): number => {
+    const sgn = u < 0.5 ? -1 : 1;
+    return sgn * FACE_HALF_ANGLE * Math.pow(Math.abs(2 * u - 1), 1.5);
+  };
+  const tAt = (v: number): number => {
+    const x = v * (rows.length - 1);
+    const i = Math.min(Math.floor(x), rows.length - 2);
+    return THREE.MathUtils.lerp(rows[i], rows[i + 1], x - i);
+  };
+  const point = (u: number, v: number, out: THREE.Vector3): void => {
+    const t = tAt(v);
+    const theta = thetaAt(u);
+    path.frameAt(t * L, frame);
+    const [hw, fr] = lerpKeys(HEAD_KEYS, t);
+    // Stay just outside the backing skull, fading the relief out towards the sheet's hidden edge.
+    const r = 0.0015 + faceRelief(t, theta) * smoothstep(FACE_HALF_ANGLE, FACE_HALF_ANGLE - 0.3, Math.abs(theta));
+    const c = Math.cos(theta);
+    out.copy(frame.point).addScaledVector(frame.right, Math.sin(theta) * (hw + r)).addScaledVector(frame.up, c * (fr + r));
+  };
+  // Orientation: normals (du x dv) must point out of the face (forward).
+  const p0 = new THREE.Vector3();
+  const p1 = new THREE.Vector3();
+  const p2 = new THREE.Vector3();
+  point(0.45, 0.5, p0);
+  point(0.55, 0.5, p1);
+  point(0.5, 0.55, p2);
+  const n = new THREE.Vector3().crossVectors(p1.sub(p0), p2.sub(p0));
+  buildSheet(builder, {
+    rows: rows.length - 1,
+    cols,
+    point,
+    material: () => RIDER_MAT.skin,
+    wear: (u, v) => lipWeight(tAt(v), thetaAt(u)),
+    skin: (_u, _v, acc) => acc.add(head, 1),
+    hide: true,
+    flip: n.dot(FWD) < 0,
+  });
 }
 
 /** Flat glass disc (flat normals, unlike a capped tube) facing `dir`. */
@@ -228,7 +323,7 @@ function buildHood(builder: MeshBuilder, rig: RigSkeleton): void {
   };
   const skinAt = (t: number, acc: SkinAccumulator): void => blendSkin(acc, chest, head, smoothstep(0.12, 0.35, t));
   const rows = 22;
-  const cols = 34;
+  const cols = 28;
   buildSheet(builder, {
     rows,
     cols,

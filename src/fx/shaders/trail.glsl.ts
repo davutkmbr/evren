@@ -81,6 +81,9 @@ ${PARTICLE_FRAG_GLSL}
 
 uniform highp sampler3D tNoise;
 uniform float uTrailLife;
+uniform sampler2D tVol;
+uniform sampler2D tHeat;
+uniform float uHasVol;
 
 varying vec4 vRib;
 varying float vDepth;
@@ -105,6 +108,18 @@ void main() {
   float vis = clamp((sceneZ - vDepth) / 0.6 + 0.3, 0.0, 1.0) * smoothstep(0.2, 0.8, vDepth);
   float a = clamp(core * breakup * fadeIn * fade * intensity * vis * 0.8, 0.0, 1.0);
   if (a <= 1e-4) discard;
+  if (uHasVol > 0.5) {
+    // The soft particle layer is already composited under the ribbons: hide the ribbon by the opacity of the smoke
+    // that lies in front of it (alpha-weighted mean depth of the layer, soft over a few metres).
+    vec2 suv = gl_FragCoord.xy * uInvTarget;
+    float smokeA = texture2D(tVol, suv).a;
+    vec2 wd = texture2D(tHeat, suv).gb;
+    if (smokeA > 0.003 && wd.y > 1e-4) {
+      float smokeZ = exp2(wd.x / wd.y) - 1.0;
+      float front = smoothstep(-1.0, 1.0, (vDepth - smokeZ) / (2.0 + 0.05 * smokeZ));
+      a *= 1.0 - smokeA * front;
+    }
+  }
   gl_FragColor = clamp(vec4((vLight * vAtmoT + vAtmoIn) * a, a), 0.0, 60000.0);
 }
 `;
