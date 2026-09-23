@@ -1,5 +1,6 @@
 /** Main-thread side of the placement data flow: the one-off init payload and per-tile geo windows. */
 import { LandUse, type GeoQuery, type GridData, type RoadKind, type WorldBounds } from '../../../core/contracts';
+import { OSM_OWNS_PARK_TREES } from '../../osm/area';
 import type { SpeciesInfo } from '../assets';
 import type { GridWindow, MosqueRingSite, PlacementInitMessage, TileRequestMessage } from './protocol';
 
@@ -55,7 +56,10 @@ function cutWindow<T extends Float32Array | Uint8Array>(grid: GridData<T>, data:
 export class GeoWindowCutter {
   private readonly coastData: Float32Array | null;
 
-  /** `exclude`: optional rectangle kept free of procedural urban/street trees (land use cut to Industrial, which plants nothing); parks keep theirs. */
+  /**
+   * `exclude`: optional rectangle (the OSM slice) kept free of procedural urban/street trees (land use cut to
+   * Industrial, which plants nothing); parks, forests and cemeteries keep theirs unless OSM_OWNS_PARK_TREES.
+   */
   constructor(
     private readonly geo: GeoQuery,
     private readonly exclude: WorldBounds | null = null,
@@ -86,7 +90,8 @@ export class GeoWindowCutter {
           const x = landUse.x0 + c * landUse.cell;
           const k = r * landUse.w + c;
           const use = landUse.data[k];
-          if (x >= ex.minX && x <= ex.maxX && use !== LandUse.Park && use !== LandUse.Forest && use !== LandUse.Cemetery) {
+          const green = use === LandUse.Park || use === LandUse.Forest || use === LandUse.Cemetery;
+          if (x >= ex.minX && x <= ex.maxX && (OSM_OWNS_PARK_TREES || !green)) {
             landUse.data[k] = LandUse.Industrial;
           }
         }
