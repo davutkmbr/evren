@@ -94,9 +94,14 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 
 Walking the whole city, entering every building, photoreal faces, voice acting, car damage, mobile support.
 
+## Decisions taken
+
+- 2026-09-24, web or desktop: the user prefers the web but accepts desktop. S2 decides: if the street test passes on
+  the web with good performance, the game stays on the web (three.js WebGPU); otherwise the walking game moves to
+  Godot on desktop and the flight demo stays on the web as a teaser.
+
 ## Open decisions for the user
 
-- Web or desktop for the walking game (recommended: allow desktop; the flight demo stays on the web as a teaser).
 - Look: grounded realism (real proportions, CC0 photo-scanned materials, CC0 humans at medium framing), judged on S2 renders.
 - Asset approvals before S1: Quaternius characters and UAL clips, Poly Haven / ambientCG materials and café props.
 - Story premise and tone (Turkish first, real streets and landmarks named, all businesses fictional).
