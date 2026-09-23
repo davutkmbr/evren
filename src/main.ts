@@ -7,6 +7,7 @@ import { createCloudSystem } from './render/clouds';
 import { createTerrainSystem } from './world/terrain';
 import { createWaterSystem } from './world/water';
 import { createCitySystem } from './world/city';
+import { createOsmSystem } from './world/osm';
 import { createVegetationSystem } from './world/vegetation';
 import { createMosqueSystem } from './world/landmarks/mosques';
 import { createStructureSystem } from './world/landmarks/structures';
@@ -32,6 +33,7 @@ async function boot(): Promise<void> {
     .register(createTerrainSystem())
     .register(createWaterSystem())
     .register(createCitySystem())
+    .register(createOsmSystem())
     .register(createVegetationSystem())
     .register(createMosqueSystem())
     .register(createStructureSystem())

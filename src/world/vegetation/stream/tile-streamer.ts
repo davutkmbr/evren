@@ -1,4 +1,4 @@
-import type { GeoQuery } from '../../../core/contracts';
+import type { GeoQuery, WorldBounds } from '../../../core/contracts';
 import { WORLD_HALF_SIZE } from '../../../core/geo-coords';
 import { GeoWindowCutter } from './geo-window';
 import { PlacementContext } from './placement';
@@ -62,8 +62,9 @@ export class TileStreamer {
     readonly tileSize: number,
     onRemove: (tile: VegTile) => void,
     workerCount = 2,
+    exclude: WorldBounds | null = null,
   ) {
-    this.cutter = new GeoWindowCutter(geo);
+    this.cutter = new GeoWindowCutter(geo, exclude);
     this.onRemove = onRemove;
     for (let i = 0; i < workerCount; i++) {
       try {

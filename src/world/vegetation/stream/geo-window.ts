@@ -1,5 +1,5 @@
 /** Main-thread side of the placement data flow: the one-off init payload and per-tile geo windows. */
-import type { GeoQuery, GridData, RoadKind } from '../../../core/contracts';
+import { LandUse, type GeoQuery, type GridData, type RoadKind, type WorldBounds } from '../../../core/contracts';
 import type { SpeciesInfo } from '../assets';
 import type { GridWindow, MosqueRingSite, PlacementInitMessage, TileRequestMessage } from './protocol';
 
@@ -55,7 +55,11 @@ function cutWindow<T extends Float32Array | Uint8Array>(grid: GridData<T>, data:
 export class GeoWindowCutter {
   private readonly coastData: Float32Array | null;
 
-  constructor(private readonly geo: GeoQuery) {
+  /** `exclude`: optional rectangle kept free of procedural urban/street trees (land use cut to Industrial, which plants nothing); parks keep theirs. */
+  constructor(
+    private readonly geo: GeoQuery,
+    private readonly exclude: WorldBounds | null = null,
+  ) {
     let coast: Float32Array | null = null;
     try {
       const tex = geo.getCoastDistanceTexture();
@@ -74,6 +78,20 @@ export class GeoWindowCutter {
     const x1 = x0 + size;
     const z1 = z0 + size;
     const landUse = cutWindow(geo.landUseGrid, geo.landUseGrid.data, x0, z0, x1, z1, 30);
+    const ex = this.exclude;
+    if (ex) {
+      for (let r = 0; r < landUse.h; r++) {
+        const z = landUse.z0 + r * landUse.cell;
+        for (let c = 0; c < landUse.w && z >= ex.minZ && z <= ex.maxZ; c++) {
+          const x = landUse.x0 + c * landUse.cell;
+          const k = r * landUse.w + c;
+          const use = landUse.data[k];
+          if (x >= ex.minX && x <= ex.maxX && use !== LandUse.Park && use !== LandUse.Forest && use !== LandUse.Cemetery) {
+            landUse.data[k] = LandUse.Industrial;
+          }
+        }
+      }
+    }
     const height = cutWindow(geo.heightGrid, geo.heightGrid.data, x0, z0, x1, z1, 30);
     let coast: GridWindow<Float32Array>;
     if (this.coastData) {

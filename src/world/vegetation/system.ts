@@ -11,6 +11,7 @@ import { CHUNK, ImpostorPool } from './render/impostor-pool';
 import type { NearBands } from './render/near-pools';
 import { NearPools } from './render/near-pools';
 import { SPECIES_COUNT, SPECIES_SHAPES } from './species';
+import { osmEnabled, osmExclusionRect } from '../osm/area';
 import { buildPlacementInit } from './stream/geo-window';
 import type { VegTile } from './stream/tile-streamer';
 import { TileState, TileStreamer } from './stream/tile-streamer';
@@ -100,7 +101,7 @@ export class VegetationSystem implements System {
     }
     const crown = SPECIES_SHAPES.map((s) => s.crownWidth * 0.5);
     const init = buildPlacementInit(geo, this.assets.species, crown);
-    this.streamer = new TileStreamer(geo, init, TILE_SIZE, (t) => this.releaseTile(t));
+    this.streamer = new TileStreamer(geo, init, TILE_SIZE, (t) => this.releaseTile(t), undefined, osmEnabled(this.ctx.debug.params) ? osmExclusionRect() : null);
     this.colliders = new TreeColliders(this.ctx.services.get('collision'));
     this.initJobs = 0;
   }

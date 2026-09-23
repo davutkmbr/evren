@@ -1,5 +1,5 @@
 /** Main-thread side of the worker data flow: the one-off init payload and per-request geography windows. */
-import type { GeoQuery, RoadKind } from '../../core/contracts';
+import { LandUse, type GeoQuery, type RoadKind, type WorldBounds } from '../../core/contracts';
 import { STYLE_BY_NAME, Style, type CityInitMessage, type GeoWindowMsg, type GridSpecMsg } from './protocol';
 
 const WORLD_HALF = 24000;
@@ -84,7 +84,11 @@ function floatTextureData(geo: GeoQuery): Float32Array | null {
 export class GeoWindowCutter {
   private readonly coastData: Float32Array | null;
 
-  constructor(private readonly geo: GeoQuery) {
+  /** `exclude`: optional rectangle where no procedural buildings are generated (land use cut to Landmark). */
+  constructor(
+    private readonly geo: GeoQuery,
+    private readonly exclude: WorldBounds | null = null,
+  ) {
     this.coastData = floatTextureData(geo);
   }
 
@@ -101,6 +105,21 @@ export class GeoWindowCutter {
     for (let r = 0; r < luH; r++) {
       const src = (luR0 + r) * lu.width + luC0;
       luData.set(lu.data.subarray(src, src + luW), r * luW);
+    }
+    const ex = this.exclude;
+    if (ex) {
+      for (let r = 0; r < luH; r++) {
+        const z = lu.originZ + (luR0 + r) * lu.cellSize;
+        if (z < ex.minZ || z > ex.maxZ) {
+          continue;
+        }
+        for (let c = 0; c < luW; c++) {
+          const x = lu.originX + (luC0 + c) * lu.cellSize;
+          if (x >= ex.minX && x <= ex.maxX) {
+            luData[r * luW + c] = LandUse.Landmark;
+          }
+        }
+      }
     }
 
     const hg = geo.heightGrid;
