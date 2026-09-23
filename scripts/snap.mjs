@@ -9,11 +9,15 @@
  *
  * Waits for window.__evren.ready and __evren.pending() === 0 (or --timeout), then --settle ms more.
  * Prints JSON with console errors/warnings and engine stats. Requires the dev server (npm run dev, port 5199).
+ * Frame times are measured in the page over the settle window: `stats.frameMedianMs` / `stats.frameP99Ms`, and
+ * `frameTimes` ({ windowMs, frames, medianMs, p99Ms, maxMs, over50ms }). A frame is a change of the page's frame
+ * counter (__evren.frame or __evren.ctx.time.frame), so a capped page (default 24 fps) reports its real cadence.
+ * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs).
  */
 import { chromium } from 'playwright-core';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { acquireSlot, releaseSlot, CHROME_ARGS } from './lib/gpu-slot.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -32,10 +36,59 @@ async function ensureServer() {
   }
 }
 
+/**
+ * Installed before the page's scripts: records the interval between rendered frames (rAF timestamps at which the
+ * page's frame counter changed; every rAF when the page exposes none).
+ */
+function installFrameProbe() {
+  const times = [];
+  let lastFrame = null;
+  let lastT = -1;
+  const counter = () => {
+    const a = window.__evren;
+    if (!a) return null;
+    if (typeof a.frame === 'number') return a.frame;
+    const f = a.ctx && a.ctx.time ? a.ctx.time.frame : undefined;
+    return typeof f === 'number' ? f : null;
+  };
+  const tick = (t) => {
+    const c = counter();
+    if (c === null || c !== lastFrame) {
+      if (lastT >= 0) times.push(t - lastT);
+      lastT = t;
+      lastFrame = c;
+    }
+    if (times.length > 20000) times.splice(0, 10000);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  let since = performance.now();
+  window.__snapFrames = {
+    reset() {
+      times.length = 0;
+      since = performance.now();
+    },
+    summary() {
+      const s = times.slice().sort((a, b) => a - b);
+      const pick = (p) => (s.length ? s[Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1))] : 0);
+      const r = (x) => Math.round(x * 100) / 100;
+      return {
+        windowMs: Math.round(performance.now() - since),
+        frames: s.length,
+        medianMs: r(pick(0.5)),
+        p99Ms: r(pick(0.99)),
+        maxMs: r(s.length ? s[s.length - 1] : 0),
+        over50ms: s.filter((x) => x > 50).length,
+      };
+    },
+  };
+}
+
 async function shoot(browser, job) {
   const w = Number(job.w ?? 1600);
   const h = Number(job.h ?? 900);
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  await page.addInitScript(installFrameProbe);
   const errors = [];
   const warnings = [];
   const logs = [];
@@ -87,7 +140,9 @@ async function shoot(browser, job) {
       await page.waitForTimeout(250);
     }
   }
+  await page.evaluate(() => window.__snapFrames?.reset()).catch(() => undefined);
   await page.waitForTimeout(Number(job.settle ?? 1200));
+  const frameTimes = await page.evaluate(() => window.__snapFrames?.summary() ?? null).catch(() => null);
   let perf = null;
   if (job.perf) {
     perf = await page.evaluate(async (ms) => {
@@ -109,66 +164,16 @@ async function shoot(browser, job) {
     }, Number(job.perf));
   }
   const stats = await page.evaluate(() => (window.__evren ? window.__evren.stats() : null)).catch(() => null);
+  if (stats && typeof stats === 'object' && frameTimes && frameTimes.frames > 0) {
+    stats.frameMedianMs = frameTimes.medianMs;
+    stats.frameP99Ms = frameTimes.p99Ms;
+  }
   if (job.out) {
     mkdirSync(dirname(job.out), { recursive: true });
     await page.screenshot({ path: job.out, type: job.out.endsWith('.jpg') ? 'jpeg' : 'png', quality: job.out.endsWith('.jpg') ? 88 : undefined });
   }
   await page.close();
-  return { url: job.url, out: job.out, ready, pending, loadMs: Date.now() - t0, errors, warnings: warnings.slice(0, 15), logs: logs.slice(0, 40), perf, stats };
-}
-
-/**
- * Machine-wide limit on concurrent GPU browsers (parallel agents share one GPU). Slots are lock directories holding the
- * owner's pid; stale slots of dead processes are reclaimed. Override with SNAP_MAX_CONCURRENT.
- */
-const MAX_CONCURRENT = Number(process.env.SNAP_MAX_CONCURRENT ?? 2);
-const LOCK_ROOT = fileURLToPath(new URL('../.shots/.snap-slots', import.meta.url));
-let heldSlot = null;
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-async function acquireSlot() {
-  mkdirSync(LOCK_ROOT, { recursive: true });
-  for (;;) {
-    for (let i = 0; i < MAX_CONCURRENT; i++) {
-      const dir = `${LOCK_ROOT}/slot-${i}`;
-      try {
-        mkdirSync(dir);
-        writeFileSync(`${dir}/pid`, String(process.pid));
-        heldSlot = dir;
-        return;
-      } catch {
-        let owner = NaN;
-        try {
-          owner = Number(readFileSync(`${dir}/pid`, 'utf8'));
-        } catch {
-          /* being created */
-        }
-        if (Number.isFinite(owner) && owner > 0 && !alive(owner)) {
-          rmSync(dir, { recursive: true, force: true });
-        }
-      }
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-}
-function releaseSlot() {
-  if (heldSlot) {
-    rmSync(heldSlot, { recursive: true, force: true });
-    heldSlot = null;
-  }
-}
-process.on('exit', releaseSlot);
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    releaseSlot();
-    process.exit(130);
-  });
+  return { url: job.url, out: job.out, ready, pending, loadMs: Date.now() - t0, errors, warnings: warnings.slice(0, 15), logs: logs.slice(0, 40), perf, stats, frameTimes };
 }
 
 await ensureServer();
@@ -176,7 +181,7 @@ await acquireSlot();
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
-  args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'],
+  args: CHROME_ARGS,
 });
 try {
   let jobs;

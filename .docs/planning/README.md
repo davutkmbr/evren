@@ -37,6 +37,12 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   a separate street layer built by an offline world compiler, with the runtime (three.js WebGPU or Godot 4.7) chosen
   by a measured street-level test. See [16 — Street track](16-street-layer.md). Kadıköy hero-spot research is done
   (`.docs/research/kadikoy-hero-spots.json`).
+- **S0 done (24 September 2026):** Kadıköy OSM data (`data/osm/kadikoy.json`), the offline world compiler
+  (`tools/world-compiler`, format 0: 139 greybox glTF tiles + manifests, one connected walk graph, lane graph), the
+  eye-level sandbox (`sandbox/street.html`, free walk or `?route=rihtim-carsi|altiyol-sureyya`) and `scripts/walk-test.mjs`.
+  Phase 01 bug fixes (landing, hover, turns, fire jet, POV head, rider face, bridge decks for traffic) are committed.
+  S1 assets are approved and cached (`tools/assets/approved.json`); humans are MetaHuman + Mixamo in `private-assets/`
+  (`.docs/assets/humans-pipeline.md`).
 
 ## Detail tiers (how Istanbul gets detailed)
 

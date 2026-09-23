@@ -1,48 +1,48 @@
 #!/usr/bin/env node
 /**
- * Fetches the OpenStreetMap content of the vertical-slice area (Eminönü, Galata Bridge, Karaköy, Galata, Tophane,
- * Cihangir) from the Overpass API and writes compact local-metre JSON to public/data/osm/slice.json.
+ * Fetches the OpenStreetMap content of one area of OSM_AREAS (src/world/osm/area.ts) from the Overpass API and
+ * writes compact local-metre JSON to the area's `dataFile`:
  *
- *   node scripts/data/fetch-osm.mjs [--cache /tmp/overpass-slice.json]
+ *   node scripts/data/fetch-osm.mjs [--area galata|kadikoy] [--cache /tmp/overpass-<area>.json]
+ *
+ * - galata (default, profile 'slice'): the ?osm=1 vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane,
+ *   Cihangir) -> public/data/osm/slice.json. Queries and records are unchanged by the street extension.
+ * - kadikoy (profile 'street'): world-compiler input -> data/osm/kadikoy.json (not served). Same schema plus the
+ *   street extension ('street/1': entrance=* nodes linked to their building, craft=* POIs, kerb=* nodes,
+ *   area:highway=* polygons, sidewalk widths and kerb tags on ways), documented in tools/world-compiler/README.md.
  *
  * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright).
  *
  * The output schema (version 2) is documented as TypeScript in src/world/osm/data.ts; keep both in sync.
- * The bbox is parsed from OSM_AREA in src/world/osm/area.ts and the projection origin from WORLD_ORIGIN in
- * src/core/geo-coords.ts, so neither is duplicated here.
+ * The bbox is parsed from OSM_AREAS in src/world/osm/area.ts and the projection origin from WORLD_ORIGIN in
+ * src/core/geo-coords.ts (tools/world-compiler/lib/areas.mjs), so neither is duplicated here.
  * Coordinates: +X east, +Z south, metres, rounded to 0.1 m. Outer rings have a positive shoelace area in the x/z
  * plane, holes a negative one; rings are not closed (no duplicate last point).
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const OUT = resolve(ROOT, 'public/data/osm/slice.json');
-const LEGACY_OUT = resolve(ROOT, 'public/data/osm/galata.json');
+const args = process.argv.slice(2);
+const argOf = (name) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : null;
+};
+const AREA = readArea(argOf('--area') ?? 'galata');
+const STREET = AREA.profile === 'street';
+const OUT = resolve(ROOT, AREA.dataFile);
+const LEGACY_OUT = AREA.id === 'galata' ? resolve(ROOT, 'public/data/osm/galata.json') : null;
 const SCHEMA_VERSION = 2;
+/** Street extension version (profile 'street' only). */
+const STREET_EXTENSION = 'street/1';
 
-function parseConst(file, name, keys) {
-  const src = readFileSync(resolve(ROOT, file), 'utf8');
-  const m = src.match(new RegExp(`export const ${name} = \\{([^}]*)\\}`));
-  if (!m) {
-    throw new Error(`${name} not found in ${file}`);
-  }
-  const out = {};
-  for (const k of keys) {
-    const v = m[1].match(new RegExp(`${k}:\\s*(-?[\\d.]+)`));
-    if (!v) {
-      throw new Error(`${name}.${k} not found in ${file}`);
-    }
-    out[k] = Number(v[1]);
-  }
-  return out;
-}
-
-const BBOX = parseConst('src/world/osm/area.ts', 'OSM_AREA', ['south', 'west', 'north', 'east']);
-const ORIGIN = parseConst('src/core/geo-coords.ts', 'WORLD_ORIGIN', ['lat', 'lon']);
-/** Data is fetched ~75 m beyond the area so the seam band (OSM_SEAM in area.ts) is covered too. */
-const MARGIN = { lat: 0.0007, lon: 0.0009 };
+const BBOX = AREA.bbox;
+const ORIGIN = readOrigin();
+/**
+ * Data is fetched ~75 m beyond the area so the seam band (OSM_SEAM in area.ts) is covered too. Street areas get
+ * ~155 m: the compiler tiles every 100 m square that touches the area, so tiles reach up to 100 m past it.
+ */
+const MARGIN = STREET ? { lat: 0.0014, lon: 0.0019 } : { lat: 0.0007, lon: 0.0009 };
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
 /* Same projection as src/core/geo-coords.ts (latLonToLocal). */
@@ -118,16 +118,21 @@ const POINT_KEYS = [
   ['man_made', new Set(['street_cabinet', 'flagpole', 'mast', 'lighthouse', 'monitoring_station', 'surveillance', 'water_tap', 'chimney', 'tower'])],
   ['leisure', new Set(['picnic_table', 'playground', 'fitness_station', 'outdoor_seating'])],
 ];
+/**
+ * Street profile: entrances first (a door wins over any other tag of the node), craft workshops as POIs, and kerb=*
+ * nodes (crossing kerbs) that carry no other kind.
+ */
+const STREET_POINT_KEYS = [['entrance', null], ...POINT_KEYS, ['craft', null], ['kerb', null]];
+const POINT_KEYS_ACTIVE = STREET ? STREET_POINT_KEYS : POINT_KEYS;
 
-const args = process.argv.slice(2);
-const cacheIdx = args.indexOf('--cache');
-const cachePath = cacheIdx >= 0 ? args[cacheIdx + 1] : null;
+const cachePath = argOf('--cache');
 
 /** Overpass queries, split by theme so each one stays well inside the public servers' time limits. */
 function overpassQueries() {
   const bb = `${BBOX.south - MARGIN.lat},${BBOX.west - MARGIN.lon},${BBOX.north + MARGIN.lat},${BBOX.east + MARGIN.lon}`;
   const head = '[out:json][timeout:180][maxsize:536870912];';
-  const nodeFilters = POINT_KEYS.map(([k, vals]) => (vals ? `node["${k}"~"^(${[...vals].join('|')})$"](${bb});` : `node["${k}"](${bb});`)).join('\n  ');
+  const nodeFilters = POINT_KEYS_ACTIVE.map(([k, vals]) => (vals ? `node["${k}"~"^(${[...vals].join('|')})$"](${bb});` : `node["${k}"](${bb});`)).join('\n  ');
+  const streetAreas = STREET ? `\n  way["area:highway"](${bb});` : '';
   return {
     buildings: `${head}
 (
@@ -157,7 +162,7 @@ out body;`,
   way["amenity"~"^(parking|marketplace|fountain|bus_station|ferry_terminal|taxi)$"](${bb});
   way["public_transport"="platform"](${bb});
   way["water"](${bb});
-  way["historic"="citywalls"](${bb});
+  way["historic"="citywalls"](${bb});${streetAreas}
 );
 out body geom;`,
     relations: `${head}
@@ -180,10 +185,13 @@ out body;`,
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Index of the endpoint that answered last: later queries start there. */
+let preferred = 0;
+
 async function runQuery(name, q) {
   let lastError = null;
   for (let attempt = 0; attempt < 6; attempt++) {
-    const endpoint = ENDPOINTS[attempt % ENDPOINTS.length];
+    const endpoint = ENDPOINTS[(preferred + attempt) % ENDPOINTS.length];
     try {
       const t = Date.now();
       const res = await fetch(endpoint, {
@@ -200,6 +208,7 @@ async function runQuery(name, q) {
         throw new Error(`Overpass remark: ${json.remark}`);
       }
       console.error(`[fetch-osm] ${name}: ${json.elements.length} elements from ${endpoint} in ${Date.now() - t} ms`);
+      preferred = ENDPOINTS.indexOf(endpoint);
       return json;
     } catch (e) {
       lastError = e;
@@ -560,7 +569,19 @@ function areaKind(t) {
       return `${key}=${v}`;
     }
   }
+  if (STREET && t['area:highway']) {
+    return `area:highway=${t['area:highway']}`;
+  }
   return null;
+}
+
+/** Sidewalk widths [left, right] (m) from sidewalk:{both,left,right}:width / sidewalk:width, or undefined. */
+function sidewalkWidthOf(t) {
+  const both = metres(t['sidewalk:both:width']) ?? metres(t['sidewalk:width']);
+  const l = metres(t['sidewalk:left:width']) ?? both;
+  const r = metres(t['sidewalk:right:width']) ?? both;
+  const ok = (v) => (v !== undefined && v > 0.3 && v < 15 ? round(v) : 0);
+  return l !== undefined || r !== undefined ? [ok(l), ok(r)] : undefined;
 }
 
 function lineKind(t) {
@@ -573,13 +594,56 @@ function lineKind(t) {
 }
 
 function pointKind(t) {
-  for (const [key, vals] of POINT_KEYS) {
+  for (const [key, vals] of POINT_KEYS_ACTIVE) {
     const v = t[key];
     if (v && (!vals || vals.has(v))) {
       return `${key}=${v}`;
     }
   }
   return null;
+}
+
+/**
+ * Street profile: OSM id of the building outline (way) each node is a vertex of, preferring building=* outlines over
+ * building:part ways. Multipolygon members carry no node ids in Overpass geometry output; the compiler matches those
+ * entrances to the nearest outline instead.
+ */
+function entranceOwners(elements) {
+  const owner = new Map();
+  for (const pass of [true, false]) {
+    for (const e of elements) {
+      if (e.type !== 'way' || !e.nodes || !e.tags) {
+        continue;
+      }
+      const isOutline = !!e.tags.building && e.tags.building !== 'no';
+      if (pass !== isOutline || (!isOutline && !e.tags['building:part'])) {
+        continue;
+      }
+      for (const id of e.nodes) {
+        if (!owner.has(id)) {
+          owner.set(id, e.id);
+        }
+      }
+    }
+  }
+  return owner;
+}
+
+/** Street profile fields of a point record (entrance details, kerb type). */
+function streetPointFields(rec, node, t, owners) {
+  if (rec.kind.startsWith('entrance=')) {
+    const building = owners?.get(node.id);
+    if (building !== undefined) {
+      rec.building = building;
+    }
+    copyTags(rec, t, { door: 'door', access: 'access', wheelchair: 'wheelchair' }, true);
+    copyTags(rec, t, { ref: 'entranceRef', 'addr:housenumber': 'housenumber' });
+    const width = metres(t.width) ?? metres(t['door:width']);
+    if (width && width > 0.5 && width < 12) {
+      rec.width = round(width);
+    }
+  }
+  copyTags(rec, t, { kerb: 'kerb' }, true);
 }
 
 async function main() {
@@ -785,6 +849,13 @@ async function main() {
       if (stepCount) {
         rec.stepCount = stepCount;
       }
+      if (STREET) {
+        const walkWidth = sidewalkWidthOf(t);
+        if (walkWidth) {
+          rec.sidewalkWidth = walkWidth;
+        }
+        copyTags(rec, t, { kerb: 'kerb' }, true);
+      }
       if (refs.length) {
         rec.refs = refs;
       }
@@ -879,6 +950,7 @@ async function main() {
   };
   const roadsByRef = indexRefs(roads);
   const railsByRef = indexRefs(rails);
+  const entranceOwner = STREET ? entranceOwners(elements) : null;
 
   for (const n of pointNodes) {
     const t = n.tags;
@@ -932,6 +1004,9 @@ async function main() {
     if (species) {
       rec.species = String(species).trim();
     }
+    if (STREET) {
+      streetPointFields(rec, n, t, entranceOwner);
+    }
     points.push(rec);
   }
 
@@ -981,6 +1056,7 @@ async function main() {
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
+    ...(STREET ? { area: AREA.id, extension: STREET_EXTENSION } : {}),
     buildings,
     roads,
     rails,
@@ -991,9 +1067,19 @@ async function main() {
   mkdirSync(dirname(OUT), { recursive: true });
   const text = JSON.stringify(out);
   writeFileSync(OUT, text);
-  if (existsSync(LEGACY_OUT)) {
+  if (LEGACY_OUT && existsSync(LEGACY_OUT)) {
     rmSync(LEGACY_OUT);
   }
+  const entrances = points.filter((p) => p.kind.startsWith('entrance='));
+  const streetStats = STREET
+    ? {
+        entrances: entrances.length,
+        entrancesOnOutline: entrances.filter((p) => p.building !== undefined).length,
+        craftPois: points.filter((p) => p.kind.startsWith('craft=')).length,
+        kerbNodes: points.filter((p) => p.kerb).length,
+        sidewalkWidthWays: roads.filter((r) => r.sidewalkWidth).length,
+      }
+    : {};
 
   const countBy = (list) => list.reduce((m, r) => ((m[r.kind] = (m[r.kind] ?? 0) + 1), m), {});
   const top = (m, n) => Object.fromEntries(Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n));
@@ -1023,6 +1109,7 @@ async function main() {
         points: points.length,
         pointKinds: top(countBy(points), 70),
         junctionRefs: refOf.size,
+        ...streetStats,
         ...stats,
         ms: Date.now() - t0,
       },

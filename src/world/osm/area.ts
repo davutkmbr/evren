@@ -8,6 +8,34 @@ import { latLonToLocal } from '../../core/geo-coords';
 
 export const OSM_AREA = { south: 41.015, west: 28.965, north: 41.038, east: 28.99 } as const;
 
+/**
+ * Kadıköy core, the first street-layer district (.docs/planning/16-street-layer.md): Rıhtım with both ferry piers,
+ * the çarşı, Altıyol, Bahariye down to Süreyya Operası and the start of Moda Caddesi, with ~100 m of margin.
+ */
+export const KADIKOY_AREA = { south: 40.9848, west: 29.0185, north: 40.995, east: 29.0325 } as const;
+
+/**
+ * One area of real OSM data. `dataFile` is where scripts/data/fetch-osm.mjs writes it (repo-relative).
+ * `profile`: 'slice' is the flight-scale ?osm=1 schema (version 2, src/world/osm/data.ts); 'street' is the same
+ * schema plus the street-layer extension read by tools/world-compiler (documented in its README.md).
+ */
+export interface OsmAreaDef {
+  readonly id: string;
+  readonly bbox: { readonly south: number; readonly west: number; readonly north: number; readonly east: number };
+  readonly dataFile: string;
+  readonly profile: 'slice' | 'street';
+}
+
+/**
+ * Every OSM area. Keep one entry per line in this exact shape: fetch-osm.mjs and the world compiler parse it from the
+ * source text (tools/world-compiler/lib/areas.mjs), and `bbox` must name an `export const X = { ... } as const` above.
+ * Only 'galata' (OSM_AREA) feeds the runtime slice and the procedural exclusion rects; the others are compiler inputs.
+ */
+export const OSM_AREAS: readonly OsmAreaDef[] = [
+  { id: 'galata', bbox: OSM_AREA, dataFile: 'public/data/osm/slice.json', profile: 'slice' },
+  { id: 'kadikoy', bbox: KADIKOY_AREA, dataFile: 'data/osm/kadikoy.json', profile: 'street' },
+];
+
 /** Metres beyond the area where OSM still replaces the procedural city (the data is fetched ~75 m wider). */
 export const OSM_SEAM = 40;
 

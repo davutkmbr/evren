@@ -29,14 +29,21 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "snap": "node scripts/snap.mjs"
+    "snap": "node scripts/snap.mjs",
+    "walk-test": "node scripts/walk-test.mjs",
+    "compile:world": "tsx tools/world-compiler/src/cli.ts",
+    "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json"
   },
   "dependencies": {
     "three": "^0.186.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.0",
+    "@types/node": "^24.13.6",
     "@types/three": "^0.186.0",
+    "gltf-validator": "^2.0.0-dev.3.10",
     "playwright-core": "^1.63.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   }
