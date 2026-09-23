@@ -1,0 +1,43 @@
+{
+  "name": "ejderha-istanbul",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A realistic, open-world dragon-riding flight simulation over Istanbul, generated entirely in code with Three.js.",
+  "license": "MIT",
+  "author": "Davut Kember <davutkmbr@gmail.com>",
+  "homepage": "https://davutkmbr.github.io/ejderha-istanbul/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davutkmbr/ejderha-istanbul.git"
+  },
+  "keywords": [
+    "threejs",
+    "webgl",
+    "flight-simulator",
+    "dragon",
+    "istanbul",
+    "procedural",
+    "open-world",
+    "game"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "snap": "node scripts/snap.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}

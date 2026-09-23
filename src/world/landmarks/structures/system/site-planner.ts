@@ -1,0 +1,43 @@
+/**
+ * Main thread: decides which terrain patches every structure site needs, samples them from geo.heightAt() and
+ * packages the landmark definition for the worker.
+ */
+import type { GeoQuery, LandmarkDef } from '../../../../core/contracts';
+import { samplePatch, type PatchSpec } from '../build/height-sampler';
+import type { SiteDef, SiteInput } from '../types';
+
+function squarePatch(x: number, z: number, half: number, cell: number): PatchSpec {
+  return { ox: x, oz: z, ux: 1, uz: 0, u0: -half, lenU: half * 2, v0: -half, lenV: half * 2, cell };
+}
+
+/** Strip along a->b extended by `extend` at both ends, `halfWidth` to each side. */
+function stripPatch(ax: number, az: number, bx: number, bz: number, extend: number, halfWidth: number, cell: number): PatchSpec {
+  const len = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / len;
+  const uz = (bz - az) / len;
+  return { ox: ax, oz: az, ux, uz, u0: -extend, lenU: len + extend * 2, v0: -halfWidth, lenV: halfWidth * 2, cell };
+}
+
+export function planPatches(def: LandmarkDef): PatchSpec[] {
+  const anchors = def.anchors ?? [];
+  if (def.kind === 'bridge' && anchors.length >= 4) {
+    const a = anchors[2];
+    const b = anchors[3];
+    const long = Math.hypot(b.x - a.x, b.z - a.z) > 1200;
+    return [stripPatch(a.x, a.z, b.x, b.z, long ? 900 : 500, long ? 90 : 60, long ? 6 : 4)];
+  }
+  if (def.kind === 'skyscraper' && anchors.length > 0) {
+    return anchors.map((p) => squarePatch(p.x, p.z, 130, 4));
+  }
+  return [squarePatch(def.x, def.z, Math.max(def.radius, 30) + 60, 2)];
+}
+
+export function prepareSite(def: LandmarkDef, geo: GeoQuery): SiteInput {
+  const patches = planPatches(def).map((spec) => samplePatch(geo, spec));
+  const anchors = def.anchors?.map((p) => {
+    const h = (p as { height?: number }).height;
+    return h === undefined ? { x: p.x, z: p.z } : { x: p.x, z: p.z, height: h };
+  });
+  const siteDef: SiteDef = { ...def, anchors };
+  return { def: siteDef, patches };
+}

@@ -1,0 +1,6 @@
+node_modules
+dist
+.shots
+.claude/
+.DS_Store
+*.log
