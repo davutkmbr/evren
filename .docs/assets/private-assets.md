@@ -6,12 +6,13 @@ Assets whose licence allows use inside the game but forbids redistributing the r
 | Source | Use | Licence | Notes |
 |---|---|---|---|
 | MetaHuman (Epic Games) | Player, hero NPCs, crowd (low LODs); faces via MetaHuman Animator | MetaHuman licence / Unreal Engine EULA: free under $1 M annual revenue, usable in any engine since mid-2025, no royalty outside Unreal | Characters are created in the Unreal Engine MetaHuman plugin and exported once. |
-| Mixamo (Adobe) | Body animation clips, retargeted to the MetaHuman skeleton in Blender | Mixamo FAQ: royalty-free in games; raw files must not be redistributed | Downloaded "without skin" per clip. |
+| Mixamo (Adobe) | Body animation clips, retargeted to the MetaHuman skeleton with Unreal's IK Retargeter (batch, Python) | Mixamo FAQ: royalty-free in games; raw files must not be redistributed | Downloaded "without skin" per clip. |
 
 ## Layout
 
 ```
 private-assets/
+  unreal/EvrenHumans/         Unreal 5.8 project (MetaHuman Creator, Animator, IK Retargeter, exports)
   metahuman/<character-id>/   exported characters (source) + runtime LOD exports
   mixamo/<clip>.fbx           source clips (without skin)
   build/                      retargeted, packed runtime files (per runtime)

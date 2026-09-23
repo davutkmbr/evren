@@ -46,7 +46,9 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 - Navigation and crowds: recast-navigation-js + DetourCrowd | NavigationServer3D with avoidance.
 - Humans (decided 2026-09-24): **MetaHuman** characters (free under $1 M revenue, usable in any engine since mid-2025)
   for the player, hero NPCs and the crowd (low LODs), faces animated with MetaHuman Animator (video or audio to face,
-  incl. Turkish lip-sync); **Mixamo** mocap clips for body animation, retargeted to the MetaHuman skeleton in Blender.
+  incl. Turkish lip-sync, quality untested); **Mixamo** mocap clips for body animation, retargeted with Unreal's IK
+  Retargeter; faces baked to plain joint keys (Character DNA in Blender) so runtimes need no RigLogic. Pipeline:
+  `.docs/assets/humans-pipeline.md`.
   Neither licence allows redistributing raw files, so they live in a private asset store (`private-assets/`, gitignored)
   and only ship inside game builds; the public repo keeps code, manifests and CC0/CC-BY assets. The free CC0 candidates
   (Rocketbox, MPFB2, Quaternius) looked dated or lacked animations (`.docs/assets/candidates/humans.md`).
