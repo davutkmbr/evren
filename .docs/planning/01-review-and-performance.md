@@ -50,7 +50,7 @@ terrain, water, city, vegetation, mosques, structures, heritage, life, ui.
 - `Engine.stats()` keeps the previous frame's `drawCalls/triangles`; the `?stats=1` overlay currently reads 0.
 - A single owner for pointer lock (camera and UI both request it today).
 - `VIEW_PRESETS.spawn` is labelled "Sarayburnu üzeri" but its coordinates are in Laleli–Aksaray; move the coordinates to Sarayburnu.
-- View presets with a time (`gece`) should apply the time on page load (today only `__ejderha.view()` does).
+- View presets with a time (`gece`) should apply the time on page load (today only `__evren.view()` does).
 - A default 1×1 texture for every sampler in SHARED_GLSL (sandboxes compile without sky and clouds).
 - `AudioService.masterVolume` and `unlock()`; `GeoQuery.waterNameAt(x, z)`; `CameraRigState.shotLabel`;
   `EnvironmentState.humidity`; document HdrPass order ranges (clouds 100, transparent effects 150–199).
@@ -64,10 +64,9 @@ terrain, water, city, vegetation, mosques, structures, heritage, life, ui.
 
 ## Technical approach
 
-1. Initial commit (the repository has no commits).
-2. Core contract fixes first, by a single owner.
-3. Workflow: review → fix (one round) for the 9 Phase B modules and 5 Phase A modules; then a performance agent.
-4. Finally a visual QA pass over the full app: 10 views × day/night screenshots.
+1. Core contract fixes first, by a single owner.
+2. Workflow: review → fix (one round) for the 9 Phase B modules and 5 Phase A modules; then a performance agent.
+3. Finally a visual QA pass over the full app: 10 views × day/night screenshots.
 
 ## Acceptance criteria
 

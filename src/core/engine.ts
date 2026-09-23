@@ -345,6 +345,6 @@ export class Engine {
       },
       views: () => Object.keys(VIEW_PRESETS),
     };
-    (window as unknown as { __ejderha: typeof api }).__ejderha = api;
+    (window as unknown as { __evren: typeof api }).__evren = api;
   }
 }

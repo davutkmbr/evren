@@ -56,7 +56,7 @@ function telemetryOverlay(): System {
         `wing      spread ${n('spread', 2)} sweep ${n('sweep', 2)} brake ${n('brake', 2)}`,
         `legs/hov  ${n('legsOut', 2)} / ${n('hover', 2)}   updraft ${n('updraft', 2)}`,
         `stamina   ${(Number(t.stamina) * 100).toFixed(0)}%${t.tired ? ' TIRED' : ''}${t.firing ? '  FIRE' : ''}`,
-        `cpu       ${((window as unknown as { __ejderha?: { stats(): { cpuBySystem: Record<string, number> } } }).__ejderha?.stats().cpuBySystem.flight ?? 0).toFixed(3)} ms`,
+        `cpu       ${((window as unknown as { __evren?: { stats(): { cpuBySystem: Record<string, number> } } }).__evren?.stats().cpuBySystem.flight ?? 0).toFixed(3)} ms`,
       ].join('\n');
       void dt;
     },

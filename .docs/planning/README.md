@@ -1,4 +1,4 @@
-# Ejderha · İstanbul — Roadmap
+# Evren — Roadmap
 
 An open-world, realistic and "chill" flight simulation where we ride a dragon over Istanbul.
 This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,
@@ -66,4 +66,4 @@ Suggested order: 01 → 02 → B bundle (03, 04, 05, 06, 07 as one release) → 
 - Contracts change through `src/core/contracts.ts`; any contract change a phase needs is made once, up front, by one
   owner; module agents only touch their own folders.
 - Verification: `node scripts/snap.mjs` for GPU screenshots + stats; every phase's acceptance criteria are written to be measurable with it.
-- Checkpoints: a git commit before and after each phase (the repository has no commits yet; the first task is an initial commit).
+- Checkpoints: a git commit before and after each phase.

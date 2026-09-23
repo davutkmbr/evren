@@ -165,7 +165,7 @@ export function createReportView(parent: HTMLElement, total: number): ReportView
   const root = document.createElement('div');
   root.className = 'ar-root';
   root.innerHTML = `
-    <div class="ar-head"><h1>Ejderha · İstanbul — ses doğrulama</h1><span class="ar-id" id="ar-status"></span></div>
+    <div class="ar-head"><h1>Evren — ses doğrulama</h1><span class="ar-id" id="ar-status"></span></div>
     <p class="ar-sub">Her ses, oyundaki motorun aynısıyla (tam master zinciri: subsonik filtre, reverb, glue kompresör, limiter, soft-clip;
     ses seviyesi 1.0) OfflineAudioContext'te 48 kHz stereo olarak çizildi; kompresörlerin açılış geçişi için 1.6 s ön-çalma kırpıldı.
     Ölçümler: çıkış tepesi ve dinamik aşamasına giren sinyalin tepesi (limiter'ın dengeyi "sağlamadığını" gösterir), glue/limiter kazanç

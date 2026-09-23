@@ -7,7 +7,7 @@
  *   node scripts/snap.mjs --url "/?view=bogaz" --perf 5000          # measure fps for 5 s
  *   node scripts/snap.mjs --batch shots.json                          # [{url,out,eval?,settle?,w?,h?}]
  *
- * Waits for window.__ejderha.ready and __ejderha.pending() === 0 (or --timeout), then --settle ms more.
+ * Waits for window.__evren.ready and __evren.pending() === 0 (or --timeout), then --settle ms more.
  * Prints JSON with console errors/warnings and engine stats. Requires the dev server (npm run dev, port 5199).
  */
 import { chromium } from 'playwright-core';
@@ -58,7 +58,7 @@ async function shoot(browser, job) {
   let pending = -1;
   while (Date.now() - t0 < timeout) {
     const s = await page.evaluate(() => {
-      const a = window.__ejderha;
+      const a = window.__evren;
       return a ? { ready: a.ready, pending: a.pending() } : { ready: false, pending: -1 };
     }).catch(() => ({ ready: false, pending: -1 }));
     ready = s.ready;
@@ -76,7 +76,7 @@ async function shoot(browser, job) {
     const t1 = Date.now();
     await page.waitForTimeout(300);
     while (Date.now() - t1 < timeout / 2) {
-      const p = await page.evaluate(() => window.__ejderha?.pending?.() ?? 0).catch(() => 0);
+      const p = await page.evaluate(() => window.__evren?.pending?.() ?? 0).catch(() => 0);
       if (p === 0) break;
       await page.waitForTimeout(250);
     }
@@ -102,7 +102,7 @@ async function shoot(browser, job) {
       return { frames: times.length, avgMs: +avg.toFixed(2), fps: +(1000 / avg).toFixed(1), p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2), maxMs: +times[times.length - 1].toFixed(2) };
     }, Number(job.perf));
   }
-  const stats = await page.evaluate(() => (window.__ejderha ? window.__ejderha.stats() : null)).catch(() => null);
+  const stats = await page.evaluate(() => (window.__evren ? window.__evren.stats() : null)).catch(() => null);
   if (job.out) {
     mkdirSync(dirname(job.out), { recursive: true });
     await page.screenshot({ path: job.out, type: job.out.endsWith('.jpg') ? 'jpeg' : 'png', quality: job.out.endsWith('.jpg') ? 88 : undefined });

@@ -1,14 +1,14 @@
 {
-  "name": "ejderha-istanbul",
+  "name": "evren",
   "private": true,
   "version": "0.1.0",
   "description": "A realistic, open-world dragon-riding flight simulation over Istanbul, generated entirely in code with Three.js.",
   "license": "MIT",
   "author": "Davut Kember <davutkmbr@gmail.com>",
-  "homepage": "https://davutkmbr.github.io/ejderha-istanbul/",
+  "homepage": "https://davutkmbr.github.io/evren/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/davutkmbr/ejderha-istanbul.git"
+    "url": "git+https://github.com/davutkmbr/evren.git"
   },
   "keywords": [
     "threejs",

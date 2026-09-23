@@ -1,12 +1,12 @@
 <div align="center">
 
-# Ejderha · İstanbul
+# Evren
 
 **Ride a dragon over Istanbul.**
 A realistic, open-world flight simulation that runs in the browser. Every building, cloud, wave, sound and even the
 dragon itself is generated in code at runtime; there are no downloaded 3D models or textures.
 
-[**▶ Play the live demo**](https://davutkmbr.github.io/ejderha-istanbul/) ·
+[**▶ Play the live demo**](https://davutkmbr.github.io/evren/) ·
 [Roadmap](.docs/planning/README.md) ·
 [Architecture](#architecture) ·
 [Run locally](#getting-started)
@@ -29,6 +29,9 @@ You sit in the saddle of an 18-metre dragon and fly freely over a 48 × 48 km re
 peninsula, the Golden Horn, both shores of the Bosphorus, the Princes' Islands and the Black Sea entrance. The
 coastline, hills and landmark positions follow the real city; the sun and moon move along their real paths for
 Istanbul's latitude, so the light at 18:00 in late September looks like it does there.
+
+The name comes from Turkic mythology, where **Evren** is the great dragon; in modern Turkish the same word means
+"the universe".
 
 It is meant to be a calm experience: no fail state, forgiving flight assistance, and a city that keeps revealing
 landmarks, ferries, gulls and night lights as you explore.
@@ -117,8 +120,8 @@ Requirements: Node.js 22.12 or newer and a browser with WebGL 2 and the `EXT_cli
 Chrome or Edge is recommended).
 
 ```bash
-git clone https://github.com/davutkmbr/ejderha-istanbul.git
-cd ejderha-istanbul
+git clone https://github.com/davutkmbr/evren.git
+cd evren
 npm install
 npm run dev
 ```

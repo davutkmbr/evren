@@ -62,7 +62,7 @@ export class PauseMenu {
 
     const sheet = el('div', 'menu-sheet ejd-glass', [
       el('nav', 'menu-nav', [
-        el('div', 'menu-brand', [el('p', 'ejd-caps menu-state', 'Duraklatıldı'), el('p', 'menu-name', ['Ejderha', el('span', 'menu-dot', ' · '), 'İstanbul'])]),
+        el('div', 'menu-brand', [el('p', 'ejd-caps menu-state', 'Duraklatıldı'), el('p', 'menu-name', 'Evren')]),
         this.resumeButton,
         el('i', 'nav-sep'),
         ...navItems,

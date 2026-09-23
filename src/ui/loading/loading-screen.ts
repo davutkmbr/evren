@@ -78,7 +78,7 @@ export class LoadingScreen {
       el('div', 'ld-scrim'),
       el('header', 'ld-title', [
         el('p', 'ld-eyebrow', 'İstanbul üzerinde serbest uçuş'),
-        el('h1', 'ld-name', ['Ejderha', el('span', 'ld-dot', ' · '), 'İstanbul']),
+        el('h1', 'ld-name', 'Evren'),
       ]),
       this.progressBlock,
       this.startBlock,
@@ -87,7 +87,7 @@ export class LoadingScreen {
         el('br'),
         'Harita verisi © OpenStreetMap katkıcıları (ODbL) · Yükseklik: NASA SRTM',
       ]),
-    ], { 'aria-label': 'Ejderha · İstanbul yükleniyor' });
+    ], { 'aria-label': 'Evren yükleniyor' });
     this.root.addEventListener('click', () => this.start());
     parent.append(this.root);
     this.backdrop.start();

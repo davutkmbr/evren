@@ -157,7 +157,7 @@ if (stall) {
 
 void startSandbox({ systems }).then(() => {
   const open = params.get('open');
-  const hook = (window as unknown as { __ejderhaUi?: { open(what: string): void } }).__ejderhaUi;
+  const hook = (window as unknown as { __evrenUi?: { open(what: string): void } }).__evrenUi;
   if (open && hook) {
     window.setTimeout(() => hook.open(open), 300);
   }

@@ -24,7 +24,7 @@ const ROWS: Array<[key: string, label: string]> = [
   ['ui', 'Arayüz CPU'],
 ];
 
-/** ?stats=1 performance readout (reads window.__ejderha.stats() at 4 Hz). */
+/** ?stats=1 performance readout (reads window.__evren.stats() at 4 Hz). */
 export class StatsOverlay {
   readonly root: HTMLElement;
   private readonly slots = new Map<string, TextSlot>();
@@ -50,7 +50,7 @@ export class StatsOverlay {
   }
 
   private readonly refresh = (): void => {
-    const api = (window as unknown as { __ejderha?: { stats(): EngineStatsLike } }).__ejderha;
+    const api = (window as unknown as { __evren?: { stats(): EngineStatsLike } }).__evren;
     if (!api) {
       return;
     }

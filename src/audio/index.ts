@@ -163,7 +163,7 @@ export function createAudioSystem(): System {
         window.addEventListener(e, unlock, true);
       }
       document.addEventListener('visibilitychange', onVisibility);
-      (window as unknown as { __ejderhaAudio?: AudioDebugHandle }).__ejderhaAudio = debugHandle;
+      (window as unknown as { __evrenAudio?: AudioDebugHandle }).__evrenAudio = debugHandle;
 
       const ev = ctx.events;
       unsubscribers.push(
@@ -286,9 +286,9 @@ export function createAudioSystem(): System {
       void context?.close().catch(() => undefined);
       context = null;
       unlocked = false;
-      const debugGlobal = window as unknown as { __ejderhaAudio?: AudioDebugHandle };
-      if (debugGlobal.__ejderhaAudio === debugHandle) {
-        delete debugGlobal.__ejderhaAudio;
+      const debugGlobal = window as unknown as { __evrenAudio?: AudioDebugHandle };
+      if (debugGlobal.__evrenAudio === debugHandle) {
+        delete debugGlobal.__evrenAudio;
       }
     },
   };

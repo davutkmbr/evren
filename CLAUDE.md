@@ -1,4 +1,4 @@
-# Ejderha · İstanbul — Project Rules
+# Evren — Project Rules
 
 ## Language
 

@@ -473,6 +473,6 @@ export class UiSystem implements System {
         mapRaster: this.raster.image ? `${this.raster.image.width}x${this.raster.image.height}` : this.raster.pending ? 'building' : 'none',
       }),
     };
-    (window as unknown as { __ejderhaUi: typeof hook }).__ejderhaUi = hook;
+    (window as unknown as { __evrenUi: typeof hook }).__evrenUi = hook;
   }
 }

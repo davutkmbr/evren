@@ -168,7 +168,7 @@ export function createLiveHarness(state: LiveState): System {
         cam.position.y += 7;
         cam.lookAt(object.position);
       }
-      const handle = (window as unknown as { __ejderhaAudio?: AudioDebugHandle }).__ejderhaAudio;
+      const handle = (window as unknown as { __evrenAudio?: AudioDebugHandle }).__evrenAudio;
       const engine = handle?.engine;
       if (engine && !analyser) {
         analyser = engine.ctx.createAnalyser();

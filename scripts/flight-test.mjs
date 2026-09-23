@@ -450,7 +450,7 @@ const MANEUVERS = {
     // Hands-off from every view preset for 90 s: no impacts, no scraping.
     T.options({ wind: true, turbulence: true, thermals: true, autoFlap: true, stallProtection: true });
     const out = {};
-    for (const name of window.__ejderha.views()) {
+    for (const name of window.__evren.views()) {
       T.view(name, 40);
       let minClear = 1e9;
       const run = T.simulate(90, (t, sim) => { minClear = Math.min(minClear, sim.footClearance); }, 5);
@@ -628,8 +628,8 @@ const MANEUVERS = {
     for (let a = 0; a < 360 && !hit; a += 10) {
       const dir = { x: Math.sin(a * DEG), y: 0, z: -Math.cos(a * DEG) };
       for (const y of [40, 80, 140]) {
-        const o = new window.__ejderha.THREE.Vector3(p.x, col.groundHeight(p.x, p.z) + y, p.z);
-        const d = new window.__ejderha.THREE.Vector3(dir.x, 0, dir.z);
+        const o = new window.__evren.THREE.Vector3(p.x, col.groundHeight(p.x, p.z) + y, p.z);
+        const d = new window.__evren.THREE.Vector3(dir.x, 0, dir.z);
         const h = col.raycast(o, d, 3000, false);
         if (h && h.surface !== 'ground' && h.surface !== 'water' && h.distance > 200) { hit = { o, heading: a, dist: h.distance, surface: h.surface }; break; }
       }
@@ -742,7 +742,7 @@ async function shoot(browser, job) {
       await p.goto(BASE + URL_PATH, { waitUntil: 'load', timeout: 60000 });
       const t1 = Date.now();
       while (Date.now() - t1 < 60000) {
-        const ok = await p.evaluate(() => !!window.__flightTest && !!window.__ejderha?.ready && window.__ejderha.pending() === 0).catch(() => false);
+        const ok = await p.evaluate(() => !!window.__flightTest && !!window.__evren?.ready && window.__evren.pending() === 0).catch(() => false);
         if (ok) break;
         await p.waitForTimeout(250);
       }
@@ -790,7 +790,7 @@ async function main() {
     const waitReady = async () => {
       const t0 = Date.now();
       while (Date.now() - t0 < 60000) {
-        const ok = await page.evaluate(() => !!window.__flightTest && !!window.__ejderha?.ready).catch(() => false);
+        const ok = await page.evaluate(() => !!window.__flightTest && !!window.__evren?.ready).catch(() => false);
         if (ok) return;
         await page.waitForTimeout(250);
       }
