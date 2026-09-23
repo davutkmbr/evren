@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GeoQuery } from '../../../core/contracts';
+import type { GeoQuery, WorldBounds } from '../../../core/contracts';
 import { RenderLayers } from '../../../core/contracts';
 import { patchMaterial } from '../../../core/uniforms';
 import { SHARED_GLSL } from '../../../render/shaders';
@@ -93,8 +93,9 @@ export class CarTraffic {
   private readonly lightMaterial: THREE.ShaderMaterial;
   private readonly carMaterial: THREE.MeshStandardMaterial;
 
-  constructor(geo: GeoQuery, densityScale: number) {
-    this.network = new RoadNetwork(geo, densityScale);
+  /** `exclude`: optional rectangle where cars are hidden (see RoadNetwork). */
+  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null) {
+    this.network = new RoadNetwork(geo, densityScale, exclude);
     const cars = this.network.cars;
     const n = cars.length;
     const road = new Float32Array(n * 4);

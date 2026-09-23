@@ -285,6 +285,33 @@ export class MeshBuilder {
     }
   }
 
+  /**
+   * Torus around the local X axis (ring in the YZ plane) centred at (cx, cy, cz): ring radius R, tube radius r.
+   * Used for life rings and tyre fenders hung on a side (rotate with push for other orientations).
+   */
+  torus(cx: number, cy: number, cz: number, R: number, r: number, segU: number, segV: number, s: SurfaceSpec): void {
+    const base = this.vertexCount;
+    for (let i = 0; i <= segU; i++) {
+      const u = (i / segU) * Math.PI * 2;
+      const cu = Math.cos(u);
+      const su = Math.sin(u);
+      for (let j = 0; j <= segV; j++) {
+        const v = (j / segV) * Math.PI * 2;
+        const cv = Math.cos(v);
+        const sv = Math.sin(v);
+        this.vertex(cx + r * sv, cy + (R + r * cv) * cu, cz + (R + r * cv) * su, sv, cv * cu, cv * su, s);
+      }
+    }
+    const w = segV + 1;
+    for (let i = 0; i < segU; i++) {
+      for (let j = 0; j < segV; j++) {
+        const a = base + i * w + j;
+        const b = a + w;
+        this.idx.push(a, b, b + 1, a, b + 1, a + 1);
+      }
+    }
+  }
+
   /** Quad whose winding is chosen so its face normal agrees with `facing`. */
   quadFacing(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, facing: THREE.Vector3, s: SurfaceSpec): void {
     tmpA.subVectors(b, a);

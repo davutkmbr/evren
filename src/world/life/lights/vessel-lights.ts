@@ -19,7 +19,9 @@ const STYLES: Record<NavLightKind, LightStyle> = {
   red: { sector: Sector.AllRound, color: [14, 0.8, 0.4], radius: 0.3 },
 };
 
-const PASSENGER = new Set(['vapur', 'seabus', 'tour']);
+const PASSENGER = new Set(['vapur', 'ferry', 'seabus', 'tour']);
+/** Working lamps that are only lit while working (fishing boats drifting over their nets), with a smaller glow. */
+const WORK_LAMPS = new Set(['fishing', 'seiner']);
 
 /** Keeps every vessel's navigation / anchor / deck lights in the shared light pool, switching them by vessel mode. */
 export class VesselLights {
@@ -52,7 +54,7 @@ export class VesselLights {
             on = mode === 'anchored';
             break;
           case 'deck':
-            on = passenger || mode !== 'underway';
+            on = WORK_LAMPS.has(v.model.kind) ? mode === 'anchored' : passenger || mode !== 'underway';
             break;
           case 'red':
             on = true;
@@ -62,7 +64,8 @@ export class VesselLights {
         }
         this.tmp.set(def.x, def.y, def.z).applyMatrix4(v.matrix);
         const i = v.lightBase + k;
-        pool.set(i, this.tmp.x, this.tmp.y, this.tmp.z, fx, fz, st.sector, on ? st.color[0] : 0, on ? st.color[1] : 0, on ? st.color[2] : 0, st.radius);
+        const radius = def.kind === 'deck' && v.model.length < 30 ? st.radius * 0.45 : st.radius;
+        pool.set(i, this.tmp.x, this.tmp.y, this.tmp.z, fx, fz, st.sector, on ? st.color[0] : 0, on ? st.color[1] : 0, on ? st.color[2] : 0, radius);
       }
     }
   }

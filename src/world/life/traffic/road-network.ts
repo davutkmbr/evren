@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GeoQuery, RoadDef } from '../../../core/contracts';
+import type { GeoQuery, RoadDef, WorldBounds } from '../../../core/contracts';
 import { createRng } from '../../../core/math/noise';
 import { BRIDGE_DECKS } from '../data/places';
 
@@ -58,9 +58,20 @@ function laneSpec(r: RoadDef): LaneSpec {
 /** Pedestrian-only streets (no cars). */
 const CAR_FREE = new Set(['istiklal-caddesi']);
 
+/** Metres over which cars fade out when entering an excluded rectangle. */
+const EXCLUDE_FADE = 15;
+
+/** 0 outside `r`, rising to 1 at EXCLUDE_FADE metres inside it. */
+function excludeWeight(x: number, z: number, r: WorldBounds | null): number {
+  if (!r) return 0;
+  const inside = Math.min(x - r.minX, r.maxX - x, z - r.minZ, r.maxZ - z);
+  return inside <= 0 ? 0 : Math.min(1, inside / EXCLUDE_FADE);
+}
+
 /**
- * Resamples geo.roads into a float texture of road centreline points (x, y, z) at ROAD_STEP spacing and lays out
- * right-hand traffic lanes with car phases. Bridge spans follow their deck heights.
+ * Resamples geo.roads into a float texture of road centreline points (x, y, z, hide) at ROAD_STEP spacing and lays
+ * out right-hand traffic lanes with car phases. Bridge spans follow their deck heights. `hide` is 1 inside the
+ * optional `exclude` rectangle (the ?osm=1 slice, which runs its own traffic) and 0 elsewhere.
  */
 export class RoadNetwork {
   readonly tracks: RoadTrack[] = [];
@@ -68,7 +79,7 @@ export class RoadNetwork {
   readonly texture: THREE.DataTexture;
   readonly samples: Float32Array;
 
-  constructor(geo: GeoQuery, densityScale: number) {
+  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null) {
     const pts: number[] = [];
     for (const def of geo.roads) {
       if (CAR_FREE.has(def.id) || def.points.length < 2) continue;
@@ -109,7 +120,7 @@ export class RoadNetwork {
         } else {
           y = Math.max(geo.heightAt(x, z), 0.4);
         }
-        pts.push(x, y + 0.05, z, 0);
+        pts.push(x, y + 0.05, z, excludeWeight(x, z, exclude));
         minX = Math.min(minX, x);
         maxX = Math.max(maxX, x);
         minZ = Math.min(minZ, z);

@@ -6,7 +6,6 @@ import { createLifeMaterial } from './render/life-material';
 import { buildCatalog } from './vessels/catalog';
 import { Fleet } from './vessels/fleet';
 import type { VesselModel } from './vessels/model-types';
-import { AtAnchor } from './vessels/agents';
 import { WakeTrails } from './wakes/wake-trails';
 import { LightPoints, Sector } from './lights/nav-lights';
 import { VesselLights } from './lights/vessel-lights';
@@ -14,9 +13,10 @@ import { buildPiers, type PierLamp } from './piers/pier-builder';
 import { globalUniforms } from '../../core/uniforms';
 import { Flocks } from './birds/flocks';
 import { CarTraffic } from './traffic/car-traffic';
+import { osmEnabled, osmExclusionRect } from '../osm/area';
 
 const TRAFFIC_DENSITY: Record<string, number> = { low: 0.35, medium: 0.6, high: 1.0, ultra: 1.25 };
-import { buildFerryLoops, buildStraitLanes, placeBerths, type Berth, type FerryLoop, type StraitLanes } from './vessels/routes';
+import { buildStraitLanes, placeBerths, type Berth, type StraitLanes } from './vessels/routes';
 
 /** Debug handle: window.__life */
 export interface LifeDebug {
@@ -32,7 +32,6 @@ export class LifeSystem implements System {
   private material: THREE.MeshStandardMaterial | null = null;
   private models: Map<string, VesselModel> | null = null;
   berths: Map<string, Berth[]> | null = null;
-  loops: FerryLoop[] = [];
   lanes: StraitLanes | null = null;
   fleet: Fleet | null = null;
   wakes: WakeTrails | null = null;
@@ -65,12 +64,6 @@ export class LifeSystem implements System {
       this.models = await buildCatalog();
       const t1 = performance.now();
       this.berths = placeBerths(geo);
-      const vapur = this.models.get('vapur')!;
-      const seabus = this.models.get('seabus')!;
-      this.loops = buildFerryLoops(geo, this.berths, {
-        vapur: { length: vapur.length, beam: vapur.beam },
-        seabus: { length: seabus.length, beam: seabus.beam },
-      });
       this.lanes = buildStraitLanes(geo);
       const piers = buildPiers(geo, this.berths);
       this.pierMesh = new THREE.Mesh(piers.geometry, this.material);
@@ -98,7 +91,8 @@ export class LifeSystem implements System {
       this.traffic.dispose();
     }
     this.trafficPreset = s.preset;
-    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1);
+    const osmSlice = this.ctx && osmEnabled(this.ctx.debug.params) ? osmExclusionRect() : null;
+    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1, osmSlice);
     this.root.add(this.traffic.group);
   }
 
@@ -120,21 +114,19 @@ export class LifeSystem implements System {
   }
 
   private rebuildFleet(s: QualitySettings): void {
-    if (!this.geo || !this.models || !this.lanes || !this.material) return;
+    if (!this.geo || !this.models || !this.lanes || !this.material || !this.berths) return;
     if (this.fleet) {
       this.root.remove(this.fleet.renderer.object);
       this.fleet.dispose();
     }
     this.shipCount = s.shipCount;
-    this.fleet = new Fleet({ geo: this.geo, models: this.models, loops: this.loops, lanes: this.lanes, shipCount: s.shipCount }, this.material);
+    this.fleet = new Fleet({ geo: this.geo, models: this.models, berths: this.berths, lanes: this.lanes, shipCount: s.shipCount }, this.material);
     this.root.add(this.fleet.renderer.object);
     if (this.wakes) {
       this.root.remove(this.wakes.mesh);
       this.wakes.dispose();
     }
-    const moving = this.fleet.vessels.filter((v) => !(v.behaviour instanceof AtAnchor));
-    this.wakes = new WakeTrails(Math.max(1, moving.length));
-    for (const v of moving) v.wake = this.wakes.add(v.model.length, v.model.beam);
+    this.wakes = this.fleet.createWakes();
     this.root.add(this.wakes.mesh);
 
     if (this.lights) {
@@ -160,12 +152,7 @@ export class LifeSystem implements System {
     this.clock += dt;
     const time = this.clock;
     if (this.wakes) {
-      for (const v of this.fleet.vessels) {
-        if (v.wake < 0) continue;
-        const half = v.model.length * 0.485;
-        this.wakes.feed(v.wake, v.state.x - Math.sin(v.state.yaw) * half, v.state.z - Math.cos(v.state.yaw) * half, time);
-      }
-      this.wakes.commit(time);
+      this.fleet.feedWakes(this.wakes, time);
     }
     this.traffic?.update(dt, time, ctx.time.timeOfDay, this.camPos);
     if (this.flocks) {

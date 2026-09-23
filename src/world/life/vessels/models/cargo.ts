@@ -84,7 +84,22 @@ export function buildCargoShip(d: CargoDesign, o: ModelOptions): BuiltModel {
     const inset = t >= houseTiers - 2 ? 0.8 : 0;
     const poly = rect(0, (accFront + accBack) / 2 + inset * 0.5, accW - inset * 2, accDepth - inset);
     prism(b, poly, y, tierH, white, t === houseTiers - 1 ? S.roof(0xb7bab4) : null);
-    windowsOnPolygon(b, poly, y, near ? { surf: glass, sill: 1.05, height: 1.05, width: 1.1, pitch: 2.4 } : { surf: glass, sill: 1.05, height: 1.0, width: 1, pitch: 1, band: true, minEdge: 3 });
+    // Cabin windows: small square lights in regular rows (the bridge above has the big wrap-around band).
+    windowsOnPolygon(b, poly, y, near ? { surf: glass, sill: 1.15, height: 0.9, width: 0.9, pitch: 2.35, margin: 1.2 } : { surf: glass, sill: 1.15, height: 0.85, width: 1, pitch: 1, band: true, minEdge: 3, margin: 1.2 }, (nn) => nn.z < 0.5);
+    // Each tier's deck overhangs a little: horizontal lines and walkways break up the block.
+    if (t < houseTiers - 1) {
+      const ledge = inflate(poly, 0.45);
+      slab(b, ledge, y + tierH + 0.05, 0.16, S.roof(0xb7bab4), white);
+      if (near && t % 2 === 1) railing(b, ledge, y + tierH + 0.05, white, 1.0, 1.8, true);
+    }
+    if (near && t < houseTiers - 1) {
+      // Outside stairs between the tiers on both sides.
+      for (const s of [-1, 1]) {
+        b.pushTRS(s * (accW / 2 + 0.75), y + tierH * 0.5, accFront + accDepth * (t % 2 === 0 ? 0.35 : 0.65), 0, (t % 2 === 0 ? 1 : -1) * 0.78);
+        b.box(0, 0, 0, 0.9, 0.12, tierH * 1.35, surf(0x9a9d98, { roughness: 0.6, metalness: 0.4 }));
+        b.pop();
+      }
+    }
     y += tierH;
   }
   // Bridge deck with wings spanning the beam.
@@ -133,16 +148,32 @@ export function buildCargoShip(d: CargoDesign, o: ModelOptions): BuiltModel {
     b.box(0, fcTop + 6, -L / 2 + L * 0.045 + 0.4, 0.4, 0.3, 0.3, S.lamp());
   }
 
+  // Anchors stowed in their hawse pockets high on the bow flare, chain running up to the windlasses.
+  {
+    const az = -L / 2 + L * 0.035;
+    const ay = deckY(az) - 1.8;
+    const ax = hb(az) + 0.05;
+    const anchor = surf(0x141516, { roughness: 0.5, metalness: 0.5 });
+    const size = Math.max(1.6, B * 0.085);
+    for (const sd of [-1, 1]) {
+      b.pushTRS(sd * ax, ay, az, 0, 0, sd * 0.12);
+      b.box(0, 0, 0, 0.25, size * 1.3, size * 0.9, surf(0x2a2b2d, { roughness: 0.6, metalness: 0.4 }));
+      b.box(sd * 0.12, -size * 0.1, 0, 0.18, size * 0.95, size * 0.16, anchor);
+      b.box(sd * 0.12, -size * 0.55, 0, 0.2, size * 0.2, size * 0.7, anchor);
+      b.pop();
+    }
+  }
+
   const cargoStart = fcEnd + 3;
   const cargoEnd = accFront - 4;
 
   if (d.type === 'tanker') {
-    const pipe = surf(0x9b9f9a, { roughness: 0.5, metalness: 0.5 });
+    const pipe = surf(0xc2c5c0, { roughness: 0.5, metalness: 0.4 });
     const pipeRed = surf(0x7e2f22, { roughness: 0.6, metalness: 0.3 });
     const py = yMain + 0.9;
     if (near) {
       for (const x of [-1.8, -0.9, 0, 0.9]) {
-        b.tube(new THREE.Vector3(x, py, cargoStart), new THREE.Vector3(x, py, cargoEnd), 0.3, 6, x === 0 ? pipeRed : pipe);
+        b.tube(new THREE.Vector3(x, py, cargoStart), new THREE.Vector3(x, py, cargoEnd), 0.42, 6, x === 0 ? pipeRed : pipe);
       }
       // Catwalk on posts.
       b.box(2.4, yMain + 2.3, (cargoStart + cargoEnd) / 2, 1.0, 0.12, cargoEnd - cargoStart, surf(0x6f7572, { roughness: 0.6, metalness: 0.4 }));
@@ -196,11 +227,21 @@ export function buildCargoShip(d: CargoDesign, o: ModelOptions): BuiltModel {
       }
       if (k < holds - 1 && k % 1 === 0 && holds >= 5 && k > 0 && k < holds - 1) {
         const cz = cargoStart + pitch * (k + 1);
-        b.cylinder(0, yMain, cz, 1.3, 1.1, 9, near ? 10 : 6, craneSurf, true);
-        b.block(0, yMain + 9, cz, 2.6, 2.6, 3.2, craneSurf);
-        if (near) b.box(0.9, yMain + 10.6, cz - 1.62, 0.8, 0.9, 0.05, glass);
-        const dir = k % 2 === 0 ? -1 : 1;
-        b.tube(new THREE.Vector3(0, yMain + 10, cz), new THREE.Vector3(0, yMain + 10 + 20 * Math.sin(0.45), cz + dir * 20 * Math.cos(0.45)), 0.45, near ? 6 : 4, craneSurf);
+        // Deck crane between the holds: pedestal, slewing house with the cab on one side, jib stowed aft on its
+        // rest (sloping down over the next hatch).
+        const side = k % 2 === 0 ? 1 : -1;
+        b.cylinder(0, yMain, cz, 1.25, 1.1, 7.5, near ? 10 : 6, craneSurf, true);
+        b.block(0, yMain + 7.5, cz, 3.2, 3.0, 4.2, craneSurf);
+        b.block(side * 1.9, yMain + 8.1, cz - 1.2, 1.1, 1.9, 1.6, craneSurf);
+        if (near) {
+          b.box(side * 1.9, yMain + 9.2, cz - 2.02, 0.9, 1.0, 0.05, glass);
+          b.box(side * 2.46, yMain + 9.2, cz - 1.2, 0.05, 1.0, 1.2, glass);
+        }
+        const jibEnd = new THREE.Vector3(0.3, yMain + 5.2, cz + pitch * 0.92);
+        const jibA = new THREE.Vector3(0, yMain + 9.3, cz + 1.2);
+        b.tube(jibA.clone().setX(-0.55), jibEnd.clone().setX(-0.25), 0.28, near ? 6 : 4, craneSurf);
+        b.tube(jibA.clone().setX(0.55), jibEnd.clone().setX(0.25), 0.28, near ? 6 : 4, craneSurf);
+        b.block(0.3, yMain + 1.6, jibEnd.z - 0.4, 0.45, jibEnd.y - yMain - 1.9, 0.45, craneSurf);
       }
     }
   } else {

@@ -1,6 +1,20 @@
 import type * as THREE from 'three';
 
-export type VesselKind = 'vapur' | 'seabus' | 'tour' | 'tanker' | 'container' | 'bulk' | 'fishing' | 'seiner' | 'yacht' | 'sailboat';
+export type VesselKind =
+  | 'vapur'
+  | 'ferry'
+  | 'seabus'
+  | 'tour'
+  | 'tanker'
+  | 'container'
+  | 'bulk'
+  | 'fishing'
+  | 'seiner'
+  | 'yacht'
+  | 'sailboat'
+  | 'motorboat'
+  | 'tug'
+  | 'pilot';
 
 export type NavLightKind = 'mast' | 'port' | 'stbd' | 'stern' | 'anchor' | 'deck' | 'red';
 

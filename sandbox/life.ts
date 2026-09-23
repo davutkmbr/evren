@@ -106,7 +106,13 @@ function createCameraRig(): System {
           obj.renderOrder = 999;
           ctx.scene.add(obj);
         };
-        for (const loop of sys.loops) line(loop.path.xs, loop.path.zs, loop.line.kind === 'seabus' ? 0x00ffff : 0xffff00);
+        for (const plan of sys.fleet.services) {
+          const c = plan.line.model === 'seabus' ? 0x00ffff : plan.line.model === 'ferry' ? 0xff9900 : 0xffff00;
+          for (const leg of plan.legs) {
+            line(leg.route.xs, leg.route.zs, c);
+            if (leg.undock) line(leg.undock.xs, leg.undock.zs, 0xffffff);
+          }
+        }
         if (sys.lanes) {
           line(sys.lanes.south.xs, sys.lanes.south.zs, 0xff3030);
           line(sys.lanes.north.xs, sys.lanes.north.zs, 0x30ff30);

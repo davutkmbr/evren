@@ -146,46 +146,87 @@ export interface WindowSpec {
   margin?: number;
 }
 
-/** Windows on every sufficiently long wall of a planform prism (placed just outside the wall). */
+/**
+ * Windows on every sufficiently long wall of a planform prism (placed just outside the wall). Consecutive edges that
+ * are nearly collinear (a subdivided hull-following side) are treated as one continuous wall.
+ */
 export function windowsOnPolygon(b: MeshBuilder, poly: readonly P2[], y0: number, w: WindowSpec, edgeFilter?: (n: P2, i: number) => boolean): void {
   const n = poly.length;
   const sign = signedArea(poly) >= 0 ? 1 : -1;
   const margin = w.margin ?? 0.35;
+  const cosJoin = Math.cos(THREE.MathUtils.degToRad(9));
+  const edges = poly.map((p, i) => {
+    const q = poly[(i + 1) % n];
+    return { i, p, q, len: Math.hypot(q.x - p.x, q.z - p.z), ne: edgeNormal(poly, i, sign) };
+  });
+  const joins = (a: (typeof edges)[number], c: (typeof edges)[number]): boolean => a.ne.x * c.ne.x + a.ne.z * c.ne.z >= cosJoin;
+  let start = 0;
+  for (let i = 0; i < n; i++) {
+    if (!joins(edges[(i - 1 + n) % n], edges[i])) {
+      start = i;
+      break;
+    }
+  }
   const a = new THREE.Vector3();
   const bb = new THREE.Vector3();
   const c = new THREE.Vector3();
   const d = new THREE.Vector3();
   const nn = new THREE.Vector3();
-  for (let i = 0; i < n; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % n];
-    const len = Math.hypot(q.x - p.x, q.z - p.z);
-    if (len < (w.minEdge ?? w.width + 2 * margin)) continue;
-    const ne = edgeNormal(poly, i, sign);
-    if (edgeFilter && !edgeFilter(ne, i)) continue;
-    const ux = (q.x - p.x) / len;
-    const uz = (q.z - p.z) / len;
-    const off = 0.025;
-    nn.set(ne.x, 0, ne.z);
+  const off = 0.035;
+  let k = 0;
+  while (k < n) {
+    const run = [edges[(start + k) % n]];
+    k++;
+    while (k < n && joins(run[run.length - 1], edges[(start + k) % n])) {
+      run.push(edges[(start + k) % n]);
+      k++;
+    }
+    let total = 0;
+    let ax = 0;
+    let az = 0;
+    for (const e of run) {
+      total += e.len;
+      ax += e.ne.x * e.len;
+      az += e.ne.z * e.len;
+    }
+    const al = Math.hypot(ax, az) || 1;
+    const avg = { x: ax / al, z: az / al };
+    if (total < (w.minEdge ?? w.width + 2 * margin)) continue;
+    if (edgeFilter && !edgeFilter(avg, run[0].i)) continue;
+    // Point and normal at arc length s along the run.
+    const at = (s: number): { x: number; z: number; nx: number; nz: number } => {
+      let acc = 0;
+      for (const e of run) {
+        if (s <= acc + e.len || e === run[run.length - 1]) {
+          const t = e.len > 1e-6 ? Math.min(Math.max((s - acc) / e.len, 0), 1) : 0;
+          return { x: e.p.x + (e.q.x - e.p.x) * t, z: e.p.z + (e.q.z - e.p.z) * t, nx: e.ne.x, nz: e.ne.z };
+        }
+        acc += e.len;
+      }
+      return { x: run[0].p.x, z: run[0].p.z, nx: avg.x, nz: avg.z };
+    };
     const place = (s0: number, s1: number): void => {
-      a.set(p.x + ux * s0 + ne.x * off, y0 + w.sill, p.z + uz * s0 + ne.z * off);
-      bb.set(p.x + ux * s1 + ne.x * off, y0 + w.sill, p.z + uz * s1 + ne.z * off);
+      const p0 = at(s0);
+      const p1 = at(s1);
+      const pm = at((s0 + s1) / 2);
+      a.set(p0.x + pm.nx * off, y0 + w.sill, p0.z + pm.nz * off);
+      bb.set(p1.x + pm.nx * off, y0 + w.sill, p1.z + pm.nz * off);
       c.set(bb.x, y0 + w.sill + w.height, bb.z);
       d.set(a.x, y0 + w.sill + w.height, a.z);
+      nn.set(pm.nx, 0, pm.nz);
       b.quadFacing(a, bb, c, d, nn, w.surf);
     };
     if (w.band) {
-      place(margin, len - margin);
+      // Bands follow the run segment by segment so they hug curved walls.
+      const segs = Math.max(1, Math.ceil((total - 2 * margin) / 2.5));
+      for (let j = 0; j < segs; j++) place(margin + ((total - 2 * margin) * j) / segs, margin + ((total - 2 * margin) * (j + 1)) / segs);
       continue;
     }
-    const count = Math.floor((len - 2 * margin + (w.pitch - w.width)) / w.pitch);
+    const count = Math.floor((total - 2 * margin + (w.pitch - w.width)) / w.pitch);
     if (count <= 0) continue;
     const used = count * w.pitch - (w.pitch - w.width);
-    const start = (len - used) / 2;
-    for (let k = 0; k < count; k++) {
-      const s0 = start + k * w.pitch;
-      place(s0, s0 + w.width);
-    }
+    const s0 = (total - used) / 2;
+    for (let j = 0; j < count; j++) place(s0 + j * w.pitch, s0 + j * w.pitch + w.width);
   }
 }
 
@@ -291,11 +332,12 @@ export function roundRect(cx: number, cz: number, w: number, d: number, r: numbe
   const out: P2[] = [];
   const hw = w / 2 - r;
   const hd = d / 2 - r;
+  // Clockwise in (x, z): each corner arc sweeps its own outer quadrant.
   const corners: [number, number, number][] = [
-    [hw, hd, 0],
-    [hw, -hd, -Math.PI / 2],
-    [-hw, -hd, Math.PI],
-    [-hw, hd, Math.PI / 2],
+    [hw, hd, Math.PI / 2],
+    [hw, -hd, 0],
+    [-hw, -hd, -Math.PI / 2],
+    [-hw, hd, -Math.PI],
   ];
   for (const [ox, oz, a0] of corners) {
     for (let i = 0; i <= k; i++) {
@@ -304,4 +346,162 @@ export function roundRect(cx: number, cz: number, w: number, d: number, r: numbe
     }
   }
   return out;
+}
+
+/** Life ring hung on a side facing along `yaw` (0 = facing +X / starboard). */
+export function lifeRing(b: MeshBuilder, x: number, y: number, z: number, yaw: number, s: SurfaceSpec, seg = 8): void {
+  b.pushTRS(x, y, z, yaw);
+  b.torus(0, 0, 0, 0.3, 0.075, seg, 4, s);
+  b.pop();
+}
+
+/** Old tyre used as a fender, hanging flat against a hull side facing +X (rotated by `yaw`). */
+export function tyreFender(b: MeshBuilder, x: number, y: number, z: number, yaw: number, radius: number, s: SurfaceSpec, seg = 8): void {
+  b.pushTRS(x, y, z, yaw);
+  b.torus(0, 0, 0, radius * 0.72, radius * 0.28, seg, 4, s);
+  b.pop();
+}
+
+/** Flag on a short staff: pole + cloth (the Turkish ensign reads as a red rectangle at distance). */
+export function flag(b: MeshBuilder, x: number, y: number, z: number, h: number, w: number, pole: SurfaceSpec, cloth: SurfaceSpec, yaw = 0): void {
+  b.cylinder(x, y, z, 0.035, 0.025, h, 5, pole, true);
+  b.pushTRS(x, y + h - w * 0.35, z, yaw);
+  // Slight wave: two panels at an angle.
+  b.box(0, 0, w * 0.26, 0.02, w * 0.66, w * 0.5, cloth);
+  b.pushTRS(0, 0, w * 0.5, 0.25);
+  b.box(0, 0, w * 0.25, 0.02, w * 0.66, w * 0.5, cloth);
+  b.pop();
+  b.pop();
+}
+
+const PEOPLE = [0x2b2f38, 0x3b4a66, 0x7a2a2a, 0xd9d4c7, 0x55624a, 0x1f1f22, 0x8a6d4a, 0x2f5f8f, 0xc9a23a, 0x6a3f63];
+
+/** Standing / sitting passengers (legs, torso, head) scattered in a rectangle (x0..x1, z0..z1) on deck level y. */
+export function crowd(b: MeshBuilder, x0: number, x1: number, z0: number, z1: number, y: number, count: number, rng: () => number, seated = false): void {
+  const skin = surf(0xb58a6c, { roughness: 0.7 });
+  const hair = surf(0x2a211b, { roughness: 0.8 });
+  for (let i = 0; i < count; i++) {
+    const x = x0 + (x1 - x0) * rng();
+    const z = z0 + (z1 - z0) * rng();
+    const top = surf(PEOPLE[Math.floor(rng() * PEOPLE.length)], { roughness: 0.85, detail: Detail.Fabric });
+    const legs = surf(PEOPLE[Math.floor(rng() * 3)], { roughness: 0.85, detail: Detail.Fabric });
+    const k = 0.92 + rng() * 0.16;
+    const yaw = (rng() - 0.5) * 1.2 + (rng() < 0.3 ? Math.PI : 0);
+    b.pushTRS(x, y, z, yaw, 0, 0, k);
+    if (seated) {
+      b.block(0, 0.42, 0.12, 0.36, 0.14, 0.42, legs, 1 | 2 | 4 | 16 | 32);
+      b.block(0, 0.02, 0.3, 0.3, 0.42, 0.12, legs, 1 | 2 | 16 | 32);
+      b.block(0, 0.56, -0.02, 0.4, 0.58, 0.22, top, 1 | 2 | 4 | 16 | 32);
+      b.ellipsoid(0, 1.27, 0, 0.1, 0.12, 0.11, 6, 3, rng() < 0.5 ? hair : skin);
+    } else {
+      b.block(-0.1, 0, 0, 0.13, 0.82, 0.16, legs, 1 | 2 | 16 | 32);
+      b.block(0.1, 0, 0, 0.13, 0.82, 0.16, legs, 1 | 2 | 16 | 32);
+      b.block(0, 0.82, 0, 0.42, 0.6, 0.24, top, 1 | 2 | 4 | 16 | 32);
+      b.ellipsoid(0, 1.56, 0, 0.1, 0.12, 0.11, 6, 3, rng() < 0.5 ? hair : skin);
+    }
+    b.pop();
+  }
+}
+
+/** Row of slatted benches across the deck (backs towards `backDir` along z: +1 or -1). */
+export function benchRow(b: MeshBuilder, x0: number, x1: number, z: number, y: number, s: SurfaceSpec, backDir = 1): void {
+  const w = x1 - x0;
+  const cx = (x0 + x1) / 2;
+  b.block(cx, y + 0.42, z, w, 0.06, 0.45, s, 63 & ~8);
+  b.block(cx, y + 0.45, z + backDir * 0.22, w, 0.45, 0.05, s, 63 & ~8);
+  for (let x = x0 + 0.2; x < x1; x += 1.6) b.block(x, y, z, 0.06, 0.42, 0.4, s, 1 | 2 | 16 | 32);
+}
+
+/**
+ * The Şehir Hatları funnel emblem (red crossed anchors under a crescent and star, after the Denizcilik Bankası
+ * insignia), simplified to a few flat pieces on a plane facing +X, `size` = overall height.
+ */
+export function crossedAnchors(b: MeshBuilder, x: number, y: number, z: number, yaw: number, size: number, s: SurfaceSpec): void {
+  b.pushTRS(x, y, z, yaw);
+  const k = size;
+  for (const a of [0.62, -0.62]) {
+    b.pushTRS(0, 0, 0, 0, 0, 0);
+    b.push(new THREE.Matrix4().makeRotationX(a));
+    b.box(0, 0, 0, 0.02, k * 0.9, k * 0.07, s);
+    // Flukes: a bar across the lower end, stock across the upper end.
+    b.box(0, -k * 0.4, 0, 0.02, k * 0.07, k * 0.34, s);
+    b.box(0, k * 0.36, 0, 0.02, k * 0.06, k * 0.22, s);
+    b.pop();
+    b.pop();
+  }
+  // Crescent (thick arc) and star (small diamond) above.
+  for (let i = 0; i < 5; i++) {
+    const t = (i / 4 - 0.5) * 2.2;
+    b.box(0, k * 0.62 + Math.cos(t) * k * 0.1, Math.sin(t) * k * 0.14, 0.02, k * 0.06, k * 0.07, s);
+  }
+  b.box(0, k * 0.8, 0, 0.02, k * 0.08, k * 0.08, s);
+  b.pop();
+}
+
+/** Horizontal paint band around a planform (walls only), e.g. sheer stripes or a boot-top. */
+export function band(b: MeshBuilder, poly: readonly P2[], y0: number, h: number, s: SurfaceSpec, grow = 0.02): void {
+  prism(b, inflate(poly, grow), y0, h, s, null, null, 50);
+}
+
+/**
+ * Stripe that follows a hull's sheer on both sides: from z0 to z1, `off` metres relative to the deck edge (negative =
+ * below it), `h` tall, standing `grow` proud of the side plating.
+ */
+export function sheerBand(b: MeshBuilder, hb: (z: number) => number, deckY: (z: number) => number, z0: number, z1: number, n: number, off: number, h: number, s: SurfaceSpec, grow = 0.015): void {
+  const a = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const d = new THREE.Vector3();
+  const e = new THREE.Vector3();
+  const f = new THREE.Vector3();
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < n; i++) {
+      const za = z0 + ((z1 - z0) * i) / n;
+      const zb = z0 + ((z1 - z0) * (i + 1)) / n;
+      const xa = side * (hb(za) + grow);
+      const xb = side * (hb(zb) + grow);
+      a.set(xa, deckY(za) + off, za);
+      c.set(xb, deckY(zb) + off, zb);
+      d.set(xb, deckY(zb) + off + h, zb);
+      e.set(xa, deckY(za) + off + h, za);
+      // Outward: perpendicular to the edge in plan, on this side.
+      f.set((zb - za) * side, 0, -(xb - xa) * side);
+      if (f.x * side < 0) f.negate();
+      b.quadFacing(a, c, d, e, f, s);
+    }
+  }
+}
+
+/**
+ * Modern wheelhouse: vertical wall up to `hWall`, then an outward-raked window band (`flare` metres wider at the top on
+ * every side) of height `hGlass` with slim corner posts, as on tugs, pilot boats and sea buses. Returns the polygon of
+ * the top edge (for the roof slab).
+ */
+export function glassHouse(b: MeshBuilder, poly: readonly P2[], y0: number, hWall: number, hGlass: number, flare: number, wall: SurfaceSpec, glass: SurfaceSpec, frame: SurfaceSpec, near = true): P2[] {
+  prism(b, poly, y0, hWall, wall, null, null, 50);
+  const top = inflate(poly, flare);
+  const y1 = y0 + hWall;
+  const y2 = y1 + hGlass;
+  const n = poly.length;
+  const sign = signedArea(poly) >= 0 ? 1 : -1;
+  const a = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const d = new THREE.Vector3();
+  const e = new THREE.Vector3();
+  const f = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ne = edgeNormal(poly, i, sign);
+    a.set(poly[i].x, y1, poly[i].z);
+    c.set(poly[j].x, y1, poly[j].z);
+    d.set(top[j].x, y2, top[j].z);
+    e.set(top[i].x, y2, top[i].z);
+    f.set(ne.x, flare / Math.max(hGlass, 1e-3), ne.z).normalize();
+    b.quadFacing(a, c, d, e, f, glass);
+    if (near) b.tube(new THREE.Vector3(poly[i].x, y1, poly[i].z), new THREE.Vector3(top[i].x, y2, top[i].z), 0.06, 4, frame);
+  }
+  if (near) {
+    // Sill and header rails.
+    band(b, poly, y1 - 0.08, 0.1, frame, 0.03);
+  }
+  return top;
 }

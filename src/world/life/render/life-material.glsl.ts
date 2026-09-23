@@ -99,23 +99,27 @@ LifeSurf lifeSurface(inout vec3 albedo) {
   float grime = fbm2(vec2(along * 0.45, op.y * 0.9) + seed * 13.0, 3);
 
   if (det == 1) {
-    // Steel plating: seams, rust streaks from the deck edge and scuppers, waterline slime, antifouling.
+    // Steel plating: seams (bump only), gentle tonal variation, sparse rust runs, dark boot-top, antifouling below.
     float seamH = 1.0 - smoothstep(0.012, 0.04, lifeLine(op.y - 0.35, 2.6));
     float seamV = 1.0 - smoothstep(0.012, 0.04, lifeLine(along, 8.5));
     s.bump = (seamH + seamV) * 0.004 * fine;
-    float streak = pow(vnoise2(vec2(along * 1.7, op.y * 0.05) + seed * 7.0), 4.0);
-    streak *= smoothstep(-0.2, 6.0, op.y) * (0.35 + 1.4 * weather);
-    vec3 rust = vec3(0.16, 0.055, 0.02);
-    albedo = mix(albedo, rust, clamp(streak * 1.6, 0.0, 0.75));
-    float blotch = smoothstep(0.62, 0.8, fbm2(vec2(along * 0.25, op.y * 0.5) + seed * 3.1, 4)) * weather;
-    albedo = mix(albedo, rust * 1.2, blotch * 0.7);
-    albedo *= 0.9 + 0.2 * grime;
-    float wl = smoothstep(1.1, 0.0, op.y) * smoothstep(-0.25, 0.1, op.y);
-    albedo = mix(albedo, albedo * vec3(0.45, 0.5, 0.38), wl * (0.35 + 0.5 * vnoise2(vec2(along * 0.8, 3.0))));
+    albedo *= 0.94 + 0.1 * grime;
+    float cellA = floor(along / 1.9);
+    float present = step(1.0 - 0.3 * weather, hash12(vec2(cellA, seed * 91.0 + 1.3)));
+    float xin = fract(along / 1.9) - 0.5 - (hash12(vec2(cellA, seed * 13.0 + 7.1)) - 0.5) * 0.6;
+    float width = 0.05 + 0.1 * hash12(vec2(cellA, 3.1));
+    float runs = smoothstep(0.42, 0.72, vnoise2(vec2(cellA * 3.7, op.y * 0.16 + seed * 5.0)));
+    float streak = present * (1.0 - smoothstep(width * 0.3, width, abs(xin) * 1.9)) * runs * smoothstep(0.3, 1.2, op.y);
+    vec3 rust = vec3(0.19, 0.075, 0.03);
+    albedo = mix(albedo, rust, streak * (0.3 + 0.45 * weather));
+    float blotch = smoothstep(0.7, 0.86, fbm2(vec2(along * 0.16, op.y * 0.4) + seed * 3.1, 4)) * smoothstep(0.45, 1.0, weather);
+    albedo = mix(albedo, rust * 1.15, blotch * 0.4);
+    float boot = smoothstep(-0.03, 0.02, op.y) * (1.0 - smoothstep(0.4, 0.47, op.y));
+    albedo = mix(albedo, vec3(0.017, 0.019, 0.021) * (0.9 + 0.2 * grime), boot * 0.94);
     float af = smoothstep(0.03, -0.03, op.y);
     vec3 antifoul = vec3(0.26, 0.05, 0.035) * (0.8 + 0.35 * grime);
     albedo = mix(albedo, antifoul, af);
-    s.rough = mix(s.rough + (grime - 0.5) * 0.25 + streak * 0.3, 0.75, af);
+    s.rough = mix(s.rough + (grime - 0.5) * 0.15 + streak * 0.25, 0.75, max(af, boot * 0.6));
     s.metal = mix(s.metal, 0.0, max(af, streak));
   } else if (det == 2) {
     // Corrugated container walls: trapezoid ribs every 0.28 m (sides) / 0.3 m (doors), dents and dirt.

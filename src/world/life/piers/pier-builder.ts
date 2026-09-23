@@ -145,14 +145,26 @@ function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp
       hipRoof(b, 0, DECK_Y + h + 7.8, tz, 5.2, 5.2, 4.2, surf(0x4e5357, { roughness: 0.45, metalness: 0.6 }));
     }
   } else if (style === 'modern') {
-    const hallW = F * 0.85;
-    const h = 5.2;
+    // Steel-and-glass pavilion (Beşiktaş, Kabataş, İDO piers): white steel frame, light glazing between slim mullions,
+    // a thin cantilevered roof over the boarding apron.
+    const hallW = F * 0.8;
+    const h = 5.0;
     const hall = rect(0, hallZ, hallW, hallD);
-    prism(b, hall, DECK_Y, h, surf(0x2a3238, { roughness: 0.2, metalness: 0.6 }), null);
-    windowsOnPolygon(b, hall, DECK_Y, { surf: glass, sill: 0.25, height: h - 0.6, width: 2.2, pitch: 2.4, margin: 0.2 });
-    const roofPoly = rect(0, (hallZ - hallD / 2 + R) / 2, hallW + 3, R - (hallZ - hallD / 2) + 1);
-    slab(b, roofPoly, DECK_Y + h + 0.5, 0.55, surf(0xcfd2d2, { roughness: 0.6, metalness: 0.3 }), surf(0xdadcdc, { roughness: 0.4, metalness: 0.5 }), surf(0xbfc3c3, { roughness: 0.7 }));
-    for (let x = -hallW / 2; x <= hallW / 2 + 0.1; x += hallW / 3) b.cylinder(x, DECK_Y, R - 0.8, 0.18, 0.18, h + 0.1, 8, surf(STEEL, { roughness: 0.4, metalness: 0.7 }), false);
+    const frame = surf(0xe3e5e2, { roughness: 0.45, metalness: 0.25, detail: Detail.Super });
+    const glazing = surf(0x6b8390, { roughness: 0.06, metalness: 0.1, emit: Emit.Cabin, detail: Detail.Glass });
+    prism(b, hall, DECK_Y, 0.9, frame, null);
+    prism(b, hall, DECK_Y + h - 0.7, 0.7, frame, null);
+    prism(b, inflate(hall, -0.12), DECK_Y + 0.9, h - 1.6, glazing, null);
+    const bays = Math.round(hallW / 2.6);
+    for (const z of [hallZ - hallD / 2, hallZ + hallD / 2]) {
+      for (let k = 0; k <= bays; k++) b.box(-hallW / 2 + (k * hallW) / bays, DECK_Y + h / 2, z, 0.22, h, 0.3, frame);
+    }
+    for (const sx of [-1, 1]) {
+      for (let z = hallZ - hallD / 2; z <= hallZ + hallD / 2 + 0.01; z += hallD / Math.round(hallD / 2.6)) b.box(sx * hallW / 2, DECK_Y + h / 2, z, 0.3, h, 0.22, frame);
+    }
+    const roofPoly = rect(0, (hallZ - hallD / 2 + R) / 2, hallW + 4, R - (hallZ - hallD / 2) + 1.5);
+    slab(b, roofPoly, DECK_Y + h + 0.45, 0.4, surf(0xc9ccca, { roughness: 0.6, metalness: 0.3, detail: Detail.Deck }), surf(0xf0f1ef, { roughness: 0.4, metalness: 0.3 }), surf(0xd9dbd8, { roughness: 0.7 }));
+    for (let x = -hallW / 2; x <= hallW / 2 + 0.1; x += hallW / 3) b.cylinder(x, DECK_Y, R - 0.8, 0.18, 0.18, h + 0.1, 8, surf(0xe8e9e6, { roughness: 0.4, metalness: 0.4 }), false);
     b.box(0, DECK_Y + h - 0.4, R + 0.2, Math.min(hallW * 0.55, 13), 0.9, 0.2, surf(SIGN_BLUE, { roughness: 0.4, emit: Emit.Sign }));
     for (let x = -hallW / 2 + 2; x < hallW / 2; x += 4) b.box(x, DECK_Y + h - 0.05, (hallZ + R) / 2 + 2, 0.6, 0.08, 0.6, surf(0xfff1d6, { roughness: 0.3, emit: Emit.Lamp }));
   } else {

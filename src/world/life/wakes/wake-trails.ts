@@ -3,10 +3,13 @@ import { RenderLayers } from '../../../core/contracts';
 import { WAKE_FRAGMENT, WAKE_VERTEX } from './wake-shaders';
 
 const SAMPLES = 40;
+/** Lateral subdivisions of each ribbon (keeps the (distance, offset) mapping close to bilinear on trapezoids). */
+const COLUMNS = 8;
 
 interface Trail {
   length: number;
   beam: number;
+  planing: number;
   spacing: number;
   head: number;
   count: number;
@@ -29,7 +32,7 @@ export class WakeTrails {
   private readonly timeU = { value: 0 };
 
   constructor(readonly capacity: number) {
-    const w = SAMPLES + 1;
+    const w = SAMPLES + 2;
     this.data = new Float32Array(w * capacity * 4);
     this.tex = new THREE.DataTexture(this.data, w, capacity, THREE.RGBAFormat, THREE.FloatType);
     this.tex.magFilter = THREE.NearestFilter;
@@ -37,22 +40,24 @@ export class WakeTrails {
     this.tex.generateMipmaps = false;
     this.tex.needsUpdate = true;
 
-    const verts = capacity * SAMPLES * 2;
+    const cols = COLUMNS;
+    const perRow = cols + 1;
+    const verts = capacity * SAMPLES * perRow;
     const aTrail = new Float32Array(verts * 3);
     const index: number[] = [];
     let k = 0;
     for (let r = 0; r < capacity; r++) {
       for (let i = 0; i < SAMPLES; i++) {
-        for (const side of [-1, 1]) {
+        for (let c = 0; c <= cols; c++) {
           aTrail[k * 3] = r;
           aTrail[k * 3 + 1] = i;
-          aTrail[k * 3 + 2] = side;
+          aTrail[k * 3 + 2] = (c / cols) * 2 - 1;
           k++;
         }
         if (i < SAMPLES - 1) {
-          const a = (r * SAMPLES + i) * 2;
-          const b = a + 2;
-          index.push(a, b, a + 1, a + 1, b, b + 1);
+          const a = (r * SAMPLES + i) * perRow;
+          const b = a + perRow;
+          for (let c = 0; c < cols; c++) index.push(a + c, b + c, a + c + 1, a + c + 1, b + c, b + c + 1);
         }
       }
     }
@@ -79,10 +84,10 @@ export class WakeTrails {
     this.mesh.layers.set(RenderLayers.NoReflection);
   }
 
-  /** Registers a trail; returns its index or -1 when the pool is full. */
-  add(length: number, beam: number): number {
+  /** Registers a trail (planing = 1 for planing hulls); returns its index or -1 when the pool is full. */
+  add(length: number, beam: number, planing = 0): number {
     if (this.trails.length >= this.capacity) return -1;
-    this.trails.push({ length, beam, spacing: Math.max(8, Math.min(length / 2.5, 80)), head: 0, count: 0, s: 0, lastX: 0, lastZ: 0, active: false });
+    this.trails.push({ length, beam, planing, spacing: Math.max(6, Math.min(length / 2.5, 80)), head: 0, count: 0, s: 0, lastX: 0, lastZ: 0, active: false });
     return this.trails.length - 1;
   }
 
@@ -92,11 +97,20 @@ export class WakeTrails {
     this.tex.needsUpdate = true;
   }
 
+  /** Drops a trail's history (after going astern or swapping ends): the next feed starts a fresh wake. */
+  restart(index: number): void {
+    const t = this.trails[index];
+    if (!t) return;
+    t.active = false;
+    const prm = index * (SAMPLES + 2) * 4 + SAMPLES * 4;
+    this.data[prm + 3] = 0;
+  }
+
   /** Feeds the current bow position of a trail. */
   feed(index: number, bowX: number, bowZ: number, time: number): void {
     const t = this.trails[index];
     if (!t) return;
-    const w = SAMPLES + 1;
+    const w = SAMPLES + 2;
     const row = index * w * 4;
     if (!t.active) {
       t.active = true;
@@ -138,6 +152,7 @@ export class WakeTrails {
     this.data[prm + 1] = t.beam;
     this.data[prm + 2] = t.head;
     this.data[prm + 3] = t.count;
+    this.data[prm + 4] = t.planing;
   }
 
   /** Keeps the time stamp of a stationary trail's head fresh (no new samples). */

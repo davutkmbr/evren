@@ -9,9 +9,10 @@ attribute vec4 aRoad;
 attribute vec4 aLane;
 attribute vec4 aStyle;
 
-vec3 roadPoint(float i) {
+/* Road sample: centreline point (xyz) and hide weight (w, 1 inside the ?osm=1 slice). */
+vec4 roadSample(float i) {
   int ii = int(i + 0.5);
-  return texelFetch(uRoads, ivec2(ii % ${ROAD_TEX_WIDTH}, ii / ${ROAD_TEX_WIDTH}), 0).xyz;
+  return texelFetch(uRoads, ivec2(ii % ${ROAD_TEX_WIDTH}, ii / ${ROAD_TEX_WIDTH}), 0);
 }
 
 /* Position on the lane centre, unit travel direction (3D) and visibility (road-end fade x traffic volume). */
@@ -22,8 +23,10 @@ float carFrame(out vec3 pos, out vec3 fwd) {
   float i0 = floor(f);
   float fr = f - i0;
   float i1 = min(i0 + 1.0, aRoad.y - 1.0);
-  vec3 p0 = roadPoint(aRoad.x + i0);
-  vec3 p1 = roadPoint(aRoad.x + i1);
+  vec4 s0 = roadSample(aRoad.x + i0);
+  vec4 s1 = roadSample(aRoad.x + i1);
+  vec3 p0 = s0.xyz;
+  vec3 p1 = s1.xyz;
   vec3 c = mix(p0, p1, fr);
   vec3 t = p1 - p0;
   float tl = length(t);
@@ -32,7 +35,7 @@ float carFrame(out vec3 pos, out vec3 fwd) {
   pos = c + right * aLane.x * aLane.y;
   fwd = t * aLane.y;
   float edge = min(s, L - s);
-  return smoothstep(3.0, 30.0, edge) * step(aStyle.z, uTraffic);
+  return smoothstep(3.0, 30.0, edge) * step(aStyle.z, uTraffic) * (1.0 - mix(s0.w, s1.w, fr));
 }
 `;
 
