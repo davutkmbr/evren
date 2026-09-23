@@ -4,3 +4,9 @@ dist
 .claude/
 .DS_Store
 *.log
+
+# Compiled street tiles (npm run compile:world), published outside git
+public/world/
+
+# Licensed assets that must not be redistributed (MetaHuman, Mixamo)
+private-assets/

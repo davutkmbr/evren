@@ -33,8 +33,13 @@ procedural solution:
    (or a placeholder) so the work does not stall, and report the candidates as pending approval.
 3. After approval, record every integrated asset in `public/models/LICENSES.md` or `public/textures/LICENSES.md`.
 
-Already approved: the CC0 Poly Haven texture sets listed in `public/textures/LICENSES.md` and OpenStreetMap data
-(ODbL, attribution shown in the UI).
+Already approved: the CC0 Poly Haven texture sets listed in `public/textures/LICENSES.md`, OpenStreetMap data
+(ODbL, attribution shown in the UI), and MetaHuman characters + Mixamo animations for humans.
+
+**Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
+Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy
+them into `public/`, and never publish them in screenshots of their raw files; code and manifests may reference them
+by id. Their licences and sources are recorded in `.docs/assets/private-assets.md`.
 
 ## Shared machine (agents)
 

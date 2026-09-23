@@ -44,8 +44,12 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 - Walking: Rapier KinematicCharacterController | CharacterBody3D on Jolt.
 - Cars (S7): Rapier raycast vehicle | VehicleBody3D; the player's car joins the IDM traffic simulation as a leader.
 - Navigation and crowds: recast-navigation-js + DetourCrowd | NavigationServer3D with avoidance.
-- Humans: Quaternius Universal Base Characters + UAL clips (CC0, one rig) now; MPFB2 (CC0 base) for hero NPCs later.
-  Mixamo is dropped: its terms forbid distributing raw files, which a public MIT repo would do.
+- Humans (decided 2026-09-24): **MetaHuman** characters (free under $1 M revenue, usable in any engine since mid-2025)
+  for the player, hero NPCs and the crowd (low LODs), faces animated with MetaHuman Animator (video or audio to face,
+  incl. Turkish lip-sync); **Mixamo** mocap clips for body animation, retargeted to the MetaHuman skeleton in Blender.
+  Neither licence allows redistributing raw files, so they live in a private asset store (`private-assets/`, gitignored)
+  and only ship inside game builds; the public repo keeps code, manifests and CC0/CC-BY assets. The free CC0 candidates
+  (Rocketbox, MPFB2, Quaternius) looked dated or lacked animations (`.docs/assets/candidates/humans.md`).
 - Dialogue: ink (`story/*.ink`, inkjs | godot-ink), external functions for game actions, tags for camera/animation,
   Ink-Localiser line IDs (Turkish first, English), rule-matched barks for passers-by. No LLM NPCs.
 - Save: one versioned SaveDoc (context, district, interior, position, controlled entity, world flags, ink state),
@@ -103,5 +107,5 @@ Walking the whole city, entering every building, photoreal faces, voice acting, 
 ## Open decisions for the user
 
 - Look: grounded realism (real proportions, CC0 photo-scanned materials, CC0 humans at medium framing), judged on S2 renders.
-- Asset approvals before S1: Quaternius characters and UAL clips, Poly Haven / ambientCG materials and café props.
+- Asset approvals before S1: Poly Haven / ambientCG materials and café/street props (shortlists in `.docs/assets/candidates/`).
 - Story premise and tone (Turkish first, real streets and landmarks named, all businesses fictional).

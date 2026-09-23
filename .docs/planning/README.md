@@ -67,8 +67,8 @@ Decision: **hybrid**. Lighting and the world stay procedural; licence-clean exte
 | Google Photorealistic 3D Tiles | No | Usage limited to "map visualizations", caching/offline prohibited; lighting and shadows are baked into the photos, so the day/night cycle and dynamic lights cannot work; paid at scale. |
 | Overture Maps / OSM (building footprints, roads, roof shapes) | Yes | Real city fabric; ODbL, free; lighting stays ours. Attribution required. |
 | CC0 PBR textures (Poly Haven, ambientCG) | Yes | Close-range realism for facades, roof tiles, asphalt; no attribution required. |
-| Mixamo animations | No (was: rider) | Its terms forbid distributing the raw files, which a public MIT repo would do. Replaced by Quaternius UAL clips and characters (CC0). |
-| Quaternius / MPFB2 humans | Candidate (street track) | CC0 characters and animations on one rig; shortlisted for approval before S1. |
+| MetaHuman characters | Yes (humans, private store) | Modern realistic humans, free under $1 M revenue, usable in any engine; faces animated with MetaHuman Animator. Raw files stay in `private-assets/`, never in the public repo. |
+| Mixamo animations | Yes (body clips, private store) | Good mocap, free; its terms forbid distributing raw files, so they live in `private-assets/` and ship only inside builds. |
 | Music | Licensed | Well-known songs are copyrighted. Royalty-free licensed tracks or generated music with commercial rights; synthesized ambience as a fallback layer. |
 | Vehicle models | Procedural | They are small from dragon altitude; realism comes from traffic behaviour and lights, not the models. |
 
@@ -101,7 +101,7 @@ Order (since 24 September 2026): 01 (bugs and performance only) → 16 S0–S2 (
 decision) → S3–S5 (walk, enter and talk, the heart of Kadıköy) → S6 (sky to street, absorbs the tiling of 08/09 and the
 landing pads of 03/04) → S7 (drive) → S8 (chapter one). Flight-only phases 02 and 05–07 fit in between when they do not
 touch the street layer. Parked until the Kadıköy slice ships: 11, 12, 14, 15. Phase 10's rider becomes a CC0 human
-(Quaternius / MPFB2); Mixamo is dropped because its terms forbid distributing the raw files.
+(MetaHuman + Mixamo clips, kept in the private asset store).
 
 ## Working method
 
