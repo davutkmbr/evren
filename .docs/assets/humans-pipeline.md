@@ -240,7 +240,10 @@ quoted from the linked source.
 - [ ] 6. Sign in to **mixamo.com with your Adobe ID** and download:
       - X Bot "with skin" (T-pose);
       - the clip list "without skin", as FBX Binary at 30 fps, using "In Place" for locomotion.
-      Save them into `private-assets/mixamo/`.
+      Save them into `private-assets/mixamo/`. First clip set (Mixamo search terms; pick the closest match):
+      Breathing Idle, Standing Idle, Walking, Jogging, Running (the three with "In Place"), Left Turn 90,
+      Right Turn 90, Stand To Sit, Sitting Idle, Sit To Stand, Sitting Talking, Talking, Drinking, Talking On Phone,
+      Looking Around, Opening Door, Waving.
 - [ ] 7. Provide 2–3 Turkish dialogue lines as WAV files for the audio-to-face test.
 - [ ] 8. Approve the POC (a hero speaking at 2 m, and 200 crowd instances in both runtimes) before bulk production.
       Add the log rows in `private-assets.md`.
