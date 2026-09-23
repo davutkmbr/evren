@@ -4,8 +4,9 @@ import { KEY_LIGHT_HEIGHTS } from './params';
 
 /**
  * Global uniforms added by the sky module (declared in src/render/shaders/atmosphere.glsl.ts).
- * They are registered as soon as the shared GLSL module loads (see atmosphere.glsl.ts) so every program always has a
- * bound sampler, even in sandboxes that do not run the sky system (uAtmoState.y = 0 selects the fallback fog there).
+ * They are registered while the shared GLSL module loads (atmosphere.glsl.ts imports this module) so every program
+ * always has them and every sampler declared in SHARED_GLSL (uSkyViewLUT, uCloudShadowMap) has a 1x1 default texture,
+ * even in sandboxes that do not run the sky or clouds systems (uAtmoState.y = 0 selects the fallback fog there).
  */
 function createPlaceholderLut(): THREE.DataTexture {
   const data = new Uint16Array(4);
@@ -42,8 +43,21 @@ export function ensureCloudShadowSampler(): void {
   }
 }
 
+/**
+ * False while core/uniforms is still being evaluated: it imports SHARED_GLSL, so when it is the first module of the
+ * import cycle core/uniforms -> render/shaders -> atmosphere.glsl -> sky/globals, this module runs before
+ * `globalUniforms` is initialised (temporal dead zone).
+ */
+function coreUniformsReady(): boolean {
+  try {
+    return typeof globalUniforms === 'object' && globalUniforms !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function registerAtmosphereGlobals(): void {
-  if (registered) {
+  if (registered || !coreUniformsReady()) {
     return;
   }
   registered = true;
@@ -62,4 +76,11 @@ export function registerAtmosphereGlobals(): void {
   if (!globalUniforms.uCloudShadowXform) {
     registerGlobalUniform('uCloudShadowXform', { value: new THREE.Vector4(0, 0, 1 / 32000, 0) });
   }
+}
+
+// Synchronous registration at load time. In the cycle case above it runs as soon as the module graph has finished
+// evaluating (a microtask), which is before any code can create a renderer and compile a program.
+registerAtmosphereGlobals();
+if (!registered) {
+  queueMicrotask(registerAtmosphereGlobals);
 }

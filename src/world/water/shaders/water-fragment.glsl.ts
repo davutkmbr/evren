@@ -64,20 +64,27 @@ vec2 projectRefl(vec3 p, out float w) {
   return q.xy / max(q.w, 1e-4);
 }
 
-// Fraction of the four texels around uv where the mirror saw only sky (bilinear coverage, avoids blocky silhouettes).
-float reflSkyCoverage(vec2 uv) {
-  vec2 ts = vec2(textureSize(uReflDepth, 0));
+// Cubic B-spline reconstruction of the mirror at mip 0 (4 bilinear taps, GPU Gems 2 ch. 20). The mirror renders at a
+// fraction of the screen resolution and calm water magnifies it 2-3x: bilinear magnification is only C0, so the texel
+// grid shows as stair steps along every silhouette. The B-spline is C2 and never negative (no halos, no ringing on
+// the premultiplied coverage).
+vec4 mirrorBSpline(vec2 uv) {
+  vec2 ts = vec2(textureSize(uReflTex, 0));
   vec2 st = uv * ts - 0.5;
-  ivec2 i0 = ivec2(floor(st));
-  vec2 f = fract(st);
-  float acc = 0.0;
-  for (int k = 0; k < 4; k++) {
-    ivec2 o = ivec2(k & 1, k >> 1);
-    ivec2 c = clamp(i0 + o, ivec2(0), ivec2(ts) - 1);
-    float sky = texelFetch(uReflDepth, c, 0).r <= 0.0 ? 1.0 : 0.0;
-    acc += sky * (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
-  }
-  return acc;
+  vec2 i = floor(st);
+  vec2 f = st - i;
+  vec2 f2 = f * f;
+  vec2 f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+  vec2 w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1;
+  vec2 g1 = w2 + w3;
+  vec2 p0 = (i - 0.5 + w1 / g0) / ts;
+  vec2 p1 = (i + 1.5 + w3 / g1) / ts;
+  return (textureLod(uReflTex, vec2(p0.x, p0.y), 0.0) * g0.x + textureLod(uReflTex, vec2(p1.x, p0.y), 0.0) * g1.x) * g0.y +
+         (textureLod(uReflTex, vec2(p0.x, p1.y), 0.0) * g0.x + textureLod(uReflTex, vec2(p1.x, p1.y), 0.0) * g1.x) * g1.y;
 }
 
 // Mirror-space distance from the water point to what the flat mirror sees, bilinearly filtered by hand
@@ -292,12 +299,23 @@ void main() {
       float cone = 2.0 * alpha;
       vec2 gUp = upUv * (cone / 0.05);
       vec2 gSide = vec2(-upUv.y, upUv.x) * (cone / 0.05) * mix(0.35, 1.0, clamp(V.y * 2.0, 0.0, 1.0));
-      vec3 planar = textureGrad(uReflTex, ruv, flatDx + gSide, flatDy + gUp).rgb;
+      // Premultiplied by geometry coverage (see reflection.ts): filtered with the same footprint as the colour, so
+      // silhouettes against the sky stay smooth at any mip level.
+      vec2 gx = flatDx + gSide;
+      vec2 gy = flatDy + gUp;
+      // Footprint in mirror texels: magnified (< 1) -> cubic reconstruction, minified -> mips + anisotropic filtering.
+      vec2 rts = vec2(textureSize(uReflTex, 0));
+      float texels = max(length(gx * rts), length(gy * rts));
+      float cubic = 1.0 - smoothstep(0.9, 1.6, texels);
+      vec4 mirror = cubic < 1.0 ? textureGrad(uReflTex, ruv, gx, gy) : vec4(0.0);
+      if (cubic > 0.0) {
+        mirror = mix(mirror, mirrorBSpline(ruv), cubic);
+      }
       // Bit-level test: fast-math GPU compilers fold x != x away, and one non-finite texel would spread through the mips.
-      planar = badFloat3(planar) > 0.0 ? reflection : clamp(planar, vec3(0.0), vec3(1e4));
+      bool badMirror = badFloat3(mirror.rgb) + badFloat(mirror.a) > 0.0;
+      float cover = badMirror ? 0.0 : clamp(mirror.a, 0.0, 1.0);
       // Sky seen in the mirror comes from skyReflection() (no sun/moon disks: the GGX glitter below reflects those).
-      float skyHit = reflSkyCoverage(ruv);
-      planar = mix(planar, reflection, skyHit);
+      vec3 planar = (badMirror ? vec3(0.0) : clamp(mirror.rgb, vec3(0.0), vec3(1e4))) + reflection * (1.0 - cover);
       float lum = max(max(planar.r, planar.g), planar.b);
       planar *= lum > 60.0 ? (60.0 + 10.0 * log(lum / 60.0)) / lum : 1.0;
       vec2 e = smoothstep(vec2(0.0), vec2(0.035), ruv) * smoothstep(vec2(1.0), vec2(0.965), ruv);

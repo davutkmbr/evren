@@ -10,6 +10,8 @@ const BINS = 128;
 const LOG_MIN = -18;
 const LOG_MAX = 18;
 const KEY = 0.18;
+/** Metered log2 luminance at or below this is an exactly black texel (the meter clamps luminance to 1e-7). */
+const BLACK_LOG = -22;
 
 export interface ExposureTuning {
   /** Stops of compensation (?ev=). */
@@ -49,6 +51,10 @@ export class AutoExposure {
   averageLog = Number.NaN;
   targetEv = 0;
   fixedExposure: number | null = null;
+  /** Weighted fraction of the last measurement that was exactly black (black-frame diagnostics). */
+  blackFraction = 0;
+  /** Number of measurements taken so far (lets callers react to each new one). */
+  measurements = 0;
 
   private ev = 0;
   private readonly target: THREE.WebGLRenderTarget;
@@ -59,6 +65,8 @@ export class AutoExposure {
   private snapCount = 3;
   private hasMeasurement = false;
   private pendingMeasurement = false;
+  /** Incremented by snap(): readbacks requested before it show the view before the jump. */
+  private generation = 0;
 
   constructor(gl: WebGL2RenderingContext) {
     this.target = createColorTarget(METER_W, METER_H, { name: 'post.meter', filter: THREE.NearestFilter });
@@ -82,6 +90,7 @@ export class AutoExposure {
   /** Jump straight to the target on the next measurements (teleports, time jumps). */
   snap(): void {
     this.snapCount = 3;
+    this.generation++;
   }
 
   get meterTexture(): THREE.Texture {
@@ -91,7 +100,7 @@ export class AutoExposure {
   meter(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture): void {
     this.material.uniforms.tSource.value = source;
     fs.draw(renderer, this.material, this.target);
-    this.readback.request(renderer, this.target);
+    this.readback.request(renderer, this.target, this.generation);
   }
 
   /** Collects finished readbacks. Call at the start of a frame (see AsyncReadback). */
@@ -102,20 +111,31 @@ export class AutoExposure {
   }
 
   update(realDt: number): void {
-    if (this.pendingMeasurement) {
-      this.pendingMeasurement = false;
-      this.averageLog = this.measure(this.readback.data);
-      this.targetEv = this.computeTargetEv(this.averageLog);
-      if (!this.hasMeasurement || this.snapCount > 0) {
-        this.ev = this.targetEv;
-        this.snapCount = Math.max(0, this.snapCount - 1);
-        this.hasMeasurement = true;
+    // Results requested before the last snap() still show the view before the jump: snapping to one of those would
+    // expose the new view for the old one (a dark or blown-out flash right after a teleport).
+    if (this.pendingMeasurement && this.readback.dataTag === this.generation) {
+      const averageLog = this.measure(this.readback.data);
+      this.measurements++;
+      const targetEv = this.computeTargetEv(averageLog);
+      // A meter without a single valid texel (or a non-finite input) keeps the previous target.
+      if (Number.isFinite(targetEv)) {
+        this.averageLog = averageLog;
+        this.targetEv = targetEv;
+        if (!this.hasMeasurement || this.snapCount > 0) {
+          this.ev = targetEv;
+          this.snapCount = Math.max(0, this.snapCount - 1);
+          this.hasMeasurement = true;
+        }
       }
     }
+    this.pendingMeasurement = false;
     if (this.hasMeasurement) {
       const dt = Math.min(Math.max(realDt, 0), 0.25);
       const tau = this.targetEv > this.ev ? this.tuning.tauUp : this.tuning.tauDown;
       this.ev += (this.targetEv - this.ev) * (1 - Math.exp(-dt / tau));
+    }
+    if (!Number.isFinite(this.ev)) {
+      this.ev = Number.isFinite(this.targetEv) ? this.targetEv : 0;
     }
     this.exposure = this.fixedExposure ?? Math.pow(2, this.ev);
   }
@@ -124,6 +144,7 @@ export class AutoExposure {
     const hist = this.histogram;
     hist.fill(0);
     let total = 0;
+    let black = 0;
     const scale = BINS / (LOG_MAX - LOG_MIN);
     for (let i = 0, n = METER_W * METER_H; i < n; i++) {
       const lg = data[i * 4];
@@ -135,9 +156,13 @@ export class AutoExposure {
       const w = this.weights[i];
       hist[bin] += w;
       total += w;
+      if (lg <= BLACK_LOG) {
+        black += w;
+      }
     }
+    this.blackFraction = total > 0 ? black / total : 0;
     if (total <= 0) {
-      return 0;
+      return Number.NaN;
     }
     const lo = total * this.tuning.lowPercent;
     const hi = total * this.tuning.highPercent;

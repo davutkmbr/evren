@@ -170,19 +170,24 @@ export interface WaterQuality {
   planar: boolean;
   /** Planar reflection resolution relative to the internal render size. */
   reflectionScale: number;
+  /**
+   * MSAA samples of the planar reflection. The mirror renders at a fraction of the screen resolution and is magnified
+   * 2-3x on calm water, so aliased silhouettes (shore, bridge deck, towers against the sky) would show as stair steps.
+   */
+  reflectionSamples: number;
 }
 
 export function waterQualityFor(preset: QualityPreset, reflections: 'sky' | 'planar'): WaterQuality {
   switch (preset) {
     case 'low':
-      return { segments: 112, bands: 7, planar: reflections === 'planar', reflectionScale: 0.4 };
+      return { segments: 112, bands: 7, planar: reflections === 'planar', reflectionScale: 0.4, reflectionSamples: 0 };
     case 'medium':
-      return { segments: 160, bands: 9, planar: reflections === 'planar', reflectionScale: 0.5 };
+      return { segments: 160, bands: 9, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 2 };
     case 'high':
-      return { segments: 224, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.5 };
+      return { segments: 224, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 4 };
     case 'ultra':
     default:
-      return { segments: 288, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.6 };
+      return { segments: 288, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.6, reflectionSamples: 4 };
   }
 }
 

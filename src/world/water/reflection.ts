@@ -3,6 +3,11 @@
  * The mirror camera renders RenderLayers.Default only (small detail lives on NoReflection), with an oblique near
  * plane on the water (Lengyel) adapted to three's reversed-Z projection (clip z in [0, w], near -> w, far -> 0).
  * The result is mip-mapped so the water shader can blur it by the unresolved wave roughness.
+ * The texture is premultiplied by geometry coverage: rgb = 0 and alpha = 0 where the mirror only saw sky (the water
+ * shader composites its own sky reflection there), alpha = 1 on geometry. Coverage therefore goes through the same
+ * mip/anisotropic filtering as the colour, so silhouettes against the sky are antialiased at the lookup footprint
+ * instead of being rebuilt from a binary depth test (texel-sized stair steps). With MSAA the coverage is resolved per
+ * sample as well, which antialiases the silhouettes themselves.
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../core/contracts';
@@ -26,6 +31,92 @@ const _ndc = [
   [1, 1],
 ] as const;
 
+/**
+ * Full-screen triangles on the far plane, drawn last in the mirror render (same render call, so with MSAA they run
+ * per sample before the resolve). They are depth-tested against the mirror's depth buffer (never sampled, so no
+ * feedback loop with the attached depth texture): `sky` clears colour + alpha where nothing was drawn, `covered` forces
+ * alpha = 1 (colour kept) wherever something was drawn, whatever alpha its material wrote.
+ */
+const COVERAGE_VERTEX = /* glsl */ `
+uniform float uFarDepth;
+void main() {
+  gl_Position = vec4(position.xy, uFarDepth, 1.0);
+}
+`;
+const COVERAGE_FRAGMENT = /* glsl */ `
+uniform vec4 uValue;
+void main() {
+  gl_FragColor = uValue;
+}
+`;
+
+class CoverageMeshes {
+  readonly group = new THREE.Group();
+  private readonly geometry = new THREE.BufferGeometry();
+  private readonly farDepth = { value: 0 };
+  private readonly sky: THREE.ShaderMaterial;
+  private readonly covered: THREE.ShaderMaterial;
+  private reversed: boolean | null = null;
+
+  constructor() {
+    this.group.name = 'water-reflection-coverage';
+    this.geometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    const make = (value: THREE.Vector4, blend: Partial<THREE.ShaderMaterialParameters>): THREE.ShaderMaterial =>
+      new THREE.ShaderMaterial({
+        name: 'water.reflectionCoverage',
+        vertexShader: COVERAGE_VERTEX,
+        fragmentShader: COVERAGE_FRAGMENT,
+        uniforms: { uFarDepth: this.farDepth, uValue: { value } },
+        // Transparent + highest renderOrder: drawn after everything else in the mirror.
+        transparent: true,
+        depthTest: true,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false,
+        ...blend,
+      });
+    this.sky = make(new THREE.Vector4(0, 0, 0, 0), { blending: THREE.NoBlending });
+    // Colour untouched (0 * src + 1 * dst), alpha replaced (1 * src + 0 * dst).
+    this.covered = make(new THREE.Vector4(0, 0, 0, 1), {
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.ZeroFactor,
+      blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.ZeroFactor,
+    });
+    [this.sky, this.covered].forEach((material, i) => {
+      const mesh = new THREE.Mesh(this.geometry, material);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 1e9 + i;
+      mesh.matrixAutoUpdate = false;
+      this.group.add(mesh);
+    });
+    this.group.matrixAutoUpdate = false;
+  }
+
+  /** Depth state for the renderer's depth convention (call before the mirror render). */
+  prepare(renderer: THREE.WebGLRenderer): void {
+    const reversed = renderer.state.buffers.depth.getReversed();
+    if (reversed === this.reversed) {
+      return;
+    }
+    this.reversed = reversed;
+    // Cleared (sky) depth is the far plane: 0 with reversed-Z, 1 otherwise. three remaps depth functions for a
+    // reversed buffer (ReversedDepthFuncs), so pick the logical function that yields the GL test needed:
+    // sky = EQUAL to the far value, covered = anything nearer than it (GreaterDepth maps to LESS when reversed).
+    this.farDepth.value = reversed ? 0 : 1;
+    this.sky.depthFunc = reversed ? THREE.NotEqualDepth : THREE.EqualDepth;
+    this.covered.depthFunc = THREE.GreaterDepth;
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.sky.dispose();
+    this.covered.dispose();
+  }
+}
+
 export class PlanarReflection {
   readonly camera = new THREE.PerspectiveCamera();
   /** World -> reflection texture uv (xy/w), without the oblique clip. */
@@ -37,8 +128,12 @@ export class PlanarReflection {
   fovScale = 1.12;
   private width = 0;
   private height = 0;
+  private readonly coverage = new CoverageMeshes();
+  /** MSAA samples of the mirror target (antialiased silhouettes and coverage, see WaterQuality.reflectionSamples). */
+  private samples: number;
 
-  constructor(anisotropy: number) {
+  constructor(anisotropy: number, samples = 0) {
+    this.samples = samples;
     this.camera.layers.set(RenderLayers.Default);
     this.camera.matrixAutoUpdate = true;
     // Mark the mirror camera as reversed-Z up front: the renderer would otherwise rebuild its projection (and drop
@@ -63,24 +158,26 @@ export class PlanarReflection {
       magFilter: THREE.LinearFilter,
       wrapS: THREE.ClampToEdgeWrapping,
       wrapT: THREE.ClampToEdgeWrapping,
-      samples: 0,
+      // Multisampled: the coverage pass then runs per sample, so the resolved alpha is the antialiased coverage.
+      samples: this.samples,
     });
     target.texture.name = 'water.reflection';
     target.texture.anisotropy = anisotropy;
     return target;
   }
 
-  setSize(width: number, height: number, anisotropy: number): void {
+  setSize(width: number, height: number, anisotropy: number, samples = this.samples): void {
     const w = Math.max(16, Math.round(width / 8) * 8);
     const h = Math.max(16, Math.round(height / 8) * 8);
     // Dynamic resolution moves the internal size in small steps; only reallocate for a real change (the mirror
     // projection is resolution independent, a slightly larger/smaller target is just a little more/less sharp).
     const same = (a: number, b: number): boolean => b > 0 && Math.abs(a - b) <= b * 0.12;
-    if (same(w, this.width) && same(h, this.height)) {
+    if (same(w, this.width) && same(h, this.height) && samples === this.samples) {
       return;
     }
     this.width = w;
     this.height = h;
+    this.samples = samples;
     this.target.dispose();
     this.target = this.createTarget(w, h, anisotropy);
   }
@@ -145,18 +242,26 @@ export class PlanarReflection {
     const previousAutoClear = renderer.autoClear;
     const wasVisible = hide.visible;
     hide.visible = false;
-    renderer.autoClear = true;
-    renderer.setRenderTarget(this.target);
-    renderer.state.buffers.depth.setMask(true);
-    renderer.clear(true, true, false);
-    renderer.render(scene, cam);
-    renderer.setRenderTarget(previousTarget);
-    renderer.autoClear = previousAutoClear;
-    hide.visible = wasVisible;
-    this.valid = true;
+    this.coverage.prepare(renderer);
+    scene.add(this.coverage.group);
+    try {
+      renderer.autoClear = true;
+      renderer.setRenderTarget(this.target);
+      renderer.state.buffers.depth.setMask(true);
+      renderer.clear(true, true, false);
+      renderer.render(scene, cam);
+      this.valid = true;
+    } finally {
+      // The coverage triangles cover the whole far plane: left in the scene they would black out the main view's sky.
+      scene.remove(this.coverage.group);
+      renderer.setRenderTarget(previousTarget);
+      renderer.autoClear = previousAutoClear;
+      hide.visible = wasVisible;
+    }
   }
 
   dispose(): void {
     this.target.dispose();
+    this.coverage.dispose();
   }
 }

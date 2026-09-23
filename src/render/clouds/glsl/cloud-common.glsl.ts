@@ -372,10 +372,18 @@ vec3 cloudAmbientLight(vec3 p, float hFrac, vec3 skyAmb) {
 }
 
 /* Cirrus sheet: returns opacity; rgb radiance written to col (before aerial perspective). */
-float cloudCirrus(vec3 pc, vec3 rd, float cosT, vec3 skyAmb, out vec3 col) {
+/* footprint: width (m) of the pixel cone where the ray meets the cirrus shell. */
+float cloudCirrus(vec3 pc, vec3 rd, float cosT, vec3 skyAmb, float footprint, out vec3 col) {
   col = vec3(0.0);
-  vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * (pc.xz - uCloudWind2.zw) * CLOUD_INV_CIRRUS;
-  vec2 c = texture(uCloudCirrus, q).rg;
+  mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+  vec2 q = rot * (pc.xz - uCloudWind2.zw) * CLOUD_INV_CIRRUS;
+  /* Explicit filter footprint: this runs in divergent control flow, where implicit derivatives are undefined (random
+     mip levels = a speckled band of cirrus along the horizon, most visible when it is lit at twilight). The pixel cone
+     is stretched by 1 / |rd.y| along the ray's horizontal direction on the (flat) cirrus shell. */
+  vec2 hdir = dot(rd.xz, rd.xz) > 1e-8 ? normalize(rd.xz) : vec2(1.0, 0.0);
+  vec2 gAlong = rot * (hdir * (footprint / max(abs(rd.y), 0.02))) * CLOUD_INV_CIRRUS;
+  vec2 gSide = rot * (vec2(-hdir.y, hdir.x) * footprint) * CLOUD_INV_CIRRUS;
+  vec2 c = textureGrad(uCloudCirrus, q, gAlong, gSide).rg;
   float dens = c.r * uCloudMisc.z;
   if (dens < 0.002) return 0.0;
   float slant = min(inversesqrt(rd.y * rd.y + 0.02), 4.0);

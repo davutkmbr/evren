@@ -265,7 +265,7 @@ void main() {
     if (tc > 0.0 && tc < min(sceneDist, 260000.0)) {
       vec3 pc = ro + rd * tc;
       vec3 ccol;
-      float ca = cloudCirrus(pc, rd, cosT, skyAmb, ccol);
+      float ca = cloudCirrus(pc, rd, cosT, skyAmb, tc * uPixelAngle, ccol);
       ca *= 1.0 - smoothstep(120000.0, 250000.0, tc);
       if (ca > 0.001) {
         ccol = applyAtmosphere(ccol, pc);
@@ -491,6 +491,16 @@ void main() {
   float d = texture(tDepth, vUv).r;
   vec3 vdir = cloudViewRay(vUv);
   float sceneKm = min(cloudSceneDistance(d, vdir) * 0.001, 1000.0);
+  /* Depth slope of this surface across one low-res texel (log depth). Distant terrain seen at a grazing angle changes
+     depth by several % per low-res texel and the checkerboard near/far samples add as much again: that is a
+     continuous surface, not a depth edge. Without this tolerance the reconstruction toggled between the cubic and
+     the bilateral path from pixel to pixel along iso-depth lines (dashed coastlines and gap edges far away). Capped so
+     real silhouettes (towers, ridges against the sea behind them) still count as edges. Uniform control flow here. */
+  float lowPerPx = max(abs(dFdx(vUv.x)) * uLowSize.x, 1e-4);
+  float slopeTol = min(fwidth(log(max(sceneKm, 1e-3))) / lowPerPx * 1.5, 0.1);
+#ifdef CLOUD_DEBUG_NOSLOPE
+  slopeTol = 0.0;
+#endif
 
   vec2 lp = vUv * uLowSize - 0.5;
   vec2 b = floor(lp);
@@ -517,16 +527,23 @@ void main() {
       cmax = max(cmax, c);
     }
   }
-  if (cmin.a > 0.998 && maxErr < 0.08) {
+  /* 0 = depth-continuous (cubic), 1 = depth edge (bilateral); blended in between so no pixel flips hard. */
+  float edge = smoothstep(slopeTol + 0.03, slopeTol + 0.11, maxErr);
+#ifdef CLOUD_DEBUG_NOBICUBIC
+  edge = 1.0;
+#endif
+#ifdef CLOUD_DEBUG_EDGE
+  /* Reconstruction path per pixel: red = bilateral share, green = cloud present in the 2x2 footprint. */
+  outColor = vec4(scene * 0.25 + vec3(edge * 8.0, (1.0 - cmin.a) * 2.0, 0.0), 1.0);
+  return;
+#endif
+  if (cmin.a > 0.998 && edge <= 0.0) {
     /* Cloud-free neighbourhood: pass the scene through untouched. */
     outColor = vec4(scene, 1.0);
     return;
   }
-  vec4 cloud;
-#ifdef CLOUD_DEBUG_NOBICUBIC
-  maxErr = 1.0;
-#endif
-  if (maxErr < 0.08) {
+  vec4 cloud = vec4(0.0, 0.0, 0.0, 1.0);
+  if (edge < 1.0) {
     /* Depth-continuous: sharp cubic reconstruction, clamped to the local range (no ringing). */
 #ifdef CLOUD_DEBUG_BILINEAR
     cloud = cloudTap(vUv * uLowSize);
@@ -536,7 +553,8 @@ void main() {
     /* Thin geometry closer than the nearest cloud surface (towers, minarets) is never covered. */
     float vis = smoothstep(minFront * 0.85, minFront * 0.97, sceneKm);
     cloud = mix(vec4(0.0, 0.0, 0.0, 1.0), cloud, vis);
-  } else {
+  }
+  if (edge > 0.0) {
     /* Depth edge: joint-bilateral 4x4 gather. Samples whose ray reached farther than this pixel are re-evaluated
        at its depth (always valid); samples that stopped short of it (nearer geometry) are down-weighted. */
     vec4 acc = vec4(0.0);
@@ -551,13 +569,13 @@ void main() {
         float ws = tent.x * tent.x * tent.y * tent.y;
         float cloudEnd = cloudEndKm(a);
         float relevant = smoothstep(cloudEnd * 1.6, cloudEnd * 1.1, min(a.y, sceneKm));
-        float shortfall = a.y < sceneKm * 0.97 ? abs(log(max(a.y, 1e-4) / max(sceneKm, 1e-4))) * relevant : 0.0;
+        float shortfall = a.y < sceneKm * 0.97 ? max(abs(log(max(a.y, 1e-4) / max(sceneKm, 1e-4))) - slopeTol, 0.0) * relevant : 0.0;
         float w = ws * (exp(-shortfall * 12.0) + 1e-4);
         acc += cloudAtDepth(c, a, sceneKm) * w;
         wsum += w;
       }
     }
-    cloud = acc / max(wsum, 1e-8);
+    cloud = mix(cloud, acc / max(wsum, 1e-8), edge);
   }
   outColor = vec4(scene * cloud.a + cloud.rgb, 1.0);
 #ifdef CLOUD_DEBUG_NAN

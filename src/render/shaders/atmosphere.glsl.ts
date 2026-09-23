@@ -19,6 +19,9 @@
  * Without the sky system (other sandboxes) everything falls back to a simple height fog (uAtmoState.y == 0).
  */
 import { ATMOSPHERE, KEY_LIGHT_HEIGHTS } from '../sky/params';
+// Registers the uniforms declared below (placeholder LUT / neutral cloud shadow until the sky and clouds systems run)
+// while this module loads, so no program can ever compile without them (see sky/globals.ts).
+import '../sky/globals';
 
 const f = (n: number): string => {
   const s = n.toPrecision(7);
@@ -95,12 +98,21 @@ vec3 atmoFullRayDepth(float h0, float dy) {
   return atmoOpticalDepth(column);
 }
 
+/* Origin of every aerial-perspective ray: the camera, lifted to sea level when it is below it (diving, or a camera
+   clipping into low shore terrain). The air path starts at the surface; the water column in between is the post
+   pipeline's underwater medium. Without the clamp, rays from below sea level see the sky-view LUT at too high an
+   elevation and the exponential height terms grow past the ground density. */
+vec3 atmoRayOrigin() {
+  return vec3(uCamPos.x, max(uCamPos.y, 0.0), uCamPos.z);
+}
+
 vec3 atmoTransmittance(vec3 worldPos) {
-  vec3 d = worldPos - uCamPos;
+  vec3 ro = atmoRayOrigin();
+  vec3 d = worldPos - ro;
   float dist = length(d);
   if (dist < 1e-3) return vec3(1.0);
   if (uAtmoState.y < 0.5) return vec3(exp(-uFogDensity * dist));
-  return exp(-atmoOpticalDepth(atmoColumn(max(uCamPos.y, 0.0), d.y / dist, dist)));
+  return exp(-atmoOpticalDepth(atmoColumn(ro.y, d.y / dist, dist)));
 }
 
 vec3 skyRadiance(vec3 dir) {
@@ -118,19 +130,20 @@ vec3 skyRadiance(vec3 dir) {
 }
 
 vec3 applyAtmosphere(vec3 color, vec3 worldPos) {
-  vec3 d = worldPos - uCamPos;
+  vec3 ro = atmoRayOrigin();
+  vec3 d = worldPos - ro;
   float dist = length(d);
   if (dist < 1e-3) return color;
   vec3 dir = d / dist;
   if (uAtmoState.y < 0.5) {
     float fh = max(uFogHeightFalloff, 1e-5);
-    float integ = abs(d.y) > 0.01 ? (exp(-fh * uCamPos.y) - exp(-fh * (uCamPos.y + d.y))) / (fh * d.y) : exp(-fh * uCamPos.y);
+    float integ = abs(d.y) > 0.01 ? (exp(-fh * ro.y) - exp(-fh * (ro.y + d.y))) / (fh * d.y) : exp(-fh * ro.y);
     float amount = 1.0 - exp(-uFogDensity * dist * max(integ, 0.0));
     float sunAmt = pow(max(dot(dir, uSunDir), 0.0), 6.0);
     vec3 fogC = mix(uFogColor, uSunColor * 0.25 + uFogColor, sunAmt * (1.0 - uNight));
     return mix(color, fogC, clamp(amount, 0.0, 1.0));
   }
-  float h0 = max(uCamPos.y, 0.0);
+  float h0 = ro.y;
   vec3 T = exp(-atmoOpticalDepth(atmoColumn(h0, dir.y, dist)));
   vec3 Tfull = exp(-atmoFullRayDepth(h0, dir.y));
   vec3 w = clamp((1.0 - T) / max(1.0 - Tfull, vec3(1e-5)), 0.0, 1.0);
@@ -154,6 +167,3 @@ vec3 keyLightAt(vec3 worldPos) {
 }
 `;
 
-// Register the sky's global uniforms (placeholder LUT until the sky system runs). Dynamic import breaks the
-// core/uniforms <-> shaders import cycle; it resolves long before the first program compiles.
-void import('../sky/globals').then((m) => m.registerAtmosphereGlobals());

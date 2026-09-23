@@ -3,6 +3,7 @@ import type * as THREE from 'three';
 interface Slot {
   buffer: WebGLBuffer;
   sync: WebGLSync | null;
+  tag: number;
 }
 
 /**
@@ -14,6 +15,8 @@ interface Slot {
  */
 export class AsyncReadback {
   readonly data: Float32Array;
+  /** Tag passed to the request() whose result is currently in `data`. */
+  dataTag = -1;
   private readonly slots: Slot[] = [];
   private write = 0;
   private read = 0;
@@ -31,13 +34,16 @@ export class AsyncReadback {
       const buffer = gl.createBuffer()!;
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
       gl.bufferData(gl.PIXEL_PACK_BUFFER, this.byteLength, gl.STREAM_COPY);
-      this.slots.push({ buffer, sync: null });
+      this.slots.push({ buffer, sync: null, tag: -1 });
     }
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 
-  /** Queues a readback of `target` (RGBA float-readable). Returns false when all slots are in flight. */
-  request(renderer: THREE.WebGLRenderer, target: THREE.WebGLRenderTarget): boolean {
+  /**
+   * Queues a readback of `target` (RGBA float-readable). Returns false when all slots are in flight.
+   * `tag` is handed back as `dataTag` with the result (lets the caller drop results requested before a state change).
+   */
+  request(renderer: THREE.WebGLRenderer, target: THREE.WebGLRenderTarget, tag = 0): boolean {
     const slot = this.slots[this.write];
     if (slot.sync) {
       return false;
@@ -48,6 +54,7 @@ export class AsyncReadback {
     gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.FLOAT, 0);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     slot.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    slot.tag = tag;
     this.write = (this.write + 1) % this.slots.length;
     return true;
   }
@@ -70,6 +77,7 @@ export class AsyncReadback {
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, slot.buffer);
       gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.data);
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      this.dataTag = slot.tag;
       this.read = (this.read + 1) % this.slots.length;
       updated = true;
     }

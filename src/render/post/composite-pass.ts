@@ -86,10 +86,14 @@ export class CompositePass {
     });
   }
 
-  /** Underwater absorption/scattering inputs; light = linear sun + sky irradiance reaching the surface. */
-  updateUnderwater(camera: THREE.PerspectiveCamera, sunDir: THREE.Vector3, sunColor: THREE.Color, ambient: THREE.Color): void {
+  /**
+   * Underwater absorption/scattering inputs; light = linear sun + sky irradiance reaching the surface.
+   * `overWater` = there is a water column under the camera (false over land, where a camera below sea level is only
+   * clipping into low terrain and must not turn the whole frame into sea water).
+   */
+  updateUnderwater(camera: THREE.PerspectiveCamera, sunDir: THREE.Vector3, sunColor: THREE.Color, ambient: THREE.Color, overWater = true): void {
     const camPos = this.camPos.setFromMatrixPosition(camera.matrixWorld);
-    this.underwater = camPos.y < 0 ? THREE.MathUtils.smoothstep(-camPos.y, 0, 0.35) : 0;
+    this.underwater = overWater && camPos.y < 0 ? THREE.MathUtils.smoothstep(-camPos.y, 0, 0.35) : 0;
     if (this.underwater <= 0) {
       return;
     }

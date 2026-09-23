@@ -118,7 +118,7 @@ export function createWaterSystem(): System {
       return;
     }
     const res = globalUniforms.uResolution.value as THREE.Vector2;
-    reflection.setSize(res.x * quality.reflectionScale, res.y * quality.reflectionScale, anisotropy);
+    reflection.setSize(res.x * quality.reflectionScale, res.y * quality.reflectionScale, anisotropy, quality.reflectionSamples);
   }
 
   return {
@@ -132,7 +132,7 @@ export function createWaterSystem(): System {
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
       quality = waterQualityFor(ctx.quality.settings.preset, ctx.quality.settings.waterReflections);
       const b = geo.bounds;
-      reflection = new PlanarReflection(anisotropy);
+      reflection = new PlanarReflection(anisotropy, quality.reflectionSamples);
       uniforms = createWaterUniforms(
         sea.uniforms,
         {
