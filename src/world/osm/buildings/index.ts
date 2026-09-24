@@ -26,7 +26,7 @@ const SERVICE = /^amenity=(bank|pharmacy|bureau_de_change|post_office|dentist|do
 const HOTEL = /^tourism=(hotel|hostel|guest_house|motel)$/;
 
 /** Shop-front POIs as x, z, Poi kind triples. */
-function poiTriples(points: readonly OsmPoint[]): Float32Array {
+export function poiTriples(points: readonly OsmPoint[]): Float32Array {
   const out: number[] = [];
   for (const p of points) {
     const kind = FOOD.test(p.kind) ? Poi.Food : SERVICE.test(p.kind) ? Poi.Service : HOTEL.test(p.kind) ? Poi.Hotel : p.kind.startsWith('shop=') && p.kind !== 'shop=kiosk' ? Poi.Shop : 0;
@@ -38,7 +38,7 @@ function poiTriples(points: readonly OsmPoint[]): Float32Array {
 }
 
 /** Modelled landmarks (and neighbourhood mosques) whose footprint OSM buildings must leave free; bridges and walls are linear and excluded. */
-function landmarkPads(geo: GeoQuery): Float32Array {
+export function landmarkPads(geo: GeoQuery): Float32Array {
   const out: number[] = [];
   for (const l of geo.landmarks) {
     if (l.kind === 'bridge' || l.kind === 'walls') {
