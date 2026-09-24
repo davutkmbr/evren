@@ -34,7 +34,7 @@ procedural solution:
 3. After approval, record every integrated asset in `public/models/LICENSES.md` or `public/textures/LICENSES.md`.
 
 Already approved: the CC0 Poly Haven texture sets listed in `public/textures/LICENSES.md`, OpenStreetMap data
-(ODbL, attribution shown in the UI), and MetaHuman characters + Mixamo animations for humans.
+(ODbL, attribution shown in the UI), MetaHuman characters + Mixamo animations for humans, and Epic's free MetaHuman wardrobe on Fab (private store).
 
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy

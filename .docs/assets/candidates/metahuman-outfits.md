@@ -1,5 +1,20 @@
 # MetaHuman outfit candidates (pending approval)
 
+## Decision (2026-09-24)
+
+Approved by the user:
+
+- **Epic's free MetaHuman wardrobe on Fab** (§1): the 20 garment and shoe listings, Clothing Construction Presets
+  (Set of 4, incl. the additional-files zip), and optionally the Crowd Sample, the Fashion Starter Kit and the free
+  Epic grooms. Fab Standard License, Professional tier ($0); private store only (`private-assets/`), shipped only inside
+  builds; no-extraction measures for any web build.
+- **Six garments tailored by us** (§4): *başörtüsü* (headscarf, starting from MakeHuman's CC0 hijab), *pardesü*
+  (long coat), apron, cardigan/vest, trousers and a midi skirt. Our own work, MIT.
+
+Not approved: the third-party free listings (§2), the paid packs (§3) and City Sample Crowds (UE-only).
+Click list for the user: `.shots/assets/metahuman-outfits/checklist.html` (local).
+
+
 Status: **shortlist only, nothing is approved.** Nothing was installed, downloaded (apart from the listings' own
 thumbnails), added to Unreal, `private-assets/` or `public/`, or referenced in code. Checked live on 2026-09-24.
 
