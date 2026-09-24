@@ -18,7 +18,7 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
   glTF 2.0 tiles plus JSON manifests (doors, POIs, lights, spawn points, seats, NPC slots) that any runtime loads.
   Compiled tiles stay out of git (release assets, later R2).
 - The **runtime is chosen by measurement** (S2): the same compiled strip is rendered in three.js r186
-  WebGPURenderer and Godot 4.7 Forward+, next to Blender reference renders, against one street-level test.
+  WebGPURenderer, Godot 4.7 Forward+ and Unreal Engine 5.8, next to Blender reference renders, against one street-level test.
   three.js WebGL2 is ruled out for street level (no reprojection TAA, AO/SSR need a second scene pass, per-object
   diffuse probes, no clustered lights or local reflection probes — checked in `node_modules/three` 0.186.0).
 - Rejected: Unreal 5 (binary assets, experimental editor-only MCP, M2 Max below the recommended spec, no web),
@@ -85,6 +85,11 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
   integration — lobbies, invites, friends, achievements (GodotSteam for Godot; Electron/Tauri + steamworks.js for a
   three.js build), (c) proximity voice chat, (d) a streamer mode (muted licensed audio, hidden join codes). Streamers
   play co-op games on Steam, so a desktop Steam build is expected for the co-op game whichever runtime wins.
+- Third candidate (added 2026-09-24): **Unreal Engine 5.8** (Lumen, Nanite, MetaHumans native) runs the same strip
+  from the same glTF output. Its original rejection rested on agent-unfriendliness, no web build and the M2 Max being
+  below spec; the first reason no longer holds (agents drive the open editor through tools/unreal's Python job runner),
+  the user accepts desktop, and co-op needs Steam anyway. Measure it with the same test; its web gap and Mac
+  performance are part of the result.
 - Decision rule: Blender fails → fix the kit, not the engine. Both pass → three.js WebGPU (keeps the web link and the
   flight game) unless Godot is clearly better side by side **or clearly better for co-op readiness**. Only one passes
   → that one. Neither passes while Blender does → rerun once at lower density, then take the closer one.
