@@ -9,6 +9,11 @@
 import { ringArea } from '../../../../src/world/osm/shared/geometry';
 import type { BuildingRec } from '../format';
 import type { AreaContext, CompileStep, TileContext } from '../registry';
+import { FERRY_PROP } from './ferry';
+import { SKYLINE_ANCHOR, SKYLINE_PROP } from './farfield';
+import { buildHaldunTaner } from './haldun-taner';
+import { headingYaw } from '../instances';
+import type { PropDef } from '../props';
 import { buildNewPier } from './new-pier';
 import { buildPier1926, type HeroBuild } from './pier1926';
 import { buildAyaEfimia, buildIskeleCamii } from './worship';
@@ -35,9 +40,46 @@ interface HeroDef {
 const HEROES: HeroDef[] = [
   { id: 'pier1926', anchor: 'w102190096', build: (t, ring, bottomY) => buildPier1926(t, ring, bottomY) },
   { id: 'newPier', anchor: 'w560203763', build: (t, ring, bottomY) => buildNewPier(t, ring, bottomY) },
+  { id: 'haldunTaner', anchor: 'w102190100', build: (t, ring, bottomY) => buildHaldunTaner(t, ring, bottomY) },
   { id: 'iskeleCamii', anchor: 'w694298377', outline: 102190093, build: (t, ring, bottomY, dome) => buildIskeleCamii(t, ring, dome, bottomY) },
   { id: 'ayaEfimia', anchor: 'w694298363', outline: 694298362, build: (t, ring, bottomY, tower) => buildAyaEfimia(t, ring, tower, bottomY) },
 ];
+
+/** Hero props: the docked City Lines ferry and the far-field skyline (registered in registry.ts PROP_SETS). */
+export const HERO_PROPS: PropDef[] = [FERRY_PROP, SKYLINE_PROP];
+
+/**
+ * The ferry lies broadside to c02 (bearing about 317° from it, 70 m long): on the view ray from the c02 camera the
+ * first spot 80-160 m out where the whole hull is over water, the long axis across the ray.
+ */
+function ferryPose(a: AreaContext): { x: number; z: number; heading: number } | null {
+  const cam = { x: 189.8, z: 5937.6 };
+  const bearing = 317;
+  const h = (bearing * Math.PI) / 180;
+  const dx = Math.sin(h);
+  const dz = -Math.cos(h);
+  const axis = bearing - 90;
+  const ah = (axis * Math.PI) / 180;
+  const ax = Math.sin(ah);
+  const az = -Math.cos(ah);
+  for (let d = 80; d <= 160; d += 2) {
+    const x = cam.x + dx * d;
+    const z = cam.z + dz * d;
+    let ok = true;
+    for (let u = -37; u <= 37 && ok; u += 4) {
+      for (const v of [-8, 0, 8]) {
+        if (a.land(x + ax * u + -az * v, z + az * u + ax * v) > -1) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if (ok) {
+      return { x, z, heading: axis };
+    }
+  }
+  return null;
+}
 
 export const heroStep: CompileStep = {
   id: 'heroes',
@@ -95,6 +137,15 @@ export const heroStep: CompileStep = {
     for (let k = solids.length - 1; k >= 0; k--) {
       if (shared.solids.has(solids[k].rec.id)) {
         solids.splice(k, 1);
+      }
+    }
+    // The ferry at the 1926 pier and the far-field skyline belong to the tile of the pier.
+    if (t.area.format === 1 && Math.floor(SKYLINE_ANCHOR[0] / 100) === t.manifest.i && Math.floor(SKYLINE_ANCHOR[2] / 100) === t.manifest.j) {
+      t.place('hero_skyline', SKYLINE_ANCHOR, 0, { variant: 'istanbul', ref: 'hero/skyline' });
+      const fp = ferryPose(t.area);
+      if (fp) {
+        t.place('hero_ferry', [fp.x, 0, fp.z], headingYaw(fp.heading, '+Z'), { variant: 'kadikoy', ref: 'hero/ferry' });
+        built.push({ id: 'ferry', position: [Math.round(fp.x * 10) / 10, 0, Math.round(fp.z * 10) / 10], headingDeg: Math.round(fp.heading) });
       }
     }
     if (built.length) {

@@ -15,7 +15,9 @@ export const GROUND_MATERIALS: MaterialDef[] = [
   { id: 'st_slabs', color: 0xd6dde4, textures: { asset: 'granite_tile_04' }, tiling: [2.4, 2.4], surface: 'ground' },
   { id: 'st_kup', color: 0xe6e6e6, textures: { asset: 'patterned_cobblestone' }, surface: 'ground' },
   { id: 'st_sidewalk', color: 0xf2f2f2, textures: { asset: 'patterned_concrete_pavers' }, surface: 'ground' },
-  { id: 'st_pavers', color: 0xcfd4d8, textures: { asset: 'patterned_concrete_pavers' }, tiling: [2.2, 2.2], surface: 'ground' },
+  // Grey interlocking pavers of the square (c02): the set's relief, joints (AO) and roughness with a flat grey, so the
+  // set's warm albedo and its colour repeat do not show; COLOR_0 carries the wear and a 30 m macro variation.
+  { id: 'st_pavers', color: 0x9d9f9e, textures: { asset: 'patterned_concrete_pavers' }, maps: { baseColor: false }, tiling: [2.2, 2.2], normalScale: 0.75, surface: 'ground' },
   { id: 'st_kerb', color: 0xe6e8ea, textures: { asset: 'granite_tile_04' }, tiling: [4, 2], surface: 'ground' },
   { id: 'st_gutter', color: 0xb9bdc0, textures: { public: 'concrete' }, tiling: [2.7, 2.7], surface: 'ground' },
   { id: 'st_tactile', color: 0xf0b21a, textures: { asset: 'Tiles133B' }, tiling: [3.6, 3.6], roughness: 0.85, surface: 'ground' },
@@ -26,7 +28,13 @@ export const GROUND_MATERIALS: MaterialDef[] = [
   { id: 'st_paint', color: 0xf4f4f0, textures: { asset: 'RoadLines004' }, alphaMode: 'MASK', alphaCutoff: 0.45, surface: 'ground', castShadow: false },
   { id: 'st_paint_lines', color: 0xf4f4f0, textures: { asset: 'RoadLines010' }, alphaMode: 'MASK', alphaCutoff: 0.45, surface: 'ground', castShadow: false },
   { id: 'st_manhole', color: 0xffffff, textures: { asset: 'ManholeCover003' }, alphaMode: 'MASK', alphaCutoff: 0.5, surface: 'ground', castShadow: false },
+  /* Lawns: no grass set is approved, so a muted flat green (COLOR_0 mottling, dry patches and edge AO from ground.ts) with
+     the plaster set's fine relief for a matt, uneven surface. */
+  { id: 'st_grass', color: 0x56663a, textures: { public: 'plaster' }, maps: { baseColor: false }, tiling: [0.9, 0.9], normalScale: 1.6, roughness: 1, surface: 'ground' },
   { id: 'st_iron', color: 0x34322f, metallic: 0.7, roughness: 0.55, surface: 'metal', castShadow: false },
+  /* Square guide line (white pavers), and wet films: puddles in paving hollows, wet paving at drains and fish stalls. */
+  { id: 'st_guide', color: 0xe9e8e2, textures: { asset: 'Tiles133B' }, tiling: [0.6, 0.6], roughness: 0.7, surface: 'ground', castShadow: false },
+  { id: 'st_wet', color: 0x1e2022, roughness: 0.04, alphaMode: 'BLEND', surface: 'ground', castShadow: false },
 ];
 
 /** Street furniture, cables, the Aya Efimia precinct wall and fountain. */
@@ -44,7 +52,12 @@ export const KIT_MATERIALS: MaterialDef[] = [
   { id: 'st_sign_blue', color: 0x1f5fb0, roughness: 0.5, surface: 'other', castShadow: false },
   { id: 'st_signal_lens_red', color: 0x5a0d0a, roughness: 0.2, surface: 'glass', emissive: { color: 0xff3020, nits: 900, night: false, source: 'other' } },
   { id: 'st_signal_lens_green', color: 0x0a3a24, roughness: 0.2, surface: 'glass', emissive: { color: 0x30ff90, nits: 900, night: false, source: 'other' } },
-  { id: 'st_bark', color: 0x6d5f52, textures: { public: 'stone' }, tiling: [1.2, 1.2], surface: 'plant', castShadow: true },
+  { id: 'st_bark', color: 0x8a8274, textures: { public: 'stone' }, tiling: [1.2, 1.2], surface: 'plant', castShadow: true },
+  { id: 'st_bark_olive', color: 0x7a7556, roughness: 0.85, surface: 'plant', castShadow: true },
+  { id: 'st_bark_cream', color: 0xcdc3a4, roughness: 0.8, surface: 'plant', castShadow: true },
+  { id: 'st_leaf_a', color: 0x4d6a2a, roughness: 0.7, doubleSided: true, surface: 'plant', castShadow: true },
+  { id: 'st_leaf_b', color: 0x3a5524, roughness: 0.75, doubleSided: true, surface: 'plant', castShadow: true },
+  { id: 'st_leaf_c', color: 0x6a7d31, roughness: 0.7, doubleSided: true, surface: 'plant', castShadow: true },
   { id: 'st_leaves', color: 0x48662e, roughness: 0.9, surface: 'plant', castShadow: true },
   { id: 'st_leaves_dark', color: 0x36522a, roughness: 0.9, surface: 'plant', castShadow: true },
   { id: 'st_soil', color: 0x3b2f25, roughness: 1, surface: 'ground', castShadow: false },
@@ -54,9 +67,13 @@ export const KIT_MATERIALS: MaterialDef[] = [
   { id: 'st_wall_yellow', color: 0xf0c865, textures: { public: 'plaster_painted' }, tiling: [2, 2], surface: 'wall', castShadow: true },
   { id: 'st_wall_band', color: 0xc9953f, textures: { public: 'plaster_painted' }, tiling: [2, 2], surface: 'wall', castShadow: true },
   { id: 'st_wall_cap', color: 0xd9d2c4, textures: { public: 'stone' }, tiling: [1.5, 1.5], surface: 'wall', castShadow: true },
-  { id: 'st_kufeki', color: 0xe2d6bb, textures: { public: 'stone' }, tiling: [1.8, 1.8], surface: 'wall', castShadow: true },
+  // Küfeki limestone ashlar: smooth, light grey, jointed blocks (granite tile relief, flat colour, low bump).
+  { id: 'st_kufeki', color: 0xc8bfae, textures: { asset: 'granite_tile_04' }, maps: { baseColor: false }, tiling: [1.6, 1.6], normalScale: 0.35, surface: 'wall', castShadow: true },
+  { id: 'st_kufeki_dark', color: 0x6c675e, textures: { asset: 'granite_tile_04' }, maps: { baseColor: false }, tiling: [1.6, 1.6], normalScale: 0.35, surface: 'wall', castShadow: true },
+  { id: 'st_gate_steel', color: 0x8e979d, roughness: 0.45, metallic: 0.35, surface: 'metal', castShadow: true },
+  { id: 'st_gate_steel_dark', color: 0x5d656a, roughness: 0.5, metallic: 0.35, surface: 'metal', castShadow: true },
   { id: 'st_marble', color: 0xf2f0ea, textures: { asset: 'Marble019' }, tiling: [1.2, 1.2], surface: 'other', castShadow: true },
-  { id: 'st_inscription', color: 0x243a30, roughness: 0.4, surface: 'other', castShadow: false },
+  { id: 'st_inscription', color: 0x121414, roughness: 0.35, surface: 'other', castShadow: false },
   { id: 'st_gilt', color: 0xc8a052, metallic: 0.8, roughness: 0.35, surface: 'metal', castShadow: false },
   { id: 'st_gate_wood', color: 0xc9a066, textures: { asset: 'PaintedWood009C' }, tiling: [1.2, 2.4], surface: 'wood', castShadow: true },
   { id: 'st_gate_grey', color: 0xb7bcc0, textures: { asset: 'PaintedWood009C' }, tiling: [1.2, 2.4], surface: 'wood', castShadow: true },

@@ -20,6 +20,7 @@ import type { GroundHeights } from '../ground';
 import type { LightSink } from '../lights';
 import { LOD0, LOD1, type RGBA, type TileMesh, type Vec2, type Vec3 } from '../mesh';
 import type { PlaceOptions } from '../registry';
+import { emitText, textWidth } from '../shopfront/font';
 import { emitShopUnit, planShops, type ShopUnit } from '../shopfront/shopfront';
 import { Batch, Frame, h01, lin, mix, pick, scale } from './frame';
 import type { FacadePlan } from './plan';
@@ -402,6 +403,10 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
     emitWindow(x, e, b, w, 0, p.wall);
     b.flush();
   }
+  if (e.kind === 'street' && (p.typ === 'T1' || p.typ === 'T3') && x.H(900 + e.i) < 0.3) {
+    upperTrade(x, e, b, wins);
+    b.flush();
+  }
   emitBalconies(x, e, b, wins, ck);
   if (ck) {
     emitCikma(x, e, b, ck);
@@ -415,7 +420,188 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
   }
   decals(x, e, b, wins, units);
   b.flush();
+  if (e.kind === 'street') {
+    streetWear(x, e, b, wins, units);
+    b.flush();
+  }
   return units;
+}
+
+/**
+ * The lived-in layer of a street façade (spec T1 wear; S1 critique "everything is too clean"): soot under the slab
+ * edges, a downpipe per plot, cable bundles under the eaves with drops, posters, stickers and spray tags up to 2.5 m
+ * on the piers and on shut kepenks.
+ */
+function streetWear(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], units: readonly ShopUnit[]): void {
+  const { p } = x;
+  const H = (k: number): number => h01(p.seed + e.i * 17.3, 1000 + k);
+  const d = 0.013;
+  // Soot and run-off under the slab edges of the upper floors (0.3-1.0 m), broken by the windows.
+  if (p.typ !== 'T2' || p.wear > 0.4) {
+    for (let k = 1; k < p.storeys; k++) {
+      const yTop = x.floorY(k) - 0.02;
+      if (yTop < x.G1 + 0.5) {
+        continue;
+      }
+      for (let r = 0.2; r < e.len - 0.4; r += 0.9 + 1.1 * H(k * 31 + r)) {
+        const w = 0.5 + 0.9 * H(k * 37 + r);
+        const r1 = Math.min(e.len - 0.1, r + w);
+        const hit = wins.find((q) => r1 > q.r0 && r < q.r1 && q.y1 + q.box > yTop - 1.0 && q.y0 < yTop);
+        const len = hit ? Math.max(0, yTop - (hit.y1 + hit.box) - 0.03) : 0.3 + 0.7 * H(k * 41 + r);
+        if (len < 0.15 || H(k * 43 + r) > 0.35 + 0.5 * p.wear) {
+          continue;
+        }
+        const u0 = H(k * 47 + r) * 0.6;
+        b.quadF('fac_leak', 'N', [[r, yTop - len, d], [r1, yTop - len, d], [r1, yTop, d], [r, yTop, d]], [0.55, 0.45, 0.62, 0.3 + 0.35 * p.wear], [
+          [u0, 1],
+          [u0 + Math.min(0.4, w / 3), 1],
+          [u0 + Math.min(0.4, w / 3), 0],
+          [u0, 0],
+        ]);
+      }
+    }
+  }
+  // A downpipe per plot, at the end of the main street edge, with a hopper, brackets and a shoe.
+  if (e.i === x.mainEdge && e.len > 3) {
+    const rp = H(1) < 0.5 ? 0.18 : e.len - 0.3;
+    const pipe = H(2) < 0.6 ? lin(0x8f9396) : lin(0x6a6e70);
+    const top = p.roofY - 0.12;
+    b.box('fac_metal', rp, rp + 0.1, e.gAt(rp) - 0.02, top, 0.03, 0.13, pipe, { front: true, left: true, right: true });
+    b.box('fac_metal', rp - 0.06, rp + 0.16, top - 0.02, top + 0.2, 0.0, 0.2, scale(pipe, 0.9), { front: true, left: true, right: true, bottom: true, top: true });
+    for (let y = x.G1 + 0.6; y < top - 0.5; y += 2.0) {
+      b.box('fac_metal', rp - 0.03, rp + 0.13, y, y + 0.04, 0.0, 0.14, scale(pipe, 0.7), { front: true, top: true, bottom: true });
+    }
+    // Stain down the wall beside the pipe.
+    b.quadF('fac_leak_band', 'N', [[rp - 0.25, x.G1, d], [rp + 0.35, x.G1, d], [rp + 0.35, top, d], [rp - 0.25, top, d]], [0.6, 0.5, 0.62, 0.35], [
+      [0.1, 1],
+      [0.35, 1],
+      [0.35, 0],
+      [0.1, 0],
+    ]);
+  }
+  // Cable bundle under the eaves (three cables, clipped every 1.2 m, a slight sag) with drops to the shop band.
+  const cableCol = lin(0x141414);
+  const yc = (p.roof === 'flat' ? p.roofY - 0.3 : p.roofY - 0.45) - 0.2 * H(3);
+  const nSeg = Math.max(1, Math.round(e.len / 1.2));
+  for (let q = 0; q < 3; q++) {
+    const yq = yc - q * 0.035;
+    for (let k = 0; k < nSeg; k++) {
+      const a = (e.len * k) / nSeg;
+      const c2 = (e.len * (k + 1)) / nSeg;
+      const m = (a + c2) / 2;
+      b.box('fac_metal', a, m, yq - 0.03 - 0.012, yq - 0.012, 0.03 + q * 0.012, 0.045 + q * 0.012, cableCol, { front: true, bottom: true });
+      b.box('fac_metal', m, c2, yq - 0.03 - 0.012, yq - 0.012, 0.03 + q * 0.012, 0.045 + q * 0.012, cableCol, { front: true, bottom: true });
+    }
+  }
+  const drops = 1 + Math.floor(H(4) * 2);
+  for (let k = 0; k < drops; k++) {
+    const rd = Math.min(e.len - 0.2, Math.max(0.2, e.len * (0.15 + 0.7 * H(5 + k))));
+    if (wins.some((w) => rd > w.r0 - 0.05 && rd < w.r1 + 0.05)) {
+      continue;
+    }
+    b.box('fac_metal', rd, rd + 0.018, x.G1 - 0.2, yc, 0.03, 0.048, cableCol, { front: true, left: true, right: true });
+  }
+  // Posters, stickers and tags on the piers between the units and on shut kepenks.
+  const surfaces: { r0: number; r1: number; y0: number; y1: number; d: number }[] = [];
+  const sorted = [...units].sort((a, c) => a.r0 - c.r0);
+  let cur = 0;
+  for (const u of sorted) {
+    if (u.r0 - cur > 0.35) {
+      surfaces.push({ r0: cur + 0.05, r1: u.r0 - 0.05, y0: e.gAt(cur) + 0.9, y1: Math.min(e.gAt(cur) + 2.5, x.G1 - 0.3), d: 0.015 });
+    }
+    if (u.kind === 'shop' && u.kepenk === 'closed') {
+      const yK = u.yFloor + 0.3;
+      surfaces.push({ r0: u.r0 + 0.2, r1: u.r1 - 0.2, y0: yK, y1: Math.min(u.yOpen - 0.45, u.yFloor + 2.4), d: -0.085 });
+    }
+    cur = u.r1;
+  }
+  const posterCols = [0xf2efe6, 0xe8d23a, 0xd6412f, 0x2f6fb0, 0x1e1e1e, 0xf0a0b0, 0x5ab04a, 0xf2efe6];
+  surfaces.forEach((sf, k) => {
+    if (sf.y1 - sf.y0 < 0.3 || sf.r1 - sf.r0 < 0.25) {
+      return;
+    }
+    const n = Math.min(4, Math.floor(((sf.r1 - sf.r0) * (sf.y1 - sf.y0)) / 0.35) + (H(60 + k) < 0.5 ? 1 : 0));
+    for (let q = 0; q < n; q++) {
+      const pw = Math.min(sf.r1 - sf.r0, 0.3 + 0.25 * H(70 + k * 7 + q));
+      const ph = pw * (1.2 + 0.3 * H(80 + k * 7 + q));
+      const r0 = sf.r0 + (sf.r1 - sf.r0 - pw) * H(90 + k * 7 + q);
+      const y0 = sf.y0 + Math.max(0, sf.y1 - sf.y0 - ph) * H(100 + k * 7 + q);
+      if (y0 + ph > sf.y1 + 0.05 || H(110 + k * 7 + q) > 0.75) {
+        continue;
+      }
+      const col = scale(lin(pick(posterCols, H(120 + k * 7 + q))), 0.85 + 0.15 * H(130 + k));
+      const dd = sf.d + 0.002 + q * 0.001;
+      b.quadF('fac_sign', 'N', [[r0, y0, dd], [r0 + pw, y0, dd], [r0 + pw, y0 + ph, dd], [r0, y0 + ph, dd]], col);
+      // A headline band and a picture block on the poster.
+      const dark = pick(posterCols, H(140 + k * 7 + q));
+      b.quadF('fac_sign', 'N', [[r0 + pw * 0.1, y0 + ph * 0.72, dd + 0.001], [r0 + pw * 0.9, y0 + ph * 0.72, dd + 0.001], [r0 + pw * 0.9, y0 + ph * 0.88, dd + 0.001], [r0 + pw * 0.1, y0 + ph * 0.88, dd + 0.001]], lin(dark === pick(posterCols, H(120 + k * 7 + q)) ? 0x1e1e1e : dark));
+      b.quadF('fac_sign', 'N', [[r0 + pw * 0.15, y0 + ph * 0.2, dd + 0.001], [r0 + pw * 0.85, y0 + ph * 0.2, dd + 0.001], [r0 + pw * 0.85, y0 + ph * 0.62, dd + 0.001], [r0 + pw * 0.15, y0 + ph * 0.62, dd + 0.001]], scale(col, 0.55));
+    }
+    // Stickers: a scatter of small labels.
+    for (let q = 0; q < 5; q++) {
+      if (H(150 + k * 11 + q) > 0.55) {
+        continue;
+      }
+      const sw = 0.06 + 0.06 * H(160 + k * 11 + q);
+      const r0 = sf.r0 + (sf.r1 - sf.r0 - sw) * H(170 + k * 11 + q);
+      const y0 = sf.y0 + (sf.y1 - sf.y0 - sw) * H(180 + k * 11 + q);
+      b.quadF('fac_sign', 'N', [[r0, y0, sf.d + 0.004], [r0 + sw, y0, sf.d + 0.004], [r0 + sw, y0 + sw * 0.7, sf.d + 0.004], [r0, y0 + sw * 0.7, sf.d + 0.004]], lin(pick(posterCols, H(190 + k * 11 + q))));
+    }
+    // A spray tag on some surfaces (kepenks and piers), 1.0-2.2 m up.
+    if (H(200 + k) < 0.3 * (0.5 + p.wear)) {
+      const tag = pick(['KDK', 'ÇARŞI', 'ASLA', 'NO', 'ZEN', 'KORE', '1907'], H(210 + k));
+      const cap = Math.min(0.32, (sf.r1 - sf.r0 - 0.1) / Math.max(0.1, textWidth(tag)));
+      if (cap > 0.1) {
+        emitText(b, tag, { material: 'fac_letters', color: lin(pick([0x1e1e1e, 0xc02a2a, 0x2a5ac0, 0xe0e0e0, 0x2a8a3a], H(220 + k))), r: (sf.r0 + sf.r1) / 2, y: Math.min(sf.y1 - cap - 0.05, sf.y0 + 0.3 + 0.5 * H(230 + k)), d: sf.d + 0.006, capH: cap, depth: 0 });
+      }
+    }
+  });
+}
+
+/** Upper-floor businesses of the photos (c06, c11): lettering on first-floor windows and a vinyl banner below them. */
+const UPPER_TRADES = ['DİŞ HEKİMİ', 'AVUKAT', 'DERSHANE', 'DÖVME', 'KUAFÖR', 'MUAYENEHANE', 'EMLAK', 'TERZİ', 'MALİ MÜŞAVİR', 'FİZYOTERAPİ', 'ETÜT MERKEZİ', 'PİLATES'];
+
+function upperTrade(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[]): void {
+  const floor = x.H(910 + e.i) < 0.7 ? 1 : 2;
+  const row = wins.filter((w) => w.floor === floor && (w.kind === 'window' || w.kind === 'ribbon')).sort((a, c) => a.r0 - c.r0);
+  if (!row.length) {
+    return;
+  }
+  const word = pick(UPPER_TRADES, x.H(920 + e.i));
+  const letter = lin(pick([0xf4f2ea, 0xf2c94c, 0xd62f2f, 0xf4f2ea], x.H(930 + e.i)));
+  const rev = x.p.typ === 'T3' ? 0.12 : 0.16;
+  for (const w of row) {
+    const glassW = w.r1 - w.r0 - 0.2;
+    const cap = Math.min(0.17, glassW / Math.max(0.1, textWidth(word)));
+    if (cap < 0.06) {
+      continue;
+    }
+    emitText(b, word, { material: 'fac_letters', color: letter, r: (w.r0 + w.r1) / 2, y: w.y0 + (w.y1 - w.y0) * 0.55, d: -rev + 0.045, capH: cap, depth: 0 });
+  }
+  // A banner across the spandrel under the row (above the shop sign band).
+  const first = row[0];
+  const last = row[row.length - 1];
+  const y1 = first.y0 - 0.12;
+  const y0 = Math.max(x.G1 + 0.08, y1 - 0.75);
+  if (y1 - y0 > 0.4 && x.H(940 + e.i) < 0.75) {
+    const r0 = Math.max(0.2, first.r0 - 0.15);
+    const r1 = Math.min(e.len - 0.2, last.r1 + 0.15);
+    const [bgHex, darkBg] = pick<[number, boolean]>([
+      [0xc8242b, true],
+      [0xf2c94c, false],
+      [0x1d4f9e, true],
+      [0xf2f0ea, false],
+      [0x1f6b45, true],
+    ], x.H(950 + e.i));
+    const bg = lin(bgHex);
+    const dark = darkBg;
+    b.box('fac_sign', r0, r1, y0, y1, 0, 0.025, bg, { front: true, top: true, bottom: true, left: true, right: true });
+    const text = word;
+    const cap = Math.min((y1 - y0) * 0.5, (r1 - r0 - 0.3) / Math.max(0.1, textWidth(text)));
+    if (cap > 0.08) {
+      emitText(b, text, { material: 'fac_letters', color: dark ? lin(0xf6f2e8) : lin(0x1e1e1e), r: (r0 + r1) / 2, y: (y0 + y1) / 2 - cap / 2, d: 0.028, capH: cap, depth: 0 });
+    }
+  }
 }
 
 /** The compiled interior behind a door record (or POI) of this building, if the interiors step lists one. */
@@ -722,6 +908,17 @@ function emitWindow(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, wallCol: RGB
     const dd = w.kind === 'door' ? dp + 0.05 : dp;
     const [px, pz] = e.f.xz(rc, dd);
     c.place('fac_ac', [px, yb, pz], yaw, { variant: 'unit', seed: Math.floor(U(16) * 1000), ref: `${c.tile}/ac` });
+    // Condensate streak down the wall under the unit (Leaking003).
+    if (w.kind !== 'door' && dp === 0) {
+      const len = 0.7 + 0.8 * U(17);
+      const u0 = U(18) * 0.6;
+      b.quadF('fac_leak', 'N', [[rc - 0.2, yb - len, 0.012], [rc + 0.2, yb - len, 0.012], [rc + 0.2, yb + 0.05, 0.012], [rc - 0.2, yb + 0.05, 0.012]], [0.5, 0.42, 0.4, 0.65], [
+        [u0, 1],
+        [u0 + 0.12, 1],
+        [u0 + 0.12, 0],
+        [u0, 0],
+      ]);
+    }
   }
 }
 
@@ -1249,7 +1446,7 @@ function clipHalf(poly: Vec2[], fn: (x: number, z: number) => number): Vec2[] {
   return out;
 }
 
-/** Hole rings (light wells, courtyards): plain walls. */
+/** Hole rings (light wells, courtyards): plain walls and a roof sheet over the well. */
 function plainRing(x: Ctx2, ring: readonly number[]): void {
   const n = ring.length / 2;
   for (let i = 0; i < n; i++) {
@@ -1258,6 +1455,13 @@ function plainRing(x: Ctx2, ring: readonly number[]): void {
     b.quadF('fac_render', 'N', [[0, x.bottom, 0], [f.len, x.bottom, 0], [f.len, x.wallTop, 0], [0, x.wallTop, 0]], scale(x.p.wall, 0.8));
     b.flush();
   }
+  // Light wells are roofed over at the roof line (a corrugated translucent sheet on a curb), so they never read as
+  // open black shafts from above (c07).
+  const pts = pairs(ring);
+  const tris = THREE.ShapeUtils.triangulateShape(pts, []).flat();
+  const y = x.p.roofY + 0.3;
+  x.c.mesh.flatTriangles('fac_panel', pts.map((v) => [v.x, y, v.y] as Vec3), tris, [0, 1, 0], { color: lin(0xaab5b2) });
+  x.c.mesh.flatTriangles('fac_panel', pts.map((v) => [v.x, y - 0.02, v.y] as Vec3), tris, [0, -1, 0], { color: lin(0x8f9896) });
 }
 
 /* ------------------------------------------------------------------------------------------------------------- */

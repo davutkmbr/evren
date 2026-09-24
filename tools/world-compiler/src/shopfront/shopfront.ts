@@ -17,6 +17,7 @@ import { Batch, Frame, h01, lin, mix, pick, pickWeighted, scale } from '../facad
 import { SIGN_GLOW, type SignGlow } from '../facade/materials';
 import type { FacadePlan } from '../facade/plan';
 import { emitText, textWidth } from './font';
+import { emitShopInterior } from './interior';
 import { fillerTrade, type ShopName, shopName, type Trade, tradeOf } from './names';
 
 export type Kepenk = 'open' | 'half' | 'closed';
@@ -79,6 +80,8 @@ export interface EdgeShopInput {
 const MARKET_TRADES = new Set<Trade>(['fish', 'produce', 'deli', 'nuts', 'butcher']);
 const ALWAYS_OPEN = new Set<Trade>(['cafe', 'restaurant', 'fastfood', 'sweets', 'bakery', 'fish', 'produce', 'deli']);
 const PIER = 0.4;
+/** Buildings whose shop is shuttered (spec section 2: the 1930 lottery kiosk at the Yasa Cd entrance, c11). */
+const SHUTTERED = new Set([709156144]);
 
 /** Splits a street edge's ground floor into shop units and entrances. */
 export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<string>): ShopUnit[] {
@@ -142,7 +145,7 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
       const market = MARKET_TRADES.has(trade);
       const yFloor = floorOf(r0, r1);
       const yOpen = openTop(r0, r1, yFloor);
-      const kepenk: Kepenk = ALWAYS_OPEN.has(trade) ? 'open' : pickWeighted<Kepenk>([['open', 0.7], ['half', 0.18], ['closed', 0.12]], U(2));
+      const kepenk: Kepenk = SHUTTERED.has(p.osmId) ? 'closed' : ALWAYS_OPEN.has(trade) ? 'open' : pickWeighted<Kepenk>([['open', 0.7], ['half', 0.18], ['closed', 0.12]], U(2));
       let awning: AwningKind = market ? 'market' : e.market || U(3) < 0.68 ? (U(4) < 0.55 ? 'low' : 'high') : 'none';
       let depth = market ? (e.market ? 2.5 + 0.9 * U(5) : 1.7 + 0.5 * U(5)) : 1.1 + 0.5 * U(5);
       const clear = Math.min(e.clearAt(r0 + 0.3), e.clearAt((r0 + r1) / 2), e.clearAt(r1 - 0.3));
@@ -194,11 +197,11 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
     }
   }
   units.sort((x, y) => x.r0 - y.r0);
-  // A projecting sign at least every 12 m of frontage, on the pier right of a unit, clear of tall awnings.
+  // A projecting sign about every 8-10 m of frontage, on the pier right of a unit, clear of tall awnings.
   let lastSign = -Infinity;
   const tall = (u: ShopUnit | undefined): boolean => !!u && (u.awning === 'high' || u.awning === 'market');
   units.forEach((u, k) => {
-    if (u.kind === 'shop' && u.r1 - lastSign > 11 && u.r1 - u.r0 > 2 && !tall(u) && !tall(units[k + 1])) {
+    if (u.kind === 'shop' && u.r1 - lastSign > 7.5 && u.r1 - u.r0 > 2 && !tall(u) && !tall(units[k + 1])) {
       u.projecting = true;
       lastSign = u.r1;
     }
@@ -256,17 +259,28 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
     emitGlazing(batch, u, yBox, c, U);
   }
   if (u.kepenk !== 'closed' && !u.interior) {
-    // Interior light spilling onto the lane at night.
-    const [lx, lz] = f.xz((r0 + r1) / 2, -RV - 1.2);
-    c.lights.add({ type: 'point', position: [lx, yBox - 0.4, lz], kelvin: pick([4000, 4500, 5000, 6000], U(5)), lumens: 600 + 400 * U(6), night: true, source: 'interior', ref: `${c.tile}/shop:${u.poi ?? u.name?.name ?? ''}` });
-    lights++;
+    // Interior light (s1-strip.md §3: shop light spills 3-5 m onto the lane): about 2,200 lm per metre of frontage
+    // (11,000 lm for a 5 m unit, 300-500 lx inside), a fill in the room and a spot behind the glass aimed out and
+    // down through it; a half-open kepenk lets out half.
+    const w = r1 - r0;
+    const open = u.kepenk === 'half' ? 0.5 : 1;
+    const food = u.trade === 'cafe' || u.trade === 'restaurant' || u.trade === 'fastfood' || u.trade === 'bakery' || u.trade === 'sweets';
+    const kelvin = food ? pick([3000, 3500, 4000], U(5)) : pick([4000, 4500, 5000, 6000], U(5));
+    const ref = `${c.tile}/shop:${u.poi ?? u.name?.name ?? ''}`;
+    const depth = Math.max(1.2, Math.min(3.4, c.depthAt((r0 + r1) / 2) - 0.4));
+    const [lx, lz] = f.xz((r0 + r1) / 2, -RV - depth * 0.55);
+    c.lights.add({ type: 'point', position: [lx, yBox - 0.35, lz], kelvin, lumens: 950 * w * open, night: true, source: 'interior', ref });
+    const [sx, sz] = f.xz((r0 + r1) / 2, -RV - 0.35);
+    const dl = Math.hypot(1, 0.8);
+    c.lights.add({ type: 'spot', position: [sx, yBox - 0.25, sz], direction: [f.nx / dl, -0.8 / dl, f.nz / dl], kelvin, lumens: 1250 * w * open, cone: { inner: 35, outer: 72 }, night: true, source: 'interior', ref });
+    lights += 2;
   }
   // Sign band and awning.
   const awningLow = u.awning === 'low';
   const ySign0 = yOpen + (awningLow ? 0.32 : 0.1);
   const signTop = Math.min(c.G1 - 0.18, ySign0 + 0.95);
   const hS = signTop - ySign0;
-  if (hS >= 0.35 && u.name) {
+  if (hS >= 0.24 && u.name) {
     emitSign(batch, u, ySign0, signTop, c, U);
     if (u.signLit) {
       const [sx, sz] = f.xz((r0 + r1) / 2, 0.8);
@@ -341,7 +355,7 @@ function emitGlazing(batch: Batch, u: ShopUnit, yTop: number, c: ShopEmitContext
     }
   }
   batch.box('fac_alu', dl, dr, transom, transom + fw, d, d + 0.07, alu, { front: true, top: true, bottom: true });
-  const glass: RGBA = [0.3, 0.36, 0.4, 0.3];
+  const glass: RGBA = [0.26, 0.31, 0.34, 0.42];
   const pane = (a: number, b: number, y0: number, y1: number): void => {
     if (b - a > 0.02 && y1 - y0 > 0.02) {
       batch.quadF('fac_glass', 'N', [[a, y0, d + 0.03], [b, y0, d + 0.03], [b, y1, d + 0.03], [a, y1, d + 0.03]], glass);
@@ -357,43 +371,9 @@ function emitGlazing(batch: Batch, u: ShopUnit, yTop: number, c: ShopEmitContext
   // Door leaf: glass with a push bar.
   pane(dl, dr, yFloor, transom);
   batch.box('fac_alu', dl + 0.08, dr - 0.08, yFloor + 1.0, yFloor + 1.04, d + 0.07, d + 0.12, lin(0xd0d2d4), { front: true, top: true, bottom: true, left: true, right: true });
-  // Interior: lit back wall, floor, ceiling, side walls, shelving with rows of goods, a counter.
-  const depth = Math.max(1.2, Math.min(3.2, c.depthAt((r0 + r1) / 2) - 0.4));
-  const db = d - depth;
-  const wallC = lin(pick([0xb8b2a6, 0xa89c88, 0x9fa8ae, 0xc2b08e, 0x8e8478], U(12)));
-  const iy0 = yFloor;
-  const iy1 = yTop;
-  batch.quadF('fac_shop_lit', 'N', [[r0, iy0, db], [r1, iy0, db], [r1, iy1, db], [r0, iy1, db]], wallC);
-  batch.quadF('fac_terrazzo', 'Y', [[r0, iy0 + 0.001, d], [r1, iy0 + 0.001, d], [r1, iy0 + 0.001, db], [r0, iy0 + 0.001, db]], lin(0x8f8a82));
-  batch.quadF('fac_room', '-Y', [[r0, iy1, d], [r1, iy1, d], [r1, iy1, db], [r0, iy1, db]], lin(0xb9b6b0));
-  batch.quadF('fac_shop_lit', 'R', [[r0, iy0, d], [r0, iy0, db], [r0, iy1, db], [r0, iy1, d]], scale(wallC, 0.85));
-  batch.quadF('fac_shop_lit', '-R', [[r1, iy0, d], [r1, iy0, db], [r1, iy1, db], [r1, iy1, d]], scale(wallC, 0.85));
-  const goods: RGBA[] = [lin(0x8a4a3e), lin(0x4a5d72), lin(0xa88a4a), lin(0x56705a), lin(0x6a5a70), lin(0xcfc8ba), lin(0x3a3a3a), lin(0x9a7a5a)];
-  const food = u.trade === 'cafe' || u.trade === 'restaurant' || u.trade === 'fastfood' || u.trade === 'bakery' || u.trade === 'sweets';
-  const frameC = lin(pick([0x3a3a3a, 0x6a5a48, 0xc9c6c0], U(13)));
-  // Back shelving: a frame with 3–4 shelves of goods in small blocks.
-  const sh0 = r0 + 0.15;
-  const sh1 = r1 - 0.15;
-  const rows = food ? 2 : 4;
-  const shTop = iy0 + (food ? 1.9 : 2.1);
-  batch.box('fac_room', sh0, sh1, iy0, shTop, db, db + 0.4, scale(frameC, 0.8), { front: true, top: true, left: true, right: true });
-  for (let k = 0; k < rows; k++) {
-    const y0 = iy0 + 0.35 + ((shTop - iy0 - 0.45) * k) / rows;
-    const y1 = y0 + ((shTop - iy0 - 0.45) / rows) * 0.72;
-    const n = Math.max(2, Math.round((sh1 - sh0) / 0.45));
-    for (let q = 0; q < n; q++) {
-      const a = sh0 + 0.04 + ((sh1 - sh0 - 0.08) * q) / n;
-      const b = a + ((sh1 - sh0 - 0.08) / n) * (0.75 + 0.2 * h01(u.seed, 90 + k * 13 + q));
-      batch.quadF('fac_room', 'N', [[a, y0, db + 0.42], [b, y0, db + 0.42], [b, y1, db + 0.42], [a, y1, db + 0.42]], pick(goods, h01(u.seed, 120 + k * 17 + q)));
-    }
-  }
-  // Counter (and a display cabinet for food trades).
-  const cr = U(19) < 0.5 ? r0 + 0.3 : Math.max(r0 + 0.3, r1 - 1.6);
-  const counterC = lin(pick([0x8a6a4a, 0xd8d4cc, 0x3c3c3c], U(20)));
-  batch.box('fac_room', cr, Math.min(r1 - 0.2, cr + 1.3), iy0, iy0 + 1.0, db + 0.9, db + 1.5, counterC, { front: true, top: true, left: true, right: true });
-  if (food) {
-    batch.box('fac_room', cr, Math.min(r1 - 0.2, cr + 1.3), iy0 + 1.0, iy0 + 1.35, db + 1.2, db + 1.5, lin(0xe8e4dc), { front: true, top: true, left: true, right: true });
-  }
+  // The room behind the glass, dressed by trade (interior.ts).
+  const depth = Math.max(1.2, Math.min(3.4, c.depthAt((r0 + r1) / 2) - 0.4));
+  emitShopInterior(batch, { r0, r1, yFloor, yTop, d, db: d - depth, trade: u.trade, seed: u.seed, doorR: u.doorR, doorW: u.doorW }, c.place, `${c.tile}/${u.name?.name ?? u.poi ?? ''}`);
 }
 
 function emitSign(batch: Batch, u: ShopUnit, y0: number, y1: number, c: ShopEmitContext, U: (q: number) => number): void {
@@ -456,12 +436,30 @@ function emitAwning(batch: Batch, u: ShopUnit, yMount: number, yFront: number): 
   const sw = 0.26;
   const n = Math.max(1, Math.round((a1 - a0) / sw));
   const val = 0.22;
+  // Weathering: dirt and soot build up towards the front edge and at the ends (rain runs off the front).
+  const grime = 0.62 + 0.18 * h01(u.seed, 77);
   for (let k = 0; k < n; k++) {
     const x0 = a0 + ((a1 - a0) * k) / n;
     const x1 = a0 + ((a1 - a0) * (k + 1)) / n;
     const col = stripes && k % 2 ? u.awningColors[1] : u.awningColors[0];
-    batch.poly('fac_awning', nrm, [f.p(x0, yMount + 0.02, 0.12), f.p(x1, yMount + 0.02, 0.12), f.p(x1, yFront, D), f.p(x0, yFront, D)], col);
-    batch.quadF('fac_awning', 'N', [[x0, yFront - val, D], [x1, yFront - val, D], [x1, yFront, D], [x0, yFront, D]], scale(col, 0.95));
+    const endDirt = (xx: number): number => 1 - 0.12 * Math.max(0, 1 - Math.min(xx - a0, a1 - xx) / 0.6);
+    const back0 = scale(col, 0.97 * endDirt(x0));
+    const back1 = scale(col, 0.97 * endDirt(x1));
+    const front0 = scale(col, grime * endDirt(x0));
+    const front1 = scale(col, grime * endDirt(x1));
+    batch.poly('fac_awning', nrm, [f.p(x0, yMount + 0.02, 0.12), f.p(x1, yMount + 0.02, 0.12), f.p(x1, yFront, D), f.p(x0, yFront, D)], [back0, back1, front1, front0]);
+    // Scalloped valance: the lower edge of each stripe is a shallow half-circle.
+    const pts: [number, number, number][] = [[x0, yFront, D]];
+    for (let j = 0; j <= 6; j++) {
+      const tt = j / 6;
+      pts.push([x0 + (x1 - x0) * tt, yFront - val + 0.06 - 0.06 * Math.sin(Math.PI * tt), D]);
+    }
+    pts.push([x1, yFront, D]);
+    const vc = scale(col, grime * 0.95);
+    batch.quadF('fac_awning', 'N', [pts[0], pts[1], pts[4], [x0 + (x1 - x0) * 0.5, yFront, D]], vc);
+    batch.quadF('fac_awning', 'N', [[x0 + (x1 - x0) * 0.5, yFront, D], pts[4], pts[7], pts[8]], vc);
+    batch.quadF('fac_awning', 'N', [pts[1], pts[2], pts[3], pts[4]], vc);
+    batch.quadF('fac_awning', 'N', [pts[4], pts[5], pts[6], pts[7]], vc);
   }
   // Front bar and the folding arms.
   batch.box('fac_alu', a0, a1, yFront - 0.05, yFront, D - 0.05, D, lin(0xc8c8c4), { bottom: true });

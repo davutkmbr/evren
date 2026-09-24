@@ -8,7 +8,10 @@ Reads <renders>/<camera>-<time>.png with the sidecar <camera>-<time>.json writte
 tools/world-compiler/s1/cameras.json and the photo credits of .shots/s1/reference/sources.json. Writes:
 - <out>/<camera>-<time>.jpg   photo (left) and render (right) at the same height, with a caption band;
 - <out>/index.jpg             every pair on one sheet (two columns);
-- <out>/board.json            the pairs, their files and the render settings.
+- <out>/board.json            the pairs, their files and the render settings;
+- <out>/index.html            the review page (board_html.py): photo and final render per camera and time of day,
+                              the critic's score and note (<out>/critique.json), the renders the critic judged
+                              (<out>/previous/), the overall score and the checklist. Turkish UI text.
 A photo taken at another time of day than the render (or with another framing) is marked in the caption.
 """
 
@@ -18,6 +21,9 @@ import os
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import board_html  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 CAMERAS_JSON = os.path.join(ROOT, 'tools', 'world-compiler', 's1', 'cameras.json')
@@ -82,7 +88,7 @@ def make_pair(meta, cam, sources, height):
     d = ImageDraw.Draw(sheet)
     title = f"{meta['camera']}  ·  {t}"
     d.text((pad, 8), title, font=font(24), fill=FG)
-    label = (cam or {}).get('label') or ''
+    label = (cam or {}).get('label') or meta.get('label') or ''
     x0 = pad + d.textlength(title, font=font(24)) + 18
     room = w - pad - x0
     if label and room > 60:
@@ -91,7 +97,12 @@ def make_pair(meta, cam, sources, height):
         d.text((x0, 14), label, font=font(17), fill=DIM)
     ex = meta.get('exposure') or {}
     pr = meta.get('preset') or {}
-    stats = f"Cycles {meta.get('device', '')} {meta.get('samples')} spp  ·  {meta.get('seconds')} s  ·  {meta['resolution'][0]}×{meta['resolution'][1]}  ·  EV {pr.get('ev100')}  ·  exposure {ex.get('final', pr.get('exposure'))} ({ex.get('mode', 'preset')})"
+    mode = ex.get('mode', 'preset')
+    if mode == 'interior':
+        mode = f"fixed EV {ex.get('ev100')} for the interior"
+    elif ex.get('highlightCap') is not None and ex.get('final') is not None and ex.get('uncapped') is not None and ex['final'] < ex['uncapped']:
+        mode += f", highlight cap {ex['uncapped'] - ex['final']:.1f} stops"
+    stats = f"Cycles {meta.get('device', '')} {meta.get('samples')} spp  ·  {meta.get('seconds')} s  ·  {meta['resolution'][0]}×{meta['resolution'][1]}  ·  EV {pr.get('ev100')}  ·  exposure {ex.get('final', pr.get('exposure'))} ({mode})"
     if meta.get('clipStart', 0.1) > 0.1:
         stats += f"  ·  near clip {meta['clipStart']} m (camera inside geometry)"
     d.text((pad, 42), stats, font=font(15), fill=WARN if meta.get('clipStart', 0.1) > 0.1 else DIM)
@@ -102,7 +113,7 @@ def make_pair(meta, cam, sources, height):
         if not same_time:
             d.text((pad + d.textlength(note, font=font(15)) + 12, y), f'other time of day than the render', font=font(15), fill=WARN)
     else:
-        d.text((pad, y), 'no reference photo', font=font(15), fill=WARN)
+        d.text((pad, y), 'no reference photo' + (' (interior view)' if meta.get('interior') else ''), font=font(15), fill=WARN)
     notes = []
     if (cam or {}).get('poseFrom') and (cam or {}).get('poseFrom') != t and same_time:
         notes.append(f"pose fitted to the {cam['poseFrom']} photo")
@@ -157,6 +168,8 @@ def main():
     with open(os.path.join(a.out, 'board.json'), 'w', encoding='utf-8') as f:
         json.dump({'renders': os.path.relpath(a.renders, ROOT), 'pairs': entries}, f, indent=1)
     print(f"board: index.jpg ({index.width}x{index.height}), {len(entries)} pairs in {os.path.relpath(a.out, ROOT)}")
+    page = board_html.write(os.path.abspath(a.out), ROOT, metas, cams, sources)
+    print(f'board: {os.path.relpath(page, ROOT)}')
 
 
 if __name__ == '__main__':

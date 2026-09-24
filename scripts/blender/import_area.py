@@ -23,7 +23,11 @@ What it builds:
   (nits / 683); lamp fixtures glow for camera rays only, because their light already has a light record.
 - The sea: tiles contain no water (the runtime draws its own ocean), so a plane at y = 0 stands in for it.
 - The camera: position / target of cameras.json, fovDeg as the vertical FOV, resolution at the camera's aspect
-  inside a 1600 x 900 box (900 x 1600 for portrait frames).
+  inside a 1600 x 900 box (900 x 1600 for portrait frames). scripts/blender/camera-overrides.json can replace a
+  pose for the renders (a critique fix waiting for the spec or hero lane; render.py applies its interiorViews); with
+  `snapGround` the eye is re-snapped to the compiled ground + eyeHeight and the target moves by the same dy.
+- Day-lit night fixtures (DAY_ON_LIGHT_REFS / DAY_ON_MATERIALS): market-stall bulbs burn by day too (c10 photo);
+  the compiled records still say night: true, so the renders switch them on by day here.
 
 Axes: Evren (x, y, z) -> Blender (x, -z, y); Evren quaternion [x, y, z, w] -> Blender (w, x, -z, y). The glTF
 importer converts the tile and prop glbs itself.
@@ -46,6 +50,10 @@ LUMENS_PER_WATT = 683.0
 FRAME_BOX = (1600, 900)
 NEAR_KEEP_M = 150.0
 VIEW_MARGIN_DEG = 20.0
+OVERRIDES_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'camera-overrides.json')
+# Night-only fixtures that are lit by day as well (covered market stalls: the c10 day photo shows burning bulbs).
+DAY_ON_LIGHT_REFS = ('/stall-bulb',)
+DAY_ON_MATERIALS = ('fac_bulb',)
 
 
 def log(*args):
@@ -99,6 +107,9 @@ class Area:
         self.index = load_json(os.path.join(self.dir, 'index.json'))
         self.cameras_doc = load_json(CAMERAS_JSON) if os.path.exists(CAMERAS_JSON) else {'cameras': []}
         self.cameras = {c['id']: c for c in self.cameras_doc.get('cameras', [])}
+        for cid, o in (load_overrides().get('cameras') or {}).items():
+            if cid in self.cameras:
+                apply_pose_override(self.cameras[cid], o)
 
     def select_cameras(self, spec):
         if not spec or spec == 'all':
@@ -114,6 +125,21 @@ class Area:
 
     def tile_manifest(self, tile):
         return load_json(os.path.join(self.dir, tile['manifest']))
+
+
+def load_overrides():
+    """scripts/blender/camera-overrides.json: {cameras: {id: pose}, interiorViews: {id: pose}} ({} when missing)."""
+    return load_json(OVERRIDES_JSON) if os.path.exists(OVERRIDES_JSON) else {}
+
+
+def apply_pose_override(cam, o):
+    """Replaces a camera record's pose with an override entry (position, target, optional fovDeg, snapGround)."""
+    cam['poseOverride'] = {'from': {'position': list(cam['position']), 'target': list(cam['target']), 'fovDeg': cam.get('fovDeg')}, 'why': o.get('why', '')}
+    cam['position'], cam['target'] = list(o['position']), list(o['target'])
+    if o.get('fovDeg'):
+        cam['fovDeg'] = o['fovDeg']
+    cam['snapGround'] = bool(o.get('snapGround'))
+    return cam
 
 
 def camera_heading_deg(cam):
@@ -339,6 +365,7 @@ def add_light(rec, coll):
         obj.rotation_quaternion = (-d).to_track_quat('Z', 'Y')
     obj.visible_camera = False
     obj['night'] = bool(rec.get('night'))
+    obj['dayOn'] = any((rec.get('ref') or '').endswith(suffix) for suffix in DAY_ON_LIGHT_REFS)
     obj['source'] = rec.get('source') or 'other'
     obj['energy'] = watts
     if rec.get('ref'):
@@ -368,6 +395,7 @@ def setup_emissive_materials():
             value.name = value.label = 'evren_emission'
             value['nits'] = float(e.get('nits') or 0.0)
             value['night'] = bool(e.get('night'))
+            value['dayOn'] = re.sub(r'\.\d{3,}$', '', m.name) in DAY_ON_MATERIALS
             value['luminance'] = y
             value.outputs[0].default_value = 0.0
             src = value.outputs[0]
@@ -390,15 +418,24 @@ def setup_emissive_materials():
 
 def set_emission(night_on):
     """Sets every 'evren_emission' node: nits / 683 / luminance of the emission colour, 0 for night-only
-    materials by day."""
+    materials by day (except DAY_ON_MATERIALS)."""
     for m in bpy.data.materials:
         if not m.use_nodes or not m.node_tree:
             continue
         v = m.node_tree.nodes.get('evren_emission')
         if v is None:
             continue
-        on = night_on or not v.get('night', False)
+        on = night_on or not v.get('night', False) or v.get('dayOn', False)
         v.outputs[0].default_value = (v['nits'] / LUMENS_PER_WATT / v['luminance']) if on else 0.0
+
+
+# Sea stand-in: wind waves as three layered bump normals (wavelength, bump distance in m). Slopes of ~0.1-0.2 break
+# the mirror into the glitter path and soft streaks of a real harbour; a blue-green body colour for the water seen
+# from above. Waves are stretched across the (north-easterly) wind.
+SEA_WAVES = ((4.0, 0.30), (1.4, 0.10), (0.5, 0.035))
+SEA_WAVE_STRENGTH = 0.6
+SEA_ROUGHNESS = 0.12
+SEA_COLOR = (0.018, 0.058, 0.062, 1.0)
 
 
 def add_sea(area, coll):
@@ -413,19 +450,33 @@ def add_sea(area, coll):
     mat = bpy.data.materials.new('sea_standin')
     nt = mat.node_tree
     bsdf = nt.nodes['Principled BSDF']
-    bsdf.inputs['Base Color'].default_value = (0.012, 0.035, 0.045, 1.0)
-    bsdf.inputs['Roughness'].default_value = 0.06
+    bsdf.inputs['Base Color'].default_value = SEA_COLOR
+    bsdf.inputs['Roughness'].default_value = SEA_ROUGHNESS
     bsdf.inputs['IOR'].default_value = 1.333
     coord = nt.nodes.new('ShaderNodeTexCoord')
-    noise = nt.nodes.new('ShaderNodeTexNoise')
-    noise.inputs['Scale'].default_value = 0.35
-    noise.inputs['Detail'].default_value = 8.0
-    nt.links.new(coord.outputs['Object'], noise.inputs['Vector'])
-    bump = nt.nodes.new('ShaderNodeBump')
-    bump.inputs['Strength'].default_value = 0.25
-    bump.inputs['Distance'].default_value = 0.4
-    nt.links.new(noise.outputs['Fac'], bump.inputs['Height'])
-    nt.links.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
+    mapping = nt.nodes.new('ShaderNodeMapping')
+    mapping.inputs['Rotation'].default_value = (0.0, 0.0, math.radians(35.0))
+    mapping.inputs['Scale'].default_value = (1.0, 0.45, 1.0)
+    nt.links.new(coord.outputs['Object'], mapping.inputs['Vector'])
+    normal = None
+    for k, (wavelength, distance) in enumerate(SEA_WAVES):
+        noise = nt.nodes.new('ShaderNodeTexNoise')
+        noise.noise_dimensions = '4D'
+        noise.inputs['Scale'].default_value = 1.0 / wavelength
+        noise.inputs['Detail'].default_value = 2.0
+        noise.inputs['Roughness'].default_value = 0.5
+        w = next((i for i in noise.inputs if i.name == 'W'), None)
+        if w is not None:
+            w.default_value = 1.7 * k
+        nt.links.new(mapping.outputs['Vector'], noise.inputs['Vector'])
+        bump = nt.nodes.new('ShaderNodeBump')
+        bump.inputs['Strength'].default_value = SEA_WAVE_STRENGTH
+        bump.inputs['Distance'].default_value = distance
+        nt.links.new(noise.outputs['Fac'], bump.inputs['Height'])
+        if normal is not None:
+            nt.links.new(normal, bump.inputs['Normal'])
+        normal = bump.outputs['Normal']
+    nt.links.new(normal, bsdf.inputs['Normal'])
     mesh.materials.append(mat)
     obj['standIn'] = 'sea: tiles carry no water; the runtime draws its own ocean'
     coll.objects.link(obj)
@@ -513,6 +564,13 @@ def setup_camera(cam_rec, box=FRAME_BOX):
     data.clip_end = 6000.0
     pos = to_blender(cam_rec['position'])
     tgt = to_blender(cam_rec['target'])
+    if cam_rec.get('snapGround'):
+        ground = ground_below(pos)
+        if ground is not None:
+            dz = ground + cam_rec.get('eyeHeight', 1.6) - pos.z
+            pos.z += dz
+            tgt.z += dz
+            cam_rec['snapped'] = {'groundY': round(ground, 3), 'dy': round(dz, 3), 'position': [round(pos.x, 3), round(pos.z, 3), round(-pos.y, 3)], 'target': [round(tgt.x, 3), round(tgt.z, 3), round(-tgt.y, 3)]}
     obj.location = pos
     obj.rotation_mode = 'QUATERNION'
     obj.rotation_quaternion = (tgt - pos).to_track_quat('-Z', 'Y')
@@ -523,15 +581,60 @@ def setup_camera(cam_rec, box=FRAME_BOX):
     return obj
 
 
+def ground_below(pos, above=1.0, depth=12.0):
+    """Height (Blender z) of the first upward-facing tile surface under `pos` (props, people and awnings skipped)."""
+    scene = bpy.context.scene
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    start = Vector((pos.x, pos.y, pos.z + above))
+    down = Vector((0.0, 0.0, -1.0))
+    left = depth
+    for _ in range(16):
+        hit, loc, normal, _i, obj, _m = scene.ray_cast(depsgraph, start, down, distance=left)
+        if not hit:
+            return None
+        if obj is not None and obj.get('tile') is not None and normal.z > 0.5:
+            return loc.z
+        left -= (start.z - loc.z) + 0.01
+        start = loc + down * 0.01
+        if left <= 0.0:
+            return None
+    return None
+
+
+ENCLOSED_MIN_DIRS = 20
+
+
+def eye_enclosure(origin, scene=None, depsgraph=None):
+    """How many of 26 directions (cube corners, edges and faces) first hit a back face within 60 m of `origin`."""
+    scene = scene or bpy.context.scene
+    depsgraph = depsgraph or bpy.context.evaluated_depsgraph_get()
+    count = 0
+    for x in (-1, 0, 1):
+        for y in (-1, 0, 1):
+            for z in (-1, 0, 1):
+                if x == y == z == 0:
+                    continue
+                d = Vector((x, y, z)).normalized()
+                hit, _loc, normal, *_ = scene.ray_cast(depsgraph, origin, d, distance=60.0)
+                if hit and normal.dot(d) > 0.0:
+                    count += 1
+    return count
+
+
 def clip_out_of_enclosure(cam_obj, grid=5, max_layers=4):
     """Near clip distance that gets a camera out of geometry enclosing it. A pose fitted to a photo taken from a
     window or a passage can sit a metre or two inside a compiled block; a ray whose first hit is a back face starts
     inside a volume. For a grid of rays over the frame, the depth (along the view axis) at which each such ray leaves
-    the volume is found; the near clip is the largest of them plus 5 cm (0.1 m when no ray starts inside)."""
+    the volume is found; the near clip is the largest of them plus 5 cm (0.1 m when no ray starts inside).
+    Only an eye inside a closed volume (at least ENCLOSED_MIN_DIRS of 26 directions first hit a back face) counts:
+    single-sided awnings, umbrellas and open shopfronts seen from below or behind also return back faces, and must not
+    push the near clip through the foreground."""
     scene = bpy.context.scene
     depsgraph = bpy.context.evaluated_depsgraph_get()
     m = cam_obj.matrix_world
     origin = m.translation.copy()
+    if eye_enclosure(origin, scene, depsgraph) < ENCLOSED_MIN_DIRS:
+        return 0.1
     forward = (m.to_3x3() @ Vector((0, 0, -1))).normalized()
     frame = cam_obj.data.view_frame(scene=scene)
     best = 0.0

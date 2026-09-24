@@ -2,17 +2,18 @@
  * Aya Efimia precinct as street kit (format 1, s1-strip.md §3 heroes, cameras c07-c09): the rendered precinct wall
  * along OSM way 179197257 (barrier=wall, a closed loop around the church), 3.2 m high and 0.5 m thick with mitred
  * corners, a darker ochre band up to 1 m and a stone coping; the gabled gate with an arched fanlight, a cross and a grey
- * double door facing the junction plaza (on the c08 view ray), the wooden double gate under a moulded hood on Yasa Cd
- * (on the c09 view ray), the Sürmeli Ali Paşa fountain (1693/94: küfeki stone frame about 2.4 m wide, pointed-arch
- * niche 1.2 x 2.2 m, inscription panel, marble basin) at about (424.5, 6036.5) facing 200°, the large plane tree
- * behind the wall, and their night light (warm wash on the gate, the fountain lit warm).
+ * steel double door facing the junction plaza (on the c08 view ray), the wooden double gate under a moulded hood on
+ * Yasa Cd (on the c09 view ray), the Sürmeli Ali Paşa fountain (1693/94) set flush into the wall face near
+ * (424.5, 6036.5) (gate A and the fountain: precinct-kit.ts), the large plane tree behind the wall, and their night
+ * light (warm wash on the gate, the fountain lit warm).
  */
 import { pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { headingYaw } from '../instances';
 import { LOD0, LOD1, type Vec3 } from '../mesh';
 import type { AreaContext, CompileStep, TileContext } from '../registry';
 import { inTile, streetContext, streetTile } from './common';
-import { beam, obox } from './shapes';
+import { buildFountain, buildGateA } from './precinct-kit';
+import { obox } from './shapes';
 
 const WALL_ID = 179197257;
 const HEIGHT = 3.2;
@@ -20,8 +21,11 @@ const HALF = 0.25;
 const BAND = 1.0;
 /** Gate A (gabled, junction plaza) and gate B (wooden, Yasa Cd): points on the wall from the c08 / c09 view rays. */
 const GATE_A = { x: 414.5, z: 6026.7, width: 2.3 };
-const GATE_B = { x: 422.2, z: 6037.6, width: 1.9 };
+// Gate B sits 3 m along the long Yasa Cd wall section (OSM 179197257 vertices 3-4), leaving the section's east end
+// to the fountain: the OSM corner is 1.3 m east of the view-ray point, too close for both (spec section 3).
+const GATE_B = { x: 419.4, z: 6035.9, width: 1.9 };
 const FOUNTAIN = { x: 424.5, z: 6036.5, heading: 200 };
+const FOUNTAIN_HALF = 1.25;
 const PLANE_TREE = { x: 421.5, z: 6030.5 };
 
 interface Opening {
@@ -35,8 +39,9 @@ interface WallPlan {
   /** Outward normal side: +1 = right-hand side of the ring direction. */
   out: number;
   openings: Opening[];
-  /** Fountain position, pushed out of the wall along its heading so its back stands against the outer face. */
+  /** Fountain position on the wall's outer face and its heading (the wall's outward normal there). */
   fountain: [number, number];
+  fountainHeading: number;
 }
 
 function wallPlan(a: AreaContext): WallPlan | null {
@@ -75,27 +80,42 @@ function wallPlan(a: AreaContext): WallPlan | null {
         openings.push(best);
       }
     }
-    // The fountain keeps the photo heading (200°); push it out along that heading until its back clears the wall.
-    const outer: number[] = [];
+    // The fountain is set flush into the wall face (spec: at the east end of the long wall section): on the segment
+    // nearest to its photo position, its back on the outer face, turned to the segment's outward normal, and moved
+    // into the corner when it lies within its own width of the segment's end.
+    let fBest = { d: Infinity, i: 0, t: 0, len: 1 };
     for (let i = 0; i < n; i++) {
-      outer.push(...offsetVertex(ring, out, i, HALF + 0.02));
-    }
-    const h = (FOUNTAIN.heading * Math.PI) / 180;
-    const fx = Math.sin(h);
-    const fz = -Math.cos(h);
-    const rx = -fz;
-    const rz = fx;
-    let fpos: [number, number] = [FOUNTAIN.x, FOUNTAIN.z];
-    for (let push = -1; push < 3; push += 0.05) {
-      const x = FOUNTAIN.x + fx * push;
-      const z = FOUNTAIN.z + fz * push;
-      const back = [-1.2, 0, 1.2].map((o) => [x - fx * 0.35 + rx * o, z - fz * 0.35 + rz * o]);
-      if (back.every(([bx, bz]) => !pointInRing(outer, bx, bz))) {
-        fpos = [x, z];
-        break;
+      const ax = ring[i * 2];
+      const az = ring[i * 2 + 1];
+      const bx = ring[((i + 1) % n) * 2];
+      const bz = ring[((i + 1) % n) * 2 + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      const t = Math.max(0, Math.min(1, ((FOUNTAIN.x - ax) * (bx - ax) + (FOUNTAIN.z - az) * (bz - az)) / (len * len)));
+      const d = Math.hypot(ax + (bx - ax) * t - FOUNTAIN.x, az + (bz - az) * t - FOUNTAIN.z);
+      // Only faces within 45° of the photo heading (200°): the corner's other wall faces away from Yasa Cd.
+      const nh = ((Math.atan2(((bz - az) / len) * out, (((bx - ax) / len) * out)) * 180) / Math.PI + 360) % 360;
+      const off = Math.abs(((nh - FOUNTAIN.heading + 540) % 360) - 180);
+      if (d < fBest.d && len > 2.8 && off < 45) {
+        fBest = { d, i, t, len };
       }
     }
-    plan = { ring, out, openings, fountain: fpos };
+    const fi = fBest.i;
+    const fax = ring[fi * 2];
+    const faz = ring[fi * 2 + 1];
+    const fbx = ring[((fi + 1) % n) * 2];
+    const fbz = ring[((fi + 1) % n) * 2 + 1];
+    const margin = FOUNTAIN_HALF / fBest.len;
+    let ft = Math.max(margin + 0.05 / fBest.len, Math.min(1 - margin - 0.05 / fBest.len, fBest.t));
+    if (ft > 1 - 2 * margin) {
+      ft = 1 - margin - 0.05 / fBest.len;
+    } else if (ft < 2 * margin) {
+      ft = margin + 0.05 / fBest.len;
+    }
+    const fnx = ((fbz - faz) / fBest.len) * out;
+    const fnz = (-(fbx - fax) / fBest.len) * out;
+    const fpos: [number, number] = [fax + (fbx - fax) * ft + fnx * HALF, faz + (fbz - faz) * ft + fnz * HALF];
+    const fHeading = ((Math.atan2(fnx, -fnz) * 180) / Math.PI + 360) % 360;
+    plan = { ring, out, openings, fountain: fpos, fountainHeading: fHeading };
   }
   a.shared.set('precinct', plan);
   return plan;
@@ -195,57 +215,6 @@ function emitWall(t: TileContext, plan: WallPlan): number {
   return segs;
 }
 
-/** Gabled gate A: pilasters, pediment, arched fanlight, grey double door, cross. Local frame: +Z = outward. */
-function gateA(t: TileContext, x: number, z: number, heading: number, gy: number): void {
-  const yaw = headingYaw(heading, '+Z');
-  const c = Math.cos(yaw);
-  const s = Math.sin(yaw);
-  // Prop-local (lx, ly, lz) -> world, as instances do: +Z turns to the heading.
-  const w = (lx: number, ly: number, lz: number): Vec3 => [x + lx * c + lz * s, gy + ly, z - lx * s + lz * c];
-  const U: Vec3 = [c, 0, -s];
-  const V: Vec3 = [0, 1, 0];
-  const W: Vec3 = [s, 0, c];
-  const hw = GATE_A.width / 2;
-  for (const side of [-1, 1]) {
-    obox(t.mesh, 'st_wall_yellow', w(side * (hw + 0.3), 1.85, 0.05), U, V, W, 0.3, 2.15, 0.35);
-    obox(t.mesh, 'st_wall_cap', w(side * (hw + 0.3), 3.98, 0.05), U, V, W, 0.36, 0.06, 0.42);
-  }
-  // Lintel wall above the opening, up to the pediment.
-  obox(t.mesh, 'st_wall_yellow', w(0, 3.55, 0.0), U, V, W, hw, 0.45, 0.3);
-  obox(t.mesh, 'st_wall_cap', w(0, 4.02, 0.05), U, V, W, hw + 0.66, 0.05, 0.4);
-  // Pediment: triangular prism.
-  const peak = 1.1;
-  for (const [dz, nn] of [
-    [0.36, 1],
-    [-0.3, -1],
-  ] as const) {
-    t.mesh.flatPolygon('st_wall_yellow', [w(-hw - 0.6, 4.07, dz), w(hw + 0.6, 4.07, dz), w(0, 4.07 + peak, dz)], [W[0] * nn, 0, W[2] * nn]);
-  }
-  for (const side of [-1, 1]) {
-    const a = w(side * (hw + 0.66), 4.07, 0.42);
-    const b = w(0, 4.07 + peak + 0.06, 0.42);
-    const a2 = w(side * (hw + 0.66), 4.07, -0.34);
-    const b2 = w(0, 4.07 + peak + 0.06, -0.34);
-    const up: Vec3 = [-side * c * 0.7, 0.7, side * s * 0.7];
-    t.mesh.flatPolygon('st_wall_cap', [a, b, b2, a2], up);
-  }
-  // Arched fanlight over the door, the door leaves, the cross.
-  const arc: Vec3[] = [];
-  for (let k = 0; k <= 12; k++) {
-    const ang = (k / 12) * Math.PI;
-    arc.push(w(Math.cos(ang) * (hw - 0.1), 2.65 + Math.sin(ang) * (hw - 0.1) * 0.8, 0.12));
-  }
-  t.mesh.flatPolygon('st_fanlight', arc, W);
-  for (let k = 1; k < 6; k++) {
-    const ang = (k / 6) * Math.PI;
-    beam(t.mesh, 'st_sign_white', w(0, 2.65, 0.14), w(Math.cos(ang) * (hw - 0.1), 2.65 + Math.sin(ang) * (hw - 0.1) * 0.8, 0.14), 0.03, 0.02);
-  }
-  obox(t.mesh, 'st_gate_grey', w(-hw / 2, 1.3, 0.05), U, V, W, hw / 2 - 0.02, 1.32, 0.04);
-  obox(t.mesh, 'st_gate_grey', w(hw / 2, 1.3, 0.05), U, V, W, hw / 2 - 0.02, 1.32, 0.04);
-  obox(t.mesh, 'st_sign_white', w(0, 4.07 + peak + 0.45, 0.05), U, V, W, 0.04, 0.4, 0.04);
-  obox(t.mesh, 'st_sign_white', w(0, 4.07 + peak + 0.55, 0.05), U, V, W, 0.22, 0.04, 0.04);
-}
-
 /** Wooden gate B under a moulded hood. */
 function gateB(t: TileContext, x: number, z: number, heading: number, gy: number): void {
   const yaw = headingYaw(heading, '+Z');
@@ -268,37 +237,6 @@ function gateB(t: TileContext, x: number, z: number, heading: number, gy: number
   for (const side of [-1, 1]) {
     obox(t.mesh, 'st_wall_cap', w(side * (hw + 0.2), 2.55, 0.35), U, V, W, 0.07, 0.18, 0.1);
   }
-}
-
-/** Sürmeli Ali Paşa fountain: küfeki frame with a pointed-arch niche, inscription panel, marble basin. */
-function fountain(t: TileContext, x: number, z: number, heading: number, gy: number): void {
-  const yaw = headingYaw(heading, '+Z');
-  const c = Math.cos(yaw);
-  const s = Math.sin(yaw);
-  const w = (lx: number, ly: number, lz: number): Vec3 => [x + lx * c + lz * s, gy + ly, z - lx * s + lz * c];
-  const U: Vec3 = [c, 0, -s];
-  const V: Vec3 = [0, 1, 0];
-  const W: Vec3 = [s, 0, c];
-  // Frame: two piers and the head block, 0.7 m deep, 2.4 m wide, 3.3 m high; the niche is the gap 1.2 m wide.
-  obox(t.mesh, 'st_kufeki', w(-0.9, 1.3, 0), U, V, W, 0.3, 1.3, 0.35);
-  obox(t.mesh, 'st_kufeki', w(0.9, 1.3, 0), U, V, W, 0.3, 1.3, 0.35);
-  obox(t.mesh, 'st_kufeki', w(0, 2.95, 0), U, V, W, 1.2, 0.35, 0.35);
-  obox(t.mesh, 'st_kufeki', w(0, 3.36, 0.05), U, V, W, 1.32, 0.06, 0.42);
-  // Pointed arch: two leaning stones closing the niche top (2.2 m).
-  for (const side of [-1, 1]) {
-    t.mesh.flatPolygon('st_kufeki', [w(side * 0.6, 1.75, 0.34), w(side * 0.6, 2.6, 0.34), w(0, 2.6, 0.34), w(0, 2.22, 0.34), w(side * 0.35, 2.05, 0.34)], W);
-  }
-  // Niche back wall (recessed 0.35 m) and its floor, darker stone.
-  obox(t.mesh, 'st_kufeki', w(0, 1.1, -0.2), U, V, W, 0.6, 1.1, 0.15);
-  // Inscription panel with a gilt border.
-  obox(t.mesh, 'st_inscription', w(0, 2.95, 0.36), U, V, W, 0.72, 0.25, 0.02);
-  for (const dy of [-0.26, 0.26]) {
-    obox(t.mesh, 'st_gilt', w(0, 2.95 + dy, 0.37), U, V, W, 0.75, 0.015, 0.02);
-  }
-  // Spout and the marble basin (trough) in front of the niche.
-  beam(t.mesh, 'st_gilt', w(0, 1.05, 0.05), w(0, 1.02, 0.28), 0.03, 0.03);
-  obox(t.mesh, 'st_marble', w(0, 0.22, 0.55), U, V, W, 0.62, 0.22, 0.22);
-  obox(t.mesh, 'st_groove', w(0, 0.445, 0.55), U, V, W, 0.52, 0.004, 0.14);
 }
 
 export const precinctStep: CompileStep = {
@@ -334,7 +272,11 @@ export const precinctStep: CompileStep = {
         const nz = (-(bx - ax) / len) * plan.out;
         const heading = ((Math.atan2(nx, -nz) * 180) / Math.PI + 360) % 360;
         const gy = Math.min(sc.groundY(x + nx, z + nz), sc.groundY(x - nx, z - nz));
-        (k === 0 ? gateA : gateB)(t, x, z, heading, gy);
+        if (k === 0) {
+          buildGateA(t.mesh, x, z, heading, gy, HALF, GATE_A.width);
+        } else {
+          gateB(t, x, z, heading, gy);
+        }
         gates++;
         if (k === 0) {
           t.lights.add({ type: 'spot', position: [x + nx * 1.2, gy + 4.6, z + nz * 1.2], direction: [-nx * 0.35, -0.94, -nz * 0.35], kelvin: 3000, lumens: 1400, cone: { inner: 30, outer: 65 }, night: true, source: 'other', ref: 'precinct/gateA' });
@@ -342,9 +284,9 @@ export const precinctStep: CompileStep = {
       });
       const [qx, qz] = plan.fountain;
       if (inTile(t, qx, qz)) {
-        const gy = sc.groundY(qx, qz);
-        fountain(t, qx, qz, FOUNTAIN.heading, gy);
-        const h = (FOUNTAIN.heading * Math.PI) / 180;
+        const h = (plan.fountainHeading * Math.PI) / 180;
+        const gy = Math.min(sc.groundY(qx, qz), sc.groundY(qx + Math.sin(h) * 0.8, qz - Math.cos(h) * 0.8));
+        buildFountain(t.mesh, qx, qz, plan.fountainHeading, gy);
         const fx = Math.sin(h);
         const fz = -Math.cos(h);
         t.lights.add({ type: 'spot', position: [qx + fx * 1.6, gy + 3.4, qz + fz * 1.6], direction: [-fx * 0.55, -0.83, -fz * 0.55], kelvin: 2700, lumens: 1200, cone: { inner: 25, outer: 55 }, night: true, source: 'other', ref: 'precinct/fountain' });
@@ -354,7 +296,7 @@ export const precinctStep: CompileStep = {
       t.place('st_tree', [PLANE_TREE.x, sc.groundY(PLANE_TREE.x, PLANE_TREE.z), PLANE_TREE.z], 0.7, { variant: 'plane', ref: 'precinct/plane-tree' });
     }
     if (segs || gates) {
-      t.record('streetPrecinct', { wallSegments: segs, gates, fountain: inTile(t, plan.fountain[0], plan.fountain[1]) ? plan.fountain.map((v) => Math.round(v * 100) / 100) : null });
+      t.record('streetPrecinct', { wallSegments: segs, gates, fountain: inTile(t, plan.fountain[0], plan.fountain[1]) ? plan.fountain.map((v) => Math.round(v * 100) / 100) : null, fountainHeading: Math.round(plan.fountainHeading) });
     }
   },
 };

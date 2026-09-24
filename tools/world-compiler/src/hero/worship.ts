@@ -126,7 +126,8 @@ export function buildIskeleCamii(t: TileContext, outlineRing: readonly number[],
   const trim = 'hero_stone_trim';
   const lead = 'hero_lead';
   const lights: LightInput[] = [];
-  const winSt: WindowStyle = { wall: stone, frame: 'hero_iron', pane: 'hero_glass_lit', reveal: 0.6, frameW: 0.05, mullions: 1, transom: true, sill: { mat: trim, depth: 0.08, h: 0.1 } };
+  const winSt: WindowStyle = { wall: stone, frame: 'hero_iron', pane: 'hero_glass_lit', reveal: 0.6, frameW: 0.05, mullions: 2, transom: true, radials: 2, sill: { mat: trim, depth: 0.08, h: 0.1 }, surround: { mat: trim, w: 0.14, d: 0.04 } };
+  const lowerSt: WindowStyle = { wall: stone, frame: 'hero_iron', pane: 'hero_glass', reveal: 0.55, frameW: 0.04, mullions: 3, transom: false, sill: { mat: trim, depth: 0.1, h: 0.12 }, surround: { mat: trim, w: 0.2, d: 0.06 } };
   const doorSt: WindowStyle = { wall: stone, frame: 'hero_frame', pane: 'hero_door', fan: 'hero_glass_lit', reveal: 0.5, frameW: 0.08, transom: true, surround: { mat: trim, w: 0.18, d: 0.05 } };
 
   // Annexes: the outline outside the hall and portico, as 4.2 m cut-stone blocks with flat lead roofs.
@@ -142,19 +143,20 @@ export function buildIskeleCamii(t: TileContext, outlineRing: readonly number[],
     const faces = [span(f, [HALL, HALL], [HALL, -HALL]), span(f, [-HALL, -HALL], [-HALL, HALL]), span(f, [-HALL, HALL], [HALL, HALL]), span(f, [HALL, -HALL], [-HALL, -HALL])];
     faces.forEach((e, i) => {
       const c = e.len / 2;
+      // Ottoman scheme: rectangular lower windows in stone frames, pointed-arch upper windows with iron grilles.
       const ops: Opening[] = [
-        { s: c - 4.0, w: 1.3, y0: 1.2, ys: 3.2, kind: 'pointed', rise: 0.9 },
-        { s: c, w: 1.3, y0: 1.8, ys: 3.8, kind: 'pointed', rise: 0.9 },
-        { s: c + 4.0, w: 1.3, y0: 1.2, ys: 3.2, kind: 'pointed', rise: 0.9 },
-        { s: c - 2.2, w: 0.9, y0: 5.6, ys: 6.8, kind: 'round' },
-        { s: c + 2.2, w: 0.9, y0: 5.6, ys: 6.8, kind: 'round' },
+        { s: c - 4.0, w: 1.2, y0: 1.2, ys: 3.3, kind: 'flat' },
+        { s: c, w: 1.2, y0: 1.2, ys: 3.3, kind: 'flat' },
+        { s: c + 4.0, w: 1.2, y0: 1.2, ys: 3.3, kind: 'flat' },
+        { s: c - 2.2, w: 0.95, y0: 5.4, ys: 6.7, kind: 'pointed', rise: 0.75 },
+        { s: c + 2.2, w: 0.95, y0: 5.4, ys: 6.7, kind: 'pointed', rise: 0.75 },
       ];
       if (i === 1) {
         ops.splice(1, 1, { s: c, w: 1.5, y0: 0, ys: 2.8, kind: 'pointed', rise: 1.0, door: true });
       }
       wall(mesh, stone, e.face, 0, e.len, yb, HALL_H, ops);
       for (const o of ops) {
-        dressOpening(mesh, b0, e.face, o, o.door ? doorSt : winSt);
+        dressOpening(mesh, b0, e.face, o, o.door ? doorSt : o.kind === 'flat' ? lowerSt : winSt);
       }
     });
     b0.flush();

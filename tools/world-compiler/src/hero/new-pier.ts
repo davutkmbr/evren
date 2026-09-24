@@ -6,12 +6,13 @@
  * one-storey part with a roof terrace (20 m, 4.2 m), the two-storey pavilion (27 m) with arched ground-floor openings,
  * a glazed upper floor and a hipped standing-seam roof (eaves 8.0 m, ridge about 11.4 m), then the land block (35 m,
  * parapet 8.6 m) in five pilastered bays of paired pointed-arch windows over rectangular ones. Cream panels, white
- * frames, grey metal roof.
+ * frames, a light-grey standing-seam roof; pointed arches on the ground floor; on the berth side a dark concrete quay
+ * face down to the water with a row of tyre fenders (c03).
  */
 import type { LightInput } from '../lights';
 import { LOD0, LOD1, type TileMesh } from '../mesh';
 import type { TileContext } from '../registry';
-import { Batch, box, dressOpening, Face, faceBox, Frame, hippedRoof, hpoly, type Opening, outline, shape, span, wall, type WindowStyle } from './kit';
+import { Batch, box, dressOpening, Face, faceBox, Frame, hippedRoof, hpoly, type Opening, outline, shape, span, type V2, wall, type WindowStyle } from './kit';
 import { type HeroBuild, longestEdgeHeading } from './pier1926';
 
 const HALF_L = 41.15;
@@ -115,10 +116,10 @@ function openings(len: number, sSW: boolean): Op[] {
   const sOf = (u: number): number => (sSW ? u + HALF_L : HALF_L - u);
   const ops: Op[] = [];
   for (const u of [-37, -31.5, -26]) {
-    ops.push({ s: sOf(u), w: 1.5, y0: 0.9, ys: 2.4, kind: 'round' });
+    ops.push({ s: sOf(u), w: 1.5, y0: 0.9, ys: 2.3, kind: 'pointed', rise: 1.05 });
   }
   for (const u of [-17.5, -10.8, -4.1, 2.6]) {
-    ops.push({ s: sOf(u), w: 1.7, y0: 0.6, ys: 2.3, kind: 'round' });
+    ops.push({ s: sOf(u), w: 1.7, y0: 0.6, ys: 2.2, kind: 'pointed', rise: 1.2 });
   }
   for (let k = 0; k < 10; k++) {
     ops.push({ s: sOf(PAV.u0 + 1.35 + k * 2.63 + 1.0), w: 1.95, y0: 4.85, ys: 7.25, kind: 'flat' });
@@ -182,10 +183,44 @@ function longSide(mesh: TileMesh, batch: Batch, f: Frame, v: number, yb: number,
   const s1 = Math.max(sOf(SEA.u0), sOf(SEA.u1));
   faceBox(trim, side.face, s0, s1, SEA.h - 0.25, SEA.h + 0.05, -0.02, 0.14);
   railing(batch, side.face, s0 + 0.2, s1 - 0.2, SEA.h + 0.05);
+  // Berth side over water (c03): a dark concrete quay face down to the water and a row of tyre fenders on chains.
+  if (sSW) {
+    quayFace(mesh, batch, side.face, side.len, f.y0);
+  }
   // Wall lanterns over the ground-floor openings of the berth side, warm.
   for (const u of [-37, -26, -17.5, -4.1, 9.5, 23.5, 37.5]) {
     const p = side.face.p(sOf(u), 3.3, 0.35);
     lights.push({ type: 'point', position: p, kelvin: 2800, lumens: 650, night: true, source: 'lamp' });
+  }
+}
+
+/** Quay face under a berth wall (from 0.3 m under the water to the floor) and tyre fenders every 3.4 m. */
+function quayFace(mesh: TileMesh, batch: Batch, face: Face, len: number, floorY: number): void {
+  const water = -floorY;
+  faceBox(batch.of('hero_quay'), face, -0.3, len + 0.3, water - 0.3, -0.04, -0.05, 0.28);
+  // Weed and damp line at the water.
+  faceBox(batch.of('hero_quay_wet'), face, -0.3, len + 0.3, water - 0.3, water + 0.35, 0.28, 0.285, false, false);
+  const tyre = batch.of('hero_tyre');
+  for (let s = 1.2; s < len - 1; s += 3.4) {
+    const cy = water + 0.55;
+    const ring: V2[] = [];
+    const hole: V2[] = [];
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      ring.push([s + Math.cos(a) * 0.42, cy + Math.sin(a) * 0.42]);
+      hole.push([s + Math.cos(a) * 0.2, cy + Math.sin(a) * 0.2]);
+    }
+    shape(mesh, 'hero_tyre', face, ring, [hole], 0.52);
+    for (let k = 0; k < 16; k++) {
+      const [a0, b0] = ring[k];
+      const [a1, b1] = ring[(k + 1) % 16];
+      const l = Math.hypot(a1 - a0, b1 - b0) || 1;
+      tyre.flatQuad([face.p(a0, b0, 0.3), face.p(a1, b1, 0.3), face.p(a1, b1, 0.52), face.p(a0, b0, 0.52)], face.dir((b1 - b0) / l, -(a1 - a0) / l, 0));
+    }
+    // Two chains from the deck edge.
+    for (const ds of [-0.25, 0.25]) {
+      faceBox(batch.of('hero_iron'), face, s + ds - 0.015, s + ds + 0.015, cy + 0.3, -0.05, 0.36, 0.39, false, false);
+    }
   }
 }
 
@@ -210,9 +245,9 @@ function ends(mesh: TileMesh, batch: Batch, f: Frame, yb: number): void {
   const land = span(f, [HALF_L, HALF_W], [HALF_L, -HALF_W]);
   const c = land.len / 2;
   const ops: Op[] = [
-    { s: c - 4, w: 2.0, y0: 0, ys: 2.6, kind: 'round', door: true },
-    { s: c, w: 2.0, y0: 0, ys: 2.6, kind: 'round', door: true },
-    { s: c + 4, w: 2.0, y0: 0, ys: 2.6, kind: 'round', door: true },
+    { s: c - 4, w: 2.0, y0: 0, ys: 2.5, kind: 'pointed', rise: 1.35, door: true },
+    { s: c, w: 2.0, y0: 0, ys: 2.5, kind: 'pointed', rise: 1.35, door: true },
+    { s: c + 4, w: 2.0, y0: 0, ys: 2.5, kind: 'pointed', rise: 1.35, door: true },
     { s: c - 4, w: 1.3, y0: 4.45, ys: 6.35, kind: 'pointed', rise: 0.85 },
     { s: c, w: 1.3, y0: 4.45, ys: 6.35, kind: 'pointed', rise: 0.85 },
     { s: c + 4, w: 1.3, y0: 4.45, ys: 6.35, kind: 'pointed', rise: 0.85 },
@@ -225,7 +260,7 @@ function ends(mesh: TileMesh, batch: Batch, f: Frame, yb: number): void {
   faceBox(batch.of(TRIM), land.face, 0, land.len, LAND.h - 0.06, LAND.h + 0.04, -0.3, 0.06);
   // Sea end of the low part.
   const sea = span(f, [-HALF_L, -HALF_W], [-HALF_L, HALF_W]);
-  const so: Op[] = [-5, 0, 5].map((d) => ({ s: sea.len / 2 + d, w: 1.5, y0: 0.9, ys: 2.4, kind: 'round' as const }));
+  const so: Op[] = [-5, 0, 5].map((d) => ({ s: sea.len / 2 + d, w: 1.5, y0: 0.9, ys: 2.3, kind: 'pointed' as const, rise: 1.05 }));
   wall(mesh, WALL, sea.face, 0, sea.len, yb, SEA.h, so);
   for (const o of so) {
     dressOpening(mesh, batch, sea.face, o, win(true));

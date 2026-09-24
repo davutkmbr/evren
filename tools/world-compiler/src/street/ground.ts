@@ -29,6 +29,8 @@ const PATH_REACH = PATH_RANGE * 0.75;
 const GRIME_WALL = 0.4;
 /** Granite edging around mapped greens (m). */
 const GREEN_EDGE = 0.12;
+/** Depth of the skirt under the ground's tile-border edges (m). */
+const SKIRT = 0.5;
 
 const TAG_NONE = 0;
 const TAG_COAST = 1;
@@ -211,6 +213,35 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     }
     return best;
   };
+  // Raised solids (building=roof canopies, bridges) stand over paving: the ground under them stays.
+  const raised = a.solids.filter((q) => {
+    if (q.grounded) {
+      return false;
+    }
+    const b = bounds(q.ring);
+    return b.maxX > tile.minX - 1 && b.minX < tile.maxX + 1 && b.maxZ > tile.minZ - 1 && b.minZ < tile.maxZ + 1;
+  });
+  const grounded = raised.length ? a.solids.filter((q) => q.grounded && raised.some((r) => bounds(r.ring).maxX > bounds(q.ring).minX && bounds(r.ring).minX < bounds(q.ring).maxX && bounds(r.ring).maxZ > bounds(q.ring).minZ && bounds(r.ring).minZ < bounds(q.ring).maxZ)) : [];
+  const underRaisedOnly = (x: number, z: number): boolean => raised.some((q) => pointInRing(q.ring, x, z)) && !grounded.some((q) => pointInRing(q.ring, x, z));
+  /** Within 0.6 m of a raised solid's outline and not in a grounded one: no contact darkening from its footprint. */
+  const nearRaised = (x: number, z: number): boolean => {
+    if (grounded.some((q) => pointInRing(q.ring, x, z))) {
+      return false;
+    }
+    for (const q of raised) {
+      const r = q.ring;
+      const m = r.length / 2;
+      if (pointInRing(r, x, z)) {
+        return true;
+      }
+      for (let i = 0, j = m - 1; i < m; j = i++) {
+        if (segDist(x, z, r[j * 2], r[j * 2 + 1], r[i * 2], r[i * 2 + 1]) < 0.6) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
   for (let j = 0; j <= nz; j++) {
     for (let i = 0; i <= nx; i++) {
       const x = tile.minX + i * CELL;
@@ -220,9 +251,12 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       D[k] = s.distance(x, z);
       P[k] = s.pathDistance(x, z);
       B[k] = s.buildingDistance(x, z);
+      if (raised.length && B[k] < 1 && nearRaised(x, z)) {
+        B[k] = 1;
+      }
       G[k] = greens.length ? greenDist(x, z) : -3;
       Wd[k] = sc.drop(x, z);
-      inside[k] = f.footprints.inside(x, z) ? 1 : 0;
+      inside[k] = f.footprints.inside(x, z) && !(raised.length && underRaisedOnly(x, z)) ? 1 : 0;
     }
   }
   const stats: StreetGroundStats = { kerbStoneM: 0, gutterM: 0, copingM: 0, droppedKerbs: 0 };
@@ -262,16 +296,30 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
   const carriageY = (v: V): number => a.heights.carriage(v.x, v.z);
   /** Wear colour (linear multiplier) of a ground vertex. */
   const wear = (v: V, carriage: boolean): RGBA => {
-    const blotch = 0.9 + 0.1 * (0.6 * valueNoise(v.x, v.z, 6.3) + 0.4 * valueNoise(v.x, v.z, 1.9, 1));
+    // Blotches at 2-6 m and a macro variation at about 30 m (breaks the paving repeat seen across the square).
+    const macro = carriage ? 1 : 0.84 + 0.16 * (0.65 * valueNoise(v.x, v.z, 31, 2) + 0.35 * valueNoise(v.x, v.z, 13, 3));
+    const blotch = macro * (0.9 + 0.1 * (0.6 * valueNoise(v.x, v.z, 6.3) + 0.4 * valueNoise(v.x, v.z, 1.9, 1)));
     let g = 0;
     if (carriage && v.D > -0.9 && kerbStone(v.x, v.z)) {
       g = 0.24 * Math.pow(1 - -v.D / 0.9, 1.6);
     }
     if (!carriage && v.B < GRIME_WALL) {
-      g = Math.max(g, 0.34 * (1 - v.B / GRIME_WALL));
+      g = Math.max(g, Math.min(0.6, 0.34 * (1 - v.B / GRIME_WALL)));
     }
     const k = blotch * (1 - g);
     return [k, k * (1 - g * 0.04), k * (1 - g * 0.1), 1];
+  };
+
+  /**
+   * Lawn colour (COLOR_0 over st_grass): mottled at 1-3 m, dry yellow-brown patches, worn paths near the edge and
+   * contact darkening (AO) within 0.4 m of the granite edging.
+   */
+  const grassColour = (v: V): RGBA => {
+    const mott = 0.78 + 0.3 * valueNoise(v.x, v.z, 1.3, 7) + 0.1 * valueNoise(v.x, v.z, 3.1, 9);
+    const dry = Math.max(0, valueNoise(v.x, v.z, 4.3, 8) - 0.55) * 1.8;
+    const edge = v.G < 0.4 ? 0.62 + 0.38 * Math.max(0, v.G / 0.4) : 1;
+    const k = mott * edge;
+    return [k * (1 + 0.55 * dry), k * (1 + 0.12 * dry), k * (1 - 0.35 * dry), 1];
   };
 
   /** Paving of a pedestrian street (by its OSM surface) in the street's frame. */
@@ -309,7 +357,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       return ['st_sidewalk', kerbFrame()];
     }
     if (c.G > 0 && d > 0.5) {
-      return ['grass', WORLD];
+      return ['st_grass', WORLD];
     }
     if (sc.inSquare(c.x, c.z)) {
       // The arrival square is paved throughout (c02: grey interlocking pavers).
@@ -334,6 +382,38 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     return s.pathDistance(c.x, c.z) < PATH_REACH ? ['st_pavers', WORLD] : ['lot', WORLD];
   };
 
+  /**
+   * Tile-border edges of the emitted ground: each gets a SKIRT-deep face down from the edge, so no gap opens against
+   * a neighbour tile built at another level (greybox ground, other kerb rules).
+   */
+  const skirts: { a: Vec3; b: Vec3; n: Vec3 }[] = [];
+  const onLine = (p: Vec3, q: Vec3): Vec3 | null => {
+    const e = 1e-4;
+    if (Math.abs(p[0] - tile.minX) < e && Math.abs(q[0] - tile.minX) < e) {
+      return [-1, 0, 0];
+    }
+    if (Math.abs(p[0] - tile.maxX) < e && Math.abs(q[0] - tile.maxX) < e) {
+      return [1, 0, 0];
+    }
+    if (Math.abs(p[2] - tile.minZ) < e && Math.abs(q[2] - tile.minZ) < e) {
+      return [0, 0, -1];
+    }
+    if (Math.abs(p[2] - tile.maxZ) < e && Math.abs(q[2] - tile.maxZ) < e) {
+      return [0, 0, 1];
+    }
+    return null;
+  };
+  const noteBorder = (pts: readonly Vec3[]): void => {
+    for (let k = 0; k < pts.length; k++) {
+      const p = pts[k];
+      const q = pts[(k + 1) % pts.length];
+      const n = onLine(p, q);
+      if (n && Math.hypot(q[0] - p[0], q[2] - p[2]) > 1e-3) {
+        skirts.push({ a: p, b: q, n });
+      }
+    }
+  };
+
   /** A kerb / gutter / coping piece: flat polygon with UVs along the contour (u) and across it (v, metres). */
   const alongPiece = (m: MaterialName, q: Poly, ys: number[], normal: (g: [number, number]) => Vec3, field: (x: number, z: number) => number, vOf: (v: V) => number, carriage: boolean): void => {
     const c = centre(q);
@@ -343,6 +423,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     const pts: Vec3[] = q.v.map((v, k) => [v.x, ys[k], v.z]);
     const uvm: Vec2[] = q.v.map((v) => [v.x * tx + v.z * tz, vOf(v)]);
     mesh.flatPolygon(m, pts, normal([gx, gz]), { uvm, color: q.v.map((v) => wear(v, carriage)) });
+    noteBorder(pts);
   };
 
   const emitWalls = (p: Poly, ys: number[], carriage: boolean): void => {
@@ -415,6 +496,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       } else {
         patch(m, fr).polygon(pts, cols);
       }
+      noteBorder(pts);
     }
     emitWalls(q, ys, true);
   };
@@ -450,12 +532,13 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     } else {
       const [m, fr] = offMaterial(c);
       const pts: Vec3[] = q.v.map((v, k) => [v.x, ys[k], v.z]);
-      const cols = q.v.map((v) => wear(v, false));
+      const cols = q.v.map((v) => (m === 'st_grass' ? grassColour(v) : wear(v, false)));
       if (fr === WORLD) {
         mesh.groundPolygon(m, pts, { color: cols });
       } else {
         patch(m, fr).polygon(pts, cols);
       }
+      noteBorder(pts);
     }
     emitWalls(q, ys, false);
   };
@@ -502,6 +585,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
             ['D', PAVED_REACH],
             ['B', GRIME_WALL],
             ['G', 0],
+            ['G', 0.4],
             ['G', -GREEN_EDGE],
             ['W', 0.015],
             ['W', 0.04],
@@ -516,6 +600,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
         }
       }
     }
+  }
+  for (const k of skirts) {
+    mesh.wall('st_gutter', k.a[0], k.a[2], k.b[0], k.b[2], k.a[1] - SKIRT, k.a[1], k.b[1] - SKIRT, k.b[1], k.n, { color: [0.55, 0.55, 0.55, 1] });
   }
   for (const [key, p] of patches) {
     if (!p.idx.length) {

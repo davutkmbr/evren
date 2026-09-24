@@ -36,7 +36,8 @@ export const FACADE_MATERIALS: MaterialDef[] = [
   { id: 'fac_timber', color: 0xffffff, textures: { asset: 'wood_peeling_paint_weathered' }, maps: { baseColor: false }, tiling: [0.76, 0.76], surface: 'wood', castShadow: true },
   { id: 'fac_shutter_wood', color: 0xffffff, textures: { asset: 'wood_peeling_paint_weathered' }, tiling: [0.76, 0.76], surface: 'wood', castShadow: true },
   { id: 'fac_roller', color: 0xffffff, textures: { asset: 'painted_metal_shutter' }, tiling: [1.2, 1.2], roughness: 0.6, surface: 'metal', castShadow: true },
-  { id: 'fac_kepenk', color: 0xffffff, textures: { asset: 'painted_metal_shutter' }, tiling: [1.6, 1.6], metallic: 0.5, surface: 'metal', castShadow: true },
+  // Slats come from the texture (mipmapped, no slat geometry); a softer relief keeps them from shimmering at distance.
+  { id: 'fac_kepenk', color: 0xffffff, textures: { asset: 'painted_metal_shutter' }, tiling: [1.6, 1.6], metallic: 0.5, normalScale: 0.6, surface: 'metal', castShadow: true },
   { id: 'fac_kepenk_worn', color: 0xffffff, textures: { asset: 'worn_shutter' }, tiling: [1.37, 1.37], surface: 'metal', castShadow: true },
   { id: 'fac_metal', color: 0xffffff, roughness: 0.5, metallic: 0.55, surface: 'metal', castShadow: true },
   { id: 'fac_alu', color: 0xffffff, roughness: 0.32, metallic: 0.85, surface: 'metal', castShadow: true },
@@ -46,6 +47,7 @@ export const FACADE_MATERIALS: MaterialDef[] = [
   { id: 'fac_room_lit', color: 0xffffff, roughness: 0.95, emissive: { color: 0xffcf96, nits: 40, night: true, source: 'window' }, surface: 'other', castShadow: false },
   { id: 'fac_curtain', color: 0xffffff, roughness: 0.95, doubleSided: true, surface: 'fabric', castShadow: false },
   { id: 'fac_shop_lit', color: 0xffffff, roughness: 0.8, emissive: { color: 0xfff1de, nits: 25, night: true, source: 'interior' }, surface: 'other', castShadow: false },
+  { id: 'fac_ceiling_light', color: 0xffffff, roughness: 0.4, emissive: { color: 0xfff6ec, nits: 1500, night: false, source: 'interior' }, surface: 'other', castShadow: false },
   /* Shopfront dressing. */
   { id: 'fac_awning', color: 0xffffff, roughness: 0.9, doubleSided: true, surface: 'fabric', castShadow: true },
   { id: 'fac_sign', color: 0xffffff, roughness: 0.45, surface: 'other', castShadow: true },

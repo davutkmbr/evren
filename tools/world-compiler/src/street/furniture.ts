@@ -13,7 +13,10 @@
  * Positions stand on the street ground (common.ts groundY). Everything keeps clear of façades, the carriageway and
  * other furniture (Spacing).
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { hash } from '../../../../src/world/osm/shared/geometry';
+import { ROOT } from '../../lib/areas.mjs';
 import { Spacing } from '../../../../src/world/osm/streets/sink';
 import type { XYZ } from '../format';
 import { headingYaw } from '../instances';
@@ -63,6 +66,21 @@ const SHOPFRONT_BOARD = /^(shop=(bakery|confectionery|greengrocer|seafood|deli|b
 
 const tileOf = (x: number, z: number): string => `${Math.floor(x / 100)}_${Math.floor(z / 100)}`;
 /** Compass heading (deg) of a direction (dx, dz). */
+/** The c05 camera of tools/world-compiler/s1/cameras.json (position and heading), or null. */
+function c05Camera(): { x: number; z: number; heading: number } | null {
+  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
+  if (!existsSync(file)) {
+    return null;
+  }
+  const doc = JSON.parse(readFileSync(file, 'utf8')) as { cameras?: { id: string; position: number[]; target: number[] }[] };
+  const c = (doc.cameras ?? []).find((q) => q.id.startsWith('c05'));
+  if (!c) {
+    return null;
+  }
+  const heading = ((Math.atan2(c.target[0] - c.position[0], -(c.target[2] - c.position[2])) * 180) / Math.PI + 360) % 360;
+  return { x: c.position[0], z: c.position[2], heading };
+}
+
 const compass = (dx: number, dz: number): number => ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360;
 /** Yaw that turns the prop's +Z along (dx, dz). */
 const yawZ = (dx: number, dz: number): number => headingYaw(compass(dx, dz), '+Z');
@@ -366,10 +384,85 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
     }
   }
 
+  /* The c05 foreground (spec §5: İskele Cami T3 stop), placed as measured on the c05 photo relative to its camera:
+     the tram stop pole with the oval sign 2.6 m ahead, the bench on concrete feet, the blue bin, street trees
+     behind, and the T3 catenary (poles with cantilevers, a contact wire at 5.8 m) along the track nearby. */
+  const c05 = c05Camera();
+  if (c05 && onStreetTile(c05.x, c05.z)) {
+    const h = (c05.heading * Math.PI) / 180;
+    const fx = Math.sin(h);
+    const fz = -Math.cos(h);
+    const rx = Math.cos(h);
+    const rz = Math.sin(h);
+    const rel = (ahead: number, left: number): [number, number] => [c05.x + fx * ahead - rx * left, c05.z + fz * ahead - rz * left];
+    const [px, pz] = rel(2.6, 0.45);
+    put({ prop: 'st_stop_pole', variant: 'tram', pos: at(px, pz), yaw: headingYaw(c05.heading + 90, '+X'), ref: 'stop/c05/pole' }, 0);
+    const [bx, bz] = rel(3.4, 2.1);
+    if (put({ prop: 'st_bench', variant: 'flat', pos: at(bx, bz), yaw: yawZ(rx + fx * 0.3, rz + fz * 0.3), ref: 'stop/c05/bench' }, 0)) {
+      seats.push({ x: bx, y: y(bx, bz), z: bz, yaw: yawZ(rx + fx * 0.3, rz + fz * 0.3) });
+    }
+    const [ix, iz] = rel(2.2, 1.05);
+    put({ prop: 'st_bin', variant: 'ibb', pos: at(ix, iz), yaw: 0, ref: 'stop/c05/bin' }, 0);
+    for (const [ah, lf, sc2] of [
+      [7.5, 4.8, 1.25],
+      [15, 6.5, 1.1],
+      [24, 6.0, 1.2],
+    ] as const) {
+      const [tx, tz] = rel(ah, lf);
+      if (open(tx, tz, 0.5)) {
+        put({ prop: 'st_tree', variant: 'street', pos: at(tx, tz), yaw: hash(tx) * 6.28, scale: sc2, ref: `c05/tree${ah}` }, 0);
+      }
+    }
+    // Catenary along the T3 track within 90 m of the camera: poles every 28 m, 3.2 m off the track, a cantilever
+    // over it and the contact wire at 5.8 m (25 mm, drawn as a cable).
+    for (const tr of a.data.rails) {
+      if (!/tram/.test(tr.kind)) {
+        continue;
+      }
+      const P = tr.pts;
+      let along = 0;
+      let next = 0;
+      let prev: Vec3 | null = null;
+      for (let k = 2; k < P.length; k += 2) {
+        const ax = P[k - 2];
+        const az = P[k - 1];
+        const len = Math.hypot(P[k] - ax, P[k + 1] - az);
+        if (len < 1e-3) {
+          continue;
+        }
+        const tx = (P[k] - ax) / len;
+        const tz = (P[k + 1] - az) / len;
+        while (next < along + len) {
+          const f = next - along;
+          const cx = ax + tx * f;
+          const cz = az + tz * f;
+          next += 28;
+          if (Math.hypot(cx - c05.x, cz - c05.z) > 90 || !onStreetTile(cx, cz)) {
+            prev = null;
+            continue;
+          }
+          const ox = cx - tz * 3.2;
+          const oz = cz + tx * 3.2;
+          const base = y(ox, oz);
+          const wire: Vec3 = [cx, y(cx, cz) + 5.8, cz];
+          cables.push({ pts: [[ox, base, oz], [ox, base + 6.6, oz]], r: 0.09, tile: tileOf(ox, oz) });
+          cables.push({ pts: [[ox, base + 6.2, oz], [cx, base + 6.2, cz]], r: 0.03, tile: tileOf(ox, oz) });
+          cables.push({ pts: [[cx, base + 6.2, cz], wire], r: 0.012, tile: tileOf(cx, cz) });
+          if (prev) {
+            cables.push({ pts: sagLine(prev, wire, 0.08, 8), r: 0.0125, tile: tileOf((prev[0] + cx) / 2, (prev[2] + cz) / 2) });
+            count('catenary');
+          }
+          prev = wire;
+        }
+        along += len;
+      }
+    }
+  }
+
   /* Tram and bus stops: pole at the kerb, bench and bin behind it. */
   for (const p of a.data.points) {
     const tram = p.kind === 'railway=tram_stop';
-    if ((!tram && p.kind !== 'highway=bus_stop') || !onStreetTile(p.x, p.z)) {
+    if ((!tram && p.kind !== 'highway=bus_stop') || !onStreetTile(p.x, p.z) || (c05 && Math.hypot(p.x - c05.x, p.z - c05.z) < 12)) {
       continue;
     }
     // Pavement spot 0.6-1.2 m behind the nearest kerb.
@@ -618,7 +711,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
         const sag = 0.18 + 0.02 * (l1 + l2);
         const pts = sagLine(A, B, sag, 16);
         const mid = pts[8];
-        cables.push({ pts, r: 0.006, tile: tileOf(mid[0], mid[2]) });
+        cables.push({ pts, r: 0.0125, tile: tileOf(mid[0], mid[2]) });
         count('spanWires');
         // Pendant hangs from the middle of the wire; its suspension point is 0.9 m above the prop's origin.
         put({ prop: 'st_pendant', variant: 'warm', pos: [mid[0], mid[1] - 0.9, mid[2]], yaw: yawZ(tx, tz), ref: `span/${st.road}/${Math.round(next)}` }, 0);

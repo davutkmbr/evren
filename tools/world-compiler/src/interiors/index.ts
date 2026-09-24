@@ -37,6 +37,26 @@ const CELLS: { id: string; kind: 'cafe'; building: string; poiKind: string; name
   { id: 'cafe0', kind: 'cafe', building: 'w179197243', poiKind: 'amenity=cafe', name: 'Lodos Kahvesi' },
 ];
 
+/**
+ * Eye-level viewpoints in front of the interiors' street doors (door + 3.4 m out, looking in): other steps keep them
+ * clear (the crowd does not stand in the café's street view). Usable from any step's prepare.
+ */
+export function interiorDoorViews(a: AreaContext): { x: number; z: number; fx: number; fz: number }[] {
+  const out: { x: number; z: number; fx: number; fz: number }[] = [];
+  for (const c of CELLS) {
+    for (const m of a.manifests.values()) {
+      const poi = m.pois.find((p) => p.building === c.building && p.kind === c.poiKind && p.door);
+      const door = poi ? m.doors.find((d) => d.id === poi.door) : undefined;
+      if (door) {
+        const [nx, , nz] = door.normal;
+        out.push({ x: door.position[0] + nx * 3.4, z: door.position[2] + nz * 3.4, fx: -nx, fz: -nz });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export const interiorStep: CompileStep = {
   id: 'interiors',
   prepare(a: AreaContext) {

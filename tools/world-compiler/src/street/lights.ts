@@ -13,7 +13,7 @@
 import { hash } from '../../../../src/world/osm/shared/geometry';
 import type { LampRec, XYZ } from '../format';
 import { lampFixturesStep } from '../fixtures';
-import { headingYaw } from '../instances';
+import { headingYaw, rotateYaw } from '../instances';
 import { LAMP_KELVIN } from '../lights';
 import type { CompileStep, TileContext } from '../registry';
 import { streetTile } from './common';
@@ -45,14 +45,35 @@ function placeLamps(t: TileContext): { lamps: number; replaced: number } {
       return;
     }
     const pos: XYZ = [l.position[0], l.position[1] + (spec.lift ?? 0), l.position[2]];
-    t.place(spec.prop, pos, headingYaw(l.heading, '+Z'), {
+    const yaw = headingYaw(l.heading, '+Z');
+    const lantern = spec.prop === 'street_lamp_01' || spec.prop === 'street_lamp_02';
+    t.place(spec.prop, pos, yaw, {
       ...(spec.variantByLight ? { variant: l.light } : {}),
       ref: `${t.id}/lamp${k}`,
-      lights: { kelvin: LAMP_KELVIN[l.light] },
+      lights: lantern ? false : { kelvin: LAMP_KELVIN[l.light] },
     });
+    if (lantern) {
+      lanternLights(t, spec.prop, pos, yaw, `${t.id}/lamp${k}`, LAMP_KELVIN[l.light]);
+    }
     lamps++;
   });
   return { lamps, replaced };
+}
+
+/** Lamp-head offsets (prop space) of the approved lanterns: post lantern and wall bracket. */
+const LANTERN_HEAD: Record<string, XYZ> = { street_lamp_01: [0, 3.3, 0], street_lamp_02: [0, 0.72, 0.61] };
+
+/**
+ * Lights of a lantern (s1-strip.md §3 night light, critique of the S1 renders): a 3,800 lm downward spot with a
+ * 120° cone that makes the pool of light on the paving, and a 600 lm point for the glowing glass and the spill up
+ * the façades (4,400 lm in all, a 35-45 W LED lantern). Used for the post and wall lanterns instead of their
+ * template's single point.
+ */
+export function lanternLights(t: TileContext, prop: string, pos: XYZ, yaw: number, ref: string, kelvin: number): void {
+  const o = rotateYaw(LANTERN_HEAD[prop] ?? [0, 3.3, 0], yaw);
+  const head: XYZ = [pos[0] + o[0], pos[1] + o[1], pos[2] + o[2]];
+  t.lights.add({ type: 'spot', position: [head[0], head[1] - 0.12, head[2]], direction: [0, -1, 0], kelvin, lumens: 3800, cone: { inner: 30, outer: 60 }, night: true, source: 'lamp', ref });
+  t.lights.add({ type: 'point', position: head, kelvin, lumens: 600, night: true, source: 'lamp', ref });
 }
 
 function shopLights(t: TileContext): { windows: number; signs: number } {

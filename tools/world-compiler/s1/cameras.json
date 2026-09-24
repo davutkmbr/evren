@@ -297,12 +297,12 @@
    "label": "Quay edge of the square looking north across the water at the long side of the new pier",
    "position": [
     215.0,
-    3.45,
+    3.09,
     5893.0
    ],
    "target": [
     251.0,
-    4.0,
+    3.64,
     5792.0
    ],
    "fovDeg": 37.7,
@@ -340,12 +340,12 @@
    "label": "Pier square looking east at the Haldun Taner (1927 market hall) south-west front and the arcaded sea side",
    "position": [
     212.0,
-    3.69,
+    3.8,
     5905.0
    ],
    "target": [
     271.99,
-    7.89,
+    8.0,
     5903.95
    ],
    "fovDeg": 41.8,
@@ -430,14 +430,14 @@
    "id": "c06-yasa-west-above",
    "label": "Yasa Cd west half from an upper window of the north-side row (about 7 m up, photo GPS position) looking west-north-west to the Rıhtım",
    "position": [
-    385.7,
-    13.6,
-    6016.4
+    385.14,
+    13.74,
+    6022.68
    ],
    "target": [
-    354.18,
-    5.1,
-    5991.77
+    353.62,
+    5.24,
+    5998.05
    ],
    "fovDeg": 38.7,
    "aspect": 1.2955,
@@ -519,12 +519,12 @@
    "label": "Junction plaza, Aya Efimia gate in the yellow precinct wall, bell tower behind",
    "position": [
     401.1,
-    8.76,
+    8.69,
     6030.8
    ],
    "target": [
     420.23,
-    12.9,
+    12.83,
     6024.95
    ],
    "fovDeg": 55.6,
@@ -564,14 +564,14 @@
    "id": "c09-fountain-wall",
    "label": "Yasa Cd north side: precinct wall with the wooden gate, bench and the Sürmeli Ali Paşa Çeşmesi (1693/94)",
    "position": [
-    419.0,
-    9.14,
-    6046.5
+    420.53,
+    9.2,
+    6043.92
    ],
    "target": [
-    425.84,
-    10.19,
-    6027.71
+    426.14,
+    10.25,
+    6024.75
    ],
    "fovDeg": 39.2,
    "aspect": 1.3335,
@@ -589,7 +589,7 @@
    "eyeHeight": 1.6,
    "heightAboveGround": 1.6,
    "groundYFormat0": 7.54,
-   "headingDeg": 20.0,
+   "headingDeg": 16.3,
    "pitchDeg": 3.0,
    "chainage": 240.0,
    "offStrip": 5.9,
@@ -611,12 +611,12 @@
    "label": "Strip end at the fish market junction looking south-west down Güneşlibahçe Sk between fish, produce and deli stalls",
    "position": [
     437.0,
-    9.81,
+    9.67,
     6053.9
    ],
    "target": [
     415.8,
-    11.21,
+    11.07,
     6087.82
    ],
    "fovDeg": 53.0,
@@ -660,12 +660,12 @@
    "label": "Yasa Cd entrance at the Tavus Sk corner looking east-south-east into the lane (night only: no free day photo here)",
    "position": [
     317.0,
-    6.87,
+    6.82,
     5987.0
    ],
    "target": [
     354.09,
-    4.77,
+    4.72,
     6001.98
    ],
    "fovDeg": 56.8,

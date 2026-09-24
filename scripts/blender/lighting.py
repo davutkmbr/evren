@@ -13,9 +13,15 @@ Exposure (AgX view transform, 'Medium High Contrast' look):
   (+ sun): EV100 = log2(E_lux * 100 / 250), Blender exposure = log2(0.18 * 683 / (12.5 * 2^EV / 100)) + bias (dusk
   -1.5 stops for the blue-hour look). Night uses EV100 3.5 (a surface under ~24 lx reads middle grey).
 - Per camera (render.py --exposure auto, the default): the log-average luminance of a 160 px pre-render is mapped to
-  middle grey, clamped to -1..+2 stops (day), +-1.5 (dusk) or -1.5..+1 (night) around the preset, like a camera's matrix
-  meter in a narrow lane or a dark square.
-Manifest lights and emissive materials with `night: true` are off by day.
+  middle grey, clamped to -1..+5 stops (day), +-1.5 (dusk) or -1.5..+1 (night) around the preset, like a camera's
+  matrix meter in a narrow lane or a dark square. By day the meter is centre-weighted (the outer 20 % of the frame on
+  every side is ignored), so a bright near wall at the frame edge does not darken a shaded lane. At dusk and night the
+  result is also capped so the brightest 3 % of the frame (lit shop windows and interiors) sit 3.5 (dusk) or 4.5
+  (night, lower-contrast look) stops over middle grey instead of burning out (HIGHLIGHT_CAP).
+White balance (WHITE_BALANCE): the view transform is balanced like the phone photos, 6500 K by day, 4000 K at night
+(the 1900-3000 K lamps and signs read warm, not raw orange), 9000 K at dusk (the blue-hour sky light is 10000 K+; a
+lower setting such as 5500 K makes the frame colder, not warmer). Light colours are unchanged.
+Manifest lights and emissive materials with `night: true` are off by day (except import_area.DAY_ON_*).
 """
 
 import datetime as dt
@@ -38,6 +44,10 @@ PRESETS = {
 }
 VIEW_TRANSFORM = 'AgX'
 LOOK = 'AgX - Medium High Contrast'
+# Night uses the lower-contrast look (like a phone's night mode: lifted shadows, softer highlight shoulder). Tested on
+# c11 / c10 / c01 at night: one stop more exposure with this look clips no more than the high-contrast look did at
+# the old exposure (0.07 % against 0.08 % of c11's pixels) and lifts the lamp-lit pavement by about a stop.
+LOOKS = {'night': 'AgX - Medium Low Contrast'}
 SKY_ALTITUDE_M = 30.0
 
 
@@ -136,8 +146,9 @@ def sky_world(azimuth_deg, elevation_deg):
 
 
 def night_world():
-    """Urban night sky: ~0.08 cd/m² warm skyglow in a band just above the horizon, fading to ~0.004 cd/m² navy at
-    the zenith; dark below the horizon (reflections on the sea stand-in)."""
+    """Urban night sky (Istanbul, measured city skyglow is 0.01-0.3 cd/m²): ~0.2 cd/m² warm skyglow in a band just
+    above the horizon, fading to ~0.02 cd/m² grey-navy at the zenith; dark below the horizon. The sea stand-in reflects
+    the band; the night photos (c01) show a dark grey, not a black, sky."""
     w, nt, bg = _world()
 
     def col(nits, rgb):
@@ -156,9 +167,9 @@ def night_world():
     els = ramp.color_ramp.elements
     stops = [
         (0.0, 0.006, (0.3, 0.3, 0.3)),     # below the horizon
-        (0.09, 0.08, (1.0, 0.62, 0.4)),    # horizon skyglow
-        (0.16, 0.015, (0.45, 0.42, 0.45)), # ~4 deg up
-        (1.0, 0.004, (0.15, 0.22, 0.45)),  # zenith
+        (0.09, 0.2, (1.0, 0.62, 0.4)),     # horizon skyglow
+        (0.16, 0.06, (0.55, 0.5, 0.5)),    # ~4 deg up
+        (1.0, 0.02, (0.25, 0.3, 0.45)),    # zenith
     ]
     els[0].position, els[0].color = stops[0][0], col(stops[0][1], stops[0][2])
     els[1].position, els[1].color = stops[-1][0], col(stops[-1][1], stops[-1][2])
@@ -242,20 +253,46 @@ def exposure_for_ev(ev, bias=0.0):
 
 # Per-camera metering (like a camera's matrix meter): the log-average scene luminance of a small, fast pre-render
 # is mapped to middle grey, within a range around the preset's exposure.
-AUTO_RANGE = {'day': (-1.0, 2.0), 'dusk': (-1.5, 1.5), 'night': (-1.5, 1.0)}
+# Day allows +3.5 stops: in the shaded, awning-covered lanes (c09, c10) the frame is 5-6 stops under the sunlit
+# incident reading, and at +2 those views rendered nearly black while the photos are exposed for the lane.
+# Day allows +5: the fish-market lane (c10) under closed awnings sits 6-7 stops under the incident reading.
+AUTO_RANGE = {'day': (-1.0, 5.0), 'dusk': (-1.5, 1.5), 'night': (-1.5, 1.0)}
 AUTO_KEY = 0.18
+# Centre-weighted metering: this fraction of the frame on every side is left out of the log-average.
+AUTO_BORDER = {'day': 0.2}
+METER_ZONE = 4
+# View white balance per preset: (temperature K, tint). Tint 10 is Blender's D65 (daylight locus); tint 0 sits on the
+# Planckian locus of the incandescent / sodium / LED sources that light the night.
+# Dusk 9000 K: c05 dusk rendered at 5500 / 6500 / 8000 / 10000 K; the pavement's blue excess (B - R of the bottom
+# fifth) was 78 / 59 / 45 / 33 against 11 in c05-dusk.jpg.
+WHITE_BALANCE = {'day': (6500.0, 10.0), 'dusk': (9000.0, 10.0), 'night': (4000.0, 0.0)}
+# Highlight protection at dusk and night (a camera's highlight-weighted metering): the log-average of a night street
+# is dominated by dark sky and shadow and asks for 7+ stops more, so the exposure sat at the top of its range and lit
+# shop windows and interiors (hundreds of lux inside against 10-30 lx on the pavement) burnt out. The exposure is
+# capped so that the luminance at this percentile of the frame lands this many stops above middle grey (AgX keeps
+# colour and texture there; its white is about +6.5 stops). Point sources above the percentile (lamp globes) still clip.
+# Night: +4.5 stops with the lower-contrast night look (LOOKS), which keeps about a stop more highlight detail.
+HIGHLIGHT_CAP = {'dusk': (97.0, 3.5), 'night': (97.0, 4.5)}
+# The cap may go below the metering range (a frame full of lit glass), down to this many stops under the preset.
+HIGHLIGHT_FLOOR = {'dusk': -3.0, 'night': -2.0}
 
 
-def meter_view(width_px=160, samples=16):
+def meter_view(width_px=160, samples=16, percentile=None, border=0.0):
+    """Log-average luminance (Blender units, exposure 0) of a small pre-render of the current camera (without the
+    outer `border` fraction of the frame on every side), and with `percentile` also the luminance at that percentile
+    of the whole frame. Sample clamping is off while metering: render.py scales the indirect clamp with the previous
+    camera's exposure, which would otherwise dim a night meter by stops."""
     import numpy as np
 
     scene = bpy.context.scene
     r, c, img_s, vs = scene.render, scene.cycles, scene.render.image_settings, scene.view_settings
-    saved = (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure)
+    saved = (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure, c.sample_clamp_indirect, c.sample_clamp_direct)
     path = os.path.join(tempfile.gettempdir(), f'evren_view_meter_{os.getpid()}.exr')
     try:
         r.resolution_percentage = max(1, min(100, round(100.0 * width_px / max(r.resolution_x, 1))))
         c.samples = samples
+        c.sample_clamp_indirect = 0.0
+        c.sample_clamp_direct = 0.0
         c.use_denoising = False
         c.use_adaptive_sampling = False
         img_s.file_format = 'OPEN_EXR'
@@ -265,26 +302,52 @@ def meter_view(width_px=160, samples=16):
         r.filepath = path
         bpy.ops.render.render(write_still=True)
         img = bpy.data.images.load(path)
+        size = tuple(img.size)
         px = np.empty(len(img.pixels), dtype=np.float32)
         img.pixels.foreach_get(px)
         bpy.data.images.remove(img)
     finally:
-        (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure) = saved
+        (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure, c.sample_clamp_indirect, c.sample_clamp_direct) = saved
         if os.path.exists(path):
             os.remove(path)
-    px = px.reshape(-1, 4)[:, :3]
+    px = px.reshape(size[1], size[0], -1)[:, :, :3]
     y = np.maximum(px @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32), 0.0)
-    return float(np.exp(np.mean(np.log(1e-7 + y))))
+    core = y
+    if border > 0.0:
+        bx, by = int(round(size[0] * border)), int(round(size[1] * border))
+        core = y[by:size[1] - by, bx:size[0] - bx]
+    # Zones of METER_ZONE x METER_ZONE pixels (a matrix meter's cells): at 16 samples a dim, indirectly lit pixel is
+    # often exactly 0, and single zero pixels would drag the log-average down by many stops (c10 by day).
+    k = METER_ZONE
+    hz, wz = core.shape[0] // k, core.shape[1] // k
+    if hz and wz:
+        core = core[:hz * k, :wz * k].reshape(hz, k, wz, k).mean(axis=(1, 3))
+    log_avg = float(np.exp(np.mean(np.log(1e-7 + core))))
+    if percentile is None:
+        return log_avg
+    return log_avg, float(np.percentile(y, percentile))
 
 
 def auto_exposure(time_of_day, base_exposure):
-    """Exposure for the current camera: base + clamp(metered - base, range of the preset)."""
-    log_avg = meter_view()
+    """Exposure for the current camera: base + clamp(metered - base, range of the preset); at dusk and night then
+    no brighter than the highlight cap (HIGHLIGHT_CAP) and no darker than HIGHLIGHT_FLOOR under the preset."""
+    rule = HIGHLIGHT_CAP.get(time_of_day)
+    border = AUTO_BORDER.get(time_of_day, 0.0)
+    if rule:
+        log_avg, high = meter_view(percentile=rule[0], border=border)
+    else:
+        log_avg, high = meter_view(border=border), None
     metered = math.log2(AUTO_KEY / max(log_avg, 1e-9))
     lo, hi = AUTO_RANGE.get(time_of_day, (-1.0, 1.0))
     final = base_exposure + max(lo, min(hi, metered - base_exposure))
+    info = {'logAverage': log_avg, 'metered': round(metered, 2), 'border': border, 'range': [lo, hi]}
+    if rule:
+        cap = math.log2(AUTO_KEY * 2.0 ** rule[1] / max(high, 1e-9))
+        info.update({'highlightPercentile': rule[0], 'highlight': round(high, 5), 'highlightCap': round(cap, 2), 'uncapped': round(final, 2)})
+        final = max(base_exposure + HIGHLIGHT_FLOOR.get(time_of_day, lo), min(final, cap))
     bpy.context.scene.view_settings.exposure = final
-    return {'logAverage': log_avg, 'metered': round(metered, 2), 'final': round(final, 2)}
+    info['final'] = round(final, 2)
+    return info
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -319,14 +382,26 @@ def set_manifest_lights(night_on):
     lit = 0
     coll = bpy.data.collections.get('lights')
     for o in (coll.objects if coll else []):
-        on = night_on or not o.get('night', False)
+        on = night_on or not o.get('night', False) or o.get('dayOn', False)
         o.hide_render = not on
         lit += 1 if on else 0
     return lit
 
 
-def apply(time_of_day, when=None, ev=None, bias=None):
-    """Applies a preset to the current scene. Returns a summary dict (sun position, illuminance, EV, exposure)."""
+def white_balance(time_of_day, kelvin=None):
+    """Sets the view white balance of the preset (or `kelvin`, tint of the preset). Returns {kelvin, tint}."""
+    vs = bpy.context.scene.view_settings
+    k, tint = WHITE_BALANCE.get(time_of_day, (6500.0, 10.0))
+    k = k if kelvin is None else kelvin
+    vs.use_white_balance = True
+    vs.white_balance_temperature = k
+    vs.white_balance_tint = tint
+    return {'kelvin': k, 'tint': tint}
+
+
+def apply(time_of_day, when=None, ev=None, bias=None, wb_kelvin=None):
+    """Applies a preset to the current scene. Returns a summary dict (sun position, illuminance, EV, exposure,
+    white balance)."""
     import import_area  # sibling module (sys.path is set by the caller)
 
     preset = PRESETS[time_of_day]
@@ -367,9 +442,10 @@ def apply(time_of_day, when=None, ev=None, bias=None):
     import_area.set_emission(night_on)
     info['lightsOn'] = set_manifest_lights(night_on)
     scene.view_settings.view_transform = VIEW_TRANSFORM
-    scene.view_settings.look = LOOK
+    scene.view_settings.look = LOOKS.get(time_of_day, LOOK)
     scene.view_settings.exposure = exposure
     scene.view_settings.gamma = 1.0
-    info.update({'ev100': round(ev_used, 2), 'exposure': round(exposure, 2), 'bias': bias, 'view': f'{VIEW_TRANSFORM} / {LOOK}'})
+    wb = white_balance(time_of_day, wb_kelvin)
+    info.update({'ev100': round(ev_used, 2), 'exposure': round(exposure, 2), 'bias': bias, 'view': f'{VIEW_TRANSFORM} / {LOOKS.get(time_of_day, LOOK)}', 'whiteBalance': wb})
     log('preset', info)
     return info

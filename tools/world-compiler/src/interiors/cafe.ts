@@ -6,7 +6,9 @@
  * and the door, minus 0.3 m, capped at 11 m). Floor = the door threshold, ceiling 3.35 m above it.
  *
  * Layout (Kadıköy çarşı type, deep and narrow): a counter across the back with a marble top, an espresso machine and
- * a çaydanlık stand-in, the barista zone and steel shelves against the back wall, a chalk menu board above them;
+ * a çaydanlık stand-in, the barista zone and dressed shelves against the back wall, a lettered chalk menu board above
+ * them, a tea boiler, register and baklava vitrine on the counter, tea glasses on the tables, framed photos, a clock
+ * and a TV on the walls (cafe-dressing.ts);
  * bistro sets (approved outdoor_table_chair_set_01) along both side walls, pendants (modern_ceiling_lamp_01) over the
  * aisle and the counter, plants (potted_plant_04); the street door stands open inwards; an A-frame chalkboard
  * (standing_chalkboard_01) outside. Mannequins stand in for the NPCs of the slots (barista and three guests).
@@ -15,6 +17,7 @@ import type { DoorRec, XYZ } from '../format';
 import { LOD0, type TileMesh } from '../mesh';
 import type { TileContext } from '../registry';
 import { Batch, box, Face, faceBox, Frame, hpoly, lathe, type Opening, span, wall, type V2, dressOpening } from '../hero/kit';
+import { dressCafe, menuLettering } from './cafe-dressing';
 
 export const CAFE_CEILING = 3.35;
 /** Clear width of the café's street door; the shopfront lane is asked to frame its door opening at this width. */
@@ -150,11 +153,10 @@ export function buildCafe(t: TileContext, cell: CafeCell, ring: readonly number[
     menuBoard(batch, f, uL + 1.3, D, 2.25, 3.1);
     openDoor(batch, f, ud, v0);
     batch.flush();
+    menuLettering(mesh, f, uL + 1.3, D, 2.25, 3.1, uR);
   });
 
-  // Back bar: steel shelves against the back wall, facing the room.
-  place('steel_frame_shelves_01', uL + 0.72, 0, D - 0.28, 0, -1, { tag: 'shelf0' });
-  place('steel_frame_shelves_01', uL + 1.9, 0, D - 0.28, 0, -1, { tag: 'shelf1' });
+  // Back bar: dressed wall shelves (cafe-dressing.ts) instead of empty steel racks.
   place('potted_plant_04', counterR - 0.35, 1.04, (vc0 + vc1) / 2, 0, -1, { tag: 'plant-counter' });
   // Bistro sets along the side walls (chairs along the depth), the first right-hand set left out beside the door.
   const pitch = 1.95;
@@ -174,6 +176,11 @@ export function buildCafe(t: TileContext, cell: CafeCell, ring: readonly number[
       seatAt.push({ u: u - 0.11, v: v + 0.62, dv: -1 }, { u: u + 0.07, v: v - 0.57, dv: 1 });
     }
   }
+  mesh.withLod(LOD0, () => {
+    const batch = new Batch(mesh);
+    dressCafe(mesh, batch, f, { uL, uR, v0, D, C, counterR, vc0, vc1 }, tables);
+    batch.flush();
+  });
   place('potted_plant_04', uR - 0.45, 0, v0 + 0.55, 0, -1, { scale: 3.2, tag: 'plant0' });
   place('potted_plant_04', uL + 0.4, 0, vc0 - 0.55, 1, 0, { scale: 3.0, tag: 'plant1' });
   // Pendants: over the aisle and the counter (top at the ceiling; the prop hangs 1.17 m).
@@ -328,20 +335,13 @@ function counter(batch: Batch, f: Frame, u0: number, u1: number, v0: number, v1:
   }
 }
 
-/** Chalk menu board on the back wall: wooden frame, board and chalk lines. */
+/** Chalk menu board on the back wall: wooden frame and board (lettered by menuLettering). */
 function menuBoard(batch: Batch, f: Frame, uc: number, D: number, y0: number, y1: number): void {
   const back = span(f, [uc + 1.0, D], [uc - 1.0, D]);
   const wood = batch.of('int_wood_dark');
   faceBox(wood, back.face, 0, back.len, y0, y1, -0.01, 0.04, false, true);
   faceBox(batch.of('int_chalk'), back.face, 0.07, back.len - 0.07, y0 + 0.07, y1 - 0.07, 0.035, 0.046, false, true);
-  const chalk = batch.of('int_chalk_text');
-  const lines = [0.55, 0.5, 0.62, 0.45, 0.58, 0.4];
-  faceBox(chalk, back.face, 0.55, 1.45, y1 - 0.2, y1 - 0.16, 0.046, 0.049, false, false);
-  lines.forEach((lw, i) => {
-    const y = y1 - 0.3 - i * 0.075;
-    faceBox(chalk, back.face, 0.18, 0.18 + lw, y, y + 0.022, 0.046, 0.049, false, false);
-    faceBox(chalk, back.face, back.len - 0.35, back.len - 0.2, y, y + 0.022, 0.046, 0.049, false, false);
-  });
+  // Lettering: cafe-dressing.ts menuLettering (Turkish menu in the stroke font).
 }
 
 /** The street door leaf, open inwards (95°) on its right-hand hinge: aluminium frame and glass. */

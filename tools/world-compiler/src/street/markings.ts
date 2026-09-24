@@ -6,7 +6,10 @@
  * - manhole covers (ManholeCover003, foundry mark removed: conditions.json) on carriageways and pedestrian lanes;
  * - gully grates in the gutters of kerbed streets;
  * - yellow tactile strips on every dropped kerb;
- * - grooved rails of the T3 tram embedded in the street.
+ * - grooved rails of the T3 tram embedded in the street;
+ * - on the arrival square a white guide line of pavers (bus stop to the piers and the crossing) and manholes;
+ * - wet films (BLEND, COLOR_0 alpha falling to 0 at the rim): puddles in the square, wet paving in front of fish
+ *   stalls and round gully grates.
  * A marking belongs to the tile that holds its centre (strips: each quad by its midpoint).
  */
 import { BoxGrid, segDist } from '../../../../src/world/osm/shared/geometry';
@@ -174,6 +177,7 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   const tactile = newStrip();
   const rails = newStrip();
   const grooves = newStrip();
+  const gullies: [number, number][] = [];
   const nearCrossing = (x: number, z: number, r: number): boolean => sc.crossings.some((c) => segDist(x, z, c.ax, c.az, c.bx, c.bz) < r + c.width / 2);
 
   /* Zebras: bars 0.5 m wide (along the crossing) and `width` long (along the traffic), 1 m apart, 0.4 m off the kerbs. */
@@ -320,6 +324,7 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
             drapedRect(t, slots, y, x + tx * g - nx * (hw - 0.04), z + tz * g - nz * (hw - 0.04), x + tx * g + nx * (hw - 0.04), z + tz * g + nz * (hw - 0.04), 0.03, [0, 0.06], [0, 0.24], IRON_LIFT, 1);
           }
           stats.gullies++;
+          gullies.push([x, z]);
         }
         nextGully += 18 + hash(nextGully + st.road) * 14;
       }
@@ -365,6 +370,99 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
     }
   }
 
+  /* The arrival square: a white guide line of pavers from the bus stop to the piers and the crossing, manholes. */
+  const guide = newStrip();
+  const sp = sc.spine;
+  if (sc.square.length >= 6 && sp.length >= 6) {
+    const P0: [number, number] = [sp[0], sp[1]];
+    const legs: [number, number, number, number][] = [
+      [P0[0], P0[1], 206, 5931],
+      [P0[0], P0[1], sp[4], sp[5]],
+      [P0[0] - 8, P0[1] - 1.5, 236, 5893],
+    ];
+    for (const [ax, az, bx, bz] of legs) {
+      const len = Math.hypot(bx - ax, bz - az);
+      drapedRect(t, guide, y, ax, az, bx, bz, 0.15, [0, 0.5], [0, len / 0.6], PAINT_LIFT - 0.004, 0.6);
+    }
+    for (let k = 0; k < 9; k++) {
+      const x = 185 + hash(k * 3.7) * 110;
+      const z = 5885 + hash(k * 5.3 + 1) * 60;
+      if (!inTile(t, x, z) || !sc.inSquare(x, z) || s.buildingDistance(x, z) < 1.5) {
+        continue;
+      }
+      const r = 0.4;
+      const ang = hash(k * 9.1) * Math.PI * 2;
+      const ca = Math.cos(ang) * r;
+      const sa = Math.sin(ang) * r;
+      const corner = (u: number, v: number): Vec3 => {
+        const px = x + u * ca - v * sa;
+        const pz = z + u * sa + v * ca;
+        return [px, y(px, pz) + PAINT_LIFT + 0.002, pz];
+      };
+      quad(manhole, [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ]);
+      stats.manholes++;
+    }
+  }
+
+  /* Wet films: puddles in the square's hollows, wet paving in front of fish stalls and round gully grates. */
+  const wet = { pos: [] as number[], idx: [] as number[], col: [] as [number, number, number, number][] };
+  const puddle = (x: number, z: number, rx: number, rz: number, ang: number, alpha: number, seed: number): void => {
+    const n = 18;
+    const base = wet.pos.length / 3;
+    wet.pos.push(x, y(x, z) + 0.006, z);
+    wet.col.push([1, 1, 1, alpha]);
+    for (let k = 0; k < n; k++) {
+      const a2 = (k / n) * Math.PI * 2;
+      const wob = 0.75 + 0.25 * hash(seed + k * 1.3) + 0.15 * Math.sin(a2 * 3 + seed);
+      const lx = Math.cos(a2) * rx * wob;
+      const lz = Math.sin(a2) * rz * wob;
+      const px = x + lx * Math.cos(ang) - lz * Math.sin(ang);
+      const pz = z + lx * Math.sin(ang) + lz * Math.cos(ang);
+      wet.pos.push(px, y(px, pz) + 0.006, pz);
+      wet.col.push([1, 1, 1, 0]);
+    }
+    for (let k = 0; k < n; k++) {
+      wet.idx.push(base, base + 1 + ((k + 1) % n), base + 1 + k);
+    }
+  };
+  if (sc.square.length >= 6) {
+    for (let k = 0; k < 14; k++) {
+      const x = 180 + hash(k * 2.9 + 7) * 120;
+      const z = 5880 + hash(k * 4.1 + 3) * 70;
+      if (inTile(t, x, z) && sc.inSquare(x, z) && s.buildingDistance(x, z) > 1) {
+        puddle(x, z, 0.5 + hash(k) * 1.2, 0.3 + hash(k + 0.5) * 0.6, hash(k * 7) * 3, 0.55 + 0.3 * hash(k * 11), k * 5.1);
+      }
+    }
+  }
+  for (const i of t.instances.list) {
+    if (i.asset !== 'fac_stall_fish') {
+      continue;
+    }
+    const yaw = 2 * Math.atan2(i.rotation[1], i.rotation[3]);
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const cx = i.position[0] + fx * 2.0;
+    const cz = i.position[2] + fz * 2.0;
+    if (inTile(t, cx, cz)) {
+      puddle(cx, cz, 1.7, 1.1, Math.atan2(fz, fx) + Math.PI / 2, 0.7, cx * 0.37);
+    }
+  }
+  gullies.forEach(([gx, gz], k) => {
+    if (hash(gx * 0.7 + gz) < 0.55) {
+      puddle(gx, gz, 0.9, 0.5, hash(k + gx) * 3, 0.55, gx);
+    }
+  });
+  if (wet.idx.length) {
+    const nrm = new Array<number>(wet.pos.length).fill(0).map((_, k) => (k % 3 === 1 ? 1 : 0));
+    t.mesh.addMesh('st_wet', { positions: wet.pos, indices: wet.idx, normals: nrm, color: wet.col, lod: LOD0 });
+  }
+
+  flush(t, 'st_guide', guide, LOD0);
   flush(t, 'st_paint', paint, LOD0 | LOD1);
   flush(t, 'st_paint_lines', lines, LOD0 | LOD1);
   flush(t, 'st_manhole', manhole, LOD0);

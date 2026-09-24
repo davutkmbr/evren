@@ -18,6 +18,7 @@
 import type { LightInput } from '../lights';
 import { LOD0, LOD1, type RGBA, type TileMesh } from '../mesh';
 import type { TileContext } from '../registry';
+import { lanternLights } from '../street/lights';
 import {
   Batch,
   box,
@@ -162,7 +163,9 @@ export function buildPier1926(t: TileContext, ring: readonly number[], bottomY: 
   }
   for (const u of [-7.5, 7.5]) {
     const p = f.p(u, 0, MAIN.v0 - 3.2);
-    t.place('street_lamp_01', [p[0], t.area.heights.at(p[0], p[2]), p[2]], f.yaw(0, -1), { ref: `hero/pier1926/lamp${u < 0 ? 0 : 1}`, lights: { kelvin: 3000 } });
+    const pos: [number, number, number] = [p[0], t.area.heights.at(p[0], p[2]), p[2]];
+    t.place('street_lamp_01', pos, f.yaw(0, -1), { ref: `hero/pier1926/lamp${u < 0 ? 0 : 1}`, lights: false });
+    lanternLights(t, 'street_lamp_01', pos, f.yaw(0, -1), `hero/pier1926/lamp${u < 0 ? 0 : 1}`, 3000);
     instances++;
   }
   for (const l of lights) {

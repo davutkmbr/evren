@@ -5,7 +5,7 @@
  * - st_bin: blue İBB bin 0.9 m (slatted drum, round lid, concrete foot);
  * - st_bench: wooden slats on two concrete mushroom feet, with or without a backrest (seat faces +Z);
  * - st_planter: concrete trough or bowl with a shrub;
- * - st_tree: trunk and clustered crown (street tree, large plane tree);
+ * - st_tree: branch skeleton with mottled bark and geometric leaf clusters (street tree, large plane tree; tree.ts);
  * - st_cabinet: grey utility cabinet;
  * - st_signal: traffic / pedestrian signal pole (heads face +Z);
  * - st_stop_pole: grey pole with an oval tram stop sign or a bus stop plate on a bracket (+X);
@@ -18,6 +18,7 @@ import type { PropDef } from '../props';
 import type { TileMesh, Vec3 } from '../mesh';
 import { PERSON_BOTTOMS, PERSON_SKIN, PERSON_TOPS } from './materials';
 import { aabox, beam, cylinder, ellipsoid, lathe, obox, tube } from './shapes';
+import { buildTree } from './tree';
 
 function bollard(mesh: TileMesh, kind: 'ball' | 'post' | 'thin'): void {
   const m = 'st_black_metal';
@@ -130,45 +131,6 @@ function planter(mesh: TileMesh, round: boolean): void {
     ellipsoid(mesh, 'st_leaves', [-0.25, 0.8, 0], 0.4, 0.32, 0.3, 10, 6);
     ellipsoid(mesh, 'st_leaves_dark', [0.3, 0.75, 0.02], 0.35, 0.28, 0.28, 10, 6);
   }
-}
-
-function tree(mesh: TileMesh, big: boolean): void {
-  const h = big ? 15 : 7.5;
-  const trunkR = big ? 0.38 : 0.14;
-  const bole = big ? 4.5 : 2.4;
-  lathe(mesh, 'st_bark', 0, 0, 0, [
-    [trunkR * 1.35, 0],
-    [trunkR * 1.05, 0.4],
-    [trunkR, bole * 0.7],
-    [trunkR * 0.85, bole],
-    [trunkR * 0.5, bole + 1.2],
-  ], 10, false);
-  // Main limbs and a clustered crown (seeded, fixed).
-  const limbs = big ? 5 : 3;
-  for (let k = 0; k < limbs; k++) {
-    const a = (k / limbs) * Math.PI * 2 + 0.4;
-    const reach = big ? 3.2 : 1.3;
-    const top: Vec3 = [Math.cos(a) * reach, bole + (big ? 3.5 : 1.6), Math.sin(a) * reach];
-    tube(mesh, 'st_bark', [[0, bole - 0.2, 0], [top[0] * 0.5, bole + (top[1] - bole) * 0.55, top[2] * 0.5], top], trunkR * 0.45, 6);
-  }
-  const crown = big ? 5.2 : 2.3;
-  const blobs: [number, number, number, number][] = big
-    ? [
-        [0, h - 4.5, 0, 1],
-        [2.8, h - 5.5, 1.2, 0.8],
-        [-2.6, h - 5.8, 1.5, 0.78],
-        [1.2, h - 6, -2.9, 0.8],
-        [-1.6, h - 3.2, -1.8, 0.7],
-        [2.2, h - 3.5, -0.8, 0.65],
-        [-0.5, h - 2.2, 1.6, 0.6],
-      ]
-    : [
-        [0, h - 2.2, 0, 1],
-        [1.0, h - 2.8, 0.6, 0.7],
-        [-0.9, h - 2.9, 0.5, 0.7],
-        [0.2, h - 3, -1.0, 0.7],
-      ];
-  blobs.forEach(([x, y, z, s], k) => ellipsoid(mesh, k % 2 ? 'st_leaves_dark' : 'st_leaves', [x, y, z], crown * 0.62 * s, crown * 0.5 * s, crown * 0.62 * s, 10, 6));
 }
 
 function cabinet(mesh: TileMesh, wide: boolean): void {
@@ -389,8 +351,8 @@ export const KIT_PROPS: PropDef[] = [
     drawDistance: 400,
     castShadow: true,
     build: (b) => {
-      b.variant('street', (m) => tree(m, false));
-      b.variant('plane', (m) => tree(m, true));
+      b.variant('street', (m) => buildTree(m, false));
+      b.variant('plane', (m) => buildTree(m, true));
     },
   },
   {
@@ -425,7 +387,11 @@ export const KIT_PROPS: PropDef[] = [
     drawDistance: 150,
     castShadow: false,
     build: (b) => b.variant('warm', (m) => pendant(m)),
-    lights: [{ type: 'point', position: 'emissive', kelvin: 2700, lumens: 1400, night: true, source: 'lamp' }],
+    // A 120° downward pool (the lane under the span wire) and the glowing glass: 4,400 lm (s1-strip.md §3).
+    lights: [
+      { type: 'spot', position: [0, 0.14, 0], direction: [0, -1, 0], kelvin: 2700, lumens: 3800, cone: { inner: 30, outer: 60 }, night: true, source: 'lamp' },
+      { type: 'point', position: 'emissive', kelvin: 2700, lumens: 600, night: true, source: 'lamp' },
+    ],
   },
   {
     id: 'st_twin_lantern',
@@ -433,8 +399,10 @@ export const KIT_PROPS: PropDef[] = [
     castShadow: true,
     build: (b) => b.variant('warm', (m) => twinLantern(m)),
     lights: [
-      { type: 'point', position: [-0.55, 4.0, 0], kelvin: 3000, lumens: 1800, night: true, source: 'lamp' },
-      { type: 'point', position: [0.55, 4.0, 0], kelvin: 3000, lumens: 1800, night: true, source: 'lamp' },
+      { type: 'spot', position: [-0.55, 3.85, 0], direction: [0, -1, 0], kelvin: 3000, lumens: 3800, cone: { inner: 30, outer: 60 }, night: true, source: 'lamp' },
+      { type: 'spot', position: [0.55, 3.85, 0], direction: [0, -1, 0], kelvin: 3000, lumens: 3800, cone: { inner: 30, outer: 60 }, night: true, source: 'lamp' },
+      { type: 'point', position: [-0.55, 4.0, 0], kelvin: 3000, lumens: 600, night: true, source: 'lamp' },
+      { type: 'point', position: [0.55, 4.0, 0], kelvin: 3000, lumens: 600, night: true, source: 'lamp' },
     ],
   },
   {

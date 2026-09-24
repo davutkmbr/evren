@@ -1,0 +1,51 @@
+{
+ "format": "evren-camera-overrides/1",
+ "note": "Render-only pose fixes from the S1 critique, applied by scripts/blender/import_area.py ('cameras': tools/world-compiler/s1/cameras.json ids) and render.py ('interiorViews': views of the compiled interior records, ids as in render.py) until the owning lane adopts them. snapGround: y = compiled ground + eyeHeight (1.6 m), target moved by the same dy.",
+ "cameras": {
+  "c10-guneslibahce": {
+   "position": [
+    438.5,
+    9.67,
+    6054.85
+   ],
+   "target": [
+    417.3,
+    11.07,
+    6088.77
+   ],
+   "snapGround": true,
+   "why": "S1 critique: the cameras.json pose stands 0.81 m from w694715125 (a marble pier filled 45 % of the frame). Moved 1.77 m sideways into the lane (+1.5 x, +0.95 z) with the target shifted by the same amount, so heading 212 and pitch 2 stay; the pose overlay on c10-night.jpg puts the lane's vanishing point and the right stall line on the photo's."
+  },
+  "c09-fountain-wall": {
+   "position": [
+    417.93,
+    9.2,
+    6042.42
+   ],
+   "target": [
+    423.54,
+    10.25,
+    6023.25
+   ],
+   "snapGround": true,
+   "why": "Content revision moved precinct gate B 3 m west along the Yasa Cd wall (fountain flush at the wall's east end); the cameras.json pose was fitted to the old gate and now centres the fountain. Camera and target moved 3 m along the wall (bearing 300) so heading 16.3 and pitch 3 stay: gate B is centred and the fountain sits at the right edge as in c09-day.jpg (gate and fountain projected into the photo)."
+  }
+ },
+ "interiorViews": {
+  "cafe": {
+   "position": [
+    382.79,
+    8.27,
+    6023.13
+   ],
+   "target": [
+    384.88,
+    8.0,
+    6018.11
+   ],
+   "fovDeg": 50,
+   "snapGround": true,
+   "why": "S1 critique: from the record's street view (3.4 m out, 0.5 m west of the door, under the parasol) the canopy filled the top 30 % and 'day' did not read. 2 m further out along the facade normal (5.4 m) and 1.7 m east of it (1.2 m east of the door), looking at the door: the parasol moves to the left third, the pavement, sign and awning are in frame. No sunlit pavement is possible here at 16:00: Yasa Cd runs 119/299 deg and the sun stands at 238 deg / 33 deg, so both sides are in shade."
+  }
+ }
+}
