@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireSlot, releaseSlot } from './lib/gpu-slot.mjs';
+import { acquireNamedLock, acquireSlot, releaseSlot } from './lib/gpu-slot.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -72,6 +72,8 @@ process.on('exit', () => {
 
 const tWait = performance.now();
 if (!flag('no-slot')) {
+  // One Blender job at a time machine-wide (each needs 10-15 GB), plus a GPU slot shared with browser screenshots.
+  await acquireNamedLock('blender');
   await acquireSlot();
 }
 const waited = (performance.now() - tWait) / 1000;

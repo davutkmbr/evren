@@ -53,6 +53,42 @@ export async function acquireSlot() {
   }
 }
 
+/**
+ * A machine-wide mutex by name (same folder and stale-pid rules as the GPU slots). Blender jobs take 'blender' so only
+ * one runs at a time: each one needs 10-15 GB, and two at once push the 32 GB machine into heavy swapping.
+ */
+let heldLock = null;
+export async function acquireNamedLock(name) {
+  mkdirSync(LOCK_ROOT, { recursive: true });
+  const dir = `${LOCK_ROOT}/lock-${name}`;
+  for (;;) {
+    try {
+      mkdirSync(dir);
+      writeFileSync(`${dir}/pid`, String(process.pid));
+      heldLock = dir;
+      return;
+    } catch {
+      let owner = NaN;
+      try {
+        owner = Number(readFileSync(`${dir}/pid`, 'utf8'));
+      } catch {
+        /* being created */
+      }
+      if (Number.isFinite(owner) && owner > 0 && !alive(owner)) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+export function releaseNamedLock() {
+  if (heldLock) {
+    rmSync(heldLock, { recursive: true, force: true });
+    heldLock = null;
+  }
+}
+
 export function releaseSlot() {
   if (heldSlot) {
     rmSync(heldSlot, { recursive: true, force: true });
@@ -60,10 +96,14 @@ export function releaseSlot() {
   }
 }
 
-process.on('exit', releaseSlot);
+process.on('exit', () => {
+  releaseSlot();
+  releaseNamedLock();
+});
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     releaseSlot();
+    releaseNamedLock();
     process.exit(130);
   });
 }
