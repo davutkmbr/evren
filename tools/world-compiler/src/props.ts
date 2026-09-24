@@ -16,7 +16,7 @@ import { Document, getBounds, type Material, NodeIO } from '@gltf-transform/core
 import type { PropRec, XYZ } from './format';
 import { createMaterial, ExternalTextures, externalizeImages, GENERATOR_V1, TEXTURE_URI } from './gltf';
 import { kelvinToRgb, lightRange, pointCandela, spotCandela } from './lights';
-import { type EmissiveDef, linearRgb, type MaterialDef, type MaterialName } from './materials';
+import { type EmissiveDef, linearRgb, type MaterialDef, type MaterialName, weatherLayerMaterials } from './materials';
 import { TileMesh, type Vec3 } from './mesh';
 import { approvedAssets, assetDir, type AssetCredit, CACHE_DIR, conditionStatus, type TextureBaker } from './textures';
 import { writePropLods } from './street/prop-lod';
@@ -58,6 +58,11 @@ export interface PropDef {
   emissive?: { match: RegExp; def: EmissiveDef }[];
   /** Light template of every instance. */
   lights?: PropLight[];
+  /**
+   * Procedural props only (format 1.1, opt-in so other props stay byte-identical): write the builder's COLOR_0 and
+   * `_WEATHER` vertex attributes, and the weather layer maps of its weathered materials.
+   */
+  vertexAttributes?: boolean;
 }
 
 const registry = new Map<string, PropDef>();
@@ -495,21 +500,33 @@ export class PropBaker {
       for (const p of res.parts) {
         let mat = materials.get(p.material);
         if (!mat) {
-          mat = createMaterial(doc, tex, p.material, await this.textures.material(p.material));
+          let layers: Map<MaterialName, Awaited<ReturnType<TextureBaker['material']>>> | undefined;
+          if (def.vertexAttributes) {
+            layers = new Map();
+            for (const id of weatherLayerMaterials(p.material)) {
+              layers.set(id, await this.textures.material(id));
+            }
+          }
+          mat = createMaterial(doc, tex, p.material, await this.textures.material(p.material), layers);
           materials.set(p.material, mat);
         }
         const n = p.position.length / 3;
         const index = n <= 65535 ? Uint16Array.from(p.index) : p.index;
         const acc = (s: string, type: 'VEC2' | 'VEC3' | 'SCALAR', a: Float32Array<ArrayBuffer> | Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>) => doc.createAccessor(`${v.name}_${p.material}_${s}`).setType(type).setArray(a).setBuffer(buffer);
-        gm.addPrimitive(
-          doc
-            .createPrimitive()
-            .setAttribute('POSITION', acc('position', 'VEC3', p.position))
-            .setAttribute('NORMAL', acc('normal', 'VEC3', p.normal))
-            .setAttribute('TEXCOORD_0', acc('uv0', 'VEC2', p.uv0!))
-            .setIndices(acc('index', 'SCALAR', index))
-            .setMaterial(mat),
-        );
+        const prim = doc
+          .createPrimitive()
+          .setAttribute('POSITION', acc('position', 'VEC3', p.position))
+          .setAttribute('NORMAL', acc('normal', 'VEC3', p.normal))
+          .setAttribute('TEXCOORD_0', acc('uv0', 'VEC2', p.uv0!))
+          .setIndices(acc('index', 'SCALAR', index))
+          .setMaterial(mat);
+        if (def.vertexAttributes && p.color) {
+          prim.setAttribute('COLOR_0', doc.createAccessor(`${v.name}_${p.material}_color`).setType('VEC4').setArray(p.color).setBuffer(buffer));
+        }
+        if (def.vertexAttributes && p.weather) {
+          prim.setAttribute('_WEATHER', doc.createAccessor(`${v.name}_${p.material}_weather`).setType('VEC4').setArray(p.weather).setBuffer(buffer));
+        }
+        gm.addPrimitive(prim);
       }
       scene.addChild(doc.createNode(v.name).setMesh(gm));
     }

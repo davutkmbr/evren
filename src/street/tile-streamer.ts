@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTFParser } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { fetchJson, GROUND_MATERIALS, type LightRec, SHADOW_CASTER_MATERIALS, type StreetIndex, type StreetTileManifest, type StreetTileRef } from './format';
-import { PropLibrary } from './props';
+import { type PropDistances, PropBatches, type PropStats } from './props';
 
 export interface TileStreamerOptions {
   /** URL of the area folder that holds index.json (e.g. "/world/kadikoy/"). */
@@ -17,6 +17,8 @@ export interface TileStreamerOptions {
   shadows?: boolean;
   /** Anisotropic filtering of the shared textures (ground at grazing angles). */
   anisotropy?: number;
+  /** Prop LOD and cull distances (format 1). */
+  propDistances: PropDistances;
   /**
    * Called before a tile that brings a material not seen before enters the scene, e.g.
    * `(o) => renderer.compileAsync(o, camera, scene)`, so a new program never compiles mid-frame.
@@ -38,15 +40,18 @@ interface TileSlot {
   pending: { level: number; glb: string; loaded: LoadedLod | null } | null;
   /** The pending result is no longer wanted (tile left the radius or the wanted LOD changed). */
   cancelled: boolean;
-  /** A request failed; the tile is not retried (a missing file would otherwise be fetched every frame). */
-  failed?: boolean;
+  /** A request failed (e.g. the compiler is rewriting the file): no new request before this time (performance.now). */
+  retryAt: number;
+  attempts: number;
   ground: GroundGrid | null;
   requestedAt: number;
   /** Format 1: manifest (instances, lights) and the tile's instanced props. */
   manifest: StreetTileManifest | null;
-  manifestState: 'none' | 'loading' | 'ready';
-  props: THREE.Group | null;
-  propsState: 'none' | 'loading' | 'ready';
+  manifestState: 'none' | 'loading' | 'ready' | 'failed';
+  manifestRetryAt: number;
+  manifestAttempts: number;
+  /** The manifest's instances are handed to the prop batches. */
+  propsAdded: boolean;
   distance: number;
 }
 
@@ -81,7 +86,14 @@ export interface StreamerStats {
   lodLive: Record<number, number>;
   instancesLive: number;
   lightsLive: number;
+  /** Prop batches (draw calls before culling), placed / visible instances, instances per visible LOD level. */
+  props: PropStats | null;
+  /** Tiles, manifests or props waiting for a retry after a failed load. */
+  retrying: number;
 }
+
+/** Backoff after the n-th failed load of a file (ms). */
+const retryDelay = (attempts: number): number => Math.min(30000, 1000 * 2 ** attempts);
 
 /**
  * GLTFLoader plugin: textures with an external URI are loaded once per URL and shared by every tile and prop (the
@@ -109,6 +121,9 @@ class SharedTextures {
       p = parser.loadTextureImage(textureIndex, source, parser.textureLoader).then((t) => {
         if (t) {
           t.anisotropy = this.anisotropy;
+        } else {
+          // Failed (e.g. the compiler is rewriting textures/): the next tile or prop that uses it tries again.
+          this.cache.delete(url);
         }
         return t;
       });
@@ -123,7 +138,9 @@ class SharedTextures {
  * first, and unloads tiles beyond `radius + unloadMargin`. Format 1 tiles switch LODs by the index's distance bands
  * (LOD0 near, LOD1 far, with hysteresis) and bring their prop instances (drawn within each prop's draw distance) and
  * light lists. Materials are shared by glTF material name across tiles, textures by URL, so each material is one
- * program and one uniform set. No custom shaders: tiles render with the loader's standard materials.
+ * program and one uniform set, and the renderer's material sort keeps state switches to one per material. Props are
+ * drawn by PropBatches (a few BatchedMeshes for the whole area). Failed loads (a file being rewritten by the compiler)
+ * are retried with backoff; unknown manifest and index fields are ignored.
  */
 export class TileStreamer {
   readonly root = new THREE.Group();
@@ -132,8 +149,8 @@ export class TileStreamer {
   private readonly materials = new Map<string, THREE.Material>();
   private readonly emissive = new Set<THREE.Material>();
   private readonly textureCache = new Map<string, Promise<THREE.Texture | null>>();
-  private readonly props: PropLibrary | null;
-  private readonly radius: number;
+  readonly props: PropBatches | null;
+  private radius: number;
   private readonly unloadMargin: number;
   private readonly maxInFlight: number;
   private readonly maxAdds: number;
@@ -148,6 +165,9 @@ export class TileStreamer {
   private addedLastUpdate = 0;
   private focusX = NaN;
   private focusZ = NaN;
+  private lightsCache: LightRec[] | null = null;
+  /** Bumped when tiles enter or leave the scene (the sandbox re-renders the shadow map then). */
+  version = 0;
   readonly format: number;
 
   constructor(private readonly opts: TileStreamerOptions) {
@@ -161,9 +181,29 @@ export class TileStreamer {
     this.format = opts.index.format;
     const aniso = opts.anisotropy ?? 8;
     this.loader.register((parser) => new SharedTextures(parser, this.textureCache, aniso) as never);
-    this.props = opts.index.props ? new PropLibrary(opts.baseUrl, opts.index.props, this.loader, (m) => this.noteMaterial(m)) : null;
+    this.props = opts.index.props
+      ? new PropBatches(opts.baseUrl, opts.index.props, this.loader, opts.propDistances, this.shadows, (m) => this.noteMaterial(m), opts.compile)
+      : null;
+    if (this.props) {
+      this.root.add(this.props.group);
+    }
     for (const ref of opts.index.tiles) {
-      this.slots.set(ref.id, { ref, live: null, pending: null, cancelled: false, ground: null, requestedAt: 0, manifest: null, manifestState: 'none', props: null, propsState: 'none', distance: Infinity });
+      this.slots.set(ref.id, {
+        ref,
+        live: null,
+        pending: null,
+        cancelled: false,
+        retryAt: 0,
+        attempts: 0,
+        ground: null,
+        requestedAt: 0,
+        manifest: null,
+        manifestState: 'none',
+        manifestRetryAt: 0,
+        manifestAttempts: 0,
+        propsAdded: false,
+        distance: Infinity,
+      });
     }
   }
 
@@ -196,10 +236,16 @@ export class TileStreamer {
     return slot.ref.lods?.find((l) => l.level === level)?.glb ?? slot.ref.glb;
   }
 
+  /** Load radius (m); tiles beyond radius + unloadMargin are dropped on the next update. */
+  setRadius(radius: number): void {
+    this.radius = radius;
+  }
+
   /** Call every frame with the camera (or player) position. */
   update(x: number, z: number): void {
     this.focusX = x;
     this.focusZ = z;
+    const now = performance.now();
     const wanted: { slot: TileSlot; level: number; glb: string; d: number }[] = [];
     for (const slot of this.slots.values()) {
       const d = TileStreamer.distanceToBounds(slot.ref, x, z);
@@ -223,18 +269,14 @@ export class TileStreamer {
         }
       } else if (slot.pending) {
         slot.cancelled = slot.pending.glb !== glb;
-      } else if (!slot.failed && (d <= this.radius || slot.live)) {
+      } else if (now >= slot.retryAt && (d <= this.radius || slot.live)) {
         wanted.push({ slot, level, glb, d });
       }
       if (slot.live && this.format >= 1) {
-        this.ensureProps(slot);
-      }
-      if (slot.props) {
-        for (const c of slot.props.children) {
-          c.visible = d <= (c.userData.drawDistance as number);
-        }
+        this.ensureProps(slot, now);
       }
     }
+    this.props?.update(x, z);
     wanted.sort((a, b) => a.d - b.d);
     for (const w of wanted) {
       if (this.inFlight >= this.maxInFlight) {
@@ -258,11 +300,14 @@ export class TileStreamer {
       if (slot.live) {
         this.root.remove(slot.live.object);
         TileStreamer.disposeObject(slot.live.object);
+      } else {
+        this.lightsCache = null;
       }
       this.root.add(loaded.object);
       slot.live = loaded;
       slot.pending = null;
       slot.ground = null;
+      this.version++;
       this.loadTimes.push(performance.now() - slot.requestedAt);
       this.loads++;
       this.addedLastUpdate++;
@@ -283,6 +328,7 @@ export class TileStreamer {
           await this.opts.compile(gltf.scene).catch(() => undefined);
         }
         this.inFlight--;
+        slot.attempts = 0;
         if (slot.pending && slot.pending.glb === glb) {
           slot.pending.loaded = { level, glb, object: gltf.scene };
           this.readyQueue.push(slot);
@@ -294,42 +340,40 @@ export class TileStreamer {
         this.inFlight--;
         this.failures++;
         slot.pending = null;
-        slot.failed = true;
-        console.error(`[street] tile ${slot.ref.id} failed`, err);
+        slot.attempts++;
+        slot.retryAt = performance.now() + retryDelay(slot.attempts);
+        if (slot.attempts === 1 || slot.attempts % 10 === 0) {
+          console.warn(`[street] tile ${slot.ref.id} (${glb}) failed, attempt ${slot.attempts}, will retry: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+        }
       });
   }
 
-  /** Format 1: loads the tile manifest once, then builds its instanced props. */
-  private ensureProps(slot: TileSlot): void {
-    if (slot.manifestState === 'none') {
+  /** Format 1: loads the tile manifest once (retrying after failures), then hands its instances to the prop batches. */
+  private ensureProps(slot: TileSlot, now: number): void {
+    if (slot.manifestState === 'none' || (slot.manifestState === 'failed' && now >= slot.manifestRetryAt)) {
       slot.manifestState = 'loading';
       fetchJson<StreetTileManifest>(new URL(slot.ref.manifest, new URL(this.opts.baseUrl, window.location.href)).href)
         .then((m) => {
           slot.manifest = m;
           slot.manifestState = 'ready';
+          slot.manifestAttempts = 0;
+          this.lightsCache = null;
         })
         .catch((err: unknown) => {
-          slot.manifestState = 'ready';
-          console.error(`[street] manifest ${slot.ref.id} failed`, err);
+          slot.manifestState = 'failed';
+          slot.manifestAttempts++;
+          slot.manifestRetryAt = performance.now() + retryDelay(slot.manifestAttempts);
+          if (slot.manifestAttempts === 1 || slot.manifestAttempts % 10 === 0) {
+            console.warn(`[street] manifest ${slot.ref.id} failed, attempt ${slot.manifestAttempts}, will retry: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+          }
         });
       return;
     }
-    if (slot.manifestState === 'ready' && slot.propsState === 'none' && this.props && slot.manifest?.instances?.length) {
-      slot.propsState = 'loading';
-      void this.props.build(slot.manifest.instances, this.shadows).then(async (group) => {
-        if (!slot.live) {
-          PropLibrary.dispose(group);
-          slot.propsState = 'none';
-          return;
-        }
-        if (this.opts.compile && group.children.length) {
-          await this.opts.compile(group).catch(() => undefined);
-        }
-        group.updateMatrixWorld(true);
-        slot.props = group;
-        slot.propsState = 'ready';
-        this.root.add(group);
-      });
+    if (slot.manifestState === 'ready' && !slot.propsAdded && this.props) {
+      slot.propsAdded = true;
+      if (slot.manifest?.instances?.length) {
+        this.props.addTile(slot.ref.id, slot.manifest.instances);
+      }
     }
   }
 
@@ -355,6 +399,7 @@ export class TileStreamer {
       const shared = this.materials.get(name);
       if (shared) {
         if (shared !== own) {
+          TileStreamer.adoptMaps(shared, own);
           own.dispose();
         }
         mesh.material = shared;
@@ -375,18 +420,34 @@ export class TileStreamer {
     return introduced;
   }
 
+  /** A shared material created while one of its textures was missing (a recompile in progress) takes them later. */
+  private static adoptMaps(shared: THREE.Material, own: THREE.Material): void {
+    const a = shared as THREE.MeshStandardMaterial;
+    const b = own as THREE.MeshStandardMaterial;
+    let changed = false;
+    for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap'] as const) {
+      if (k in a && !a[k] && b[k]) {
+        a[k] = b[k];
+        changed = true;
+      }
+    }
+    if (changed) {
+      a.needsUpdate = true;
+    }
+  }
+
   private unload(slot: TileSlot): void {
     if (slot.live) {
       this.root.remove(slot.live.object);
       TileStreamer.disposeObject(slot.live.object);
       slot.live = null;
+      this.version++;
     }
-    if (slot.props) {
-      this.root.remove(slot.props);
-      PropLibrary.dispose(slot.props);
-      slot.props = null;
+    if (slot.propsAdded) {
+      this.props?.removeTile(slot.ref.id);
+      slot.propsAdded = false;
     }
-    slot.propsState = 'none';
+    this.lightsCache = null;
     slot.ground = null;
     this.unloads++;
   }
@@ -406,14 +467,15 @@ export class TileStreamer {
       return 1;
     }
     let n = 0;
+    const now = performance.now();
     for (const slot of this.slots.values()) {
-      if (slot.failed || slot.distance > this.radius) {
+      if (slot.distance > this.radius || (!slot.pending && now < slot.retryAt)) {
         continue;
       }
       const wantGlb = this.glbOf(slot, this.wantedLevel(slot, slot.distance));
       if (!slot.live || slot.live.glb !== wantGlb || slot.pending) {
         n++;
-      } else if (this.format >= 1 && this.props && (slot.manifestState !== 'ready' || (slot.manifest?.instances?.length && slot.propsState !== 'ready'))) {
+      } else if (this.format >= 1 && this.props && slot.manifestState !== 'failed' && (!slot.propsAdded || this.props.isPending(slot.ref.id))) {
         n++;
       }
     }
@@ -428,6 +490,8 @@ export class TileStreamer {
     let tris = 0;
     let instances = 0;
     let lights = 0;
+    let retrying = 0;
+    const now = performance.now();
     const lodLive: Record<number, number> = {};
     for (const slot of this.slots.values()) {
       if (slot.live) {
@@ -436,12 +500,15 @@ export class TileStreamer {
         bytes += lod?.bytes ?? slot.ref.bytes;
         tris += lod?.triangles ?? slot.ref.triangles;
         lodLive[slot.live.level] = (lodLive[slot.live.level] ?? 0) + 1;
-        instances += slot.props ? (slot.manifest?.instances?.length ?? 0) : 0;
+        instances += slot.propsAdded ? (slot.manifest?.instances?.length ?? 0) : 0;
         lights += slot.manifest?.lights?.length ?? 0;
+      }
+      if (now < slot.retryAt || (slot.manifestState === 'failed' && slot.live)) {
+        retrying++;
       }
       if (slot.pending) {
         loading++;
-      } else if (!slot.live && !slot.failed && Number.isFinite(this.focusX) && slot.distance <= this.radius) {
+      } else if (!slot.live && now >= slot.retryAt && Number.isFinite(this.focusX) && slot.distance <= this.radius) {
         queued++;
       }
     }
@@ -462,6 +529,8 @@ export class TileStreamer {
       lodLive,
       instancesLive: instances,
       lightsLive: lights,
+      props: this.props?.stats() ?? null,
+      retrying,
     };
   }
 
@@ -475,15 +544,18 @@ export class TileStreamer {
     return this.emissive;
   }
 
-  /** Lights of the live tiles (format 1). */
-  liveLights(): LightRec[] {
-    const out: LightRec[] = [];
-    for (const slot of this.slots.values()) {
-      if (slot.live && slot.manifest?.lights) {
-        out.push(...slot.manifest.lights);
+  /** Lights of the live tiles (format 1). The array is rebuilt, and changes identity, only when tiles come or go. */
+  liveLights(): readonly LightRec[] {
+    if (!this.lightsCache) {
+      const out: LightRec[] = [];
+      for (const slot of this.slots.values()) {
+        if (slot.live && slot.manifest?.lights) {
+          out.push(...slot.manifest.lights);
+        }
       }
+      this.lightsCache = out;
     }
-    return out;
+    return this.lightsCache;
   }
 
   /**
@@ -548,6 +620,7 @@ export class TileStreamer {
       void p.then((t) => t?.dispose());
     }
     this.textureCache.clear();
+    this.props?.dispose();
   }
 }
 

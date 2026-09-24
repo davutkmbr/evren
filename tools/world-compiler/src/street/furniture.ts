@@ -24,6 +24,7 @@ import { LOD0, type Vec3 } from '../mesh';
 import type { AreaContext, CompileStep, PlaceOptions } from '../registry';
 import { inTile, rng, streetContext, type StreetContext } from './common';
 import { sagLine, tube } from './shapes';
+import { VEHICLE_HALF_LENGTH } from './vehicles';
 
 export interface Placement {
   prop: string;
@@ -34,6 +35,8 @@ export interface Placement {
   ref: string;
   seed?: number;
   lights?: PlaceOptions['lights'];
+  /** Lean (radians about the prop's own X axis) of a knocked bollard. */
+  tilt?: number;
 }
 
 export interface Cable {
@@ -65,6 +68,40 @@ const FOOD = new Set(['amenity=cafe', 'amenity=restaurant', 'amenity=fast_food',
 const SHOPFRONT_BOARD = /^(shop=(bakery|confectionery|greengrocer|seafood|deli|butcher|pastry|coffee|tea))/;
 
 const tileOf = (x: number, z: number): string => `${Math.floor(x / 100)}_${Math.floor(z / 100)}`;
+
+export interface ClearCamera {
+  x: number;
+  y: number;
+  z: number;
+  fx: number;
+  fz: number;
+  /** Raised above the street (more than 3 m): no near-field wedge on the ground. */
+  high: boolean;
+}
+
+/**
+ * Cameras whose foreground stays clear of people and vehicles: tools/world-compiler/s1/cameras.json, with the
+ * render-time pose overrides of scripts/blender/camera-overrides.json where the look lane moved a camera.
+ */
+export function camerasForClearance(): ClearCamera[] {
+  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
+  if (!existsSync(file)) {
+    return [];
+  }
+  const doc = JSON.parse(readFileSync(file, 'utf8')) as { cameras?: { id: string; position: number[]; target: number[]; heightAboveGround?: number }[] };
+  const ovFile = resolve(ROOT, 'scripts/blender/camera-overrides.json');
+  const ov = existsSync(ovFile) ? ((JSON.parse(readFileSync(ovFile, 'utf8')) as { cameras?: Record<string, { position: number[]; target: number[] }> }).cameras ?? {}) : {};
+  const out: ClearCamera[] = [];
+  for (const c of doc.cameras ?? []) {
+    for (const pose of [c, ov[c.id]].filter((q): q is { position: number[]; target: number[] } => !!q)) {
+      const fx = pose.target[0] - pose.position[0];
+      const fz = pose.target[2] - pose.position[2];
+      const l = Math.hypot(fx, fz) || 1;
+      out.push({ x: pose.position[0], y: pose.position[1], z: pose.position[2], fx: fx / l, fz: fz / l, high: (c.heightAboveGround ?? 1.6) > 3 });
+    }
+  }
+  return out;
+}
 /** Compass heading (deg) of a direction (dx, dz). */
 /** The c05 camera of tools/world-compiler/s1/cameras.json (position and heading), or null. */
 function c05Camera(): { x: number; z: number; heading: number } | null {
@@ -112,6 +149,28 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
     return true;
   };
   const at = (x: number, z: number): XYZ => [x, y(x, z), z];
+  const vehicleCams = camerasForClearance();
+  const clearOfCameras = (x: number, z: number, r: number): boolean =>
+    vehicleCams.every((c) => {
+      const dx = x - c.x;
+      const dz = z - c.z;
+      if (Math.hypot(dx, dz, c.y - y(x, z)) < 3 + r) {
+        return false;
+      }
+      const along = dx * c.fx + dz * c.fz;
+      const side = Math.abs(-dx * c.fz + dz * c.fx);
+      return c.high || !(along > -r && along < 9 + r && side < 1 + r + 0.3 * along);
+    });
+  /** On or within 1 m of a zebra. */
+  const nearZebra = (x: number, z: number): boolean =>
+    sc.crossings.some((c) => {
+      const len = Math.hypot(c.bx - c.ax, c.bz - c.az) || 1;
+      const ux = (c.bx - c.ax) / len;
+      const uz = (c.bz - c.az) / len;
+      const along = (x - c.ax) * ux + (z - c.az) * uz;
+      const across = Math.abs(-(x - c.ax) * uz + (z - c.az) * ux);
+      return along > -1 && along < len + 1 && across < c.width / 2 + 1;
+    });
 
   /* Trees (OSM), first: everything else keeps clear of their trunks. */
   for (const m of a.manifests.values()) {
@@ -160,12 +219,13 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       }
       carry = f - len;
       let g = benchCarry;
-      for (; g < len; g += 14) {
+      for (; g < len; g += sc.inSquare(ax + tx * g + nx * 2.4, az + tz * g + nz * 2.4) ? 6.5 : 14) {
         const f = g;
         const x = ax + tx * f + nx * 2.4;
         const z = az + tz * f + nz * 2.4;
         if (open(x, z, 2.5) && s.distance(x, z) > 3 && (sc.inSquare(x, z) || sc.spineDist(x, z) < 60)) {
-          if (put({ prop: 'st_bench', variant: 'back', pos: at(x, z), yaw: yawZ(-nx, -nz), ref: `quay/bench${benchK}` }, 2.2)) {
+          // The square's quay row (c02 photo): blue steel benches facing the water.
+          if (put({ prop: 'st_bench', variant: sc.inSquare(x, z) ? 'metal' : 'back', pos: at(x, z), yaw: yawZ(-nx, -nz), ref: `quay/bench${benchK}` }, 2.2)) {
             seats.push({ x: x - nx * 0.05, y: y(x, z), z: z - nz * 0.05, yaw: yawZ(-nx, -nz) });
             if (benchK++ % 2 === 0) {
               const bx = x + tx * 1.45;
@@ -201,15 +261,104 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       minZ = Math.min(minZ, sc.square[k + 1]);
       maxZ = Math.max(maxZ, sc.square[k + 1]);
     }
+    // Photo-fitted masts first: the 12 m floodlight mast at the square's north-east corner (c04 photo, left of the
+    // frame: bearing 64° and about 43 m from the camera) and the post-top mast left of the c02 camera (bearing 263°,
+    // about 10 m); then the 26 m grid, kept out of the middle of the c04 frame (critique: "the mast stands centre").
+    const fitted: [number, number, string, string, number][] = [
+      [250.4, 5886.4, 'lamp_mast_double', 'led', 1.25],
+      [179.7, 5938.8, 'lamp_mast_low', 'led', 1],
+    ];
+    fitted.forEach(([x, z, prop, variant, scale], k) => {
+      if (onStreetTile(x, z) && !fp.inside(x, z) && put({ prop, variant, pos: at(x, z), yaw: 0.35, scale, ref: `square/photoMast${k}` }, 2)) {
+        lampAt.push([x, z]);
+      }
+    });
+    const c04 = { x: 212, z: 5905, heading: 89 };
     let k = 0;
     for (let z = minZ + 12; z < maxZ; z += 26) {
       for (let x = minX + 12; x < maxX; x += 26) {
         if (!sc.inSquare(x, z) || !open(x, z, 5) || s.distance(x, z) < 5 || a.land(x, z) < 4 || lampNear(x, z, 16)) {
           continue;
         }
+        const bearing = ((Math.atan2(x - c04.x, -(z - c04.z)) * 180) / Math.PI + 360) % 360;
+        if (Math.abs(((bearing - c04.heading + 540) % 360) - 180) < 26 && Math.hypot(x - c04.x, z - c04.z) < 60) {
+          continue;
+        }
         if (put({ prop: 'lamp_mast_double', variant: 'led', pos: at(x, z), yaw: 0.35, ref: `square/mast${k}` }, 3)) {
           lampAt.push([x, z]);
           k++;
+        }
+      }
+    }
+
+    /* Bench rows (c01, c02 photos: blue steel benches on concrete drum feet): one in front of the 1926 pier's east
+       loggia facing it, every 4.5 m, a bin at every other bench. */
+    const face: [number, number, number, number] = [155.2, 5916.2, 159.5, 5924.8];
+    const fl = Math.hypot(face[2] - face[0], face[3] - face[1]);
+    const ftx = (face[2] - face[0]) / fl;
+    const ftz = (face[3] - face[1]) / fl;
+    const fnx = ftz;
+    const fnz = -ftx;
+    let rowK = 0;
+    for (let along = -1; along < 24; along += 4.5) {
+      const x = face[0] + ftx * along + fnx * 6.5;
+      const z = face[1] + ftz * along + fnz * 6.5;
+      if (!sc.inSquare(x, z) || !open(x, z, 1.5)) {
+        continue;
+      }
+      if (put({ prop: 'st_bench', variant: 'metal', pos: at(x, z), yaw: yawZ(-fnx, -fnz), ref: `square/pierRow${rowK}` }, 1.6)) {
+        seats.push({ x, y: y(x, z), z, yaw: yawZ(-fnx, -fnz) });
+        const bx = x + ftx * 1.5;
+        const bz = z + ftz * 1.5;
+        if (rowK++ % 2 === 1 && open(bx, bz, 1)) {
+          put({ prop: 'st_bin', variant: 'ibb', pos: at(bx, bz), yaw: 0, ref: `square/pierRowBin${rowK}` }, 0.7);
+        }
+      }
+    }
+    // A short line of posts left of the c02 camera (photo: five black posts about 12 m away, bearing 277-286°).
+    for (let q = 0; q < 5; q++) {
+      const x = 177.4 + q * 0.42;
+      const z = 5937.6 - q * 1.15;
+      if (open(x, z, 0.3)) {
+        put({ prop: 'st_bollard', variant: 'post', pos: at(x, z), yaw: yawZ(0.94, 0.34), ref: `square/c02posts${q}` }, 0.5);
+      }
+    }
+    // Ball-top bollards along the square's Rıhtım kerb (s1-strip.md §3), 0.45 m in from the kerb, every 1.8 m,
+    // leaving the dropped kerbs and the bus stop free.
+    const sqRing = sc.square;
+    const edge = [...Array(sqRing.length / 2).keys()];
+    let bk = 0;
+    for (const i of edge) {
+      const ax = sqRing[i * 2];
+      const az = sqRing[i * 2 + 1];
+      const bx = sqRing[((i + 1) % edge.length) * 2];
+      const bz = sqRing[((i + 1) % edge.length) * 2 + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      for (let f = 0; f < len; f += 1.8) {
+        const px = ax + ((bx - ax) * f) / len;
+        const pz = az + ((bz - az) * f) / len;
+        if (s.distance(px, pz) > 4 || s.distance(px, pz) < -3) {
+          continue;
+        }
+        // Walk to the kerb along the distance gradient, then back 0.45 m onto the paving.
+        let x = px;
+        let z = pz;
+        for (let it = 0; it < 30 && Math.abs(s.distance(x, z) - 0.45) > 0.03; it++) {
+          const h = 0.3;
+          let gx = s.distance(x + h, z) - s.distance(x - h, z);
+          let gz = s.distance(x, z + h) - s.distance(x, z - h);
+          const l = Math.hypot(gx, gz) || 1;
+          gx /= l;
+          gz /= l;
+          const d = s.distance(x, z) - 0.45;
+          x -= gx * Math.max(-0.5, Math.min(0.5, d));
+          z -= gz * Math.max(-0.5, Math.min(0.5, d));
+        }
+        if (!s.kerbed(x, z) || sc.dropped.some((d) => Math.hypot(d.x - x, d.z - z) < d.half + 1.5) || (sc.spine.length > 1 && Math.hypot(sc.spine[0] - x, sc.spine[1] - z) < 6)) {
+          continue;
+        }
+        if (open(x, z, 0.4) && put({ prop: 'st_bollard', variant: 'ball', pos: at(x, z), yaw: 0, ref: `square/kerbBollard${bk}` }, 1.2)) {
+          bk++;
         }
       }
     }
@@ -413,49 +562,187 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
         put({ prop: 'st_tree', variant: 'street', pos: at(tx, tz), yaw: hash(tx) * 6.28, scale: sc2, ref: `c05/tree${ah}` }, 0);
       }
     }
-    // Catenary along the T3 track within 90 m of the camera: poles every 28 m, 3.2 m off the track, a cantilever
-    // over it and the contact wire at 5.8 m (25 mm, drawn as a cable).
-    for (const tr of a.data.rails) {
-      if (!/tram/.test(tr.kind)) {
+  }
+
+  /* T3 catenary along the (corrected) tram track on the street tiles: a pole every ~28 m on the nearer pavement
+     (0.5 m behind the kerb, else 3.2 m off the track), a cantilever over the track at 6.2 m, a dropper and the
+     contact wire at 5.8 m, staggered ±0.2 m (c05 photo: wires over the stop and across the sky). */
+  for (const tr of sc.tram) {
+    const P = tr.pts;
+    let along = 0;
+    let next = 0;
+    let prev: Vec3 | null = null;
+    let stagger = 1;
+    for (let k = 2; k < P.length; k += 2) {
+      const ax = P[k - 2];
+      const az = P[k - 1];
+      const len = Math.hypot(P[k] - ax, P[k + 1] - az);
+      if (len < 1e-3) {
         continue;
       }
-      const P = tr.pts;
-      let along = 0;
-      let next = 0;
-      let prev: Vec3 | null = null;
-      for (let k = 2; k < P.length; k += 2) {
-        const ax = P[k - 2];
-        const az = P[k - 1];
-        const len = Math.hypot(P[k] - ax, P[k + 1] - az);
-        if (len < 1e-3) {
+      const tx = (P[k] - ax) / len;
+      const tz = (P[k + 1] - az) / len;
+      while (next < along + len) {
+        const f = next - along;
+        const cx = ax + tx * f;
+        const cz = az + tz * f;
+        next += 28;
+        if (!onStreetTile(cx, cz) || s.distance(cx, cz) > 0) {
+          prev = null;
           continue;
         }
-        const tx = (P[k] - ax) / len;
-        const tz = (P[k + 1] - az) / len;
-        while (next < along + len) {
-          const f = next - along;
-          const cx = ax + tx * f;
-          const cz = az + tz * f;
-          next += 28;
-          if (Math.hypot(cx - c05.x, cz - c05.z) > 90 || !onStreetTile(cx, cz)) {
-            prev = null;
-            continue;
+        // Nearer pavement: step out on both sides until off the carriageway.
+        let pole: [number, number] | null = null;
+        let best = Infinity;
+        for (const side of [-1, 1]) {
+          for (let o = 1.2; o < 7; o += 0.2) {
+            const ox = cx - tz * o * side;
+            const oz = cz + tx * o * side;
+            if (s.distance(ox, oz) > 0.45) {
+              if (o < best && open(ox, oz, 0.3)) {
+                best = o;
+                pole = [ox, oz];
+              }
+              break;
+            }
           }
-          const ox = cx - tz * 3.2;
-          const oz = cz + tx * 3.2;
-          const base = y(ox, oz);
-          const wire: Vec3 = [cx, y(cx, cz) + 5.8, cz];
-          cables.push({ pts: [[ox, base, oz], [ox, base + 6.6, oz]], r: 0.09, tile: tileOf(ox, oz) });
-          cables.push({ pts: [[ox, base + 6.2, oz], [cx, base + 6.2, cz]], r: 0.03, tile: tileOf(ox, oz) });
-          cables.push({ pts: [[cx, base + 6.2, cz], wire], r: 0.012, tile: tileOf(cx, cz) });
-          if (prev) {
-            cables.push({ pts: sagLine(prev, wire, 0.08, 8), r: 0.0125, tile: tileOf((prev[0] + cx) / 2, (prev[2] + cz) / 2) });
-            count('catenary');
-          }
-          prev = wire;
         }
-        along += len;
+        if (!pole || !clearOfCameras(pole[0], pole[1], 0.2)) {
+          prev = null;
+          continue;
+        }
+        const [ox, oz] = pole;
+        const base = y(ox, oz);
+        const rail = y(cx, cz);
+        stagger = -stagger;
+        const wx = cx - tz * 0.2 * stagger;
+        const wz = cz + tx * 0.2 * stagger;
+        const wire: Vec3 = [wx, rail + 5.8, wz];
+        occupied.add(ox, oz);
+        cables.push({ pts: [[ox, base, oz], [ox, base + 6.9, oz]], r: 0.1, tile: tileOf(ox, oz) });
+        cables.push({ pts: [[ox, base + 6.9, oz], [ox, base + 7.05, oz]], r: 0.06, tile: tileOf(ox, oz) });
+        cables.push({ pts: [[ox, base + 6.3, oz], [wx, rail + 6.3, wz]], r: 0.03, tile: tileOf(ox, oz) });
+        cables.push({ pts: [[ox, base + 6.75, oz], [wx + (ox - wx) * 0.15, rail + 6.3, wz + (oz - wz) * 0.15]], r: 0.015, tile: tileOf(ox, oz) });
+        cables.push({ pts: [[wx, rail + 6.3, wz], wire], r: 0.012, tile: tileOf(wx, wz) });
+        if (prev && Math.hypot(prev[0] - wx, prev[2] - wz) < 40) {
+          cables.push({ pts: sagLine(prev, wire, 0.08, 10), r: 0.0125, tile: tileOf((prev[0] + wx) / 2, (prev[2] + wz) / 2) });
+          count('catenary');
+        }
+        prev = wire;
       }
+      along += len;
+    }
+  }
+
+  /* Signalised crossings (kind traffic_signals, or within 25 m of an OSM signal node on a carriageway): at each end a
+     pole with a vehicle head facing the traffic that approaches in the lane beside that kerb (right-hand traffic) and a
+     pedestrian head facing across (c05 photo: heads on both sides of the zebra). */
+  const signalNodes = a.data.points.filter((p) => p.kind === 'highway=traffic_signals');
+  sc.crossings.forEach((c, k) => {
+    const mx = (c.ax + c.bx) / 2;
+    const mz = (c.az + c.bz) / 2;
+    if (!onStreetTile(mx, mz) || (c.kind !== 'traffic_signals' && !signalNodes.some((p) => Math.hypot(p.x - mx, p.z - mz) < 25))) {
+      return;
+    }
+    for (const [ex, ez, ox, oz] of [
+      [c.ax, c.az, c.bx, c.bz],
+      [c.bx, c.bz, c.ax, c.az],
+    ]) {
+      let nx = ex - ox;
+      let nz = ez - oz;
+      const l = Math.hypot(nx, nz) || 1;
+      nx /= l;
+      nz /= l;
+      // Travel direction of the lane beside this kerb (kerb on the right): d = (n.z, -n.x). The pole stands upstream
+      // of the zebra; the prop's +Z (vehicle head) faces -d, its +X points at the kerb, the pedestrian head faces -X.
+      const dx = nz;
+      const dz = -nx;
+      const up = c.width / 2 + 0.7;
+      for (const o of [0.55, 0.9, 1.4]) {
+        const x = ex + nx * o - dx * up;
+        const z = ez + nz * o - dz * up;
+        if (s.distance(x, z) > 0.3 && open(x, z, 0.3) && occupied.claim(x, z, 0.8)) {
+          items.push({ prop: 'st_signal', variant: 'combo', pos: at(x, z), yaw: yawZ(-dx, -dz), ref: `crossing${k}/signal${ex === c.ax ? 'a' : 'b'}` });
+          count('st_signal:combo');
+          break;
+        }
+      }
+    }
+  });
+
+  /* A few vehicles on Rıhtım Cd (c05 and the spine crossings, s1-strip.md §5): taxis, cars, a dolmuş and a delivery
+     van, stopped in the lanes before the zebras (red for them) or further along, never within 3 m of a camera or in
+     its near field, never on a zebra or a tram stop's kerb lane. */
+  const lanePaths = a.lanes.paths.filter((p) => p.kind === 'lane');
+  const cars: { x: number; z: number; hl: number }[] = [];
+  const kinds = ['taxi', 'car_white', 'taxi', 'car_grey', 'van', 'taxi', 'dolmus', 'car_blue', 'taxi', 'car_white'];
+  let vk = 0;
+  const spots: [number, number][] = [];
+  if (c05) {
+    spots.push([c05.x, c05.z]);
+  }
+  for (const c of sc.crossings) {
+    if (c.kind === 'traffic_signals' && sc.spineDist((c.ax + c.bx) / 2, (c.az + c.bz) / 2) < 12) {
+      spots.push([(c.ax + c.bx) / 2, (c.az + c.bz) / 2]);
+    }
+  }
+  // First pass: slots inside the c05 frame (the photo has vans and motorbikes on the road ahead), then the rest.
+  const inC05 = (x: number, z: number): boolean => {
+    if (!c05) {
+      return false;
+    }
+    const d = Math.hypot(x - c05.x, z - c05.z);
+    const bearing = ((Math.atan2(x - c05.x, -(z - c05.z)) * 180) / Math.PI + 360) % 360;
+    return d > 10 && d < 70 && Math.abs(((bearing - c05.heading + 540) % 360) - 180) < 27;
+  };
+  for (const pass of [0, 1]) for (const path of lanePaths) {
+    const P = path.points;
+    let along = 0;
+    let slot = (pass === 0 ? 1 : 4) + hash(path.id * 0.37) * (pass === 0 ? 3 : 10);
+    for (let k = 3; k < P.length; k += 3) {
+      const ax = P[k - 3];
+      const az = P[k - 1];
+      const bx = P[k];
+      const bz = P[k + 2];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-3) {
+        continue;
+      }
+      const tx = (bx - ax) / len;
+      const tz = (bz - az) / len;
+      while (slot < along + len) {
+        const f = slot - along;
+        const x = ax + tx * f;
+        const z = az + tz * f;
+        const kind = kinds[vk % kinds.length];
+        const hl = VEHICLE_HALF_LENGTH[kind];
+        slot += pass === 0 ? 1.5 : hl * 2 + 1.4 + hash(slot * 1.7 + path.id) * 9;
+        if (pass === 0 && (!inC05(x, z) || cars.filter((q) => inC05(q.x, q.z)).length >= 3)) {
+          continue;
+        }
+        if (!onStreetTile(x, z) || !spots.some(([px, pz]) => Math.hypot(px - x, pz - z) < 60) || s.distance(x, z) > -1.1 || s.pedestrianStreet(x, z)) {
+          continue;
+        }
+        const fx = x + tx * (hl + 0.3);
+        const fz = z + tz * (hl + 0.3);
+        const bx2 = x - tx * (hl + 0.3);
+        const bz2 = z - tz * (hl + 0.3);
+        if (nearZebra(fx, fz) || nearZebra(x, z) || nearZebra(bx2, bz2) || sc.tramDist(x, z) < 1.2 || s.distance(fx, fz) > -0.9 || s.distance(bx2, bz2) > -0.9) {
+          continue;
+        }
+        if (!clearOfCameras(x, z, hl) || cars.some((q) => Math.hypot(q.x - x, q.z - z) < q.hl + hl + 1)) {
+          continue;
+        }
+        // Keep a vehicle out of 30 % of the slots (gaps in the traffic).
+        if (pass === 1 && hash(x * 0.71 + z * 0.37) < 0.3) {
+          continue;
+        }
+        cars.push({ x, z, hl });
+        items.push({ prop: 'st_vehicle', variant: kind, pos: at(x, z), yaw: yawZ(tx, tz), ref: `traffic/${path.id}/${Math.round(slot)}` });
+        count(`st_vehicle:${kind}`);
+        vk++;
+      }
+      along += len;
     }
   }
 
@@ -665,6 +952,75 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
     }
   }
 
+  /* The Aya Efimia junction plaza (c07 photo) in front of gate A: a bench against the wall left of the gate, a potted
+     shrub and a red umbrella beside it, a lantern column, a trough planter and a topiary pot further out, and a row of
+     granite cube bollards along the plaza's north edge. Positions are (left along the wall, out from it) in metres
+     from the gate, seen from the plaza. */
+  const wall = a.data.lines.find((l) => l.id === 179197257);
+  if (wall && onStreetTile(414.5, 6026.7)) {
+    const G = { x: 414.5, z: 6026.7 };
+    let best: [number, number, number, number] | null = null;
+    let bd = Infinity;
+    let cx = 0;
+    let cz = 0;
+    const n = wall.pts.length / 2;
+    for (let k = 0; k < n; k++) {
+      cx += wall.pts[k * 2] / n;
+      cz += wall.pts[k * 2 + 1] / n;
+    }
+    for (let k = 2; k < wall.pts.length; k += 2) {
+      const ax = wall.pts[k - 2];
+      const az = wall.pts[k - 1];
+      const bx = wall.pts[k];
+      const bz = wall.pts[k + 1];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((G.x - ax) * dx + (G.z - az) * dz) / l2));
+      const d = Math.hypot(ax + dx * t - G.x, az + dz * t - G.z);
+      if (d < bd) {
+        bd = d;
+        const l = Math.sqrt(l2);
+        best = [dx / l, dz / l, ax + dx * t, az + dz * t];
+      }
+    }
+    if (best) {
+      const [tx, tz, gx, gz] = best;
+      let nx = -tz;
+      let nz = tx;
+      if (nx * (gx - cx) + nz * (gz - cz) < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      // Seen from the plaza (facing -n), left is (-n.z, n.x).
+      const lx = -nz;
+      const lz = nx;
+      const P = (left: number, out: number): [number, number] => [gx + lx * left + nx * (0.25 + out), gz + lz * left + nz * (0.25 + out)];
+      const kit: [number, number, string, string | undefined, number, number][] = [
+        [3.4, 0.45, 'st_bench', 'back', yawZ(nx, nz), 1.2],
+        [1.7, 0.4, 'st_planter', 'round', 0, 0.6],
+        [1.3, 2.2, 'st_umbrella', 'red', 0, 0.4],
+        // The photo's lantern and planters stand further left, where the compiled plaza already meets a building
+        // 6 m north of the gate: kept inside the open plaza.
+        [3.2, 7, 'st_twin_lantern', 'warm', yawZ(tx, tz), 1],
+        [1.2, 9, 'st_planter', 'box', yawZ(tx, tz), 1],
+        [3.6, 4.6, 'st_planter', 'round', 0, 0.8],
+      ];
+      kit.forEach(([left, out, prop, variant, yaw, keep], q) => {
+        const [x, z] = P(left, out);
+        if (open(x, z, 0.3) && put({ prop, ...(variant ? { variant } : {}), pos: at(x, z), yaw, ref: `plaza/gateA/${prop}${q}` }, keep) && prop === 'st_bench') {
+          seats.push({ x: x + nx * 0.05, y: y(x, z), z: z + nz * 0.05, yaw });
+        }
+      });
+      for (let q = 0; q < 4; q++) {
+        const [x, z] = P(-0.5 - q * 1.3, 11 + q * 0.2);
+        if (open(x, z, 0.3)) {
+          put({ prop: 'st_bollard', variant: 'cube', pos: at(x, z), yaw: yawZ(tx, tz), ref: `plaza/gateA/cube${q}` }, 0.6);
+        }
+      }
+    }
+  }
+
   /* Span wires with pendant lamps across the pedestrian lanes. */
   const facadeHit = (x: number, z: number, dx: number, dz: number, max: number): number | null => {
     for (let d = 0; d <= max; d += 0.2) {
@@ -720,6 +1076,37 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       along += len;
     }
   }
+  /* Wear by instance: a third of the ball-top bollards rusty, about one in twenty knocked askew (6-9°), and the
+     crossing post nearest the c05 view leaning (soul catalogue 35: "bent or leaning bollards"). */
+  for (const p of items) {
+    if (p.prop !== 'st_bollard') {
+      continue;
+    }
+    const h = hash(p.pos[0] * 3.1 + p.pos[2] * 1.7);
+    if (p.variant === 'ball' && h < 0.33) {
+      p.variant = 'ball_rusty';
+    }
+    if ((p.variant === 'ball' || p.variant === 'ball_rusty' || p.variant === 'post') && hash(p.pos[0] * 5.3 + p.pos[2] * 0.3) < 0.05) {
+      p.tilt = 0.1 + 0.06 * h;
+      p.yaw += h * 6.28;
+    }
+  }
+  if (c05) {
+    const h = (c05.heading * Math.PI) / 180;
+    const fx = c05.x + Math.sin(h) * 12;
+    const fz = c05.z - Math.cos(h) * 12;
+    let lean: Placement | null = null;
+    for (const p of items) {
+      if (p.prop === 'st_bollard' && p.variant === 'thin' && Math.hypot(p.pos[0] - fx, p.pos[2] - fz) < 12 && (!lean || Math.hypot(p.pos[0] - fx, p.pos[2] - fz) < Math.hypot(lean.pos[0] - fx, lean.pos[2] - fz))) {
+        lean = p;
+      }
+    }
+    if (lean) {
+      lean.tilt = 0.14;
+      stats.leaningPost = 1;
+    }
+  }
+  stats.tilted = items.filter((p) => p.tilt).length;
   return { items, cables, seats, pendants, occupied, stats };
 }
 
@@ -746,7 +1133,16 @@ export const streetFurnitureStep: CompileStep = {
       if (!inTile(t, p.pos[0], p.pos[2]) || stalls.some((q) => Math.hypot(q[0] - p.pos[0], q[2] - p.pos[2]) < 1.8)) {
         continue;
       }
-      t.place(p.prop, p.pos, p.yaw, { ...(p.variant ? { variant: p.variant } : {}), ...(p.scale !== undefined ? { scale: p.scale } : {}), ref: p.ref, ...(p.seed !== undefined ? { seed: p.seed } : {}), ...(p.lights !== undefined ? { lights: p.lights } : {}) });
+      const rec = t.place(p.prop, p.pos, p.yaw, { ...(p.variant ? { variant: p.variant } : {}), ...(p.scale !== undefined ? { scale: p.scale } : {}), ref: p.ref, ...(p.seed !== undefined ? { seed: p.seed } : {}), ...(p.lights !== undefined ? { lights: p.lights } : {}) });
+      if (p.tilt) {
+        // yaw · tilt about the prop's own X axis: [cy·sx, cx·sy, -sy·sx, cy·cx].
+        const sy = Math.sin(p.yaw / 2);
+        const cy = Math.cos(p.yaw / 2);
+        const sx = Math.sin(p.tilt / 2);
+        const cx = Math.cos(p.tilt / 2);
+        const r5 = (v: number): number => Math.round(v * 1e5) / 1e5;
+        rec.rotation = [r5(cy * sx), r5(cx * sy), r5(-sy * sx), r5(cy * cx)];
+      }
       n++;
     }
     let wires = 0;

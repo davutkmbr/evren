@@ -10,7 +10,7 @@
  * Frame coordinates (facade/frame.ts): r to the right along the wall, y world height, d in front of the wall.
  */
 import type { LightSink } from '../lights';
-import type { RGBA } from '../mesh';
+import type { RGBA, Weather } from '../mesh';
 import type { PlaceOptions } from '../registry';
 import type { InstanceRec, XYZ } from '../format';
 import { Batch, Frame, h01, lin, mix, pick, pickWeighted, scale } from '../facade/frame';
@@ -181,7 +181,7 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
         kepenk: interior ? 'open' : kepenk,
         awning,
         awningDepth: depth,
-        awningColors: [lin(awningColors[0], 0.95), lin(awningColors[1], 0.92)],
+        awningColors: [fade(lin(awningColors[0], 0.95), 0.12 + 0.4 * U(11)), fade(lin(awningColors[1], 0.92), 0.1 + 0.3 * U(11))],
         signLit: U(8) < 0.5,
         glow: pickWeighted<SignGlow>([['white', 0.5], ['red', 0.15], ['green', 0.15], ['yellow', 0.1], ['blue', 0.1]], U(9)),
         projecting: false,
@@ -207,6 +207,13 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
     }
   });
   return units;
+}
+
+/** Sun-bleached fabric: towards a light, greyish tone of the same brightness family (red goes pink-brown). */
+function fade(c: RGBA, t: number): RGBA {
+  const lum = c[0] * 0.3 + c[1] * 0.55 + c[2] * 0.15;
+  const bleached: RGBA = [lum * 1.25 + 0.06, lum * 1.18 + 0.05, lum * 1.1 + 0.05, c[3]];
+  return mix(c, bleached, t);
 }
 
 export interface ShopEmitContext {
@@ -252,7 +259,12 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
   batch.box(galv, r0, r1, yBox, yOpen, -RV, -0.03, kepenkTint, { front: true, bottom: true });
   const yK = u.kepenk === 'closed' ? yFloor : u.kepenk === 'half' ? yFloor + 1.15 + 0.7 * U(4) : yBox;
   if (yK < yBox - 0.01) {
-    batch.quadF(galv, 'N', [[r0 + 0.035, yK, -0.09], [r1 - 0.035, yK, -0.09], [r1 - 0.035, yBox, -0.09], [r0 + 0.035, yBox, -0.09]], kepenkTint);
+    const wxK = (_r: number, y: number): Weather => [y < yFloor + 0.35 ? 0.7 : 0.2 + 0.2 * U(12), y > yBox - 0.5 ? 0.6 : 0.15, 0, y < yFloor + 0.2 ? 0.5 : 0];
+    // Split at 0.35 m so the grime and splash at the foot have their own row of vertices.
+    if (yK < yFloor + 0.34) {
+      batch.quadF(galv, 'N', [[r0 + 0.035, yK, -0.09], [r1 - 0.035, yK, -0.09], [r1 - 0.035, yFloor + 0.35, -0.09], [r0 + 0.035, yFloor + 0.35, -0.09]], kepenkTint, undefined, wxK);
+    }
+    batch.quadF(galv, 'N', [[r0 + 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, yBox, -0.09], [r0 + 0.035, yBox, -0.09]], kepenkTint, undefined, wxK);
     batch.box('fac_kepenk', r0 + 0.035, r1 - 0.035, yK, yK + 0.06, -0.12, -0.08, scale(kepenkTint, 0.7), { front: true, bottom: true, top: true });
   }
   if (u.kepenk !== 'closed') {
@@ -385,11 +397,12 @@ function emitSign(batch: Batch, u: ShopUnit, y0: number, y1: number, c: ShopEmit
   const panelHex = pick(panels, U(21));
   const dark = [0x1f4d3a, 0x1d3b66, 0x9e1f23, 0x1e1e1e, 0x4a4f55].includes(panelHex);
   const panel = lin(panelHex);
-  batch.box('fac_sign', s0, s1, y0, y1, 0, dS, scale(panel, 0.9), { top: true, bottom: true, left: true, right: true });
+  const wxS = (_r: number, y: number): Weather => [y < y0 + 0.05 ? 0.5 : 0.25, y < (y0 + y1) / 2 ? 0.45 : 0.1, 0.4, 0];
+  batch.box('fac_sign', s0, s1, y0, y1, 0, dS, scale(panel, 0.9), { top: true, bottom: true, left: true, right: true }, wxS);
   if (u.signLit) {
     batch.quadF(`fac_glow_${u.glow}`, 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], mix(lin(0xffffff), lin(SIGN_GLOW[u.glow]), 0.25));
   } else {
-    batch.quadF('fac_sign', 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], panel);
+    batch.quadF('fac_sign', 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], panel, undefined, wxS);
   }
   const name = u.name!;
   const w = s1 - s0 - 0.3;
@@ -427,10 +440,18 @@ function emitAwning(batch: Batch, u: ShopUnit, yMount: number, yFront: number): 
   const a1 = u.r1 + 0.1;
   const D = u.awningDepth;
   const drop = yMount - yFront;
+  // The canvas bellies between the roller and the front bar (old, stretched fabric), most in the middle of the width;
+  // fixed market awnings sag more. The front bar itself droops a little at the unsupported middle.
+  const sag = (u.awning === 'market' ? 0.07 : 0.035) + 0.05 * h01(u.seed, 78);
+  const barDroop = 0.012 + 0.03 * h01(u.seed, 79);
+  const tm = 0.55;
   const len = Math.hypot(D, drop);
   const nrm = f.vec(0, D / len, drop / len);
+  const yMid = yMount + 0.02 + (yFront - yMount - 0.02) * tm;
+  const nBack = f.vec(0, D * tm, drop * tm + sag * 0.7);
+  const nFront = f.vec(0, D * (1 - tm), drop * (1 - tm) - sag * 0.7);
   // Roller box on the wall.
-  batch.box('fac_alu', a0, a1, yMount, yMount + 0.16, 0, 0.18, lin(0xd8d8d4), { front: true, top: true, bottom: true, left: true, right: true });
+  batch.box('fac_alu', a0, a1, yMount, yMount + 0.16, 0, 0.18, lin(0xcfcfca), { front: true, top: true, bottom: true, left: true, right: true }, [0.4, 0.3, 0, 0]);
   const [ca, cb] = u.awningColors;
   const stripes = Math.abs(ca[0] - cb[0]) + Math.abs(ca[1] - cb[1]) + Math.abs(ca[2] - cb[2]) > 0.05;
   const sw = 0.26;
@@ -438,6 +459,10 @@ function emitAwning(batch: Batch, u: ShopUnit, yMount: number, yFront: number): 
   const val = 0.22;
   // Weathering: dirt and soot build up towards the front edge and at the ends (rain runs off the front).
   const grime = 0.62 + 0.18 * h01(u.seed, 77);
+  const wBack: Weather = [0.2, 0.25, 0, 0];
+  const wMid: Weather = [0.35, 0.45, 0, 0];
+  const wFront: Weather = [0.7, 0.3, 0, 0];
+  const across = (xx: number): number => Math.sin(Math.PI * Math.min(1, Math.max(0, (xx - a0) / (a1 - a0))));
   for (let k = 0; k < n; k++) {
     const x0 = a0 + ((a1 - a0) * k) / n;
     const x1 = a0 + ((a1 - a0) * (k + 1)) / n;
@@ -445,26 +470,37 @@ function emitAwning(batch: Batch, u: ShopUnit, yMount: number, yFront: number): 
     const endDirt = (xx: number): number => 1 - 0.12 * Math.max(0, 1 - Math.min(xx - a0, a1 - xx) / 0.6);
     const back0 = scale(col, 0.97 * endDirt(x0));
     const back1 = scale(col, 0.97 * endDirt(x1));
+    const mid0 = scale(col, (0.97 + grime) / 2 * endDirt(x0));
+    const mid1 = scale(col, (0.97 + grime) / 2 * endDirt(x1));
     const front0 = scale(col, grime * endDirt(x0));
     const front1 = scale(col, grime * endDirt(x1));
-    batch.poly('fac_awning', nrm, [f.p(x0, yMount + 0.02, 0.12), f.p(x1, yMount + 0.02, 0.12), f.p(x1, yFront, D), f.p(x0, yFront, D)], [back0, back1, front1, front0]);
+    const s0 = sag * (0.45 + 0.55 * across(x0));
+    const s1 = sag * (0.45 + 0.55 * across(x1));
+    const f0 = yFront - barDroop * across(x0);
+    const f1 = yFront - barDroop * across(x1);
+    batch.poly('fac_awning', nBack, [f.p(x0, yMount + 0.02, 0.12), f.p(x1, yMount + 0.02, 0.12), f.p(x1, yMid - s1, D * tm), f.p(x0, yMid - s0, D * tm)], [back0, back1, mid1, mid0], undefined, [wBack, wBack, wMid, wMid]);
+    batch.poly('fac_awning', nFront, [f.p(x0, yMid - s0, D * tm), f.p(x1, yMid - s1, D * tm), f.p(x1, f1, D), f.p(x0, f0, D)], [mid0, mid1, front1, front0], undefined, [wMid, wMid, wFront, wFront]);
     // Scalloped valance: the lower edge of each stripe is a shallow half-circle.
-    const pts: [number, number, number][] = [[x0, yFront, D]];
+    const pts: [number, number, number][] = [[x0, f0, D]];
     for (let j = 0; j <= 6; j++) {
       const tt = j / 6;
-      pts.push([x0 + (x1 - x0) * tt, yFront - val + 0.06 - 0.06 * Math.sin(Math.PI * tt), D]);
+      const yy = f0 + (f1 - f0) * tt;
+      pts.push([x0 + (x1 - x0) * tt, yy - val + 0.06 - 0.06 * Math.sin(Math.PI * tt), D]);
     }
-    pts.push([x1, yFront, D]);
+    pts.push([x1, f1, D]);
     const vc = scale(col, grime * 0.95);
-    batch.quadF('fac_awning', 'N', [pts[0], pts[1], pts[4], [x0 + (x1 - x0) * 0.5, yFront, D]], vc);
-    batch.quadF('fac_awning', 'N', [[x0 + (x1 - x0) * 0.5, yFront, D], pts[4], pts[7], pts[8]], vc);
-    batch.quadF('fac_awning', 'N', [pts[1], pts[2], pts[3], pts[4]], vc);
-    batch.quadF('fac_awning', 'N', [pts[4], pts[5], pts[6], pts[7]], vc);
+    const wv: Weather = [0.75, 0.2, 0, 0];
+    const fm = (f0 + f1) / 2;
+    batch.quadF('fac_awning', 'N', [pts[0], pts[1], pts[4], [x0 + (x1 - x0) * 0.5, fm, D]], vc, undefined, wv);
+    batch.quadF('fac_awning', 'N', [[x0 + (x1 - x0) * 0.5, fm, D], pts[4], pts[7], pts[8]], vc, undefined, wv);
+    batch.quadF('fac_awning', 'N', [pts[1], pts[2], pts[3], pts[4]], vc, undefined, wv);
+    batch.quadF('fac_awning', 'N', [pts[4], pts[5], pts[6], pts[7]], vc, undefined, wv);
   }
+  void nrm;
   // Front bar and the folding arms.
-  batch.box('fac_alu', a0, a1, yFront - 0.05, yFront, D - 0.05, D, lin(0xc8c8c4), { bottom: true });
+  batch.box('fac_alu', a0, a1, yFront - 0.05, yFront, D - 0.05, D, lin(0xbfbfba), { bottom: true });
   for (const x of [a0 + 0.3, a1 - 0.35]) {
-    batch.poly('fac_alu', f.vec(0, -drop / len, D / len), [f.p(x, yMount - 0.35, 0.05), f.p(x + 0.05, yMount - 0.35, 0.05), f.p(x + 0.05, yFront - 0.03, D - 0.1), f.p(x, yFront - 0.03, D - 0.1)], lin(0xbdbdb8));
+    batch.poly('fac_alu', f.vec(0, -drop / len, D / len), [f.p(x, yMount - 0.35, 0.05), f.p(x + 0.05, yMount - 0.35, 0.05), f.p(x + 0.05, yFront - 0.03, D - 0.1), f.p(x, yFront - 0.03, D - 0.1)], lin(0xb4b4ae));
   }
 }
 
@@ -533,9 +569,52 @@ function emitEntrance(batch: Batch, u: ShopUnit, p: FacadePlan): void {
   batch.box(timber ? 'fac_timber' : 'fac_alu', r0, r1, doorTop, doorTop + 0.07, d, d + 0.06, leaf, { front: true, bottom: true, top: true });
   batch.quadF('fac_glass', 'N', [[r0, doorTop + 0.07, d + 0.01], [r1, doorTop + 0.07, d + 0.01], [r1, yOpen, d + 0.01], [r0, yOpen, d + 0.01]], [0.08, 0.09, 0.1, 0.8]);
   batch.box('fac_metal', (r0 + r1) / 2 - 0.25, (r0 + r1) / 2 + 0.25, yFloor + 1.0, yFloor + 1.03, d, d + 0.06, lin(0xc9a44a), { front: true, top: true, bottom: true });
-  // Intercom panel beside the door and a canopy slab above it.
-  batch.box('fac_alu', r1 + 0.08, r1 + 0.3, yFloor + 1.2, yFloor + 1.55, 0, 0.03, lin(0x9a9c9e), { front: true, left: true, right: true, top: true, bottom: true });
+  // Intercom panel beside the door (a column of buttons with taped name labels) and a canopy slab above it.
+  const ir = r1 + 0.08;
+  batch.box('fac_alu', ir, ir + 0.22, yFloor + 1.2, yFloor + 1.55, 0, 0.03, lin(0x9a9c9e), { front: true, left: true, right: true, top: true, bottom: true }, [0.5, 0.2, 0.3, 0]);
+  for (let k = 0; k < 5; k++) {
+    const yb = yFloor + 1.24 + k * 0.058;
+    batch.quadF('fac_paper', 'N', [[ir + 0.03, yb, 0.032], [ir + 0.15, yb, 0.032], [ir + 0.15, yb + 0.035, 0.032], [ir + 0.03, yb + 0.035, 0.032]], lin(pick([0xece6d6, 0xf2f0e8, 0xe0d4b0], U(10 + k))));
+  }
   if (p.typ !== 'T2') {
-    batch.box('fac_concrete', r0 - 0.25, r1 + 0.25, yOpen + 0.12, yOpen + 0.24, 0, 0.75, lin(0xd0ccc4), { front: true, top: true, bottom: true, left: true, right: true });
+    batch.slab('fac_concrete', r0 - 0.25, r1 + 0.25, yOpen + 0.12, yOpen + 0.24, 0, 0.75, lin(0xc6c2b9), 0.015, { front: true, top: true, bottom: true, left: true, right: true }, (_r, y) => [y > yOpen + 0.23 ? 0.8 : 0.4, 0.4, 0.7, 0]);
+  }
+  // Door number plate (İBB crimson with white digits) on the wall beside the door, at about 2.1 m.
+  const num = String(1 + Math.floor(U(20) * 120));
+  const pw = 0.12 + 0.05 * num.length;
+  const pr = r0 - 0.12 - pw;
+  const py = Math.min(yFloor + 2.05, yOpen - 0.2);
+  if (pr > r0 - 1.2) {
+    batch.box('fac_sign', pr, pr + pw, py, py + 0.15, 0, 0.012, lin(0x8e1b22), { front: true, left: true, right: true, top: true, bottom: true }, [0.3, 0.3, 0.4, 0]);
+    emitText(batch, num, { material: 'fac_letters', color: lin(0xf4f0e6), r: pr + pw / 2, y: py + 0.035, d: 0.014, capH: 0.08, depth: 0 });
+  }
+  // The block's name ("… APARTMANI") in brass letters on a marble plaque over the door.
+  const name = `${pick(APT_NAMES, U(21))} APT.`;
+  const cap = Math.min(0.075, (r1 - r0 + 0.3) / Math.max(0.1, textWidth(name)));
+  const plY = p.typ !== 'T2' ? yOpen + 0.3 : yOpen + 0.08;
+  if (cap > 0.035 && plY + 0.2 < p.base + p.G - 0.1) {
+    const pw2 = textWidth(name) * cap + 0.12;
+    const pc = (r0 + r1) / 2;
+    batch.box('fac_marble', pc - pw2 / 2, pc + pw2 / 2, plY, plY + cap + 0.08, 0, 0.02, lin(0xd8d4c8), { front: true, left: true, right: true, top: true, bottom: true }, [0.45, 0.4, 0.3, 0]);
+    emitText(batch, name, { material: 'fac_letters', color: lin(0xa88a3a), r: pc, y: plY + 0.04, d: 0.022, capH: cap, depth: 0 });
+  }
+  // A taped note on about one door in three: a printed headline and hand-written lines.
+  if (U(22) < 0.36) {
+    const nr = r0 + 0.2 + (r1 - r0 - 0.5) * U(23);
+    const ny = yFloor + 1.25 + 0.3 * U(24);
+    const paper = lin(pick([0xf2f0ea, 0xece6c8, 0xf0e8e0], U(25)));
+    batch.quadF('fac_paper', 'N', [[nr, ny, d + 0.025], [nr + 0.21, ny + 0.004, d + 0.025], [nr + 0.21, ny + 0.3, d + 0.025], [nr, ny + 0.296, d + 0.025]], paper);
+    batch.quadF('fac_letters', 'N', [[nr + 0.03, ny + 0.225, d + 0.027], [nr + 0.18, ny + 0.225, d + 0.027], [nr + 0.18, ny + 0.245, d + 0.027], [nr + 0.03, ny + 0.245, d + 0.027]], lin(0x1c1c1c));
+    for (let k = 0; k < 4; k++) {
+      const ly = ny + 0.18 - k * 0.035;
+      batch.quadF('fac_letters', 'N', [[nr + 0.025, ly, d + 0.027], [nr + 0.08 + 0.1 * U(27 + k), ly + 0.002, d + 0.027], [nr + 0.08 + 0.1 * U(27 + k), ly + 0.006, d + 0.027], [nr + 0.025, ly + 0.004, d + 0.027]], lin(0x2a3a7a));
+    }
+    // Tape strips at the top corners.
+    for (const tr of [nr - 0.01, nr + 0.16]) {
+      batch.quadF('fac_paper', 'N', [[tr, ny + 0.27, d + 0.028], [tr + 0.06, ny + 0.275, d + 0.028], [tr + 0.06, ny + 0.305, d + 0.028], [tr, ny + 0.3, d + 0.028]], lin(0xd8cfa8, 1, 1));
+    }
   }
 }
+
+/** Fictional apartment block names (common Turkish words and given names; no real buildings on the strip). */
+const APT_NAMES = ['YILDIZ', 'GÜNEŞ', 'ÇINAR', 'LALE', 'DENİZ', 'SEVİM', 'HUZUR', 'ÖZEN', 'NUR', 'ERGUN', 'KARDEŞLER', 'SÜMBÜL', 'AKASYA', 'MİNE', 'FEYZA', 'ESER'];

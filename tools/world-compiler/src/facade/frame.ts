@@ -11,7 +11,8 @@
  * per face. Callers flush a batch per element, so a chart never covers parts that overlap in projection.
  */
 import type { MaterialName } from '../materials';
-import type { RGBA, TileMesh, Vec2, Vec3 } from '../mesh';
+import type { RGBA, TileMesh, Vec2, Vec3, Weather } from '../mesh';
+import { tilingOf } from '../textures';
 
 export class Frame {
   constructor(
@@ -80,7 +81,31 @@ interface Group {
   tris: number[];
   col: RGBA[];
   uv: Vec2[] | null;
+  /** `_WEATHER` per vertex (zeros where a caller gave none); written only when some caller set it. */
+  wx: Weather[];
+  hasWx: boolean;
 }
+
+/** `_WEATHER` of one vertex, one per vertex, or a function of the frame point (r, y, d). */
+export type WeatherIn = Weather | readonly Weather[] | ((r: number, y: number, d: number) => Weather);
+
+/** Per-vertex attributes of a welded sheet vertex at frame (r, y). */
+export interface SheetAttr {
+  color: RGBA;
+  weather?: Weather;
+  /** Tilt of the shading normal towards +r and +y (radians): low-frequency waviness of a rendered wall. */
+  tilt?: [number, number];
+}
+
+interface Sheet {
+  m: MaterialName;
+  a: 'N' | '-N';
+  d: number;
+  quads: [number, number, number, number][];
+  attr: (r: number, y: number) => SheetAttr;
+}
+
+const ZERO_WX: Weather = [0, 0, 0, 0];
 
 /** Faces of a box to emit (default: all but the back). */
 export interface BoxFaces {
@@ -96,6 +121,7 @@ const ALL_BUT_BACK: BoxFaces = { front: true, left: true, right: true, top: true
 
 export class Batch {
   private groups = new Map<string, Group>();
+  private sheets: Sheet[] = [];
   tris = 0;
 
   constructor(
@@ -107,22 +133,26 @@ export class Batch {
     const key = `${m}|${n[0].toFixed(3)},${n[1].toFixed(3)},${n[2].toFixed(3)}|${uv ? 1 : 0}`;
     let g = this.groups.get(key);
     if (!g) {
-      g = { m, n, pts: [], tris: [], col: [], uv: uv ? [] : null };
+      g = { m, n, pts: [], tris: [], col: [], uv: uv ? [] : null, wx: [], hasWx: false };
       this.groups.set(key, g);
     }
     return g;
   }
 
-  /** Planar polygon (convex, world points) with normal `n`. */
-  poly(m: MaterialName, n: Vec3, pts: readonly Vec3[], color: RGBA | readonly RGBA[], uv?: readonly Vec2[]): void {
+  /** Planar polygon (convex, world points) with normal `n`; `weather` is one `_WEATHER` for all points or one per point. */
+  poly(m: MaterialName, n: Vec3, pts: readonly Vec3[], color: RGBA | readonly RGBA[], uv?: readonly Vec2[], weather?: Weather | readonly Weather[]): void {
     if (pts.length < 3) {
       return;
     }
     const g = this.group(m, n, !!uv);
     const base = g.pts.length;
+    if (weather) {
+      g.hasWx = true;
+    }
     pts.forEach((p, k) => {
       g.pts.push(p);
       g.col.push(typeof color[0] === 'number' ? (color as RGBA) : (color as readonly RGBA[])[k]);
+      g.wx.push(!weather ? ZERO_WX : typeof weather[0] === 'number' ? (weather as Weather) : (weather as readonly Weather[])[k]);
       if (uv && g.uv) {
         g.uv.push(uv[k]);
       }
@@ -134,49 +164,195 @@ export class Batch {
   }
 
   /** Quad in frame coordinates facing axis `a`: four (r, y, d) corners in order around the quad. */
-  quadF(m: MaterialName, a: Axis, c: readonly [number, number, number][], color: RGBA | readonly RGBA[], uv?: readonly Vec2[]): void {
+  quadF(m: MaterialName, a: Axis, c: readonly [number, number, number][], color: RGBA | readonly RGBA[], uv?: readonly Vec2[], weather?: WeatherIn): void {
     this.poly(
       m,
       this.f.dir(a),
       c.map(([r, y, d]) => this.f.p(r, y, d)),
       color,
       uv,
+      typeof weather === 'function' ? c.map(([r, y, d]) => weather(r, y, d)) : weather,
     );
   }
 
   /** Axis-aligned box in frame coordinates. */
-  box(m: MaterialName, r0: number, r1: number, y0: number, y1: number, d0: number, d1: number, color: RGBA, faces: BoxFaces = ALL_BUT_BACK): void {
+  box(m: MaterialName, r0: number, r1: number, y0: number, y1: number, d0: number, d1: number, color: RGBA, faces: BoxFaces = ALL_BUT_BACK, weather?: WeatherIn): void {
     if (r1 - r0 < 1e-4 || y1 - y0 < 1e-4 || d1 - d0 < 1e-4) {
       return;
     }
     if (faces.front) {
-      this.quadF(m, 'N', [[r0, y0, d1], [r1, y0, d1], [r1, y1, d1], [r0, y1, d1]], color);
+      this.quadF(m, 'N', [[r0, y0, d1], [r1, y0, d1], [r1, y1, d1], [r0, y1, d1]], color, undefined, weather);
     }
     if (faces.back) {
-      this.quadF(m, '-N', [[r0, y0, d0], [r1, y0, d0], [r1, y1, d0], [r0, y1, d0]], color);
+      this.quadF(m, '-N', [[r0, y0, d0], [r1, y0, d0], [r1, y1, d0], [r0, y1, d0]], color, undefined, weather);
     }
     if (faces.left) {
-      this.quadF(m, '-R', [[r0, y0, d0], [r0, y0, d1], [r0, y1, d1], [r0, y1, d0]], color);
+      this.quadF(m, '-R', [[r0, y0, d0], [r0, y0, d1], [r0, y1, d1], [r0, y1, d0]], color, undefined, weather);
     }
     if (faces.right) {
-      this.quadF(m, 'R', [[r1, y0, d0], [r1, y0, d1], [r1, y1, d1], [r1, y1, d0]], color);
+      this.quadF(m, 'R', [[r1, y0, d0], [r1, y0, d1], [r1, y1, d1], [r1, y1, d0]], color, undefined, weather);
     }
     if (faces.top) {
-      this.quadF(m, 'Y', [[r0, y1, d0], [r1, y1, d0], [r1, y1, d1], [r0, y1, d1]], color);
+      this.quadF(m, 'Y', [[r0, y1, d0], [r1, y1, d0], [r1, y1, d1], [r0, y1, d1]], color, undefined, weather);
     }
     if (faces.bottom) {
-      this.quadF(m, '-Y', [[r0, y0, d0], [r1, y0, d0], [r1, y0, d1], [r0, y0, d1]], color);
+      this.quadF(m, '-Y', [[r0, y0, d0], [r1, y0, d0], [r1, y0, d1], [r0, y0, d1]], color, undefined, weather);
     }
   }
 
-  /** Emits every group as one planar chart each and clears the batch. */
+  /**
+   * A projecting slab, sill or coping: a box in frame coordinates whose front-top and front-bottom arrises are
+   * chamfered by `c` (1-3 cm; real concrete and render edges are never razor sharp). The end faces become hexagons.
+   * `weather` defaults to edge wear on the chamfers and the front.
+   */
+  slab(m: MaterialName, r0: number, r1: number, y0: number, y1: number, d0: number, d1: number, color: RGBA, c: number, faces: BoxFaces = ALL_BUT_BACK, weather?: WeatherIn): void {
+    const cc = Math.min(c, (y1 - y0) / 2.5, (d1 - d0) / 2.5);
+    if (cc < 0.004 || r1 - r0 < 1e-4) {
+      this.box(m, r0, r1, y0, y1, d0, d1, color, faces, weather);
+      return;
+    }
+    const wx = weather ?? (((_r: number, y: number, d: number): Weather => [0, 0, d > d1 - cc - 1e-4 ? 0.85 : 0.2, 0]) as WeatherIn);
+    const lo = scale(color, 0.9);
+    if (faces.front) {
+      this.quadF(m, 'N', [[r0, y0 + cc, d1], [r1, y0 + cc, d1], [r1, y1 - cc, d1], [r0, y1 - cc, d1]], color, undefined, wx);
+    }
+    const top: Vec3 = this.f.vec(0, 1, 1);
+    const bot: Vec3 = this.f.vec(0, -1, 1);
+    this.poly(m, top, [this.f.p(r0, y1 - cc, d1), this.f.p(r1, y1 - cc, d1), this.f.p(r1, y1, d1 - cc), this.f.p(r0, y1, d1 - cc)], color, undefined, wxAt(wx, [[r0, y1 - cc, d1], [r1, y1 - cc, d1], [r1, y1, d1 - cc], [r0, y1, d1 - cc]]));
+    if (faces.bottom !== false) {
+      this.poly(m, bot, [this.f.p(r0, y0 + cc, d1), this.f.p(r1, y0 + cc, d1), this.f.p(r1, y0, d1 - cc), this.f.p(r0, y0, d1 - cc)], lo, undefined, wxAt(wx, [[r0, y0 + cc, d1], [r1, y0 + cc, d1], [r1, y0, d1 - cc], [r0, y0, d1 - cc]]));
+    }
+    if (faces.top) {
+      this.quadF(m, 'Y', [[r0, y1, d0], [r1, y1, d0], [r1, y1, d1 - cc], [r0, y1, d1 - cc]], color, undefined, wx);
+    }
+    if (faces.bottom) {
+      this.quadF(m, '-Y', [[r0, y0, d0], [r1, y0, d0], [r1, y0, d1 - cc], [r0, y0, d1 - cc]], lo, undefined, wx);
+    }
+    if (faces.back) {
+      this.quadF(m, '-N', [[r0, y0, d0], [r1, y0, d0], [r1, y1, d0], [r0, y1, d0]], color, undefined, wx);
+    }
+    const end = (r: number): [number, number, number][] => [
+      [r, y0, d0],
+      [r, y0, d1 - cc],
+      [r, y0 + cc, d1],
+      [r, y1 - cc, d1],
+      [r, y1, d1 - cc],
+      [r, y1, d0],
+    ];
+    if (faces.left) {
+      this.quadF(m, '-R', end(r0), color, undefined, wx);
+    }
+    if (faces.right) {
+      this.quadF(m, 'R', end(r1), color, undefined, wx);
+    }
+  }
+
+  /**
+   * A welded sheet in the frame plane `d` facing `a`: grid quads [r0, r1, y0, y1] that share their corner vertices,
+   * with per-vertex colour, `_WEATHER` and a tilted shading normal from `attr` (wavy render, macro variation and
+   * weathering gradients need shared, smoothly varying vertices). Emitted on flush through TileMesh.addMesh as one
+   * chart per sheet, with UV0 continuous with the flat faces of the same plane. Positions stay planar.
+   */
+  sheet(m: MaterialName, a: 'N' | '-N', d: number, quads: [number, number, number, number][], attr: (r: number, y: number) => SheetAttr): void {
+    if (quads.length) {
+      this.sheets.push({ m, a, d, quads, attr });
+      this.tris += quads.length * 2;
+    }
+  }
+
+  private emitSheet(s: Sheet): void {
+    const n = this.f.dir(s.a);
+    const key = new Map<string, number>();
+    const pos: number[] = [];
+    const nrm: number[] = [];
+    const uvm: number[] = [];
+    const col: RGBA[] = [];
+    const wx: Weather[] = [];
+    const idx: number[] = [];
+    let anyWx = false;
+    // UV0 in metres as flat faces of this plane get it (mesh.ts faceFrame: u runs right when facing the face, v down).
+    const h = Math.hypot(n[0], n[2]) || 1;
+    const ux = n[2] / h;
+    const uz = -n[0] / h;
+    const [tw] = tilingOf(s.m);
+    const ou = (this.mesh.ox * ux + this.mesh.oz * uz) % tw;
+    const vert = (r: number, y: number): number => {
+      const k = `${Math.round(r * 1000)},${Math.round(y * 1000)}`;
+      let i = key.get(k);
+      if (i === undefined) {
+        i = pos.length / 3;
+        const p = this.f.p(r, y, s.d);
+        pos.push(p[0], p[1], p[2]);
+        const at = s.attr(r, y);
+        const [tr, ty] = at.tilt ?? [0, 0];
+        const sgn = s.a === 'N' ? 1 : -1;
+        const t = this.f.vec(sgn * Math.sin(tr), Math.sin(ty), sgn * Math.cos(tr) * Math.cos(ty));
+        nrm.push(t[0], t[1], t[2]);
+        uvm.push((p[0] - this.mesh.ox) * ux + (p[2] - this.mesh.oz) * uz + ou, -p[1]);
+        col.push(at.color);
+        wx.push(at.weather ?? ZERO_WX);
+        anyWx ||= !!at.weather;
+        key.set(k, i);
+      }
+      return i;
+    };
+    for (const [r0, r1, y0, y1] of s.quads) {
+      const a = vert(r0, y0);
+      const b = vert(r1, y0);
+      const c = vert(r1, y1);
+      const d = vert(r0, y1);
+      // Wind so the front face matches the sheet's normal.
+      const front = s.a === 'N';
+      if (front) {
+        idx.push(a, c, b, a, d, c);
+      } else {
+        idx.push(a, b, c, a, c, d);
+      }
+    }
+    fixWinding(pos, idx, n);
+    this.mesh.addMesh(s.m, { positions: pos, indices: idx, normals: nrm, uvm, color: col, ...(anyWx ? { weather: wx } : {}) });
+  }
+
+  /** Emits every group as one planar chart each (sheets through addMesh) and clears the batch. */
   flush(): void {
     for (const g of this.groups.values()) {
       if (g.tris.length) {
-        this.mesh.flatTriangles(g.m, g.pts, g.tris, g.n, { color: g.col, ...(g.uv ? { uv: g.uv } : {}) });
+        this.mesh.flatTriangles(g.m, g.pts, g.tris, g.n, { color: g.col, ...(g.uv ? { uv: g.uv } : {}), ...(g.hasWx ? { weather: g.wx } : {}) });
       }
     }
+    for (const s of this.sheets) {
+      this.emitSheet(s);
+    }
     this.groups = new Map();
+    this.sheets = [];
+  }
+}
+
+/** Per-point `_WEATHER` of a WeatherIn for frame points. */
+function wxAt(w: WeatherIn | undefined, pts: readonly [number, number, number][]): Weather | readonly Weather[] | undefined {
+  if (!w) {
+    return undefined;
+  }
+  return typeof w === 'function' ? pts.map(([r, y, d]) => w(r, y, d)) : w;
+}
+
+/** Flips triangles whose geometric normal points away from `n` (the sheet's facing). */
+function fixWinding(pos: readonly number[], idx: number[], n: Vec3): void {
+  for (let t = 0; t < idx.length; t += 3) {
+    const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]];
+    const ux = pos[b * 3] - pos[a * 3];
+    const uy = pos[b * 3 + 1] - pos[a * 3 + 1];
+    const uz = pos[b * 3 + 2] - pos[a * 3 + 2];
+    const vx = pos[c * 3] - pos[a * 3];
+    const vy = pos[c * 3 + 1] - pos[a * 3 + 1];
+    const vz = pos[c * 3 + 2] - pos[a * 3 + 2];
+    const cx = uy * vz - uz * vy;
+    const cy = uz * vx - ux * vz;
+    const cz = ux * vy - uy * vx;
+    if (cx * n[0] + cy * n[1] + cz * n[2] < 0) {
+      idx[t + 1] = c;
+      idx[t + 2] = b;
+    }
   }
 }
 

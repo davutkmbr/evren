@@ -55,6 +55,21 @@ function collect(files: string[]): Map<string, Credit> {
     for (const a of index.assets ?? []) {
       add(a, a.usedBy, area);
     }
+    // Approved models that a compile step bakes from source (not placed as model props) are credited when a tile
+    // manifest of the area names their source URL (e.g. the soul lane's pigeon).
+    const dir = f.slice(0, f.lastIndexOf('/'));
+    const tileText = existsSync(`${dir}/tiles`)
+      ? readdirSync(`${dir}/tiles`)
+          .filter((n) => n.endsWith('.json'))
+          .map((n) => readFileSync(`${dir}/tiles/${n}`, 'utf8'))
+          .join('\n')
+      : '';
+    for (const a of approved.values()) {
+      if (a.kind === 'model' && !credits.has(a.id) && a.url && tileText.includes(a.url)) {
+        const cond = a.conditions.length ? a.conditions.map((text) => ({ text, met: 'see assets-src conditions / the compiler' })) : undefined;
+        add({ id: a.id, name: a.name, kind: a.kind, source: a.source, url: a.url, licence: a.licence, author: a.author, attribution: a.attribution, ...(cond ? { conditions: cond } : {}) }, ['baked'], area);
+      }
+    }
     // Texture sets that no tile material uses (procedural props): credited from their source lists.
     for (const t of index.textures ?? []) {
       if (t.file.startsWith('prop_')) {

@@ -16,8 +16,23 @@
 import type { DoorRec, XYZ } from '../format';
 import { LOD0, type TileMesh } from '../mesh';
 import type { TileContext } from '../registry';
-import { Batch, box, Face, faceBox, Frame, hpoly, lathe, type Opening, span, wall, type V2, dressOpening } from '../hero/kit';
-import { dressCafe, menuLettering } from './cafe-dressing';
+import { Batch, box, Face, faceBox, faceBoxC, Frame, hpoly, lathe, type Opening, span, wall, type V2, dressOpening } from '../hero/kit';
+import { HeroWeather, type WxProfile } from '../hero/weather';
+import { cafeWear, dressCafe, menuLettering } from './cafe-dressing';
+
+/**
+ * Lived-in wear (S1 round 2): grime on the terrazzo along the door-to-counter path, in front of the counter and along
+ * the skirting; scuffs low on the walls; kick marks and paint worn through on the counter; stains on the marble top.
+ * Driven per vertex by hero/weather.ts (see interiors/materials.ts for the layers).
+ */
+const CAFE_WX: Record<string, WxProfile> = {
+  int_floor: { dirt: 0.12, vary: 0.2, grid: 0.6, tint: 0.06 },
+  int_wall: { dirt: 0.06, vary: 0.12, splash: 0.35, splashH: 0.5, up: 0.3, down: 0.2, side: 0.1, edge: 0.35, tint: 0.05 },
+  int_brick: { dirt: 0.12, vary: 0.2, splash: 0.3, splashH: 0.45, tint: 0.06 },
+  int_counter: { dirt: 0.12, vary: 0.12, splash: 0.5, splashH: 0.5, up: 0.25, side: 0.05, edge: 0.8, tint: 0.05 },
+  int_wood_dark: { dirt: 0.1, vary: 0.15, splash: 0.3, splashH: 0.3, up: 0.2, edge: 0.55 },
+  int_marble: { dirt: 0.18, vary: 0.35, up: 0.12, edge: 0.3 },
+};
 
 export const CAFE_CEILING = 3.35;
 /** Clear width of the café's street door; the shopfront lane is asked to frame its door opening at this width. */
@@ -130,7 +145,31 @@ export function buildCafe(t: TileContext, cell: CafeCell, ring: readonly number[
   }
   const v0 = 0.33;
   const C = CAFE_CEILING;
-  const mesh = t.mesh;
+  const aisleU = (uL + uR) / 2 + 0.2;
+  const vcFront = D - 2.6;
+  const wx = new HeroWeather({
+    seed: 1453,
+    ground: () => floorY,
+    profiles: CAFE_WX,
+    extra: (p, _n, m) => {
+      if (m !== 'int_floor') {
+        return undefined;
+      }
+      const [u, v] = f.local(p[0], p[2]);
+      // Traffic: door -> aisle -> counter front, and the barista's strip behind the counter.
+      const seg = (a: V2, b: V2): number => {
+        const du = b[0] - a[0];
+        const dv = b[1] - a[1];
+        const t = Math.max(0, Math.min(1, ((u - a[0]) * du + (v - a[1]) * dv) / (du * du + dv * dv)));
+        return Math.hypot(u - a[0] - du * t, v - a[1] - dv * t);
+      };
+      const path = Math.min(seg([ud, v0], [aisleU, 1.6]), seg([aisleU, 1.6], [aisleU, vcFront - 0.3]), seg([uL + 0.3, D - 1.5], [uR - 1.6, D - 1.5]));
+      const wall = Math.min(u - uL, uR - u, v - v0, D - v);
+      const counterBand = v > vcFront - 0.7 && v < vcFront && u < uR - 1.1 ? 0.25 : 0;
+      return [0.62 * Math.exp(-((path / 0.6) ** 2)) + 0.35 * Math.max(0, 1 - wall / 0.3) + counterBand, 0, 0, 0];
+    },
+  });
+  const mesh = wx.wrap(t.mesh);
   const placed: Placed[] = [];
   const lightIds: string[] = [];
   const place = (asset: string, u: number, y: number, v: number, du: number, dv: number, opts: { variant?: string; scale?: number; lumens?: number; tag: string }): void => {
@@ -167,18 +206,27 @@ export function buildCafe(t: TileContext, cell: CafeCell, ring: readonly number[
       if (side === 1 && v < 2 && Math.abs(u - ud) < 1.6) {
         continue;
       }
-      const id = `t${k++}`;
+      const id = `t${k}`;
+      // Sets pushed about a little by the guests (±4°).
+      const j = ((((k * 37) % 11) - 5) / 5) * 0.07;
+      k++;
+      const cj = Math.cos(j);
+      const sj = Math.sin(j);
+      const rot = (du: number, dv: number): V2 => [u + du * cj + dv * sj, v - du * sj + dv * cj];
       tables.push({ id, u, v });
-      place('outdoor_table_chair_set_01', u, 0, v, 0, 1, { tag: id });
+      place('outdoor_table_chair_set_01', u, 0, v, sj, cj, { tag: id });
       // Seat hips: chair_01 sits +Z of the table facing -Z, chair_02 -Z facing +Z (prop +X = local +u).
-      seats.push({ id: `${id}s0`, table: id, position: xyz(f.p(u - 0.11, 0.47, v + 0.62)), heading: r2(f.heading(0, -1)), yaw: r2(f.yaw(0, -1)) });
-      seats.push({ id: `${id}s1`, table: id, position: xyz(f.p(u + 0.07, 0.47, v - 0.57)), heading: r2(f.heading(0, 1)), yaw: r2(f.yaw(0, 1)) });
-      seatAt.push({ u: u - 0.11, v: v + 0.62, dv: -1 }, { u: u + 0.07, v: v - 0.57, dv: 1 });
+      const s0 = rot(-0.11, 0.62);
+      const s1 = rot(0.07, -0.57);
+      seats.push({ id: `${id}s0`, table: id, position: xyz(f.p(s0[0], 0.47, s0[1])), heading: r2(f.heading(-sj, -cj)), yaw: r2(f.yaw(-sj, -cj)) });
+      seats.push({ id: `${id}s1`, table: id, position: xyz(f.p(s1[0], 0.47, s1[1])), heading: r2(f.heading(sj, cj)), yaw: r2(f.yaw(sj, cj)) });
+      seatAt.push({ u: s0[0], v: s0[1], dv: -1 }, { u: s1[0], v: s1[1], dv: 1 });
     }
   }
   mesh.withLod(LOD0, () => {
     const batch = new Batch(mesh);
     dressCafe(mesh, batch, f, { uL, uR, v0, D, C, counterR, vc0, vc1 }, tables);
+    cafeWear(mesh, batch, f, { uL, uR, v0, D, C, counterR, vc0, vc1, ud }, tables);
     batch.flush();
   });
   place('potted_plant_04', uR - 0.45, 0, v0 + 0.55, 0, -1, { scale: 3.2, tag: 'plant0' });
@@ -295,11 +343,11 @@ function counter(batch: Batch, f: Frame, u0: number, u1: number, v0: number, v1:
   const body = batch.of('int_counter');
   box(body, f, u0, u1, 0.1, 1.0, v0, v1);
   box(batch.of('int_wood_dark'), f, u0 + 0.05, u1 - 0.05, 0, 0.1, v0 + 0.06, v1);
-  box(batch.of('Marble019'), f, u0 - 0.02, u1 + 0.03, 1.0, 1.04, v0 - 0.05, v1 + 0.02, { bottom: true, top: true });
+  box(batch.of('int_marble'), f, u0 - 0.02, u1 + 0.03, 1.0, 1.04, v0 - 0.05, v1 + 0.02, { bottom: true, top: true });
   // Battens on the front (facing the room, -v).
   const front = span(f, [u1, v0], [u0, v0]);
   for (let s = 0.2; s < front.len - 0.1; s += 0.36) {
-    faceBox(body, front.face, s, s + 0.06, 0.16, 0.94, -0.01, 0.025, false, true);
+    faceBoxC(body, front.face, s, s + 0.06, 0.16, 0.94, -0.01, 0.025, 0.006, true);
   }
   // Espresso machine (stand-in): steel body, red panel, group heads; çaydanlık on a burner.
   const em = u0 + 0.95;

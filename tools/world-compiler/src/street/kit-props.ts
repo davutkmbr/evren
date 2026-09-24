@@ -13,15 +13,64 @@
  * - st_twin_lantern: junction column with two lanterns;
  * - st_umbrella: café parasol;
  * - st_person: neutral placeholder people (MetaHuman crowd later) in palettes x poses, facing +Z.
+ * Street furniture is worn (format 1.1, S1 round 2): `@worn` materials and a wear painter per prop give COLOR_0 and
+ * `_WEATHER` (grime and splash at the foot, rust runs under caps and collars, chipped paint on the edges, scuffed and
+ * mismatched bench slats); `vertexAttributes` writes them into the prop glbs.
  */
+
+const smooth = (e0: number, e1: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+const h1 = (x: number): number => {
+  const v = Math.sin(x * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/**
+ * Wear of a standing metal or concrete piece: grime and splash in the bottom 0.35 m, rust runs below the heights in
+ * `runs` (0.6 m long, in vertical stripes round the piece), chipped edges (`chip`, more on up-facing tops above `top`).
+ */
+function wearPainter(o: { top: number; rust: number; chip: number; runs: number[]; seed: number }): Painter {
+  return (p, n) => {
+    const y = p[1];
+    const foot = 1 - smooth(0, 0.35, y);
+    const dirt = Math.max(0.9 * foot, 0.18 * h1(Math.floor(y * 6) + o.seed));
+    const damp = 0.6 * (1 - smooth(0, 0.12, y));
+    const ang = Math.atan2(p[2], p[0]);
+    const stripe = Math.max(0, Math.sin(ang * 5 + o.seed * 3.1) * 0.6 + Math.sin(ang * 11 + o.seed) * 0.4);
+    let streak = 0;
+    for (const h of o.runs) {
+      if (y < h && y > h - 0.6) {
+        streak = Math.max(streak, (1 - (h - y) / 0.6) * stripe * stripe * o.rust);
+      }
+    }
+    const edge = o.chip * (n[1] > 0.6 && y > o.top - 0.1 ? 1 : 0.6);
+    const c = 1 - 0.22 * foot;
+    return { weather: [Math.min(1, dirt), Math.min(1, streak), Math.min(1, edge), damp], color: [c, c * 0.98, c * 0.95, 1] };
+  };
+}
 import type { PropDef } from '../props';
 import type { TileMesh, Vec3 } from '../mesh';
 import { PERSON_BOTTOMS, PERSON_SKIN, PERSON_TOPS } from './materials';
-import { aabox, beam, cylinder, ellipsoid, lathe, obox, tube } from './shapes';
+import { aabox, beam, cylinder, ellipsoid, lathe, obox, type Painter, tube, withPaint } from './shapes';
 import { buildTree } from './tree';
 
-function bollard(mesh: TileMesh, kind: 'ball' | 'post' | 'thin'): void {
-  const m = 'st_black_metal';
+function bollard(mesh: TileMesh, kind: 'ball' | 'ball_rusty' | 'post' | 'thin' | 'cube'): void {
+  if (kind === 'cube') {
+    // Granite cube bollard (c07 photo), chamfered top.
+    withPaint(wearPainter({ top: 0.5, rust: 0, chip: 0.7, runs: [], seed: 5 }), () => {
+      obox(mesh, 'st_kerb', [0, 0.22, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.21, 0.22, 0.21);
+      obox(mesh, 'st_kerb', [0, 0.47, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.19, 0.03, 0.19);
+    });
+    return;
+  }
+  const rusty = kind === 'ball_rusty';
+  withPaint(wearPainter({ top: kind === 'thin' ? 0.84 : 0.95, rust: rusty ? 1 : 0.5, chip: rusty ? 0.6 : 0.28, runs: kind === 'ball' || rusty ? [0.8, 0.07] : [0.86, 0.66], seed: rusty ? 7 : 3 }), () => bollardShape(mesh, kind === 'ball_rusty' ? 'ball' : kind));
+}
+
+function bollardShape(mesh: TileMesh, kind: 'ball' | 'post' | 'thin'): void {
+  const m = 'st_black_metal@worn';
   if (kind === 'ball') {
     lathe(mesh, m, 0, 0, 0, [
       [0.085, 0],
@@ -56,28 +105,32 @@ function bollard(mesh: TileMesh, kind: 'ball' | 'post' | 'thin'): void {
 }
 
 function bin(mesh: TileMesh): void {
-  lathe(mesh, 'st_concrete', 0, 0, 0, [
+  withPaint(wearPainter({ top: 0.9, rust: 0.7, chip: 0.5, runs: [0.72, 0.2], seed: 2 }), () => binShape(mesh));
+}
+
+function binShape(mesh: TileMesh): void {
+  lathe(mesh, 'st_concrete@worn', 0, 0, 0, [
     [0.24, 0],
     [0.24, 0.07],
     [0.2, 0.1],
   ], 14);
-  cylinder(mesh, 'st_blue_metal', 0, 0, 0.1, 0.16, 0.05, 8, false);
+  cylinder(mesh, 'st_blue_metal@worn', 0, 0, 0.1, 0.16, 0.05, 8, false);
   cylinder(mesh, 'st_bin_liner', 0, 0, 0.18, 0.72, 0.19, 12, true);
   const slats = 18;
   for (let k = 0; k < slats; k++) {
     const a = (k / slats) * Math.PI * 2;
     const x = Math.cos(a) * 0.2;
     const z = Math.sin(a) * 0.2;
-    obox(mesh, 'st_blue_metal', [x, 0.46, z], [-Math.sin(a), 0, Math.cos(a)], [0, 1, 0], [Math.cos(a), 0, Math.sin(a)], 0.018, 0.27, 0.006);
+    obox(mesh, 'st_blue_metal@worn', [x, 0.46, z], [-Math.sin(a), 0, Math.cos(a)], [0, 1, 0], [Math.cos(a), 0, Math.sin(a)], 0.018, 0.27, 0.006);
   }
   for (const y of [0.2, 0.7]) {
-    lathe(mesh, 'st_blue_metal', 0, y, 0, [
+    lathe(mesh, 'st_blue_metal@worn', 0, y, 0, [
       [0.212, 0],
       [0.212, 0.025],
     ], 16, false);
   }
-  cylinder(mesh, 'st_blue_metal', 0, 0, 0.73, 0.8, 0.02, 6, false);
-  lathe(mesh, 'st_blue_metal', 0, 0.8, 0, [
+  cylinder(mesh, 'st_blue_metal@worn', 0, 0, 0.73, 0.8, 0.02, 6, false);
+  lathe(mesh, 'st_blue_metal@worn', 0, 0.8, 0, [
     [0.27, 0],
     [0.28, 0.02],
     [0.26, 0.05],
@@ -86,9 +139,25 @@ function bin(mesh: TileMesh): void {
   ], 16);
 }
 
-function bench(mesh: TileMesh, back: boolean): void {
+/** Bench slats: scuffed edges, grime, and a tone per slat (repainted or replaced ones). */
+const slatPainter =
+  (seed: number): Painter =>
+  (p, n) => {
+    const k = Math.round((p[2] + p[1] * 0.5) / 0.095);
+    const tone = 0.7 + 0.3 * h1(k * 3.7 + seed);
+    const endWear = smooth(0.7, 0.95, Math.abs(p[0]));
+    return { weather: [0.25 + 0.3 * h1(k + seed * 2), 0, Math.min(1, 0.45 + 0.5 * endWear + (n[1] > 0.6 ? 0.2 : 0)), 0], color: [tone, tone * 0.99, tone * 0.97, 1] };
+  };
+
+function bench(mesh: TileMesh, back: boolean, steel = false): void {
+  const frame = wearPainter({ top: 0.9, rust: 0.8, chip: 0.35, runs: [0.43, 0.85], seed: 4 });
+  withPaint(frame, () => benchFrame(mesh, back));
+  withPaint(slatPainter(steel ? 9 : 1), () => benchSlats(mesh, back, steel ? 'st_bench_steel@worn' : 'st_bench_wood@worn'));
+}
+
+function benchFrame(mesh: TileMesh, back: boolean): void {
   for (const x of [-0.62, 0.62]) {
-    lathe(mesh, 'st_concrete', x, 0, 0, [
+    lathe(mesh, 'st_concrete@worn', x, 0, 0, [
       [0.2, 0],
       [0.21, 0.05],
       [0.15, 0.16],
@@ -96,37 +165,53 @@ function bench(mesh: TileMesh, back: boolean): void {
       [0.2, 0.38],
       [0.2, 0.4],
     ], 12);
-    aabox(mesh, 'st_black_metal', [x - 0.03, 0.4, -0.22], [x + 0.03, 0.43, 0.2]);
-  }
-  for (let k = 0; k < 5; k++) {
-    const z = -0.2 + k * 0.095;
-    aabox(mesh, 'st_bench_wood', [-0.95, 0.43, z - 0.04], [0.95, 0.465, z + 0.04]);
+    aabox(mesh, 'st_black_metal@worn', [x - 0.03, 0.4, -0.22], [x + 0.03, 0.43, 0.2]);
   }
   if (back) {
     for (const x of [-0.62, 0.62]) {
-      beam(mesh, 'st_black_metal', [x, 0.43, -0.2], [x, 0.85, -0.3], 0.05, 0.03, [0, 0, 1]);
+      beam(mesh, 'st_black_metal@worn', [x, 0.43, -0.2], [x, 0.85, -0.3], 0.05, 0.03, [0, 0, 1]);
     }
+  }
+}
+
+function benchSlats(mesh: TileMesh, back: boolean, slat: string): void {
+  for (let k = 0; k < 5; k++) {
+    const z = -0.2 + k * 0.095;
+    aabox(mesh, slat, [-0.95, 0.43, z - 0.04], [0.95, 0.465, z + 0.04]);
+  }
+  if (back) {
     for (let k = 0; k < 3; k++) {
       const y = 0.55 + k * 0.11;
       const z = -0.23 - (y - 0.45) * 0.24;
-      obox(mesh, 'st_bench_wood', [0, y, z], [1, 0, 0], [0, 0.97, -0.24], [0, 0.24, 0.97], 0.95, 0.04, 0.017);
+      obox(mesh, slat, [0, y, z], [1, 0, 0], [0, 0.97, -0.24], [0, 0.24, 0.97], 0.95, 0.04, 0.017);
     }
   }
 }
 
 function planter(mesh: TileMesh, round: boolean): void {
+  withPaint(wearPainter({ top: 0.55, rust: 0, chip: 0.5, runs: [], seed: 6 }), () => planterPot(mesh, round));
+  planterPlants(mesh, round);
+}
+
+function planterPot(mesh: TileMesh, round: boolean): void {
   if (round) {
-    lathe(mesh, 'st_concrete', 0, 0, 0, [
+    lathe(mesh, 'st_concrete@worn', 0, 0, 0, [
       [0.3, 0],
       [0.42, 0.25],
       [0.48, 0.5],
       [0.44, 0.52],
     ], 16);
+  } else {
+    aabox(mesh, 'st_concrete@worn', [-0.65, 0, -0.35], [0.65, 0.55, 0.35]);
+  }
+}
+
+function planterPlants(mesh: TileMesh, round: boolean): void {
+  if (round) {
     cylinder(mesh, 'st_soil', 0, 0, 0.44, 0.47, 0.42, 16, true);
     ellipsoid(mesh, 'st_leaves', [0, 0.75, 0], 0.42, 0.38, 0.42, 10, 6);
     ellipsoid(mesh, 'st_leaves_dark', [0.15, 0.62, 0.1], 0.3, 0.25, 0.3, 8, 5);
   } else {
-    aabox(mesh, 'st_concrete', [-0.65, 0, -0.35], [0.65, 0.55, 0.35]);
     aabox(mesh, 'st_soil', [-0.58, 0.55, -0.28], [0.58, 0.56, 0.28]);
     ellipsoid(mesh, 'st_leaves', [-0.25, 0.8, 0], 0.4, 0.32, 0.3, 10, 6);
     ellipsoid(mesh, 'st_leaves_dark', [0.3, 0.75, 0.02], 0.35, 0.28, 0.28, 10, 6);
@@ -135,29 +220,56 @@ function planter(mesh: TileMesh, round: boolean): void {
 
 function cabinet(mesh: TileMesh, wide: boolean): void {
   const hw = wide ? 0.65 : 0.42;
-  aabox(mesh, 'st_concrete', [-hw - 0.04, 0, -0.22], [hw + 0.04, 0.12, 0.22]);
+  withPaint(wearPainter({ top: 0.12, rust: 0, chip: 0.5, runs: [], seed: 14 }), () => aabox(mesh, 'st_concrete@worn', [-hw - 0.04, 0, -0.22], [hw + 0.04, 0.12, 0.22]));
   aabox(mesh, 'st_cabinet', [-hw, 0.12, -0.18], [hw, 1.32, 0.18]);
   aabox(mesh, 'st_cabinet', [-hw - 0.02, 1.32, -0.2], [hw + 0.02, 1.36, 0.2]);
   aabox(mesh, 'st_grey_metal', [-hw + 0.05, 0.25, 0.18], [-hw + 0.08, 1.2, 0.19]);
 }
 
-function signal(mesh: TileMesh, pedestrian: boolean): void {
-  cylinder(mesh, 'st_grey_metal', 0, 0, 0, 3.3, 0.055, 10, true);
-  const y0 = pedestrian ? 2.2 : 2.4;
-  const n = pedestrian ? 2 : 3;
+/**
+ * Signal head of n lenses (red on top, green at the bottom) at y0, facing +Z turned by `yaw` (about +Y) on the pole;
+ * only the `lit` lens glows (a real head shows one aspect), the others are dark glass.
+ */
+function signalHead(mesh: TileMesh, y0: number, n: number, yaw: number, lit: 'red' | 'green' = 'red'): void {
+  const c = Math.cos(yaw);
+  const sn = Math.sin(yaw);
+  const R = (p: Vec3): Vec3 => [p[0] * c + p[2] * sn, p[1], -p[0] * sn + p[2] * c];
   const hh = n * 0.3 + 0.06;
-  aabox(mesh, 'st_black_metal', [-0.16, y0, 0.06], [0.16, y0 + hh, 0.3]);
+  const u: Vec3 = R([1, 0, 0]);
+  const w: Vec3 = R([0, 0, 1]);
+  obox(mesh, 'st_black_metal@worn', R([0, y0 + hh / 2, 0.18]), u, [0, 1, 0], w, 0.16, hh / 2, 0.12);
   for (let k = 0; k < n; k++) {
     const y = y0 + hh - 0.18 - k * 0.3;
-    const lens = k === 0 ? 'st_signal_lens_red' : k === n - 1 ? 'st_signal_lens_green' : 'st_black_metal';
-    mesh.flatPolygon(lens, [...Array(10)].map((_, q): Vec3 => [Math.cos((q / 10) * Math.PI * 2) * 0.1, y + Math.sin((q / 10) * Math.PI * 2) * 0.1, 0.305]), [0, 0, 1]);
-    aabox(mesh, 'st_black_metal', [-0.12, y + 0.1, 0.3], [0.12, y + 0.12, 0.42]);
+    const aspect = k === 0 ? 'red' : k === n - 1 ? 'green' : 'amber';
+    const lens = aspect === lit ? (lit === 'red' ? 'st_signal_lens_red' : 'st_signal_lens_green') : 'st_signal_lens_off';
+    mesh.flatPolygon(lens, [...Array(10)].map((_, q): Vec3 => R([Math.cos((q / 10) * Math.PI * 2) * 0.1, y + Math.sin((q / 10) * Math.PI * 2) * 0.1, 0.305])), w);
+    obox(mesh, 'st_black_metal', R([0, y + 0.11, 0.36]), u, [0, 1, 0], w, 0.12, 0.01, 0.06);
   }
-  aabox(mesh, 'st_grey_metal', [-0.04, y0 + 0.2, 0], [0.04, y0 + 0.3, 0.07]);
+  obox(mesh, 'st_grey_metal@worn', R([0, y0 + 0.25, 0.035]), u, [0, 1, 0], w, 0.04, 0.05, 0.035);
+}
+
+/** Signal pole: traffic (3 lenses, +Z), pedestrian (2 lenses, +Z) or combo (traffic head +Z, pedestrian head -X). */
+function signal(mesh: TileMesh, kind: 'traffic' | 'pedestrian' | 'combo'): void {
+  withPaint(wearPainter({ top: 3.6, rust: 0.6, chip: 0.25, runs: [2.2, 1.9, 0.3], seed: 8 }), () => signalShape(mesh, kind));
+}
+
+function signalShape(mesh: TileMesh, kind: 'traffic' | 'pedestrian' | 'combo'): void {
+  cylinder(mesh, 'st_grey_metal@worn', 0, 0, 0, kind === 'combo' ? 3.6 : 3.3, 0.055, 10, true);
+  // Traffic heads show red (cars wait at the zebras), the pedestrian heads green.
+  if (kind === 'pedestrian') {
+    signalHead(mesh, 2.2, 2, 0, 'green');
+  } else {
+    signalHead(mesh, 2.4, 3, 0, 'red');
+  }
+  if (kind === 'combo') {
+    signalHead(mesh, 1.95, 2, -Math.PI / 2, 'green');
+    // Push-button box for pedestrians.
+    obox(mesh, 'st_sign_white', [-0.09, 1.1, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.035, 0.08, 0.05);
+  }
 }
 
 function stopPole(mesh: TileMesh, tram: boolean): void {
-  cylinder(mesh, 'st_grey_metal', 0, 0, 0, 3.8, 0.055, 10, true);
+  withPaint(wearPainter({ top: 3.8, rust: 0.5, chip: 0.35, runs: [3.2, 0.3], seed: 10 }), () => cylinder(mesh, 'st_grey_metal@worn', 0, 0, 0, 3.8, 0.055, 10, true));
   if (tram) {
     beam(mesh, 'st_black_metal', [0, 3.2, 0], [0.95, 3.2, 0], 0.03, 0.03);
     tube(mesh, 'st_black_metal', [[0.05, 3.05, 0], [0.35, 3.18, 0]], 0.012, 4);
@@ -199,14 +311,14 @@ function pendant(mesh: TileMesh): void {
 }
 
 function twinLantern(mesh: TileMesh): void {
-  lathe(mesh, 'st_black_metal', 0, 0, 0, [
+  withPaint(wearPainter({ top: 3.7, rust: 0.6, chip: 0.3, runs: [0.5, 3.6], seed: 12 }), () => lathe(mesh, 'st_black_metal@worn', 0, 0, 0, [
     [0.16, 0],
     [0.16, 0.25],
     [0.1, 0.4],
     [0.075, 0.5],
     [0.07, 3.6],
     [0.09, 3.7],
-  ], 12);
+  ], 12));
   beam(mesh, 'st_black_metal', [-0.62, 3.72, 0], [0.62, 3.72, 0], 0.05, 0.05);
   for (const x of [-0.55, 0.55]) {
     lathe(mesh, 'st_black_metal', x, 3.75, 0, [
@@ -228,7 +340,7 @@ function twinLantern(mesh: TileMesh): void {
 }
 
 function umbrella(mesh: TileMesh, fabric: string): void {
-  cylinder(mesh, 'st_concrete', 0, 0, 0, 0.12, 0.28, 12, true);
+  withPaint(wearPainter({ top: 0.12, rust: 0, chip: 0.5, runs: [], seed: 13 }), () => cylinder(mesh, 'st_concrete@worn', 0, 0, 0, 0.12, 0.28, 12, true));
   cylinder(mesh, 'st_grey_metal', 0, 0, 0.12, 2.55, 0.025, 8, true);
   const canopy: [number, number][] = [
     [1.3, 0],
@@ -321,26 +433,30 @@ export const KIT_PROPS: PropDef[] = [
     id: 'st_bollard',
     drawDistance: 80,
     castShadow: true,
+    vertexAttributes: true,
     build: (b) => {
-      for (const k of ['ball', 'post', 'thin'] as const) {
+      for (const k of ['ball', 'post', 'thin', 'ball_rusty', 'cube'] as const) {
         b.variant(k, (m) => bollard(m, k));
       }
     },
   },
-  { id: 'st_bin', drawDistance: 80, castShadow: true, build: (b) => b.variant('ibb', (m) => bin(m)) },
+  { id: 'st_bin', drawDistance: 80, castShadow: true, vertexAttributes: true, build: (b) => b.variant('ibb', (m) => bin(m)) },
   {
     id: 'st_bench',
     drawDistance: 90,
     castShadow: true,
+    vertexAttributes: true,
     build: (b) => {
       b.variant('back', (m) => bench(m, true));
       b.variant('flat', (m) => bench(m, false));
+      b.variant('metal', (m) => bench(m, true, true));
     },
   },
   {
     id: 'st_planter',
     drawDistance: 80,
     castShadow: true,
+    vertexAttributes: true,
     build: (b) => {
       b.variant('box', (m) => planter(m, false));
       b.variant('round', (m) => planter(m, true));
@@ -350,6 +466,7 @@ export const KIT_PROPS: PropDef[] = [
     id: 'st_tree',
     drawDistance: 400,
     castShadow: true,
+    vertexAttributes: true,
     build: (b) => {
       b.variant('street', (m) => buildTree(m, false));
       b.variant('plane', (m) => buildTree(m, true));
@@ -357,6 +474,7 @@ export const KIT_PROPS: PropDef[] = [
   },
   {
     id: 'st_cabinet',
+    vertexAttributes: true,
     drawDistance: 70,
     castShadow: true,
     build: (b) => {
@@ -366,15 +484,18 @@ export const KIT_PROPS: PropDef[] = [
   },
   {
     id: 'st_signal',
+    vertexAttributes: true,
     drawDistance: 150,
     castShadow: true,
     build: (b) => {
-      b.variant('traffic', (m) => signal(m, false));
-      b.variant('pedestrian', (m) => signal(m, true));
+      b.variant('traffic', (m) => signal(m, 'traffic'));
+      b.variant('pedestrian', (m) => signal(m, 'pedestrian'));
+      b.variant('combo', (m) => signal(m, 'combo'));
     },
   },
   {
     id: 'st_stop_pole',
+    vertexAttributes: true,
     drawDistance: 120,
     castShadow: true,
     build: (b) => {
@@ -395,6 +516,7 @@ export const KIT_PROPS: PropDef[] = [
   },
   {
     id: 'st_twin_lantern',
+    vertexAttributes: true,
     drawDistance: 200,
     castShadow: true,
     build: (b) => b.variant('warm', (m) => twinLantern(m)),
@@ -407,6 +529,7 @@ export const KIT_PROPS: PropDef[] = [
   },
   {
     id: 'st_umbrella',
+    vertexAttributes: true,
     drawDistance: 90,
     castShadow: true,
     build: (b) => {

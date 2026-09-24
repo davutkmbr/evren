@@ -92,20 +92,20 @@ const SPEC: Record<number, SpecRow> = {
   709156145: { typ: 'T2', storeys: [4, 4], railing: 'iron' },
   694298380: { typ: 'T1', storeys: [5, 6] },
   694298381: { typ: 'T1', storeys: [5, 6] },
-  694298376: { typ: 'T3', storeys: [6, 6], cikma: 'full', glazedBase: 2, wall: 0x8d9296 },
+  694298376: { typ: 'T3', storeys: [6, 6], cikma: 'full', glazedBase: 2, wall: 0x858a8d },
   709156143: { typ: 'T1', storeys: [5, 6] },
   694298375: { typ: 'T1', storeys: [5, 5] },
   694298374: { typ: 'T1', storeys: [5, 5] },
   694298373: { typ: 'T2', storeys: [2, 3] },
   179197314: { typ: 'T1', storeys: [5, 5] },
   694298383: { typ: 'T5', storeys: [1, 1] },
-  179197243: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xeeeeea },
-  179197258: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xeeeeea },
+  179197243: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
+  179197258: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
   179197266: { typ: 'T1', storeys: [5, 6] },
   1462853447: { typ: 'T1', storeys: [5, 5] },
-  179197226: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xe4cf98, G: 3.7, F: 2.85 },
-  1462853450: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xe4cf98, G: 3.7, F: 2.85 },
-  711321929: { typ: 'T1', storeys: [3, 4], wall: 0xeadfc0, frame: 0x2f4a3a, cikma: 'none' },
+  179197226: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
+  1462853450: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
+  711321929: { typ: 'T1', storeys: [3, 4], wall: 0xdcd2b6, frame: 0x3a4d40, cikma: 'none' },
   694715116: { typ: 'T1', storeys: [4, 5] },
   711321928: { typ: 'T1', storeys: [4, 5] },
   694715117: { typ: 'T1', storeys: [4, 5] },
@@ -117,38 +117,45 @@ const SPEC: Record<number, SpecRow> = {
   694715138: { typ: 'T1', storeys: [3, 4] },
 };
 
-/** Kadıköy paint palette (sRGB) with weights: ochre, salmon, pale green, cream, light grey, white, pale blue. */
+/**
+ * Kadıköy paint palette (sRGB) with weights: dusty ochre, faded salmon, grey-green, cream, light grey, dirty white,
+ * blue-grey. Sampled from the strip's reference photos (.shots/s1/reference: c06, c07, Emel Apt, the çarşı and
+ * Güneşlibahçe streets), where old paint has saturation 0.05-0.35 (HSV), never the 0.4-0.55 of fresh pastels; the
+ * values here are albedo-level (a little lighter than the shaded photo pixels). weather.ts paintAt adds the mottling,
+ * dust drift and sun fading on top.
+ */
 const T1_PAINT: (readonly [number, number])[] = [
-  [0xd8ae62, 1.2],
-  [0xdfbb72, 1],
-  [0xcca25c, 0.8],
-  [0xd99a80, 0.9],
-  [0xe2a98f, 0.7],
-  [0xb9c8a2, 0.7],
-  [0xa9bf9c, 0.5],
-  [0xeadcbc, 1.4],
-  [0xe6d5ae, 1],
-  [0xc9c6bf, 1.1],
-  [0xbdbab3, 0.8],
-  [0xe9e8e2, 1.1],
-  [0xf0eee8, 0.9],
-  [0xb6c3ca, 0.4],
+  [0xc9ae80, 1.2],
+  [0xcdb68d, 1],
+  [0xbba27a, 0.8],
+  [0xc8a391, 0.9],
+  [0xceb2a3, 0.7],
+  [0xaab29c, 0.7],
+  [0x9fab96, 0.5],
+  [0xd8ccb2, 1.4],
+  [0xd3c6a9, 1],
+  [0xbcb8b0, 1.1],
+  [0xaeaba4, 0.8],
+  [0xd9d6ce, 1.1],
+  [0xdedbd3, 0.9],
+  [0xa9b2b4, 0.4],
+  [0xcdb9b1, 0.5],
 ];
 const T2_PAINT: (readonly [number, number])[] = [
-  [0xe2cc8c, 1.4],
-  [0xe9dcc0, 1.2],
-  [0xc8c0b2, 1],
-  [0xd9b98f, 0.8],
-  [0xcfd3c4, 0.5],
-  [0xdca38c, 0.5],
+  [0xd2bf8f, 1.4],
+  [0xd8cdb4, 1.2],
+  [0xbcb6aa, 1],
+  [0xc9b192, 0.8],
+  [0xc0c3b6, 0.5],
+  [0xc9a797, 0.5],
 ];
 const T3_PANEL: (readonly [number, number])[] = [
-  [0x8e9398, 1],
-  [0x5c6166, 0.7],
-  [0xe6e6e2, 1],
-  [0xc7c9c8, 0.8],
+  [0x858a8e, 1],
+  [0x595d61, 0.7],
+  [0xd9d8d3, 1],
+  [0xbdbfbe, 0.8],
 ];
-const TRIM = [0xf1efe8, 0xece2c8, 0xe6e3dc];
+const TRIM = [0xdfdcd3, 0xdad1bb, 0xd6d3cb];
 
 /** Storey metrics per typology: ground floor, upper floor-to-floor ranges (m) and parapet. */
 const METRICS: Record<Typology, { G: [number, number]; F: [number, number]; parapet: number }> = {
@@ -246,10 +253,10 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   const paint = spec?.wall ?? osmPaint(osm?.colour) ?? (typ === 'T2' ? pickWeighted(T2_PAINT, H(6)) : typ === 'T3' ? pickWeighted(T3_PANEL, H(6)) : pickWeighted(T1_PAINT, H(6)));
   const wear = Math.min(1, Math.max(0, (typ === 'T2' ? 0.7 : typ === 'T3' ? 0.25 : 0.5) + (H(7) - 0.5) * 0.6));
   const wall = scale(lin(paint), 0.92 + 0.1 * H(8) - wear * 0.08);
-  const trim = typ === 'T3' ? lin(0xe8e8e4) : scale(mix(lin(pick(TRIM, H(9))), wall, 0.25 * H(10)), 1 - wear * 0.06);
+  const trim = typ === 'T3' ? lin(0xdcdbd6) : scale(mix(lin(pick(TRIM, H(9))), wall, 0.25 * H(10)), 1 - wear * 0.06);
   const accent = typ === 'T1' && H(11) < 0.4 ? scale(lin(pickWeighted(T1_PAINT, H(12))), 0.9) : H(11) < 0.7 ? scale(wall, 0.9) : wall;
   const timber = typ === 'T2' ? H(13) < 0.55 : H(13) < 0.2;
-  const frameColor = spec?.frame !== undefined ? lin(spec.frame) : timber ? lin(pick([0x5b3d29, 0x6b4a33, 0x3f4a3d, 0x4b3a2e], H(14))) : lin(0xf0f0ec, 0.95 - 0.1 * H(14));
+  const frameColor = spec?.frame !== undefined ? lin(spec.frame) : timber ? lin(pick([0x5b4131, 0x66503d, 0x44503f, 0x4d4034], H(14))) : lin(0xe6e5df, 0.95 - 0.1 * H(14));
 
   let cikma: FacadePlan['cikma'] = 'none';
   if (spec?.cikma) {
@@ -296,7 +303,7 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
             ],
             H(17),
           ));
-  const railColor = railing === 'pipe' ? lin(0xb2b5b6) : railing === 'iron' ? lin(0x2a2c2b) : lin(pick([0x2e3130, 0x3c4a44, 0xe8e6e0, 0x5a3b2c, 0x2a3a4e], H(18)));
+  const railColor = railing === 'pipe' ? lin(0xa9acac) : railing === 'iron' ? lin(0x2e2f2d) : lin(pick([0x323432, 0x3f4a45, 0xd6d3cb, 0x55402f, 0x34404e], H(18)));
   return {
     id: s.rec.id,
     osmId: s.rec.osmId,

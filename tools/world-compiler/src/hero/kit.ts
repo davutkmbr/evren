@@ -852,3 +852,172 @@ export function rgba(hex: number, a = 1): RGBA {
   };
   return [ch(16), ch(8), ch(0), a];
 }
+
+/* ------------------------------------------------------------------------------------------------------------- */
+/* Imperfect geometry (S1 round 2): chamfered arrises, gutters and downpipes                                       */
+/* ------------------------------------------------------------------------------------------------------------- */
+
+/**
+ * `faceBox` with its four front arrises chamfered by `c` (mitred at the corners): real stone and render trims have
+ * 1–3 cm arrises that catch the light, razor edges read as CG. The back (d0) face is skipped.
+ */
+export function faceBoxC(b: Builder, face: Face, s0: number, s1: number, y0: number, y1: number, d0: number, d1: number, c = 0.02, withBottom = true): void {
+  const cc = Math.min(c, (s1 - s0) / 3, (y1 - y0) / 3, (d1 - d0) / 2);
+  if (cc < 0.004) {
+    faceBox(b, face, s0, s1, y0, y1, d0, d1, false, withBottom);
+    return;
+  }
+  const P = (s: number, y: number, d: number): Vec3 => face.p(s, y, d);
+  const n = face.n;
+  const r = face.r;
+  const up: Vec3 = [0, 1, 0];
+  const mix = (a: Vec3, q: Vec3): Vec3 => [a[0] + q[0], a[1] + q[1], a[2] + q[2]];
+  const neg = (a: Vec3): Vec3 => [-a[0], -a[1], -a[2]];
+  const e = d1 - cc;
+  b.flatQuad([P(s0 + cc, y0 + cc, d1), P(s1 - cc, y0 + cc, d1), P(s1 - cc, y1 - cc, d1), P(s0 + cc, y1 - cc, d1)], n);
+  // Chamfer strips (mitred).
+  b.flatQuad([P(s0 + cc, y1 - cc, d1), P(s1 - cc, y1 - cc, d1), P(s1, y1, e), P(s0, y1, e)], mix(n, up));
+  b.flatQuad([P(s1 - cc, y0 + cc, d1), P(s1, y0, e), P(s1, y1, e), P(s1 - cc, y1 - cc, d1)], mix(n, r));
+  b.flatQuad([P(s0, y0, e), P(s0 + cc, y0 + cc, d1), P(s0 + cc, y1 - cc, d1), P(s0, y1, e)], mix(n, neg(r)));
+  b.flatQuad([P(s0, y0, e), P(s1, y0, e), P(s1 - cc, y0 + cc, d1), P(s0 + cc, y0 + cc, d1)], mix(n, neg(up)));
+  // Top, sides and bottom back to the wall.
+  b.flatQuad([P(s0, y1, d0), P(s1, y1, d0), P(s1, y1, e), P(s0, y1, e)], up);
+  if (withBottom) {
+    b.flatQuad([P(s0, y0, d0), P(s1, y0, d0), P(s1, y0, e), P(s0, y0, e)], neg(up));
+  }
+  b.flatQuad([P(s1, y0, d0), P(s1, y0, e), P(s1, y1, e), P(s1, y1, d0)], r);
+  b.flatQuad([P(s0, y0, d0), P(s0, y0, e), P(s0, y1, e), P(s0, y1, d0)], neg(r));
+}
+
+/** Plan rectangle u0..u1 × v0..v1 with its corners cut by c (a box with chamfered vertical arrises, for `prism`). */
+export function chamferRect(u0: number, u1: number, v0: number, v1: number, c: number): V2[] {
+  return [
+    [u0 + c, v0],
+    [u1 - c, v0],
+    [u1, v0 + c],
+    [u1, v1 - c],
+    [u1 - c, v1],
+    [u0 + c, v1],
+    [u0, v1 - c],
+    [u0, v0 + c],
+  ];
+}
+
+/**
+ * Half-round gutter along the plan line a -> b of a frame at height y (its rim), radius r, sagging up to `sag` metres
+ * between the ends and dipping a little between its brackets (every ~0.9 m); open side up, `out` = the side away
+ * from the wall (+1: right of a -> b in plan).
+ */
+export function gutter(b: Builder, f: Frame, a: V2, c: V2, y: number, r: number, sag: number, seed = 0): void {
+  const du = c[0] - a[0];
+  const dv = c[1] - a[1];
+  const len = Math.hypot(du, dv);
+  if (len < 0.2) {
+    return;
+  }
+  const n = Math.max(2, Math.ceil(len / 1.1));
+  const tu = du / len;
+  const tv = dv / len;
+  // Across direction (right of a -> b in plan).
+  const xu = tv;
+  const xv = -tu;
+  const prof: V2[] = [];
+  for (let k = 0; k <= 3; k++) {
+    const t = Math.PI * (k / 3);
+    prof.push([-Math.cos(t) * r, -Math.sin(t) * r]);
+  }
+  const ring = (i: number): { pts: Vec3[]; nrm: Vec3[] } => {
+    const t = i / n;
+    const l = t * len;
+    const dip = sag * Math.sin(Math.PI * t) + 0.004 * Math.sin((l / 0.9) * Math.PI) ** 2 + 0.003 * Math.sin(l * 2.3 + seed);
+    const cu = a[0] + tu * l;
+    const cv = a[1] + tv * l;
+    return {
+      pts: prof.map(([x, yy]) => f.p(cu + xu * x, y - dip + yy, cv + xv * x)),
+      nrm: prof.map(([x, yy]) => f.d(xu * x, yy, xv * x)),
+    };
+  };
+  let prev = ring(0);
+  for (let i = 1; i <= n; i++) {
+    const cur = ring(i);
+    for (let k = 0; k < prof.length - 1; k++) {
+      // Outside of the trough (normals outward) and inside (inward, seen from above).
+      b.quad(b.v(prev.pts[k], prev.nrm[k]), b.v(cur.pts[k], cur.nrm[k]), b.v(cur.pts[k + 1], cur.nrm[k + 1]), b.v(prev.pts[k + 1], prev.nrm[k + 1]));
+      const inn = (q: Vec3): Vec3 => [-q[0], -q[1], -q[2]];
+      b.quad(b.v(prev.pts[k], inn(prev.nrm[k])), b.v(cur.pts[k], inn(cur.nrm[k])), b.v(cur.pts[k + 1], inn(cur.nrm[k + 1])), b.v(prev.pts[k + 1], inn(prev.nrm[k + 1])));
+    }
+    prev = cur;
+  }
+}
+
+/**
+ * Round downpipe on a face at s, `off` in front of it, from yTop down to yBottom (face heights): an octagonal pipe
+ * with a swan neck out to the gutter under the eave (`neck` m) at the top, clips every ~1.8 m and a shoe at the foot.
+ */
+export function downpipe(b: Builder, face: Face, s: number, yTop: number, yBottom: number, off = 0.08, r = 0.045, neck = 0): void {
+  const p = face.p(s, 0, off);
+  const [u, v] = face.f.local(p[0], p[2]);
+  lathe(b, face.f, u, v, [
+    [r, yBottom + 0.1],
+    [r, yTop],
+  ], 8, 0, false);
+  // Shoe turned out at the foot.
+  const q = face.p(s, 0, off + 0.06);
+  const [su, sv] = face.f.local(q[0], q[2]);
+  lathe(b, face.f, su, sv, [
+    [r * 1.1, yBottom],
+    [r * 1.1, yBottom + 0.14],
+  ], 8, 0, false);
+  for (let y = yBottom + 0.9; y < yTop - 0.3; y += 1.8) {
+    faceBox(b, face, s - r - 0.012, s + r + 0.012, y, y + 0.035, 0, off + r + 0.01, false, true);
+  }
+  if (neck > 0) {
+    // Swan neck: back out under the eave to the gutter outlet.
+    faceBox(b, face, s - r * 0.9, s + r * 0.9, yTop - 0.02, yTop + r * 1.6, off - r, off + neck, false, true);
+  }
+}
+
+/**
+ * Ridge or hip cap tiles along a roof line p0 -> p1 (world): a half-round of radius r (flattened by `flat`) with a
+ * slight wave every `pitch` metres (one cap tile each), so the line is not a ruler edge.
+ */
+export function ridgeCap(b: Builder, p0: Vec3, p1: Vec3, r = 0.12, pitch = 0.84, flat = 0.75): void {
+  const t: Vec3 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+  const len = Math.hypot(...t);
+  if (len < 0.1) {
+    return;
+  }
+  t[0] /= len;
+  t[1] /= len;
+  t[2] /= len;
+  // up: world up made perpendicular to the line; side = t × up.
+  let up: Vec3 = [-t[0] * t[1], 1 - t[1] * t[1], -t[2] * t[1]];
+  const ul = Math.hypot(...up) || 1;
+  up = [up[0] / ul, up[1] / ul, up[2] / ul];
+  const side: Vec3 = [t[1] * up[2] - t[2] * up[1], t[2] * up[0] - t[0] * up[2], t[0] * up[1] - t[1] * up[0]];
+  const n = Math.max(2, Math.round(len / pitch));
+  const segs = 4;
+  const ring = (i: number): { p: Vec3[]; nn: Vec3[] } => {
+    const l = (len * i) / n;
+    const swell = 1 + 0.08 * Math.sin((i % 2) * Math.PI * 0.5);
+    const c: Vec3 = [p0[0] + t[0] * l, p0[1] + t[1] * l, p0[2] + t[2] * l];
+    const p: Vec3[] = [];
+    const nn: Vec3[] = [];
+    for (let k = 0; k <= segs; k++) {
+      const a = Math.PI * (k / segs);
+      const cs = Math.cos(a) * r * swell;
+      const sn = Math.sin(a) * r * flat * swell;
+      p.push([c[0] + side[0] * cs + up[0] * sn, c[1] + side[1] * cs + up[1] * sn, c[2] + side[2] * cs + up[2] * sn]);
+      nn.push([side[0] * Math.cos(a) + up[0] * Math.sin(a), side[1] * Math.cos(a) + up[1] * Math.sin(a), side[2] * Math.cos(a) + up[2] * Math.sin(a)]);
+    }
+    return { p, nn };
+  };
+  let prev = ring(0);
+  for (let i = 1; i <= n; i++) {
+    const cur = ring(i);
+    for (let k = 0; k < segs; k++) {
+      b.quad(b.v(prev.p[k], prev.nn[k]), b.v(cur.p[k], cur.nn[k]), b.v(cur.p[k + 1], cur.nn[k + 1]), b.v(prev.p[k + 1], prev.nn[k + 1]));
+    }
+    prev = cur;
+  }
+}

@@ -1,24 +1,23 @@
 /**
  * Placeholder pedestrians (format 1): neutral procedural people (kit-props.ts st_person: palettes x standing /
  * walking / sitting poses, static meshes) as prop instances, to be replaced by the MetaHuman crowd. Densities follow
- * s1-strip.md §4 by zone, with no global cap:
- * - the fish / produce end (within FISH_REACH of P11 on pedestrian lanes, including Güneşlibahçe Sk and Yağlıkçı
- *   İsmail Sk in tiles 3_61 / 4_61): 0.45 / m² near the junction, 0.2–0.32 / m² further down the market lanes;
- * - Yasa Cd (the spine lane): 0.15 / m²;
- * - the arrival square: 0.045 / m² over its whole polygon (≈ 380 people, 20+ in view at c02 / c04), walkers heading
- *   for the piers, the crossing and the bus stop;
- * - Rıhtım Cd pavements and crossings near the spine: 0.06 / m².
- * Walkers go along the walk graph (both directions, a third of them in pairs), standers face anywhere. Per tile,
- * people also browse 0.6–1.0 m in front of stalls and shop windows (facing them), and sit on 65 % of the café
- * chairs and benches near the strip. Nobody spawns inside a building, inside or within 0.8 m of a hero's outline
- * (the pier loggias are gated), within 0.35 m of a wall or in the clear foreground of an eye-level reference camera. Heights vary with the instance scale (0.92-1.08 of
- * 1.75 m); `seed` lets runtimes vary them further. Instance refs start with "crowd/" so a runtime can swap them for
- * animated agents.
+ * s1-strip.md §4 by zone; the placement follows how people use the strip (S1 round 2, critique "a uniform random
+ * scatter with no flows, groups, queues or seated clusters"):
+ * - the arrival square: flows along the desire lines (wear.ts: pier gates → crossing → Yasa Cd, the bus stop), people
+ *   walking alone, in pairs side by side or in threes and fours; waiting clusters at the pier gates, the bus stop and
+ *   the crossing kerb; standing conversation groups (2-4 facing each other); people sitting on the quay edge with
+ *   their legs over the water; a sparse scatter elsewhere;
+ * - tram stops: a waiting group on the stop's pavement facing the track;
+ * - lanes, pavements and crossings (walk graph): walkers in both directions, a third in groups of 2-4; the fish /
+ *   produce end densest (0.45 / m² near P11), Yasa Cd 0.15 / m², Rıhtım Cd 0.06 / m²;
+ * - per tile, browsers 0.6-1.0 m in front of stalls and shop windows, and 65 % of the café chairs and benches near the
+ *   strip taken; people sitting on the rims of the junction planters.
+ * Nobody spawns inside a building or a hero's outline (0.8 m margin), within 0.35 m of a wall, within 3 m of any
+ * camera of tools/world-compiler/s1/cameras.json (and the look lane's pose overrides) or in the 11 m foreground
+ * wedge of an eye-level camera. Heights vary with the instance scale (0.92-1.08 of 1.75 m); `seed` lets runtimes vary
+ * them further. Instance refs start with "crowd/" so a runtime can swap them for animated agents.
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { pointInRing, segDist } from '../../../../src/world/osm/shared/geometry';
-import { ROOT } from '../../lib/areas.mjs';
 import { Spacing } from '../../../../src/world/osm/streets/sink';
 import type { XYZ } from '../format';
 import type { HeroShared } from '../hero';
@@ -26,8 +25,9 @@ import { headingYaw } from '../instances';
 import { interiorDoorViews } from '../interiors';
 import type { AreaContext, CompileStep, TileContext } from '../registry';
 import { inTile, rng, streetContext } from './common';
-import { streetPlan, type Placement } from './furniture';
+import { camerasForClearance, streetPlan, type Placement } from './furniture';
 import { PERSON_PALETTES } from './kit-props';
+import { wearPlan } from './wear';
 
 /** Share of seats taken (café chairs, benches near the strip). */
 const SEATED_SHARE = 0.65;
@@ -80,18 +80,23 @@ function planCrowd(a: AreaContext): CrowdState {
       }
       return false;
     });
-  // Eye-level reference cameras keep a clear foreground: no spawn within 2.8 m or in a 10 m wedge ahead of them.
-  const cams = [...eyeCameras(), ...interiorDoorViews(a)];
+  // Reference cameras keep a clear foreground: nobody within 3 m (3D) of a camera, nor in an 11 m wedge ahead of an
+  // eye-level one (cameras.json with the look lane's overrides, and the interior street views).
+  const cams = [...camerasForClearance(), ...interiorDoorViews(a).map((v) => ({ ...v, y: sc.groundY(v.x, v.z) + 1.6, high: false }))];
   const inCameraView = (x: number, z: number): boolean =>
     cams.some((c) => {
       const dx = x - c.x;
       const dz = z - c.z;
-      if (Math.hypot(dx, dz) < 2.8) {
+      if (Math.hypot(dx, dz, c.y - (sc.groundY(x, z) + 1.2)) < 3.2) {
         return true;
+      }
+      if (c.high) {
+        return false;
       }
       const along = dx * c.fx + dz * c.fz;
       const side = Math.abs(-dx * c.fz + dz * c.fx);
-      return along > 0 && along < 10 && side < 0.8 + 0.35 * along;
+      // The near field: nobody inside the view within 6.5 m (a figure there fills half the frame), then an 11 m wedge.
+      return (Math.hypot(dx, dz) < 6.5 && along > 0 && side < along * 0.85 + 0.6) || (along > -0.5 && along < 11 && side < 1.0 + 0.33 * along);
     });
   const blocked = (x: number, z: number): boolean => inCameraView(x, z) || fp.inside(x, z) || s.buildingDistance(x, z) < 0.35 || a.land(x, z) < 0.5 || (s.distance(x, z) < 0 && !s.pedestrianStreet(x, z)) || nearHero(x, z);
   /** People per m² wanted at (x, z); 0 outside the strip. */
@@ -123,20 +128,78 @@ function planCrowd(a: AreaContext): CrowdState {
     people.push({ prop: 'st_person', variant: `${pose}${k}`, pos: [x, y, z], yaw, scale: pose === 'sitting' ? 0.96 + r() * 0.08 : 0.92 + r() * 0.16, ref: `crowd/${people.length}`, seed: Math.floor(r() * 1e6) });
     stats[pose]++;
   };
-  /** A walker (sometimes with a companion beside them) or a stander at (x, z), heading `h` degrees. */
-  const person = (x: number, z: number, h: number, walkShare: number): void => {
-    const walking = r() < walkShare;
-    add(walking ? 'walking' : 'standing', x, sc.groundY(x, z), z, headingYaw(walking ? h : r() * 360, '+Z'));
-    if (walking && r() < 0.33) {
-      const rad = (h * Math.PI) / 180;
-      const side = r() < 0.5 ? 1 : -1;
-      // Right of the heading is (cos h, sin h) in (x, z).
-      const cx = x + Math.cos(rad) * 0.62 * side;
-      const cz = z + Math.sin(rad) * 0.62 * side;
-      if (!blocked(cx, cz) && taken.claim(cx, cz, 0.5)) {
-        add('walking', cx, sc.groundY(cx, cz), cz, headingYaw(h + (r() - 0.5) * 8, '+Z'));
+  /** Group size of walkers: 45 % alone, 33 % pairs, 15 % threes, 7 % fours. */
+  const groupSize = (): number => {
+    const q = r();
+    return q < 0.45 ? 1 : q < 0.78 ? 2 : q < 0.93 ? 3 : 4;
+  };
+  /**
+   * Walkers heading `h` degrees at (x, z): one, or a group side by side (pairs, threes in a shallow V, fours two by
+   * two), keeping step with small heading jitter.
+   */
+  const walkGroup = (x: number, z: number, h: number, n: number): number => {
+    const rad = (h * Math.PI) / 180;
+    // Right of the heading is (cos h, sin h) in (x, z); forward is (sin h, -cos h).
+    const rx = Math.cos(rad);
+    const rz = Math.sin(rad);
+    const fx = Math.sin(rad);
+    const fz = -Math.cos(rad);
+    const slots: [number, number][] = n === 1 ? [[0, 0]] : n === 2 ? [[-0.32, 0], [0.32, 0]] : n === 3 ? [[-0.62, -0.25], [0, 0.1], [0.62, -0.25]] : [[-0.32, 0.45], [0.32, 0.45], [-0.32, -0.45], [0.32, -0.45]];
+    let placed = 0;
+    for (const [side, ahead] of slots) {
+      const px = x + rx * side + fx * ahead + (r() - 0.5) * 0.08;
+      const pz = z + rz * side + fz * ahead + (r() - 0.5) * 0.08;
+      if (blocked(px, pz) || !plan.occupied.free(px, pz, 0.5) || !taken.claim(px, pz, 0.46)) {
+        continue;
       }
+      add('walking', px, sc.groundY(px, pz), pz, headingYaw(h + (r() - 0.5) * 7, '+Z'));
+      placed++;
     }
+    return placed;
+  };
+  /** Standers talking: 2-4 in a small circle facing its centre. */
+  const talkGroup = (x: number, z: number, n: number): number => {
+    let placed = 0;
+    const a0 = r() * Math.PI * 2;
+    const rad = n === 2 ? 0.42 : 0.55;
+    for (let k = 0; k < n; k++) {
+      const a2 = a0 + (k / n) * Math.PI * 2 + (r() - 0.5) * 0.4;
+      const px = x + Math.cos(a2) * rad;
+      const pz = z + Math.sin(a2) * rad;
+      if (blocked(px, pz) || !plan.occupied.free(px, pz, 0.5) || !taken.claim(px, pz, 0.45)) {
+        continue;
+      }
+      const h = ((Math.atan2(x - px, -(z - pz)) * 180) / Math.PI + 360 + (r() - 0.5) * 25) % 360;
+      add('standing', px, sc.groundY(px, pz), pz, headingYaw(h, '+Z'));
+      placed++;
+    }
+    return placed;
+  };
+  /** A walker or group, or a stander at (x, z), heading `h` degrees. */
+  const person = (x: number, z: number, h: number, walkShare: number): void => {
+    if (r() < walkShare) {
+      walkGroup(x, z, h, groupSize());
+    } else if (!blocked(x, z) && taken.claim(x, z, 0.5)) {
+      add('standing', x, sc.groundY(x, z), z, headingYaw(r() * 360, '+Z'));
+    }
+  };
+  /** Waiting cluster: n people within `spread` m of (x, z), facing (faceX, faceZ) with some scatter. */
+  const waitCluster = (x: number, z: number, faceX: number, faceZ: number, n: number, spread: number, zone: string): void => {
+    const face = (Math.atan2(faceX, -faceZ) * 180) / Math.PI;
+    let placed = 0;
+    for (let k = 0; k < n * 6 && placed < n; k++) {
+      const u = (r() + r() - 1) * spread;
+      const v = (r() + r() - 1) * spread * 0.6;
+      // u across the facing direction, v along it.
+      const px = x + -faceZ * u + faceX * v;
+      const pz = z + faceX * u + faceZ * v;
+      if (blocked(px, pz) || !plan.occupied.free(px, pz, 0.5) || !taken.claim(px, pz, 0.62)) {
+        continue;
+      }
+      add('standing', px, sc.groundY(px, pz), pz, headingYaw(face + (r() - 0.5) * 50, '+Z'));
+      placed++;
+    }
+    stats[zone] = (stats[zone] ?? 0) + placed;
   };
   // Lanes, pavements and crossings: along the walk graph.
   for (let e = 0; e < w.edges.length; e += 2) {
@@ -153,7 +216,8 @@ function planCrowd(a: AreaContext): CrowdState {
     }
     const len = Math.hypot(bx - ax, bz - az);
     const hw = Math.max(0.6, (w.halfWidth[i] + w.halfWidth[j]) / 2);
-    const want = density(mx, mz) * len * Math.max(1.2, hw * 2);
+    // Walkers come in groups (1.84 people on average), standers alone: about 1.5 people per placement.
+    const want = (density(mx, mz) * len * Math.max(1.2, hw * 2)) / 1.5;
     if (want <= 0) {
       continue;
     }
@@ -170,7 +234,7 @@ function planCrowd(a: AreaContext): CrowdState {
         const o = (r() * 2 - 1) * hw * 0.92;
         const x = ax + tx * f - tz * o;
         const z = az + tz * f + tx * o;
-        if (blocked(x, z) || !plan.occupied.free(x, z, 0.55) || !taken.claim(x, z, market ? 0.62 : 0.75)) {
+        if (blocked(x, z) || !plan.occupied.free(x, z, 0.55) || !taken.free(x, z, market ? 0.62 : 0.75)) {
           continue;
         }
         const dir = r() < 0.5 ? 1 : -1;
@@ -180,9 +244,46 @@ function planCrowd(a: AreaContext): CrowdState {
       }
     }
   }
-  // The arrival square: uniform over its polygon, walkers heading for the piers, the crossing and the bus stop.
+  // The arrival square: flows along the desire lines, waiting clusters, talking groups, sitters on the quay edge and a
+  // sparse scatter (about 0.04 / m² in all, 20+ in view at c02 / c04).
   const sq = sc.square;
+  const wear = wearPlan(a);
   if (sq.length >= 6) {
+    for (const d of wear.desire) {
+      const P = d.pts;
+      for (let k = 2; k < P.length; k += 2) {
+        const ax = P[k - 2];
+        const az = P[k - 1];
+        const len = Math.hypot(P[k] - ax, P[k + 1] - az);
+        const tx = (P[k] - ax) / len;
+        const tz = (P[k + 1] - az) / len;
+        // Groups every ~3.5 m of line at weight 1.
+        const groups = Math.round((len / 3.5) * d.weight);
+        for (let q = 0; q < groups; q++) {
+          const f = r() * len;
+          const o = (r() + r() + r() - 1.5) * 2.4;
+          const x = ax + tx * f - tz * o;
+          const z = az + tz * f + tx * o;
+          // The ends are the gates, where the waiting clusters stand and the lines converge.
+          const ends = Math.min(Math.hypot(x - P[0], z - P[1]), Math.hypot(x - P[P.length - 2], z - P[P.length - 1]));
+          if (!pointInRing(sq, x, z) || ends < 7) {
+            continue;
+          }
+          // Towards the crossing / bus stop more often than back (arrivals from the ferries).
+          const dir = r() < 0.6 ? 1 : -1;
+          const h = ((Math.atan2(tx * dir, -tz * dir) * 180) / Math.PI + 360 + (r() - 0.5) * 12) % 360;
+          stats.square += walkGroup(x, z, h, groupSize());
+        }
+      }
+    }
+    for (const g of wear.gates) {
+      // The 1926 pier's gate is the centre of the c01 telephoto: a few people only, as in the photo.
+      const n = g.id === 'busStop' ? 11 : g.id === 'crossing' ? 9 : g.id === 'pier1926' ? 5 : 14;
+      // Stand back from the gate (bus stop: at the kerb) and face it.
+      const back = g.id === 'busStop' ? 1.8 : g.id === 'crossing' ? 1.2 : g.id === 'pier1926' ? 2.5 : 4.5;
+      waitCluster(g.x - g.faceX * back, g.z - g.faceZ * back, g.faceX, g.faceZ, n, g.id === 'crossing' ? 2.2 : 3.2, `wait:${g.id}`);
+    }
+    // Talking groups and a sparse scatter over the open square.
     let minX = Infinity;
     let minZ = Infinity;
     let maxX = -Infinity;
@@ -193,28 +294,113 @@ function planCrowd(a: AreaContext): CrowdState {
       minZ = Math.min(minZ, sq[k + 1]);
       maxZ = Math.max(maxZ, sq[k + 1]);
     }
-    const cell = Math.sqrt(1 / 0.045);
-    const targets: [number, number][] = [
-      [200, 5930],
-      [232, 5880],
-      [spine[4] ?? 284, spine[5] ?? 5940],
-      [spine[0] ?? 236, spine[1] ?? 5944],
-    ];
-    for (let x = minX + cell / 2; x < maxX; x += cell) {
-      for (let z = minZ + cell / 2; z < maxZ; z += cell) {
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const px = x + (r() - 0.5) * cell;
-          const pz = z + (r() - 0.5) * cell;
-          if (!pointInRing(sq, px, pz) || blocked(px, pz) || !plan.occupied.free(px, pz, 0.55) || !taken.claim(px, pz, 0.8)) {
+    for (let k = 0; k < 30; k++) {
+      const x = minX + r() * (maxX - minX);
+      const z = minZ + r() * (maxZ - minZ);
+      if (pointInRing(sq, x, z)) {
+        stats.square += talkGroup(x, z, 2 + Math.floor(r() * 3));
+      }
+    }
+    for (let k = 0; k < 110; k++) {
+      const x = minX + r() * (maxX - minX);
+      const z = minZ + r() * (maxZ - minZ);
+      if (!pointInRing(sq, x, z) || blocked(x, z) || !plan.occupied.free(x, z, 0.55) || !taken.free(x, z, 0.8)) {
+        continue;
+      }
+      const tg = wear.gates[Math.floor(r() * wear.gates.length)] ?? { x: 236, z: 5944 };
+      const h = ((Math.atan2(tg.x - x, -(tg.z - z)) * 180) / Math.PI + 360 + (r() - 0.5) * 40) % 360;
+      person(x, z, h, 0.6);
+      stats.square++;
+    }
+    // Sitting on the quay edge, legs over the water, facing the sea (alone or in pairs).
+    let sitters = 0;
+    for (const l of a.data.lines) {
+      if (l.kind !== 'natural=coastline') {
+        continue;
+      }
+      for (let k = 2; k < l.pts.length && sitters < 14; k += 2) {
+        const ax = l.pts[k - 2];
+        const az = l.pts[k - 1];
+        const len = Math.hypot(l.pts[k] - ax, l.pts[k + 1] - az);
+        if (len < 1) {
+          continue;
+        }
+        const tx = (l.pts[k] - ax) / len;
+        const tz = (l.pts[k + 1] - az) / len;
+        let nx = tz;
+        let nz = -tx;
+        const mx = ax + tx * len * 0.5;
+        const mz = az + tz * len * 0.5;
+        if (a.land(mx + nx * 1.5, mz + nz * 1.5) < a.land(mx - nx * 1.5, mz - nz * 1.5)) {
+          nx = -nx;
+          nz = -nz;
+        }
+        for (let f = 2 + r() * 6; f < len - 1 && sitters < 14; f += 4 + r() * 9) {
+          const ex = ax + tx * f;
+          const ez = az + tz * f;
+          const x = ex + nx * 0.18;
+          const z = ez + nz * 0.18;
+          const inland = [ex + nx * 1.2, ez + nz * 1.2] as const;
+          // Between the quay posts (0.7 m in, every 3 m) and clear of the bench row.
+          if (!pointInRing(sq, inland[0], inland[1]) || inCameraView(x, z) || !plan.occupied.free(x, z, 0.5) || !plan.occupied.free(inland[0], inland[1], 0.6) || !taken.claim(x, z, 0.55)) {
             continue;
           }
-          const tg = targets[Math.floor(r() * targets.length)];
-          const h = ((Math.atan2(tg[0] - px, -(tg[1] - pz)) * 180) / Math.PI + 360 + (r() - 0.5) * 30) % 360;
-          person(px, pz, h, 0.7);
-          stats.square++;
-          break;
+          const yaw = headingYaw((Math.atan2(-nx, nz) * 180) / Math.PI, '+Z');
+          const seat = sc.groundY(inland[0], inland[1]);
+          add('sitting', x, seat - 0.45, z, yaw);
+          sitters++;
+          if (r() < 0.45) {
+            const px = x + tx * 0.62;
+            const pz = z + tz * 0.62;
+            if (!inCameraView(px, pz) && taken.claim(px, pz, 0.5)) {
+              add('sitting', px, seat - 0.45, pz, yaw);
+              sitters++;
+            }
+          }
         }
       }
+    }
+    stats.quaySitters = sitters;
+  }
+  // Tram stops: a waiting group on the stop's pavement, 1-2.5 m behind the kerb, facing the (corrected) track.
+  for (const p of a.data.points) {
+    if (p.kind !== 'railway=tram_stop' || !streetTileId(tileOf(p.x, p.z))) {
+      continue;
+    }
+    let best: [number, number, number, number] | null = null;
+    for (const tr of sc.tram) {
+      for (let k = 2; k < tr.pts.length; k += 2) {
+        const ax = tr.pts[k - 2];
+        const az = tr.pts[k - 1];
+        const bx = tr.pts[k];
+        const bz = tr.pts[k + 1];
+        const d = segDist(p.x, p.z, ax, az, bx, bz);
+        if (d < 8 && (!best || d < Math.hypot(best[0] - p.x, best[1] - p.z))) {
+          const len = Math.hypot(bx - ax, bz - az) || 1;
+          best = [(ax + bx) / 2, (az + bz) / 2, (bx - ax) / len, (bz - az) / len];
+        }
+      }
+    }
+    if (!best) {
+      continue;
+    }
+    const [cx, cz, tx, tz] = best;
+    // The pavement side: the normal whose side is off the carriageway.
+    let nx = -tz;
+    let nz = tx;
+    if (s.distance(cx + nx * 3, cz + nz * 3) < s.distance(cx - nx * 3, cz - nz * 3)) {
+      nx = -nx;
+      nz = -nz;
+    }
+    let off = 1.5;
+    for (let o = 1; o < 6; o += 0.1) {
+      if (s.distance(cx + nx * o, cz + nz * o) > 0.9) {
+        off = o;
+        break;
+      }
+    }
+    for (const along of [-9, -5, 4, 8, 12]) {
+      waitCluster(cx + tx * along + nx * (off + 0.6), cz + tz * along + nz * (off + 0.6), -nx, -nz, 2 + Math.floor(r() * 2), 1.4, 'wait:tram');
     }
   }
   // Seated people on café chairs and benches near the strip.
@@ -226,23 +412,6 @@ function planCrowd(a: AreaContext): CrowdState {
     }
   }
   return { plan: { people, stats }, taken, blocked, add, r };
-}
-
-/** Eye-level cameras of tools/world-compiler/s1/cameras.json (position and horizontal forward), none when absent. */
-function eyeCameras(): { x: number; z: number; fx: number; fz: number }[] {
-  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
-  if (!existsSync(file)) {
-    return [];
-  }
-  const doc = JSON.parse(readFileSync(file, 'utf8')) as { cameras?: { position: number[]; target: number[]; heightAboveGround?: number }[] };
-  return (doc.cameras ?? [])
-    .filter((c) => (c.heightAboveGround ?? 1.6) < 3)
-    .map((c) => {
-      const fx = c.target[0] - c.position[0];
-      const fz = c.target[2] - c.position[2];
-      const l = Math.hypot(fx, fz) || 1;
-      return { x: c.position[0], z: c.position[2], fx: fx / l, fz: fz / l };
-    });
 }
 
 function crowdState(a: AreaContext): CrowdState {

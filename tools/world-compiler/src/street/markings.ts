@@ -13,11 +13,12 @@
  * A marking belongs to the tile that holds its centre (strips: each quad by its midpoint).
  */
 import { BoxGrid, segDist } from '../../../../src/world/osm/shared/geometry';
-import { streetTramTracks, type Street } from '../../../../src/world/osm/shared/street-field';
+import type { Street } from '../../../../src/world/osm/shared/street-field';
 import { LOD0, LOD1, type Vec2, type Vec3 } from '../mesh';
 import type { MaterialName } from '../materials';
 import type { CompileStep, TileContext } from '../registry';
 import { GUTTER_WIDTH, hash, inTile, KERB_WIDTH, streetContext, streetTile, type StreetContext } from './common';
+import { wearPlan } from './wear';
 
 /** Lift (m) of paint and ironwork above the ground. */
 const PAINT_LIFT = 0.008;
@@ -345,7 +346,8 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   }
 
   /* Embedded tram rails: steel heads with the flangeway groove on their inner side. */
-  for (const tr of streetTramTracks(a.data)) {
+  // The corrected tracks (common.ts: on the carriageway where OSM draws them on the pavement).
+  for (const tr of sc.tram) {
     const g = tr.gauge / 2;
     for (let k = 2; k < tr.pts.length; k += 2) {
       const ax = tr.pts[k - 2];
@@ -430,13 +432,10 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       wet.idx.push(base, base + 1 + ((k + 1) % n), base + 1 + k);
     }
   };
-  if (sc.square.length >= 6) {
-    for (let k = 0; k < 14; k++) {
-      const x = 180 + hash(k * 2.9 + 7) * 120;
-      const z = 5880 + hash(k * 4.1 + 3) * 70;
-      if (inTile(t, x, z) && sc.inSquare(x, z) && s.buildingDistance(x, z) > 1) {
-        puddle(x, z, 0.5 + hash(k) * 1.2, 0.3 + hash(k + 0.5) * 0.6, hash(k * 7) * 3, 0.55 + 0.3 * hash(k * 11), k * 5.1);
-      }
+  // The square: water standing in the wear plan's hollows (the ground dips under the film).
+  for (const h of wearPlan(a).hollows) {
+    if (h.wet > 0 && inTile(t, h.x, h.z)) {
+      puddle(h.x, h.z, h.rx, h.rz, h.ang, h.wet, h.x * 0.37 + h.z);
     }
   }
   for (const i of t.instances.list) {

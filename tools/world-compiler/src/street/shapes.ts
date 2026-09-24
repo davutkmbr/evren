@@ -4,7 +4,47 @@
  * tubes along polylines (cables, rails) and lathed profiles.
  */
 import type { MaterialName } from '../materials';
-import type { TileMesh, Vec3 } from '../mesh';
+import type { RGBA, TileMesh, Vec3, Weather } from '../mesh';
+
+/**
+ * Wear painter (format 1.1): while set (withPaint), every shape helper gives its vertices COLOR_0 and `_WEATHER` from
+ * their prop-space position and normal (base grime, rust runs, chipped edges), for props with `vertexAttributes`.
+ */
+export type Painter = (p: Vec3, n: Vec3) => { weather: Weather; color?: RGBA };
+let painter: Painter | null = null;
+
+/** Runs `body` with a wear painter (null: none). */
+export function withPaint<T>(p: Painter | null, body: () => T): T {
+  const prev = painter;
+  painter = p;
+  try {
+    return body();
+  } finally {
+    painter = prev;
+  }
+}
+
+/** Per-vertex COLOR_0 / `_WEATHER` of flat [x, y, z, ...] positions and normals under the current painter. */
+function painted(pos: ArrayLike<number>, nrm: ArrayLike<number> | ((k: number) => Vec3)): { weather?: Weather[]; color?: RGBA[] } {
+  if (!painter) {
+    return {};
+  }
+  const weather: Weather[] = [];
+  const color: RGBA[] = [];
+  const n = pos.length / 3;
+  for (let k = 0; k < n; k++) {
+    const nv: Vec3 = typeof nrm === 'function' ? nrm(k) : [nrm[k * 3], nrm[k * 3 + 1], nrm[k * 3 + 2]];
+    const r = painter([pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]], nv);
+    weather.push(r.weather);
+    color.push(r.color ?? [1, 1, 1, 1]);
+  }
+  return { weather, color };
+}
+
+/** COLOR_0 / `_WEATHER` for a list of points with one normal (flat caps). */
+export function paintedPts(pts: readonly Vec3[], n: Vec3): { weather?: Weather[]; color?: RGBA[] } {
+  return painted(pts.flat(), () => n);
+}
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -51,7 +91,7 @@ export function obox(mesh: TileMesh, m: MaterialName, c: Vec3, u: Vec3, v: Vec3,
       idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
     }
   }
-  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm, ...(lod !== undefined ? { lod } : {}) });
+  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm, ...painted(pos, nrm), ...(lod !== undefined ? { lod } : {}) });
 }
 
 /** Axis-aligned box from min to max (all six faces). */
@@ -114,7 +154,7 @@ export function lathe(mesh: TileMesh, m: MaterialName, cx: number, y0: number, c
       idx.push(a, c, b, b, c, d);
     }
   }
-  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm });
+  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm, ...painted(pos, nrm) });
   if (caps) {
     for (const [end, up] of [
       [0, -1],
@@ -133,7 +173,7 @@ export function lathe(mesh: TileMesh, m: MaterialName, cx: number, y0: number, c
       for (let k = 1; k + 1 < seg; k++) {
         tris.push(0, k, k + 1);
       }
-      mesh.flatTriangles(m, pts, tris, [0, up, 0]);
+      mesh.flatTriangles(m, pts, tris, [0, up, 0], paintedPts(pts, [0, up, 0]));
     }
   }
 }
@@ -201,7 +241,7 @@ export function tube(mesh: TileMesh, m: MaterialName, pts: readonly Vec3[], r: n
       idx[q + 2] = j;
     }
   }
-  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm, ...(lod !== undefined ? { lod } : {}) });
+  mesh.addMesh(m, { positions: pos, indices: idx, normals: nrm, ...painted(pos, nrm), ...(lod !== undefined ? { lod } : {}) });
 }
 
 /** Points of a hanging cable (parabolic sag) between a and b. */

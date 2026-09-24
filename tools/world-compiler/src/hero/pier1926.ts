@@ -16,7 +16,7 @@
  * the roof and flat window shapes.
  */
 import type { LightInput } from '../lights';
-import { LOD0, LOD1, type RGBA, type TileMesh } from '../mesh';
+import { LOD0, LOD1, type RGBA, type TileMesh, type Vec3 } from '../mesh';
 import type { TileContext } from '../registry';
 import { lanternLights } from '../street/lights';
 import {
@@ -24,12 +24,16 @@ import {
   box,
   Builder,
   domeProfile,
+  downpipe,
   dressOpening,
   Face,
   faceBar,
   faceBox,
+  faceBoxC,
   Frame,
+  gutter,
   hippedRoof,
+  ridgeCap,
   hpoly,
   lathe,
   type Opening,
@@ -42,6 +46,27 @@ import {
   wall,
   type WindowStyle,
 } from './kit';
+import { HeroWeather, repairPatches, sillStreaks, type WxProfile } from './weather';
+
+/**
+ * Weathering of the restored (2022–23) pier: light grime with patchy variation, splash and damp above the stone
+ * plinth, dirty ledges and soffits, rain-streak bands under the cornice, the terrace edge and the string course,
+ * worn arrises, grey streaks under the sills, lichen and soot patches on an uneven tile roof, rusty railings.
+ */
+const PIER_WX: Record<string, WxProfile> = {
+  hero_render: { dirt: 0.04, vary: 0.08, splash: 0.4, splashH: 1.1, damp: 0.55, dampH: 0.55, side: 0.2, up: 0.35, down: 0.3, edge: 0.3, streak: 0.22, bandH: 1.0, tint: 0.04 },
+  hero_render_trim: { dirt: 0.05, vary: 0.08, splash: 0.3, splashH: 0.9, up: 0.4, down: 0.35, side: 0.06, edge: 0.45, streak: 0.18, bandH: 0.8, tint: 0.03 },
+  hero_render_soffit: { dirt: 0.3, vary: 0.2, down: 0.2, side: 0.1, edge: 0.2, tint: 0.06 },
+  hero_plinth: { dirt: 0.25, vary: 0.15, splash: 0.35, splashH: 0.6, damp: 0.7, dampH: 0.45, up: 0.3, side: 0.05, edge: 0.5, tint: 0.05 },
+  hero_roof_tile: { dirt: 0.22, vary: 0.32, grid: 1.5, displace: 0.028, tint: 0.1 },
+  hero_tile_panel: { dirt: 0.25, vary: 0.2, up: 0.2, streak: 0.25, bandH: 0.6, tint: 0.06 },
+  hero_frame: { dirt: 0.15, vary: 0.1, up: 0.2, edge: 0.55 },
+  hero_door: { dirt: 0.2, vary: 0.1, splash: 0.3, splashH: 0.8, edge: 0.5 },
+  hero_iron: { dirt: 0.3, vary: 0.3, up: 0.15, edge: 0.6 },
+  hero_lead: { dirt: 0.35, vary: 0.35, up: 0.15, streak: 0.2 },
+  hero_floor: { dirt: 0.18, vary: 0.25, grid: 2.0, tint: 0.05 },
+};
+const STREAK_WHITE: [number, number, number, number] = [0.42, 0.38, 0.33, 0.4];
 
 /* Plan (local u along the long axis, towards 64.4°; v towards the land side, 154.4°). */
 const MAIN = { u0: -13.8, u1: 13.8, v0: -9.9, v1: 5.35 };
@@ -104,7 +129,6 @@ export interface HeroBuild {
 
 /** Builds the pier into the tile; `ring` is the OSM outline (flat x, z). */
 export function buildPier1926(t: TileContext, ring: readonly number[], bottomY: number): HeroBuild {
-  const mesh = t.mesh;
   const n = ring.length / 2;
   let ox = 0;
   let oz = 0;
@@ -133,6 +157,13 @@ export function buildPier1926(t: TileContext, ring: readonly number[], bottomY: 
   const yb = bottomY - floorY;
   const lights: LightInput[] = [];
   let instances = 0;
+  const wx = new HeroWeather({
+    seed: 1926,
+    ground: (x, z) => Math.min(floorY, t.area.heights.at(x, z)),
+    profiles: PIER_WX,
+    shelters: [CORNICE, STRING[0], 4.75, PAV_TOP - 0.25, PARAPET].map((y) => floorY + y),
+  });
+  const mesh = wx.wrap(t.mesh);
 
   mesh.withLod(LOD0, () => {
     const batch = new Batch(mesh);
@@ -177,7 +208,7 @@ export function buildPier1926(t: TileContext, ring: readonly number[], bottomY: 
     floorY,
     lights: lights.length + instances,
     instances,
-    notes: { origin: [round2(ox), round2(oz)], headingDeg: round2(heading), eaveY: round2(floorY + EAVE), ridgeY: round2(floorY + ridge), parapetY: round2(floorY + PAV_PARAPET) },
+    notes: { origin: [round2(ox), round2(oz)], headingDeg: round2(heading), eaveY: round2(floorY + EAVE), ridgeY: round2(floorY + ridge), parapetY: round2(floorY + PAV_PARAPET), weatherCutTriangles: wx.added },
   };
 }
 
@@ -211,31 +242,35 @@ function facade(mesh: TileMesh, batch: Batch, face: Face, len: number, yb: numbe
   for (const d of doors) {
     const l = d.s - d.w / 2 - 0.16;
     if (l > s + 0.01) {
-      faceBox(plinth, face, s, l, yb, PLINTH, -0.05, 0.05);
+      faceBoxC(plinth, face, s, l, yb, PLINTH, -0.05, 0.05, 0.025);
     }
     s = d.s + d.w / 2 + 0.16;
   }
   if (len > s + 0.01) {
-    faceBox(plinth, face, s, len, yb, PLINTH, -0.05, 0.05);
+    faceBoxC(plinth, face, s, len, yb, PLINTH, -0.05, 0.05, 0.025);
   }
   wall(mesh, RENDER, face, 0, len, PLINTH, top, ops);
   for (const o of ops) {
     dressOpening(mesh, batch, face, o, o.k === 'door' ? doorStyle : winStyle(o.k === 'win'));
   }
   const trim = batch.of(TRIM);
-  faceBox(trim, face, 0, len, STRING[0], STRING[1], -0.02, 0.1);
+  faceBoxC(trim, face, 0, len, STRING[0], STRING[1], -0.02, 0.1, 0.02);
   if (pilasters) {
-    faceBox(trim, face, 0, 0.45, PLINTH, CORNICE, -0.02, 0.06, false, false);
-    faceBox(trim, face, len - 0.45, len, PLINTH, CORNICE, -0.02, 0.06, false, false);
+    faceBoxC(trim, face, 0, 0.45, PLINTH, CORNICE, -0.02, 0.06, 0.018, false);
+    faceBoxC(trim, face, len - 0.45, len, PLINTH, CORNICE, -0.02, 0.06, 0.018, false);
   }
+  // Weathering decals: grey streaks under most sills, a repair patch or two in the fresh render.
+  const seed = Math.round(face.u0 * 131 + face.v0 * 71 + len * 13);
+  sillStreaks(mesh, face, ops, 0.08, { color: STREAK_WHITE, len: [0.45, 1.5], p: 0.75 }, seed);
+  repairPatches(mesh, 'hero_render@patch', face, 0.6, len - 0.6, PLINTH + 0.3, top - 0.7, ops, len > 8 ? 2 : 1, [[0.985, 0.98, 0.975, 1], [0.955, 0.95, 0.945, 1]], seed + 1);
 }
 
 /** Cornice under the eaves (two stepped bands). */
 function cornice(batch: Batch, face: Face, len: number, y0: number, y1: number): void {
   const trim = batch.of(TRIM);
   const mid = (y0 + y1) / 2;
-  faceBox(trim, face, -0.1, len + 0.1, y0, mid, -0.02, 0.1);
-  faceBox(trim, face, -0.2, len + 0.2, mid, y1, -0.02, 0.2);
+  faceBoxC(trim, face, -0.1, len + 0.1, y0, mid, -0.02, 0.1, 0.02);
+  faceBoxC(trim, face, -0.2, len + 0.2, mid, y1, -0.02, 0.2, 0.025);
 }
 
 function panelOver(mesh: TileMesh, batch: Batch, face: Face, s0: number, s1: number, y0: number, y1: number): void {
@@ -382,12 +417,12 @@ function pavilion(mesh: TileMesh, batch: Batch, f: Frame, yb: number, lights: Li
   ], PAV_TOP + 0.15);
   const trim = batch.of(TRIM);
   for (const e of [front, span(f, [u1, v1], [u1, v0]), span(f, [u0, v0], [u0, v1]), back]) {
-    faceBox(trim, e.face, -0.12, e.len + 0.12, PAV_TOP - 0.25, PAV_TOP, -0.02, 0.1);
-    faceBox(trim, e.face, -0.18, e.len + 0.18, PAV_TOP, PAV_TOP + 0.12, -0.02, 0.16);
+    faceBoxC(trim, e.face, -0.12, e.len + 0.12, PAV_TOP - 0.25, PAV_TOP, -0.02, 0.1, 0.02);
+    faceBoxC(trim, e.face, -0.18, e.len + 0.18, PAV_TOP, PAV_TOP + 0.12, -0.02, 0.16, 0.02);
     // Parapet (0.25 thick): outer face is the wall plane, inner face 0.25 in.
     wall(mesh, RENDER, e.face, 0, e.len, PAV_TOP + 0.12, PAV_PARAPET);
     wall(mesh, RENDER, e.face.offset(-0.25), 0.25, e.len - 0.25, PAV_TOP + 0.15, PAV_PARAPET, [], { back: true });
-    faceBox(trim, e.face, -0.05, e.len + 0.05, PAV_PARAPET, PAV_PARAPET + 0.08, -0.3, 0.05);
+    faceBoxC(trim, e.face, -0.05, e.len + 0.05, PAV_PARAPET, PAV_PARAPET + 0.08, -0.3, 0.05, 0.015);
   }
   // Corner crests: pedestal and a pointed finial on each front corner.
   const b = batch.of(TRIM);
@@ -453,24 +488,55 @@ function loggia(mesh: TileMesh, batch: Batch, f: Frame, yb: number, dir: 1 | -1,
     const big: Op = { s: sd.len / 2, w, y0: 0, ys: 2.4, kind: 'pointed', rise: 2.05, door: true, k: 'door' };
     arcade(mesh, batch, sd.face, sd.len, yb, depth, [big]);
   }
-  // Terrace parapet with a row of pierced slots, and its coping.
+  // Terrace parapet (c01 photo): posts over the arcade piers with cap blocks on the coping, and between them sunken
+  // panels framed by a raised moulding, each pierced by a group of square openings with a carved cross-and-boss
+  // rosette in the middle of the wall.
+  const yc = (TERRACE + PARAPET) / 2 + 0.02;
   for (const e of [front, ...sides]) {
+    const posts = e === front ? Array.from({ length: 5 }, (_, k) => k * bay + pier / 2) : [0.16, e.len / 2, e.len - 0.16];
     const slots: Op[] = [];
-    const nSlots = Math.floor((e.len - 0.6) / 0.75);
-    for (let k = 0; k < nSlots; k++) {
-      const s = 0.3 + (e.len - 0.6) * ((k + 0.5) / nSlots);
-      slots.push({ s, w: 0.26, y0: 5.42, ys: 5.58, kind: 'flat', k: 'dark' });
+    const panels: [number, number][] = [];
+    for (let k = 0; k + 1 < posts.length; k++) {
+      const a = posts[k] + 0.26;
+      const b = posts[k + 1] - 0.26;
+      const w = b - a;
+      if (w < 0.5) {
+        continue;
+      }
+      panels.push([a, b]);
+      const nS = Math.max(2, Math.min(5, Math.floor(w / 0.42)));
+      const inner = Math.min(w - 0.3, nS * 0.36);
+      for (let i = 0; i < nS; i++) {
+        const sc = (a + b) / 2 - inner / 2 + inner * ((i + 0.5) / nS);
+        slots.push({ s: sc, w: 0.19, y0: yc - 0.095, ys: yc + 0.095, kind: 'flat', k: 'dark' });
+      }
     }
+    slots.sort((p, q) => p.s - q.s);
     wall(mesh, RENDER, e.face, 0, e.len, TERRACE - 0.05, PARAPET, slots);
     wall(mesh, RENDER, e.face.offset(-0.22), 0, e.len, TERRACE, PARAPET, slots, { back: true });
     const rb = batch.of(RENDER);
+    const trim = batch.of(TRIM);
     for (const o of slots) {
       const loop = outline(o, 4);
       loopSidesThrough(rb, e.face, loop, 0, -0.22);
+      faceBar(trim, e.face, [o.s - 0.095, yc], [o.s + 0.095, yc], 0.026, -0.124);
+      faceBar(trim, e.face, [o.s, yc - 0.095], [o.s, yc + 0.095], 0.026, -0.124);
+      faceBox(trim, e.face, o.s - 0.035, o.s + 0.035, yc - 0.035, yc + 0.035, -0.13, -0.085, false, true);
     }
-    const trim = batch.of(TRIM);
-    faceBox(trim, e.face, -0.06, e.len + 0.06, PARAPET, PARAPET + 0.08, -0.28, 0.05);
-    faceBox(trim, e.face, -0.12, e.len + 0.12, 4.75, TERRACE - 0.05, -0.02, 0.14);
+    for (const [a, b] of panels) {
+      const y0 = TERRACE + 0.16;
+      const y1 = PARAPET - 0.13;
+      faceBoxC(trim, e.face, a - 0.06, b + 0.06, y0 - 0.05, y0, -0.01, 0.028, 0.01);
+      faceBoxC(trim, e.face, a - 0.06, b + 0.06, y1, y1 + 0.05, -0.01, 0.028, 0.01);
+      faceBoxC(trim, e.face, a - 0.06, a - 0.01, y0, y1, -0.01, 0.028, 0.01, false);
+      faceBoxC(trim, e.face, b + 0.01, b + 0.06, y0, y1, -0.01, 0.028, 0.01, false);
+    }
+    for (const p of posts) {
+      faceBoxC(trim, e.face, p - 0.17, p + 0.17, TERRACE - 0.05, PARAPET, -0.02, 0.06, 0.015, false);
+      faceBoxC(trim, e.face, p - 0.15, p + 0.15, PARAPET + 0.08, PARAPET + 0.2, -0.24, 0.03, 0.012);
+    }
+    faceBoxC(trim, e.face, -0.06, e.len + 0.06, PARAPET, PARAPET + 0.08, -0.28, 0.07, 0.015);
+    faceBoxC(trim, e.face, -0.12, e.len + 0.12, 4.75, TERRACE - 0.05, -0.02, 0.14, 0.02);
   }
   // Uplights at the foot of the front piers.
   for (let k = 0; k <= 4; k++) {
@@ -519,18 +585,18 @@ function arcade(mesh: TileMesh, batch: Batch, face: Face, len: number, yb: numbe
     const band: V2[] = [...outer.slice(2).reverse(), ...loop.slice(2)];
     shape(mesh, TRIM, face, band, [], 0.04);
     // Impost blocks at the spring.
-    faceBox(batch.of(TRIM), face, a.s - a.w / 2 - 0.12, a.s - a.w / 2 + 0.02, a.ys - 0.18, a.ys, -0.02, 0.07);
-    faceBox(batch.of(TRIM), face, a.s + a.w / 2 - 0.02, a.s + a.w / 2 + 0.12, a.ys - 0.18, a.ys, -0.02, 0.07);
+    faceBoxC(batch.of(TRIM), face, a.s - a.w / 2 - 0.12, a.s - a.w / 2 + 0.02, a.ys - 0.18, a.ys, -0.02, 0.07, 0.015);
+    faceBoxC(batch.of(TRIM), face, a.s + a.w / 2 - 0.02, a.s + a.w / 2 + 0.12, a.ys - 0.18, a.ys, -0.02, 0.07, 0.015);
   }
   // Plinth on the piers.
   const plinth = batch.of('hero_plinth');
   const sorted = [...arches].sort((p, q) => p.s - q.s);
   let s = 0;
   for (const a of sorted) {
-    faceBox(plinth, face, s, a.s - a.w / 2, yb, 0.3, -0.05, 0.05);
+    faceBoxC(plinth, face, s, a.s - a.w / 2, yb, 0.3, -0.05, 0.05, 0.025);
     s = a.s + a.w / 2;
   }
-  faceBox(plinth, face, s, len, yb, 0.3, -0.05, 0.05);
+  faceBoxC(plinth, face, s, len, yb, 0.3, -0.05, 0.05, 0.025);
 }
 
 /** Wrought-iron railing across an arch: rails and square bars with spear tips. */
@@ -552,6 +618,46 @@ function roofAndDome(mesh: TileMesh, batch: Batch, f: Frame, detail: boolean): v
   const rise = half * Math.tan((PITCH * Math.PI) / 180);
   hippedRoof(mesh, 'hero_roof_tile', 'hero_render_soffit', f, u0 - OVERHANG, u1 + OVERHANG, v0 - OVERHANG, v1 + OVERHANG, EAVE + 0.18, rise, OVERHANG, 0.18, batch);
   const ridgeY = EAVE + 0.18 + rise;
+  if (detail) {
+    // Ridge and hip caps, half-round gutters sagging a little along the eaves, downpipes near the corners.
+    const eu0 = u0 - OVERHANG;
+    const eu1 = u1 + OVERHANG;
+    const ev0 = v0 - OVERHANG;
+    const ev1 = v1 + OVERHANG;
+    const hr = (ev1 - ev0) / 2;
+    const cv = (ev0 + ev1) / 2;
+    const cap = batch.of('hero_roof_tile');
+    const y = EAVE + 0.18;
+    const r0 = f.p(eu0 + hr, ridgeY + 0.03, cv);
+    const r1 = f.p(eu1 - hr, ridgeY + 0.03, cv);
+    ridgeCap(cap, r0, r1, 0.13);
+    for (const [cu, cvv, r] of [
+      [eu0, ev0, r0],
+      [eu0, ev1, r0],
+      [eu1, ev0, r1],
+      [eu1, ev1, r1],
+    ] as [number, number, Vec3][]) {
+      ridgeCap(cap, f.p(cu, y + 0.02, cvv), r, 0.11);
+    }
+    const gb = batch.of('hero_lead');
+    const g = 0.09;
+    gutter(gb, f, [eu0, ev0 - g], [eu1, ev0 - g], EAVE + 0.1, 0.075, 0.03, 1);
+    gutter(gb, f, [eu1 + g, ev0], [eu1 + g, ev1], EAVE + 0.1, 0.075, 0.022, 2);
+    gutter(gb, f, [eu0 - g, ev0], [eu0 - g, ev1], EAVE + 0.1, 0.075, 0.018, 3);
+    gutter(gb, f, [eu0, ev1 + g], [PAV.u0 - 0.1, ev1 + g], EAVE + 0.1, 0.075, 0.02, 4);
+    gutter(gb, f, [PAV.u1 + 0.1, ev1 + g], [eu1, ev1 + g], EAVE + 0.1, 0.075, 0.025, 5);
+    const sea = span(f, [u1, v0], [u0, v0]);
+    const landW = span(f, [u0, v1], [PAV.u0, v1]);
+    const landE = span(f, [PAV.u1, v1], [u1, v1]);
+    for (const [face, s] of [
+      [sea.face, 0.66],
+      [sea.face, sea.len - 0.66],
+      [landW.face, 0.66],
+      [landE.face, landE.len - 0.66],
+    ] as [Face, number][]) {
+      downpipe(gb, face, s, EAVE - 0.05, -0.05, 0.1, 0.048, OVERHANG - 0.05);
+    }
+  }
   const vr = (v0 + v1) / 2;
   const b = batch.of(RENDER);
   const t = batch.of(TRIM);

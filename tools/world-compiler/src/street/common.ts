@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { BoxGrid, hash, pointInRing } from '../../../../src/world/osm/shared/geometry';
-import { classifyStreets, Surf, type Street } from '../../../../src/world/osm/shared/street-field';
+import { classifyStreets, streetTramTracks, Surf, type Street } from '../../../../src/world/osm/shared/street-field';
 import { ROOT } from '../../lib/areas.mjs';
 import type { XYZ } from '../format';
 import type { OsmStreetRoad } from '../osm-street';
@@ -82,7 +82,26 @@ export interface StreetContext {
   /** Distance from (x, z) to the spine polyline. */
   spineDist(x: number, z: number): number;
   inSquare(x: number, z: number): boolean;
+  /**
+   * Street tram tracks (OSM) resampled every TRAM_STEP m and moved onto the carriageway where OSM draws them on the
+   * pavement or within TRAM_KERB of a kerb (the T3 at İskele Camii runs in the kerb lane, c05 photo: near rail
+   * about 0.8 m off the kerb, OSM puts the track 1.2 m inside the stop's pavement).
+   */
+  tram: TramTrack[];
+  /** Distance from (x, z) to the nearest tram track centre line (Infinity without tracks). */
+  tramDist(x: number, z: number): number;
 }
+
+export interface TramTrack {
+  /** Centre line [x, z, ...]. */
+  pts: number[];
+  gauge: number;
+}
+
+/** Resampling step (m) of the corrected tram tracks. */
+const TRAM_STEP = 1;
+/** Clearance (m) from the kerb line to the near rail of a tram track in a kerb lane. */
+const TRAM_KERB = 0.85;
 
 const MARKED = new Set(['marked', 'zebra', 'traffic_signals', 'uncontrolled', 'yes', 'pelican', 'toucan']);
 
@@ -293,6 +312,23 @@ export function streetContext(a: AreaContext): StreetContext {
     }
     return d;
   };
+  const tram = correctTramTracks(a);
+  const tramGrid = new BoxGrid(20);
+  const tramSegs: [number, number, number, number][] = [];
+  for (const tr of tram) {
+    for (let k = 2; k < tr.pts.length; k += 2) {
+      const id = tramSegs.push([tr.pts[k - 2], tr.pts[k - 1], tr.pts[k], tr.pts[k + 1]]) - 1;
+      tramGrid.add(id, Math.min(tr.pts[k - 2], tr.pts[k]) - 6, Math.min(tr.pts[k - 1], tr.pts[k + 1]) - 6, Math.max(tr.pts[k - 2], tr.pts[k]) + 6, Math.max(tr.pts[k - 1], tr.pts[k + 1]) + 6);
+    }
+  }
+  const tramDist = (x: number, z: number): number => {
+    let d = Infinity;
+    for (const id of tramGrid.at(x, z)) {
+      const [ax, az, bx, bz] = tramSegs[id];
+      d = Math.min(d, segProject(x, z, ax, az, bx, bz).d);
+    }
+    return d;
+  };
   const ctx: StreetContext = {
     streets,
     axis,
@@ -306,9 +342,93 @@ export function streetContext(a: AreaContext): StreetContext {
     kitTiles: new Set(cam.kit),
     spineDist,
     inSquare: (x, z) => cam.square.length >= 6 && pointInRing(cam.square, x, z),
+    tram,
+    tramDist,
   };
   a.shared.set('street', ctx);
   return ctx;
+}
+
+/**
+ * The street tram tracks, resampled every TRAM_STEP m; a stretch that OSM draws on the pavement or with its near rail
+ * closer than TRAM_KERB to the kerb (but within 5 m of the carriageway) is moved along the carriageway distance
+ * gradient until the near rail clears the kerb by TRAM_KERB, the samples next to a moved stretch ease into it, so the track bends instead of kinking.
+ */
+function correctTramTracks(a: AreaContext): TramTrack[] {
+  const s = a.foundation.surface;
+  const out: TramTrack[] = [];
+  for (const tr of streetTramTracks(a.data)) {
+    const want = -(tr.gauge / 2 + 0.05 + TRAM_KERB);
+    const pts: number[] = [];
+    for (let k = 2; k < tr.pts.length; k += 2) {
+      const ax = tr.pts[k - 2];
+      const az = tr.pts[k - 1];
+      const len = Math.hypot(tr.pts[k] - ax, tr.pts[k + 1] - az);
+      const m = Math.max(1, Math.round(len / TRAM_STEP));
+      for (let i = k === 2 ? 0 : 1; i <= m; i++) {
+        pts.push(ax + ((tr.pts[k] - ax) * i) / m, az + ((tr.pts[k + 1] - az) * i) / m);
+      }
+    }
+    const moved = new Float64Array(pts.length);
+    for (let k = 0; k < pts.length; k += 2) {
+      let x = pts[k];
+      let z = pts[k + 1];
+      const d0 = s.distance(x, z);
+      if (d0 > want && d0 < 5) {
+        for (let it = 0; it < 40; it++) {
+          const d = s.distance(x, z);
+          if (d <= want) {
+            break;
+          }
+          const h = 0.3;
+          let gx = s.distance(x + h, z) - s.distance(x - h, z);
+          let gz = s.distance(x, z + h) - s.distance(x, z - h);
+          const l = Math.hypot(gx, gz) || 1;
+          gx /= l;
+          gz /= l;
+          const stepLen = Math.min(0.5, Math.max(0.05, d - want));
+          x -= gx * stepLen;
+          z -= gz * stepLen;
+        }
+        moved[k] = x - pts[k];
+        moved[k + 1] = z - pts[k + 1];
+      }
+    }
+    // Ease the untouched samples next to a moved stretch (diffusion with the moved samples fixed), so the track
+    // bends away from the OSM line over several metres instead of kinking.
+    const fixed = (i: number): boolean => moved[i * 2] !== 0 || moved[i * 2 + 1] !== 0;
+    let off = moved;
+    const n = off.length / 2;
+    for (let pass = 0; pass < 16; pass++) {
+      const next = Float64Array.from(off);
+      for (let i = 0; i < n; i++) {
+        if (fixed(i)) {
+          continue;
+        }
+        let sx = 0;
+        let sz = 0;
+        let w = 0;
+        for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) {
+          sx += off[j * 2];
+          sz += off[j * 2 + 1];
+          w++;
+        }
+        next[i * 2] = sx / w;
+        next[i * 2 + 1] = sz / w;
+      }
+      off = next;
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      const next = Float64Array.from(off);
+      for (let i = 1; i + 1 < n; i++) {
+        next[i * 2] = (off[i * 2 - 2] + off[i * 2] * 2 + off[i * 2 + 2]) / 4;
+        next[i * 2 + 1] = (off[i * 2 - 1] + off[i * 2 + 1] * 2 + off[i * 2 + 3]) / 4;
+      }
+      off = next;
+    }
+    out.push({ pts: pts.map((v, k) => v + off[k]), gauge: tr.gauge });
+  }
+  return out;
 }
 
 /** Smooth value noise in [0, 1] (bilinear over a hashed lattice of `cell` metres). */

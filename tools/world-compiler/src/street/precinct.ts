@@ -12,7 +12,8 @@ import { headingYaw } from '../instances';
 import { LOD0, LOD1, type Vec3 } from '../mesh';
 import type { AreaContext, CompileStep, TileContext } from '../registry';
 import { inTile, streetContext, streetTile } from './common';
-import { buildFountain, buildGateA } from './precinct-kit';
+import { buildFountain } from '../hero/fountain';
+import { buildGateA } from './precinct-kit';
 import { obox } from './shapes';
 
 const WALL_ID = 179197257;

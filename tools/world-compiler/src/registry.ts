@@ -31,6 +31,7 @@ import { HERO_PROPS, heroStep } from './hero';
 import { HERO_MATERIALS } from './hero/materials';
 import { interiorStep } from './interiors';
 import { INTERIOR_MATERIALS } from './interiors/materials';
+import { SOUL_MATERIALS, SOUL_PROPS, soulStep } from './soul';
 
 export type Detail = 'full' | 'greybox';
 
@@ -101,11 +102,11 @@ export interface CompileStep {
 }
 
 /** Material sets in registration (primitive) order. */
-export const MATERIAL_SETS: readonly (readonly MaterialDef[])[] = [CORE_MATERIALS, LIBRARY_MATERIALS, WEATHER_LAYER_MATERIALS, PROP_MATERIALS, STREET_MATERIALS, HERO_MATERIALS, FACADE_MATERIALS, FACADE_PROP_MATERIALS, INTERIOR_MATERIALS];
+export const MATERIAL_SETS: readonly (readonly MaterialDef[])[] = [CORE_MATERIALS, LIBRARY_MATERIALS, WEATHER_LAYER_MATERIALS, PROP_MATERIALS, STREET_MATERIALS, HERO_MATERIALS, FACADE_MATERIALS, FACADE_PROP_MATERIALS, INTERIOR_MATERIALS, SOUL_MATERIALS];
 
-export const PROP_SETS: readonly (readonly PropDef[])[] = [CORE_PROPS, STREET_PROPS, FACADE_PROPS, HERO_PROPS];
+export const PROP_SETS: readonly (readonly PropDef[])[] = [CORE_PROPS, STREET_PROPS, FACADE_PROPS, HERO_PROPS, SOUL_PROPS];
 
-export const COMPILE_STEPS: readonly CompileStep[] = [streetGroundStep, heroStep, facadeStep, ...STREET_STEPS, interiorStep];
+export const COMPILE_STEPS: readonly CompileStep[] = [streetGroundStep, heroStep, facadeStep, ...STREET_STEPS, interiorStep, soulStep];
 
 let registered = false;
 /** Registers every material and prop set (idempotent). */

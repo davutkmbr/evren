@@ -10,7 +10,8 @@
  * Local frame: cafe.ts (u along the façade, v into the room, y from the floor).
  */
 import { Batch as FaceBatch, Frame as FaceFrame, lin } from '../facade/frame';
-import { box, type Builder, type Batch, faceBox, type Frame, lathe, span } from '../hero/kit';
+import { box, type Builder, type Batch, faceBox, faceBoxC, type Frame, lathe, span } from '../hero/kit';
+import { LEAK, LEAK_BAND, rng } from '../hero/weather';
 import { emitText, textWidth } from '../shopfront/font';
 import type { TileMesh } from '../mesh';
 
@@ -316,4 +317,132 @@ export function menuLettering(mesh: TileMesh, f: Frame, uc: number, D: number, y
   });
   void y0;
   b.flush();
+}
+
+/**
+ * Lived-in wear and clutter (S1 round 2, "a sterile showroom" → a çay ocağı in use): steam and grease stains rising
+ * from the tea boiler on the brick wall and behind the espresso machine, drips under the shelves, grimy scuffs on the
+ * floor at the threshold and in front of the counter, and the clutter of a working café — crates of bottles by the
+ * back door, cardboard boxes behind the counter, a water carboy on its stand, a bin, a newspaper on a table, a
+ * calendar and taped notices, white cable trunking to the TV.
+ */
+export function cafeWear(mesh: TileMesh, batch: Batch, f: Frame, room: { uL: number; uR: number; v0: number; D: number; C: number; counterR: number; vc0: number; vc1: number; ud: number }, tables: { u: number; v: number }[]): void {
+  const { uL, uR, v0, D, C, counterR, vc0, vc1, ud } = room;
+  const r = rng(1453);
+  const left = span(f, [uL, D], [uL, v0]);
+  const back = span(f, [uR, D], [uL, D]);
+  const right = span(f, [uR, v0], [uR, D]);
+  const top = 1.04;
+  // Steam grease rising from the çay kazanı (counter's left end) on the brick wall, and a smaller patch behind it.
+  const kv = (vc0 + vc1) / 2 + 0.05;
+  mesh.decal(LEAK_BAND, left.face.p(D - kv, top + 0.8, 0), left.face.n, { size: [1.1, 1.6], offset: 0.01, rect: [0.1, 0.05, 0.5, 1], color: [0.12, 0.09, 0.05, 0.95] });
+  mesh.decal(LEAK_BAND, left.face.p(D - kv + 0.35, top + 1.25, 0), left.face.n, { size: [0.7, 1.0], offset: 0.011, rect: [0.55, 0.3, 0.9, 1], color: [0.1, 0.08, 0.05, 0.8] });
+  // Yellowed, sooty ceiling over the boiler.
+  const ku = uL + 0.32;
+  mesh.decal(LEAK_BAND, f.p(ku + 0.35, C - 0.004, kv), [0, -1, 0], { size: [1.3, 1.1], offset: 0.003, rotation: 0.6, rect: [0.2, 0.35, 0.7, 1], color: [0.35, 0.27, 0.15, 0.7] });
+  // Splashes behind the espresso machine and drips under the shelf boards on the back wall.
+  const em = uL + 0.95;
+  mesh.decal(LEAK_BAND, back.face.p(uR - em, top + 0.45, 0), back.face.n, { size: [1.1, 0.9], offset: 0.01, rect: [0.3, 0.2, 0.75, 1], color: [0.32, 0.24, 0.16, 0.7] });
+  for (const y of [1.27, 1.63, 1.99]) {
+    for (let k = 0; k < 2; k++) {
+      const s = uR - (uL + 0.5 + r() * 1.8);
+      mesh.decal(LEAK, back.face.p(s, y - 0.25, 0), back.face.n, { size: [0.3 + r() * 0.3, 0.45], offset: 0.008, rect: [r() * 0.5, 0, r() * 0.5 + 0.5, 0.9], color: [0.35, 0.28, 0.2, 0.5] });
+    }
+  }
+  // Kick marks along the foot of the counter front, paint worn through along its top arris.
+  const front = span(f, [counterR, vc0], [uL, vc0]);
+  for (let s = 0.1; s < front.len - 0.3; s += 0.9 + r() * 0.5) {
+    mesh.decal(LEAK_BAND, front.face.p(s + 0.4, 0.32, 0.03), front.face.n, { size: [0.8 + r() * 0.4, 0.5], offset: 0.004, rect: [r() * 0.5, 0.3, r() * 0.5 + 0.45, 1], color: [0.2, 0.18, 0.15, 0.75] });
+  }
+  const worn = batch.of('wood_peeling_paint_weathered');
+  for (let s = 0.15; s < front.len - 0.2; s += 0.5 + r() * 0.9) {
+    const w = 0.2 + r() * 0.5;
+    faceBox(worn, front.face, s, Math.min(front.len - 0.05, s + w), 0.97, 0.995, 0.02, 0.028, false, false);
+  }
+  // Floor scuffs: the threshold and the strip in front of the counter (Leaking008 smears, low alpha).
+  const up: [number, number, number] = [0, 1, 0];
+  const floorAt = (u: number, v: number): [number, number, number] => f.p(u, 0.006, v);
+  mesh.decal(LEAK_BAND, floorAt(ud, v0 + 0.6), up, { size: [1.4, 1.2], offset: 0.004, rotation: 0.3, rect: [0.2, 0.3, 0.7, 1], color: [0.25, 0.21, 0.17, 0.6] });
+  for (let k = 0; k < 3; k++) {
+    mesh.decal(LEAK_BAND, floorAt(uL + 0.8 + k * ((counterR - uL - 1) / 3), vc0 - 0.35), up, { size: [1.2, 0.7], offset: 0.004, rotation: 1.4 + r() * 0.4, rect: [r() * 0.5, 0.4, r() * 0.5 + 0.4, 1], color: [0.33, 0.28, 0.23, 0.4] });
+  }
+  // Crates of bottles by the back door.
+  const cu = uR - 1.45;
+  const cv = D - 0.3;
+  const crate = (u: number, y: number, v: number, m: string, bottles: boolean): void => {
+    const b = batch.of(m);
+    box(b, f, u - 0.2, u + 0.2, y, y + 0.28, v - 0.15, v + 0.15, { bottom: true, top: false });
+    box(b, f, u - 0.18, u + 0.18, y + 0.02, y + 0.03, v - 0.13, v + 0.13, { bottom: false, top: true });
+    if (bottles) {
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 3; j++) {
+          lathe(batch.of('int_tea'), f, u - 0.14 + i * 0.093, v - 0.09 + j * 0.09, [
+            [0.03, y + 0.03],
+            [0.03, y + 0.2],
+            [0.012, y + 0.27],
+            [0.012, y + 0.31],
+            [0.001, y + 0.31],
+          ], 6);
+        }
+      }
+    }
+  };
+  crate(cu, 0, cv, 'int_crate_red', false);
+  crate(cu, 0.28, cv, 'int_crate_blue', false);
+  crate(cu + 0.02, 0.56, cv - 0.01, 'int_crate_red', true);
+  crate(cu - 0.45, 0, cv, 'int_crate_blue', true);
+  // Cardboard boxes behind the counter, under the shelves.
+  const cb = batch.of('int_cardboard');
+  box(cb, f, uL + 2.1, uL + 2.55, 0, 0.35, D - 0.45, D - 0.08);
+  box(cb, f, uL + 2.15, uL + 2.5, 0.35, 0.58, D - 0.42, D - 0.12);
+  box(cb, f, uL + 0.15, uL + 0.5, 0, 0.3, vc1 + 0.1, vc1 + 0.45);
+  // Water carboy on its stand at the counter's end.
+  const wu = counterR + 0.35;
+  const wv = vc1 - 0.2;
+  box(batch.of('int_black'), f, wu - 0.17, wu + 0.17, 0, 0.62, wv - 0.17, wv + 0.17);
+  lathe(batch.of('int_carboy'), f, wu, wv, [
+    [0.04, 0.62],
+    [0.13, 0.66],
+    [0.14, 0.72],
+    [0.14, 1.0],
+    [0.12, 1.07],
+    [0.04, 1.12],
+    [0.035, 1.17],
+    [0.001, 1.17],
+  ], 12);
+  // A bin by the counter's end.
+  lathe(batch.of('int_black'), f, counterR + 0.35, vc0 - 0.25, [
+    [0.001, 0],
+    [0.15, 0],
+    [0.17, 0.46],
+    [0.001, 0.46],
+  ], 12);
+  lathe(batch.of('int_paper'), f, counterR + 0.35, vc0 - 0.25, [
+    [0.172, 0.44],
+    [0.182, 0.48],
+    [0.13, 0.49],
+  ], 12);
+  // A newspaper left on the first table.
+  if (tables.length) {
+    const t = tables[0];
+    const y = 0.732;
+    const p = batch.of('int_paper');
+    const c = Math.cos(0.35);
+    const sn = Math.sin(0.35);
+    const q = (du: number, dv: number): [number, number, number] => f.p(t.u + 0.05 + du * c + dv * sn, y, t.v - 0.05 - du * sn + dv * c);
+    p.flatQuad([q(-0.14, -0.2), q(0.14, -0.2), q(0.14, 0.2), q(-0.14, 0.2)], [0, 1, 0]);
+    const pr = batch.of('int_paper_print');
+    const q2 = (du: number, dv: number): [number, number, number] => [q(du, dv)[0], y + 0.001, q(du, dv)[2]];
+    pr.flatQuad([q2(-0.11, 0.05), q2(0.11, 0.05), q2(0.11, 0.16), q2(-0.11, 0.16)], [0, 1, 0]);
+  }
+  // A calendar and taped notices on the right wall by the door, white trunking from the ceiling down to the TV.
+  const paper = batch.of('int_paper');
+  faceBox(paper, right.face, 0.55, 0.9, 1.45, 1.95, 0, 0.004, false, false);
+  faceBox(batch.of('int_paper_print'), right.face, 0.58, 0.87, 1.72, 1.92, 0, 0.005, false, false);
+  faceBox(paper, right.face, 0.95, 1.16, 1.3, 1.6, 0, 0.003, false, false);
+  const tvS = right.len - 2.6;
+  const trunk = batch.of('int_ceramic');
+  faceBoxC(trunk, right.face, 0.2, right.len - 0.2, C - 0.16, C - 0.11, 0, 0.025, 0.004);
+  faceBoxC(trunk, right.face, tvS + 0.4, tvS + 0.44, C - 0.42, C - 0.16, 0, 0.022, 0.004, false);
+  faceBox(batch.of('int_cable'), right.face, tvS + 0.3, tvS + 0.31, C - 1.2, C - 1.02, 0.02, 0.03, false, false);
 }

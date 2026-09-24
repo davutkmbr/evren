@@ -8,10 +8,13 @@
  * - every twig carries leaf clusters: 5–6 palmate leaves (pentagons, 0.2–0.3 m, double-sided) around its tip and
  *   along it, in three greens; about 3,000 clusters (≈ 55k triangles) on the plane, 1,100 on the street tree, so the
  *   crown is dense from outside with sky and branches showing through, and casts a dappled shadow.
- * No leaf or bark texture is approved yet, so both are geometry and flat materials (street/materials.ts).
+ * S1 round 2 (critique: "brick-textured trunk", "white radial branch sticks", "cartoon"): every leaf is an alpha card
+ * cut from the LeafSet010 atlas (four palmate leaves, CC0; one leaf per card, tip away from the twig, COLOR_0 tone
+ * per card with a few yellowing ones), the bark is Poly Haven's bark_platanus under the grey / olive / cream patch
+ * tints, and the twigs are the darker, finer bark of the young wood.
  */
 import type { MaterialName } from '../materials';
-import type { TileMesh, Vec3 } from '../mesh';
+import type { RGBA, TileMesh, Vec3 } from '../mesh';
 import { Builder } from '../hero/kit';
 
 class Geo {
@@ -82,8 +85,8 @@ function barkAt(p: Vec3, plane: boolean): MaterialName {
   return n < 0.42 ? 'st_bark' : n < 0.62 ? 'st_bark_olive' : 'st_bark_cream';
 }
 
-/** A tapered tube along a polyline with radii per point; quads pick their bark material by position. */
-function tube(g: Geo, pts: readonly Vec3[], radii: readonly number[], sides: number, plane: boolean): void {
+/** A tapered tube along a polyline with radii per point; quads pick their bark material by position (or `fixed`). */
+function tube(g: Geo, pts: readonly Vec3[], radii: readonly number[], sides: number, plane: boolean, fixed?: MaterialName): void {
   const rings: { p: Vec3; n: Vec3 }[][] = [];
   let prevS1: Vec3 | null = null;
   for (let k = 0; k < pts.length; k++) {
@@ -113,13 +116,13 @@ function tube(g: Geo, pts: readonly Vec3[], radii: readonly number[], sides: num
       const c = rings[k + 1][(q + 1) % sides];
       const d = rings[k + 1][q];
       const mid: Vec3 = [(a.p[0] + c.p[0]) / 2, (a.p[1] + c.p[1]) / 2, (a.p[2] + c.p[2]) / 2];
-      const B = g.of(barkAt(mid, plane));
+      const B = g.of(fixed ?? barkAt(mid, plane));
       B.quad(B.v(a.p, a.n), B.v(b.p, b.n), B.v(c.p, c.n), B.v(d.p, d.n));
     }
   }
   // Cap the thin end.
   const last = rings[rings.length - 1];
-  const B = g.of('st_bark');
+  const B = g.of(fixed ?? 'st_bark');
   const tip = B.v(pts[pts.length - 1], norm(sub(pts[pts.length - 1], pts[pts.length - 2])));
   for (let q = 0; q < sides; q++) {
     B.tri(tip, B.v(last[q].p, last[q].n), B.v(last[(q + 1) % sides].p, last[(q + 1) % sides].n));
@@ -136,16 +139,29 @@ function branchPts(a: Vec3, dir: Vec3, l: number, bend: Vec3, n: number): Vec3[]
   return out;
 }
 
-/** Palmate leaf (a pentagon, three triangles) centred at c, facing n, tip towards `along`. */
-function leaf(g: Geo, m: MaterialName, c: Vec3, n: Vec3, along: Vec3, size: number): void {
-  const b = g.of(m);
+/** The four leaves of the LeafSet010 atlas: image rectangles [u0, v0 (tip), u1, v1 (stalk)]. */
+const LEAF_RECTS: [number, number, number, number][] = [
+  [0.06, 0.04, 0.47, 0.47],
+  [0.56, 0.04, 0.91, 0.47],
+  [0.07, 0.49, 0.45, 0.99],
+  [0.59, 0.49, 0.91, 0.99],
+];
+
+/** Leaf card: one atlas leaf on a quad whose stalk end sits at `c`, facing n, tip towards `along`, tinted by `tone`. */
+function leaf(g: Geo, c: Vec3, n: Vec3, along: Vec3, size: number, pick: number, tone: RGBA): void {
+  const b = g.of('st_leaf_card');
   const u = norm(sub(along, add([0, 0, 0], n, along[0] * n[0] + along[1] * n[1] + along[2] * n[2])));
   const v = cross(n, u);
-  const P = (x: number, y: number): Vec3 => add(add(c, u, y * size), v, x * size);
-  const ids = [P(0, 0.55), P(0.5, 0.18), P(0.3, -0.38), P(-0.3, -0.38), P(-0.5, 0.18)].map((p) => b.v(p, n));
-  for (let k = 1; k + 1 < ids.length; k++) {
-    b.tri(ids[0], ids[k], ids[k + 1]);
-  }
+  const [u0, v0, u1, v1] = LEAF_RECTS[pick % LEAF_RECTS.length];
+  const w = size * ((u1 - u0) / (v1 - v0));
+  const P = (x: number, y: number): Vec3 => add(add(c, u, y * size), v, x * w);
+  const ids = [
+    b.v(P(-0.5, 0), n, [u0, v1], tone),
+    b.v(P(0.5, 0), n, [u1, v1], tone),
+    b.v(P(0.5, 1), n, [u1, v0], tone),
+    b.v(P(-0.5, 1), n, [u0, v0], tone),
+  ];
+  b.quad(ids[0], ids[1], ids[2], ids[3]);
 }
 
 interface Spec {
@@ -166,7 +182,6 @@ export function buildTree(mesh: TileMesh, plane: boolean): void {
   const S = plane ? PLANE : STREET;
   const g = new Geo(mesh);
   const r = rng(plane ? 1931 : 77);
-  const leafMats: MaterialName[] = ['st_leaf_a', 'st_leaf_b', 'st_leaf_c'];
   // Trunk with a root flare and a slight lean.
   const lean: Vec3 = [0.35 * (plane ? 1 : 0.3), 0, 0.15];
   const trunkPts: Vec3[] = [];
@@ -231,8 +246,12 @@ export function buildTree(mesh: TileMesh, plane: boolean): void {
       const n = norm([out[0] * 0.6 + (r() - 0.5) * 1.2, 1.0 + r() * 0.4, out[2] * 0.6 + (r() - 0.5) * 1.2]);
       const along = norm([out[0] + (r() - 0.5), -0.3 + (r() - 0.5) * 0.6, out[2] + (r() - 0.5)]);
       const shade = noise3(c[0] * 0.5, c[1] * 0.5, c[2] * 0.5);
-      const m = c[1] < centre[1] - ry * 0.3 || shade < 0.35 ? leafMats[1] : shade > 0.7 ? leafMats[2] : leafMats[0];
-      leaf(g, m, c, n, along, S.leafSize * (0.75 + 0.5 * r()));
+      // Inner and lower leaves darker, sunlit patches lighter, 6 % turning yellow (late September).
+      const low = c[1] < centre[1] - ry * 0.3 ? 0.78 : 1;
+      const t = low * (0.72 + 0.4 * shade + 0.12 * r());
+      const k = Math.min(1, t);
+      const tone: RGBA = r() < 0.06 ? [1, 0.9, 0.5, 1] : [k * 0.92, k, k * 0.86, 1];
+      leaf(g, c, n, along, S.leafSize * (1.05 + 0.5 * r()), Math.floor(r() * 4), tone);
     }
     clusters++;
   };
@@ -259,7 +278,7 @@ export function buildTree(mesh: TileMesh, plane: boolean): void {
     }
     const twigEnd = add(gc, out, -S.leafSize);
     const mid = add(add(best.p, sub(twigEnd, best.p), 0.5), [0, 0.15 * bd * (r() - 0.3), 0]);
-    tube(g, [best.p, mid, twigEnd], [Math.min(best.r, 0.05) * 0.8, 0.02, 0.008], 3, plane);
+    tube(g, [best.p, mid, twigEnd], [Math.min(best.r, 0.05) * 0.8, 0.02, 0.008], 3, plane, 'st_bark_twig');
     const nc = 6 + Math.floor(r() * 5);
     for (let q = 0; q < nc; q++) {
       const o: Vec3 = [(r() - 0.5) * 1.3, (r() - 0.5) * 0.8, (r() - 0.5) * 1.3];

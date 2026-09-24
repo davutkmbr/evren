@@ -46,6 +46,8 @@ export interface PropRef {
   drawDistance: number;
   castShadow: boolean;
   triangles: number;
+  /** Decimated levels (props of 1500+ triangles): draw `level` from `distance` metres on, LOD0 (`glb`) before. */
+  lods?: { level: number; glb: string; triangles: number; distance: number }[];
 }
 
 export interface MaterialRef {

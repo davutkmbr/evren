@@ -21,8 +21,30 @@
 import type { LightInput } from '../lights';
 import { LOD0, LOD1, type RGBA, type TileMesh, type Vec3 } from '../mesh';
 import type { TileContext } from '../registry';
-import { Batch, box, type Builder, dressOpening, type Face, faceBox, Frame, hpoly, lathe, ngon, type Opening, outline, prism, rgba, shape, span, tilePanel, type V2, wall, type WindowStyle } from './kit';
+import { Batch, box, type Builder, dressOpening, type Face, faceBar, faceBox, faceBoxC, Frame, hpoly, lathe, ngon, type Opening, outline, prism, rgba, shape, span, tilePanel, type V2, wall, type WindowStyle } from './kit';
 import { type HeroBuild, longestEdgeHeading } from './pier1926';
+import { propDef } from '../props';
+import { HeroWeather, repairPatches, sillStreaks, streakAt, type WxProfile } from './weather';
+
+/**
+ * Weathering of the pre-2021 market hall (c04, context/haldun-taner-kiosks-2013): grey city grime over the salmon
+ * render, darker in patches, heavy under the cornice and the canopy, splash and damp over the plinth, long streaks
+ * under the upper sills and the AC units, mismatched grey repair patches, rusty brackets, a dusty canopy roof.
+ */
+const HT_WX: Record<string, WxProfile> = {
+  hero_ht_render: { dirt: 0.2, vary: 0.18, splash: 0.5, splashH: 1.2, damp: 0.75, dampH: 0.8, side: 0.25, up: 0.4, down: 0.35, edge: 0.35, streak: 0.75, bandH: 1.8, tint: 0.09 },
+  hero_ht_trim: { dirt: 0.22, vary: 0.16, splash: 0.35, splashH: 1.0, up: 0.5, down: 0.4, side: 0.12, edge: 0.5, streak: 0.5, bandH: 1.2, tint: 0.07 },
+  hero_plinth: { dirt: 0.35, vary: 0.2, splash: 0.4, splashH: 0.7, damp: 0.85, dampH: 0.6, up: 0.3, side: 0.1, edge: 0.55, tint: 0.07 },
+  hero_tile_panel: { dirt: 0.35, vary: 0.25, up: 0.2, streak: 0.35, bandH: 0.8, tint: 0.08 },
+  hero_ht_green: { dirt: 0.25, vary: 0.15, up: 0.25, edge: 0.65 },
+  hero_ht_door: { dirt: 0.3, vary: 0.15, splash: 0.35, splashH: 0.9, edge: 0.55 },
+  hero_ht_soffit: { dirt: 0.35, vary: 0.25, edge: 0.3 },
+  hero_metal_roof: { dirt: 0.35, vary: 0.3, grid: 3.0, tint: 0.08 },
+  hero_iron: { dirt: 0.45, vary: 0.3, up: 0.15, edge: 0.7 },
+  hero_lead: { dirt: 0.4, vary: 0.35, up: 0.15 },
+  hero_floor: { dirt: 0.3, vary: 0.25, grid: 3.0 },
+};
+const STREAK_HT: [number, number, number, number] = [0.3, 0.27, 0.24, 0.62];
 
 /* Plan (u along the long axis, 63.9°; v 90° clockwise of it, towards the Rıhtım side). Walls, not the OSM line. */
 const V0 = -14.45;
@@ -39,7 +61,6 @@ const STRING = [5.75, 5.95] as const;
 const RANGE_TOP = 6.45;
 const UF_SILL = 6.55;
 const UF_SPRING = 8.3;
-const FRIEZE = [9.35, 9.85] as const;
 const CORNICE = [9.9, 10.35] as const;
 const PARAPET = 11.05;
 const STEP = 0.52;
@@ -85,6 +106,9 @@ interface Ctx {
   seed: number;
   /** Ground above the hall floor in front of a face point (0.7 m out). */
   g: (face: Face, s: number) => number;
+  t: TileContext;
+  /** AC units placed. */
+  ac: number;
 }
 
 /** Builds the market hall into the tile; `ring` is the OSM outline (flat x, z). */
@@ -112,13 +136,20 @@ export function buildHaldunTaner(t: TileContext, ring: readonly number[], bottom
   // floor sits at the lowest wall foot (c04 side) and openings further up the slope start at the local ground.
   const floorY = Math.round((Math.min(...samples.map(([u, v]) => at(u, v))) + 0.05) * 100) / 100;
   const f = new Frame(ox, oz, floorY, heading);
+  const wx = new HeroWeather({
+    seed: 1927,
+    ground: (x, z) => t.area.heights.at(x, z),
+    profiles: HT_WX,
+    shelters: [CORNICE[0], STRING[0], CANOPY_WALL - 0.15, RANGE_TOP, PARAPET].map((y) => floorY + y),
+  });
+  const wmesh = wx.wrap(mesh);
   const yb = Math.min(bottomY - floorY, -0.4) - 0.2;
   const lights: LightInput[] = [];
   const g = (face: Face, s: number): number => {
     const p = face.p(s, 0, 0.7);
     return t.area.heights.at(p[0], p[2]) - floorY;
   };
-  const c: Ctx = { mesh, batch: new Batch(mesh), f, yb, lights, seed: 7, g };
+  const c: Ctx = { mesh: wmesh, batch: new Batch(wmesh), f, yb, lights, seed: 7, g, t, ac: 0 };
 
   mesh.withLod(LOD0, () => {
     pavilion(c, WEST.u0, WEST.u1, true);
@@ -129,9 +160,9 @@ export function buildHaldunTaner(t: TileContext, ring: readonly number[], bottom
     c.batch.flush();
   });
   mesh.withLod(LOD1, () => {
-    const b = new Batch(mesh);
-    lod1(mesh, b, f, yb);
-    const c1: Ctx = { mesh, batch: b, f, yb, lights: [], seed: 7, g };
+    const b = new Batch(wmesh);
+    lod1(wmesh, b, f, yb);
+    const c1: Ctx = { mesh: wmesh, batch: b, f, yb, lights: [], seed: 7, g, t, ac: 0 };
     hallRoof(c1, false);
     canopy(c1, false);
     b.flush();
@@ -145,8 +176,8 @@ export function buildHaldunTaner(t: TileContext, ring: readonly number[], bottom
     topY,
     floorY,
     lights: lights.length,
-    instances: 0,
-    notes: { origin: [r2(ox), r2(oz)], headingDeg: r2(heading), canopyY: r2(floorY + CANOPY_WALL), parapetY: r2(floorY + PARAPET), ridgeY: r2(floorY + RIDGE) },
+    instances: c.ac,
+    notes: { origin: [r2(ox), r2(oz)], headingDeg: r2(heading), canopyY: r2(floorY + CANOPY_WALL), parapetY: r2(floorY + PARAPET), ridgeY: r2(floorY + RIDGE), weatherCutTriangles: wx.added },
   };
 }
 
@@ -210,23 +241,50 @@ function pavilionFace(c: Ctx, face: Face, len: number, groups: { s: number; coun
   }
   const trim = batch.of(TRIM);
   // Plinth cap, string course over the canopy, cornice, parapet coping.
-  faceBox(trim, face, 0, len, PLINTH, PLINTH + 0.08, -0.02, 0.07);
-  faceBox(trim, face, -0.02, len + 0.02, STRING[0], STRING[1], -0.02, 0.1);
-  faceBox(trim, face, -0.06, len + 0.06, CORNICE[0], (CORNICE[0] + CORNICE[1]) / 2, -0.02, 0.12);
-  faceBox(trim, face, -0.14, len + 0.14, (CORNICE[0] + CORNICE[1]) / 2, CORNICE[1], -0.02, 0.24);
-  // Tile panels over each window group (pointed-arch heads reach 8.87 m) and the frieze under the cornice.
+  faceBoxC(trim, face, 0, len, PLINTH, PLINTH + 0.08, -0.02, 0.07, 0.015);
+  faceBoxC(trim, face, -0.02, len + 0.02, STRING[0], STRING[1], -0.02, 0.1, 0.02);
+  faceBoxC(trim, face, -0.06, len + 0.06, CORNICE[0], (CORNICE[0] + CORNICE[1]) / 2, -0.02, 0.12, 0.02);
+  faceBoxC(trim, face, -0.14, len + 0.14, (CORNICE[0] + CORNICE[1]) / 2, CORNICE[1], -0.02, 0.24, 0.025);
+  // Every window group (c04 photo): a moulded frame round the group, a gabled turquoise tile hood over the arch heads
+  // (8.87 m) and a small tile apron under each sill.
   for (const g of groups) {
-    const w = g.count * 0.82 + (g.count - 1) * 0.34 + 0.5;
-    tilePanel(mesh, batch, 'hero_tile_panel', face, g.s - w / 2, g.s + w / 2, 9.0, 9.28, 0.02, 0.14, seljuk, { mat: TRIM, w: 0.05, d: 0.03 });
+    const w = g.count * 0.82 + (g.count - 1) * 0.34 + 0.44;
+    tileHood(mesh, batch, face, g.s, w, 8.97);
+    const fy0 = UF_SILL - 0.46;
+    const fy1 = 9.2;
+    faceBoxC(trim, face, g.s - w / 2 - 0.1, g.s - w / 2 - 0.03, fy0, fy1, -0.01, 0.035, 0.01, false);
+    faceBoxC(trim, face, g.s + w / 2 + 0.03, g.s + w / 2 + 0.1, fy0, fy1, -0.01, 0.035, 0.01, false);
+    faceBoxC(trim, face, g.s - w / 2 - 0.1, g.s + w / 2 + 0.1, fy0 - 0.06, fy0, -0.01, 0.035, 0.01);
   }
-  tilePanel(mesh, batch, 'hero_tile_panel', face, 0.5, len - 0.5, FRIEZE[0], FRIEZE[1] - 0.08, 0.015, 0.16, seljuk);
+  for (const o of ups) {
+    tilePanel(mesh, batch, 'hero_tile_panel', face, o.s - 0.34, o.s + 0.34, UF_SILL - 0.36, UF_SILL - 0.13, 0.018, 0.115, seljuk, { mat: TRIM, w: 0.03, d: 0.025 });
+  }
+  const seed = Math.round(face.u0 * 97 + face.v0 * 53 + len * 7);
+  sillStreaks(mesh, face, ups, 0.08, { color: STREAK_HT, len: [0.8, 2.3], p: 0.9 }, seed);
+  sillStreaks(mesh, face, arches.filter((o) => !o.door), 0.02, { color: STREAK_HT, len: [0.3, 0.8], p: 0.5 }, seed + 3);
+  repairPatches(mesh, 'hero_ht_render@patch', face, 0.7, len - 0.7, STRING[1] + 0.2, CORNICE[0] - 0.3, ups, 2, [[0.9, 0.9, 0.92, 1], [0.97, 0.94, 0.92, 1], [0.86, 0.85, 0.85, 1]], seed + 5, [0.35, 1.2]);
+  repairPatches(mesh, 'hero_ht_render@patch', face, 0.7, len - 0.7, PLINTH + 0.3, SPRING, arches, 1, [[0.88, 0.87, 0.87, 1], [0.95, 0.92, 0.9, 1]], seed + 6, [0.3, 0.9]);
+  // Split AC units between some window groups (c04: five or six on the long face), with a condensate streak.
+  if (groups.length >= 2 && hasProp('fac_ac')) {
+    for (let k = 0; k + 1 < groups.length; k++) {
+      if ((k + Math.round(len)) % 3 === 2) {
+        continue;
+      }
+      const s = (groups[k].s + groups[k + 1].s) / 2 + ((k % 2) - 0.5) * 0.3;
+      const y = 6.9 + (k % 2) * 0.35;
+      const p = face.p(s, y, 0.02);
+      c.t.place('fac_ac', p, face.f.yaw(face.nu, face.nv), { variant: 'unit', ref: `hero/haldunTaner/ac${c.ac}` });
+      c.ac++;
+      streakAt(mesh, face, s + 0.1, y + 0.02, 0.35, 1.2 + 0.6 * (k % 2), [0.28, 0.26, 0.24, 0.7], seed + k);
+    }
+  }
   // Pilasters at the corners (the turrets stand on them) and between groups.
-  faceBox(trim, face, 0, 0.55, PLINTH, CORNICE[0], -0.02, 0.08, false, false);
-  faceBox(trim, face, len - 0.55, len, PLINTH, CORNICE[0], -0.02, 0.08, false, false);
+  faceBoxC(trim, face, 0, 0.55, PLINTH, CORNICE[0], -0.02, 0.08, 0.018, false);
+  faceBoxC(trim, face, len - 0.55, len, PLINTH, CORNICE[0], -0.02, 0.08, 0.018, false);
   // Parapet inner face and coping; the stepped crest.
   const inner = face.offset(-0.3);
   wall(mesh, RENDER, inner, 0.3, len - 0.3, CORNICE[1] - 0.2, PARAPET, [], { back: true });
-  faceBox(trim, face, -0.04, len + 0.04, PARAPET, PARAPET + 0.1, -0.36, 0.06);
+  faceBoxC(trim, face, -0.04, len + 0.04, PARAPET, PARAPET + 0.1, -0.36, 0.06, 0.015);
   if (crest) {
     stepCrest(c, face, crest.s, crest.half);
     const d = face.dir(0, 0.95, -0.3);
@@ -239,6 +297,50 @@ function pavilionFace(c: Ctx, face: Face, len: number, groups: { s: number; coun
   });
 }
 
+/** Whether a prop is registered (the AC unit is the façade lane's). */
+function hasProp(id: string): boolean {
+  try {
+    propDef(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gabled Seljuk tile hood over a window group (c04 photo): a cobalt border, a turquoise field with a white star and
+ * two cobalt knots, a thin render moulding along its top edges; bottom at yb, width w.
+ */
+function tileHood(mesh: TileMesh, batch: Batch, face: Face, s: number, w: number, yb: number): void {
+  const h1 = 0.2;
+  const h2 = 0.46;
+  const hw = w / 2;
+  shape(mesh, 'hero_tile_panel', face, [[s - hw, yb], [s + hw, yb], [s + hw, yb + h1], [s, yb + h2], [s - hw, yb + h1]], [], 0.012, false, { color: rgba(0x1f4a8f) });
+  const i = 0.05;
+  const slope = (h2 - h1) / hw;
+  const k = i * Math.sqrt(1 + slope * slope);
+  shape(mesh, 'hero_tile_panel', face, [[s - hw + i, yb + i], [s + hw - i, yb + i], [s + hw - i, yb + h1 + slope * i - k], [s, yb + h2 - k], [s - hw + i, yb + h1 + slope * i - k]], [], 0.016, false, { color: rgba(0x2a9a9c) });
+  const cy = yb + h1 * 0.62;
+  const star = (cs: number, r: number, col: number): void => {
+    const pts: V2[] = [];
+    for (let q = 0; q < 8; q++) {
+      const a = (q / 8) * Math.PI * 2;
+      const rr = q % 2 ? r * 0.45 : r;
+      pts.push([cs + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+    }
+    shape(mesh, 'hero_tile_panel', face, pts, [], 0.02, false, { color: rgba(col) });
+  };
+  star(s, 0.085, 0xece8dc);
+  for (const d of [-1, 1]) {
+    star(s + d * hw * 0.55, 0.045, 0x1f4a8f);
+  }
+  const tb = batch.of(TRIM);
+  faceBar(tb, face, [s - hw - 0.02, yb + h1], [s, yb + h2 + 0.02], 0.035, 0);
+  faceBar(tb, face, [s, yb + h2 + 0.02], [s + hw + 0.02, yb + h1], 0.035, 0);
+  faceBar(tb, face, [s - hw - 0.02, yb - 0.02], [s - hw - 0.02, yb + h1], 0.03, 0);
+  faceBar(tb, face, [s + hw + 0.02, yb - 0.02], [s + hw + 0.02, yb + h1], 0.03, 0);
+}
+
 /** Plinth band between the door notches. */
 function plinth(batch: Batch, face: Face, len: number, ops: readonly Op[], yb: number): void {
   const b = batch.of('hero_plinth');
@@ -246,12 +348,12 @@ function plinth(batch: Batch, face: Face, len: number, ops: readonly Op[], yb: n
   for (const o of ops.filter((q) => q.door).sort((p, q) => p.s - q.s)) {
     const l = o.s - o.w / 2 - 0.14;
     if (l > s + 0.01) {
-      faceBox(b, face, s, l, yb, PLINTH, -0.05, 0.06);
+      faceBoxC(b, face, s, l, yb, PLINTH, -0.05, 0.06, 0.025);
     }
     s = o.s + o.w / 2 + 0.14;
   }
   if (len > s + 0.01) {
-    faceBox(b, face, s, len, yb, PLINTH, -0.05, 0.06);
+    faceBoxC(b, face, s, len, yb, PLINTH, -0.05, 0.06, 0.025);
   }
 }
 
@@ -407,9 +509,11 @@ function range(c: Ctx): void {
       dressOpening(mesh, batch, face.face, o, o.k === 'door' ? doorStyle : arcadeStyle(Math.round(o.s * 3) % 5 !== 0));
     }
     const trim = batch.of(TRIM);
-    faceBox(trim, face.face, 0, len, PLINTH, PLINTH + 0.08, -0.02, 0.07);
-    faceBox(trim, face.face, 0, len, STRING[0], STRING[1], -0.02, 0.1);
-    faceBox(trim, face.face, -0.04, len + 0.04, RANGE_TOP, RANGE_TOP + 0.1, -0.36, 0.06);
+    faceBoxC(trim, face.face, 0, len, PLINTH, PLINTH + 0.08, -0.02, 0.07, 0.015);
+    faceBoxC(trim, face.face, 0, len, STRING[0], STRING[1], -0.02, 0.1, 0.02);
+    faceBoxC(trim, face.face, -0.04, len + 0.04, RANGE_TOP, RANGE_TOP + 0.1, -0.36, 0.06, 0.015);
+    const seed = Math.round(face.face.u0 * 97 + face.face.v0 * 53);
+    repairPatches(mesh, 'hero_ht_render@patch', face.face, 0.5, len - 0.5, PLINTH + 0.25, SPRING - 0.2, arches, 3, [[0.88, 0.87, 0.87, 1], [0.95, 0.92, 0.9, 1]], seed, [0.3, 0.8]);
     // Diamond tile plaques on the parapet between the canopy and the coping, over every pier.
     for (let k = 0; k <= arches.length; k++) {
       const s = k === 0 ? 0.35 : k === arches.length ? len - 0.35 : (arches[k - 1].s + arches[k].s) / 2;

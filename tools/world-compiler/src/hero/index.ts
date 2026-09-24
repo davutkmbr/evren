@@ -14,7 +14,7 @@ import { SKYLINE_ANCHOR, SKYLINE_PROP } from './farfield';
 import { buildHaldunTaner } from './haldun-taner';
 import { headingYaw } from '../instances';
 import type { PropDef } from '../props';
-import { buildNewPier } from './new-pier';
+import { buildNewPier, TYRE_PROP } from './new-pier';
 import { buildPier1926, type HeroBuild } from './pier1926';
 import { buildAyaEfimia, buildIskeleCamii } from './worship';
 
@@ -45,8 +45,8 @@ const HEROES: HeroDef[] = [
   { id: 'ayaEfimia', anchor: 'w694298363', outline: 694298362, build: (t, ring, bottomY, tower) => buildAyaEfimia(t, ring, tower, bottomY) },
 ];
 
-/** Hero props: the docked City Lines ferry and the far-field skyline (registered in registry.ts PROP_SETS). */
-export const HERO_PROPS: PropDef[] = [FERRY_PROP, SKYLINE_PROP];
+/** Hero props: the docked City Lines ferry, the far-field skyline and the quay tyre fenders (registry.ts PROP_SETS). */
+export const HERO_PROPS: PropDef[] = [FERRY_PROP, SKYLINE_PROP, TYRE_PROP];
 
 /**
  * The ferry lies broadside to c02 (bearing about 317° from it, 70 m long): on the view ray from the c02 camera the
