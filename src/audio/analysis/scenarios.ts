@@ -272,7 +272,7 @@ export const CASES: RenderCase[] = [
       e.play('discover');
     }
   }),
-  oneShot('gull', 'Martı (sarı bacaklı), 60 m', 3.2, [-33, -26], 'third', (t, p, e) => {
+  oneShot('gull', 'Martı çağrısı, 60 m', 3.2, [-36, -26], 'third', (t, p, e) => {
     if (crossed(t, p, 0.05)) {
       e.ambience.spawnGull(30, 60);
     }
@@ -498,7 +498,7 @@ async function loadShared(ctx: OfflineAudioContext): Promise<NonNullable<typeof 
   let samples: SampleBank | null = null;
   if (recorded) {
     samples = new SampleLibrary().createBank(ctx);
-    await Promise.all((['flight', 'rain', 'storm'] as const).map((g) => samples!.ready(g)));
+    await Promise.all((['flight', 'rain', 'storm', 'coast'] as const).map((g) => samples!.ready(g)));
   }
   return { noise: createNoiseBank(ctx), impulse: createImpulseResponse(ctx), samples };
 }

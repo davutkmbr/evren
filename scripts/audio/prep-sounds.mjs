@@ -7,10 +7,12 @@
  *
  *   node scripts/audio/prep-sounds.mjs
  *
- * Needs ffmpeg (the AudioToolbox AAC encoder when available, ffmpeg's own otherwise).
+ * Needs ffmpeg (the AudioToolbox AAC encoder when available, ffmpeg's own otherwise) and sox (noise reduction).
  * - Loops are crossfaded (equal power) into seamless cycles and carry LOOP_MARGIN seconds of wrapped audio on both
  *   sides of [loopStart, loopEnd], so they stay seamless whether or not a decoder trims the AAC priming samples.
  * - Sprites hold one-shots (thunder claps, single wing flaps) separated by silence; slots are [start, duration] (s).
+ * - Field recordings with background noise (the gulls) are denoised first: sox `noisered` with a noise profile taken
+ *   from a quiet second of the same recording, after the high-pass.
  * The trim, loop and slice points come from envelope analysis of each recording (level-matched loop seams without
  * transients, onsets of the strong flaps); see .docs/assets/candidates/sounds.md for what each recording contains.
  */
@@ -44,6 +46,47 @@ const FLAPS = [
   [11.985, 12.515],
   [12.97, 13.77],
 ];
+
+/**
+ * Call phrases (from, to in s) found by envelope analysis of the denoised recordings: activity in the 0.3-4 kHz call
+ * band 15 dB over the floor, merged across gaps under 0.5 s, with at least 0.4 s at least 10 dB quieter around it.
+ */
+const GULL_CALLS = [
+  ...[
+    [14.1, 18.48],
+    [19.72, 20.96],
+    [28.06, 32.88],
+    [43.22, 44.48],
+    [67.64, 68.6],
+    [71.62, 72.84],
+    [110.32, 114.92],
+    [141.22, 141.92],
+    [200.88, 202.06],
+    [203.12, 204.12],
+    [207.74, 208.8],
+    [246.9, 247.94],
+    [266.22, 268.48],
+  ].map(([from, to]) => ({ id: 'gulls_harbour_brunoauzet', from, to })),
+  ...[
+    [54.28, 55.2],
+    [64.26, 68.48],
+    [69.06, 72.52],
+  ].map(([from, to]) => ({ id: 'gulls_adalar_felixblume', from, to })),
+  // The herring gull's calls and its long call (split in two phrases).
+  ...[
+    [1.3, 3.8],
+    [3.8, 7.4],
+    [7.4, 11.9],
+  ].map(([from, to]) => ({ id: 'gull_longcall_genghisattenborough', from, to })),
+];
+
+/** Noise profile (start of a quiet second, s) and noisered amount per denoised recording. */
+const DENOISE = {
+  gulls_harbour_brunoauzet: { at: 139.25, amount: 0.21 },
+  gulls_adalar_felixblume: { at: 60.25, amount: 0.24 },
+  gull_longcall_genghisattenborough: { at: 11.5, amount: 0.21 },
+  gulls_distant_etienneleplumey: { at: 0, amount: 0.2 },
+};
 
 /**
  * level: 'peak' normalises every slot to PEAK_DB; 'match' gives every slot the same RMS over its loudest `window`
@@ -94,9 +137,64 @@ const RECIPES = [
     level: { mode: 'match', window: 0.25, weightHz: 60 },
     slots: [1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `wing_flap_ani_${n}a`, from: 0, to: null, fadeIn: 0.002, fadeOut: 0.08 })),
   },
+  {
+    out: 'gull/calls',
+    channels: 1,
+    // Gull calls sit at 0.7-4 kHz: everything under 300 Hz is wind, surf and traffic.
+    highpass: 300,
+    level: { mode: 'match', window: 0.4, weightHz: 700 },
+    slots: GULL_CALLS.map((c) => ({ ...c, fadeIn: 0.03, fadeOut: 0.12 })),
+  },
+  { out: 'gull/bed', channels: 2, highpass: 250, loop: { id: 'gulls_distant_etienneleplumey', start: 40, length: 45, crossfade: 4 } },
 ];
 
 const encoder = execFileSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).includes(' aac_at ') ? 'aac_at' : 'aac';
+
+/** Profile start for a recording: its quietest second away from the edges when `at` is 0. */
+function quietest(path) {
+  const [x] = decode(path, 1);
+  let best = SR;
+  let bestE = Infinity;
+  for (let s = SR; s + SR <= x.length - SR; s += SR / 4) {
+    let e = 0;
+    for (let i = s; i < s + SR; i += 4) {
+      e += x[i] * x[i];
+    }
+    if (e > 1e-9 && e < bestE) {
+      bestE = e;
+      best = s;
+    }
+  }
+  return best / SR;
+}
+
+/** High-passed (and, for DENOISE recordings, noise-reduced) channels of a cached recording. */
+function load(id, channels, fc) {
+  const path = sourceFile(id);
+  const dn = DENOISE[id];
+  if (!dn) {
+    return decode(path, channels).map((x) => highpass(x, fc));
+  }
+  const tmp = mkdtempSync(join(tmpdir(), 'evren-denoise-'));
+  try {
+    const at = dn.at || quietest(path);
+    // One channel at a time (sox's multi-channel noisered drains its channels unevenly at the end).
+    return decode(path, channels).map((x, c) => {
+      highpass(x, fc);
+      const raw = join(tmp, `hp${c}.f32`);
+      const wav = join(tmp, `hp${c}.wav`);
+      const prof = join(tmp, `noise${c}.prof`);
+      const out = join(tmp, `dn${c}.wav`);
+      writeFileSync(raw, Buffer.from(x.buffer, x.byteOffset, x.byteLength));
+      execFileSync('sox', ['-t', 'f32', '-r', String(SR), '-c', '1', raw, '-e', 'floating-point', '-b', '32', wav]);
+      execFileSync('sox', [wav, '-n', 'trim', String(at), '1', 'noiseprof', prof]);
+      execFileSync('sox', [wav, out, 'noisered', prof, String(dn.amount)]);
+      return decode(out, 1)[0];
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
 
 function sourceFile(id) {
   const dir = join(CACHE, id);
@@ -280,10 +378,7 @@ function verify(chs, out) {
 }
 
 function buildLoop(r) {
-  const chs = decode(sourceFile(r.loop.id), r.channels).map((x) => {
-    highpass(x, r.highpass);
-    return withMargins(makeLoop(x, r.loop.start, r.loop.length, r.loop.crossfade));
-  });
+  const chs = load(r.loop.id, r.channels, r.highpass).map((x) => withMargins(makeLoop(x, r.loop.start, r.loop.length, r.loop.crossfade)));
   scale(chs, peakGain(chs));
   const m = seconds(LOOP_MARGIN);
   const entry = {
@@ -298,7 +393,7 @@ function buildSprite(r) {
   const decoded = new Map();
   const slots = r.slots.map((s) => {
     if (!decoded.has(s.id)) {
-      decoded.set(s.id, decode(sourceFile(s.id), r.channels).map((x) => highpass(x, r.highpass)));
+      decoded.set(s.id, load(s.id, r.channels, r.highpass));
     }
     const src = decoded.get(s.id);
     const to = s.to === null ? src[0].length : seconds(s.to);

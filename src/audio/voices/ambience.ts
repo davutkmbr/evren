@@ -36,11 +36,17 @@ const PROBE_KEYS: ReadonlyArray<keyof AmbienceProbe> = ['agl', 'altitude', 'urba
 const WAVE_POINTS = 96;
 const WAVE_SHAPES = 6;
 const AUDIBLE = 1e-4;
+/** Mean seconds between gull calls at full coast weight while an area still has calls left. */
+const GULL_INTERVAL = 8;
 /**
- * Spontaneous gull calls. Off: players found the synthesized calls disturbing (Sep 2026); they return as recorded
- * CC0 calls once those are approved. spawnGull() stays for explicit calls and the offline cases.
+ * Gulls are a moment, not a bed: each GULL_CELL-metre square of the map plays at most GULL_CALLS_PER_CELL calls per
+ * session, and its distant-gull bed fades out as they are used up, so flying past a stretch of shore a few times
+ * hears gulls once and then that stretch stays quiet.
  */
-const GULL_CALLS = false;
+const GULL_CELL = 700;
+const GULL_CALLS_PER_CELL = 3;
+/** Level of the recorded distant-gull bed over the waterfront (public/audio/gull/bed). */
+const GULL_BED = 0.13;
 
 interface WaveChannel {
   gain: GainNode;
@@ -60,6 +66,7 @@ interface WaveChannel {
  *  foliage  leaves in gusts over forests/parks
  *  high     thin lonely wind with drifting resonances above ~1500 m
  *  crickets late-September night chorus over parks, gardens and suburbs (pulsed ~3-5 kHz tones)
+ *  gulls    recorded distant gulls over the waterfront by day (with recorded calls as events)
  * Night thins out traffic, horns and gulls; ferries keep running into the evening.
  * Every sustained noise bed drifts its playback rate slowly at random (see `drift`), so no loop repeats verbatim.
  */
@@ -80,6 +87,7 @@ export class AmbienceVoice {
   private readonly highFreqA: SmoothParam;
   private readonly highFreqB: SmoothParam;
   private readonly cricketGain: SmoothParam;
+  private readonly gullBedGain: SmoothParam;
 
   private readonly cityGate: SourceGate;
   private readonly trafficGate: SourceGate;
@@ -88,6 +96,7 @@ export class AmbienceVoice {
   private readonly foliageGate: SourceGate;
   private readonly highGate: SourceGate;
   private readonly cricketGate: SourceGate;
+  private readonly gullBedGate: SourceGate;
 
   private readonly waves: WaveChannel[] = [];
   private readonly foamGain: GainNode;
@@ -96,6 +105,8 @@ export class AmbienceVoice {
   private readonly cutShapes: Float32Array<ArrayBuffer>[] = [];
 
   private gullTimer: number;
+  /** Calls already played per map cell (see GULL_CELL). */
+  private readonly gullCalls = new Map<string, number>();
   private hornTimer: number;
   private ferryTimer: number;
   private driftTime = 0;
@@ -237,6 +248,20 @@ export class AmbienceVoice {
       const mod = driftSource(t);
       drift(aux, mod, src, 0.02);
       return [src, mod, loop(noise.buffet, t, 0.35, lapDepth)];
+    });
+
+    // Distant gulls (recorded, stereo): silent until the coast recordings have loaded.
+    const gullG = gain(0);
+    gullG.connect(out);
+    this.gullBedGain = new SmoothParam(gullG.gain, 0, 1.5);
+    this.gullBedGate = gate(5, (t) => {
+      const bed = env.samples?.gullBed;
+      if (!bed) {
+        return [];
+      }
+      const src = loopSource(ctx, bed, t, 0.97 + 0.06 * rng(), rng);
+      src.connect(gullG);
+      return [src];
     });
 
     // Foliage: leaves in gusts, stereo.
@@ -406,7 +431,8 @@ export class AmbienceVoice {
     }
   }
 
-  update(probe: AmbienceProbe, dt: number, now: number, spawnEvents: boolean): void {
+  /** `x`, `z`: listener position (m), for the per-area gull budget. */
+  update(probe: AmbienceProbe, dt: number, now: number, spawnEvents: boolean, x = 0, z = 0): void {
     const k = 1 - Math.exp(-Math.max(0, dt) * 1.5);
     const s = this.smooth;
     // Non-finite probe values are skipped and a poisoned smoothed value is re-seeded, so one bad sample can never
@@ -451,6 +477,13 @@ export class AmbienceVoice {
     this.cricketGate.update(crickets > AUDIBLE * 0.1, now);
     this.cricketGain.set(crickets, now);
 
+    const gullCell = `${Math.floor(x / GULL_CELL)},${Math.floor(z / GULL_CELL)}`;
+    const gullsLeft = Math.max(0, GULL_CALLS_PER_CELL - (this.gullCalls.get(gullCell) ?? 0)) / GULL_CALLS_PER_CELL;
+    const gullHabitat = clamp01(Math.max(s.coast, s.water * 0.6)) * (1 - smoothstep(80, 300, agl)) * (0.15 + 0.85 * day);
+    const gullBed = this.env.samples?.gullBed ? (GULL_BED * gullHabitat * gullsLeft) / (1 + agl / 60) : 0;
+    this.gullBedGate.update(gullBed > AUDIBLE, now);
+    this.gullBedGain.set(gullBed, now);
+
     const high = 0.6 * smoothstep(1250, 1900, s.altitude);
     this.highGate.update(high > AUDIBLE, now);
     this.highGain.set(high, now);
@@ -464,10 +497,11 @@ export class AmbienceVoice {
     if (!spawnEvents) {
       return;
     }
-    const gullRate = !GULL_CALLS ? 0 : clamp01(Math.max(s.coast, s.water * 0.6)) * (1 - smoothstep(120, 380, agl)) * (0.15 + 0.85 * day);
+    const gullRate = gullsLeft > 0 && this.env.samples?.gullCalls ? clamp01(Math.max(s.coast, s.water * 0.6)) * (1 - smoothstep(120, 380, agl)) * (0.15 + 0.85 * day) : 0;
     this.gullTimer -= dt * gullRate;
     if (this.gullTimer <= 0) {
-      this.gullTimer = randExp(this.rng, 6.5);
+      this.gullTimer = randExp(this.rng, GULL_INTERVAL);
+      this.gullCalls.set(gullCell, (this.gullCalls.get(gullCell) ?? 0) + 1);
       this.spawnGull(agl);
     }
     const hornRate = s.urban * s.urban * (1 - smoothstep(180, 480, agl)) * (0.3 + 0.7 * day);

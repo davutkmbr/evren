@@ -26,3 +26,7 @@ the credits are kept anyway.
 | `flap/whoomps.m4a` | [Wing Flap (Flag Flapping) 5a](https://freesound.org/people/ani_music/sounds/244982/) | ani_music | CC0 1.0 |
 | `flap/whoomps.m4a` | [Wing Flap (Flag Flapping) 6a](https://freesound.org/people/ani_music/sounds/244981/) | ani_music | CC0 1.0 |
 | `flap/whoomps.m4a` | [Wing Flap (Flag Flapping) 7a](https://freesound.org/people/ani_music/sounds/244980/) | ani_music | CC0 1.0 |
+| `gull/calls.m4a` | [seagulls in town](https://freesound.org/people/bruno.auzet/sounds/690332/) | bruno.auzet | CC0 1.0 |
+| `gull/calls.m4a` | [Seagulls on the top of Princes Island (Turkey)](https://freesound.org/people/felix.blume/sounds/167129/) | felix.blume | CC0 1.0 |
+| `gull/calls.m4a` | [Herring Gull passing over roof](https://freesound.org/people/genghisattenborough/sounds/744592/) | genghisattenborough | CC0 1.0 |
+| `gull/bed.m4a` | [Seagulls in a quiet street, 6AM, Harbour City](https://freesound.org/people/etienne.leplumey/sounds/450529/) | etienne.leplumey | CC0 1.0 |

@@ -93,8 +93,8 @@ landmarks, ferries, gulls and night lights as you explore.
 - Third-person chase, first-person (POV) from the saddle, and an automatic cinematic camera.
 
 **Everything else**
-- Audio: recorded CC0 wind, wingbeats, thunder and rain (Freesound, `public/audio/`) with WebAudio synthesis for roars,
-  fire, sea, gulls and city ambience (and as the fallback for every recording).
+- Audio: recorded CC0 wind, wingbeats, thunder, rain and gulls (Freesound, `public/audio/`) with WebAudio synthesis for
+  roars, fire, sea and city ambience (and as the fallback for the flight and weather recordings).
 - Turkish UI: HUD, compass with landmark bearings, minimap, full map with teleport, discovery cards, photo mode, settings.
 - Four quality presets, dynamic resolution and auto exposure; 60 fps on an Apple M2 Max at 1600×900 ("high").
 

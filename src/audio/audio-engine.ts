@@ -347,12 +347,15 @@ export class AudioEngine {
     const fireDuck = this.fire.active ? 1 : 0;
     this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck), now);
 
-    this.ambience.update(frame.probe, dt, now, !this.paused);
+    this.ambience.update(frame.probe, dt, now, !this.paused, frame.listener.position.x, frame.listener.position.z);
     if (frame.rain > 1e-3) {
       this.samples?.request('rain');
     }
     if (frame.storm > 1e-3) {
       this.samples?.request('storm');
+    }
+    if (frame.probe.coast > 0.02 || frame.probe.water > 0.02) {
+      this.samples?.request('coast');
     }
     this.rain.update(this.paused ? 0 : frame.rain, this.pov, p.airspeed, now);
     const masking = clamp01(1.6 * speedLevel(p.airspeed)) * (1 - smoothstep(150, 450, finiteOr(frame.probe.agl, 1e3)));

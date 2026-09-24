@@ -63,7 +63,8 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
     clips, mood system, bond level.
   - Fixes from play: bridge wire and ship wake ribbons stretched into lines across the sky (per-vertex culling), fire
     now leaves from inside the open mouth, a compact discovery card shown only for new discoveries, and recorded CC0
-    wind, wingbeat, thunder and rain sounds (Freesound, `public/audio/`, calmer mix; synthesis as the fallback).
+    wind, wingbeat, thunder, rain and denoised gull sounds (Freesound, `public/audio/`, calmer mix; synthesis as the
+    fallback except for gulls).
 
 ## Detail tiers (how Istanbul gets detailed)
 

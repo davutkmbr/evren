@@ -4,7 +4,8 @@
  "decisions": [
   ".docs/assets/candidates/street-materials.md#decision-2026-09-24",
   ".docs/assets/candidates/cafe-street-props.md#decision-2026-09-24",
-  ".docs/assets/candidates/sounds.md#decision-2026-09-24"
+  ".docs/assets/candidates/sounds.md#decision-2026-09-24",
+  ".docs/assets/candidates/gulls.md#decision-2026-09-24"
  ],
  "assets": [
   {
@@ -1429,6 +1430,82 @@
    "download": "api",
    "download_url": "https://cdn.freesound.org/previews/450/450360_612689-hq.ogg",
    "shortlist": ".docs/assets/candidates/sounds.md",
+   "conditions": []
+  },
+  {
+   "id": "gulls_adalar_felixblume",
+   "name": "Seagulls on the top of Princes Island (Turkey)",
+   "source": "freesound",
+   "source_id": "167129",
+   "url": "https://freesound.org/people/felix.blume/sounds/167129/",
+   "licence": "CC0-1.0",
+   "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/",
+   "author": "felix.blume",
+   "attribution": null,
+   "kind": "sound",
+   "use": "Gull calls over the Bosphorus: sliced into the gull/calls round-robin",
+   "repeat_m": null,
+   "resolution": "hq-preview",
+   "download": "api",
+   "download_url": "https://cdn.freesound.org/previews/167/167129_1661766-hq.ogg",
+   "shortlist": ".docs/assets/candidates/gulls.md",
+   "conditions": []
+  },
+  {
+   "id": "gulls_harbour_brunoauzet",
+   "name": "seagulls in town",
+   "source": "freesound",
+   "source_id": "690332",
+   "url": "https://freesound.org/people/bruno.auzet/sounds/690332/",
+   "licence": "CC0-1.0",
+   "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/",
+   "author": "bruno.auzet",
+   "attribution": null,
+   "kind": "sound",
+   "use": "Gull calls: second source for the gull/calls round-robin",
+   "repeat_m": null,
+   "resolution": "hq-preview",
+   "download": "api",
+   "download_url": "https://cdn.freesound.org/previews/690/690332_11519060-hq.ogg",
+   "shortlist": ".docs/assets/candidates/gulls.md",
+   "conditions": []
+  },
+  {
+   "id": "gull_longcall_genghisattenborough",
+   "name": "Herring Gull passing over roof",
+   "source": "freesound",
+   "source_id": "744592",
+   "url": "https://freesound.org/people/genghisattenborough/sounds/744592/",
+   "licence": "CC0-1.0",
+   "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/",
+   "author": "genghisattenborough",
+   "attribution": null,
+   "kind": "sound",
+   "use": "Gull calls: one full long call in the round-robin",
+   "repeat_m": null,
+   "resolution": "hq-preview",
+   "download": "api",
+   "download_url": "https://cdn.freesound.org/previews/744/744592_205108-hq.ogg",
+   "shortlist": ".docs/assets/candidates/gulls.md",
+   "conditions": []
+  },
+  {
+   "id": "gulls_distant_etienneleplumey",
+   "name": "Seagulls in a quiet street, 6AM, Harbour City",
+   "source": "freesound",
+   "source_id": "450529",
+   "url": "https://freesound.org/people/etienne.leplumey/sounds/450529/",
+   "licence": "CC0-1.0",
+   "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/",
+   "author": "etienne.leplumey",
+   "attribution": null,
+   "kind": "sound",
+   "use": "Soft distant-gull bed on the waterfront (gull/bed loop)",
+   "repeat_m": null,
+   "resolution": "hq-preview",
+   "download": "api",
+   "download_url": "https://cdn.freesound.org/previews/450/450529_997174-hq.ogg",
+   "shortlist": ".docs/assets/candidates/gulls.md",
    "conditions": []
   }
  ]

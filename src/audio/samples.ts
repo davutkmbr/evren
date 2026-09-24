@@ -3,10 +3,10 @@ import { NOISE_RMS } from './dsp/noise';
 /**
  * Recorded CC0 sounds (public/audio/, built by scripts/audio/prep-sounds.mjs from tools/assets/approved.json).
  * Each group is fetched and decoded only when it is needed: the flight sounds (1.6 MB) before the engine starts, rain
- * (1.3 MB) when it starts raining, thunder (1.4 MB) with the first storm. Voices wait while a group is still loading
+ * (1.3 MB) when it starts raining, thunder (1.4 MB) with the first storm, gulls (1.5 MB) near the water. Voices wait while a group is still loading
  * and synthesize when it failed.
  */
-export type SampleGroup = 'flight' | 'rain' | 'storm';
+export type SampleGroup = 'flight' | 'rain' | 'storm' | 'coast';
 
 export interface LoopSample {
   readonly buffer: AudioBuffer;
@@ -30,6 +30,8 @@ interface SampleSlots {
   rainLight: LoopSample | null;
   thunderNear: SpriteSample | null;
   thunderFar: SpriteSample | null;
+  gullCalls: SpriteSample | null;
+  gullBed: LoopSample | null;
 }
 
 export interface SampleBank extends Readonly<SampleSlots> {
@@ -55,6 +57,10 @@ const GROUPS: Record<SampleGroup, ReadonlyArray<readonly [keyof SampleSlots, str
   storm: [
     ['thunderNear', 'thunder/near'],
     ['thunderFar', 'thunder/far'],
+  ],
+  coast: [
+    ['gullCalls', 'gull/calls'],
+    ['gullBed', 'gull/bed'],
   ],
 };
 
@@ -106,6 +112,8 @@ export class SampleLibrary {
       rainLight: null,
       thunderNear: null,
       thunderFar: null,
+      gullCalls: null,
+      gullBed: null,
     };
     const loads = new Map<SampleGroup, Promise<void>>();
     const loading = new Set<SampleGroup>();

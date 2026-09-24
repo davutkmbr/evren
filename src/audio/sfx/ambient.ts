@@ -1,141 +1,31 @@
-import { driveCurve } from '../dsp/curves';
 import { linearPoints } from '../dsp/envelope';
-import { Voice, type Placement, type SfxEnv } from './voice';
+import { Voice, pickSlot, type Placement, type SfxEnv } from './voice';
 
-let gullDrive: Float32Array<ArrayBuffer> | null = null;
-const GULL_LEVEL = 0.42;
-
-interface GullNote {
-  start: number;
-  dur: number;
-  /** Nominal fundamental (Hz). */
-  f: number;
-  amp: number;
-  /** Pitch the note swoops up to, then falls toward (ratios of f). */
-  rise: number;
-  fall: number;
-  /** Breath-noise share 0..1 (alarm notes are mostly noise). */
-  noise: number;
-}
-
-function gullNotes(rng: () => number, base: number): GullNote[] {
-  const notes: GullNote[] = [];
-  const type = rng();
-  if (type < 0.45) {
-    // Long call: a drawn "kyaaow" (big swoop up, long fall), then a run of "kya" notes, irregularly spaced and
-    // mostly speeding up while they fade.
-    const d0 = 0.32 + rng() * 0.16;
-    notes.push({ start: 0, dur: d0, f: base, amp: 1, rise: 1.16 + rng() * 0.1, fall: 0.6 + rng() * 0.08, noise: 0.45 });
-    let t = d0 + 0.07 + rng() * 0.1;
-    let gap = 0.12 + rng() * 0.06;
-    const n = 3 + Math.floor(rng() * 5);
-    for (let i = 0; i < n; i++) {
-      const d = (0.11 + rng() * 0.07) * (1 - i * 0.03);
-      notes.push({
-        start: t,
-        dur: d,
-        f: base * (1.08 + rng() * 0.1 - i * 0.012),
-        amp: (0.9 - i * 0.07) * (0.8 + rng() * 0.35),
-        rise: 1.06 + rng() * 0.08,
-        fall: 0.76 + rng() * 0.1,
-        noise: 0.45 + rng() * 0.25,
-      });
-      gap *= 0.84 + rng() * 0.3;
-      t += d + Math.max(0.05, gap);
-    }
-  } else if (type < 0.8) {
-    // Alarm "kek-kek-kek": short, low, harsh, mostly noise.
-    let t = 0;
-    const n = 3 + Math.floor(rng() * 4);
-    for (let i = 0; i < n; i++) {
-      const d = 0.07 + rng() * 0.05;
-      notes.push({ start: t, dur: d, f: base * (0.76 + rng() * 0.08), amp: 0.75 + rng() * 0.25, rise: 1.05, fall: 0.84, noise: 0.75 + rng() * 0.2 });
-      t += d + 0.07 + rng() * 0.1;
-    }
-  } else {
-    // Mew: one long plaintive descending note.
-    notes.push({ start: 0, dur: 0.55 + rng() * 0.25, f: base * 1.05, amp: 0.95, rise: 1.1, fall: 0.64, noise: 0.35 });
-  }
-  return notes;
-}
+/** Recorded gull call level (the calls are loudness-matched in prep). */
+const GULL_LEVEL = 0.67;
+/** Longer phrases are cut to this (s) with a fade: a call or two, never a long chorus. */
+const GULL_MAX = 1.8;
 
 /**
- * Yellow-legged gull (the Istanbul gull). Harsh, noisy voice: a sawtooth "syrinx" (plus an occasional subharmonic:
- * period doubling) on curved pitch swoops with irregular jitter, breath noise with a consonant burst at each onset,
- * random rasp AM, a hard asymmetric drive and two nasal formants; harmonics reach 6-8 kHz. Call types:
- * long call ("kyaaow" + "kya" run), alarm ("kek-kek"), mew (one long falling note).
+ * One recorded gull call phrase (public/audio/gull/: Adalar, harbour and herring gull calls, denoised), a random slot
+ * of the round-robin at a slightly random rate. Silent while the recordings load or when they are unavailable: the
+ * synthesized call it replaced was what players disliked. Returns the duration (s).
  */
 export function playGull(env: SfxEnv, when: number, place: Placement): number {
-  const rng = env.rng;
-  const v = new Voice(env, place, when, 0.5);
-  const t0 = v.t;
-  // Deeper than the herring gull: long-call notes around 0.75-1 kHz.
-  const base = 740 + rng() * 260;
-  const notes = gullNotes(rng, base);
-
-  // One pitch contour drives the fundamental (and the subharmonic): irregular jitter rides on it.
-  const pitch = v.constant(base);
-  const jitter = v.gain(base * 0.03);
-  v.noise(env.noise.buffet, 0, 5 + rng() * 4).connect(jitter).connect(pitch.offset);
-  const tone = v.gain(0);
-  const saw = v.osc('sawtooth', 0);
-  pitch.connect(saw.frequency);
-  saw.connect(tone);
-  if (rng() < 0.4) {
-    const sub = v.osc('sawtooth', 0);
-    const subPitch = v.gain(0.5);
-    const subLevel = v.gain(0.2 + rng() * 0.15);
-    pitch.connect(subPitch).connect(sub.frequency);
-    sub.connect(subLevel).connect(tone);
+  const calls = env.samples?.gullCalls;
+  if (!calls) {
+    return 0;
   }
-  const breathBp = v.filter('bandpass', 2300 + rng() * 900, 0.7);
-  const breath = v.gain(0);
-  v.noise(env.noise.white, 0, 0.9 + rng() * 0.2).connect(breathBp).connect(breath);
-
-  const rough = v.gain(0.6);
-  const roughDepth = v.gain(0.4);
-  v.noise(env.noise.buffet, 0, 3 + rng() * 3).connect(roughDepth).connect(rough.gain);
-  tone.connect(rough);
-  breath.connect(rough);
-  const drive = v.shaper((gullDrive ??= driveCurve(3, 0.25)));
-  const f1 = v.filter('peaking', 1700 + rng() * 500, 1.6, 7);
-  const f2 = v.filter('peaking', 3400 + rng() * 800, 2.2, 5);
-  const hp = v.filter('highpass', 600, 0.7);
-  const lp = v.filter('lowpass', 8000, 0.6);
-  const out = v.gain(GULL_LEVEL);
-  rough.connect(drive).connect(f1).connect(f2).connect(hp).connect(lp).connect(out);
-  v.toInput(out);
-
-  const fp = pitch.offset;
-  let end = 0;
-  for (const n of notes) {
-    const s = t0 + n.start;
-    const d = n.dur;
-    // Curved contour: a fast exponential swoop up, then a slower fall that starts at a random point.
-    fp.setValueAtTime(n.f * (0.78 + rng() * 0.08), s);
-    fp.setTargetAtTime(n.f * n.rise, s, d * (0.05 + rng() * 0.05));
-    fp.setTargetAtTime(n.f * n.fall, s + d * (0.25 + rng() * 0.2), d * (0.35 + rng() * 0.2));
-    const att = 0.008 + rng() * 0.025;
-    const a = n.amp;
-    linearPoints(tone.gain, s, [
-      [0, 0],
-      [att, a * 0.3],
-      [d * (0.3 + rng() * 0.15), a * (0.24 + rng() * 0.06)],
-      [d * 0.8, a * 0.18],
-      [d, 0],
-    ]);
-    const b = a * n.noise;
-    linearPoints(breath.gain, s, [
-      [0, 0],
-      [0.006, b * 1.7],
-      [0.022 + rng() * 0.01, b * 1.15],
-      [d * 0.6, b * 0.9],
-      [d, 0],
-    ]);
-    end = Math.max(end, n.start + d);
-  }
-  v.end(end + 0.1);
-  return end;
+  const v = new Voice(env, place, when, GULL_LEVEL);
+  const slot = pickSlot(calls, env.rng);
+  const rate = 0.96 + 0.08 * env.rng();
+  const length = Math.min(calls.slots[slot][1] / rate, GULL_MAX);
+  const fade = v.gain(1);
+  fade.gain.setValueAtTime(1, v.t + length - 0.35);
+  fade.gain.linearRampToValueAtTime(0, v.t + length);
+  v.slot(calls, slot, 0, rate).connect(fade).connect(v.input);
+  v.end(length + 0.05);
+  return length;
 }
 
 /** Distant two-tone car horn (Istanbul traffic), sometimes a double honk. */
