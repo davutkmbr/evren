@@ -9,7 +9,15 @@ const sandboxPages = Object.fromEntries(
 );
 
 export default defineConfig({
-  server: { port: 5199, strictPort: true, host: '127.0.0.1' },
+  server: {
+    port: 5199,
+    strictPort: true,
+    host: '127.0.0.1',
+    // Large generated or cached folders: served as static files, never watched (recompiles would flood the watcher).
+    watch: {
+      ignored: ['**/public/world/**', '**/assets-src/**', '**/private-assets/**', '**/.shots/**', '**/data/**', '**/tools/**', '**/scripts/**'],
+    },
+  },
   preview: { port: 5198, strictPort: true, host: '127.0.0.1' },
   worker: { format: 'es' },
   build: {
