@@ -1,7 +1,7 @@
 /**
  * Machine-wide queue for headless GPU browsers, shared by scripts/snap.mjs and scripts/walk-test.mjs (parallel agents
  * share one GPU while the user plays). Slots are lock directories under .shots/.snap-slots holding the owner's pid;
- * stale slots of dead processes are reclaimed. At most SNAP_MAX_CONCURRENT (default 2) browsers run at once.
+ * stale slots of dead processes are reclaimed. At most SNAP_MAX_CONCURRENT (default 1: the user plays on the same GPU) GPU jobs run at once.
  *
  *   import { chromium } from 'playwright-core';
  *   import { launchGpuBrowser, releaseSlot } from './lib/gpu-slot.mjs';
@@ -11,7 +11,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MAX_CONCURRENT = Number(process.env.SNAP_MAX_CONCURRENT ?? 2);
+export const MAX_CONCURRENT = Number(process.env.SNAP_MAX_CONCURRENT ?? 1);
 export const LOCK_ROOT = fileURLToPath(new URL('../../.shots/.snap-slots', import.meta.url));
 /** Headless system Chrome on the Metal ANGLE backend (real GPU). */
 export const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'];
