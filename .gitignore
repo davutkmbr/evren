@@ -13,3 +13,5 @@ private-assets/
 
 # Raw approved external assets (node scripts/data/fetch-assets.mjs); the street compiler ships optimised copies
 assets-src/
+
+__pycache__/

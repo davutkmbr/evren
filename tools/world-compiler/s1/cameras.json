@@ -1,0 +1,696 @@
+{
+  "format": "s1-cameras/1",
+  "frame": "Evren local metres (src/core/geo-coords.ts): +X east, +Y up, +Z south, origin 41.045 N 29.02 E, y = 0 at sea level",
+  "conventions": {
+    "fovDeg": "vertical field of view of the whole reference photo; render at width/height = aspect",
+    "position": "camera centre; for eye-level cameras y = groundYFormat0 + eyeHeight (re-snap to the compiled ground and move target by the same dy when the ground changes)",
+    "referencePhoto": "the photo the pose was fitted to (poseFrom); referencePhotos holds one photo per time, same place, framing may differ",
+    "poseConfidence": "high: footprint overlay within about 1 degree; medium: within about 3 degrees / 3 m; low: framing only"
+  },
+  "strip": {
+    "polyline": [
+      {
+        "name": "P0 pier square, bus stop İskele",
+        "position": [
+          235.8,
+          3.86,
+          5944.4
+        ],
+        "chainage": 0.0,
+        "tile": "2_59"
+      },
+      {
+        "name": "P1 quay-side pavement, Rıhtım Cd westbound",
+        "position": [
+          262.2,
+          4.05,
+          5945.4
+        ],
+        "chainage": 26.4,
+        "tile": "2_59"
+      },
+      {
+        "name": "P2 north kerb",
+        "position": [
+          284.5,
+          4.1,
+          5940.0
+        ],
+        "chainage": 49.3,
+        "tile": "2_59"
+      },
+      {
+        "name": "P3 island kerb (after 8.4 m, 2 lanes)",
+        "position": [
+          285.1,
+          4.34,
+          5949.6
+        ],
+        "chainage": 58.9,
+        "tile": "2_59"
+      },
+      {
+        "name": "P4 island",
+        "position": [
+          296.8,
+          4.55,
+          5953.4
+        ],
+        "chainage": 71.2,
+        "tile": "2_59"
+      },
+      {
+        "name": "P5 island",
+        "position": [
+          300.1,
+          4.71,
+          5960.7
+        ],
+        "chainage": 79.2,
+        "tile": "3_59"
+      },
+      {
+        "name": "P6 island tip, zebra start",
+        "position": [
+          293.8,
+          4.87,
+          5975.5
+        ],
+        "chainage": 95.3,
+        "tile": "2_59"
+      },
+      {
+        "name": "P7 zebra end (8.4 m carriageway + T3 track + 4.9 m busway)",
+        "position": [
+          306.2,
+          5.09,
+          5982.3
+        ],
+        "chainage": 109.4,
+        "tile": "3_59"
+      },
+      {
+        "name": "P8 Yasa Cd entrance (Tavus Sk corner)",
+        "position": [
+          321.9,
+          5.27,
+          5985.4
+        ],
+        "chainage": 125.4,
+        "tile": "3_59"
+      },
+      {
+        "name": "P9 Yasa Cd",
+        "position": [
+          335.0,
+          5.58,
+          5991.3
+        ],
+        "chainage": 139.8,
+        "tile": "3_59"
+      },
+      {
+        "name": "P10 Yasa × Mühürdar junction plaza",
+        "position": [
+          405.1,
+          7.16,
+          6032.1
+        ],
+        "chainage": 220.9,
+        "tile": "4_60"
+      },
+      {
+        "name": "P11 Yasa × Güneşlibahçe × Yağlıkçı İsmail (fish market)",
+        "position": [
+          442.2,
+          8.16,
+          6052.5
+        ],
+        "chainage": 263.2,
+        "tile": "4_60"
+      }
+    ],
+    "length": 263.2,
+    "tiles": {
+      "walkingScale": [
+        "1_59",
+        "2_58",
+        "2_59",
+        "3_59",
+        "3_60",
+        "4_60"
+      ],
+      "viewOnly": [
+        "2_57",
+        "3_58",
+        "4_59",
+        "5_59",
+        "5_60",
+        "3_61",
+        "4_61"
+      ]
+    },
+    "arrivalSquare": {
+      "note": "Pier square (Rıhtım / İskele Meydanı): the strip starts here; cameras c01-c04 stand in it. Polygon in x,z: quay edge (OSM coastline 755588171), Haldun Taner west front, Rıhtım Cd north kerb, 1926 pier apron.",
+      "polygon": [
+        [
+          156,
+          5918
+        ],
+        [
+          253,
+          5873
+        ],
+        [
+          254.5,
+          5898.8
+        ],
+        [
+          267.7,
+          5925.6
+        ],
+        [
+          284.5,
+          5936.0
+        ],
+        [
+          240.0,
+          5957.0
+        ],
+        [
+          192.0,
+          5980.0
+        ],
+        [
+          160.0,
+          5995.0
+        ],
+        [
+          150.0,
+          5937.0
+        ]
+      ]
+    }
+  },
+  "cameras": [
+    {
+      "id": "c01-pier-1926",
+      "label": "Pier square: the 1926 historic pier (İBB İskele Kütüphanesi), south-east oblique",
+      "position": [
+        208.0,
+        4.93,
+        5936.1
+      ],
+      "target": [
+        151.16,
+        8.07,
+        5924.54
+      ],
+      "fovDeg": 20.0,
+      "aspect": 1.5,
+      "times": [
+        "day",
+        "night"
+      ],
+      "referencePhoto": ".shots/s1/reference/c01-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c01-day.jpg",
+        "night": ".shots/s1/reference/c01-night.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "high",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 3.33,
+      "headingDeg": 281.5,
+      "pitchDeg": 3.1,
+      "chainage": 0.0,
+      "offStrip": 29.0,
+      "tilesInFrustum160m": [
+        "0_58",
+        "0_59",
+        "1_58",
+        "1_59",
+        "2_59"
+      ],
+      "recognise": [
+        "white rendered 2-storey pier with hipped red-tile roof, chimneys, small dome",
+        "arched loggia on the east side, pointed-arch windows with blue tile panels",
+        "square paving meets the pier apron without a step; bollards, benches"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c02-pier-square",
+      "label": "Pier square looking west-north-west: square paving, benches, simit cart, historic pier and a City Lines ferry",
+      "position": [
+        189.8,
+        4.86,
+        5937.6
+      ],
+      "target": [
+        146.28,
+        7.39,
+        5912.98
+      ],
+      "fovDeg": 61.1,
+      "aspect": 1.3333,
+      "times": [
+        "day"
+      ],
+      "referencePhoto": ".shots/s1/reference/c02-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c02-day.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 3.26,
+      "headingDeg": 299.5,
+      "pitchDeg": 2.9,
+      "chainage": 0.0,
+      "offStrip": 46.5,
+      "tilesInFrustum160m": [
+        "0_58",
+        "0_59",
+        "1_57",
+        "1_58",
+        "1_59"
+      ],
+      "recognise": [
+        "wide paved square (large grey setts/slabs, puddle hollows)",
+        "historic pier left of centre, ferry with yellow funnel to the right",
+        "lamp mast, simit cart, benches, bins, people crossing"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c03-new-pier",
+      "label": "Quay edge of the square looking north across the water at the long side of the new pier",
+      "position": [
+        215.0,
+        3.45,
+        5893.0
+      ],
+      "target": [
+        251.0,
+        4.0,
+        5792.0
+      ],
+      "fovDeg": 37.7,
+      "aspect": 1.3333,
+      "times": [
+        "day"
+      ],
+      "referencePhoto": ".shots/s1/reference/c03-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c03-day.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 1.85,
+      "headingDeg": 19.6,
+      "pitchDeg": 0.3,
+      "chainage": 0.0,
+      "offStrip": 55.4,
+      "tilesInFrustum160m": [
+        "2_57",
+        "2_58",
+        "3_57",
+        "3_58"
+      ],
+      "recognise": [
+        "82 m pier: 2-storey pavilion with hipped metal roof and glazed upper floor, long 1-storey arcade with arched windows",
+        "fender tyres along the quay wall, water in the lower half"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c04-haldun-taner",
+      "label": "Pier square looking east at the Haldun Taner (1927 market hall) south-west front and the arcaded sea side",
+      "position": [
+        212.0,
+        3.69,
+        5905.0
+      ],
+      "target": [
+        271.99,
+        7.89,
+        5903.95
+      ],
+      "fovDeg": 41.8,
+      "aspect": 1.3333,
+      "times": [
+        "day"
+      ],
+      "referencePhoto": ".shots/s1/reference/c04-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c04-day.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "high",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 2.09,
+      "headingDeg": 89.0,
+      "pitchDeg": 4.0,
+      "chainage": 0.0,
+      "offStrip": 46.0,
+      "tilesInFrustum160m": [
+        "2_58",
+        "2_59",
+        "3_58",
+        "3_59"
+      ],
+      "recognise": [
+        "2-storey block with Seljuk crest and blue tile bands above arched windows",
+        "deep canopy over the arcaded ground floor, lamp mast at left",
+        "large open square with people at 10-40 m"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c05-rihtim-tram",
+      "label": "İskele Cami T3 stop on Rıhtım Cd looking west: tram track, signalised crossing, kerbs and tactile paving (45 m south-west of the strip crossing)",
+      "position": [
+        271.1,
+        6.97,
+        6032.8
+      ],
+      "target": [
+        221.8,
+        6.97,
+        6024.46
+      ],
+      "fovDeg": 53.1,
+      "aspect": 1.3333,
+      "times": [
+        "day",
+        "dusk"
+      ],
+      "referencePhoto": ".shots/s1/reference/c05-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c05-day.jpg",
+        "dusk": ".shots/s1/reference/c05-dusk.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "high",
+      "eyeHeight": 1.5,
+      "heightAboveGround": 1.5,
+      "groundYFormat0": 5.47,
+      "headingDeg": 279.6,
+      "pitchDeg": 0.0,
+      "chainage": 103.0,
+      "offStrip": 61.2,
+      "tilesInFrustum160m": [
+        "1_59",
+        "1_60",
+        "2_59",
+        "2_60"
+      ],
+      "recognise": [
+        "\"İskele Cami\" oval tram-stop sign on a grey pole",
+        "embedded T3 rail in asphalt, zebra and yellow tactile strip",
+        "bench on concrete feet, blue bin, bollards, ATM row, metro glass pavilion"
+      ],
+      "offSpine": true,
+      "offSpineNote": "No freely licensed day photo exists at the strip crossing (P6-P7). This is the nearest Rıhtım Cd / T3 view, 61 m south-west of the crossing (tile 2_60); it judges the shared street kit (kerbs, embedded rail, zebra, tactile strips, signal poles, bench, bin). Everything behind the kit is outside the strip."
+    },
+    {
+      "id": "c06-yasa-west-above",
+      "label": "Yasa Cd west half from an upper window of the north-side row (about 7 m up, photo GPS position) looking west-north-west to the Rıhtım",
+      "position": [
+        385.7,
+        13.6,
+        6016.4
+      ],
+      "target": [
+        354.18,
+        5.1,
+        5991.77
+      ],
+      "fovDeg": 38.7,
+      "aspect": 1.2955,
+      "times": [
+        "day"
+      ],
+      "referencePhoto": ".shots/s1/reference/c06-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c06-day.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "low",
+      "eyeHeight": null,
+      "heightAboveGround": 7.0,
+      "groundYFormat0": 6.64,
+      "headingDeg": 308.0,
+      "pitchDeg": -12.0,
+      "chainage": 196.0,
+      "offStrip": 7.4,
+      "tilesInFrustum160m": [
+        "2_58",
+        "2_59",
+        "3_58",
+        "3_59",
+        "3_60"
+      ],
+      "recognise": [
+        "6 m pedestrian lane receding west with the Rıhtım at the end",
+        "striped retractable awnings, café tables, projecting signs",
+        "mixed façades: 1960s çıkma block, grey-clad refurb, white glass-balcony infill"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c07-junction-above",
+      "label": "Yasa × Mühürdar junction plaza and the Aya Efimia precinct from an upper floor (about 19 m up)",
+      "position": [
+        392.0,
+        26.5,
+        6030.0
+      ],
+      "target": [
+        421.54,
+        7.75,
+        6024.79
+      ],
+      "fovDeg": 53.5,
+      "aspect": 0.7101,
+      "times": [
+        "day"
+      ],
+      "referencePhoto": ".shots/s1/reference/c07-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c07-day.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "low",
+      "eyeHeight": null,
+      "heightAboveGround": 19.7,
+      "groundYFormat0": 6.81,
+      "headingDeg": 80.0,
+      "pitchDeg": -32.0,
+      "chainage": 209.0,
+      "offStrip": 4.8,
+      "tilesInFrustum160m": [
+        "4_59",
+        "4_60",
+        "5_59",
+        "5_60"
+      ],
+      "recognise": [
+        "Aya Efimia gate and bell tower, red-tile roofs of the precinct",
+        "junction plaza with planters, bollards, lamp post, umbrellas"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c08-aya-efimia-gate",
+      "label": "Junction plaza, Aya Efimia gate in the yellow precinct wall, bell tower behind",
+      "position": [
+        401.1,
+        8.76,
+        6030.8
+      ],
+      "target": [
+        420.23,
+        12.9,
+        6024.95
+      ],
+      "fovDeg": 55.6,
+      "aspect": 0.5628,
+      "times": [
+        "day",
+        "night"
+      ],
+      "referencePhoto": ".shots/s1/reference/c08-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c08-day.jpg",
+        "night": ".shots/s1/reference/c08-night.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 7.11,
+      "headingDeg": 73.0,
+      "pitchDeg": 11.7,
+      "chainage": 217.0,
+      "offStrip": 0.9,
+      "tilesInFrustum160m": [
+        "4_59",
+        "4_60",
+        "5_59",
+        "5_60"
+      ],
+      "recognise": [
+        "yellow precinct wall with gabled gate, arched fanlight, cross",
+        "grey (2024) double door, octagonal-domed bell tower, plane tree",
+        "grey concrete pavers with dark accent pavers"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c09-fountain-wall",
+      "label": "Yasa Cd north side: precinct wall with the wooden gate, bench and the Sürmeli Ali Paşa Çeşmesi (1693/94)",
+      "position": [
+        419.0,
+        9.14,
+        6046.5
+      ],
+      "target": [
+        425.84,
+        10.19,
+        6027.71
+      ],
+      "fovDeg": 39.2,
+      "aspect": 1.3335,
+      "times": [
+        "day",
+        "night"
+      ],
+      "referencePhoto": ".shots/s1/reference/c09-day.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c09-day.jpg",
+        "night": ".shots/s1/reference/c09-night.jpg"
+      },
+      "poseFrom": "day",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 7.54,
+      "headingDeg": 20.0,
+      "pitchDeg": 3.0,
+      "chainage": 240.0,
+      "offStrip": 5.9,
+      "tilesInFrustum160m": [
+        "4_58",
+        "4_59",
+        "4_60",
+        "5_59"
+      ],
+      "recognise": [
+        "long yellow wall with a two-tone paint band at about 1 m",
+        "wooden double gate under a moulded hood, wooden bench",
+        "küfeki-stone fountain with pointed-arch niche and marble basin at the right"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c10-guneslibahce",
+      "label": "Strip end at the fish market junction looking south-west down Güneşlibahçe Sk between fish, produce and deli stalls",
+      "position": [
+        437.0,
+        9.81,
+        6053.9
+      ],
+      "target": [
+        415.8,
+        11.21,
+        6087.82
+      ],
+      "fovDeg": 53.0,
+      "aspect": 1.3351,
+      "times": [
+        "day",
+        "night"
+      ],
+      "referencePhoto": ".shots/s1/reference/c10-night.jpg",
+      "referencePhotos": {
+        "day": ".shots/s1/reference/c10-day.jpg",
+        "night": ".shots/s1/reference/c10-night.jpg"
+      },
+      "poseFrom": "night",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 8.21,
+      "headingDeg": 212.0,
+      "pitchDeg": 2.0,
+      "chainage": 259.0,
+      "offStrip": 3.7,
+      "tilesInFrustum160m": [
+        "2_61",
+        "3_60",
+        "3_61",
+        "3_62",
+        "4_60",
+        "4_61",
+        "4_62"
+      ],
+      "recognise": [
+        "awnings on both sides nearly meeting over the lane",
+        "fish on tilted crushed-ice tables, produce crates, hanging dried peppers and aubergines",
+        "dense crowd, pendant lamp on a span wire"
+      ],
+      "offSpine": false
+    },
+    {
+      "id": "c11-yasa-entrance-night",
+      "label": "Yasa Cd entrance at the Tavus Sk corner looking east-south-east into the lane (night only: no free day photo here)",
+      "position": [
+        317.0,
+        6.87,
+        5987.0
+      ],
+      "target": [
+        354.09,
+        4.77,
+        6001.98
+      ],
+      "fovDeg": 56.8,
+      "aspect": 1.3333,
+      "times": [
+        "night"
+      ],
+      "referencePhoto": ".shots/s1/reference/c11-night.jpg",
+      "referencePhotos": {
+        "night": ".shots/s1/reference/c11-night.jpg"
+      },
+      "poseFrom": "night",
+      "poseConfidence": "medium",
+      "eyeHeight": 1.6,
+      "heightAboveGround": 1.6,
+      "groundYFormat0": 5.27,
+      "headingDeg": 112.0,
+      "pitchDeg": -3.0,
+      "chainage": 126.0,
+      "offStrip": 5.0,
+      "extra": true,
+      "tilesInFrustum160m": [
+        "3_59",
+        "3_60",
+        "4_60"
+      ],
+      "recognise": [
+        "Bambi Cafe row on the left: masonry front, awnings, café chairs",
+        "shuttered 1930 lottery kiosk with rolled kepenk on the right",
+        "large grey pavers with a manhole, the lane vanishing ESE under warm lamps"
+      ],
+      "offSpine": false
+    }
+  ]
+}

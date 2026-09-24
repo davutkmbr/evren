@@ -32,7 +32,8 @@
     "snap": "node scripts/snap.mjs",
     "walk-test": "node scripts/walk-test.mjs",
     "compile:world": "tsx tools/world-compiler/src/cli.ts",
-    "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json"
+    "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",
+    "blender": "node scripts/blender-run.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"

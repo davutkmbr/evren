@@ -1,16 +1,22 @@
 /**
- * Street sandbox: walks the compiled greybox street tiles (tools/world-compiler, format 0) at eye level.
+ * Street sandbox: walks the compiled street tiles (tools/world-compiler, format 0 or 1) at eye level.
  *   /sandbox/street.html                              free walk from the first route's start (WASD, Shift, mouse)
  *   ?route=rihtim-carsi | altiyol-sureyya             scripted walk along the walk graph (see src/street/routes.ts)
  *   &speed=1.4                                        walking speed (m/s)
  *   &autostart=0                                      stay at the start until __street.play()
  *   &at=x,z,hdg[,pitch]                               free walk from a local-metre position (compass degrees)
+ *   &t=day | dusk | night                             time of day (format 1: manifest lights and emissive materials)
  *   &area=kadikoy &radius=300 &shadows=0 &hud=0 &fov=60 &dpr=1 &fps=N (0 = uncapped; automated browsers default 24)
- * Console / tooling: __street (routes, state, play, pause, setProgress, record, report...), __evren (ready, pending, stats).
+ * Format 1 tiles switch LODs by the index's distance bands and bring prop instances and light lists; the nearest lit
+ * manifest lights drive a fixed pool of point and spot lights (src/street/lighting.ts). Preview quality: WebGL2,
+ * standard materials, no custom shaders.
+ * Console / tooling: __street (routes, state, play, pause, setProgress, time, lights, record, report...),
+ * __evren (ready, pending, stats).
  * Run `npm run compile:world -- --area kadikoy` first: tiles are served from public/world/<area>/.
  */
 import * as THREE from 'three';
-import { fetchJson, SUPPORTED_FORMAT, type StreetIndex, type WalkGraphData } from '../src/street/format';
+import { fetchJson, SUPPORTED_FORMATS, type StreetIndex, type WalkGraphData } from '../src/street/format';
+import { applyEmissive, LightPool, parseTimeOfDay, PRESETS, type TimeOfDay } from '../src/street/lighting';
 import { TileStreamer } from '../src/street/tile-streamer';
 import { WalkGraph, type WalkPath, type PathSample } from '../src/street/walk-graph';
 import { STREET_ROUTES, type StreetRoute } from '../src/street/routes';
@@ -28,9 +34,10 @@ const SPEED = num('speed', 1.4);
 const LOOK_AHEAD_M = 12;
 const LOOK_BEHIND_M = 3;
 const EYE_PITCH = -0.05;
-const SKY = new THREE.Color(0x9ec3e6);
-const SUN_AZIMUTH_DEG = num('sunaz', 230);
-const SUN_ELEVATION_DEG = num('sunel', 42);
+let timeOfDay: TimeOfDay = parseTimeOfDay(params.get('t'));
+const SKY = new THREE.Color(PRESETS[timeOfDay].sky);
+const SUN_AZIMUTH_DEG = num('sunaz', PRESETS[timeOfDay].sunAzimuthDeg);
+const SUN_ELEVATION_DEG = num('sunel', PRESETS[timeOfDay].sunElevationDeg);
 const SHADOW_HALF = 70;
 const SHADOW_MAP = 2048;
 
@@ -55,11 +62,13 @@ const camera = new THREE.PerspectiveCamera(num('fov', 60), 1, 0.1, 1200);
 
 const hemi = new THREE.HemisphereLight(0xdce8ff, 0x8a7d66, 1.9);
 const sun = new THREE.DirectionalLight(0xfff0dc, 2.4);
-const sunDir = new THREE.Vector3(
-  Math.sin(THREE.MathUtils.degToRad(SUN_AZIMUTH_DEG)) * Math.cos(THREE.MathUtils.degToRad(SUN_ELEVATION_DEG)),
-  Math.sin(THREE.MathUtils.degToRad(SUN_ELEVATION_DEG)),
-  -Math.cos(THREE.MathUtils.degToRad(SUN_AZIMUTH_DEG)) * Math.cos(THREE.MathUtils.degToRad(SUN_ELEVATION_DEG)),
-).normalize();
+const sunDir = new THREE.Vector3();
+function setSunDirection(azimuthDeg: number, elevationDeg: number): void {
+  const az = THREE.MathUtils.degToRad(azimuthDeg);
+  const el = THREE.MathUtils.degToRad(elevationDeg);
+  sunDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+}
+setSunDirection(SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG);
 sun.castShadow = renderer.shadowMap.enabled;
 sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
 sun.shadow.camera.left = -SHADOW_HALF;
@@ -85,10 +94,33 @@ scene.add(sea);
 /** Keeps the shadow frustum centred on the camera, snapped to shadow texels so edges do not crawl while walking. */
 const lightRight = new THREE.Vector3();
 const lightUp = new THREE.Vector3();
-{
+function updateLightBasis(): void {
   const back = sunDir.clone().negate();
   lightRight.crossVectors(new THREE.Vector3(0, 1, 0), back).normalize();
   lightUp.crossVectors(back, lightRight).normalize();
+}
+updateLightBasis();
+
+/** Manifest lights (format 1) drive a fixed pool of point and spot lights; emissive materials follow the time of day. */
+const lightPool = new LightPool(num('points', 24), num('spots', 24));
+scene.add(lightPool.group);
+let emissiveCount = -1;
+
+function applyTimeOfDay(t: TimeOfDay): void {
+  timeOfDay = t;
+  const p = PRESETS[t];
+  SKY.setHex(p.sky);
+  scene.background = SKY;
+  (scene.fog as THREE.Fog).color.copy(SKY);
+  (scene.fog as THREE.Fog).near = p.fogNear;
+  hemi.color.setHex(p.hemiSky);
+  hemi.groundColor.setHex(p.hemiGround);
+  hemi.intensity = p.hemiIntensity;
+  sun.color.setHex(p.sunColor);
+  sun.intensity = p.sunIntensity;
+  setSunDirection(params.has('sunaz') ? num('sunaz', p.sunAzimuthDeg) : p.sunAzimuthDeg, params.has('sunel') ? num('sunel', p.sunElevationDeg) : p.sunElevationDeg);
+  updateLightBasis();
+  emissiveCount = -1;
 }
 const focus = new THREE.Vector3();
 function placeSun(x: number, y: number, z: number): void {
@@ -157,6 +189,7 @@ let lastDrawCalls = 0;
 let lastTriangles = 0;
 let lastCpuMs = 0;
 let hudTimer = 0;
+let lightTimer = 0;
 const sample: PathSample = { x: 0, y: 0, z: 0, dirX: 0, dirZ: -1 };
 const ahead: PathSample = { x: 0, y: 0, z: 0, dirX: 0, dirZ: -1 };
 const behind: PathSample = { x: 0, y: 0, z: 0, dirX: 0, dirZ: -1 };
@@ -260,6 +293,16 @@ function frame(now: number): void {
   walker.apply(camera);
   streamer?.update(camera.position.x, camera.position.z);
   placeSun(camera.position.x, walker.groundY, camera.position.z);
+  lightTimer -= frameMs;
+  if (streamer && lightTimer <= 0) {
+    lightTimer = 250;
+    lightPool.update(streamer.liveLights(), camera.position.x, camera.position.z, PRESETS[timeOfDay]);
+    const em = streamer.emissiveMaterials();
+    if (em.size !== emissiveCount) {
+      emissiveCount = em.size;
+      applyEmissive(em, PRESETS[timeOfDay]);
+    }
+  }
 
   renderer.render(scene, camera);
   lastDrawCalls = renderer.info.render.calls;
@@ -305,8 +348,9 @@ function drawHud(): void {
     mode === 'route' && path && route
       ? `route  ${route.label}  ${walked.toFixed(0)} / ${path.length.toFixed(0)} m  @ ${SPEED} m/s${walking ? '' : playRequested ? '  (waiting for tiles)' : '  (paused)'}`
       : 'free   WASD / arrows, Shift = run, mouse = look (click to lock)';
+  const lodLine = st && streamer && streamer.format >= 1 ? `lod    ${Object.entries(st.lodLive).map(([k, v]) => `LOD${k} ${v}`).join('  ')}   props ${st.instancesLive}   lights ${lightPool.assigned}/${lightPool.candidates} lit (${st.lightsLive} live)` : null;
   hudEl.textContent = [
-    `Kadıköy street layer · greybox format 0`,
+    `Kadıköy street layer · format ${streamer?.format ?? '?'} · ${timeOfDay}`,
     where,
     `pos    x ${walker.x.toFixed(1)}  z ${walker.z.toFixed(1)}  ground ${walker.groundY.toFixed(2)} m  eye ${walker.eyeHeight} m  hdg ${head.toFixed(0)}°`,
     `frame  median ${f.medianMs.toFixed(1)} ms  p99 ${f.p99Ms.toFixed(1)} ms  max ${f.maxMs.toFixed(1)} ms  (${f.medianMs > 0 ? (1000 / f.medianMs).toFixed(0) : '-'} fps, last 3 s)`,
@@ -314,6 +358,7 @@ function drawHud(): void {
     st
       ? `tiles  ${st.tilesLive} live  ${st.tilesLoading} loading  ${st.tilesQueued} queued  ${(st.trianglesLive / 1e6).toFixed(2)} M tris  ${(st.bytesLive / 1048576).toFixed(1)} MB  load ${st.loadMsMedian} ms med`
       : 'tiles  loading index...',
+    ...(lodLine ? [lodLine] : []),
   ].join('\n');
 }
 
@@ -326,8 +371,8 @@ async function boot(): Promise<void> {
   let walkData: WalkGraphData;
   try {
     index = await fetchJson<StreetIndex>(`${BASE_URL}index.json`);
-    if (index.format !== SUPPORTED_FORMAT) {
-      throw new Error(`format ${index.format} is not supported (expected ${SUPPORTED_FORMAT})`);
+    if (!SUPPORTED_FORMATS.includes(index.format)) {
+      throw new Error(`format ${index.format} is not supported (expected ${SUPPORTED_FORMATS.join(' or ')})`);
     }
     walkData = await fetchJson<WalkGraphData>(`${BASE_URL}${index.walkGraph.file}`);
   } catch (err) {
@@ -345,6 +390,7 @@ async function boot(): Promise<void> {
     index,
     radius: num('radius', 300),
     shadows: renderer.shadowMap.enabled,
+    anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()),
     compile: (o) => renderer.compileAsync(o, camera, scene),
   });
   scene.add(streamer.root);
@@ -447,6 +493,13 @@ const streetApi = {
   },
   settleGround,
   setFpsCap,
+  /** Switches the time of day ('day' | 'dusk' | 'night'). */
+  time: (t: TimeOfDay) => {
+    applyTimeOfDay(parseTimeOfDay(t));
+    lightTimer = 0;
+  },
+  /** Light pool and manifest light counts. */
+  lights: () => ({ time: timeOfDay, assigned: lightPool.assigned, candidates: lightPool.candidates, live: streamer?.liveLights().length ?? 0, emissiveMaterials: streamer?.emissiveMaterials().size ?? 0 }),
   hud: (on: boolean) => {
     hudEl.style.display = on ? '' : 'none';
   },
@@ -493,6 +546,12 @@ const evrenApi = {
       trianglesLive: st?.trianglesLive ?? 0,
       bytesLiveMB: st ? Math.round((st.bytesLive / 1048576) * 10) / 10 : 0,
       tileLoadMsMedian: st?.loadMsMedian ?? 0,
+      format: streamer?.format ?? -1,
+      time: timeOfDay,
+      lodLive: st?.lodLive ?? {},
+      instancesLive: st?.instancesLive ?? 0,
+      lightsAssigned: lightPool.assigned,
+      lightsLive: st?.lightsLive ?? 0,
     };
   },
 };
@@ -506,4 +565,5 @@ renderer.setAnimationLoop((now) => {
     groundSettled = true;
   }
 });
+applyTimeOfDay(timeOfDay);
 void boot();
