@@ -36,6 +36,11 @@ const PROBE_KEYS: ReadonlyArray<keyof AmbienceProbe> = ['agl', 'altitude', 'urba
 const WAVE_POINTS = 96;
 const WAVE_SHAPES = 6;
 const AUDIBLE = 1e-4;
+/**
+ * Spontaneous gull calls. Off: players found the synthesized calls disturbing (Sep 2026); they return as recorded
+ * CC0 calls once those are approved. spawnGull() stays for explicit calls and the offline cases.
+ */
+const GULL_CALLS = false;
 
 interface WaveChannel {
   gain: GainNode;
@@ -459,7 +464,7 @@ export class AmbienceVoice {
     if (!spawnEvents) {
       return;
     }
-    const gullRate = clamp01(Math.max(s.coast, s.water * 0.6)) * (1 - smoothstep(120, 380, agl)) * (0.15 + 0.85 * day);
+    const gullRate = !GULL_CALLS ? 0 : clamp01(Math.max(s.coast, s.water * 0.6)) * (1 - smoothstep(120, 380, agl)) * (0.15 + 0.85 * day);
     this.gullTimer -= dt * gullRate;
     if (this.gullTimer <= 0) {
       this.gullTimer = randExp(this.rng, 6.5);
