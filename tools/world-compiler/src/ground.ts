@@ -221,8 +221,12 @@ export interface GroundStats {
   quayWallM: number;
 }
 
-/** Emits the ground of `tile` into `mesh`. */
-export function buildGround(tile: WorldBounds, f: Foundation, heights: GroundHeights, land: (x: number, z: number) => number, mesh: TileMesh): GroundStats {
+/**
+ * Emits the ground of `tile` into `mesh`. `blockAt` (format 1: the emitted solids, cover.ts) names the block standing
+ * on a point; a cell is left out only when one block stands on all four corners. Without it (format 0) any OSM
+ * outline counts, as in S0.
+ */
+export function buildGround(tile: WorldBounds, f: Foundation, heights: GroundHeights, land: (x: number, z: number) => number, mesh: TileMesh, blockAt?: (x: number, z: number) => number): GroundStats {
   const s = f.surface;
   const nx = Math.round((tile.maxX - tile.minX) / CELL);
   const nz = Math.round((tile.maxZ - tile.minZ) / CELL);
@@ -230,7 +234,7 @@ export function buildGround(tile: WorldBounds, f: Foundation, heights: GroundHei
   const L = new Float32Array(W * (nz + 1));
   const D = new Float32Array(W * (nz + 1));
   const P = new Float32Array(W * (nz + 1));
-  const inside = new Uint8Array(W * (nz + 1));
+  const inside = new Int32Array(W * (nz + 1));
   for (let j = 0; j <= nz; j++) {
     for (let i = 0; i <= nx; i++) {
       const x = tile.minX + i * CELL;
@@ -239,7 +243,7 @@ export function buildGround(tile: WorldBounds, f: Foundation, heights: GroundHei
       L[k] = land(x, z);
       D[k] = s.distance(x, z);
       P[k] = s.pathDistance(x, z);
-      inside[k] = f.footprints.inside(x, z) ? 1 : 0;
+      inside[k] = blockAt ? blockAt(x, z) : f.footprints.inside(x, z) ? 1 : 0;
     }
   }
   const stats: GroundStats = { cells: nx * nz, skippedInBuildings: 0, kerbWallM: 0, kerbStepM: [0, 0, 0, 0], quayWallM: 0 };
@@ -284,7 +288,7 @@ export function buildGround(tile: WorldBounds, f: Foundation, heights: GroundHei
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
       const k = j * W + i;
-      if (inside[k] && inside[k + 1] && inside[k + W] && inside[k + W + 1]) {
+      if (inside[k] && inside[k + 1] === inside[k] && inside[k + W] === inside[k] && inside[k + W + 1] === inside[k]) {
         stats.skippedInBuildings++;
         continue;
       }

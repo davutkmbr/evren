@@ -12,12 +12,16 @@ npm run compile:world -- --area kadikoy                                         
 npm run typecheck:world
 ```
 
+The compiler works for any Istanbul district: everything district-flavoured (typology mix, paint, shop names, which
+hand-authored steps run, the default strip) comes from a [district profile](#district-profiles) chosen by the area
+id; areas without their own profile use the generic one.
+
 | flag | default | effect |
 |---|---|---|
 | `--area <id>` | `kadikoy` | street-profile area of `src/world/osm/area.ts` |
 | `--out <dir>` | `public/world/<area>` | output folder (deleted and rewritten) |
 | `--format 0\|1` | `1` | output format |
-| `--strip auto\|none\|minX,minZ,maxX,maxZ` | `auto` | format 1: the rect compiled at full detail ([Strip](#strip)) |
+| `--strip auto\|none\|minX,minZ,maxX,maxZ` | `auto` | format 1: the rect compiled at full detail ([Strip](#strip); `auto` = the district profile's) |
 | `--tiles all\|strip` | `all` | `strip` writes only the strip's tiles (fast iteration; the graphs stay whole) |
 | `--tex-max <px>` | none | caps every processed texture (defaults: base colour and normal 2048, ORM 1024) |
 | `--all-props` | off | processes every registered prop, also those no tile places (inspection, Blender) |
@@ -97,7 +101,7 @@ Geometry rules:
 - **Buildings.** There is one block per footprint. Outlines with `building:part` children are replaced by their
   parts (Simple 3D Buildings). The height is `height`, or else (`building:levels` + `roof:levels`) × 3.1 m, or else a
   default. The default is 1 level for small kinds or footprints under 25 m², 2 for houses and pier buildings, 3 for
-  places of worship and 5 otherwise. The block starts 0.3 m below the lowest ground under the footprint, or at
+  places of worship and the district profile's `buildings.defaultLevels` otherwise (Kadıköy 5, Eminönü and generic 4). The block starts 0.3 m below the lowest ground under the footprint, or at
   `min_height`. Roofs are flat, and `building=roof` becomes a 0.4 m canopy slab.
 - **Doors.** A door is a recess 0.35 m deep. It has a door leaf at the back, jambs, a head and a threshold, and the
   wall above and below the opening stays solid. The threshold is at the ground height 0.6 m in front of the door.
@@ -106,7 +110,10 @@ Geometry rules:
   kerbs, quay edges and material borders are straight, not stair-stepped.
   - The carriageway sits at the terrain height. Everything else is raised by the kerb lift from `StreetSurface`: 15 cm
     next to kerbed streets, tapering where they meet kerbless lanes. A vertical kerb face closes the step.
-  - The land ends in a quay wall down to y = -1.5 m. Cells that lie entirely inside one building are left out.
+  - The land ends in a quay wall down to y = -1.5 m. Cells that lie entirely inside one building are left out. In
+    format 1 that is one block the tiles emit (`src/cover.ts`), with its courtyards open: ground under outlines whose
+    parts leave gaps, under buildings outside the tile rect, in courtyards and between two blocks stays, so ground and
+    blocks cover the area without holes. Format 0 keeps the S0 rule (any OSM outline, courtyards included).
   - Tram platforms are not raised in format 0.
 - **Terrain and shore.** Heights come from the geo build (a 23 m grid) and are held at least at 0.95 m on OSM land.
   The shoreline is the OSM coastline, not the geo coast grid, which misses the reclaimed Kadıköy quays by up to 90 m.
@@ -118,10 +125,10 @@ The types are in `src/format.ts` (`TileManifest`). All positions are in world me
 | field | content |
 |---|---|
 | `bounds`, `origin`, `content` | Nominal square, glb node translation, and the world AABB of the geometry. Buildings overhang their tile: each building belongs to the tile of its footprint centroid. |
-| `buildings[]` | `id` (`w<way>` / `r<relation>`, with a `-k` suffix for further polygons of the same relation), `osmId`, `kind`, `part`, `name` (OSM, data only), `footprint` (flat `[x, z, ...]`, positive shoelace area, for colliders), `holes`, `groundY`, `bottomY`, `topY`, `height`, `heightSource` (`height` \| `levels` \| `default`), `levels` and `doors` (ids). |
+| `buildings[]` | `id` (`w<way>` / `r<relation>`, with a `-k` suffix for further polygons of the same relation), `osmId`, `kind`, `part`, `name` (OSM, data only), `footprint` (flat `[x, z, ...]`, positive shoelace area, for colliders), `holes`, `groundY`, `bottomY`, `topY`, `height`, `heightSource` (`height` \| `levels` \| `default`), `levels`, `doors` (ids) and, format 1, `landmark` ([District profiles](#district-profiles)). |
 | `doors[]` | `id` (`<building>/d<k>`), `building`, `position` (centre of the opening at threshold height, on the façade plane), `normal` (outward), `width`, `height`, `depth`, `inferred`, `entrance` (the `entrance=*` value, or `shop`) and `pois` (ids). |
 | `pois[]` | `id` (`p<index of the point in the data file>`), `kind` (`shop=*`, `craft=*`, `amenity=*` places, `tourism=*`), `osmName` (data only: the businesses shown in the game are fictional), `position`, `building` and `door`. A POI belongs to its building's tile. |
-| `lamps[]` | `position` (foot of the post or bracket), `kind` (`arm`, `armLow`, `double`, `lantern`, `wall`), `heading`, `light` (`sodium`, `led`, `warm`) and `inferred`. OSM maps no lamps in Kadıköy, so every lamp comes from the street lighting rules. |
+| `lamps[]` | `position` (foot of the post or bracket), `kind` (`arm`, `armLow`, `double`, `lantern`, `wall`), `heading`, `light` (`sodium`, `led`, `warm`) and `inferred`. OSM maps no lamps in Kadıköy or Eminönü, so every lamp there comes from the street lighting rules. |
 | `trees[]`, `benches[]` | Taken from OSM nodes (`natural=tree`, `amenity=bench`, `leisure=picnic_table`), with the tags they carry. |
 | `spawns[]` | Up to 4 walk-graph vertices per tile, at least 25 m apart (`kind: "walk"`), plus the walk vertex nearest each pier or ferry terminal (`kind: "pier"`). Each has a `heading` along the walkway. |
 
@@ -355,20 +362,86 @@ Sets that are not downloaded yet are skipped the same way.
 ### Strip
 
 The strip is the rect compiled at full detail (`detail: "full"`); every other tile is greybox (format 0 geometry,
-textured materials, LOD0 = LOD1). The rect comes from, in order: `--strip minX,minZ,maxX,maxZ`;
-`tools/world-compiler/s1/cameras.json` (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
-`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres);
-`.docs/street/s1-strip.md` (the first line naming a `rect` followed by four numbers); else the bbox of the
-`rihtim-carsi` walk route (`src/street/routes.ts`) grown by 30 m. `--strip none` makes every tile greybox. Tiles
-whose square intersects the rect are full-detail.
+textured materials, LOD0 = LOD1). The rect comes from `--strip minX,minZ,maxX,maxZ`, else from the district profile's
+`strip`: its `rect` (Eminönü), else a camera file (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
+`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres; Kadıköy:
+`tools/world-compiler/s1/cameras.json`), else a spec file (the first line naming a `rect` followed by four numbers;
+Kadıköy: `.docs/street/s1-strip.md`), else the bbox of a walk route of `src/street/routes.ts` grown by 30 m (Kadıköy:
+`rihtim-carsi`). A profile without a strip (the generic one) and `--strip none` make every tile greybox. Tiles whose
+square intersects the rect are full-detail. `index.strip.source` says which source won (`cli`, `district:<id>`, a
+file or `route:<id>`).
+
+## District profiles
+
+`src/district.ts` defines `DistrictProfile`; the profiles live in `tools/world-compiler/districts/<area>.ts` and are
+listed by area id in `districts/index.ts`. `cli.ts` selects the profile of `--area` before anything else
+(`useDistrict`); an area without an entry gets `districts/generic.ts`. Every module reads the active profile with
+`district()` (one compile run compiles one area). The data-driven core runs for every area: OSM geometry, the façade
+kit, shopfronts from POIs, kerbs and sidewalks, paving, weathering, props, lamps from the lighting rules, the walk
+and lane graphs. A profile holds only what is district-flavoured:
+
+| field | what | Kadıköy | Eminönü | generic |
+|---|---|---|---|---|
+| `strip` | default full-detail rect ([Strip](#strip)) | S1 cameras / spec / `rihtim-carsi` | the rect of the dragon's landing area | none |
+| `cameras` | hand-fitted reference cameras: S1 spine, arrival square, off-spine kit tiles, clear foregrounds, the c05 stop | `s1/cameras.json` | none | none |
+| `handAuthored` | hand-authored steps that run: `heroes` (piers, Haldun Taner, İskele Camii, Aya Efimia, ferry, skyline), `soul`, `precinct` (Aya Efimia wall), `interiors` (the café) | all | none | none |
+| `buildings` | default levels, typology weights by footprint area and kind, storey ranges, per-building spec rows, hero ids and heights, landmark ids, shuttered shops, wear bias | S1 spec table | hans and masonry (T2) with commercial infill (T3), few apartments; Mısır Çarşısı a landmark | mixed |
+| `facade` | paint per typology and trims, T1 balcony layout weights, T2 balcony share, AC unit share, flag colours, the market end | photo-sampled paint, yellow-navy flags, fish end | older, muted stone and ochre, few balconies, fewer AC units | neutral |
+| `shops` | first words of the fictional names (place words of the district), filler trades, market filler, fallback trades, POI kind → trade overrides | Rıhtım, İskele, Vapur... | Eminönü, Tahtakale, Haliç, Mahmutpaşa...; spice, nuts, coffee, textiles, housewares, hardware, jewellery | no place words |
+| `street.crowd` | placeholder crowd density (people / m²) on pedestrian streets, pavements and squares where no reference spine drives it | (spine-driven) | 0.08 / 0.04 / 0.03 | 0.07 / 0.03 / 0.03 |
+
+- Without reference cameras the whole street-kit area counts as the spine: the spine-gated rules (quay benches,
+  junction planters, café seat use, browsers at shop doors, traffic before signalised crossings) run everywhere, and
+  the crowd follows `street.crowd` along the walk graph.
+- **Landmarks** (`landmarkOf`): places of worship (`building=mosque|church|...` or `amenity=place_of_worship`),
+  `historic=tomb|monument|memorial|fountain|...`, hamams and the profile's `landmarkIds` get no façade plan and no
+  shopfronts: they are simple stone massing (`fac_stone` walls, flat roof, every LOD) and their manifest record has
+  `landmark` (`worship`, `market`, `landmark` or the OSM `historic` / `amenity` value), so a runtime that draws its own
+  landmark model can hide them. Their footprint and height stay valid for colliders.
+- A footprint lying 70 %+ inside another emitted block (outside its courtyards) is a duplicate outline or an unmarked
+  part: it stays a plain block (`extra.facade.contained`).
+
+### Façade edges and projections
+
+`facade/build.ts classifyEdges` classifies each footprint edge by what it faces, probing the free space along its
+outward normal against the building outlines (`src/cover.ts`, courtyards open):
+
+- **party**: another building 1 m behind the wall (two of three samples), or a neighbour across a sliver narrower
+  than 1.2 m (median free depth): a blank wall;
+- **street**: a street surface (carriageway, pavement, pedestrian area, footway) lies in the free space in front of
+  the wall, before the next building (up to 7.5 m), however narrow the lane; or, with at least 2 m of free space, a
+  street is near (forecourts, set-backs). A street behind a neighbour or across a courtyard does not count;
+- **open**: courtyards and back lots; **short**: under 1.2 m.
+
+Everything that projects from a wall fits the room in front of it (`roomAt`): half the free depth to the building
+across (whose wall may project as much) minus 0.15 m, unlimited past 9 m. Balconies and their laundry, the çıkma, AC
+units, dishes, awnings, projecting signs and stall displays are dropped or shortened where the lane is too narrow, and
+shop units leave out stretches of wall with a neighbour less than 1 m in front.
+
+### Adding a district
+
+1. **Area.** Add a bbox constant and an `OSM_AREAS` entry with `profile: 'street'` to `src/world/osm/area.ts`, e.g.
+   `{ id: 'eminonu', bbox: EMINONU_AREA, dataFile: 'data/osm/eminonu.json', profile: 'street' }` (one line, parsed as
+   text by `lib/areas.mjs`).
+2. **Fetch.** `node scripts/data/fetch-osm.mjs --area <id>` writes `data/osm/<id>.json` (street extension).
+3. **Profile.** Copy `districts/generic.ts` to `districts/<id>.ts`, set `id`, `label` and the default `strip` rect
+   (local metres, `minX, minZ, maxX, maxZ`), tune typology weights, storeys, paint, balconies, shop words and trades,
+   landmark ids; keep `handAuthored` off and `cameras: null` unless the district has hand-fitted steps. List it in
+   `districts/index.ts`. Every business name stays fictional: place words are neighbourhood names, never real shops.
+4. **Compile.** `npm run compile:world -- --area <id>` (or `--strip x0,z0,x1,z1` to try another rect), then look at
+   it at eye level: `/sandbox/street.html?area=<id>&at=<x>,<z>,<headingDeg>,<pitchDeg>&hud=0&t=day` on the shared dev
+   server (`&eye=<m>` raises the camera for an oblique overview). Take screenshots with `node scripts/snap.mjs`.
+5. `npm run typecheck:world` and `npm run typecheck`; the glTF validator runs with every compile.
 
 ### Adding to the compiler (lanes)
 
 Everything the compiler runs is listed in `src/registry.ts`; a lane adds **one line** to a list there and keeps the
 rest in its own files.
 
-- `COMPILE_STEPS`: `{ id, formats?, tiles?, prepare?(area), tile?(tile), finish?(area) }`, run in list order.
-  `formats` defaults to `[1]`; `tiles` is `all` (default), `full` or `greybox`. The core list is `ground`,
+- `COMPILE_STEPS`: `{ id, formats?, tiles?, handAuthored?, prepare?(area), tile?(tile), finish?(area) }`, run in list
+  order. `formats` defaults to `[1]`; `tiles` is `all` (default), `full` or `greybox`; a step fitted to one district's
+  places or cameras sets `handAuthored` (`heroes`, `soul`, `precinct`, `interiors`) and runs only where the district
+  profile enables it. The core list is `ground`,
   `buildings`, `lampFixtures`; a lane may put its step before, after or instead of one of them.
 - `MATERIAL_SETS`: arrays of `MaterialDef` (`src/materials.ts`): `id`, `color` (sRGB tint), `textures`
   (`{ asset }` or `{ public }`), `tiling` (m), `maps`, `roughness`, `metallic`, `normalScale`, `occlusion`,
@@ -381,7 +454,8 @@ rest in its own files.
   overrides by material name, `lights` template (`position: 'emissive'` = centre of the emissive parts).
 
 `AreaContext` (every step): `format`, `area`, `data` (OSM street data), `foundation` (terrain, `StreetSurface`,
-footprints), `heights` (`carriage`, `off`, `at`), `land`, `piers`, `solids` (with doors), `tileOfSolid`,
+footprints), `heights` (`carriage`, `off`, `at`), `land`, `piers`, `solids` (with doors), `tileOfSolid`, `outlines`
+and `cover` (hole-aware outline / emitted-block indices, `src/cover.ts`), `district` (the profile),
 `manifests`, `walk`, `lanes`, `strip`, `detailOf(tileId)`, `outDir`, `shared` (scratch map keyed by step id).
 
 `TileContext` (tile steps): `id`, `manifest` (the format 0 records: buildings, doors, POIs, lamps, trees, benches,

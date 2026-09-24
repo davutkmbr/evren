@@ -15,6 +15,12 @@ export const OSM_AREA = { south: 41.015, west: 28.965, north: 41.038, east: 28.9
 export const KADIKOY_AREA = { south: 40.9848, west: 29.0185, north: 40.995, east: 29.0325 } as const;
 
 /**
+ * Eminönü, the second street-layer district (close-range detail where the dragon lands): Yeni Cami and its square,
+ * Mısır Çarşısı, the Eminönü piers and the south end of the Galata Bridge, inside OSM_AREA.
+ */
+export const EMINONU_AREA = { south: 41.015, west: 28.9675, north: 41.0195, east: 28.9765 } as const;
+
+/**
  * One area of real OSM data. `dataFile` is where scripts/data/fetch-osm.mjs writes it (repo-relative).
  * `profile`: 'slice' is the flight-scale slice schema (version 2, src/world/osm/data.ts); 'street' is the same
  * schema plus the street-layer extension read by tools/world-compiler (documented in its README.md).
@@ -34,6 +40,7 @@ export interface OsmAreaDef {
 export const OSM_AREAS: readonly OsmAreaDef[] = [
   { id: 'galata', bbox: OSM_AREA, dataFile: 'public/data/osm/slice.json', profile: 'slice' },
   { id: 'kadikoy', bbox: KADIKOY_AREA, dataFile: 'data/osm/kadikoy.json', profile: 'street' },
+  { id: 'eminonu', bbox: EMINONU_AREA, dataFile: 'data/osm/eminonu.json', profile: 'street' },
 ];
 
 /** Metres beyond the area where OSM still replaces the procedural city (the data is fetched ~75 m wider). */

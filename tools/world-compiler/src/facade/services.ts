@@ -1,17 +1,18 @@
 /**
- * Façade life (format 1, full-detail tiles): the things residents and utilities hang on a Kadıköy façade
+ * Façade life (format 1, full-detail tiles): the things residents and utilities hang on an Istanbul façade
  * (.docs/street/kadikoy-soul.md §18, §32, §33, §36–38), emitted into the façade's batch after the wall:
  *
  * - services: a yellow gas riser per building with its meter box, branches along each floor into the kitchens;
  *   a telecom junction box with a coil of spare cable and a TV cable dropping to a balcony; hairline cracks
  *   radiating from window corners on old render;
  * - balconies: laundry on pulley lines outside the railing (30–50 %), cat-safety nets (5–10 %), herbs in olive-oil
- *   tins, yogurt buckets and clay pots (on balconies and sills), plain yellow-and-navy flags (no crest);
+ *   tins, yogurt buckets and clay pots (on balconies and sills), plain two-colour flags (the district profile's colours, no crest);
  * - KİRALIK / SATILIK vinyl banners zip-tied to railings or taped inside windows, with numbers that cannot be dialled
  *   (area code 000).
  *
  * All deterministic (hash of the building seed and the edge), all geometry in the façade frame (facade/frame.ts).
  */
+import { district } from '../district';
 import type { Weather } from '../mesh';
 import { emitText, textWidth } from '../shopfront/font';
 import type { ShopUnit } from '../shopfront/shopfront';
@@ -25,6 +26,8 @@ export interface LifeInput {
   ck: Cikma | null;
   /** The wall rectangle of the edge (after corner chamfers). */
   R: Rect;
+  /** How far things may project from the wall at r (build.ts roomAt). */
+  room: (r: number) => number;
 }
 
 export function facadeLife(x: Ctx2, e: Edge, b: Batch, inp: LifeInput): void {
@@ -165,7 +168,8 @@ function balconyLife(x: Ctx2, e: Edge, b: Batch, bal: Balcony, k: number, Hb: (k
     return;
   }
   const net = H(1) < 0.08;
-  const laundry = !net && H(2) < 0.42;
+  // Laundry hangs up to 0.6 m outside the railing: only where the lane leaves room for it.
+  const laundry = !net && H(2) < 0.42 && bal.room >= bal.P + 0.6;
   if (net) {
     // Cat-safety net from the railing to the slab above, across the front and both ends (a dark translucent mesh).
     const y0 = bal.top - 0.02;
@@ -214,7 +218,7 @@ function balconyLife(x: Ctx2, e: Edge, b: Batch, bal: Balcony, k: number, Hb: (k
       pot(b, r, bal.y1, Math.min(bal.P - 0.12, 0.25 + 0.4 * H(12 + q)), H(20 + q), H(24 + q));
     }
   }
-  // A plain yellow-and-navy flag hung over the railing (1-3 per block face).
+  // A plain two-colour flag hung over the railing (1-3 per block face).
   if (H(8) < 0.07) {
     const fr = bal.r0 + 0.25 + (w - 1.2) * H(9);
     if (fr + 0.9 < bal.r1) {
@@ -242,8 +246,10 @@ function pot(b: Batch, r: number, y: number, d: number, u: number, v: number): v
 
 /** Plain yellow-and-navy stripes (no crest, no name), hanging from its top edge in the wall plane at depth d. */
 export function flag(b: Batch, r: number, yTop: number, d: number, w: number, h: number, vertical: boolean): void {
-  const yellow = lin(0xe0b830);
-  const navy = lin(0x1b2a5a);
+  // Two plain colours of the district profile (Kadıköy: yellow and navy), no crest.
+  const [c0, c1] = district().facade.flag;
+  const yellow = lin(c0);
+  const navy = lin(c1);
   const n = 4;
   for (let k = 0; k < n; k++) {
     const col = k % 2 ? navy : yellow;
@@ -337,7 +343,7 @@ function dishes(x: Ctx2, e: Edge, inp: LifeInput, H: (k: number) => number): voi
       pos = [px, bal.top - 0.12, pz];
     } else {
       const w = inp.wins.filter((q) => q.floor >= 1 && q.kind === 'window')[Math.floor(H(440 + k) * inp.wins.length)];
-      if (w && w.r1 + 0.5 < e.len && clear(inp, w.r1 + 0.35, 0.05, w.y1 - 0.6, w.y1)) {
+      if (w && w.r1 + 0.5 < e.len && clear(inp, w.r1 + 0.35, 0.05, w.y1 - 0.6, w.y1) && inp.room(w.r1 + 0.35) >= 0.7) {
         const [px, pz] = e.f.xz(w.r1 + 0.35, 0);
         pos = [px, w.y1 - 0.55, pz];
       }

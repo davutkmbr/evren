@@ -1,21 +1,23 @@
 /**
  * The strip compiled at full detail (format 1). Sources, first match wins:
  * 1. `--strip minX,minZ,maxX,maxZ` (local metres) or `--strip none` (every tile greybox);
- * 2. tools/world-compiler/s1/cameras.json: `strip.rect` / `strip.bounds` / `strip.bbox` as {minX, minZ, maxX, maxZ}
- *    or [minX, minZ, maxX, maxZ], or `strip.polygon` / `strip.corners` as [[x, z], ...] (its bbox is used);
- * 3. .docs/street/s1-strip.md: the first line naming a rect followed by four numbers (minX, minZ, maxX, maxZ);
- * 4. the bbox of the 'rihtim-carsi' walk route (src/street/routes.ts) grown by ROUTE_MARGIN.
+ * 2. the district profile's `strip` (district.ts), in its own order:
+ *    a. `rect`;
+ *    b. `cameras` (Kadıköy: tools/world-compiler/s1/cameras.json): `strip.rect` / `strip.bounds` / `strip.bbox` as
+ *       {minX, minZ, maxX, maxZ} or [minX, minZ, maxX, maxZ], or `strip.polygon` / `strip.corners` as [[x, z], ...]
+ *       (its bbox is used);
+ *    c. `spec` (Kadıköy: .docs/street/s1-strip.md): the first line naming a rect followed by four numbers;
+ *    d. `route` (Kadıköy: 'rihtim-carsi'): the bbox of that walk route (src/street/routes.ts) grown by ROUTE_MARGIN;
+ * 3. none: a profile without a strip (the generic one) compiles every tile greybox.
  * Tiles whose square intersects the rect are 'full'; the others are 'greybox'.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { STREET_ROUTES } from '../../../src/street/routes';
 import { ROOT } from '../lib/areas.mjs';
+import { district } from './district';
 import type { Bounds2 } from './format';
 
-const CAMERAS = 'tools/world-compiler/s1/cameras.json';
-const SPEC = '.docs/street/s1-strip.md';
-const ROUTE = 'rihtim-carsi';
 const ROUTE_MARGIN = 30;
 
 function fromValue(v: unknown): Bounds2 | null {
@@ -48,23 +50,34 @@ export function readStrip(cli: string | null): { rect: Bounds2; source: string }
     }
     return { rect: fromValue(n)!, source: 'cli' };
   }
-  const cam = resolve(ROOT, CAMERAS);
-  if (existsSync(cam)) {
+  const prof = district().strip;
+  if (!prof) {
+    return null;
+  }
+  if (prof.rect) {
+    return { rect: prof.rect, source: `district:${district().id}` };
+  }
+  const cam = prof.cameras ? resolve(ROOT, prof.cameras) : '';
+  if (prof.cameras && existsSync(cam)) {
     const json = JSON.parse(readFileSync(cam, 'utf8')) as Record<string, unknown>;
     const s = json.strip as Record<string, unknown> | undefined;
     const rect = s ? (fromValue(s.rect) ?? fromValue(s.bounds) ?? fromValue(s.bbox) ?? fromValue(s.polygon) ?? fromValue(s.corners) ?? fromValue(s)) : null;
     if (rect) {
-      return { rect, source: CAMERAS };
+      return { rect, source: prof.cameras };
     }
   }
-  const spec = resolve(ROOT, SPEC);
-  if (existsSync(spec)) {
+  const spec = prof.spec ? resolve(ROOT, prof.spec) : '';
+  if (prof.spec && existsSync(spec)) {
     const m = readFileSync(spec, 'utf8').match(/rect[^\d\n-]*(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/i);
     if (m) {
-      return { rect: fromValue(m.slice(1, 5).map(Number))!, source: SPEC };
+      return { rect: fromValue(m.slice(1, 5).map(Number))!, source: prof.spec };
     }
   }
-  const wp = STREET_ROUTES[ROUTE].waypoints;
+  const route = prof.route ? STREET_ROUTES[prof.route] : undefined;
+  if (!route) {
+    return null;
+  }
+  const wp = route.waypoints;
   return {
     rect: {
       minX: Math.min(...wp.map((w) => w.x)) - ROUTE_MARGIN,
@@ -72,7 +85,7 @@ export function readStrip(cli: string | null): { rect: Bounds2; source: string }
       maxX: Math.max(...wp.map((w) => w.x)) + ROUTE_MARGIN,
       maxZ: Math.max(...wp.map((w) => w.z)) + ROUTE_MARGIN,
     },
-    source: `route:${ROUTE}`,
+    source: `route:${prof.route}`,
   };
 }
 

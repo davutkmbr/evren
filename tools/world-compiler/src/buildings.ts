@@ -12,6 +12,7 @@ import type { BuildingRec, DoorRec, XYZ } from './format';
 import type { GroundHeights } from './ground';
 import type { TileMesh, Vec3 } from './mesh';
 import type { OsmStreetPoint } from './osm-street';
+import { district } from './district';
 import { entranceSize, INFERRED_DOOR, isEntrance, isStorefront } from './pois';
 
 /** Storey height (m) for building:levels without a height tag. */
@@ -25,8 +26,6 @@ const DOOR_GAP = 0.3;
 const SMALL_KINDS = new Set(['garage', 'garages', 'shed', 'kiosk', 'carport', 'hut', 'toilets', 'service', 'cabin', 'shelter', 'container', 'transformer_tower', 'booth', 'guardhouse']);
 const HOUSE_KINDS = new Set(['house', 'detached', 'semidetached_house', 'bungalow', 'transportation']);
 const WORSHIP_KINDS = new Set(['mosque', 'church', 'chapel', 'synagogue', 'temple', 'cathedral', 'religious']);
-/** Kadıköy's untagged buildings are mostly 1950s-70s apartment blocks. */
-const DEFAULT_LEVELS = 5;
 
 interface DoorPlan {
   edge: number;
@@ -62,7 +61,8 @@ function defaultLevels(b: OsmBuilding, area: number): number {
   if (WORSHIP_KINDS.has(b.kind) || b.amenity === 'place_of_worship') {
     return 3;
   }
-  return DEFAULT_LEVELS;
+  // The district's typical untagged block (Kadıköy: 1950s-70s apartments, 5 levels).
+  return district().buildings.defaultLevels;
 }
 
 /** Rendered solids of the data with heights and ground references. */

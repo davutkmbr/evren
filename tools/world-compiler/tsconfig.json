@@ -5,5 +5,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "lib/*.d.mts"]
+  "include": ["src", "districts", "lib/*.d.mts"]
 }

@@ -11,6 +11,7 @@
  *
  * Every business shown in the game is fictional: the cell names are invented and the OSM name stays data only.
  */
+import { district } from '../district';
 import type { AreaContext, CompileStep } from '../registry';
 import { buildCafe, CAFE_DOOR_W, type CafeCell } from './cafe';
 
@@ -43,6 +44,9 @@ const CELLS: { id: string; kind: 'cafe'; building: string; poiKind: string; name
  */
 export function interiorDoorViews(a: AreaContext): { x: number; z: number; fx: number; fz: number }[] {
   const out: { x: number; z: number; fx: number; fz: number }[] = [];
+  if (!district().handAuthored.interiors) {
+    return out;
+  }
   for (const c of CELLS) {
     for (const m of a.manifests.values()) {
       const poi = m.pois.find((p) => p.building === c.building && p.kind === c.poiKind && p.door);
@@ -59,6 +63,7 @@ export function interiorDoorViews(a: AreaContext): { x: number; z: number; fx: n
 
 export const interiorStep: CompileStep = {
   id: 'interiors',
+  handAuthored: 'interiors',
   prepare(a: AreaContext) {
     const shared: InteriorShared = { doors: new Map(), pois: new Set() };
     for (const c of CELLS) {

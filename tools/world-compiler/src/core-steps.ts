@@ -25,7 +25,7 @@ export const groundStep: CompileStep = {
   },
   tile(t) {
     const a = t.area;
-    const g: GroundStats = buildGround(t.bounds, a.foundation, a.heights, a.land, t.mesh);
+    const g: GroundStats = buildGround(t.bounds, a.foundation, a.heights, a.land, t.mesh, a.format === 1 ? (x, z) => a.cover.id(x, z) : undefined);
     const totals = a.shared.get('ground') as GroundTotals;
     totals.kerbWallM += g.kerbWallM;
     totals.quayWallM += g.quayWallM;

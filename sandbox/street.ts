@@ -253,6 +253,8 @@ type Mode = 'route' | 'free';
 
 const walker = new FirstPersonController(renderer.domElement);
 walker.walkSpeed = SPEED;
+/** `?eye=<m>`: camera height above the ground (default 1.7 m); raise it for oblique inspection views. */
+walker.eyeHeight = num('eye', walker.eyeHeight);
 const frameWindow = new FrameTimeWindow(3000);
 const recorder = new FrameRecorder();
 let streamer: TileStreamer | null = null;

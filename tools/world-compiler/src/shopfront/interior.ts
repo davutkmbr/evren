@@ -46,6 +46,7 @@ function kindOf(t: Trade | null): Kind {
     case 'shoes':
       return 'shoes';
     case 'clothes':
+    case 'textiles':
       return 'clothes';
     case 'optician':
     case 'jewellery':

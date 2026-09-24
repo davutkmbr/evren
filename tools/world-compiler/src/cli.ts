@@ -35,6 +35,8 @@ import {
   type TileRef,
   type XYZ,
 } from './format';
+import { outlineIndex, solidCover } from './cover';
+import { useDistrict } from './district';
 import { buildFoundation } from './foundation';
 import { GENERATOR, GENERATOR_V1, weatherRecord, writeTileGlb, writeTileGlbV1 } from './gltf';
 import { exportLaneGraph, exportWalkGraph } from './graphs';
@@ -79,8 +81,9 @@ const median = (list: number[]): number => {
 
 async function main(): Promise<void> {
   const t0 = performance.now();
-  registerAll();
   const area = readArea(argOf('--area') ?? 'kadikoy');
+  const profile = useDistrict(area.id);
+  registerAll();
   if (area.profile !== 'street') {
     throw new Error(`area '${area.id}' has profile '${area.profile}'; the compiler needs a 'street' area`);
   }
@@ -333,6 +336,9 @@ async function main(): Promise<void> {
     piers,
     solids,
     tileOfSolid,
+    outlines: outlineIndex(data.buildings),
+    cover: solidCover(solids),
+    district: profile,
     manifests,
     walk,
     lanes,

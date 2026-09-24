@@ -5,11 +5,14 @@
  * - COMPILE_STEPS run in list order. `prepare` runs once before the tiles, `tile` once per tile (TileContext: its
  *   mesh, instances, lights, the solids it owns, detail level), `finish` once after all tiles.
  * - A step runs in format 1 only unless it lists `formats: [0, 1]`; it runs on every tile unless `tiles` says
- *   'full' (inside the strip) or 'greybox' (outside it).
+ *   'full' (inside the strip) or 'greybox' (outside it). A step marked `handAuthored` (heroes, soul, precinct,
+ *   interiors: fitted to one district) runs only where the district profile (district.ts) enables it.
  * - MATERIAL_SETS / PROP_SETS are registered before anything else; the format 0 materials come first because the
  *   registration order is the primitive order. Weather layer materials come before every set whose `weather` uses
  *   them, and a variant (`<base>@<variant>`) after its base (`withVariants` keeps them together).
  */
+import type { RingIndex } from './cover';
+import { district, type DistrictProfile, type HandAuthored } from './district';
 import type { Foundation } from './foundation';
 import type { Bounds2, FormatVersion, InstanceRec, LaneGraphFile, StripInfo, TileManifest, XYZ } from './format';
 import type { GroundHeights, PierField } from './ground';
@@ -48,6 +51,12 @@ export interface AreaContext {
   /** Every solid in the tile rect, with doors placed. */
   solids: Solid[];
   tileOfSolid: ReadonlyMap<Solid, string>;
+  /** Building outlines with their courtyards (cover.ts outlineIndex): what a wall faces. */
+  outlines: RingIndex<number>;
+  /** The grounded solids the tiles emit (cover.ts solidCover): where the ground is left out under a block. */
+  cover: RingIndex<Solid>;
+  /** The district profile of the area (district.ts). */
+  district: DistrictProfile;
   manifests: ReadonlyMap<string, TileManifest>;
   walk: WalkExport;
   lanes: LaneGraphFile;
@@ -92,6 +101,8 @@ export interface TileContext {
 
 export interface CompileStep {
   id: string;
+  /** A hand-authored step (fitted to one district's places or reference cameras): runs only where the profile enables it. */
+  handAuthored?: HandAuthored;
   /** Formats the step runs in (default [1]). */
   formats?: FormatVersion[];
   /** Tiles the step runs on (default 'all'). */
@@ -123,7 +134,11 @@ export function registerAll(): void {
   }
 }
 
-/** The steps that run in `format` on a tile of `detail` (or all steps of the format when detail is omitted). */
+/**
+ * The steps that run in `format` on a tile of `detail` (or all steps of the format when detail is omitted), without
+ * the hand-authored steps the active district profile does not enable.
+ */
 export function stepsFor(format: FormatVersion, detail?: Detail): CompileStep[] {
-  return COMPILE_STEPS.filter((s) => (s.formats ?? [1]).includes(format) && (!detail || !s.tiles || s.tiles === 'all' || s.tiles === detail));
+  const on = district().handAuthored;
+  return COMPILE_STEPS.filter((s) => (s.formats ?? [1]).includes(format) && (!detail || !s.tiles || s.tiles === 'all' || s.tiles === detail) && (!s.handAuthored || on[s.handAuthored]));
 }

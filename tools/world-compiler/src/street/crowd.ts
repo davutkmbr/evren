@@ -18,7 +18,9 @@
  * them further. Instance refs start with "crowd/" so a runtime can swap them for animated agents.
  */
 import { pointInRing, segDist } from '../../../../src/world/osm/shared/geometry';
+import { Ground } from '../../../../src/world/osm/shared/street-field';
 import { Spacing } from '../../../../src/world/osm/streets/sink';
+import { district } from '../district';
 import type { XYZ } from '../format';
 import type { HeroShared } from '../hero';
 import { headingYaw } from '../instances';
@@ -57,7 +59,7 @@ function planCrowd(a: AreaContext): CrowdState {
   const tileOf = (x: number, z: number): string => `${Math.floor(x / 100)}_${Math.floor(z / 100)}`;
   const streetTileId = (id: string): boolean => a.manifests.has(id) && (a.detailOf(id) === 'full' || sc.kitTiles.has(id));
   const spine = sc.spine;
-  const P11: [number, number] = spine.length >= 2 ? [spine[spine.length - 2], spine[spine.length - 1]] : [0, 0];
+  const P11: [number, number] = spine.length >= 2 ? [spine[spine.length - 2], spine[spine.length - 1]] : [Infinity, Infinity];
   const P8: [number, number] = spine.length >= 18 ? [spine[16], spine[17]] : P11;
   // Hero outlines (gated loggias, arcades) are closed to spawns, with a margin.
   const heroes = a.shared.get('heroes') as HeroShared | undefined;
@@ -99,8 +101,26 @@ function planCrowd(a: AreaContext): CrowdState {
       return (Math.hypot(dx, dz) < 6.5 && along > 0 && side < along * 0.85 + 0.6) || (along > -0.5 && along < 11 && side < 1.0 + 0.33 * along);
     });
   const blocked = (x: number, z: number): boolean => inCameraView(x, z) || fp.inside(x, z) || s.buildingDistance(x, z) < 0.35 || a.land(x, z) < 0.5 || (s.distance(x, z) < 0 && !s.pedestrianStreet(x, z)) || nearHero(x, z);
+  /**
+   * Districts without a reference spine: the profile's densities on pedestrian streets and squares, kerbed pavements
+   * (the walk graph's lanes there), else nothing.
+   */
+  const rules = district().street.crowd;
+  const ruleDensity = (x: number, z: number): number => {
+    const g = s.groundAt(x, z);
+    if (g === Ground.Plaza || g === Ground.Worship) {
+      return rules.square;
+    }
+    if (s.pedestrianStreet(x, z) || s.pathDistance(x, z) < 0) {
+      return rules.pedestrian;
+    }
+    return s.kerbed(x, z) ? rules.sidewalk : rules.pedestrian * 0.6;
+  };
   /** People per m² wanted at (x, z); 0 outside the strip. */
   const density = (x: number, z: number): number => {
+    if (spine.length < 4) {
+      return ruleDensity(x, z);
+    }
     const toFish = Math.hypot(x - P11[0], z - P11[1]);
     if (toFish < 24) {
       return 0.45;

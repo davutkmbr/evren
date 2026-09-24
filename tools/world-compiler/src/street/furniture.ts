@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hash } from '../../../../src/world/osm/shared/geometry';
 import { ROOT } from '../../lib/areas.mjs';
+import { district } from '../district';
 import { Spacing } from '../../../../src/world/osm/streets/sink';
 import type { XYZ } from '../format';
 import { headingYaw } from '../instances';
@@ -80,12 +81,14 @@ export interface ClearCamera {
 }
 
 /**
- * Cameras whose foreground stays clear of people and vehicles: tools/world-compiler/s1/cameras.json, with the
- * render-time pose overrides of scripts/blender/camera-overrides.json where the look lane moved a camera.
+ * Cameras whose foreground stays clear of people and vehicles: the district profile's reference cameras (Kadıköy:
+ * tools/world-compiler/s1/cameras.json), with the render-time pose overrides of scripts/blender/camera-overrides.json
+ * where the look lane moved a camera.
  */
 export function camerasForClearance(): ClearCamera[] {
-  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
-  if (!existsSync(file)) {
+  const rel = district().cameras;
+  const file = rel ? resolve(ROOT, rel) : '';
+  if (!rel || !existsSync(file)) {
     return [];
   }
   const doc = JSON.parse(readFileSync(file, 'utf8')) as { cameras?: { id: string; position: number[]; target: number[]; heightAboveGround?: number }[] };
@@ -103,10 +106,11 @@ export function camerasForClearance(): ClearCamera[] {
   return out;
 }
 /** Compass heading (deg) of a direction (dx, dz). */
-/** The c05 camera of tools/world-compiler/s1/cameras.json (position and heading), or null. */
+/** The c05 camera of the district's reference cameras (Kadıköy: s1/cameras.json; position and heading), or null. */
 function c05Camera(): { x: number; z: number; heading: number } | null {
-  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
-  if (!existsSync(file)) {
+  const rel = district().cameras;
+  const file = rel ? resolve(ROOT, rel) : '';
+  if (!rel || !existsSync(file)) {
     return null;
   }
   const doc = JSON.parse(readFileSync(file, 'utf8')) as { cameras?: { id: string; position: number[]; target: number[] }[] };

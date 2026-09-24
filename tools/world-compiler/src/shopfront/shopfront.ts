@@ -16,6 +16,7 @@ import type { InstanceRec, XYZ } from '../format';
 import { Batch, Frame, h01, lin, mix, pick, pickWeighted, scale } from '../facade/frame';
 import { SIGN_GLOW, type SignGlow } from '../facade/materials';
 import type { FacadePlan } from '../facade/plan';
+import { district } from '../district';
 import { emitText, textWidth } from './font';
 import { emitShopInterior } from './interior';
 import { fillerTrade, type ShopName, shopName, type Trade, tradeOf } from './names';
@@ -75,13 +76,22 @@ export interface EdgeShopInput {
   market: boolean;
   /** Free depth in front of the wall (m) before another building (awnings stay out of it). */
   clearAt: (r: number) => number;
+  /**
+   * How far the ground floor may project at r (m): half the free depth to the building across, which may project
+   * too (facade/build.ts roomAt); Infinity when the lane is open. Awnings, projecting signs and stalls fit in it.
+   */
+  roomAt: (r: number) => number;
 }
 
-const MARKET_TRADES = new Set<Trade>(['fish', 'produce', 'deli', 'nuts', 'butcher']);
-const ALWAYS_OPEN = new Set<Trade>(['cafe', 'restaurant', 'fastfood', 'sweets', 'bakery', 'fish', 'produce', 'deli']);
+/** A neighbour this close in front of the wall (m) hides it: no shop unit there. */
+const BLOCKED = 1.0;
+/** Depth (m) a projecting sign and a stall display need in front of the wall. */
+const SIGN_DEPTH = 0.9;
+const STALL_DEPTH = 1.2;
+
+const MARKET_TRADES = new Set<Trade>(['fish', 'produce', 'deli', 'nuts', 'butcher', 'spice']);
+const ALWAYS_OPEN = new Set<Trade>(['cafe', 'restaurant', 'fastfood', 'sweets', 'bakery', 'fish', 'produce', 'deli', 'spice', 'coffee']);
 const PIER = 0.4;
-/** Buildings whose shop is shuttered (spec section 2: the 1930 lottery kiosk at the Yasa Cd entrance, c11). */
-const SHUTTERED = new Set([709156144]);
 
 /** Splits a street edge's ground floor into shop units and entrances. */
 export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<string>): ShopUnit[] {
@@ -127,7 +137,29 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
   if (b - cur >= 1.4) {
     spans.push([cur, b]);
   }
-  for (const [s0, s1] of spans) {
+  // Parts of the wall with a neighbour right in front of them (a shared wall that goes on past the next building's
+  // corner, a sliver gap) get no units.
+  const blocked: [number, number][] = [];
+  for (let r = a; r <= b + 1e-6; r += 0.5) {
+    if (e.clearAt(r) < BLOCKED) {
+      const last = blocked.at(-1);
+      if (last && r - last[1] <= 0.51) {
+        last[1] = r;
+      } else {
+        blocked.push([r, r]);
+      }
+    }
+  }
+  const open = blocked.length
+    ? spans.flatMap(([s0, s1]) => {
+        let pieces: [number, number][] = [[s0, s1]];
+        for (const [q0, q1] of blocked) {
+          pieces = pieces.flatMap(([p0, p1]): [number, number][] => (q1 + 0.5 <= p0 || q0 - 0.5 >= p1 ? [[p0, p1]] : ([[p0, q0 - 0.5], [q1 + 0.5, p1]] as [number, number][]).filter(([x0, x1]) => x1 - x0 >= 1.4)));
+        }
+        return pieces;
+      })
+    : spans;
+  for (const [s0, s1] of open) {
     const w = s1 - s0;
     const target = 4.4 + 2 * H(3 + s0);
     let n = Math.max(1, Math.round(w / target));
@@ -145,11 +177,12 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
       const market = MARKET_TRADES.has(trade);
       const yFloor = floorOf(r0, r1);
       const yOpen = openTop(r0, r1, yFloor);
-      const kepenk: Kepenk = SHUTTERED.has(p.osmId) ? 'closed' : ALWAYS_OPEN.has(trade) ? 'open' : pickWeighted<Kepenk>([['open', 0.7], ['half', 0.18], ['closed', 0.12]], U(2));
+      const kepenk: Kepenk = district().buildings.shuttered.has(p.osmId) ? 'closed' : ALWAYS_OPEN.has(trade) ? 'open' : pickWeighted<Kepenk>([['open', 0.7], ['half', 0.18], ['closed', 0.12]], U(2));
       let awning: AwningKind = market ? 'market' : e.market || U(3) < 0.68 ? (U(4) < 0.55 ? 'low' : 'high') : 'none';
       let depth = market ? (e.market ? 2.5 + 0.9 * U(5) : 1.7 + 0.5 * U(5)) : 1.1 + 0.5 * U(5);
       const clear = Math.min(e.clearAt(r0 + 0.3), e.clearAt((r0 + r1) / 2), e.clearAt(r1 - 0.3));
-      depth = Math.min(depth, clear - 0.4);
+      const room = Math.min(e.roomAt(r0 + 0.3), e.roomAt((r0 + r1) / 2), e.roomAt(r1 - 0.3));
+      depth = Math.min(depth, clear - 0.4, room);
       if (depth < 0.8) {
         awning = 'none';
       }
@@ -189,7 +222,7 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
         doorW,
         yFloor,
         yOpen,
-        stall: interior ? 'none' : trade === 'fish' ? 'fish' : trade === 'produce' ? 'produce' : trade === 'deli' || trade === 'nuts' ? 'deli' : 'none',
+        stall: interior || room < STALL_DEPTH ? 'none' : trade === 'fish' ? 'fish' : trade === 'produce' ? 'produce' : trade === 'deli' || trade === 'nuts' || trade === 'spice' ? 'deli' : 'none',
         seed: us,
         doorH: door ? door.height : 2.3,
         interior,
@@ -201,7 +234,7 @@ export function planShops(e: EdgeShopInput, p: FacadePlan, avoid: ReadonlySet<st
   let lastSign = -Infinity;
   const tall = (u: ShopUnit | undefined): boolean => !!u && (u.awning === 'high' || u.awning === 'market');
   units.forEach((u, k) => {
-    if (u.kind === 'shop' && u.r1 - lastSign > 7.5 && u.r1 - u.r0 > 2 && !tall(u) && !tall(units[k + 1])) {
+    if (u.kind === 'shop' && u.r1 - lastSign > 7.5 && u.r1 - u.r0 > 2 && !tall(u) && !tall(units[k + 1]) && e.roomAt(Math.min(u.r1 + 0.2, e.len)) >= SIGN_DEPTH) {
       u.projecting = true;
       lastSign = u.r1;
     }

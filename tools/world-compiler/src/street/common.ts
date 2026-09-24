@@ -1,6 +1,7 @@
 /**
  * Shared state of the street lane (format 1): the classified streets with a nearest-street index, marked crossings
- * with their dropped kerbs, the S1 spine and arrival square (tools/world-compiler/s1/cameras.json), the street kit
+ * with their dropped kerbs, the S1 spine and arrival square (the district profile's reference cameras, Kadıköy:
+ * tools/world-compiler/s1/cameras.json; other districts have none), the street kit
  * tiles and the ground height the street steps build on (the compiled ground minus the dropped kerbs).
  *
  * Built once per compile (streetContext) and kept in AreaContext.shared under 'street'.
@@ -10,6 +11,7 @@ import { resolve } from 'node:path';
 import { BoxGrid, hash, pointInRing } from '../../../../src/world/osm/shared/geometry';
 import { classifyStreets, streetTramTracks, Surf, type Street } from '../../../../src/world/osm/shared/street-field';
 import { ROOT } from '../../lib/areas.mjs';
+import { district } from '../district';
 import type { XYZ } from '../format';
 import type { OsmStreetRoad } from '../osm-street';
 import type { AreaContext, TileContext } from '../registry';
@@ -68,6 +70,12 @@ export interface StreetContext {
   /** Per-street axis angle (rad) and origin for paving frames. */
   axis: { angle: number; ox: number; oz: number }[];
   near(x: number, z: number, max: number, accept?: (s: Street) => boolean): NearStreet | null;
+  /**
+   * How much nearer (m, carriageway edge distance) the nearest street with `pred` is than the nearest one without it,
+   * clamped to ±WIN_RANGE: > 0 where a `pred` street wins the street raster's texel (its ids and flags), 0 on the
+   * border between them. Continuous, so ground pieces can be cut along it.
+   */
+  winMargin(x: number, z: number, pred: (s: Street) => boolean): number;
   crossings: Crossing[];
   dropped: DroppedKerb[];
   /** Height (m) the dropped kerbs take off the pavement at (x, z). */
@@ -79,7 +87,7 @@ export interface StreetContext {
   square: number[];
   /** Tiles that get the full street kit even when greybox (off-spine cameras, e.g. c05). */
   kitTiles: Set<string>;
-  /** Distance from (x, z) to the spine polyline. */
+  /** Distance from (x, z) to the spine polyline (0 everywhere when the district has no reference spine). */
   spineDist(x: number, z: number): number;
   inSquare(x: number, z: number): boolean;
   /**
@@ -103,6 +111,9 @@ const TRAM_STEP = 1;
 /** Clearance (m) from the kerb line to the near rail of a tram track in a kerb lane. */
 const TRAM_KERB = 0.85;
 
+/** Range (m) of StreetContext.winMargin. */
+const WIN_RANGE = 12;
+
 const MARKED = new Set(['marked', 'zebra', 'traffic_signals', 'uncontrolled', 'yes', 'pelican', 'toucan']);
 
 /** True when the tile gets the street kit (full detail, or a kit tile). */
@@ -121,8 +132,9 @@ function segProject(x: number, z: number, ax: number, az: number, bx: number, bz
 }
 
 function readCameras(): { spine: number[]; square: number[]; kit: string[] } {
-  const file = resolve(ROOT, 'tools/world-compiler/s1/cameras.json');
-  if (!existsSync(file)) {
+  const rel = district().cameras;
+  const file = rel ? resolve(ROOT, rel) : '';
+  if (!rel || !existsSync(file)) {
     return { spine: [], square: [], kit: [] };
   }
   const c = JSON.parse(readFileSync(file, 'utf8')) as {
@@ -183,6 +195,22 @@ export function streetContext(a: AreaContext): StreetContext {
       }
     }
     return best;
+  };
+
+  const winMargin = (x: number, z: number, pred: (st: Street) => boolean): number => {
+    let yes = WIN_RANGE;
+    let no = WIN_RANGE;
+    for (const id of grid.at(x, z)) {
+      const [ax, az, bx, bz, si] = segs[id];
+      const st = streets[si];
+      const d = segProject(x, z, ax, az, bx, bz).d - st.hw;
+      if (pred(st)) {
+        yes = Math.min(yes, d);
+      } else {
+        no = Math.min(no, d);
+      }
+    }
+    return Math.max(-WIN_RANGE, Math.min(WIN_RANGE, no - yes));
   };
 
   /* Marked crossings: footway=crossing ways and crossing nodes (both with a marked crossing=* value). */
@@ -305,7 +333,13 @@ export function streetContext(a: AreaContext): StreetContext {
   };
   const groundY = (x: number, z: number): number => (s.distance(x, z) < 0 ? a.heights.carriage(x, z) : a.heights.off(x, z) - drop(x, z));
 
+  // Without reference cameras (every district but Kadıköy) the whole street-kit area counts as the spine: the
+  // spine-gated rules (quay benches, junction planters, café seat use, door browsers, traffic at signals) run everywhere.
+  const noSpine = cam.spine.length < 4;
   const spineDist = (x: number, z: number): number => {
+    if (noSpine) {
+      return 0;
+    }
     let d = Infinity;
     for (let k = 2; k < cam.spine.length; k += 2) {
       d = Math.min(d, segProject(x, z, cam.spine[k - 2], cam.spine[k - 1], cam.spine[k], cam.spine[k + 1]).d);
@@ -333,6 +367,7 @@ export function streetContext(a: AreaContext): StreetContext {
     streets,
     axis,
     near,
+    winMargin,
     crossings,
     dropped,
     drop,

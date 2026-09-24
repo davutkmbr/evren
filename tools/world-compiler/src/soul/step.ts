@@ -1320,6 +1320,7 @@ function faceAt(cx: number, cz: number, nx: number, nz: number, w: number, y0: n
 
 export const soulStep: CompileStep = {
   id: 'soul',
+  handAuthored: 'soul',
   tiles: 'full',
   prepare(a) {
     soulPlan(a);

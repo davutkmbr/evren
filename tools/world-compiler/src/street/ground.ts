@@ -42,7 +42,7 @@ const TAG_NONE = 0;
 const TAG_COAST = 1;
 const TAG_KERB = 2;
 
-type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W';
+type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W' | 'K' | 'Q' | 'S' | 'A';
 interface V {
   x: number;
   z: number;
@@ -54,13 +54,36 @@ interface V {
   G: number;
   /** Dropped-kerb depth (m). */
   W: number;
+  /**
+   * Material borders as fields, so pieces are cut along them instead of taking the raster's per-texel flags at their
+   * centre (which draws the borders as 1 m saw teeth): K > 0 where a kerbed street is the nearest (winning) one, Q > 0
+   * where a pedestrian street is, S = D - sidewalk width of the winning street (< 0 on its sidewalk), A > 0 inside
+   * paved OSM areas (squares, platforms, quays, worship grounds).
+   */
+  K: number;
+  Q: number;
+  S: number;
+  A: number;
 }
 interface Poly {
   v: V[];
   tag: number[];
 }
 
-const lerpV = (a: V, b: V, t: number): V => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, L: a.L + (b.L - a.L) * t, D: a.D + (b.D - a.D) * t, P: a.P + (b.P - a.P) * t, B: a.B + (b.B - a.B) * t, G: a.G + (b.G - a.G) * t, W: a.W + (b.W - a.W) * t });
+const lerpV = (a: V, b: V, t: number): V => ({
+  x: a.x + (b.x - a.x) * t,
+  z: a.z + (b.z - a.z) * t,
+  L: a.L + (b.L - a.L) * t,
+  D: a.D + (b.D - a.D) * t,
+  P: a.P + (b.P - a.P) * t,
+  B: a.B + (b.B - a.B) * t,
+  G: a.G + (b.G - a.G) * t,
+  W: a.W + (b.W - a.W) * t,
+  K: a.K + (b.K - a.K) * t,
+  Q: a.Q + (b.Q - a.Q) * t,
+  S: a.S + (b.S - a.S) * t,
+  A: a.A + (b.A - a.A) * t,
+});
 
 function split(p: Poly, f: Field, newTag: number, level = 0): { neg: Poly | null; pos: Poly | null } {
   const neg: Poly = { v: [], tag: [] };
@@ -163,20 +186,17 @@ const splitAll = (ps: Poly[], f: Field, level: number): Poly[] =>
     return [r.neg, r.pos].filter((x): x is Poly => x !== null);
   });
 
+const FIELDS = ['x', 'z', 'L', 'D', 'P', 'B', 'G', 'W', 'K', 'Q', 'S', 'A'] as const;
+
 function centre(p: Poly): V {
-  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0 };
-  for (const v of p.v) {
-    c.x += v.x;
-    c.z += v.z;
-    c.L += v.L;
-    c.D += v.D;
-    c.P += v.P;
-    c.B += v.B;
-    c.G += v.G;
-    c.W += v.W;
-  }
+  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0, K: 0, Q: 0, S: 0, A: 0 };
   const n = p.v.length;
-  return { x: c.x / n, z: c.z / n, L: c.L / n, D: c.D / n, P: c.P / n, B: c.B / n, G: c.G / n, W: c.W / n };
+  for (const v of p.v) {
+    for (const f of FIELDS) {
+      c[f] += v[f] / n;
+    }
+  }
+  return c;
 }
 
 /** Paving frame: u along the axis angle, v across, both in metres from an origin. */
@@ -254,7 +274,6 @@ function isMain(st: Street): boolean {
 export function buildStreetGround(t: TileContext, sc: StreetContext, totals: GroundTotals): StreetGroundStats {
   const a = t.area;
   const s = a.foundation.surface;
-  const f = a.foundation;
   const mesh = t.mesh;
   const tile = t.bounds;
   const nx = Math.round((tile.maxX - tile.minX) / CELL);
@@ -267,7 +286,33 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
   const B = new Float32Array(n);
   const G = new Float32Array(n);
   const Wd = new Float32Array(n);
-  const inside = new Uint8Array(n);
+  const inside = new Int32Array(n);
+  const K = new Float32Array(n);
+  const Q = new Float32Array(n);
+  const S = new Float32Array(n);
+  const A = new Float32Array(n);
+  const pavedAreas = a.data.areas.filter((ar) => {
+    const g = groundOf(ar);
+    if (g !== Ground.Plaza && g !== Ground.Worship && g !== Ground.Platform && g !== Ground.Quay) {
+      return false;
+    }
+    const b = bounds(ar.ring);
+    return b.maxX > tile.minX - 5 && b.minX < tile.maxX + 5 && b.maxZ > tile.minZ - 5 && b.minZ < tile.maxZ + 5;
+  });
+  /** Signed distance to the paved OSM areas (positive inside), clamped to ±3 m. */
+  const pavedDist = (x: number, z: number): number => {
+    let best = -3;
+    for (const ar of pavedAreas) {
+      const r = ar.ring;
+      let d = Infinity;
+      const m = r.length / 2;
+      for (let i = 0, j = m - 1; i < m; j = i++) {
+        d = Math.min(d, segDist(x, z, r[j * 2], r[j * 2 + 1], r[i * 2], r[i * 2 + 1]));
+      }
+      best = Math.max(best, pointInRing(r, x, z) ? Math.min(d, 3) : -Math.min(d, 3));
+    }
+    return best;
+  };
   const greens = a.data.areas.filter((ar) => {
     const g = groundOf(ar);
     if (g !== Ground.Grass && g !== Ground.Pitch) {
@@ -298,7 +343,6 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     return b.maxX > tile.minX - 1 && b.minX < tile.maxX + 1 && b.maxZ > tile.minZ - 1 && b.minZ < tile.maxZ + 1;
   });
   const grounded = raised.length ? a.solids.filter((q) => q.grounded && raised.some((r) => bounds(r.ring).maxX > bounds(q.ring).minX && bounds(r.ring).minX < bounds(q.ring).maxX && bounds(r.ring).maxZ > bounds(q.ring).minZ && bounds(r.ring).minZ < bounds(q.ring).maxZ)) : [];
-  const underRaisedOnly = (x: number, z: number): boolean => raised.some((q) => pointInRing(q.ring, x, z)) && !grounded.some((q) => pointInRing(q.ring, x, z));
   /** Within 0.6 m of a raised solid's outline and not in a grounded one: no contact darkening from its footprint. */
   const nearRaised = (x: number, z: number): boolean => {
     if (grounded.some((q) => pointInRing(q.ring, x, z))) {
@@ -332,7 +376,13 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       }
       G[k] = greens.length ? greenDist(x, z) : -3;
       Wd[k] = sc.drop(x, z);
-      inside[k] = f.footprints.inside(x, z) && !(raised.length && underRaisedOnly(x, z)) ? 1 : 0;
+      // The block standing here (emitted grounded solids only: courtyards, gaps between blocks and buildings the
+      // tiles do not emit keep their ground; raised solids stand over it).
+      inside[k] = a.cover.id(x, z);
+      K[k] = sc.winMargin(x, z, (st) => st.kerbed);
+      Q[k] = sc.winMargin(x, z, (st) => st.pedestrian);
+      S[k] = D[k] - s.sidewalkWidth(x, z);
+      A[k] = pavedAreas.length ? pavedDist(x, z) : -3;
     }
   }
   const stats: StreetGroundStats = { kerbStoneM: 0, gutterM: 0, copingM: 0, droppedKerbs: 0 };
@@ -479,7 +529,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     return [st.street.surf === Surf.Cobble ? 'st_kup' : st.street.surf === Surf.Asphalt && !st.street.pedestrian ? 'st_road' : 'st_slabs', streetFrame(st.index)];
   };
   const carriageMaterial = (c: V): [MaterialName, Frame] => {
-    if (s.pedestrianStreet(c.x, c.z)) {
+    if (c.Q > 0) {
       return lanePaving(c) ?? ['st_slabs', WORLD];
     }
     const st = sc.near(c.x, c.z, 30, (q) => !q.pedestrian);
@@ -496,12 +546,12 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       return ['st_pavers', WORLD];
     }
     const d = c.D;
-    const kerbed = s.kerbed(c.x, c.z);
+    const kerbed = c.K > 0;
     const kerbFrame = (): Frame => {
       const st = sc.near(c.x, c.z, 30, (q) => q.kerbed);
       return st ? streetFrame(st.index) : WORLD;
     };
-    if (kerbed && d < s.sidewalkWidth(c.x, c.z)) {
+    if (kerbed && c.S < 0) {
       return ['st_sidewalk', kerbFrame()];
     }
     if (c.G > 0 && d > 0.5) {
@@ -512,7 +562,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       return ['st_pavers', WORLD];
     }
     const g = s.groundAt(c.x, c.z);
-    if (s.pathDistance(c.x, c.z) < 0 || g === Ground.Plaza || g === Ground.Worship || g === Ground.Platform || g === Ground.Quay) {
+    if (c.P < 0 || c.A > 0) {
       if (!kerbed && d < PAVED_REACH) {
         return lanePaving(c) ?? ['st_pavers', WORLD];
       }
@@ -641,7 +691,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
   const emitCarriage = (q: Poly): void => {
     const c = centre(q);
     const ys = q.v.map(carriageY);
-    const kerbedGutter = c.D > -GUTTER_WIDTH && kerbStone(c.x, c.z) && !s.pedestrianStreet(c.x, c.z);
+    const kerbedGutter = c.D > -GUTTER_WIDTH && kerbStone(c.x, c.z) && !(c.Q > 0);
     if (kerbedGutter) {
       alongPiece('st_gutter', q, ys, () => [0, 1, 0], (x, z) => s.distance(x, z), (v) => 0.35 + v.D, true);
       stats.gutterM += polyArea(q) / GUTTER_WIDTH;
@@ -713,12 +763,12 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
 
   const corner = (i: number, j: number): V => {
     const k = j * W + i;
-    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k] };
+    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k], K: K[k], Q: Q[k], S: S[k], A: A[k] };
   };
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
       const k = j * W + i;
-      if (inside[k] && inside[k + 1] && inside[k + W] && inside[k + W + 1]) {
+      if (inside[k] && inside[k + 1] === inside[k] && inside[k + W] === inside[k] && inside[k + W + 1] === inside[k]) {
         continue;
       }
       const c00 = corner(i, j);
@@ -738,7 +788,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
         }
         const parts = split(land, 'D', TAG_KERB);
         if (parts.neg) {
-          for (const q of cutPatches(splitAll([parts.neg], 'D', -GUTTER_WIDTH), wp.patchesIn)) {
+          for (const q of cutPatches(splitAll(splitAll([parts.neg], 'D', -GUTTER_WIDTH), 'Q', 0), wp.patchesIn)) {
             emitCarriage(q);
           }
         }
@@ -759,6 +809,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
             ['W', 0.04],
             ['W', 0.07],
             ['W', 0.1],
+            ['K', 0],
+            ['S', 0],
+            ['A', 0],
           ] as const) {
             pieces = splitAll(pieces, field, level);
           }

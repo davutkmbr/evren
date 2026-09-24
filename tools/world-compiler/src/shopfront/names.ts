@@ -1,13 +1,15 @@
 /**
  * Fictional Turkish shop names for the sign bands. Every business shown in the game is fictional (OSM names are data
- * only): a name is a generic first word (a family name, a nature word or a Kadıköy place word) plus the trade word of
- * the shop's POI kind, e.g. "YAKAMOZ BALIKÇILIK", "ÇINAR FIRINI", "EMEK OPTİK". Generated names that share a
- * distinctive word with an OSM business name nearby are rejected, so no sign repeats a real shop's name.
+ * only): a name is a first word of the district profile (a family name, a nature word or a place word of the district,
+ * ../district.ts `shops.firstWords`) plus the trade word of the shop's POI kind, e.g. "YAKAMOZ BALIKÇILIK", "ÇINAR
+ * FIRINI", "TAHTAKALE BAHARAT". Generated names that share a distinctive word with an OSM business name nearby are
+ * rejected, so no sign repeats a real shop's name. Filler trades (shops without a POI) come from the profile too.
  */
+import { district } from '../district';
 import { h01, pick } from '../facade/frame';
 
 /** Shop trades: sign words, the trade shown on projecting signs, and the display kind. */
-export type Trade = 'fish' | 'produce' | 'deli' | 'restaurant' | 'fastfood' | 'cafe' | 'sweets' | 'bakery' | 'clothes' | 'optician' | 'phone' | 'pharmacy' | 'jewellery' | 'shoes' | 'books' | 'hardware' | 'market' | 'barber' | 'butcher' | 'nuts';
+export type Trade = 'fish' | 'produce' | 'deli' | 'restaurant' | 'fastfood' | 'cafe' | 'sweets' | 'bakery' | 'clothes' | 'optician' | 'phone' | 'pharmacy' | 'jewellery' | 'shoes' | 'books' | 'hardware' | 'market' | 'barber' | 'butcher' | 'nuts' | 'spice' | 'coffee' | 'textiles' | 'housewares';
 
 const WORDS: Record<Trade, { suffix: string[]; short: string }> = {
   fish: { suffix: ['BALIKÇILIK', 'BALIK', 'BALIK EVİ', 'SU ÜRÜNLERİ'], short: 'BALIK' },
@@ -30,64 +32,18 @@ const WORDS: Record<Trade, { suffix: string[]; short: string }> = {
   barber: { suffix: ['KUAFÖR', 'BERBER'], short: 'KUAFÖR' },
   butcher: { suffix: ['KASAP', 'ET MANGAL'], short: 'KASAP' },
   nuts: { suffix: ['KURUYEMİŞ', 'BAHARAT', 'AKTAR'], short: 'KURUYEMİŞ' },
+  spice: { suffix: ['BAHARAT', 'BAHARATÇISI', 'AKTARİYE', 'AKTAR'], short: 'BAHARAT' },
+  coffee: { suffix: ['KAHVECİSİ', 'KAHVE', 'KAHVE TOPTAN'], short: 'KAHVE' },
+  textiles: { suffix: ['MANİFATURA', 'KUMAŞ', 'TEKSTİL', 'PERDE', 'TUHAFİYE'], short: 'KUMAŞ' },
+  housewares: { suffix: ['ZÜCCACİYE', 'EV GEREÇLERİ', 'MUTFAK', 'PLASTİK'], short: 'ZÜCCACİYE' },
 };
-
-/** Generic first words (family names, nature and sea words, neighbourhood words). */
-const FIRST = [
-  'YILDIZ',
-  'GÜNEŞ',
-  'DENİZ',
-  'MARTI',
-  'YAKAMOZ',
-  'BEREKET',
-  'ÇINAR',
-  'LALE',
-  'ASLAN',
-  'KARDEŞLER',
-  'USTA',
-  'ÖZ',
-  'ALTIN',
-  'YENİ',
-  'EMEK',
-  'HUZUR',
-  'SAFA',
-  'LİMAN',
-  'İSKELE',
-  'RIHTIM',
-  'VAPUR',
-  'POYRAZ',
-  'LODOS',
-  'KARAYEL',
-  'MERCAN',
-  'İNCİ',
-  'SEDEF',
-  'NAR',
-  'AYVA',
-  'DEFNE',
-  'ZEYTİN',
-  'KESTANE',
-  'ŞAHİN',
-  'DOĞAN',
-  'KAYA',
-  'TUNA',
-  'AKYOL',
-  'ERGÜN',
-  'KÖŞE',
-  'ÇARŞI',
-  'MAHALLE',
-  'ANADOLU',
-  'EGE',
-  'KARADENİZ',
-  'TOROS',
-  'MENEKŞE',
-  'IŞIK',
-  'SEVGİ',
-  'UMUT',
-  'NEŞE',
-];
 
 /** POI kind (shop=*, amenity=*, craft=*) to trade. */
 export function tradeOf(kind: string | undefined, u: number): Trade {
+  const own = kind ? district().shops.tradeOverrides[kind] : undefined;
+  if (own) {
+    return own;
+  }
   const v = kind?.split('=')[1] ?? '';
   switch (v) {
     case 'seafood':
@@ -168,14 +124,14 @@ export function tradeOf(kind: string | undefined, u: number): Trade {
     case 'beverages':
       return 'market';
     default:
-      return pick<Trade>(['clothes', 'phone', 'market', 'shoes', 'cafe', 'jewellery', 'hardware', 'books', 'barber'], u);
+      return pick<Trade>(district().shops.fallback, u);
   }
 }
 
-/** Filler trades for ground floors without a mapped POI, by where on the strip they are (the fish end is busier). */
+/** Filler trades for ground floors without a mapped POI (district profile), in or outside its market end. */
 export function fillerTrade(u: number, market: boolean): Trade {
-  const list: Trade[] = market ? ['fish', 'produce', 'deli', 'nuts', 'fish', 'produce', 'butcher', 'fastfood', 'sweets'] : ['clothes', 'cafe', 'fastfood', 'phone', 'market', 'shoes', 'books', 'jewellery', 'restaurant', 'optician', 'bakery', 'barber'];
-  return pick(list, u);
+  const sh = district().shops;
+  return pick(market ? sh.marketFiller : sh.filler, u);
 }
 
 export interface ShopName {
@@ -189,7 +145,7 @@ export interface ShopName {
 export function shopName(trade: Trade, seed: number, avoid: ReadonlySet<string>): ShopName {
   const w = WORDS[trade];
   for (let k = 0; k < 12; k++) {
-    const first = pick(FIRST, h01(seed, 11 + k));
+    const first = pick(district().shops.firstWords, h01(seed, 11 + k));
     if (avoid.has(first)) {
       continue;
     }

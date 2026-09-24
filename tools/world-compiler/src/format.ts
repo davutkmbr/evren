@@ -279,6 +279,12 @@ export interface BuildingRec {
   height: number;
   heightSource: 'height' | 'levels' | 'default';
   levels?: number;
+  /**
+   * Format 1: the building is a landmark (place of worship, tomb, fountain, hamam, covered bazaar...) compiled as
+   * simple massing: `worship`, `market`, `landmark` or the OSM historic / amenity value. A runtime that draws its own
+   * landmark model can hide this building's geometry (its footprint and height stay valid for colliders).
+   */
+  landmark?: string;
   doors: string[];
 }
 

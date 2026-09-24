@@ -242,6 +242,7 @@ function gateB(t: TileContext, x: number, z: number, heading: number, gy: number
 
 export const precinctStep: CompileStep = {
   id: 'streetPrecinct',
+  handAuthored: 'precinct',
   tile(t) {
     if (!streetTile(t)) {
       return;

@@ -1,21 +1,23 @@
 /**
  * Façade plans: typology, storeys, heights, colours and per-building variation of every building the façade kit
- * builds (full-detail tiles, format 1). Deterministic: every choice comes from the OSM data, the S1 spec table and a
- * hash of the OSM id.
+ * builds (full-detail tiles, format 1). Deterministic: every choice comes from the OSM data, the district profile
+ * (../district.ts: typology mix, storey ranges, paint, balconies, per-building spec rows) and a hash of the OSM id.
  *
  * Typologies (.docs/street/s1-strip.md, section 3):
  * - T1: 1950–70s balconied apartment (G + 4–5, floor-to-floor 3.0 m, çıkma, balconies, PVC windows, roller boxes);
  * - T2: late-Ottoman / early-Republic masonry (2–4 storeys of 3.6–4.2 m, tall windows, cornice, hipped roof on some);
  * - T3: 1980s+ infill or refit (ribbon glazing, composite panels, glass balustrades, two-storey glazed base);
  * - T5: kiosk (one storey).
- * Heights: the S1 spec's per-building storeys (section 2) win, then OSM height / levels, then parts inherit their
- * outline's tags (Simple 3D Buildings: the outline carries building:levels, its parts do not), then a hash.
+ * Heights: the profile's per-building storeys (Kadıköy: S1 spec section 2) win, then OSM height / levels, then parts
+ * inherit their outline's tags (Simple 3D Buildings: the outline carries building:levels, its parts do not), then a
+ * hash over the profile's storey range.
  */
 import * as THREE from 'three';
 import type { OsmBuilding } from '../../../../src/world/osm/data';
 import { pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import type { Solid } from '../buildings';
 import type { RGBA } from '../mesh';
+import { district } from '../district';
 import { h01, lin, mix, pick, pickWeighted, scale } from './frame';
 
 export type Typology = 'T1' | 'T2' | 'T3' | 'T5';
@@ -63,12 +65,8 @@ export interface FacadePlan {
   source: 'spec' | 'osm-height' | 'osm-levels' | 'parent-levels' | 'hash';
 }
 
-/** Buildings owned by the hero lane (piers, Haldun Taner, İskele Camii, Aya Efimia): the façade kit leaves them as blocks. */
-export const HERO_IDS = new Set([102190096, 560203763, 102190100, 102190093, 694298377, 694298362, 694298363]);
-/** Heights the spec gives for hero blocks the kit still emits as plain blocks (m above the lowest ground). */
-export const HERO_HEIGHT: Record<number, number> = { 102190100: 13 };
-
-interface SpecRow {
+/** A per-building row fitted to reference photos (district profiles, `buildings.spec`). */
+export interface SpecRow {
   typ: Typology;
   storeys: [number, number];
   roof?: 'hipped';
@@ -82,80 +80,6 @@ interface SpecRow {
   G?: number;
   F?: number;
 }
-
-/** .docs/street/s1-strip.md section 2 (storeys include the ground floor; ranges resolve by hash). */
-const SPEC: Record<number, SpecRow> = {
-  1462853463: { typ: 'T2', storeys: [3, 4] },
-  179197246: { typ: 'T2', storeys: [3, 4] },
-  709156144: { typ: 'T2', storeys: [4, 4] },
-  694298370: { typ: 'T2', storeys: [3, 4] },
-  709156145: { typ: 'T2', storeys: [4, 4], railing: 'iron' },
-  694298380: { typ: 'T1', storeys: [5, 6] },
-  694298381: { typ: 'T1', storeys: [5, 6] },
-  694298376: { typ: 'T3', storeys: [6, 6], cikma: 'full', glazedBase: 2, wall: 0x858a8d },
-  709156143: { typ: 'T1', storeys: [5, 6] },
-  694298375: { typ: 'T1', storeys: [5, 5] },
-  694298374: { typ: 'T1', storeys: [5, 5] },
-  694298373: { typ: 'T2', storeys: [2, 3] },
-  179197314: { typ: 'T1', storeys: [5, 5] },
-  694298383: { typ: 'T5', storeys: [1, 1] },
-  179197243: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
-  179197258: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
-  179197266: { typ: 'T1', storeys: [5, 6] },
-  1462853447: { typ: 'T1', storeys: [5, 5] },
-  179197226: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
-  1462853450: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
-  711321929: { typ: 'T1', storeys: [3, 4], wall: 0xdcd2b6, frame: 0x3a4d40, cikma: 'none' },
-  694715116: { typ: 'T1', storeys: [4, 5] },
-  711321928: { typ: 'T1', storeys: [4, 5] },
-  694715117: { typ: 'T1', storeys: [4, 5] },
-  694298355: { typ: 'T1', storeys: [4, 5] },
-  694715125: { typ: 'T1', storeys: [4, 5] },
-  694298352: { typ: 'T1', storeys: [3, 4] },
-  694298353: { typ: 'T1', storeys: [3, 4] },
-  694715137: { typ: 'T1', storeys: [3, 4] },
-  694715138: { typ: 'T1', storeys: [3, 4] },
-};
-
-/**
- * Kadıköy paint palette (sRGB) with weights: dusty ochre, faded salmon, grey-green, cream, light grey, dirty white,
- * blue-grey. Sampled from the strip's reference photos (.shots/s1/reference: c06, c07, Emel Apt, the çarşı and
- * Güneşlibahçe streets), where old paint has saturation 0.05-0.35 (HSV), never the 0.4-0.55 of fresh pastels; the
- * values here are albedo-level (a little lighter than the shaded photo pixels). weather.ts paintAt adds the mottling,
- * dust drift and sun fading on top.
- */
-const T1_PAINT: (readonly [number, number])[] = [
-  [0xc9ae80, 1.2],
-  [0xcdb68d, 1],
-  [0xbba27a, 0.8],
-  [0xc8a391, 0.9],
-  [0xceb2a3, 0.7],
-  [0xaab29c, 0.7],
-  [0x9fab96, 0.5],
-  [0xd8ccb2, 1.4],
-  [0xd3c6a9, 1],
-  [0xbcb8b0, 1.1],
-  [0xaeaba4, 0.8],
-  [0xd9d6ce, 1.1],
-  [0xdedbd3, 0.9],
-  [0xa9b2b4, 0.4],
-  [0xcdb9b1, 0.5],
-];
-const T2_PAINT: (readonly [number, number])[] = [
-  [0xd2bf8f, 1.4],
-  [0xd8cdb4, 1.2],
-  [0xbcb6aa, 1],
-  [0xc9b192, 0.8],
-  [0xc0c3b6, 0.5],
-  [0xc9a797, 0.5],
-];
-const T3_PANEL: (readonly [number, number])[] = [
-  [0x858a8e, 1],
-  [0x595d61, 0.7],
-  [0xd9d8d3, 1],
-  [0xbdbfbe, 0.8],
-];
-const TRIM = [0xdfdcd3, 0xdad1bb, 0xd6d3cb];
 
 /** Storey metrics per typology: ground floor, upper floor-to-floor ranges (m) and parapet. */
 const METRICS: Record<Typology, { G: [number, number]; F: [number, number]; parapet: number }> = {
@@ -204,21 +128,15 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   const seed = (Math.abs(s.rec.osmId) % 1_000_003) * 0.618 + 0.37;
   const H = (k: number): number => h01(seed, k);
   const area = Math.abs(ringArea(s.ring));
-  const spec = SPEC[s.rec.osmId];
+  const dp = district();
+  const spec = dp.buildings.spec[s.rec.osmId];
   let typ: Typology;
   if (spec) {
     typ = spec.typ;
   } else if (area < 25 || ['kiosk', 'shed', 'hut', 'booth', 'container'].includes(s.rec.kind)) {
     typ = 'T5';
   } else {
-    typ = pickWeighted<Typology>(
-      [
-        ['T1', 0.6],
-        ['T2', area < 90 ? 0.3 : 0.2],
-        ['T3', area > 180 ? 0.25 : 0.12],
-      ],
-      H(1),
-    );
+    typ = pickWeighted<Typology>(dp.buildings.typology(area, s.rec.kind), H(1));
   }
   const met = METRICS[typ];
   const G = spec?.G ?? met.G[0] + (met.G[1] - met.G[0]) * H(2);
@@ -237,7 +155,7 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
     storeys = levels + (osm?.roofLevels ?? 0);
     source = osm?.levels ? 'osm-levels' : 'parent-levels';
   } else {
-    const [lo, hi] = typ === 'T1' ? [5, 6] : typ === 'T2' ? [3, 4] : typ === 'T3' ? [5, 7] : [1, 1];
+    const [lo, hi] = typ === 'T5' ? [1, 1] : dp.buildings.storeys[typ];
     storeys = lo + Math.floor(H(4) * (hi - lo + 1));
     if (typ !== 'T5' && area < 45) {
       storeys = Math.max(2, storeys - 2);
@@ -250,11 +168,12 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   const roof: FacadePlan['roof'] = spec?.roof ?? (typ === 'T2' && osm?.roofShape !== 'flat' && H(5) < 0.25 && area < 260 ? 'hipped' : osm?.roofShape === 'hipped' ? 'hipped' : 'flat');
   const roofY = streetBase + G + (storeys - 1) * F;
 
-  const paint = spec?.wall ?? osmPaint(osm?.colour) ?? (typ === 'T2' ? pickWeighted(T2_PAINT, H(6)) : typ === 'T3' ? pickWeighted(T3_PANEL, H(6)) : pickWeighted(T1_PAINT, H(6)));
-  const wear = Math.min(1, Math.max(0, (typ === 'T2' ? 0.7 : typ === 'T3' ? 0.25 : 0.5) + (H(7) - 0.5) * 0.6));
+  const pal = dp.facade.paint;
+  const paint = spec?.wall ?? osmPaint(osm?.colour) ?? (typ === 'T2' ? pickWeighted(pal.T2, H(6)) : typ === 'T3' ? pickWeighted(pal.T3, H(6)) : pickWeighted(pal.T1, H(6)));
+  const wear = Math.min(1, Math.max(0, (typ === 'T2' ? 0.7 : typ === 'T3' ? 0.25 : 0.5) + dp.buildings.wearBias + (H(7) - 0.5) * 0.6));
   const wall = scale(lin(paint), 0.92 + 0.1 * H(8) - wear * 0.08);
-  const trim = typ === 'T3' ? lin(0xdcdbd6) : scale(mix(lin(pick(TRIM, H(9))), wall, 0.25 * H(10)), 1 - wear * 0.06);
-  const accent = typ === 'T1' && H(11) < 0.4 ? scale(lin(pickWeighted(T1_PAINT, H(12))), 0.9) : H(11) < 0.7 ? scale(wall, 0.9) : wall;
+  const trim = typ === 'T3' ? lin(0xdcdbd6) : scale(mix(lin(pick(pal.trim, H(9))), wall, 0.25 * H(10)), 1 - wear * 0.06);
+  const accent = typ === 'T1' && H(11) < 0.4 ? scale(lin(pickWeighted(pal.T1, H(12))), 0.9) : H(11) < 0.7 ? scale(wall, 0.9) : wall;
   const timber = typ === 'T2' ? H(13) < 0.55 : H(13) < 0.2;
   const frameColor = spec?.frame !== undefined ? lin(spec.frame) : timber ? lin(pick([0x5b4131, 0x66503d, 0x44503f, 0x4d4034], H(14))) : lin(0xe6e5df, 0.95 - 0.1 * H(14));
 
@@ -270,18 +189,9 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   }
   let balcony: BalconyMode = 'none';
   if (typ === 'T1' && storeys >= 3) {
-    balcony = pickWeighted<BalconyMode>(
-      [
-        ['all', 0.25],
-        ['alternate', 0.25],
-        ['ends', 0.2],
-        ['centre', 0.15],
-        ['none', 0.15],
-      ],
-      H(16),
-    );
+    balcony = pickWeighted<BalconyMode>(dp.facade.t1Balcony, H(16));
   } else if (typ === 'T2' && storeys >= 3) {
-    balcony = spec?.railing === 'iron' || H(16) < 0.45 ? 'centre' : 'none';
+    balcony = spec?.railing === 'iron' || H(16) < dp.facade.t2Balcony ? 'centre' : 'none';
   } else if (typ === 'T3' && storeys >= 3) {
     balcony = H(16) < 0.6 ? 'all' : 'alternate';
   }

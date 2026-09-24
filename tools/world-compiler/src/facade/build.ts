@@ -19,9 +19,10 @@
  */
 import * as THREE from 'three';
 import { pointInRing } from '../../../../src/world/osm/shared/geometry';
-import type { FootprintIndex } from '../../../../src/world/osm/shared/footprints';
 import { type StreetSurface, Zone } from '../../../../src/world/osm/shared/street-surface';
 import type { Solid } from '../buildings';
+import type { RingIndex } from '../cover';
+import { district } from '../district';
 import type { DoorRec, InstanceRec, PoiRec, XYZ } from '../format';
 import type { GroundHeights } from '../ground';
 import type { LightSink } from '../lights';
@@ -41,6 +42,8 @@ export interface Edge {
   f: Frame;
   len: number;
   kind: EdgeKind;
+  /** Median free depth (m) in front of the edge before another building (Infinity: none within FREE_REACH). */
+  gap: number;
   convexL: boolean;
   convexR: boolean;
   gMean: number;
@@ -67,7 +70,8 @@ export interface Win extends Rect {
 export interface FacadeCtx {
   mesh: TileMesh;
   heights: GroundHeights;
-  footprints: FootprintIndex;
+  /** Building outlines with their courtyards (cover.ts): what a façade faces. */
+  outlines: RingIndex<number>;
   surface: StreetSurface;
   land: (x: number, z: number) => number;
   place: (asset: string, position: XYZ, yaw: number, opts?: PlaceOptions) => InstanceRec;
@@ -104,12 +108,58 @@ const r2 = (v: number): number => Math.round(v * 100) / 100;
 /* Edges                                                                                                           */
 /* ------------------------------------------------------------------------------------------------------------- */
 
-/** Classifies the outer ring's edges: party (another building behind), street, open (courtyard / back) or short. */
-export function classifyEdges(s: Solid, heights: GroundHeights, footprints: FootprintIndex, surface: StreetSurface, land: (x: number, z: number) => number): Edge[] {
+/** Reach (m) of the free-space probe in front of a wall: a building further away does not limit what projects. */
+const FREE_REACH = 9;
+const FREE_STEP = 0.25;
+/** Space (m) kept free between things projecting from two facing walls. */
+const FACING_MARGIN = 0.3;
+/** Median free depth (m) below which an edge faces its neighbour across a sliver (a blank wall like a party wall). */
+const SLIVER = 1.2;
+/**
+ * Free depth (m) a street sample needs in front of the wall when no street surface lies in that free space (a
+ * forecourt or set-back): nearer, the edge faces a neighbour, not the street.
+ */
+const STREET_CLEAR = 2.0;
+/** How far (m) the probe looks for a street surface in the free space in front of a wall. */
+const FACE_REACH = 7.5;
+/** Depth (m) an AC unit on its brackets needs in front of the wall. */
+export const AC_DEPTH = 0.55;
+
+/**
+ * Free depth (m) in front of the wall of `s` at the point (x, z) on the wall, along the outward normal (nx, nz),
+ * before another building (or another wing of this one); Infinity when nothing stands within FREE_REACH.
+ */
+function gapFrom(outlines: RingIndex<number>, s: Solid, x: number, z: number, nx: number, nz: number): number {
+  for (let d = FREE_STEP; d < FREE_REACH; d += FREE_STEP) {
+    const px = x + nx * d;
+    const pz = z + nz * d;
+    const hit = outlines.at(px, pz, s.rec.osmId);
+    // The building's own outline counts only past the first 0.6 m (another wing across a yard, not its own corner).
+    if (hit !== undefined || (d > 0.6 && pointInRing(s.ring, px, pz) && !s.holes.some((h) => pointInRing(h, px, pz)))) {
+      return d - FREE_STEP / 2;
+    }
+  }
+  return Infinity;
+}
+
+/** A street surface (carriageway, pavement, pedestrian area, footway) lies at (x, z). */
+function walkable(surface: StreetSurface, x: number, z: number): boolean {
+  const zone = surface.zone(x, z);
+  return zone === Zone.Carriageway || zone === Zone.Sidewalk || zone === Zone.Pedestrian || surface.pathDistance(x, z) < 0.3;
+}
+
+/**
+ * Classifies the outer ring's edges by what they face: party (another building behind, or across a sliver gap
+ * narrower than SLIVER), street, open (courtyard, back lot) or short. A sample of an edge faces the street when a
+ * street surface lies in the free space in front of the wall (before the next building, within FACE_REACH: a lane
+ * between two blocks is a street however narrow), or, with at least STREET_CLEAR of free space, when a street is near
+ * (a forecourt or set-back). A street behind the building across a gap or courtyard does not count.
+ */
+export function classifyEdges(s: Solid, heights: GroundHeights, outlines: RingIndex<number>, surface: StreetSurface, land: (x: number, z: number) => number): Edge[] {
   const ring = s.ring;
   const n = ring.length / 2;
   const out: Edge[] = [];
-  const inOther = (x: number, z: number): boolean => footprints.inside(x, z) && !pointInRing(ring, x, z);
+  const inOther = (x: number, z: number): boolean => outlines.inside(x, z, s.rec.osmId) && !pointInRing(ring, x, z);
   const turn = (i: number): number => {
     const ax = ring[i * 2];
     const az = ring[i * 2 + 1];
@@ -130,10 +180,17 @@ export function classifyEdges(s: Solid, heights: GroundHeights, footprints: Foot
       const [x, z] = f.xz(Math.max(0, Math.min(len, r)), 0.6);
       return heights.at(x, z);
     };
+    const gapAt = (r: number): number => {
+      const [x, z] = f.xz(r, 0);
+      return gapFrom(outlines, s, x, z, f.nx, f.nz);
+    };
     let kind: EdgeKind;
+    let gap = Infinity;
     if (len < 1.2) {
       kind = 'short';
     } else {
+      const gaps = [0.2, 0.5, 0.8].map((t) => gapAt(len * t));
+      gap = [...gaps].sort((p, q) => p - q)[1];
       let party = 0;
       for (const t of [0.2, 0.5, 0.8]) {
         const [x, z] = f.xz(len * t, 1.0);
@@ -141,17 +198,23 @@ export function classifyEdges(s: Solid, heights: GroundHeights, footprints: Foot
           party++;
         }
       }
-      if (party >= 2) {
+      if (party >= 2 || gap < SLIVER) {
         kind = 'party';
       } else {
         let street = 0;
         for (const t of [0.25, 0.5, 0.75]) {
-          const [x, z] = f.xz(len * t, 1.6);
-          if (land(x, z) <= 0) {
-            continue;
+          const r = len * t;
+          const g = gapAt(r);
+          let faces = false;
+          for (let d = 0.3; d < Math.min(g, FACE_REACH) && !faces; d += 0.4) {
+            const [x, z] = f.xz(r, d);
+            faces = land(x, z) > 0 && walkable(surface, x, z);
           }
-          const zone = surface.zone(x, z);
-          if (zone === Zone.Carriageway || zone === Zone.Sidewalk || zone === Zone.Pedestrian || surface.distance(x, z) < 6 || surface.pathDistance(x, z) < 3) {
+          if (!faces && g >= STREET_CLEAR) {
+            const [x, z] = f.xz(r, 1.6);
+            faces = land(x, z) > 0 && (surface.distance(x, z) < 6 || surface.pathDistance(x, z) < 3);
+          }
+          if (faces) {
             street++;
           }
         }
@@ -161,7 +224,7 @@ export function classifyEdges(s: Solid, heights: GroundHeights, footprints: Foot
     // Vertex B (left end, r = 0) joins this edge and the next; vertex A (right end) joins the previous one.
     const convexL = turn(i) > 0;
     const convexR = turn((i - 1 + n) % n) > 0;
-    out.push({ i, f, len, kind, convexL, convexR, gMean: (gAt(len * 0.25) + gAt(len * 0.5) + gAt(len * 0.75)) / 3, gAt });
+    out.push({ i, f, len, kind, gap, convexL, convexR, gMean: (gAt(len * 0.25) + gAt(len * 0.5) + gAt(len * 0.75)) / 3, gAt });
   }
   return out;
 }
@@ -192,6 +255,8 @@ export interface Ctx2 {
   bands: boolean;
   units: ShopUnit[];
   mainEdge: number;
+  /** Free depth cache of gapOf (edge and 0.5 m slot). */
+  gaps: Map<number, number>;
   /** The wall of e stops CHAMFER short of its left (r = 0) / right (r = len) end for a chamfered convex corner. */
   chamferL: (e: Edge) => boolean;
   chamferR: (e: Edge) => boolean;
@@ -231,6 +296,7 @@ export function buildFacade(s: Solid, p: FacadePlan, edges: readonly Edge[], c: 
     eave: p.typ === 'T1' && p.roof === 'flat' && H(5) < 0.4 ? 0.35 + 0.2 * H(6) : 0,
     bands: p.typ === 'T2' || (p.typ === 'T1' && H(7) < 0.3),
     units: [],
+    gaps: new Map(),
     mainEdge,
     chamferL: (e) => cornerChamfer(edges, e.i, 'L'),
     chamferR: (e) => cornerChamfer(edges, e.i, 'R'),
@@ -545,6 +611,7 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
             main: e.i === x.mainEdge,
             market: c.market,
             clearAt: (r) => clearAhead(x, e, r),
+            roomAt: (r) => roomAt(x, e, r),
             interior: (doorId, poiId) => interiorLink(x, doorId, poiId),
           },
           p,
@@ -648,7 +715,7 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
     b.flush();
   }
   if (e.kind === 'street' || e.kind === 'open') {
-    facadeLife(x, e, b, { wins, units, balconies, ck, R });
+    facadeLife(x, e, b, { wins, units, balconies, ck, R, room: (r) => roomAt(x, e, r) });
     b.flush();
   }
   return units;
@@ -955,13 +1022,39 @@ function doorsOn(x: Ctx2, e: Edge): { id: string; r: number; width: number; heig
 
 /** Free depth in front of the wall at r before another building (max 4.5 m). */
 function clearAhead(x: Ctx2, e: Edge, r: number): number {
-  for (let d = 0.5; d <= 4.5; d += 0.25) {
-    const [px, pz] = e.f.xz(r, d);
-    if (x.c.footprints.inside(px, pz) && !pointInRing(x.s.ring, px, pz)) {
-      return d;
-    }
+  return Math.min(4.5, gapOf(x, e, r));
+}
+
+/** Free depth (m) in front of the wall at r before another building (Infinity past FREE_REACH), cached per 0.5 m. */
+function gapOf(x: Ctx2, e: Edge, r: number): number {
+  const key = e.i * 100000 + Math.round(Math.max(0, Math.min(e.len, r)) * 2);
+  let g = x.gaps.get(key);
+  if (g === undefined) {
+    const [px, pz] = e.f.xz(Math.max(0.05, Math.min(e.len - 0.05, r)), 0);
+    g = gapFrom(x.c.outlines, x.s, px, pz, e.f.nx, e.f.nz);
+    x.gaps.set(key, g);
   }
-  return 4.5;
+  return g;
+}
+
+/**
+ * How far the façade may project at r: half the free depth in front of it (the wall across may project as much),
+ * minus FACING_MARGIN / 2; Infinity when no building stands within FREE_REACH. Balconies, AC units, awnings,
+ * projecting signs and stalls must fit in it.
+ */
+export function roomAt(x: Ctx2, e: Edge, r: number): number {
+  const g = gapOf(x, e, r);
+  return Number.isFinite(g) ? Math.max(0, (g - FACING_MARGIN) / 2) : Infinity;
+}
+
+/** The least room over [r0, r1] (sampled at both ends, the middle and every 1.5 m). */
+export function roomOver(x: Ctx2, e: Edge, r0: number, r1: number): number {
+  const n = Math.max(2, Math.ceil((r1 - r0) / 1.5));
+  let m = Infinity;
+  for (let k = 0; k <= n; k++) {
+    m = Math.min(m, roomAt(x, e, r0 + ((r1 - r0) * k) / n));
+  }
+  return m;
 }
 
 /** Depth inside the own footprint behind the wall at r (max 4 m). */
@@ -1028,7 +1121,7 @@ function layoutWindows(x: Ctx2, e: Edge, a: number, b: number, dPlane: number, a
     if (ww < 0.55) {
       continue;
     }
-    const balc = allowBalcony && e.kind === 'street' && balconyAt(p.balcony, j, nb);
+    const balc = allowBalcony && e.kind === 'street' && balconyAt(p.balcony, j, nb) && roomOver(x, e, rc - bw / 2, rc + bw / 2) >= x.balconyP + 0.05;
     for (let k = 1; k < p.storeys; k++) {
       const fy = x.floorY(k);
       const next = x.floorY(k + 1);
@@ -1202,7 +1295,7 @@ function emitWindow(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, wallCol: RGB
     woodShutters(x, e, b, w, dp, U);
   }
   // AC unit on brackets under the window, or on the balcony beside the door; a condensate hose and its streak.
-  if ((p.typ === 'T1' || p.typ === 'T3') && w.kind !== 'shopribbon' && w.kind !== 'small' && U(14) < (w.kind === 'ribbon' ? 0.45 : 0.34)) {
+  if ((p.typ === 'T1' || p.typ === 'T3') && w.kind !== 'shopribbon' && w.kind !== 'small' && U(14) < (w.kind === 'ribbon' ? 0.45 : 0.34) * district().facade.acScale && roomAt(x, e, (w.r0 + w.r1) / 2) >= AC_DEPTH) {
     const yaw = Math.atan2(e.f.nx, e.f.nz);
     const rc = w.kind === 'ribbon' ? r0 + (r1 - r0) * (0.2 + 0.6 * U(15)) : w.kind === 'door' ? (mull[0] - r0 < r1 - mull[0] ? r1 - 0.5 : r0 + 0.5) : (r0 + r1) / 2;
     const yb = w.kind === 'door' ? w.fy + 0.03 : y0 - 0.74;
@@ -1404,6 +1497,11 @@ function emitBalconies(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], ck: Cik
     if (r1 - r0 < 0.8) {
       continue;
     }
+    // No balcony slab over a lane too narrow for it (the facing wall may carry one too).
+    const room = roomOver(x, e, r0, r1);
+    if (room < P + 0.05) {
+      continue;
+    }
     const y0 = run.fy - 0.14;
     const y1 = run.fy + 0.04;
     const U = (q: number): number => h01(p.seed + run.k * 7.1 + r0, q);
@@ -1465,7 +1563,7 @@ function emitBalconies(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], ck: Cik
       }
     }
     b.flush();
-    out.push({ r0, r1, y1, top: p.railing === 'glazed' ? y1 + 0.9 : top, P, k: run.k, open: p.railing !== 'glazed', ceiling: x.floorY(run.k + 1) - 0.16 });
+    out.push({ r0, r1, y1, top: p.railing === 'glazed' ? y1 + 0.9 : top, P, k: run.k, open: p.railing !== 'glazed', ceiling: x.floorY(run.k + 1) - 0.16, room });
   }
   return out;
 }
@@ -1481,6 +1579,8 @@ export interface Balcony {
   open: boolean;
   /** Underside of the slab above (or the top-floor enclosure). */
   ceiling: number;
+  /** Room in front of the wall over the balcony (roomAt): what hangs outside the railing must fit in it. */
+  room: number;
 }
 
 /** Steel railings: flat-bar, square-bar, wrought iron or galvanised pipe, on the front and both ends. */
@@ -1570,11 +1670,14 @@ function cikmaSpan(x: Ctx2, e: Edge): Cikma | null {
   if (c1 - c0 < 2.2) {
     return null;
   }
-  // Keep clear of the building across the lane.
+  // Keep clear of the building across the lane (which may have its own çıkma).
   for (const r of [c0 + 0.2, (c0 + c1) / 2, c1 - 0.2]) {
     if (clearAhead(x, e, r) < D + 1.8) {
       return null;
     }
+  }
+  if (roomOver(x, e, c0, c1) < D + 0.1) {
+    return null;
   }
   return { c0, c1, D, y0: x.floorY(1) - 0.12 };
 }

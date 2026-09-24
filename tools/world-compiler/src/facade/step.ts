@@ -3,11 +3,14 @@
  *
  * - Format 0 and greybox tiles: exactly the core step (format 0 stays byte-identical).
  * - Format 1, prepare: building parts inherit their outline's levels / height (Simple 3D Buildings), every building
- *   of a full-detail tile gets a FacadePlan (typology, storeys from the S1 spec table, OSM tags or a hash) and its
- *   manifest record's topY / height follow the plan, so colliders and the other lanes see the real heights.
- * - Format 1, full-detail tiles: real façade geometry (facade/build.ts) and shopfronts (shopfront/); hero buildings
- *   stay blocks with door recesses. The hero lane can take a building over entirely by adding its id to the Set in
- *   `AreaContext.shared` under FACADE_SKIP ('facade:skip'); this step then emits nothing for it.
+ *   of a full-detail tile gets a FacadePlan (typology, storeys from the district profile's spec rows, OSM tags or a
+ *   hash) and its manifest record's topY / height follow the plan, so colliders and the other lanes see the real
+ *   heights. Landmarks (district.ts landmarkOf: places of worship, tombs, fountains, hamams, the profile's list) get
+ *   `landmark` in their record and no plan; so do footprints lying (70 %+) inside another one (no plan).
+ * - Format 1, full-detail tiles: real façade geometry (facade/build.ts) and shopfronts (shopfront/); landmarks are
+ *   simple stone massing (every LOD), contained footprints and hero buildings stay blocks with door recesses. The
+ *   hero lane can take a building over entirely by adding its id to the Set in `AreaContext.shared` under FACADE_SKIP
+ *   ('facade:skip'); this step then emits nothing for it.
  * - Tile manifests get `extra.facade`: per-building typology, storeys, height source, shop units, and triangles.
  */
 import * as THREE from 'three';
@@ -17,28 +20,22 @@ import { LOD0, LOD1, type TileMesh, type Vec3 } from '../mesh';
 import { lin, scale } from './frame';
 import type { AreaContext, CompileStep } from '../registry';
 import { osmWords } from '../shopfront/names';
+import { district, landmarkOf } from '../district';
+import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
-import { type FacadePlan, HERO_HEIGHT, HERO_IDS, parentOf, planFacade, planTop } from './plan';
+import { type FacadePlan, parentOf, planFacade, planTop } from './plan';
 
 /** AreaContext.shared key of the Set<string> of building ids (e.g. "w102190096") the façade step must not emit. */
 export const FACADE_SKIP = 'facade:skip';
 
 interface Shared {
   plans: Map<Solid, { plan: FacadePlan; edges: Edge[] }>;
+  /** Solids shown as simple stone massing: landmarks (the record's `landmark`) and footprints inside another one. */
+  massing: Set<Solid>;
+  contained: string[];
   avoid: Set<string>;
   inherited: string[];
   totals: { buildings: number; shops: number; lod0Triangles: number };
-}
-
-/** The fish / produce end of the strip: near the Yasa × Güneşlibahçe × Yağlıkçı İsmail junction (spec P10–P11). */
-function inMarket(x: number, z: number): boolean {
-  const ax = 405.1;
-  const az = 6032.1;
-  const bx = 442.2;
-  const bz = 6052.5;
-  const l2 = (bx - ax) ** 2 + (bz - az) ** 2;
-  const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / l2));
-  return Math.hypot(ax + (bx - ax) * t - x, az + (bz - az) * t - z) < 18 || Math.hypot(x - bx, z - bz) < 40;
 }
 
 function prepare(a: AreaContext): void {
@@ -46,7 +43,7 @@ function prepare(a: AreaContext): void {
     return;
   }
   const byId = new Map(a.data.buildings.map((b) => [b.id, b]));
-  const sh: Shared = { plans: new Map(), avoid: new Set(), inherited: [], totals: { buildings: 0, shops: 0, lod0Triangles: 0 } };
+  const sh: Shared = { plans: new Map(), massing: new Set(), contained: [], avoid: new Set(), inherited: [], totals: { buildings: 0, shops: 0, lod0Triangles: 0 } };
   a.shared.set('facade', sh);
   const names: string[] = [];
   for (const m of a.manifests.values()) {
@@ -58,12 +55,20 @@ function prepare(a: AreaContext): void {
   }
   sh.avoid = osmWords(names);
   const f = a.foundation;
+  const dp = district();
+  const inside = containedIn(a.solids);
   for (const s of a.solids) {
     const osm = byId.get(s.rec.osmId);
     const parent = s.rec.part && s.rec.heightSource === 'default' ? parentOf(s, a.data.buildings) : null;
     const full = a.detailOf(a.tileOfSolid.get(s) ?? '') === 'full';
-    if (HERO_IDS.has(s.rec.osmId)) {
-      const h = HERO_HEIGHT[s.rec.osmId];
+    const landmark = osm ? landmarkOf(osm) : null;
+    if (landmark && !dp.buildings.heroIds.has(s.rec.osmId)) {
+      s.rec.landmark = landmark;
+      sh.massing.add(s);
+      continue;
+    }
+    if (dp.buildings.heroIds.has(s.rec.osmId)) {
+      const h = dp.buildings.heroHeights[s.rec.osmId];
       if (h && full) {
         s.rec.topY = Math.round((s.rec.groundY + h) * 100) / 100;
         s.rec.height = h;
@@ -81,7 +86,14 @@ function prepare(a: AreaContext): void {
       }
       continue;
     }
-    const edges = classifyEdges(s, a.heights, f.footprints, f.surface, a.land);
+    if (inside(s) >= CONTAINED) {
+      // A footprint (almost) inside another one: a duplicate outline or an unmarked part. Its façade would stand
+      // inside the other building; it stays a plain block.
+      sh.massing.add(s);
+      sh.contained.push(s.rec.id);
+      continue;
+    }
+    const edges = classifyEdges(s, a.heights, a.outlines, f.surface, a.land);
     const base = streetBase(s, edges);
     const plan = planFacade(s, osm, parent, base);
     if (plan.source === 'parent-levels') {
@@ -93,6 +105,43 @@ function prepare(a: AreaContext): void {
     s.rec.height = Math.round((s.rec.topY - s.rec.groundY) * 100) / 100;
     sh.plans.set(s, { plan, edges });
   }
+}
+
+/** Share of a footprint inside other footprints from which it counts as contained (no façade of its own). */
+const CONTAINED = 0.7;
+
+/** Share of each solid's area that lies inside other grounded solids (sampled on a grid of about 64 points). */
+function containedIn(solids: readonly Solid[]): (s: Solid) => number {
+  const grid = new BoxGrid(20);
+  solids.forEach((q, k) => {
+    const b = bounds(q.ring);
+    grid.add(k, b.minX, b.minZ, b.maxX, b.maxZ);
+  });
+  return (s: Solid): number => {
+    if (!s.grounded) {
+      return 0;
+    }
+    const b = bounds(s.ring);
+    const step = Math.max(0.5, Math.sqrt(Math.abs(ringArea(s.ring))) / 8);
+    let n = 0;
+    let hit = 0;
+    for (let z = b.minZ + step / 2; z < b.maxZ; z += step) {
+      for (let x = b.minX + step / 2; x < b.maxX; x += step) {
+        if (!pointInRing(s.ring, x, z)) {
+          continue;
+        }
+        n++;
+        for (const k of grid.at(x, z)) {
+          const o = solids[k];
+          if (o !== s && o.grounded && pointInRing(o.ring, x, z) && !o.holes.some((h) => pointInRing(h, x, z))) {
+            hit++;
+            break;
+          }
+        }
+      }
+    }
+    return n ? hit / n : 0;
+  };
 }
 
 /**
@@ -190,11 +239,23 @@ export const facadeStep: CompileStep = {
     const skip = t.area.shared.get(FACADE_SKIP) as Set<string> | undefined;
     const records: FacadeRecord[] = [];
     let plainTris = 0;
+    let massTris = 0;
     for (const s of t.solids) {
       if (skip?.has(s.rec.id)) {
         continue;
       }
       const entry = sh.plans.get(s);
+      if (sh.massing.has(s)) {
+        const before = t.mesh.triangles(LOD0);
+        if (s.rec.landmark) {
+          emitBlock(s, t.mesh, 'fac_stone', 'fac_roof_flat');
+        } else {
+          t.mesh.withLod(LOD0, () => emitSolid(s, t.mesh));
+          t.mesh.withLod(LOD1, () => emitBlock(s, t.mesh));
+        }
+        massTris += t.mesh.triangles(LOD0) - before;
+        continue;
+      }
       if (!entry && s.rec.kind === 'roof' && s.holes.length === 0) {
         const before = t.mesh.triangles(LOD0);
         t.mesh.withLod(LOD0, () => emitCanopy(s, t.mesh, (x, z) => t.area.heights.at(x, z)));
@@ -215,7 +276,7 @@ export const facadeStep: CompileStep = {
         buildFacade(s, entry.plan, entry.edges, {
           mesh: t.mesh,
           heights: t.area.heights,
-          footprints: t.area.foundation.footprints,
+          outlines: t.area.outlines,
           surface: t.area.foundation.surface,
           land: t.area.land,
           place: (asset, position, yaw, opts) => t.place(asset, position, yaw, opts),
@@ -224,7 +285,7 @@ export const facadeStep: CompileStep = {
           avoid: sh.avoid,
           pois: t.manifest.pois.filter((q) => q.building === s.rec.id),
           doors: t.manifest.doors.filter((d) => d.building === s.rec.id),
-          market: inMarket(cx, cz),
+          market: district().facade.market(cx, cz),
           interiors: () => t.area.shared.get('interiors') as ReturnType<Parameters<typeof buildFacade>[3]['interiors']>,
         }),
       );
@@ -233,6 +294,14 @@ export const facadeStep: CompileStep = {
     sh.totals.buildings += records.length;
     sh.totals.shops += records.reduce((q, r) => q + r.shops.filter((u) => u.kind === 'shop').length, 0);
     sh.totals.lod0Triangles += tris;
-    t.record('facade', { buildings: records, lod0Triangles: tris, plainLod0Triangles: plainTris, inherited: sh.inherited.filter((id) => t.manifest.buildings.some((b) => b.id === id)) });
+    const mine = (id: string): boolean => t.manifest.buildings.some((b) => b.id === id);
+    t.record('facade', {
+      buildings: records,
+      lod0Triangles: tris,
+      plainLod0Triangles: plainTris,
+      massingLod0Triangles: massTris,
+      inherited: sh.inherited.filter(mine),
+      ...(sh.contained.some(mine) ? { contained: sh.contained.filter(mine) } : {}),
+    });
   },
 };

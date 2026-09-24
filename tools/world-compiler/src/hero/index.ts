@@ -83,6 +83,7 @@ function ferryPose(a: AreaContext): { x: number; z: number; heading: number } | 
 
 export const heroStep: CompileStep = {
   id: 'heroes',
+  handAuthored: 'heroes',
   prepare(a: AreaContext) {
     const shared: HeroShared = { solids: new Set(), outlines: new Set() };
     for (const h of HEROES) {
