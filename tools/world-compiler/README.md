@@ -283,7 +283,7 @@ chosen variant node with its own transform inside the prop). No glTF instancing 
 |---|---|
 | `lod` | LOD policy (above) |
 | `strip` | `{ source, rect, tiles }`: where the full-detail rect came from and which tiles are `full` |
-| `materialDefs[]` | every material the tiles use: `id`, `baseColorFactor`, `baseColor` / `normal` / `orm` (paths under `textures/`, or null), `tiling`, `roughness`, `metallic`, `alphaMode`, `alphaCutoff`, `doubleSided`, `emissive`, `surface`, `castShadow`, `set` |
+| `materialDefs[]` | every material the tiles use: `id`, `baseColorFactor`, `baseColor` / `normal` / `orm` (paths under `textures/`, or null), `tiling`, `roughness`, `metallic`, `alphaMode`, `alphaCutoff`, `doubleSided`, `emissive`, `surface`, `castShadow`, `set`; format 1.1: `variantOf`, `variant`, `weather` |
 | `textures[]` | `{ file, mimeType, width, height, bytes }` of every processed texture |
 | `props` | prop id → `{ glb, hash, bytes, triangles, variants, bounds, drawDistance, castShadow, source, lights }` |
 | `assets[]` | credits of every external asset in the output: `id`, `name`, `kind`, `source`, `url`, `licence`, `author`, `attribution`, `conditions` (each with how it was met) and `usedBy` (material and prop ids) |
@@ -373,8 +373,9 @@ rest in its own files.
 - `MATERIAL_SETS`: arrays of `MaterialDef` (`src/materials.ts`): `id`, `color` (sRGB tint), `textures`
   (`{ asset }` or `{ public }`), `tiling` (m), `maps`, `roughness`, `metallic`, `normalScale`, `occlusion`,
   `alphaMode`, `alphaCutoff`, `doubleSided`, `emissive` (`{ color, nits, night, source }`), `surface`,
-  `castShadow`, `flat` (format 0 colour). Registration order is primitive order. A library of neutral materials
-  exists for every approved set (ids = asset ids, `ph_<folder>` for public sets). Using an unregistered id throws.
+  `castShadow`, `flat` (format 0 colour), `weather` (format 1.1). Registration order is primitive order. A library of
+  neutral materials exists for every approved set (ids = asset ids, `ph_<folder>` for public sets). Using an
+  unregistered id throws. Variants `<base>@<variant>` come from `withVariants` / `materialVariant`.
 - `PROP_SETS`: arrays of `PropDef` (`src/props.ts`): `id`, `asset` (approved model) or `build` (procedural, emitted
   through a `TileMesh` per variant), `unitScale`, `variantsAtOrigin`, `drawDistance`, `castShadow`, `emissive`
   overrides by material name, `lights` template (`position: 'emissive'` = centre of the emissive parts).
@@ -396,9 +397,12 @@ spawns), `bounds`, `origin`, `detail`, `solids` (the solids whose centroid lies 
 | `flatTriangles(m, pts, tris, n, opts?)` | triangulated planar shape (one chart) |
 | `wall(m, ax, az, bx, bz, ya0, ya1, yb0, yb1, n, opts?)` | vertical quad |
 | `addMesh(m, { positions, indices, normals?, uv?, uvm?, color?, lod? })` | any mesh (railings, profiles); box-projected charts and UV0 |
+| `decal(m, centre, n, { size, offset?, rotation?, rect?, color?, weather?, lod? })` | decal quad in front of a surface ([Format 1.1](#format-11--weathering)) |
+| `decalOnWall(m, ax, az, bx, bz, n, along, y, decalOpts)` | decal on a wall, `along` metres from a, centre at height `y` |
 | `withLod(mask, fn)` / `lodMask` | LOD mask of what `fn` emits (`LOD0`, `LOD1`, `LOD2`, `ALL_LODS`) |
 
-`opts`: `uv` (UV0 in repeats per vertex), `uvm` (UV0 in metres), `color` (linear RGBA, one or per vertex), `lod`.
+`opts`: `uv` (UV0 in repeats per vertex), `uvm` (UV0 in metres), `color` (linear RGBA, one or per vertex), `weather`
+(`_WEATHER` `[dirt, streak, edge, damp]`, one or per vertex), `lod`.
 `yaw` for `place` is radians about +Y; `headingYaw(compassDeg, '+Z')` (`src/instances.ts`) turns a compass heading
 into it. Light helpers: `kelvinToRgb`, `spotCandela`, `pointCandela`, `lightRange` (`src/lights.ts`).
 
@@ -416,6 +420,100 @@ The compile must keep working after every change: `npm run compile:world -- --ar
   timeout; `npm run blender -- <script.py> -- <args>`).
 - `sandbox/street.html` previews format 0 and 1 in the WebGL2 renderer: LOD bands, shared textures, instanced props,
   `?t=day|dusk|night` with the nearest lit manifest lights in a fixed pool of 24 point and 24 spot lights.
+
+## Format 1.1 — weathering
+
+Additive to format 1 (`format` stays `1`; readers that ignore the additions render the clean materials). Nothing
+changes for a step that does not use it: format 0 and format 1 output stay byte-identical.
+
+### `_WEATHER` vertex attribute
+
+| | |
+|---|---|
+| name | `_WEATHER` (glTF custom attribute: the leading `_` makes the Khronos validator and default loaders accept and ignore it) |
+| type | `VEC4`, `FLOAT` (5126), not normalized, values in [0, 1]. Float keeps the values exact in every runtime; Blender's importer turns a normalized ubyte VEC4 into an sRGB byte colour, which would distort them. |
+| x | dirt / AO grime: concave corners, reveals, soffits, soot |
+| y | rain streak: under sills, cornices, balconies, AC units |
+| z | edge wear: convex edges, corners, sill and cornice noses (runtimes may gate it further by curvature) |
+| w | damp / splash: wall bases, below leaking gutters |
+| where | tile glbs, on the primitives of materials where a step set it (`opts.weather` / `MeshInput.weather`); the other vertices of such a primitive get 0. Primitives without it: 0 everywhere. Procedural props do not carry it yet. |
+
+Weathering needs vertices where the gradient changes: emit denser rows where it matters (0.5 m rows near the ground,
+under sills), within the +30 % LOD0 triangle budget.
+
+### Material variants
+
+- Id: `<base>@<variant>`, e.g. `fac_plaster@weathered`, `fac_plaster@damaged`. Base ids contain no `@`; variant names
+  match `^[a-z][a-z0-9_]*$`; `weathered` and `damaged` are the canonical ones (the base is the clean one).
+- A variant is a full material: the base definition plus overrides (`materialVariant(base, name, overrides)`, or
+  `...withVariants(base, { weathered: {...}, damaged: {...} })` in a MATERIAL_SETS list). The base is registered first.
+- Steps pick a variant per wall segment by id (`mesh.wall('fac_plaster@weathered', ...)`). Variants with the same
+  textures and tiling share texture files and keep UV0 continuous.
+- `materialDefs[]` and glTF material `extras` carry `variantOf` (base id) and `variant`.
+
+### Weather layers
+
+A material's `weather` (`MaterialDef.weather`, `WeatherDef` in `src/materials.ts`) lists up to four layers, each
+driven by one `_WEATHER` channel: `dirt` (x), `streak` (y), `edge` (z), `damp` (w). A layer takes its maps from a
+registry material (`material`; approved sets only: `WEATHER_LAYER_MATERIALS` has `wx_grime` (concrete),
+`wx_streak` (Leaking003, alpha), `wx_band` (Leaking008, alpha), `wx_substrate` (damaged_plaster)), or none (a flat
+layer: tint, darken, roughness). `WALL_WEATHER` is a starting preset for rendered walls. The compiler bakes the layer
+materials with the tile's materials and lists them in `materialDefs` and `assets` (credits).
+
+`materialDefs[].weather` (paths relative to the index) and glTF material `extras.weather` (paths relative to the glb,
+`../textures/...`) are the same record (`WeatherRec` in `src/format.ts`):
+
+```json
+{ "attribute": "_WEATHER",
+  "layers": {
+    "dirt":   { "channel": 0, "material": "wx_grime", "baseColor": "textures/ph_concrete_color.jpg", "normal": "textures/ph_concrete_normal.jpg",
+                "orm": null, "alpha": false, "tiling": [2.7, 2.7], "wrap": "repeat", "tint": [0.25, 0.22, 0.19], "strength": 0.9,
+                "blend": "multiply", "darken": 1, "roughness": 0.95, "normalScale": 1, "curvature": 0 },
+    "streak": { "channel": 1, "material": "wx_streak", "baseColor": "textures/Leaking003_color.png", "alpha": true, "wrap": "mirror", ... },
+    "edge":   { "channel": 2, "material": "wx_substrate", ..., "curvature": 0.75 },
+    "damp":   { "channel": 3, "material": null, "baseColor": null, "blend": "multiply", "darken": 0.6, "roughness": 0.45, ... } } }
+```
+
+### What each runtime implements (S2)
+
+Per material with `weather`, in the fragment shader, starting from the material's own base colour (texture × factor
+× COLOR_0), roughness and normal, apply the layers in the order dirt, streak, edge, damp:
+
+1. Layer UV = UV0 × (material `tiling` / layer `tiling`), per axis; sample with `wrap` (`mirror` = mirrored repeat).
+2. Coverage `m = clamp(_WEATHER[channel] × strength, 0, 1) × (alpha ? layer baseColor.a : 1) × mix(1, convex, curvature)`.
+   `convex` in [0, 1] is the runtime's convex-edge estimate; a runtime without one uses 1.
+3. Layer colour `c = (baseColor ? layer baseColor.rgb (sRGB decoded) : 1) × tint`.
+   Colour: `mix(col, c, m)` for `blend: "mix"`, `col × mix(1, c, m)` for `"multiply"`; then `col × mix(1, darken, m)`.
+4. Roughness: `roughness` null keeps it; with `orm`: `mix(r, orm.g × roughness, m)`; else `mix(r, roughness, m)`.
+5. Normal: with `normal` (tangent space, OpenGL, UV0 tangents): `normalize(mix(n, n_layer(normalScale), m))`.
+
+- **three.js** (WebGPU, TSL): `GLTFLoader` (r186) lower-cases unknown attribute names, so the data arrives as
+  `geometry.attributes._weather` (`attribute('_weather', 'vec4')` in TSL). Extend `MeshStandardNodeMaterial`
+  `colorNode` / `roughnessNode` / `normalNode` per weathered material; `convex` = 1.
+- **Godot 4.7**: the importer maps only `_CUSTOM0`..`_CUSTOM3` (VEC4) to `CUSTOM0`..`CUSTOM3`
+  (`GLTFDocument::_parse_meshes`) and ignores `_WEATHER`. Either a `GLTFDocumentExtension._import_preflight` renames
+  `_WEATHER` to `_CUSTOM0` in `state.json`, or the compiler adds a `_CUSTOM0` semantic pointing at the same accessor
+  (zero bytes; not done yet, decide in S2). A `ShaderMaterial` per weathered material reads `CUSTOM0`; `convex` = 1.
+- **Unreal 5.8**: not verified yet whether Interchange keeps `_` attributes; plan for a post-import step that moves
+  `_WEATHER` into a second vertex colour or UV2/UV3, and one master material with the four layers as instance
+  parameters (textures, tiling, tint, strength, blend, darken, roughness, curvature); `convex` from a curvature map
+  or 1.
+- **Blender** (reference renders): `scripts/blender/weather.py`, called by `import_area.build()`: one node group
+  `evren_weather` per file, inserted between each weathered material's maps and its Principled BSDF; `convex` =
+  bevel-normal turn (radius `Edge Radius` 3 cm × `Curvature Gain` 4) × smoothstep(`Cavity AO` 0.85, 0.98, local AO
+  within 25 cm), so concave corners get no edge wear.
+
+### Decals
+
+`TileMesh.decal(m, centre, n, opts)` / `decalOnWall(m, ax, az, bx, bz, n, along, y, opts)` emit one quad `offset`
+(default 1 cm, keep 0.5–2 cm) in front of the surface: `size` [w, h] m, `rotation` (radians, counter-clockwise seen
+from the front), `rect` [u0, v0, u1, v1] image rectangle as UV0 (tiling does not apply), `color` (COLOR_0 tint /
+alpha), `weather`, `lod`. The image stands upright on walls and runs east / south on floors. Use a `BLEND` (soft
+stains) or `MASK` (paint, cracks) material with `castShadow: false` and an approved decal set (`opacity` baked into
+the PNG's alpha). Every decal of one material in a tile lands in that material's single primitive (merged per
+material per tile), so decals cost one draw call per decal material and tile. Leaking003 / Leaking008 are
+top- / bottom-anchored stains: as tiled `weather` layers their phase is fixed in world height (`mirror` hides the
+seam), so sill-anchored streaks read best as decals or with a vertically tileable streak texture.
 
 ## Dev dependencies
 

@@ -5,6 +5,12 @@
  *
  * Lanes export their material lists from their own modules and add them to MATERIAL_SETS in registry.ts (one line).
  * Only materials some tile uses reach the output, and only their textures are processed.
+ *
+ * Format 1.1 (weathering, see ../README.md):
+ * - Variants: `<base>@<variant>` (e.g. `fac_plaster@weathered`, `fac_plaster@damaged`) is a full material made from its
+ *   base with overrides (`materialVariant`, `withVariants`); steps pick one per wall segment.
+ * - `weather`: layers (dirt, streak, edge, damp) that runtimes blend over the material, each driven by one channel of
+ *   the `_WEATHER` vertex attribute (mesh.ts). Layer textures come from registry materials (approved sets only).
  */
 
 /** Material id (the glTF material name). */
@@ -28,6 +34,39 @@ export interface EmissiveDef {
   night: boolean;
   source: 'lamp' | 'sign' | 'window' | 'interior' | 'other';
 }
+
+/** Weathering layers in blend order; layer k is driven by `_WEATHER` component k (x, y, z, w). */
+export const WEATHER_LAYERS = ['dirt', 'streak', 'edge', 'damp'] as const;
+export type WeatherLayerName = (typeof WEATHER_LAYERS)[number];
+
+/**
+ * One weathering layer. Coverage m = clamp(channel × strength, 0, 1) × layer alpha (× the runtime's curvature term,
+ * see `curvature`); the layer then replaces or multiplies the base colour, darkens it, and blends roughness and normal.
+ */
+export interface WeatherLayerDef {
+  /** Registry material whose baked maps are the layer (base colour, alpha when it has one, normal, ORM). Absent: a flat layer (tint, darken, roughness only). */
+  material?: MaterialName;
+  /** Metres per layer repeat (default: that material's tiling). */
+  tiling?: [number, number];
+  /** Mirrored repeat (glTF MIRRORED_REPEAT): hides the seams of a non-tiling decal texture used as a layer (streaks). */
+  mirror?: boolean;
+  /** sRGB hex multiplied into the layer colour (default white). */
+  tint?: number;
+  /** Coverage at channel value 1 (default 1). */
+  strength?: number;
+  /** 'mix' (default) replaces the base colour by the layer's; 'multiply' multiplies it (grime, damp). */
+  blend?: 'mix' | 'multiply';
+  /** Colour multiplier at full coverage (default 1; damp about 0.6). */
+  darken?: number;
+  /** Constant roughness of the layer. Default: ORM green × the layer material's roughness factor; a flat layer keeps the base roughness. */
+  roughness?: number;
+  /** Normal map strength of the layer (default: the layer material's normalScale, else 1; 0 keeps the base normal). */
+  normalScale?: number;
+  /** 0..1: how much a runtime's convex-curvature estimate gates the layer (1 = convex edges only). Default 0.75 for edge, 0 otherwise. */
+  curvature?: number;
+}
+
+export type WeatherDef = Partial<Record<WeatherLayerName, WeatherLayerDef>>;
 
 export interface MaterialDef {
   id: MaterialName;
@@ -55,8 +94,57 @@ export interface MaterialDef {
   surface?: 'ground' | 'wall' | 'roof' | 'glass' | 'metal' | 'wood' | 'fabric' | 'plant' | 'other';
   /** Casts shadows at eye level (default: wall and roof surfaces). */
   castShadow?: boolean;
+  /** Weathering layers driven by `_WEATHER` (format 1.1). */
+  weather?: WeatherDef;
   /** Allows this definition to replace an earlier one with the same id. */
   replace?: boolean;
+}
+
+/** Separator of variant ids: `<base>@<variant>`. */
+export const VARIANT_SEPARATOR = '@';
+/** Canonical variant names (others are allowed when they match VARIANT_NAME). */
+export const MATERIAL_VARIANTS = ['weathered', 'damaged'] as const;
+export const VARIANT_NAME = /^[a-z][a-z0-9_]*$/;
+
+export function variantId(base: MaterialName, variant: string): MaterialName {
+  if (base.includes(VARIANT_SEPARATOR) || !VARIANT_NAME.test(variant)) {
+    throw new Error(`bad material variant '${base}${VARIANT_SEPARATOR}${variant}': base ids have no '@', variant names match ${VARIANT_NAME}`);
+  }
+  return `${base}${VARIANT_SEPARATOR}${variant}`;
+}
+
+/** Base id and variant name of a material id (variant null for a base material). */
+export function splitVariant(id: MaterialName): { base: MaterialName; variant: string | null } {
+  const k = id.indexOf(VARIANT_SEPARATOR);
+  return k < 0 ? { base: id, variant: null } : { base: id.slice(0, k), variant: id.slice(k + 1) };
+}
+
+/** `{ variantOf, variant }` of a variant id, `{}` for a base material (manifest and glTF extras fields). */
+export function variantFields(id: MaterialName): { variantOf?: MaterialName; variant?: string } {
+  const { base, variant } = splitVariant(id);
+  return variant === null ? {} : { variantOf: base, variant };
+}
+
+export type MaterialOverrides = Omit<Partial<MaterialDef>, 'id'>;
+
+/** The variant `<base.id>@<variant>`: the base definition with `overrides` (the base's `replace` is not inherited). */
+export function materialVariant(base: MaterialDef, variant: string, overrides: MaterialOverrides): MaterialDef {
+  const def: MaterialDef = { ...base, ...overrides, id: variantId(base.id, variant) };
+  if (!('replace' in overrides)) {
+    delete def.replace;
+  }
+  return def;
+}
+
+/** A base material followed by its variants, for a MATERIAL_SETS list: `...withVariants(def, { weathered: {...} })`. */
+export function withVariants(base: MaterialDef, variants: Record<string, MaterialOverrides>): MaterialDef[] {
+  return [base, ...Object.entries(variants).map(([name, o]) => materialVariant(base, name, o))];
+}
+
+/** Registry materials a material's weather layers read their textures from. */
+export function weatherLayerMaterials(id: MaterialName): MaterialName[] {
+  const w = materialDef(id).weather;
+  return w ? WEATHER_LAYERS.map((k) => w[k]?.material).filter((m): m is MaterialName => !!m) : [];
 }
 
 /** Greybox colours of format 0 (sRGB hex; glTF baseColorFactor stores them linear), in primitive order. */
@@ -83,6 +171,16 @@ export function defineMaterials(defs: readonly MaterialDef[]): void {
     const known = registry.get(d.id);
     if (known && !d.replace) {
       throw new Error(`material '${d.id}' is defined twice (set replace: true to override it)`);
+    }
+    const { base, variant } = splitVariant(d.id);
+    if (variant !== null && (!registry.has(base) || variantId(base, variant) !== d.id)) {
+      throw new Error(`material variant '${d.id}': register its base '${base}' first (withVariants), variant names match ${VARIANT_NAME}`);
+    }
+    for (const k of WEATHER_LAYERS) {
+      const m = d.weather?.[k]?.material;
+      if (m && !registry.has(m)) {
+        throw new Error(`material '${d.id}': weather.${k} uses '${m}', which is not registered yet (WEATHER_LAYER_MATERIALS come early in MATERIAL_SETS)`);
+      }
     }
     if (!known) {
       order.push(d.id);
@@ -177,3 +275,25 @@ export const LIBRARY_MATERIALS: MaterialDef[] = [
   { id: 'ph_granite', color: 0xffffff, textures: { public: 'granite' }, tiling: [3, 3], surface: 'ground' },
   { id: 'ph_yard', color: 0xffffff, textures: { public: 'yard' }, tiling: [3, 3], surface: 'ground' },
 ];
+
+/**
+ * Weathering layer sources (approved sets only), registered right after the library. Lanes reference them in a
+ * material's `weather` (or register their own layer materials before the materials that use them).
+ */
+export const WEATHER_LAYER_MATERIALS: MaterialDef[] = [
+  { id: 'wx_grime', color: 0xffffff, textures: { public: 'concrete' }, tiling: [2.7, 2.7], surface: 'other', castShadow: false },
+  { id: 'wx_streak', color: 0xffffff, textures: { asset: 'Leaking003' }, maps: { normal: false }, alphaMode: 'BLEND', roughness: 0.9, surface: 'other', castShadow: false },
+  { id: 'wx_band', color: 0xffffff, textures: { asset: 'Leaking008' }, maps: { normal: false }, alphaMode: 'BLEND', roughness: 0.9, surface: 'other', castShadow: false },
+  { id: 'wx_substrate', color: 0xffffff, textures: { asset: 'damaged_plaster' }, surface: 'other', castShadow: false },
+];
+
+/**
+ * Starting point for rendered and painted walls: sooty grime (x), leak streaks (y), chipped paint showing the plaster
+ * below (z, convex edges), darker and glossier damp at the base (w). Tune per façade with overrides.
+ */
+export const WALL_WEATHER: WeatherDef = {
+  dirt: { material: 'wx_grime', tint: 0x8a8278, blend: 'multiply', strength: 0.9, roughness: 0.95 },
+  streak: { material: 'wx_streak', tint: 0x4a4038, tiling: [1.6, 3], mirror: true, strength: 1.5, roughness: 0.85 },
+  edge: { material: 'wx_substrate', strength: 1, curvature: 0.75 },
+  damp: { blend: 'multiply', darken: 0.6, roughness: 0.45 },
+};

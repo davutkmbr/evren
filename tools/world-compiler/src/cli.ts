@@ -36,13 +36,13 @@ import {
   type XYZ,
 } from './format';
 import { buildFoundation } from './foundation';
-import { GENERATOR, GENERATOR_V1, writeTileGlb, writeTileGlbV1 } from './gltf';
+import { GENERATOR, GENERATOR_V1, weatherRecord, writeTileGlb, writeTileGlbV1 } from './gltf';
 import { exportLaneGraph, exportWalkGraph } from './graphs';
 import { groundHeights, landField, PierField } from './ground';
 import { InstanceSink, rotateYaw, yawQuat } from './instances';
 import { LightSink } from './lights';
 import { LOD_LEVELS, LOD_POLICY } from './lod';
-import { linearRgb, materialDef, MATERIALS, type MaterialName } from './materials';
+import { linearRgb, materialDef, MATERIALS, type MaterialName, variantFields, weatherLayerMaterials } from './materials';
 import { TileMesh } from './mesh';
 import { loadStreetData } from './osm-street';
 import { placeLamps } from './lamps';
@@ -459,9 +459,11 @@ async function main(): Promise<void> {
         continue;
       }
       for (const p of res.parts) {
-        usedMaterials.add(p.material);
-        if (!baked.has(p.material)) {
-          baked.set(p.material, await textures!.material(p.material));
+        for (const id of [p.material, ...weatherLayerMaterials(p.material)]) {
+          usedMaterials.add(id);
+          if (!baked.has(id)) {
+            baked.set(id, await textures!.material(id));
+          }
         }
       }
       if (L.level === 0) {
@@ -569,6 +571,8 @@ async function main(): Promise<void> {
         ...(d.surface ? { surface: d.surface } : {}),
         castShadow: d.castShadow ?? (d.surface === 'wall' || d.surface === 'roof'),
         ...(b ? { set: b.key } : {}),
+        ...variantFields(id),
+        ...(d.weather ? { weather: weatherRecord(id, baked, 'textures/') } : {}),
       });
     }
   }

@@ -7,14 +7,15 @@
  * - A step runs in format 1 only unless it lists `formats: [0, 1]`; it runs on every tile unless `tiles` says
  *   'full' (inside the strip) or 'greybox' (outside it).
  * - MATERIAL_SETS / PROP_SETS are registered before anything else; the format 0 materials come first because the
- *   registration order is the primitive order.
+ *   registration order is the primitive order. Weather layer materials come before every set whose `weather` uses
+ *   them, and a variant (`<base>@<variant>`) after its base (`withVariants` keeps them together).
  */
 import type { Foundation } from './foundation';
 import type { Bounds2, FormatVersion, InstanceRec, LaneGraphFile, StripInfo, TileManifest, XYZ } from './format';
 import type { GroundHeights, PierField } from './ground';
 import type { InstanceSink } from './instances';
 import type { LightSink } from './lights';
-import { CORE_MATERIALS, defineMaterials, LIBRARY_MATERIALS, type MaterialDef } from './materials';
+import { CORE_MATERIALS, defineMaterials, LIBRARY_MATERIALS, type MaterialDef, WEATHER_LAYER_MATERIALS } from './materials';
 import type { TileMesh } from './mesh';
 import type { OsmStreetData } from './osm-street';
 import { CORE_PROPS, defineProps, PROP_MATERIALS, type PropDef } from './props';
@@ -100,7 +101,7 @@ export interface CompileStep {
 }
 
 /** Material sets in registration (primitive) order. */
-export const MATERIAL_SETS: readonly (readonly MaterialDef[])[] = [CORE_MATERIALS, LIBRARY_MATERIALS, PROP_MATERIALS, STREET_MATERIALS, HERO_MATERIALS, FACADE_MATERIALS, FACADE_PROP_MATERIALS, INTERIOR_MATERIALS];
+export const MATERIAL_SETS: readonly (readonly MaterialDef[])[] = [CORE_MATERIALS, LIBRARY_MATERIALS, WEATHER_LAYER_MATERIALS, PROP_MATERIALS, STREET_MATERIALS, HERO_MATERIALS, FACADE_MATERIALS, FACADE_PROP_MATERIALS, INTERIOR_MATERIALS];
 
 export const PROP_SETS: readonly (readonly PropDef[])[] = [CORE_PROPS, STREET_PROPS, FACADE_PROPS, HERO_PROPS];
 

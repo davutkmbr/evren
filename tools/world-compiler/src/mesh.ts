@@ -13,6 +13,11 @@
  *   (the whole ground of a tile is one X/Z chart); `addMesh` groups triangles into box-projected charts. takeLod()
  *   packs the charts into a square atlas with padding.
  * - COLOR_0 (optional, linear RGBA): glTF multiplies it into the base colour (grime, wear darkening).
+ * - _WEATHER (optional, format 1.1): per-vertex weathering amounts [dirt, streak, edge, damp] in [0, 1] that drive the
+ *   material's `weather` layers (materials.ts). Written only for materials where some emission set it; the other
+ *   vertices of that material get 0 (no weathering).
+ * - Decals: `decal` / `decalOnWall` emit a textured quad a little in front of a surface. Like every emission they are
+ *   merged into the one primitive of their material per tile.
  * - LOD: every triangle carries a LOD mask (bit k = LOD k). Emissions use `lodMask` (default: every LOD), so the
  *   greybox and the ground reach every LOD; façade detail can be limited to LOD0 with `withLod(LOD0, ...)`.
  */
@@ -23,6 +28,9 @@ export type Vec3 = [number, number, number];
 export type Vec2 = [number, number];
 /** Linear RGBA in [0, 1]. */
 export type RGBA = [number, number, number, number];
+/** `_WEATHER` amounts in [0, 1]: [dirt / AO grime, rain streak, edge wear, damp / splash]. */
+export type Weather = [number, number, number, number];
+export const NO_WEATHER: Weather = [0, 0, 0, 0];
 
 export const LOD0 = 1;
 export const LOD1 = 2;
@@ -36,7 +44,26 @@ export interface EmitOptions {
   uvm?: readonly Vec2[];
   /** COLOR_0 for all vertices, or one per vertex. */
   color?: RGBA | readonly RGBA[];
+  /** `_WEATHER` for all vertices, or one per vertex (format 1.1; default 0). */
+  weather?: Weather | readonly Weather[];
   /** LOD mask of the emitted triangles (default: the mesh's lodMask). */
+  lod?: number;
+}
+
+/** A decal quad: size, placement in the surface plane and its image rectangle. */
+export interface DecalOptions {
+  /** Width and height in metres (a number: square). */
+  size: number | Vec2;
+  /** Distance in front of the surface (default 0.01 m; keep it within 0.005-0.02 m). */
+  offset?: number;
+  /** Turn in the surface plane, radians counter-clockwise as seen from the front (default 0). */
+  rotation?: number;
+  /** Image rectangle [u0, v0, u1, v1] (v runs down the image; default the whole image [0, 0, 1, 1]). */
+  rect?: [number, number, number, number];
+  /** COLOR_0 (tint and alpha, linear) of the quad. */
+  color?: RGBA;
+  /** `_WEATHER` of the quad. */
+  weather?: Weather;
   lod?: number;
 }
 
@@ -52,6 +79,8 @@ export interface MeshInput {
   uvm?: ArrayLike<number>;
   /** COLOR_0 for all vertices, or one per vertex. */
   color?: RGBA | readonly RGBA[];
+  /** `_WEATHER` for all vertices, or one per vertex. */
+  weather?: Weather | readonly Weather[];
   lod?: number;
 }
 
@@ -65,6 +94,7 @@ class Part {
   lm: number[] = [];
   chart: number[] = [];
   col: number[] | null = null;
+  wx: number[] | null = null;
   idx: number[] = [];
   lod: number[] = [];
   readonly weld = new Map<string, number>();
@@ -79,6 +109,8 @@ export interface PartArrays {
   uv0?: Float32Array<ArrayBuffer>;
   uv1?: Float32Array<ArrayBuffer>;
   color?: Float32Array<ArrayBuffer>;
+  /** `_WEATHER` (format 1.1), 4 floats per vertex. */
+  weather?: Float32Array<ArrayBuffer>;
 }
 
 export interface LightmapInfo {
@@ -179,8 +211,32 @@ export class TileMesh {
     return typeof c[0] === 'number' ? (c as RGBA) : (c as readonly RGBA[])[k];
   }
 
+  private setWeather(p: Part, vi: number, w: Weather | undefined): void {
+    if (!w && !p.wx) {
+      return;
+    }
+    if (!p.wx) {
+      p.wx = new Array((p.pos.length / 3) * 4).fill(0);
+    }
+    while (p.wx.length < (vi + 1) * 4) {
+      p.wx.push(0);
+    }
+    const o = vi * 4;
+    const v = w ?? NO_WEATHER;
+    for (let q = 0; q < 4; q++) {
+      p.wx[o + q] = Math.min(1, Math.max(0, v[q]));
+    }
+  }
+
+  private static weatherAt(w: Weather | readonly Weather[] | undefined, k: number): Weather | undefined {
+    if (!w) {
+      return undefined;
+    }
+    return typeof w[0] === 'number' ? (w as Weather) : (w as readonly Weather[])[k];
+  }
+
   /** Welded vertex (normal accumulated from the faces that use it). Ground chart, X/Z projection. */
-  private smoothVertex(p: Part, m: MaterialName, v: Vec3, c: RGBA | undefined): number {
+  private smoothVertex(p: Part, m: MaterialName, v: Vec3, c: RGBA | undefined, w: Weather | undefined): number {
     const x = v[0] - this.ox;
     const z = v[2] - this.oz;
     const key = `${Math.round(x * 1000)},${Math.round(v[1] * 1000)},${Math.round(z * 1000)}`;
@@ -194,6 +250,7 @@ export class TileMesh {
       p.lm.push(x, z);
       p.chart.push(GROUND_CHART);
       this.setColor(p, i, c);
+      this.setWeather(p, i, w);
       p.weld.set(key, i);
     }
     return i;
@@ -224,6 +281,7 @@ export class TileMesh {
     p.lm.push(su, sv);
     p.chart.push(chart);
     this.setColor(p, i, TileMesh.colorAt(opts?.color, k));
+    this.setWeather(p, i, TileMesh.weatherAt(opts?.weather, k));
     return i;
   }
 
@@ -234,7 +292,7 @@ export class TileMesh {
     }
     const p = this.part(m);
     const lod = opts?.lod ?? this.lodMask;
-    const ids = pts.map((v, k) => this.smoothVertex(p, m, v, TileMesh.colorAt(opts?.color, k)));
+    const ids = pts.map((v, k) => this.smoothVertex(p, m, v, TileMesh.colorAt(opts?.color, k), TileMesh.weatherAt(opts?.weather, k)));
     for (let k = 1; k + 1 < pts.length; k++) {
       this.smoothTri(p, ids[0], ids[k], ids[k + 1], true, lod);
     }
@@ -338,6 +396,50 @@ export class TileMesh {
       n,
       opts,
     );
+  }
+
+  /**
+   * Decal quad centred on `centre` in the plane with normal `n`, `offset` in front of it (one chart). The image stands
+   * upright on walls (right when facing the surface, v down) and runs east / south on floors, as UV0 does; `rotation`
+   * turns it in the plane. UV0 is the image rectangle `rect` (the material's tiling does not apply). Use a MASK or
+   * BLEND material with `castShadow: false`; all decals of one material in a tile share one primitive.
+   */
+  decal(m: MaterialName, centre: Vec3, n: Vec3, opts: DecalOptions): void {
+    const [w, h] = typeof opts.size === 'number' ? [opts.size, opts.size] : opts.size;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    const l = Math.hypot(n[0], n[1], n[2]) || 1;
+    const nn: Vec3 = [n[0] / l, n[1] / l, n[2] / l];
+    const f = faceFrame(nn);
+    const cos = Math.cos(opts.rotation ?? 0);
+    const sin = Math.sin(opts.rotation ?? 0);
+    const r: Vec3 = [f.ux * cos - f.vx * sin, f.uy * cos - f.vy * sin, f.uz * cos - f.vz * sin];
+    const up: Vec3 = [-f.vx * cos - f.ux * sin, -f.vy * cos - f.uy * sin, -f.vz * cos - f.uz * sin];
+    const d = opts.offset ?? 0.01;
+    const c: Vec3 = [centre[0] + nn[0] * d, centre[1] + nn[1] * d, centre[2] + nn[2] * d];
+    const at = (sr: number, su: number): Vec3 => [c[0] + r[0] * sr + up[0] * su, c[1] + r[1] * sr + up[1] * su, c[2] + r[2] * sr + up[2] * su];
+    const [u0, v0, u1, v1] = opts.rect ?? [0, 0, 1, 1];
+    this.flatPolygon(m, [at(-w / 2, -h / 2), at(w / 2, -h / 2), at(w / 2, h / 2), at(-w / 2, h / 2)], nn, {
+      uv: [
+        [u0, v1],
+        [u1, v1],
+        [u1, v0],
+        [u0, v0],
+      ],
+      ...(opts.color ? { color: opts.color } : {}),
+      ...(opts.weather ? { weather: opts.weather } : {}),
+      ...(opts.lod !== undefined ? { lod: opts.lod } : {}),
+    });
+  }
+
+  /**
+   * Decal on a wall whose bottom edge runs from (ax, az) to (bx, bz) with outward normal `n`: centred `along` metres
+   * from a towards b, at world height `y` (see `decal`).
+   */
+  decalOnWall(m: MaterialName, ax: number, az: number, bx: number, bz: number, n: Vec3, along: number, y: number, opts: DecalOptions): void {
+    const len = Math.hypot(bx - ax, bz - az) || 1;
+    this.decal(m, [ax + ((bx - ax) / len) * along, y, az + ((bz - az) / len) * along], n, opts);
   }
 
   /**
@@ -459,6 +561,7 @@ export class TileMesh {
           p.lm.push(su, sv);
           p.chart.push(chart);
           this.setColor(p, i, TileMesh.colorAt(input.color, v));
+          this.setWeather(p, i, TileMesh.weatherAt(input.weather, v));
           remap.set(key, i);
         }
         tri.push(i);
@@ -599,6 +702,7 @@ export class TileMesh {
       const uv1 = new Float32Array(n * 2);
       const P = s.p;
       const color = P.col ? new Float32Array(n * 4) : undefined;
+      const weather = P.wx ? new Float32Array(n * 4) : undefined;
       for (let k = 0; k < n; k++) {
         const v = s.verts[k];
         position[k * 3] = P.pos[v * 3];
@@ -637,9 +741,14 @@ export class TileMesh {
             color[k * 4 + q] = P.col![v * 4 + q] ?? 1;
           }
         }
+        if (weather) {
+          for (let q = 0; q < 4; q++) {
+            weather[k * 4 + q] = P.wx![v * 4 + q] ?? 0;
+          }
+        }
       }
       triangles += s.idx.length / 3;
-      parts.push({ material: s.m, position, normal, index: new Uint32Array(s.idx), uv0, uv1, ...(color ? { color } : {}) });
+      parts.push({ material: s.m, position, normal, index: new Uint32Array(s.idx), uv0, uv1, ...(color ? { color } : {}), ...(weather ? { weather } : {}) });
     }
     return {
       parts,

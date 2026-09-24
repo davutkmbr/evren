@@ -5,6 +5,7 @@
  *
  * Format 0: greybox (flat colours, one glb per tile). Format 1 adds textured PBR materials with shared external
  * textures, UV0/UV1, LOD glbs with distance bands, prop instances, a light list and a strip at full detail.
+ * Format 1.1 (additive, `format` stays 1): the `_WEATHER` vertex attribute, material variants and weather layers.
  */
 export type FormatVersion = 0 | 1;
 /** Default output format of the compiler (`--format 0|1` picks one). */
@@ -114,6 +115,49 @@ export interface MaterialRec {
   castShadow: boolean;
   /** Source texture set (asset id or ph_<folder>). */
   set?: string;
+  /** Format 1.1: a `<base>@<variant>` material names its base material and variant. */
+  variantOf?: string;
+  variant?: string;
+  /** Format 1.1: weathering layers driven by the `_WEATHER` vertex attribute. */
+  weather?: WeatherRec;
+}
+
+/** `_WEATHER` channel of each layer: x = dirt, y = streak, z = edge, w = damp. */
+export const WEATHER_CHANNEL = { dirt: 0, streak: 1, edge: 2, damp: 3 } as const;
+
+/**
+ * One weathering layer as runtimes read it. Layer UV = UV0 × (material tiling / layer tiling), per axis. Coverage
+ * m = clamp(_WEATHER[channel] × strength, 0, 1) × (alpha ? layer base colour alpha : 1) × mix(1, convexity, curvature).
+ */
+export interface WeatherLayerRec {
+  channel: 0 | 1 | 2 | 3;
+  /** Registry material the maps come from (null: flat layer). */
+  material: string | null;
+  /** Texture files (relative to the index in the manifest, to the glb in glTF extras), or null. */
+  baseColor: string | null;
+  normal: string | null;
+  /** G = roughness (R = AO and B = metalness are not used by layers). */
+  orm: string | null;
+  /** The base colour texture carries coverage in its alpha. */
+  alpha: boolean;
+  /** Metres per layer repeat. */
+  tiling: [number, number];
+  /** Sampler wrap of the layer maps on both axes (mirror = glTF MIRRORED_REPEAT). */
+  wrap: 'repeat' | 'mirror';
+  /** Linear RGB multiplied into the layer colour. */
+  tint: [number, number, number];
+  strength: number;
+  blend: 'mix' | 'multiply';
+  darken: number;
+  /** Layer roughness: a constant when `orm` is null, the factor on ORM green otherwise; null keeps the base roughness. */
+  roughness: number | null;
+  normalScale: number;
+  curvature: number;
+}
+
+export interface WeatherRec {
+  attribute: '_WEATHER';
+  layers: { dirt?: WeatherLayerRec; streak?: WeatherLayerRec; edge?: WeatherLayerRec; damp?: WeatherLayerRec };
 }
 
 export interface TextureRec {

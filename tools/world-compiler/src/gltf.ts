@@ -7,9 +7,13 @@
  * step set one, and PBR materials whose images are EXTERNAL files shared by every tile and prop
  * (`../textures/<file>`, relative to the glb). Material extras carry what glTF core cannot: tiling, emissive nits and
  * the night flag, the surface kind.
+ * Format 1.1: `_WEATHER` (VEC4 float, custom attribute) on primitives that set it; material extras `variantOf`,
+ * `variant` and `weather` (layers with their texture URIs).
  */
 import { Document, type Material, NodeIO, type Texture, TextureInfo } from '@gltf-transform/core';
-import { baseColor, linearRgb, materialDef, type MaterialName } from './materials';
+import type { WeatherLayerRec, WeatherRec } from './format';
+import { WEATHER_CHANNEL } from './format';
+import { baseColor, linearRgb, materialDef, type MaterialName, variantFields, WEATHER_LAYERS } from './materials';
 import type { PartArrays } from './mesh';
 import { type BakedSet, tilingOf } from './textures';
 
@@ -70,8 +74,54 @@ export function repeatInfo(info: TextureInfo | null, texCoord = 0): void {
     .setMagFilter(TextureInfo.MagFilter.LINEAR);
 }
 
+/** Baked sets by material id (the weather layers' maps are looked up here). */
+export type BakedMap = ReadonlyMap<MaterialName, BakedSet | null>;
+
+/**
+ * Weather record of a material (undefined without `weather`). Texture paths get `prefix` (`textures/` in the index,
+ * `../textures/` in glTF extras); a layer whose material is not in `baked` gets no maps.
+ */
+export function weatherRecord(id: MaterialName, baked: BakedMap, prefix: string): WeatherRec | undefined {
+  const w = materialDef(id).weather;
+  if (!w) {
+    return undefined;
+  }
+  const layers: WeatherRec['layers'] = {};
+  for (const k of WEATHER_LAYERS) {
+    const L = w[k];
+    if (!L) {
+      continue;
+    }
+    const lm = L.material ? materialDef(L.material) : null;
+    const b = L.material ? (baked.get(L.material) ?? null) : null;
+    const normalScale = L.normalScale ?? lm?.normalScale ?? 1;
+    const orm = L.roughness === undefined && b?.orm ? prefix + b.orm.file : null;
+    const tint = linearRgb(L.tint ?? 0xffffff);
+    const own = linearRgb(lm?.color ?? 0xffffff);
+    const rec: WeatherLayerRec = {
+      channel: WEATHER_CHANNEL[k],
+      material: L.material ?? null,
+      baseColor: b?.baseColor ? prefix + b.baseColor.file : null,
+      normal: b?.normal && normalScale !== 0 ? prefix + b.normal.file : null,
+      orm,
+      alpha: !!b?.alpha,
+      tiling: L.tiling ?? (L.material ? tilingOf(L.material) : [1, 1]),
+      wrap: L.mirror ? 'mirror' : 'repeat',
+      tint: [0, 1, 2].map((c) => Math.round(tint[c] * own[c] * 10000) / 10000) as [number, number, number],
+      strength: L.strength ?? 1,
+      blend: L.blend ?? 'mix',
+      darken: L.darken ?? 1,
+      roughness: L.roughness ?? (orm ? (lm?.roughness ?? 1) : (lm?.roughness ?? null)),
+      normalScale,
+      curvature: L.curvature ?? (k === 'edge' ? 0.75 : 0),
+    };
+    layers[k] = rec;
+  }
+  return { attribute: '_WEATHER', layers };
+}
+
 /** Runtime extras of a registry material (what glTF core cannot say). */
-export function materialExtras(id: MaterialName, baked: BakedSet | null): Record<string, unknown> {
+export function materialExtras(id: MaterialName, baked: BakedSet | null, all?: BakedMap): Record<string, unknown> {
   const d = materialDef(id);
   const extras: Record<string, unknown> = { tiling: tilingOf(id) };
   if (d.emissive) {
@@ -84,11 +134,16 @@ export function materialExtras(id: MaterialName, baked: BakedSet | null): Record
   if (baked) {
     extras.set = baked.key;
   }
+  Object.assign(extras, variantFields(id));
+  const weather = weatherRecord(id, all ?? new Map(), TEXTURE_URI);
+  if (weather) {
+    extras.weather = weather;
+  }
   return extras;
 }
 
-/** glTF material of a registry material with its baked textures (null: flat colour). */
-export function createMaterial(doc: Document, tex: ExternalTextures, id: MaterialName, baked: BakedSet | null): Material {
+/** glTF material of a registry material with its baked textures (null: flat colour); `all` holds the weather layers' sets. */
+export function createMaterial(doc: Document, tex: ExternalTextures, id: MaterialName, baked: BakedSet | null, all?: BakedMap): Material {
   const d = materialDef(id);
   const alphaMode = d.alphaMode ?? (baked?.alpha ? 'MASK' : 'OPAQUE');
   const m = doc
@@ -119,7 +174,7 @@ export function createMaterial(doc: Document, tex: ExternalTextures, id: Materia
   if (d.emissive) {
     m.setEmissiveFactor(linearRgb(d.emissive.color));
   }
-  m.setExtras(materialExtras(id, baked));
+  m.setExtras(materialExtras(id, baked, all));
   return m;
 }
 
@@ -128,7 +183,7 @@ export interface TileGlbInput {
   origin: [number, number, number];
   parts: readonly PartArrays[];
   extras: Record<string, unknown>;
-  baked: ReadonlyMap<MaterialName, BakedSet | null>;
+  baked: BakedMap;
 }
 
 /** Format 1 tile glb (see the header). */
@@ -139,7 +194,7 @@ export async function writeTileGlbV1(input: TileGlbInput): Promise<Uint8Array> {
   const mesh = doc.createMesh(input.name);
   const tex = new ExternalTextures(doc);
   for (const p of input.parts) {
-    const material = createMaterial(doc, tex, p.material, input.baked.get(p.material) ?? null);
+    const material = createMaterial(doc, tex, p.material, input.baked.get(p.material) ?? null, input.baked);
     const vertices = p.position.length / 3;
     const index = vertices <= 65535 ? Uint16Array.from(p.index) : p.index;
     const acc = (suffix: string, type: 'VEC2' | 'VEC3' | 'VEC4' | 'SCALAR', array: Float32Array<ArrayBuffer> | Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>) =>
@@ -158,6 +213,9 @@ export async function writeTileGlbV1(input: TileGlbInput): Promise<Uint8Array> {
     }
     if (p.color) {
       prim.setAttribute('COLOR_0', acc('color', 'VEC4', p.color));
+    }
+    if (p.weather) {
+      prim.setAttribute('_WEATHER', acc('weather', 'VEC4', p.weather));
     }
     mesh.addPrimitive(prim);
   }

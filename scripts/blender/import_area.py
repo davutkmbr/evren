@@ -28,6 +28,9 @@ What it builds:
   `snapGround` the eye is re-snapped to the compiled ground + eyeHeight and the target moves by the same dy.
 - Day-lit night fixtures (DAY_ON_LIGHT_REFS / DAY_ON_MATERIALS): market-stall bulbs burn by day too (c10 photo);
   the compiled records still say night: true, so the renders switch them on by day here.
+- Weathering (format 1.1): materials with extras.weather get the shared node group "evren_weather"
+  (scripts/blender/weather.py), which blends their dirt, streak, edge and damp layers by the `_WEATHER` vertex
+  attribute; materials without weather data are unchanged.
 
 Axes: Evren (x, y, z) -> Blender (x, -z, y); Evren quaternion [x, y, z, w] -> Blender (w, x, -z, y). The glTF
 importer converts the tile and prop glbs itself.
@@ -416,6 +419,16 @@ def setup_emissive_materials():
     return count
 
 
+def setup_weather(area_dir):
+    """Weathering node group on every material with extras.weather (scripts/blender/weather.py)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import weather
+
+    return weather.setup_weather_materials(os.path.join(area_dir, 'textures'))
+
+
 def set_emission(night_on):
     """Sets every 'evren_emission' node: nits / 683 / luminance of the emission colour, 0 for night-only
     materials by day (except DAY_ON_MATERIALS)."""
@@ -524,6 +537,7 @@ def build(area_id='kadikoy', cameras=None, radius=700.0, sea=True, picks=None, l
             stats['lights'] += 1
     stats['materialsMerged'] = dedupe_materials()
     stats['emissiveMaterials'] = setup_emissive_materials()
+    stats['weatheredMaterials'] = setup_weather(area.dir)
     stats['props'] = sorted(k for k, v in props.props.items() if v)
     if sea:
         add_sea(area, misc_coll)
