@@ -9,7 +9,7 @@ Edit the manifest, not this file. The user approved these assets on 2026-09-24: 
   Nothing is in `public/`. The street compiler will copy optimised versions into the build output, and each
   integrated asset is then recorded in `public/textures/LICENSES.md` or `public/models/LICENSES.md`.
 - Every condition must be met before the asset is used in any build.
-- Cached: **35 assets, 333.3 MB**. Waiting for manual download: **9** (see
+- Cached: **45 assets, 485.0 MB**. Waiting for manual download: **9** (see
   [manual-downloads.md](manual-downloads.md)).
 
 ## Cached
@@ -49,8 +49,18 @@ Edit the manifest, not this file. The user approved these assets on 2026-09-24: 
 | Street Lamp 01 | model | [Poly Haven](https://polyhaven.com/a/street_lamp_01) | [CC0 1.0](https://polyhaven.com/license) | Josh Dean | not required (CC0) | `assets-src/model/street_lamp_01/` | 1k | 2.2 MB | – |
 | Street Lamp 02 | model | [Poly Haven](https://polyhaven.com/a/street_lamp_02) | [CC0 1.0](https://polyhaven.com/license) | Josh Dean | not required (CC0) | `assets-src/model/street_lamp_02/` | 1k | 1.9 MB | – |
 | Exterior Aircon Unit | model | [Poly Haven](https://polyhaven.com/a/exterior_aircon_unit) | [CC0 1.0](https://polyhaven.com/license) | Monsta3D | not required (CC0) | `assets-src/model/exterior_aircon_unit/` | 1k | 7.7 MB | – |
-| Manhole Cover 003 | decal | [ambientCG](https://ambientcg.com/a/ManholeCover003) | [CC0 1.0](https://docs.ambientcg.com/license/) | ambientCG (no individual author credited) | not required (CC0) | `assets-src/decal/ManholeCover003/` | 1k | 5.9 MB | Before shipping, check the rim in the full-size colour and height maps for a foundry name and remove it if present |
+| Manhole Cover 003 | decal | [ambientCG](https://ambientcg.com/a/ManholeCover003) | [CC0 1.0](https://docs.ambientcg.com/license/) | ambientCG (no individual author credited) | not required (CC0) | `assets-src/decal/ManholeCover003/` | 1k | 7.7 MB | Before shipping, check the rim in the full-size colour and height maps for a foundry name and remove it if present |
 | Manhole Cover 011 | decal | [ambientCG](https://ambientcg.com/a/ManholeCover011) | [CC0 1.0](https://docs.ambientcg.com/license/) | ambientCG (no individual author credited) | not required (CC0) | `assets-src/decal/ManholeCover011/` | 1k | 8.1 MB | Remove the "ACO Drain" trademark from the colour, normal and height maps before the asset is used in any build (the "EN124 AWK B125" rating marks may stay) |
+| Overcast Soil (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/overcast_soil_puresky) | [CC0 1.0](https://polyhaven.com/license) | Jarod Guest, Sergej Majboroda | not required (CC0) | `assets-src/hdri/overcast_soil_puresky/` | 4k | 16.9 MB | – |
+| Kloofendal 48d Partly Cloudy (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | [CC0 1.0](https://polyhaven.com/license) | Greg Zaal, Jarod Guest | not required (CC0) | `assets-src/hdri/kloofendal_48d_partly_cloudy_puresky/` | 4k | 20.7 MB | – |
+| Kloofendal 43d Clear (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/kloofendal_43d_clear_puresky) | [CC0 1.0](https://polyhaven.com/license) | Greg Zaal | not required (CC0) | `assets-src/hdri/kloofendal_43d_clear_puresky/` | 4k | 18.4 MB | – |
+| Syferfontein 18d Clear (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/syferfontein_18d_clear_puresky) | [CC0 1.0](https://polyhaven.com/license) | Greg Zaal, Jarod Guest | not required (CC0) | `assets-src/hdri/syferfontein_18d_clear_puresky/` | 4k | 15.9 MB | – |
+| Syferfontein 6d Clear (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/syferfontein_6d_clear_puresky) | [CC0 1.0](https://polyhaven.com/license) | Greg Zaal, Jarod Guest | not required (CC0) | `assets-src/hdri/syferfontein_6d_clear_puresky/` | 4k | 18.8 MB | – |
+| Kloppenheim 07 (Pure Sky) | hdri | [Poly Haven](https://polyhaven.com/a/kloppenheim_07_puresky) | [CC0 1.0](https://polyhaven.com/license) | Greg Zaal, Jarod Guest | not required (CC0) | `assets-src/hdri/kloppenheim_07_puresky/` | 4k | 19.4 MB | – |
+| Leaf Set 010 | texture | [ambientCG](https://ambientcg.com/view?id=LeafSet010) | [CC0 1.0](https://docs.ambientcg.com/license/) | Lennart Demes (ambientCG) | not required (CC0) | `assets-src/texture/LeafSet010/` | 2k | 12.6 MB | – |
+| Bark Platanus | texture | [Poly Haven](https://polyhaven.com/a/bark_platanus) | [CC0 1.0](https://polyhaven.com/license) | Dimitrios Savva | not required (CC0) | `assets-src/texture/bark_platanus/` | 2k | 12.8 MB | – |
+| Grass 004 | texture | [ambientCG](https://ambientcg.com/view?id=Grass004) | [CC0 1.0](https://docs.ambientcg.com/license/) | Lennart Demes (ambientCG) | not required (CC0) | `assets-src/texture/Grass004/` | 1k | 11.0 MB | – |
+| Forest Ground 05 | texture | [Poly Haven](https://polyhaven.com/a/forest_ground_05) | [CC0 1.0](https://polyhaven.com/license) | Charlotte Baglioni | not required (CC0) | `assets-src/texture/forest_ground_05/` | 1k | 3.4 MB | – |
 
 ## Waiting for manual download
 

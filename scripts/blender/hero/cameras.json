@@ -81,6 +81,45 @@
     "day",
     "night"
    ]
+  },
+  {
+   "id": "h05-fountain-close",
+   "label": "Sürmeli Ali Paşa fountain, frontal at 4 m (context/fountain-night-close)",
+   "position": [
+    419.55,
+    9.1,
+    6042.7
+   ],
+   "target": [
+    422.2,
+    9.25,
+    6038.0
+   ],
+   "fovDeg": 46.0,
+   "aspect": 0.8,
+   "times": [
+    "day",
+    "night"
+   ]
+  },
+  {
+   "id": "h06-minaret",
+   "label": "İskele Camii minaret from the plaza (WNW), looking up",
+   "position": [
+    292.0,
+    6.9,
+    6006.0
+   ],
+   "target": [
+    314.4,
+    24.0,
+    6024.8
+   ],
+   "fovDeg": 55.0,
+   "aspect": 1.5,
+   "times": [
+    "day"
+   ]
   }
  ]
 }

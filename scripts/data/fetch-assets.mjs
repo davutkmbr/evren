@@ -4,10 +4,10 @@
  * assets-src/<kind>/<id>/, then writes .docs/assets/approved-assets.md (what is cached) and
  * .docs/assets/manual-downloads.md (what has to be downloaded by hand).
  *
- *   node scripts/data/fetch-assets.mjs [--dry-run] [--budget-mb=400]
+ *   node scripts/data/fetch-assets.mjs [--dry-run] [--budget-mb=600]
  *
- * - Poly Haven (api.polyhaven.com): texture maps (Diffuse, nor_gl, Rough, AO, Displacement as JPG) or the glTF with its
- *   textures, at the requested resolution.
+ * - Poly Haven (api.polyhaven.com): texture maps (Diffuse, nor_gl, Rough, AO, Displacement as JPG), the glTF with its
+ *   textures, or an HDRI sky (kind 'hdri', Radiance .hdr), at the requested resolution.
  * - ambientCG (API v2 full_json): the <RES>-JPG zip, extracted with the system `unzip`.
  * - Sketchfab (login-gated) and cgbookcase (no direct link): listed as a checklist, never downloaded.
  *
@@ -56,7 +56,8 @@ const MANUAL_FORMAT = {
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
-const budgetMb = Number(args.find((a) => a.startsWith('--budget-mb='))?.split('=')[1] ?? 400);
+// 400 MB held the S1 textures and props; the six 4k HDRI skies of the realism pass add about 110 MB.
+const budgetMb = Number(args.find((a) => a.startsWith('--budget-mb='))?.split('=')[1] ?? 600);
 
 const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
 const lowerRes = (res) => RES_STEPS[Math.max(0, RES_STEPS.indexOf(res) - 1)];
@@ -149,6 +150,13 @@ async function planPolyHaven(asset, res) {
     size: file.size,
     md5: file.md5,
   });
+  if (asset.kind === 'hdri') {
+    const hdr = files.hdri?.[res]?.hdr;
+    if (!hdr) {
+      throw new Error(`no ${res} HDR for ${asset.source_id}`);
+    }
+    return [item(hdr)];
+  }
   if (asset.kind === 'model') {
     const gltf = files.gltf?.[res]?.gltf;
     if (!gltf) {

@@ -1,0 +1,239 @@
+{
+ "format": "evren-skies/1",
+ "note": "Sky and atmosphere per camera and time for the S1 reference renders (skies.py, atmosphere.py, lighting.apply). 'when' is the reference photo's capture time (EXIF DateTimeOriginal on Wikimedia Commons, local time): the sun lamp stands where the sun stood in the photo, and the HDRI is turned so its own sun sits at that azimuth. 'atmosphere' picks a preset of 'atmospheres' (render.py --weather overrides it for every camera); keys set on a camera (wet, fog, post values) override the preset. Cameras and times not listed use 'defaults'; sky 'physical' is the multiple-scattering sky model of lighting.py (the fallback).",
+ "skies": {
+  "clear": {
+   "hdri": "kloofendal_43d_clear_puresky",
+   "kind": "sun"
+  },
+  "broken": {
+   "hdri": "kloofendal_48d_partly_cloudy_puresky",
+   "kind": "sun"
+  },
+  "afternoon": {
+   "hdri": "syferfontein_18d_clear_puresky",
+   "kind": "sun"
+  },
+  "golden": {
+   "hdri": "syferfontein_6d_clear_puresky",
+   "kind": "sun",
+   "whiteBalance": 7200,
+   "bias": -0.5
+  },
+  "overcast": {
+   "hdri": "overcast_soil_puresky",
+   "kind": "overcast"
+  },
+  "night": {
+   "hdri": "kloppenheim_07_puresky",
+   "kind": "night",
+   "lux": 0.15,
+   "tint": [
+    1.0,
+    0.8,
+    0.62
+   ]
+  }
+ },
+ "defaults": {
+  "day": {
+   "sky": "clear",
+   "atmosphere": "haze"
+  },
+  "dusk": {
+   "sky": "physical",
+   "atmosphere": "haze"
+  },
+  "night": {
+   "sky": "night",
+   "atmosphere": "mist"
+  }
+ },
+ "cameras": {
+  "c01-pier-1926": {
+   "day": {
+    "sky": "clear",
+    "when": "2024-06-12T11:49:33+03:00",
+    "photo": "c01-day.jpg",
+    "atmosphere": "haze"
+   },
+   "night": {
+    "sky": "night",
+    "photo": "c01-night.jpg",
+    "atmosphere": "haze",
+    "wet": 0.55
+   }
+  },
+  "c02-pier-square": {
+   "day": {
+    "sky": "overcast",
+    "when": "2024-01-16T13:41:20+03:00",
+    "photo": "c02-day.jpg",
+    "atmosphere": "wet",
+    "wet": 0.85
+   }
+  },
+  "c03-new-pier": {
+   "day": {
+    "sky": "broken",
+    "when": "2019-12-11T13:07:28+03:00",
+    "photo": "c03-day.jpg",
+    "atmosphere": "haze"
+   }
+  },
+  "c04-haldun-taner": {
+   "day": {
+    "sky": "broken",
+    "when": "2019-12-11T13:07:13+03:00",
+    "photo": "c04-day.jpg",
+    "atmosphere": "haze"
+   }
+  },
+  "c05-rihtim-tram": {
+   "day": {
+    "sky": "clear",
+    "when": "2025-07-22T12:55:12+03:00",
+    "photo": "c05-day.jpg",
+    "atmosphere": "clear"
+   },
+   "dusk": {
+    "sky": "golden",
+    "when": "2024-10-03T18:03:48+03:00",
+    "photo": "c05-dusk.jpg",
+    "atmosphere": "haze"
+   }
+  },
+  "c06-yasa-west-above": {
+   "day": {
+    "sky": "overcast",
+    "when": "2014-04-25T12:05:40+03:00",
+    "photo": "c06-day.jpg",
+    "atmosphere": "overcast"
+   }
+  },
+  "c07-junction-above": {
+   "day": {
+    "sky": "clear",
+    "when": "2010-07-27T13:17:12+03:00",
+    "photo": "c07-day.jpg",
+    "atmosphere": "clear"
+   }
+  },
+  "c08-aya-efimia-gate": {
+   "day": {
+    "sky": "afternoon",
+    "when": "2024-05-18T17:16:34+03:00",
+    "photo": "c08-day.jpg",
+    "atmosphere": "clear"
+   },
+   "night": {
+    "sky": "night",
+    "photo": "c08-night.jpg",
+    "atmosphere": "haze",
+    "wet": 0.2
+   }
+  },
+  "c09-fountain-wall": {
+   "day": {
+    "sky": "afternoon",
+    "when": "2011-04-13T18:21:59+03:00",
+    "photo": "c09-day.jpg",
+    "atmosphere": "haze"
+   },
+   "night": {
+    "sky": "night",
+    "photo": "c09-night.jpg",
+    "atmosphere": "mist"
+   }
+  },
+  "c10-guneslibahce": {
+   "day": {
+    "sky": "clear",
+    "when": "2025-04-29T12:58:50+03:00",
+    "photo": "c10-day.jpg",
+    "atmosphere": "haze",
+    "fog": {
+     "visibilityM": 1400,
+     "heightScaleM": 30,
+     "anisotropy": 0.6,
+     "dust": 0.4,
+     "dustScaleM": 1.2,
+     "albedo": 0.95,
+     "radiusM": 70,
+     "heightM": 25,
+     "note": "market air (steam off the ice, dust): sun shafts through the gaps between the awnings"
+    }
+   },
+   "night": {
+    "sky": "night",
+    "photo": "c10-night.jpg",
+    "atmosphere": "mist"
+   }
+  },
+  "c11-yasa-entrance-night": {
+   "night": {
+    "sky": "night",
+    "photo": "c11-night.jpg",
+    "atmosphere": "mist",
+    "fog": {
+     "visibilityM": 1800
+    }
+   }
+  }
+ },
+ "atmospheres": {
+  "none": {
+   "note": "No atmosphere and no camera effects: dry ground, no haze or fog, no bloom, lens, vignette, grade or grain (the A of an A/B/C test).",
+   "wet": 0.0,
+   "fog": null,
+   "camera": false,
+   "visibilityKm": 0
+  },
+  "clear": {
+   "note": "Dry, clear air: faint aerial perspective over kilometres only.",
+   "wet": 0.0,
+   "fog": null,
+   "visibilityKm": 28,
+   "hazeHeightM": 1200
+  },
+  "haze": {
+   "note": "Humid seaside haze (Istanbul by the water): Beer-Lambert haze from the depth pass, denser near the sea, coloured by the sky's horizon in each pixel's direction.",
+   "wet": 0.0,
+   "fog": null,
+   "visibilityKm": 7,
+   "hazeHeightM": 350,
+   "hazeStart": 8
+  },
+  "overcast": {
+   "note": "Grey, damp day: moderate haze, slightly damp ground.",
+   "wet": 0.3,
+   "fog": null,
+   "visibilityKm": 9,
+   "hazeHeightM": 500
+  },
+  "wet": {
+   "note": "After rain: wet, darker, glossier ground with standing water that mirrors the sky; humid haze.",
+   "wet": 0.9,
+   "fog": null,
+   "visibilityKm": 6,
+   "hazeHeightM": 300,
+   "hazeStart": 8
+  },
+  "mist": {
+   "note": "Night mist: a low-density volumetric fog around the camera, thinning with height, with drifting denser patches (air dirt); it catches the lamps (halos, light cones). Damp ground.",
+   "wet": 0.5,
+   "visibilityKm": 3,
+   "hazeHeightM": 120,
+   "fog": {
+    "visibilityM": 1000,
+    "heightScaleM": 10,
+    "anisotropy": 0.72,
+    "dust": 0.35,
+    "dustScaleM": 1.6,
+    "albedo": 0.92,
+    "radiusM": 140,
+    "heightM": 45
+   }
+  }
+ }
+}

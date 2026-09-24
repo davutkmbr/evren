@@ -34,6 +34,12 @@ What it builds:
 
 Axes: Evren (x, y, z) -> Blender (x, -z, y); Evren quaternion [x, y, z, w] -> Blender (w, x, -z, y). The glTF
 importer converts the tile and prop glbs itself.
+
+Cycles device (use_cycles_device, used by render.py and bake_ao.py): EVREN_CYCLES_DEVICE=CPU|GPU picks it; without
+it, previews (render.py --scale < 100) run on the CPU and full-size renders and AO bakes on the Metal GPU. A Cycles
+job pins the GPU at ~97 % and starves the desktop (WindowServer), while CPU threads under blender-run's `nice` share
+fairly. CPU jobs use EVREN_CYCLES_THREADS threads (default 7) when Blender runs without -t; blender-run passes -t
+(default 4), which takes precedence, so pass `--threads 7` to blender-run for faster CPU previews.
 """
 
 import argparse
@@ -59,8 +65,31 @@ DAY_ON_LIGHT_REFS = ('/stall-bulb',)
 DAY_ON_MATERIALS = ('fac_bulb',)
 
 
+CPU_THREADS = 7
+
+
 def log(*args):
     print('[evren]', *args, flush=True)
+
+
+def use_cycles_device(scene, default_gpu):
+    """Sets the Cycles device from EVREN_CYCLES_DEVICE (CPU | GPU), else GPU when `default_gpu`. Returns 'CPU' or
+    'GPU' (GPU falls back to CPU when no Metal device is found)."""
+    want = (os.environ.get('EVREN_CYCLES_DEVICE') or '').strip().upper()
+    gpu = want == 'GPU' if want in ('CPU', 'GPU') else bool(default_gpu)
+    prefs = bpy.context.preferences.addons['cycles'].preferences
+    prefs.compute_device_type = 'METAL'
+    prefs.get_devices()
+    found = False
+    for d in prefs.devices:
+        d.use = (d.type == 'METAL') if gpu else (d.type == 'CPU')
+        found = found or (gpu and d.use)
+    device = 'GPU' if found else 'CPU'
+    scene.cycles.device = device
+    if device == 'CPU':
+        scene.render.threads_mode = 'FIXED'
+        scene.render.threads = max(1, int(os.environ.get('EVREN_CYCLES_THREADS') or CPU_THREADS))
+    return device
 
 
 def script_args(argv=None):

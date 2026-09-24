@@ -20,7 +20,16 @@ at UV0 x (material tiling / layer tiling). A material without `weather` is left 
     weather.setup_weather_materials(os.path.join(area_dir, 'textures'))
 
 Tuning knobs for the look lane: the group inputs "Edge Radius" (bevel radius, m), "Curvature Gain" and "Cavity AO"
-(the local AO below which an edge counts as concave), and the per-layer inputs the materials set.
+(the local AO below which an edge counts as concave), "Macro Variation" and "Streak Break", and the per-layer inputs
+the materials set.
+
+Macro variation (look lane, S1 round 2): with coverage from vertex data and tiled layer maps alone, every wall of a
+material weathers the same amount and the streak map repeats as one even band. Two world-space noises break that up:
+- every layer's coverage is scaled by a slow noise (features of about 4 m) between 0.35 and 1.65 x, mixed in by
+  "Macro Variation" (default 0.6): one bay of a facade is dirtier than the next, as in the photos;
+- streak coverage is also scaled by a noise stretched vertically (about 0.25 m across, 2.5 m down): drips of varying
+  length and strength instead of a uniform curtain ("Streak Break", default 0.7).
+Runtimes reproduce this with the same world-position noise (or a tiling noise texture sampled in world space).
 """
 
 import os
@@ -28,7 +37,7 @@ import os
 import bpy
 
 GROUP = 'evren_weather'
-GROUP_VERSION = 1
+GROUP_VERSION = 2
 ATTRIBUTE = '_WEATHER'
 UV0 = 'UVMap'
 LAYERS = ('dirt', 'streak', 'edge', 'damp')
@@ -143,6 +152,8 @@ def weather_group():
     socket('Edge Radius', 'NodeSocketFloat', 0.03, lo=0.0)
     socket('Curvature Gain', 'NodeSocketFloat', 4.0, lo=0.0)
     socket('Cavity AO', 'NodeSocketFloat', 0.85, lo=0.0, hi=1.0)
+    socket('Macro Variation', 'NodeSocketFloat', 0.6, lo=0.0, hi=1.0)
+    socket('Streak Break', 'NodeSocketFloat', 0.7, lo=0.0, hi=1.0)
     for layer in LAYERS:
         for field, kind, default in LAYER_FIELDS:
             socket(f'{layer.capitalize()} {field}', kind, default)
@@ -170,6 +181,31 @@ def weather_group():
     b.feed(open_.inputs['From Max'], 0.98)
     convex = b.math('MULTIPLY', edge, open_.outputs['Result'])
 
+    macro_noise = b.node('ShaderNodeTexNoise', noise_dimensions='3D')
+    b.feed(macro_noise.inputs['Vector'], geo.outputs['Position'])
+    macro_noise.inputs['Scale'].default_value = 0.25
+    macro_noise.inputs['Detail'].default_value = 3.0
+    macro_noise.inputs['Roughness'].default_value = 0.55
+    macro_range = b.node('ShaderNodeMapRange', clamp=True)
+    b.feed(macro_range.inputs['Value'], macro_noise.outputs['Fac'])
+    macro_range.inputs['From Min'].default_value = 0.3
+    macro_range.inputs['From Max'].default_value = 0.7
+    macro_range.inputs['To Min'].default_value = 0.35
+    macro_range.inputs['To Max'].default_value = 1.65
+    macro = b.mix('FLOAT', I['Macro Variation'], 1.0, macro_range.outputs['Result'])
+    drip_coord = b.vmath('MULTIPLY', geo.outputs['Position'], (4.0, 4.0, 0.4))
+    drip_noise = b.node('ShaderNodeTexNoise', noise_dimensions='3D')
+    b.feed(drip_noise.inputs['Vector'], drip_coord)
+    drip_noise.inputs['Scale'].default_value = 1.0
+    drip_noise.inputs['Detail'].default_value = 2.0
+    drip_range = b.node('ShaderNodeMapRange', clamp=True)
+    b.feed(drip_range.inputs['Value'], drip_noise.outputs['Fac'])
+    drip_range.inputs['From Min'].default_value = 0.35
+    drip_range.inputs['From Max'].default_value = 0.65
+    drip_range.inputs['To Min'].default_value = 0.3
+    drip_range.inputs['To Max'].default_value = 1.7
+    drip = b.mix('FLOAT', I['Streak Break'], 1.0, drip_range.outputs['Result'])
+
     sep = b.node('ShaderNodeSeparateColor')
     b.feed(sep.inputs['Color'], I['Weather'])
     channels = {'dirt': sep.outputs[0], 'streak': sep.outputs[1], 'edge': sep.outputs[2], 'damp': I['Damp']}
@@ -177,7 +213,10 @@ def weather_group():
     col, rough, nrm = I['Base Color'], I['Roughness'], I['Normal']
     for layer in LAYERS:
         L = layer.capitalize()
-        m = b.math('MULTIPLY', channels[layer], I[f'{L} Strength'], clamp=True)
+        cov = b.math('MULTIPLY', channels[layer], macro)
+        if layer == 'streak':
+            cov = b.math('MULTIPLY', cov, drip)
+        m = b.math('MULTIPLY', cov, I[f'{L} Strength'], clamp=True)
         m = b.math('MULTIPLY', m, I[f'{L} Alpha'])
         gate = b.mix('FLOAT', I[f'{L} Curvature'], 1.0, convex)
         m = b.math('MULTIPLY', m, gate)

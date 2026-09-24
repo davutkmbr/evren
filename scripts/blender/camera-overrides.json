@@ -18,17 +18,18 @@
   },
   "c09-fountain-wall": {
    "position": [
-    417.93,
-    9.2,
-    6042.42
+    416.54,
+    9.09,
+    6041.41
    ],
    "target": [
-    423.54,
-    10.25,
-    6023.25
+    419.66,
+    8.87,
+    6036.05
    ],
+   "fovDeg": 43.0,
    "snapGround": true,
-   "why": "Content revision moved precinct gate B 3 m west along the Yasa Cd wall (fountain flush at the wall's east end); the cameras.json pose was fitted to the old gate and now centres the fountain. Camera and target moved 3 m along the wall (bearing 300) so heading 16.3 and pitch 3 stay: gate B is centred and the fountain sits at the right edge as in c09-day.jpg (gate and fountain projected into the photo)."
+   "why": "S1 round 2 (hero lane rebuilt the fountain; look lane re-pose): frontal on gate B (heading 30.3 = the wall's normal, pitch -2: in c09-day.jpg the eye line (1.6 m on the 2.7 m door) sits 57 px above the frame centre, i.e. the camera looks 2.4 deg down; the spec's +3 was a medium-confidence fit), 6.2 m out and 0.3 m east of the gate, so the gate sits at 45 % of the width and the fountain (3.5 m east of the gate, its left edge 2.2 m) enters at the right edge as in c09-day.jpg. The photo was taken 8-12 m from the wall; in the compiled lane that point is under the opposite shop awning or inside the building, so the camera stands at 6.2 m (the awning's front edge stays above the frame) and vFOV 43 (39.2 in the photo) recovers the framing. Ray casts: no people between the camera and the gate."
   }
  },
  "interiorViews": {

@@ -18,8 +18,8 @@ Exposure (AgX view transform, 'Medium High Contrast' look):
   every side is ignored), so a bright near wall at the frame edge does not darken a shaded lane. At dusk and night the
   result is also capped so the brightest 3 % of the frame (lit shop windows and interiors) sit 3.5 (dusk) or 4.5
   (night, lower-contrast look) stops over middle grey instead of burning out (HIGHLIGHT_CAP).
-White balance (WHITE_BALANCE): the view transform is balanced like the phone photos, 6500 K by day, 4000 K at night
-(the 1900-3000 K lamps and signs read warm, not raw orange), 9000 K at dusk (the blue-hour sky light is 10000 K+; a
+White balance (WHITE_BALANCE): the view transform is balanced like the phone photos, 6500 K by day, 5000 K at night
+(the 2700-3300 K lamps and floodlights read golden as in the night photos, sodium orange, LED shop light neutral), 9000 K at dusk (the blue-hour sky light is 10000 K+; a
 lower setting such as 5500 K makes the frame colder, not warmer). Light colours are unchanged.
 Manifest lights and emissive materials with `night: true` are off by day (except import_area.DAY_ON_*).
 """
@@ -265,7 +265,10 @@ METER_ZONE = 4
 # Planckian locus of the incandescent / sodium / LED sources that light the night.
 # Dusk 9000 K: c05 dusk rendered at 5500 / 6500 / 8000 / 10000 K; the pavement's blue excess (B - R of the bottom
 # fifth) was 78 / 59 / 45 / 33 against 11 in c05-dusk.jpg.
-WHITE_BALANCE = {'day': (6500.0, 10.0), 'dusk': (9000.0, 10.0), 'night': (4000.0, 0.0)}
+# Night 5000 K (S1 round 2): at 4000 K the 2700-3300 K floodlights and lanterns read neutral white, while the night
+# photos (c01, c08, c09) show them golden; at 5000 K 2000 K sodium reads orange, 3000 K golden, 4000 K LED warm white
+# and 5000-6500 K shop LEDs neutral to cool: the mixed colour temperatures of a real street at night.
+WHITE_BALANCE = {'day': (6500.0, 10.0), 'dusk': (9000.0, 10.0), 'night': (5000.0, 0.0)}
 # Highlight protection at dusk and night (a camera's highlight-weighted metering): the log-average of a night street
 # is dominated by dark sky and shadow and asks for 7+ stops more, so the exposure sat at the top of its range and lit
 # shop windows and interiors (hundreds of lux inside against 10-30 lx on the pavement) burnt out. The exposure is
@@ -287,8 +290,11 @@ def meter_view(width_px=160, samples=16, percentile=None, border=0.0):
     scene = bpy.context.scene
     r, c, img_s, vs = scene.render, scene.cycles, scene.render.image_settings, scene.view_settings
     saved = (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure, c.sample_clamp_indirect, c.sample_clamp_direct)
+    media = getattr(img_s, 'media_type', None)
     path = os.path.join(tempfile.gettempdir(), f'evren_view_meter_{os.getpid()}.exr')
     try:
+        if media is not None:
+            img_s.media_type = 'IMAGE'
         r.resolution_percentage = max(1, min(100, round(100.0 * width_px / max(r.resolution_x, 1))))
         c.samples = samples
         c.sample_clamp_indirect = 0.0
@@ -307,6 +313,8 @@ def meter_view(width_px=160, samples=16, percentile=None, border=0.0):
         img.pixels.foreach_get(px)
         bpy.data.images.remove(img)
     finally:
+        if media is not None:
+            img_s.media_type = media
         (r.resolution_percentage, c.samples, c.use_denoising, c.use_adaptive_sampling, img_s.file_format, img_s.color_depth, img_s.color_mode, r.filepath, vs.exposure, c.sample_clamp_indirect, c.sample_clamp_direct) = saved
         if os.path.exists(path):
             os.remove(path)
@@ -399,17 +407,91 @@ def white_balance(time_of_day, kelvin=None):
     return {'kelvin': k, 'tint': tint}
 
 
-def apply(time_of_day, when=None, ev=None, bias=None, wb_kelvin=None):
-    """Applies a preset to the current scene. Returns a summary dict (sun position, illuminance, EV, exposure,
-    white balance)."""
+def _add_sun_normal(azimuth_deg, elevation_deg, energy, color, angle_rad):
+    """Sun lamp from a normal irradiance (W/m², Blender units) and a colour whose largest channel is 1."""
+    _remove_sun()
+    data = bpy.data.lights.new('evren_sun', 'SUN')
+    data.energy = energy
+    data.color = color
+    data.angle = angle_rad
+    obj = bpy.data.objects.new('evren_sun', data)
+    obj.rotation_mode = 'QUATERNION'
+    obj.rotation_quaternion = to_sun_vector(azimuth_deg, elevation_deg).to_track_quat('Z', 'Y')
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+_world_info = {}
+
+
+def world_info():
+    """The last applied HDRI world (skies.build_world result), {} for the physical sky."""
+    return _world_info
+
+
+def _hdri_sky(time_of_day, sky, when):
+    """Lights the scene with an HDRI sky record (skies.py). Returns (info dict, lux) or None when the HDRI is not
+    cached (the caller falls back to the physical sky)."""
+    import skies  # sibling module
+
+    global _world_info
+    if skies.hdri_path(sky['hdri']) is None:
+        log(f"WARNING HDRI {sky['hdri']} is not cached; physical sky instead")
+        return None
+    az, el = solar_position(when)
+    info = {'sky': sky['id'], 'hdri': sky['hdri'], 'when': when.isoformat(), 'sunAzimuth': round(az, 1), 'sunElevation': round(el, 1)}
+    kind = sky.get('kind', 'sun')
+    if kind == 'sun' and el > 0.0:
+        w, _sky_node = sky_world(az, el)
+        tot = _meter(w, True)
+        lux = luminance(tot) * LUMENS_PER_WATT * float(sky.get('luxFactor', 1.0))
+        res = skies.build_world(w, sky, az, el, lux)
+        if res['sun']:
+            _add_sun_normal(az, el, res['sun']['energy'], res['sun']['color'], math.radians(skies.SUN_ANGLE_DEG))
+        else:
+            _remove_sun()
+        info['physicalLux'] = round(luminance(tot) * LUMENS_PER_WATT)
+    else:
+        w, _nt, _bg = _world()
+        _remove_sun()
+        lux = skies.overcast_lux(el) if kind == 'overcast' else None
+        res = skies.build_world(w, sky, az, el, lux)
+        lux = res['lux']
+    _world_info = res
+    info.update({k: v for k, v in res.items() if not k.startswith('_')})
+    return info, lux
+
+
+def apply(time_of_day, when=None, ev=None, bias=None, wb_kelvin=None, sky=None):
+    """Applies a preset to the current scene. `sky`: a skies.record() (HDRI sky, capture time, white balance and
+    exposure bias of the camera's reference photo); None or id 'physical' keeps the physical sky of the preset.
+    Returns a summary dict (sun position, illuminance, EV, exposure, white balance)."""
     import import_area  # sibling module (sys.path is set by the caller)
 
+    global _world_info
+    _world_info = {}
     preset = PRESETS[time_of_day]
     scene = bpy.context.scene
-    bias = preset.get('bias', 0.0) if bias is None else bias
+    sky = sky if sky and sky.get('id') not in (None, 'physical') else None
+    if sky and sky.get('when') and when is None:
+        when = dt.datetime.fromisoformat(sky['when'])
+    if bias is None:
+        bias = sky.get('bias', preset.get('bias', 0.0)) if sky else preset.get('bias', 0.0)
     when = when or preset['when']
     info = {'time': time_of_day}
-    if time_of_day == 'day':
+    hdri = _hdri_sky(time_of_day, sky, when) if sky else None
+    if hdri is not None:
+        sky_info, lux = hdri
+        info.update(sky_info)
+        if time_of_day == 'night' or sky.get('kind') == 'night':
+            ev_used = preset.get('ev', 3.5) if ev is None else ev
+            exposure = exposure_for_ev(ev_used, bias)
+        else:
+            exposure, ev_used = exposure_for_lux(lux, bias) if ev is None else (exposure_for_ev(ev, bias), ev)
+        night_on = time_of_day != 'day'
+        if wb_kelvin is None and sky.get('whiteBalance'):
+            wb_kelvin = float(sky['whiteBalance'])
+    elif time_of_day == 'day':
         az, el = solar_position(when)
         w, sky = sky_world(az, el)
         sky_irr = _meter(w, False)

@@ -1,6 +1,7 @@
 """
 Bakes ambient occlusion per tile into its UV1 lightmap atlas (TEXCOORD_1 of the tile glb), with Cycles on the Metal
-GPU. Occluders: the baked tiles, every tile within 60 m of them (their LOD1 glb) and all prop instances of those tiles.
+GPU (EVREN_CYCLES_DEVICE=CPU bakes on the CPU instead; import_area.use_cycles_device). Occluders: the baked tiles,
+every tile within 60 m of them (their LOD1 glb) and all prop instances of those tiles.
 
     node scripts/blender-run.mjs --timeout 3600 scripts/blender/bake_ao.py -- [options]
       --area <id>          default kadikoy
@@ -61,14 +62,7 @@ def picks_for(area, bake_ids, lod_level):
 def setup_gpu(samples):
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
-    prefs = bpy.context.preferences.addons['cycles'].preferences
-    prefs.compute_device_type = 'METAL'
-    prefs.get_devices()
-    gpu = False
-    for d in prefs.devices:
-        d.use = d.type == 'METAL'
-        gpu = gpu or d.use
-    scene.cycles.device = 'GPU' if gpu else 'CPU'
+    import_area.use_cycles_device(scene, default_gpu=True)
     scene.cycles.samples = samples
     scene.cycles.use_adaptive_sampling = False
     scene.cycles.use_denoising = False
