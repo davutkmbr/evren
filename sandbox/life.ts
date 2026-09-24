@@ -23,6 +23,7 @@ import { createGeoSystem } from '../src/world/geo';
 import { createTerrainSystem } from '../src/world/terrain';
 import { createWaterSystem } from '../src/world/water';
 import { createCitySystem } from '../src/world/city';
+import { createOsmSystem } from '../src/world/osm';
 import { createMosqueSystem } from '../src/world/landmarks/mosques';
 import { createStructureSystem } from '../src/world/landmarks/structures';
 import { createHeritageSystem } from '../src/world/landmarks/heritage';
@@ -228,7 +229,7 @@ function createFakeDragon(): System {
 
 const systems: System[] = [createGeoSystem(), createSkySystem(), createTerrainSystem(), createWaterSystem()];
 if (flag('city', false)) {
-  systems.push(createCitySystem(), createMosqueSystem(), createStructureSystem(), createHeritageSystem());
+  systems.push(createCitySystem(), createOsmSystem(), createMosqueSystem(), createStructureSystem(), createHeritageSystem());
 }
 if (flag('clouds', false)) {
   systems.push(createCloudSystem());

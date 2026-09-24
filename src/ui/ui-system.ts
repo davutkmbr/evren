@@ -138,6 +138,7 @@ export class UiSystem implements System {
       events.on('loading-done', () => this.onLoadingDone()),
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
       events.on('camera-mode', ({ mode }) => this.hud.instruments.setCameraMode(mode)),
+      this.hud.maneuver.connect(events),
     );
 
     void services.when('geo').then((geo) => {

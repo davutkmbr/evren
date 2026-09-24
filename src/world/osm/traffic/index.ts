@@ -10,7 +10,7 @@
  * - sim.ts (cars: IDM car following, junction yielding, crossings, bus stops, time-of-day population) and
  *   trams.ts (Citadis pairs on T1, nostalgic trams on İstiklal) move everything;
  * - render.ts draws all vehicles in two BatchedMesh draws with three LODs, plus light glows and headlight pools.
- * The life module's procedural road traffic is hidden inside the slice when ?osm=1 (life/traffic/road-network.ts).
+ * The life module's procedural road traffic is hidden inside the slice (life/traffic/road-network.ts).
  * Debug: window.__osm.layers (this layer's `stats()`), URL `traffic=<scale>` scales the density (0 = none).
  */
 import * as THREE from 'three';
@@ -28,6 +28,8 @@ import { Signals } from './signals';
 import { CarSim } from './sim';
 import { TramSim } from './trams';
 
+/** Camera height above the ground (m) above which cars stop casting shadows. */
+const CAR_SHADOW_AGL = 120;
 const SEED = 0x0e1e5;
 /** Moving vehicle capacity at most (the network's full-traffic count normally stays well below). */
 const MOVING_CAP = 1300;
@@ -187,6 +189,7 @@ class TrafficLayer extends LayerBase {
       this.targetTimer = 1;
     }
     const camera = engine.camera;
+    renderer.setShadows(camera.position.y - ctx.geo.heightAt(camera.position.x, camera.position.z) < CAR_SHADOW_AGL);
     camera.updateMatrixWorld();
     this.proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.proj, camera.coordinateSystem);

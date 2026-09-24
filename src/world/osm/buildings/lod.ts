@@ -8,11 +8,11 @@
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
 import type { QualityPreset } from '../../../core/quality';
+import { LOD_RADIUS_SCALE as RADIUS_SCALE } from '../shared/instance-lod';
 import { DETAIL_RADIUS, type DetailKind, type DetailStream, type DetailTiles } from './details';
 import type { BuildingMaterials } from './materials';
 import { acGeometry, awningGeometry, balconyGeometry, frameGeometry, railingGeometry, shutterGeometry, signGeometry, sillGeometry, surroundArchGeometry, surroundCapGeometry, surroundPedimentGeometry } from './props';
 
-const RADIUS_SCALE: Record<QualityPreset, number> = { low: 0.55, medium: 0.8, high: 1, ultra: 1.25 };
 /** Kinds whose shadows read at street level (the rest are too thin to matter). */
 const SHADOW_KINDS = new Set<DetailKind>(['surroundCap', 'balcony', 'railing', 'parapet', 'awning', 'sign']);
 /** Camera travel (m) that triggers a re-stream. */

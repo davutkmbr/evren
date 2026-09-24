@@ -9,7 +9,7 @@ attribute vec4 aRoad;
 attribute vec4 aLane;
 attribute vec4 aStyle;
 
-/* Road sample texel k: 0 = centreline point (xyz) and hide weight (w, 1 inside the ?osm=1 slice);
+/* Road sample texel k: 0 = centreline point (xyz) and hide weight (w, 1 inside the OSM slice);
    1 = lateral surface profile relative to the centre: left / right at aRoad.w m (xy) and at half of it (zw). */
 vec4 roadSample(float i, int k) {
   int ii = int(i + 0.5) * ${ROAD_SAMPLE_TEXELS} + k;

@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 /** Builds the OSM building meshes, detail instances, rooftop props and colliders off the main thread (index.ts). */
+import { tileIndex } from '../shared/mesh-tiles';
 import { StreetSurface } from '../shared/street-surface';
 import { serveWorker } from '../shared/worker';
 import { buildBuildings } from './build';
@@ -15,9 +16,17 @@ serveWorker<BuildingsRequest, BuildingsResult>((req) => {
   const b = buildBuildings({ buildings: req.buildings, pois: req.pois, pads: req.pads, extra: infill.parcels }, surface, req.base.rect);
   const details = b.details.take();
   const props = Object.fromEntries(PROP_KINDS.map((k) => [k, b.props[k].take()])) as Record<PropKind, Float32Array>;
+  const facade = b.facade.take();
+  const roof = b.roof.take();
+  const facadeTiles = tileIndex(facade.attributes.position.array as Float32Array, facade.index);
+  const roofTiles = tileIndex(roof.attributes.position.array as Float32Array, roof.index);
+  facade.index = facadeTiles.index;
+  roof.index = roofTiles.index;
   return {
-    facade: b.facade.take(),
-    roof: b.roof.take(),
+    facade,
+    facadeTiles: facadeTiles.tiles,
+    roof,
+    roofTiles: roofTiles.tiles,
     details: details.kinds,
     tiles: details.tiles,
     props,

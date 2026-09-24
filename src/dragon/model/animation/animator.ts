@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { DragonPose, DragonState } from '../../../core/contracts';
-import { FINGERS, NECK_BONES, TAIL_BONES, SIDES, RIDER, LANDMARKS, fingerJoints, mirror, sideSign, thumbTip, type Side } from '../anatomy';
+import { FINGERS, HEAD_FWD, HEAD_UP, NECK_BONES, TAIL_BONES, SIDES, fingerJoints, sideSign, thumbTip, type Side } from '../anatomy';
 import { STANDING_ROOT_HEIGHT } from '../constants';
 import type { RigSkeleton } from '../skeleton';
 import { aimBone, aimBoneUp, damp, rigTransform, setEuler, solveTwoBone, Spring } from './kinematics';
+import { RiderAnimator, type SurfaceAnchor } from './rider-pose';
 import { computeWingAngles, createWingAngles, strokeLoad, strokePhase, type Angles, type WingAngles } from './wing-pose';
 
 interface WingBones {
@@ -21,12 +22,6 @@ interface LegBones {
   meta: THREE.Bone;
   foot: THREE.Bone;
   list: THREE.Bone[];
-}
-
-interface ArmBones {
-  upper: THREE.Bone;
-  fore: THREE.Bone;
-  hand: THREE.Bone;
 }
 
 /** Outputs other systems (materials) consume each frame. */
@@ -81,6 +76,23 @@ const FOOT_STANCE_PITCH = 0.33;
 const POV_NECK_DROP = 0.4;
 const POV_NECK_LIFT = 0.3;
 const POV_HEAD_RAISE = 0.22;
+/**
+ * Looking back at the rider (gazeRider): the neck swings round to one side in a C that tightens toward the head (the
+ * first two bones sit under the saddle and barely move) while the lower neck lifts the head to the rider's eye level
+ * about 2.5 m away; the head then turns toward the rider's eyes. Yaw / pitch per bone for a left turn (tuned
+ * headlessly: joint bends <= 28 deg, head-to-neck turn ~53 deg, snout ~1.6 m from the rider's face).
+ */
+const GAZE_YAW = [0.02, 0.04, 0.08, 0.16, 0.27, 0.38, 0.46, 0.5, 0.5];
+const GAZE_PITCH = [0.03, 0.08, 0.1, 0.06, 0.03, 0.02, 0.02, 0.02, 0.02];
+/** Extra curl and lift while being petted (the head leans in closer). */
+const GAZE_PET_YAW = [0, 0, 0.02, 0.03, 0.03, 0.03, 0.03, 0.02, 0.02];
+/** The head turns this far outward from pointing straight at the rider, so its near eye (they sit on the sides) meets his. */
+const GAZE_EYE_OFFSET = 0.7;
+/** Head up vector while gazing: 0 = the neck end's up (no twist), 1 = the body's up. */
+const GAZE_UP_BODY = 0.4;
+/** Affectionate head tilt (roll, rad), stronger while petted. */
+const GAZE_TILT = 0.2;
+const GAZE_PET_TILT = 0.16;
 /** Clamp for the body-frame acceleration fed to secondary motion (teleports, collisions). */
 const MAX_ACCEL = 40;
 const _qa = new THREE.Quaternion();
@@ -92,6 +104,10 @@ const _qc = new THREE.Quaternion();
 const _thumbTarget = new THREE.Vector3();
 const _air = new THREE.Vector3();
 const FAN_MID = (FINGERS[0].angle + FINGERS[FINGERS.length - 1].angle) * 0.5;
+const _gazeHead = new THREE.Vector3();
+const _gazeDir = new THREE.Vector3();
+const _gazeUp = new THREE.Vector3();
+const _gazeAxis = new THREE.Vector3();
 
 /** bone.quaternion = slerp(from, bone.quaternion, t). */
 function blendFrom(bone: THREE.Object3D, from: THREE.Quaternion, t: number): void {
@@ -122,18 +138,13 @@ export class DragonAnimator {
   private readonly tail: THREE.Bone[];
   private readonly wings: Record<Side, WingBones>;
   private readonly legs: Record<Side, LegBones>;
-  private readonly riderPelvis: THREE.Bone;
-  private readonly riderSpine: THREE.Bone;
-  private readonly riderChest: THREE.Bone;
-  private readonly riderHead: THREE.Bone;
-  private readonly arms: Record<Side, ArmBones>;
+  private readonly rider: RiderAnimator;
   private readonly rootRest: THREE.Vector3;
   private readonly wingAngles = createWingAngles();
 
   // Rest geometry for IK.
   private readonly legRest: Record<Side, { thigh: THREE.Vector3; shin: THREE.Vector3; meta: THREE.Vector3; l1: number; l2: number; metaLen: number }>;
   private readonly wingRest: Record<Side, { upper: THREE.Vector3; fore: THREE.Vector3; hand: THREE.Vector3; l1: number; l2: number }>;
-  private readonly armRest: Record<Side, { upper: THREE.Vector3; fore: THREE.Vector3; l1: number; l2: number; grip: THREE.Vector3 }>;
   private readonly fingerRestB = {} as Record<Side, THREE.Vector3[]>;
   private readonly thumbRest = {} as Record<Side, THREE.Vector3>;
 
@@ -142,9 +153,10 @@ export class DragonAnimator {
   private readonly neckPitch = new Spring(28, 9);
   private readonly tailYaw: Spring[] = [];
   private readonly tailPitch: Spring[] = [];
-  private readonly riderPitch = new Spring(40, 9);
-  private readonly riderRoll = new Spring(40, 9);
-  private readonly riderHeave = new Spring(70, 11);
+  /** gazeRider, sprung so the neck swings round and back organically (~1 s). */
+  private readonly gaze = new Spring(9, 6);
+  private gazeSide = 1;
+  private gazeSideTarget = 1;
   private smoothSpread = 1;
   private smoothTuck = 1;
   private smoothSweep = 0;
@@ -185,10 +197,8 @@ export class DragonAnimator {
     }
     this.wings = {} as Record<Side, WingBones>;
     this.legs = {} as Record<Side, LegBones>;
-    this.arms = {} as Record<Side, ArmBones>;
     this.legRest = {} as DragonAnimator['legRest'];
     this.wingRest = {} as DragonAnimator['wingRest'];
-    this.armRest = {} as DragonAnimator['armRest'];
     const head = (n: string): THREE.Vector3 => skel.restHeads[skel.id(n)];
     for (const side of SIDES) {
       this.wings[side] = {
@@ -201,7 +211,6 @@ export class DragonAnimator {
       };
       const legList = [b(`thigh${side}`), b(`shin${side}`), b(`meta${side}`), b(`foot${side}`)];
       this.legs[side] = { thigh: legList[0], shin: legList[1], meta: legList[2], foot: legList[3], list: legList };
-      this.arms[side] = { upper: b(`riderUpperArm${side}`), fore: b(`riderForearm${side}`), hand: b(`riderHand${side}`) };
       const hip = head(`thigh${side}`);
       const knee = head(`shin${side}`);
       const ankle = head(`meta${side}`);
@@ -221,21 +230,37 @@ export class DragonAnimator {
       this.wingRest[side] = { upper: el.clone().sub(sh), fore: wr.clone().sub(el), hand: handDir, l1: el.distanceTo(sh), l2: wr.distanceTo(el) };
       this.fingerRestB[side] = fingerJoints(side).map((j) => j[2].clone().sub(j[1]).normalize());
       this.thumbRest[side] = thumbTip(side).sub(wr).normalize();
-      const ash = head(`riderUpperArm${side}`);
-      const ael = head(`riderForearm${side}`);
-      const awr = head(`riderHand${side}`);
-      this.armRest[side] = {
-        upper: ael.clone().sub(ash),
-        fore: awr.clone().sub(ael),
-        l1: ael.distanceTo(ash),
-        l2: awr.distanceTo(ael),
-        grip: mirror(RIDER.wrist, side).sub(LANDMARKS.chest),
-      };
     }
-    this.riderPelvis = b('riderPelvis');
-    this.riderSpine = b('riderSpine');
-    this.riderChest = b('riderChest');
-    this.riderHead = b('riderHead');
+    this.rider = new RiderAnimator(skel, this.rigRoot);
+  }
+
+  /** Surface points of the petting stroke on the neck (see RiderAnimator.setPetTrack). */
+  setPetTrack(anchors: SurfaceAnchor[]): void {
+    this.rider.setPetTrack(anchors);
+  }
+
+  /** Side the head comes round on when it looks at the rider: +1 left, -1 right (applied while the head is forward). */
+  setGazeSide(side: number, immediate = false): void {
+    this.gazeSideTarget = side < 0 ? -1 : 1;
+    if (immediate) {
+      this.gazeSide = this.gazeSideTarget;
+    }
+  }
+
+  /** First-person eye anchor offset in the riderHead bone frame (see RiderAnimator.povOffset). */
+  /** True once per rein crack of the rider's urge gesture. */
+  consumeReinSnap(): boolean {
+    return this.rider.consumeReinSnap();
+  }
+
+  get povEyeOffset(): THREE.Vector3 {
+    return this.rider.povOffset;
+  }
+
+  /** Debug (screenshots): freeze the urge snap phase (0..1) and the petting stroke phase (rad); null = animate. */
+  setDebugPhases(urge: number | null, stroke: number | null): void {
+    this.rider.debugUrgePhase = urge;
+    this.rider.debugStrokePhase = stroke;
   }
 
   /** Blends the first-person neck posture in (true) or out (false). */
@@ -292,12 +317,28 @@ export class DragonAnimator {
     const np = this.neckPitch.value;
     const groundNeck = grounded * 0.12;
     const walkNod = walk * 0.03 * Math.sin(wp * 2 + 0.5);
+    // Looking back at the rider: blends the whole neck from the flight posture into the gaze curve.
+    const gazeTarget = THREE.MathUtils.clamp(pose.gazeRider ?? 0, 0, 1);
+    const gRaw = THREE.MathUtils.clamp(dt > 0 ? this.gaze.step(gazeTarget, dt) : (this.gaze.reset(gazeTarget), gazeTarget), 0, 1);
+    const g = gRaw * gRaw * (3 - 2 * gRaw);
+    if (g < 0.03) {
+      this.gazeSide = this.gazeSideTarget;
+    }
+    const side = this.gazeSide;
+    const pet = this.rider.cues.pet;
+    const petSway = 0.035 * pet * Math.sin(this.time * 0.9);
+    // The first-person neck posture gives way to the gaze, and to petting (the rider reaches down to the neck).
+    const povKeep = 1 - Math.max(g, pet);
     for (let i = 0; i < NECK_BONES; i++) {
       const w = NECK_WEIGHTS[i];
       const osc = -bodyPitch * (i < 3 ? 0.5 : 0);
       const lift = groundNeck * (i < 4 ? 0.9 : -0.6);
-      const pov = this.povBlend * (i < 5 ? -POV_NECK_DROP * (w / 0.62) : POV_NECK_LIFT * (w / 0.38));
-      setEuler(this.neck[i], np * w + osc + lift * w + walkNod * w + pov, ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded, 0, 'YXZ');
+      const pov = this.povBlend * povKeep * (i < 5 ? -POV_NECK_DROP * (w / 0.62) : POV_NECK_LIFT * (w / 0.38));
+      const flightPitch = np * w + osc + lift * w + walkNod * w + pov;
+      const flightYaw = ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded;
+      const gazePitch = GAZE_PITCH[i] + osc * 0.5;
+      const gazeYaw = side * (GAZE_YAW[i] + GAZE_PET_YAW[i] * pet) + petSway * (i > 3 ? 1 : 0);
+      setEuler(this.neck[i], flightPitch + (gazePitch - flightPitch) * g, flightYaw + (gazeYaw - flightYaw) * g, 0, 'YXZ');
     }
     this.smoothJaw += (THREE.MathUtils.clamp(pose.jawOpen, 0, 1) - this.smoothJaw) * (dt > 0 ? damp(14, dt) : 1);
     const aimTarget = THREE.MathUtils.smoothstep(this.smoothJaw, 0.05, 0.4);
@@ -305,12 +346,15 @@ export class DragonAnimator {
     // Head stabilization: counter body pitch/heave so the gaze stays steady. In first person the head undoes the
     // neck's net pitch (level, as in third person) and raises its nose unless it is breathing fire.
     const headStab = -bodyPitch * 0.6 - heave * 0.25;
-    const povHead = this.povBlend * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
+    const povHead = this.povBlend * povKeep * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
     setEuler(this.head, headStab - groundNeck * 0.25 + povHead, 0, 0, 'YXZ');
+    if (g > 0.001) {
+      this.aimHeadAtRider(g, side, pet);
+    }
     setEuler(this.jaw, -this.smoothJaw * 0.62, 0, 0, 'YXZ');
 
     // --- Tail with lagging springs ---
-    this.updateTail(pose, dt, amp, psi, walk, wp, grounded);
+    this.updateTail(pose, dt, amp, psi, walk, wp, grounded, pet, side);
 
     // --- Wings ---
     for (const side of SIDES) {
@@ -330,8 +374,10 @@ export class DragonAnimator {
       this.applyLeg(side, grounded, walk, wp, amp, psi);
     }
 
-    // --- Rider ---
-    this.applyRider(pose, dt, heave);
+    // --- Rider (after the neck: the petting hand follows the neck surface) ---
+    this.rider.gazeSide = side;
+    this.rider.firstPerson = this.povBlend;
+    this.rider.update(pose, dt, this.time, heave);
 
     // --- Material-driven outputs ---
     this.breathPhase += dt * (0.9 + 1.4 * amp + 0.6 * walk);
@@ -390,7 +436,7 @@ export class DragonAnimator {
     }
   }
 
-  private updateTail(pose: Readonly<DragonPose>, dt: number, amp: number, psi: number, walk: number, wp: number, grounded: number): void {
+  private updateTail(pose: Readonly<DragonPose>, dt: number, amp: number, psi: number, walk: number, wp: number, grounded: number, pet: number, side: number): void {
     const state = this.skelState;
     const yawRate = state ? state.y : 0;
     const pitchRate = state ? state.x : 0;
@@ -406,8 +452,12 @@ export class DragonAnimator {
       const walkSwing = walk * 0.06 * Math.sin(wp - i * 0.35 - 0.8) * (0.3 + k);
       const lateralAcc = -_acc.x * 0.0015 * k;
       const droop = grounded * (i < 4 ? -0.03 : 0.012);
-      const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc;
-      const tp = basePitch + inertialPitch + wave + droop + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
+      // Contentment while petted: the tail tip curls up and to one side, slowly swaying.
+      const tip = THREE.MathUtils.smoothstep(k, 0.45, 1);
+      const curlYaw = pet * tip * (0.2 * side + 0.07 * Math.sin(this.time * 0.55 - i * 0.35));
+      const curlPitch = -pet * tip * 0.1;
+      const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc + curlYaw;
+      const tp = basePitch + inertialPitch + wave + droop + curlPitch + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
       let yaw: number;
       let pitch: number;
       if (dt > 0) {
@@ -582,34 +632,23 @@ export class DragonAnimator {
     }
   }
 
-  private applyRider(pose: Readonly<DragonPose>, dt: number, heave: number): void {
-    const leanPitch = THREE.MathUtils.clamp(pose.riderLeanPitch, -0.6, 0.6);
-    const leanRoll = THREE.MathUtils.clamp(pose.riderLeanRoll, -0.6, 0.6);
-    const lp = dt > 0 ? this.riderPitch.step(leanPitch, dt) : (this.riderPitch.reset(leanPitch), leanPitch);
-    const lr = dt > 0 ? this.riderRoll.step(leanRoll, dt) : (this.riderRoll.reset(leanRoll), leanRoll);
-    // The rider's torso lags the dragon's heave a little (secondary motion).
-    const hv = dt > 0 ? this.riderHeave.step(heave, dt) : (this.riderHeave.reset(heave), heave);
-    const lag = THREE.MathUtils.clamp((hv - heave) * 1.4, -0.08, 0.08);
-    setEuler(this.riderPelvis, lp * 0.15, 0, -lr * 0.3, 'YXZ');
-    setEuler(this.riderSpine, lp * 0.4 + lag, 0, -lr * 0.35, 'YXZ');
-    setEuler(this.riderChest, lp * 0.35 + lag * 0.5, 0, -lr * 0.25, 'YXZ');
-    setEuler(this.riderHead, -lp * 0.6 - lag * 1.2, 0, lr * 0.5, 'YXZ');
-    // Arms: two-bone IK to the reins grip above the pommel (fixed in the dragon's chest frame).
-    rigTransform(this.chest, this.rigRoot, _p, _q);
-    rigTransform(this.riderChest, this.rigRoot, _vel, _q2);
-    for (const side of SIDES) {
-      const sgn = sideSign(side);
-      const arm = this.arms[side];
-      const rest = this.armRest[side];
-      _target.copy(rest.grip).applyQuaternion(_q).add(_p);
-      const shoulder = _hip.copy(arm.upper.position).applyQuaternion(_q2).add(_vel);
-      _pole.copy(shoulder).add(_dir.set(0.55 * sgn, -0.5, 0.35));
-      solveTwoBone(shoulder, _target, rest.l1, rest.l2, _pole, _mid, _end);
-      aimBone(arm.upper, _q2, rest.upper, _dir.subVectors(_mid, shoulder));
-      _q3.copy(_q2).multiply(arm.upper.quaternion);
-      aimBone(arm.fore, _q3, rest.fore, _dir.subVectors(_end, _mid));
-      _q3.multiply(arm.fore.quaternion);
-      arm.hand.quaternion.copy(_q3).invert().multiply(_q);
-    }
+  /**
+   * Turns the head to look at the rider's eyes (blended by g over its flight orientation): turned a little outward so
+   * the near eye meets his, upright in the body frame with an affectionate tilt.
+   */
+  private aimHeadAtRider(g: number, side: number, pet: number): void {
+    const last = this.neck[NECK_BONES - 1];
+    rigTransform(last, this.rigRoot, _p, _q);
+    _gazeHead.copy(this.head.position).applyQuaternion(_q).add(_p);
+    _gazeDir.subVectors(this.rider.eye, _gazeHead).normalize();
+    _gazeDir.applyAxisAngle(_gazeAxis.set(0, 1, 0), -side * GAZE_EYE_OFFSET);
+    // Up: between the body's up and the neck end's own up (less twist at the skull base), then the tilt.
+    _gazeUp.set(0, 1, 0).applyQuaternion(_q).lerp(_gazeAxis.set(0, 1, 0), GAZE_UP_BODY).normalize();
+    _gazeUp.applyAxisAngle(_gazeDir, side * (GAZE_TILT + GAZE_PET_TILT * pet));
+    _qa.copy(this.head.quaternion);
+    aimBoneUp(this.head, _q, HEAD_FWD, HEAD_UP, _gazeDir, _gazeUp);
+    _qb.copy(this.head.quaternion);
+    this.head.quaternion.copy(_qa).slerp(_qb, g);
   }
+
 }

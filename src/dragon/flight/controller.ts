@@ -16,17 +16,27 @@ const COS_FF_FADE = Math.cos(75 * DEG);
 const GOVERNOR_SPEED_TAU = 1;
 const GOVERNOR_TURN_BANK = 25 * DEG;
 const GOVERNOR_TURN_MARGIN = 3;
+/** Extra flap force of the first take-off beats (fraction). */
+const TAKEOFF_BOOST = 0.7;
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
 const _latched = createPilotCommand();
+const _masked = createPilotCommand();
 
 function neutralPitch(pilot: PilotCommand): PilotCommand {
   copyPilotCommand(pilot, _latched);
   _latched.pitch = 0;
   return _latched;
+}
+
+/** The pilot command with Shift ignored (a held dive that a catch has ended). */
+function withoutDive(pilot: PilotCommand): PilotCommand {
+  copyPilotCommand(pilot, _masked);
+  _masked.dive = false;
+  return _masked;
 }
 
 /** Steepest descent (negative) that still reaches `room` metres of spare height within `reach` metres. */
@@ -50,10 +60,32 @@ export interface ControlTargets {
   brake: number;
   legsOut: number;
   hover: number;
+  /** Tricks: control authority multipliers (pitch, yaw, roll), 1 = normal. */
+  readonly authority: THREE.Vector3;
+  /** Flap force multiplier (the urge's strong beats, loops), 1 = normal. */
+  thrustBoost: number;
+  /** Dynamic lift of hard-flapping wings in a loop (fraction of extra lift), 0 = none. */
+  liftBoost: number;
+  /** Wing fold/unfold and sweep rates (1/s) for snaps; 0 = the muscles' normal rates. */
+  spreadRate: number;
+  sweepRate: number;
 }
 
 export function createControlTargets(): ControlTargets {
-  return { rate: new THREE.Vector3(), effort: 0, spread: 1, sweep: 0, brake: 0, legsOut: 0, hover: 0 };
+  return {
+    rate: new THREE.Vector3(),
+    effort: 0,
+    spread: 1,
+    sweep: 0,
+    brake: 0,
+    legsOut: 0,
+    hover: 0,
+    authority: new THREE.Vector3(1, 1, 1),
+    thrustBoost: 1,
+    liftBoost: 0,
+    spreadRate: 0,
+    sweepRate: 0,
+  };
 }
 
 /**
@@ -148,18 +180,35 @@ export class FlightController {
     if (this.forwardLatch && (pilot.pitch < 0.2 || !sim.airborne)) {
       this.forwardLatch = false;
     }
-    const cmd = this.forwardLatch ? neutralPitch(pilot) : pilot;
+    let cmd = this.forwardLatch ? neutralPitch(pilot) : pilot;
+    if (sim.maneuvers.diveMasked && cmd.dive) {
+      cmd = withoutDive(cmd);
+    }
     const t = sim.targets;
     t.rate.set(0, 0, 0);
     t.brake = 0;
     t.hover = 0;
     t.legsOut = 0;
+    t.authority.set(1, 1, 1);
+    t.thrustBoost = 1;
+    t.liftBoost = 0;
+    t.spreadRate = 0;
+    t.sweepRate = 0;
     if (sim.beat.downstrokeStarted && this.burst) {
       this.burstBeats++;
     }
     this.updateTap(sim, cmd, h);
     // Kept current in every airborne mode, so the protection is valid the moment a take-off hands over.
     this.updateEnergyLimits(sim, h);
+    if (sim.maneuvers.active) {
+      this.burst = false;
+      sim.maneuvers.control(sim, cmd, h, t);
+      if (sim.maneuvers.active) {
+        t.effort = Math.min(t.effort, sim.effortCap());
+        return;
+      }
+      // The trick ended this substep: the normal law flies it from here.
+    }
     switch (sim.mode) {
       case 'takeoff':
         this.takeoffLaw(sim, cmd, t);
@@ -404,6 +453,8 @@ export class FlightController {
 
     // Legs come down when slow and near the ground.
     t.legsOut = V < 20 ? smoothstep(40, 8, sim.footClearance) : 0;
+    // The urge ("dehh"): strong beats and a surge, the path hold keeps it level.
+    sim.maneuvers.applyUrge(sim, t, !tuck && !cmd.brake);
   }
 
   /**
@@ -573,6 +624,9 @@ export class FlightController {
     const rollRate = -clamp(4 * this.rollError(sim, bankTarget), -1.4, 1.4);
     const pitchRate = clamp(3 * (pitchTarget - sim.pitch), -0.8, 0.8);
     t.rate.set(_feedForward.x + pitchRate, _feedForward.y - 1.2 * sim.beta * clamp(V / 10, 0, 1), _feedForward.z + rollRate);
+    // The first big beats off the ground carry the dragon up clear of it.
+    t.thrustBoost = 1 + TAKEOFF_BOOST * (1 - smoothstep(0.5, 1.4, sim.modeTime));
+    sim.maneuvers.applyUrge(sim, t, true);
   }
 
   /**

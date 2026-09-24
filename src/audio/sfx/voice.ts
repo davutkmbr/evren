@@ -1,10 +1,13 @@
 import type { NoiseBank } from '../dsp/noise';
 import type { Rng } from '../dsp/rng';
+import type { SampleBank, SpriteSample } from '../samples';
 
 /** Shared resources for synthesizing one-shots on any BaseAudioContext (realtime or offline). */
 export interface SfxEnv {
   readonly ctx: BaseAudioContext;
   readonly noise: NoiseBank;
+  /** Recorded sounds (null offline without recordings or when WebAudio decoding is unavailable). */
+  readonly samples: SampleBank | null;
   readonly rng: Rng;
   /** Dry destination bus. */
   readonly out: AudioNode;
@@ -159,6 +162,17 @@ export class Voice {
     return s;
   }
 
+  /** One slot of a recorded sprite starting at t + start, played at `rate` (its length scales by 1 / rate). */
+  slot(sprite: SpriteSample, index: number, start = 0, rate = 1): AudioBufferSourceNode {
+    const [offset, duration] = sprite.slots[index];
+    const s = this.env.ctx.createBufferSource();
+    s.buffer = sprite.buffer;
+    s.playbackRate.value = rate;
+    s.start(this.t + start, offset, duration);
+    this.track(s, this.t + start + duration / rate);
+    return s;
+  }
+
   /** Mono source -> panned (relative to the voice) into the stereo input. */
   toInput(node: AudioNode, pan = 0): void {
     if (pan === 0) {
@@ -196,6 +210,20 @@ export class Voice {
       s.stop(Math.min(stopAt, this.stopTimes[i]));
     }
   }
+}
+
+const lastSlot = new WeakMap<SpriteSample, number>();
+
+/** A random slot of a recorded sprite, never the one it played last (round-robin without audible repeats). */
+export function pickSlot(sprite: SpriteSample, rng: Rng): number {
+  const n = sprite.slots.length;
+  const prev = lastSlot.get(sprite) ?? -1;
+  let i = Math.floor(rng() * n);
+  if (i === prev && n > 1) {
+    i = (i + 1 + Math.floor(rng() * (n - 1))) % n;
+  }
+  lastSlot.set(sprite, i);
+  return i;
 }
 
 function clampPan(p: number): number {

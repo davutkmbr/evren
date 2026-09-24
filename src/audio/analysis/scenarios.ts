@@ -3,6 +3,7 @@ import { AudioEngine, createAudioFrame, type AudioFrame } from '../audio-engine'
 import { createImpulseResponse } from '../dsp/impulse';
 import { createNoiseBank, type NoiseBank } from '../dsp/noise';
 import type { GainReduction } from '../master-bus';
+import { SampleLibrary, type SampleBank } from '../samples';
 import { analyze, loopRepeat, maxLoudnessRise, type LoopRepeat, type SoundMetrics } from './metrics';
 
 /**
@@ -174,6 +175,22 @@ const flapOverWind = (id: string, label: string, camera: CameraMode, minRise: nu
   },
 });
 
+const rainCase = (id: string, label: string, rain: number, airspeed: number, camera: CameraMode, target: [number, number]): RenderCase => ({
+  id,
+  label,
+  seconds: 10,
+  measure: 'integrated',
+  target,
+  camera,
+  repeatMax: REPEAT_MAX,
+  step: (_t, _p, f) => {
+    f.rain = rain;
+    f.dragon.airspeed = airspeed;
+    f.dragon.grounded = airspeed === 0;
+    Object.assign(f.probe, { agl: 60, altitude: 80, urban: 0, foliage: 0, water: 0, coast: 0, strait: 0 });
+  },
+});
+
 export const CASES: RenderCase[] = [
   oneShot('flap-third', 'Kanat çırpma (3. şahıs) 0.5 + 1.0', 2.6, [-24, -18], 'third', (t, p, e) => {
     if (crossed(t, p, 0.2)) {
@@ -214,6 +231,16 @@ export const CASES: RenderCase[] = [
   oneShot('land', 'Yere iniş', 1.8, [-22, -16], 'third', (t, p, e, f) => {
     if (crossed(t, p, 0.1)) {
       e.landAt(f.dragon.position, 14);
+    }
+  }),
+  oneShot('thunder-near', 'Gök gürültüsü, yakın (~1 km)', 9, [-22, -14], 'third', (t, p, e) => {
+    if (crossed(t, p, 0.1)) {
+      e.play('thunder', 1);
+    }
+  }),
+  oneShot('thunder-far', 'Gök gürültüsü, uzak (~6 km)', 10, [-32, -22], 'third', (t, p, e) => {
+    if (crossed(t, p, 0.1)) {
+      e.play('thunder', 0.3);
     }
   }),
   {
@@ -267,34 +294,37 @@ export const CASES: RenderCase[] = [
       e.ambience.spawnFerry(150, 1500);
     }
   }),
-  windCase('wind-cruise-third', 'Rüzgâr seyir 40 m/s (3. şahıs)', 'third', [-26, -20], (_t, f) => {
+  rainCase('rain-light', 'Hafif yağmur (0.35), yerde (3. şahıs)', 0.35, 0, 'third', [-33, -27]),
+  rainCase('rain-heavy', 'Sağanak (1.0), yerde (POV)', 1, 0, 'pov', [-26, -20]),
+  rainCase('rain-flight', 'Yağmurda seyir (0.8), 32 m/s (3. şahıs)', 0.8, 32, 'third', [-24, -18]),
+  windCase('wind-cruise-third', 'Rüzgâr seyir 40 m/s (3. şahıs)', 'third', [-31, -25], (_t, f) => {
     f.dragon.airspeed = 40;
   }),
-  windCase('wind-cruise-pov', 'Rüzgâr seyir 40 m/s (POV)', 'pov', [-26, -20], (_t, f) => {
+  windCase('wind-cruise-pov', 'Rüzgâr seyir 40 m/s (POV)', 'pov', [-31, -25], (_t, f) => {
     f.dragon.airspeed = 40;
   }),
   windCase(
     'wind-steady-long',
     'Uzun sabit seyir 36 m/s (POV, 36 s): gürültü döngüsü tekrar testi',
     'pov',
-    [-25, -18],
+    [-30, -23],
     (_t, f) => {
       f.dragon.airspeed = 36;
       f.dragon.aoa = 0.05;
     },
     36,
   ),
-  windCase('wind-dive-pov', 'Dalış 50→95 m/s (POV)', 'pov', [-19, -13], (t, f) => {
+  windCase('wind-dive-pov', 'Dalış 50→95 m/s (POV)', 'pov', [-24, -18], (t, f) => {
     f.dragon.airspeed = 50 + Math.min(1, t / 4) * 45;
     f.dragon.diving = Math.min(1, t / 1.5);
   }),
-  windCase('wind-bank-third', 'Yatış/dönüş 45 m/s (3. şahıs)', 'third', [-23, -17], (t, f) => {
+  windCase('wind-bank-third', 'Yatış/dönüş 45 m/s (3. şahıs)', 'third', [-28, -22], (t, f) => {
     f.dragon.airspeed = 45;
     f.dragon.turnRate = Math.sin(t * 1.3) * 0.8;
     f.dragon.rollRate = Math.cos(t * 1.3) * 1.2;
     f.dragon.sideslip = Math.sin(t * 1.3) * 0.12;
   }),
-  windCase('wind-skim', 'Su yüzeyinde alçak uçuş 35 m/s (3. şahıs)', 'third', [-26, -20], (t, f) => {
+  windCase('wind-skim', 'Su yüzeyinde alçak uçuş 35 m/s (3. şahıs)', 'third', [-31, -25], (t, f) => {
     f.dragon.airspeed = 35;
     f.dragon.skim = Math.min(1, t / 1.5);
   }),
@@ -455,7 +485,23 @@ function flightScenario(t: number, p: number, f: AudioFrame, e: AudioEngine): vo
   }
 }
 
-let shared: { noise: NoiseBank; impulse: AudioBuffer } | null = null;
+let shared: { noise: NoiseBank; impulse: AudioBuffer; samples: SampleBank | null } | null = null;
+let recorded = true;
+
+/** Renders with the recorded sounds (default) or synthesis only (A/B against the procedural voices). */
+export function useRecordedSounds(on: boolean): void {
+  recorded = on;
+  shared = null;
+}
+
+async function loadShared(ctx: OfflineAudioContext): Promise<NonNullable<typeof shared>> {
+  let samples: SampleBank | null = null;
+  if (recorded) {
+    samples = new SampleLibrary().createBank(ctx);
+    await Promise.all((['flight', 'rain', 'storm'] as const).map((g) => samples!.ready(g)));
+  }
+  return { noise: createNoiseBank(ctx), impulse: createImpulseResponse(ctx), samples };
+}
 
 interface RawRender {
   main: AudioBuffer;
@@ -476,7 +522,7 @@ function slice(src: AudioBuffer, firstChannel: number, offset: number, length: n
 async function renderRaw(c: RenderCase, step: StepFn, seed: number): Promise<RawRender> {
   const total = PREROLL + c.seconds;
   const ctx = new OfflineAudioContext(4, Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE);
-  shared ??= { noise: createNoiseBank(ctx), impulse: createImpulseResponse(ctx) };
+  shared ??= await loadShared(ctx);
   const merger = ctx.createChannelMerger(4);
   merger.connect(ctx.destination);
   const mainIn = ctx.createGain();

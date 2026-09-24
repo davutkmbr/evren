@@ -1,8 +1,17 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, smoothstep } from '../../core/math/noise';
-import { GRAVITY } from './params';
+import { ENVELOPE, GRAVITY } from './params';
 import type { FlightSim } from './sim';
+import type { PilotCommand } from './types';
+
+/** Rider cue smoothing rates (1/s): reins ~0.17 s, crouch ~0.25 s, arm gestures ~0.2 s. */
+const REIN_RATE = 6;
+const TUCK_RATE = 4;
+const ARM_RATE = 5;
+/** A Space tap pumps the reins forward for this long (s). */
+const PUMP_TIME = 0.45;
+const ROAR_CHEER = 1.5;
 
 const _omegaWorld = new THREE.Vector3();
 const _accelBody = new THREE.Vector3();
@@ -43,12 +52,24 @@ export class PoseDriver {
     breath: 0.3,
     riderLeanPitch: 0,
     riderLeanRoll: 0,
+    riderReinLeft: 0,
+    riderReinRight: 0,
+    riderTuck: 0,
+    riderUrge: 0,
+    riderPoint: 0,
+    riderCheer: 0,
   };
 
   private roarAge = 99;
   private exertion = 0;
   private leanPitchVel = 0;
   private leanRollVel = 0;
+  private pumpAge = 99;
+  private reinLeft = 0;
+  private reinRight = 0;
+  private tuck = 0;
+  private point = 0;
+  private cheer = 0;
 
   roar(): void {
     this.roarAge = 0;
@@ -63,7 +84,8 @@ export class PoseDriver {
     return smoothstep(0, 0.22, t) * (1 - smoothstep(1.35, 2.1, t));
   }
 
-  update(sim: FlightSim, dt: number, time: number, look: LookTarget | null): DragonPose {
+  /** `cmd` is the pilot's command this frame (null: none, e.g. tests): the rider shows every command given. */
+  update(sim: FlightSim, dt: number, time: number, look: LookTarget | null, cmd: PilotCommand | null = null): DragonPose {
     const pose = this.pose;
     pose.flapPhase = sim.beat.phase;
     pose.flapAmplitude = clamp(sim.beat.amplitude, 0, 1);
@@ -148,7 +170,10 @@ export class PoseDriver {
     _invQ.copy(q).invert();
     _accelBody.copy(sim.specificForce).applyQuaternion(_invQ);
     const speedTuck = airborne ? smoothstep(28, 75, sim.airspeed) * 0.32 + (sim.mode === 'diving' ? 0.12 : 0) : 0;
-    const pitchTarget = clamp((-_accelBody.z / GRAVITY) * 0.5 - (_accelBody.y / GRAVITY - 1) * 0.06 - speedTuck, -0.55, 0.45);
+    // A soft landing reads in the saddle: the rider sits back through the flare.
+    const flareLean = sim.mode === 'landing' && sim.controller.hoverDescent ? 0.22 : 0;
+    const leapLean = sim.leapCharge > 0 || sim.runTakeoff > 0 ? -0.18 : 0;
+    const pitchTarget = clamp((-_accelBody.z / GRAVITY) * 0.5 - (_accelBody.y / GRAVITY - 1) * 0.06 - speedTuck + flareLean + leapLean, -0.55, 0.45);
     const rollTarget = clamp((-_accelBody.x / GRAVITY) * 0.5 + (airborne ? sim.bank * 0.1 : 0), -0.45, 0.45);
     const wn = 7;
     const zeta = 0.55;
@@ -157,6 +182,83 @@ export class PoseDriver {
     this.leanRollVel += (wn * wn * (rollTarget - pose.riderLeanRoll) - 2 * zeta * wn * this.leanRollVel) * h;
     pose.riderLeanPitch = clamp(pose.riderLeanPitch + this.leanPitchVel * h, -0.6, 0.5);
     pose.riderLeanRoll = clamp(pose.riderLeanRoll + this.leanRollVel * h, -0.5, 0.5);
+    this.updateRiderCues(sim, dt, cmd);
     return pose;
+  }
+
+  /**
+   * Rider cues: reins, crouch and arm gestures for every command the player gives (and for what the dragon does on
+   * its own: autopilot turns, landings, the automatic catch). Targets are smoothed so nothing pops.
+   */
+  private updateRiderCues(sim: FlightSim, dt: number, cmd: PilotCommand | null): void {
+    const pose = this.pose;
+    const m = sim.maneuvers;
+    const trick = m.kind;
+    const airborne = sim.airborne;
+    const roll = cmd ? clamp(cmd.roll + 0.5 * cmd.yaw, -1, 1) : 0;
+    const pitch = cmd ? clamp(cmd.pitch, -1, 1) : 0;
+    const dive = (cmd?.dive ?? false) && !m.diveMasked;
+    const brake = cmd?.brake ?? false;
+
+    // Turning: the inside rein comes back to the chest (0.6-0.9), the outside one gives a little. Turns the dragon
+    // flies without the stick (autopilot, overrides) still show through the bank.
+    const bankTurn = airborne && trick === 'none' ? clamp(sim.bank / ENVELOPE.maxBank, -1, 1) * 0.7 : 0;
+    const turn = Math.abs(roll) >= Math.abs(bankTurn) ? roll : bankTurn;
+    const inside = smoothstep(0.05, 0.3, Math.abs(turn)) * (0.55 + 0.3 * Math.abs(turn));
+    let left = turn < 0 ? inside : -0.12 * inside;
+    let right = turn > 0 ? inside : -0.12 * inside;
+    // Climb (S): both reins back; nose down (W): both forward.
+    const both = pitch < 0 ? -0.55 * pitch : -0.5 * pitch;
+    left += both;
+    right += both;
+    let tuck = airborne ? smoothstep(45, 85, sim.airspeed) * 0.45 : 0;
+
+    const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6);
+    if (falling) {
+      // Folded wings: flat on the neck, reins given all the way.
+      left = right = -1;
+      tuck = 1;
+    } else if (trick === 'catch') {
+      // Wings open: the rider hauls back through the pull-out, then sits up.
+      left = right = 1;
+      tuck = Math.max(tuck, 0.5 * (1 - smoothstep(0.2, 0.9, m.time)));
+    } else if (trick === 'roll') {
+      tuck = Math.max(tuck, 0.7);
+      left = right = 0.25;
+    } else if (trick === 'loop') {
+      tuck = Math.max(tuck, 0.85);
+      left = right = 0.6;
+    } else if (brake || sim.mode === 'hovering') {
+      left = right = brake ? 1 : 0.75;
+    } else if (sim.mode === 'landing') {
+      // Approach: reins shortened; the flare: pulled right back.
+      left = right = sim.controller.hoverDescent ? 1 : 0.55;
+    } else if (sim.mode === 'takeoff' || sim.leapCharge > 0 || sim.runTakeoff > 0) {
+      left = right = -0.45;
+      tuck = Math.max(tuck, 0.35);
+    }
+    this.reinLeft = follow(this.reinLeft, clamp(left, -1, 1), REIN_RATE, dt);
+    this.reinRight = follow(this.reinRight, clamp(right, -1, 1), REIN_RATE, dt);
+    this.tuck = follow(this.tuck, clamp(tuck, 0, 1), TUCK_RATE, dt);
+
+    // Space: a forward pump of the hands per tap, and with every downstroke while held.
+    this.pumpAge += dt;
+    if (cmd?.flapPressed) {
+      this.pumpAge = 0;
+    }
+    const tapPump = this.pumpAge < PUMP_TIME ? Math.sin((Math.PI * this.pumpAge) / PUMP_TIME) : 0;
+    const heldPump = cmd?.flap && airborne && !falling ? Math.max(0, Math.sin(sim.beat.phase)) * sim.beat.amplitude : 0;
+    const pump = -0.35 * Math.max(tapPump, heldPump);
+    pose.riderReinLeft = clamp(this.reinLeft + pump, -1, 1);
+    pose.riderReinRight = clamp(this.reinRight + pump, -1, 1);
+    pose.riderTuck = this.tuck;
+
+    // The "dehh": the animator runs the rein snaps and heel kicks inside this envelope.
+    pose.riderUrge = m.urgeEnvelope;
+    this.point = follow(this.point, sim.firing || cmd?.fire ? 1 : 0, ARM_RATE, dt);
+    pose.riderPoint = this.point;
+    const roarCheer = this.roarAge < ROAR_CHEER ? smoothstep(0, 0.2, this.roarAge) * (1 - smoothstep(ROAR_CHEER * 0.65, ROAR_CHEER, this.roarAge)) : 0;
+    this.cheer = follow(this.cheer, Math.max(roarCheer, m.cheer), ARM_RATE * 1.6, dt);
+    pose.riderCheer = this.cheer;
   }
 }

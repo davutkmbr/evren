@@ -11,6 +11,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'ui', load: () => import('./ui').then((m) => m.createUiSystem) },
   { name: 'geo', load: () => import('./world/geo').then((m) => m.createGeoSystem) },
   { name: 'sky', load: () => import('./render/sky').then((m) => m.createSkySystem) },
+  { name: 'weather', load: () => import('./render/weather').then((m) => m.createWeatherSystem) },
   { name: 'terrain', load: () => import('./world/terrain').then((m) => m.createTerrainSystem) },
   { name: 'water', load: () => import('./world/water').then((m) => m.createWaterSystem) },
   { name: 'city', load: () => import('./world/city').then((m) => m.createCitySystem) },

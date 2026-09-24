@@ -1,7 +1,7 @@
 /**
  * Vertical-slice area of real OpenStreetMap content (Eminönü, Galata Bridge, Karaköy, Galata, Tophane, Cihangir),
- * behind `?osm=1`. OSM_AREA is the single source of the bbox: scripts/data/fetch-osm.mjs parses it from this file,
- * and the procedural city / vegetation / life traffic exclusions derive from osmExclusionRect().
+ * always part of the map. OSM_AREA is the single source of the bbox: scripts/data/fetch-osm.mjs parses it from this
+ * file, and the procedural city / vegetation / life traffic exclusions derive from osmExclusionRect().
  */
 import type { WorldBounds } from '../../core/contracts';
 import { latLonToLocal } from '../../core/geo-coords';
@@ -16,7 +16,7 @@ export const KADIKOY_AREA = { south: 40.9848, west: 29.0185, north: 40.995, east
 
 /**
  * One area of real OSM data. `dataFile` is where scripts/data/fetch-osm.mjs writes it (repo-relative).
- * `profile`: 'slice' is the flight-scale ?osm=1 schema (version 2, src/world/osm/data.ts); 'street' is the same
+ * `profile`: 'slice' is the flight-scale slice schema (version 2, src/world/osm/data.ts); 'street' is the same
  * schema plus the street-layer extension read by tools/world-compiler (documented in its README.md).
  */
 export interface OsmAreaDef {
@@ -46,10 +46,6 @@ export const OSM_SEAM = 40;
 export { OWNS_PARK_TREES as OSM_OWNS_PARK_TREES } from './details/policy';
 
 export const OSM_DATA_URL = `${import.meta.env.BASE_URL}data/osm/slice.json`;
-
-export function osmEnabled(params: URLSearchParams): boolean {
-  return params.get('osm') === '1';
-}
 
 /** Local-metre rectangle of OSM_AREA itself (no seam). */
 export function osmAreaRect(): WorldBounds {

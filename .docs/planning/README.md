@@ -18,10 +18,14 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
 - Phase A modules (geo, sky, clouds, post, dragon, flight, camera, fx, audio) went through build + one review/fix round.
 - Phase B modules (terrain, water, city, vegetation, mosques, structures, heritage, life) were stopped during polishing;
   `ui` finished. None of them has been reviewed yet (phase 01).
-- **Galata–Karaköy–Eminönü vertical slice** (behind `?osm=1`, `src/world/osm/`): real OSM streets and buildings with
+- **Galata–Karaköy–Eminönü vertical slice** (`src/world/osm/`, always on since 24 September 2026; the `?osm=1` flag is gone): real OSM streets and buildings with
   four worker-backed layers (streets, buildings, traffic, details). Stopped at a good-enough state on purpose ("this work
-  has no end"); canonical shots in `scripts/slice-shots.json`. Known gap: **31–46 M triangles with the slice on**
-  (8–11 M without) — the layers have no LOD yet; must be fixed before rolling out city-wide.
+  has no end"); canonical shots in `scripts/slice-shots.json`. LOD (24 September 2026): rooftop props, street
+  furniture and trees stream by distance with a near shadow ring (`shared/instance-lod.ts`), facades, roofs and the
+  ground are tiled so the camera and each shadow cascade cull them per tile, cars and merged props stop casting
+  shadows above 120 m. The Galata view went from 39.7 M to 17.5 M drawn triangles (the slice itself 32.9 M → 10.7 M).
+  Still without LOD: the building shells beyond their tiles (no simplified far version), the ground mesh and the far
+  crowd; city-wide rollout needs the compiler's tiles + HLOD.
 - **Vessels** (`src/world/life/`): realistic ferries, fishing boats, tugs, cargo ships, Kelvin wakes, collision-free
   lanes. Declared good enough for now. External model candidates await approval in
   `.docs/assets/candidates/vessels.md` (agent's advice: only vapur, bulk carrier, tug).
@@ -43,6 +47,23 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   Phase 01 bug fixes (landing, hover, turns, fire jet, POV head, rider face, bridge decks for traffic) are committed.
   S1 assets are approved and cached (`tools/assets/approved.json`); humans are MetaHuman + Mixamo in `private-assets/`
   (`.docs/assets/humans-pipeline.md`).
+- **Feel and look pass (24 September 2026), first playable versions of four roadmap items:**
+  - Weather ([13](13-living-world.md), part): `src/render/weather/` — presets clear / haze / fog / rain / storm and
+    individual 0..1 settings (Settings → Hava, `N`, `?weather=`), drifting ground fog banks, depth-tested rain streaks,
+    branching lightning with sky flashes and distance-delayed thunder, overcast dimming of sun, sky, stars and clouds,
+    a rain sound bed. Not yet: wet surfaces, snow, seasons, wind-driven weather changes.
+  - Aerial softening of the far city (`farBlur`, default 0.6): depth- and haze-driven blur in the weather pass.
+  - Flight feel and tricks ([05](05-flight-feel.md) and [04](04-landing-takeoff-variety.md), part):
+    `src/dragon/flight/maneuvers.ts` — barrel roll and continuous spin, loop, free fall (≥ 7 m/s² in the first 1.5 s)
+    and wing-snap catch, the "dehh" urge, leap and running take-offs; camera and wind reactions; HUD maneuver caption.
+    Not yet: thermals and ridge lift, g-force vignette, the other landing types.
+  - Rider and bond ([10](10-rider-animations.md) and [06](06-dragon-bond.md), part): procedural rider cues for every
+    command (`DragonPose` rider fields), rider leg bones, petting with a purr, standing on the saddle, the dragon's
+    gaze back at the rider (`src/dragon/model/animation/rider-pose.ts`, `src/dragon/model/behavior/`). Not yet: Mixamo
+    clips, mood system, bond level.
+  - Fixes from play: bridge wire and ship wake ribbons stretched into lines across the sky (per-vertex culling), fire
+    now leaves from inside the open mouth, a compact discovery card shown only for new discoveries, and recorded CC0
+    wind, wingbeat, thunder and rain sounds (Freesound, `public/audio/`, calmer mix; synthesis as the fallback).
 
 ## Detail tiers (how Istanbul gets detailed)
 

@@ -307,7 +307,8 @@ export class CameraSystem implements System, CameraRigHost {
     const t = this.tracker;
     const env = ctx.services.tryGet('env');
     const speed = t.available ? t.speed : 0;
-    shaker.buffet = 0.05 * smoothstep(60, 125, speed);
+    // Buffeting grows with speed; a falling dragon's folded wings and loose gear flutter (kept subtle for POV).
+    shaker.buffet = 0.05 * smoothstep(55, 125, speed) + (t.available ? 0.035 * t.weightless * smoothstep(12, 50, speed) : 0);
     shaker.turbulence = env ? 0.02 * clamp(env.wind.length() / 8, 0, 2) * smoothstep(5, 40, speed) : 0;
     shaker.firing = t.dragon?.firing ? 0.035 : 0;
     if (ctx.time.paused) {

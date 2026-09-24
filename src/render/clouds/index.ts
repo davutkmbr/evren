@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { weatherCloudCoverage } from '../weather/presets';
 import type { EngineContext, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
 import type { QualitySettings } from '../../core/quality';
@@ -82,6 +83,8 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
   let disposed = false;
   let keyGainScale = 1;
   let appliedLevel: CloudQualityLevel | null | undefined;
+  /** Coverage bias set through the debug handle; the weather adds its own on top every frame. */
+  let coverageBase = 0;
 
   const applyQuality = (settings: QualitySettings): void => {
     if (!pass || !shadowMap) {
@@ -166,6 +169,8 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
     update(dt, ctx) {
       engineFrame = ctx.time.frame;
       glow.step();
+      const weather = ctx.services.tryGet('weather');
+      shared.uCloudShape.value.x = coverageBase + (weather ? weatherCloudCoverage(weather.current) : 0);
 
       const wind = globalUniforms.uWind.value as THREE.Vector3;
       windX += wind.x * C.windScale * dt;
@@ -195,8 +200,10 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
       shared.uCloudAmbientBottom.value.copy(lighting.ambientBottom);
       shared.uCloudGlowColor.value.copy(lighting.glowColor);
       shared.uCloudMisc.value.x = lighting.earthShadowAltitude;
+      // Rain clouds are thick and dark underneath: less sunlight comes through the deck than the sky around it gets.
+      const rainDark = weather ? 1 - 0.5 * weather.current.rain - 0.15 * weather.current.storm : 1;
       shared.uCloudMisc.value.w =
-        keyGainScale * THREE.MathUtils.lerp(KEY_LIGHT_GAIN_DAY, KEY_LIGHT_GAIN_NIGHT, THREE.MathUtils.clamp(lightInputs.night, 0, 1));
+        keyGainScale * rainDark * THREE.MathUtils.lerp(KEY_LIGHT_GAIN_DAY, KEY_LIGHT_GAIN_NIGHT, THREE.MathUtils.clamp(lightInputs.night, 0, 1));
     },
 
     preRender(ctx) {
@@ -230,6 +237,7 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
     uniforms: shared,
     lighting,
     setCoverage(bias) {
+      coverageBase = bias;
       shared.uCloudShape.value.x = bias;
     },
     benchmark(iterations) {

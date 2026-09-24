@@ -53,7 +53,14 @@ export class BodyContacts {
   /**
    * Airborne resolution: full impulses. Water contacts are ignored here (flight handles water itself).
    */
-  resolveAirborne(body: BodyState, collision: CollisionWorld, invInertia: THREE.Vector3, mass: number, report: ImpactReport): void {
+  resolveAirborne(
+    body: BodyState,
+    collision: CollisionWorld,
+    invInertia: THREE.Vector3,
+    mass: number,
+    report: ImpactReport,
+    maxSpin: number = MOMENTS.maxAngularSpeed,
+  ): void {
     report.speed = 0;
     report.touched = false;
     const count = this.tailEnabled ? this.offsets.length : this.offsets.length - 1;
@@ -80,8 +87,8 @@ export class BodyContacts {
     }
     const w = body.angularVelocity;
     const spin = w.length();
-    if (spin > MOMENTS.maxAngularSpeed) {
-      w.multiplyScalar(MOMENTS.maxAngularSpeed / spin);
+    if (spin > maxSpin) {
+      w.multiplyScalar(maxSpin / spin);
     }
   }
 

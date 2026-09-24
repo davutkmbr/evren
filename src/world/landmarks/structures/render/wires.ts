@@ -44,14 +44,18 @@ void main() {
   vec3 d = iB - iA;
   float len = length(d);
   vec3 dir = d / max(len, 1e-5);
+  // Culling decisions are made per wire (both ends), never per vertex: moving only some corners of a ribbon off
+  // screen stretches it into a sliver reaching for that corner (long lines across the sky).
+  float distA = length(cameraPosition - iA);
+  float distB = length(cameraPosition - iB);
+  if (min(distA, distB) >= iFade.y) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
   vec3 P = mix(iA, iB, corner.x);
   vec3 toCam = cameraPosition - P;
   float dist = max(length(toCam), 1e-3);
   float fade = 1.0 - smoothstep(iFade.x, iFade.y, dist);
-  if (fade <= 0.0) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    return;
-  }
   vec3 side = cross(dir, toCam / dist);
   float sl = length(side);
   side = sl > 1e-5 ? side / sl : normalize(cross(dir, vec3(0.0, 1.0, 0.0)) + vec3(1e-4));
@@ -67,7 +71,10 @@ void main() {
   vLed = vec4(iLed.x, mix(iLed.y, iLed.z, corner.x), iLed.w, corner.x);
   gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
 #ifdef WIRE_DEPTH
-  if (vCoverage < WIRE_DEPTH_MIN) {
+  // Skip wires that are too faint for the depth pass at both ends; partial ones are cut per fragment.
+  float coverA = iRadius / max(iRadius, distA * uPixelAngle * uMinPixels) * (1.0 - smoothstep(iFade.x, iFade.y, distA));
+  float coverB = iRadius / max(iRadius, distB * uPixelAngle * uMinPixels) * (1.0 - smoothstep(iFade.x, iFade.y, distB));
+  if (max(coverA, coverB) < WIRE_DEPTH_MIN) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 #endif
@@ -93,6 +100,7 @@ void main() {
   float alpha = clamp(vCoverage, 0.0, 1.0) * edge;
   if (alpha < 0.004) discard;
 #ifdef WIRE_DEPTH
+  if (vCoverage < WIRE_DEPTH_MIN) discard;
   gl_FragColor = vec4(0.0);
 #else
   vec3 V = normalize(cameraPosition - vPos);

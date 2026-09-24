@@ -260,7 +260,8 @@ export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkele
   buildBand(builder, body, sHead, 0.055, 0.014, RIDER_MAT.darkLeather, headSkin, 56);
   buildBand(builder, body, sNose, 0.05, 0.014, RIDER_MAT.darkLeather, headSkin, 48);
   const headBone = rig.id('head');
-  const handBones = { R: rig.id('riderHandR'), L: rig.id('riderHandL') };
+  // The right rein's fist end rides on its own grip bone so it can pass to the left fist (one-handed riding).
+  const handBones = { R: rig.id('riderReinR'), L: rig.id('riderHandL') };
   const reinExits: Record<Side, THREE.Vector3> = { R: new THREE.Vector3(), L: new THREE.Vector3() };
   for (const side of SIDES) {
     const sgn = sideSign(side);

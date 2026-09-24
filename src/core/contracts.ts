@@ -358,6 +358,29 @@ export interface DragonPose {
   /** Rider lean offsets (radians): forward/back and sideways. */
   riderLeanPitch: number;
   riderLeanRoll: number;
+
+  /*
+   * Rider cues and dragon attention (optional, 0 = neutral). Every command the player gives shows on the rider.
+   * Written by flight (dragon/flight/pose.ts): riderReinLeft/Right, riderTuck, riderUrge, riderPoint, riderCheer.
+   * Written by the rider behaviour (dragon/model): riderPet, riderStand, gazeRider.
+   */
+  /** Rein hand: -1 = pushed forward (giving rein, dive), 0 = neutral grip, 1 = pulled back to the chest (climb, brake). */
+  riderReinLeft?: number;
+  riderReinRight?: number;
+  /** 0..1 crouch flat against the neck, hands on the pommel (dives, rolls, loops, free fall). */
+  riderTuck?: number;
+  /** 0..1 envelope of the "dehh" urge: rein snaps and heel kicks (the animator runs the snap cycle itself). */
+  riderUrge?: number;
+  /** 0..1 right arm points ahead (fire command). */
+  riderPoint?: number;
+  /** 0..1 right fist raised (roar, cheering after a trick). */
+  riderCheer?: number;
+  /** 0..1 right hand leaves the reins and strokes the dragon's neck. */
+  riderPet?: number;
+  /** 0..1 rider stands up on the saddle (0 = seated). */
+  riderStand?: number;
+  /** 0..1 the dragon turns its head back to look at the rider (blends over neckYaw/neckPitch). */
+  gazeRider?: number;
 }
 
 export interface DragonRig {
@@ -441,9 +464,26 @@ export interface FxService {
   dust(position: THREE.Vector3, strength: number): void;
 }
 
+export type AudioOneShot =
+  | 'roar'
+  | 'flap'
+  | 'splash'
+  | 'fire-start'
+  | 'land'
+  | 'ui-click'
+  | 'discover'
+  /** Weather (render/weather): thunder clap; volume 0..1 also encodes distance (quieter = farther, duller). */
+  | 'thunder'
+  /** Maneuvers (dragon/flight): wings snapping open out of a fall, a roll/loop air whoosh, the rider's rein snap. */
+  | 'wing-snap'
+  | 'whoosh'
+  | 'rein-snap'
+  /** Bond (dragon/model): one purr phrase (~2 s) while being petted. */
+  | 'purr';
+
 export interface AudioService {
   /** Plays a synthesized one-shot. */
-  play(name: 'roar' | 'flap' | 'splash' | 'fire-start' | 'land' | 'ui-click' | 'discover', volume?: number): void;
+  play(name: AudioOneShot, volume?: number): void;
   readonly unlocked: boolean;
   setMasterVolume(v: number): void;
   /** Current master volume 0..1. */
@@ -463,6 +503,38 @@ export interface RoadSurfaceService {
   readonly decks: readonly { id: string; points: { x: number; y: number; z: number }[]; width: number }[];
 }
 
+/* ------------------------------------------------------------------ */
+/* Weather (owned by render/weather) — service key: 'weather'           */
+/* ------------------------------------------------------------------ */
+
+export type WeatherPreset = 'clear' | 'haze' | 'fog' | 'rain' | 'storm';
+
+/** Player-facing weather and look settings, each 0..1 (0 = off). */
+export interface WeatherSettings {
+  /** Ground fog and thick haze. */
+  fog: number;
+  /** Rain intensity (streaks, darker overcast sky, rain sound). */
+  rain: number;
+  /** Thunderstorm activity (lightning flashes, thunder). */
+  storm: number;
+  /** Distance softening of far buildings and terrain (aerial blur). */
+  farBlur: number;
+}
+
+export interface WeatherService {
+  /** Target settings (what the player chose); `current` eases toward them. */
+  readonly settings: Readonly<WeatherSettings>;
+  /** Smoothed values in use this frame. */
+  readonly current: Readonly<WeatherSettings>;
+  readonly preset: WeatherPreset | 'custom';
+  /** Lightning flash brightness this frame (0..1, fast decay). */
+  readonly flash: number;
+  setPreset(preset: WeatherPreset): void;
+  set(settings: Partial<WeatherSettings>): void;
+  /** Cycles clear → haze → fog → rain → storm. */
+  cycle(): WeatherPreset;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -474,6 +546,7 @@ export interface Services {
   fx: FxService;
   audio: AudioService;
   roadSurface: RoadSurfaceService;
+  weather: WeatherService;
 }
 
 /* ------------------------------------------------------------------ */
@@ -495,6 +568,11 @@ export interface GameEvents {
   'loading-progress': { label: string; progress: number };
   'loading-done': Record<string, never>;
   'toast': { text: string; kind?: 'info' | 'warn' };
+  /**
+   * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, urge, takeoff, land...; the rider
+   * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
+   */
+  maneuver: { id: string; label: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
   teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
 }

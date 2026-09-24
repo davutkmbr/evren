@@ -21,6 +21,7 @@ import { createGeoSystem } from '../src/world/geo';
 import { createTerrainSystem } from '../src/world/terrain';
 import { createWaterSystem } from '../src/world/water';
 import { createCitySystem } from '../src/world/city';
+import { createOsmSystem } from '../src/world/osm';
 
 const params = new URLSearchParams(window.location.search);
 const num = (k: string, d: number): number => (params.has(k) && params.get(k) !== '' ? Number(params.get(k)) : d);
@@ -113,7 +114,8 @@ const systems: System[] = [createGeoSystem(), createSkySystem(), createTerrainSy
 if (flag('water', true)) {
   systems.push(createWaterSystem());
 }
-systems.push(createCitySystem());
+// The OSM slice is part of the one map: the city leaves its area to it.
+systems.push(createCitySystem(), createOsmSystem());
 if (flag('clouds', false)) {
   systems.push(createCloudSystem());
 }

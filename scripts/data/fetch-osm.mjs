@@ -5,7 +5,7 @@
  *
  *   node scripts/data/fetch-osm.mjs [--area galata|kadikoy] [--cache /tmp/overpass-<area>.json]
  *
- * - galata (default, profile 'slice'): the ?osm=1 vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane,
+ * - galata (default, profile 'slice'): the OSM vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane,
  *   Cihangir) -> public/data/osm/slice.json. Queries and records are unchanged by the street extension.
  * - kadikoy (profile 'street'): world-compiler input -> data/osm/kadikoy.json (not served). Same schema plus the
  *   street extension ('street/1': entrance=* nodes linked to their building, craft=* POIs, kerb=* nodes,

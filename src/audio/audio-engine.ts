@@ -1,4 +1,4 @@
-import type { CameraMode } from '../core/contracts';
+import type { AudioOneShot, CameraMode } from '../core/contracts';
 import { clamp, clamp01, finiteOr, lerp, smoothstep } from './dsp/math';
 import { createNoiseBank, type NoiseBank } from './dsp/noise';
 import { SmoothParam } from './dsp/param';
@@ -9,14 +9,19 @@ import { playFlap } from './sfx/flap';
 import { playLand, playSplash, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
+import { playPurr } from './sfx/bond';
+import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
+import { playThunder } from './sfx/weather';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
+import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
 import { AmbienceVoice, emptyProbe, type AmbienceProbe } from './voices/ambience';
 import { CreatureVoice } from './voices/creature';
 import { FireVoice } from './voices/fire';
+import { RainVoice } from './voices/rain';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
 
-export type SoundName = 'roar' | 'flap' | 'splash' | 'fire-start' | 'land' | 'ui-click' | 'discover';
+export type SoundName = AudioOneShot;
 
 export interface DragonAudioState {
   present: boolean;
@@ -58,6 +63,10 @@ export interface AudioFrame {
   dragon: DragonAudioState;
   /** Ambient wind speed m/s. */
   ambientWind: number;
+  /** Rain intensity 0..1 (weather service). */
+  rain: number;
+  /** Storm (lightning) intensity 0..1 (weather service): loads the recorded thunder before the first strike. */
+  storm: number;
   probe: AmbienceProbe;
 }
 
@@ -89,6 +98,8 @@ export function createAudioFrame(): AudioFrame {
       exertion: 0.2,
     },
     ambientWind: 4,
+    rain: 0,
+    storm: 0,
     probe: emptyProbe(),
   };
 }
@@ -98,7 +109,7 @@ export function createAudioFrame(): AudioFrame {
  * (pre-dynamics loudness). The absolute level into the master dynamics is set by master-bus INPUT_TRIM_DB.
  */
 export const MIX = {
-  flap: 1.35,
+  flap: 1.1,
   roar: 0.5,
   splash: 1.5,
   land: 1.55,
@@ -108,8 +119,14 @@ export const MIX = {
   discover: 0.95,
   breath: 0.5,
   step: 1.0,
-  wind: 1.0,
+  /** Airflow bed: players found it too loud and harsh at 1.0 (Sep 2026); the hiss and whistle were cut too. */
+  wind: 0.55,
   ambience: 1.0,
+  thunder: 0.85,
+  wingSnap: 1.3,
+  whoosh: 0.9,
+  reinSnap: 0.8,
+  purr: 1.1,
 } as const;
 
 /** Minimum retrigger interval per sound (s): merges duplicate triggers (event + direct call). */
@@ -121,6 +138,11 @@ const COOLDOWN: Record<SoundName, number> = {
   land: 0.45,
   'ui-click': 0.035,
   discover: 1.5,
+  thunder: 0.4,
+  'wing-snap': 0.5,
+  whoosh: 0.35,
+  'rein-snap': 0.2,
+  purr: 1.2,
 };
 
 const DRAGON_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 18, delayAbove: 120 };
@@ -178,6 +200,8 @@ export interface AudioEngineOptions {
   noise?: NoiseBank;
   /** Pre-generated reverb impulse response at the context's sample rate. */
   impulse?: AudioBuffer;
+  /** Recorded sounds; every voice synthesizes when omitted. */
+  samples?: SampleBank | null;
 }
 
 /**
@@ -192,6 +216,8 @@ export class AudioEngine {
   readonly fire: FireVoice;
   readonly ambience: AmbienceVoice;
   readonly creature: CreatureVoice;
+  readonly rain: RainVoice;
+  readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
   private readonly ui: SfxEnv;
@@ -206,6 +232,11 @@ export class AudioEngine {
     land: -1e9,
     'ui-click': -1e9,
     discover: -1e9,
+    thunder: -1e9,
+    'wing-snap': -1e9,
+    whoosh: -1e9,
+    'rein-snap': -1e9,
+    purr: -1e9,
   };
   private readonly windBusGain: SmoothParam;
   private readonly ambienceBusGain: SmoothParam;
@@ -230,10 +261,12 @@ export class AudioEngine {
   ) {
     const rng = mulberry32(opts.seed ?? ((Math.random() * 1e9) | 0));
     this.noise = opts.noise ?? createNoiseBank(ctx);
+    this.samples = opts.samples ?? null;
     this.bus = createMasterBus(ctx, opts.destination, opts.impulse);
-    this.sfx = { ctx, noise: this.noise, rng, out: this.bus.sfx, reverb: this.bus.reverbSend, stats: this.stats };
-    this.ui = { ctx, noise: this.noise, rng, out: this.bus.ui, reverb: this.bus.reverbSend, stats: this.stats };
-    this.amb = { ctx, noise: this.noise, rng, out: this.bus.ambience, reverb: this.bus.reverbSend, stats: this.stats };
+    const env = { ctx, noise: this.noise, samples: this.samples, rng, reverb: this.bus.reverbSend, stats: this.stats };
+    this.sfx = { ...env, out: this.bus.sfx };
+    this.ui = { ...env, out: this.bus.ui };
+    this.amb = { ...env, out: this.bus.ambience };
     this.windDuck = ctx.createGain();
     this.windCarve = ctx.createBiquadFilter();
     this.windCarve.type = 'peaking';
@@ -241,10 +274,11 @@ export class AudioEngine {
     this.windCarve.Q.value = 0.9;
     this.windDuck.connect(this.windCarve).connect(this.bus.wind);
     this.windCarveGain = new SmoothParam(this.windCarve.gain, 0, 0.6, 0.015, 0.05);
-    this.wind = new WindVoice(ctx, this.noise, this.windDuck, rng);
+    this.wind = new WindVoice(ctx, this.noise, this.windDuck, rng, this.samples);
     this.fire = new FireVoice(ctx, this.noise, rng, this.bus.sfx, this.bus.reverbSend, this.stats);
     this.ambience = new AmbienceVoice(ctx, this.noise, this.amb, this.bus.ambience, (rng() * 1e6) | 0);
     this.creature = new CreatureVoice(ctx, this.noise, this.bus.sfx, (rng() * 1e6) | 0);
+    this.rain = new RainVoice(ctx, this.noise, this.bus.ambience, rng, this.samples);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -314,6 +348,13 @@ export class AudioEngine {
     this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck), now);
 
     this.ambience.update(frame.probe, dt, now, !this.paused);
+    if (frame.rain > 1e-3) {
+      this.samples?.request('rain');
+    }
+    if (frame.storm > 1e-3) {
+      this.samples?.request('storm');
+    }
+    this.rain.update(this.paused ? 0 : frame.rain, this.pov, p.airspeed, now);
     const masking = clamp01(1.6 * speedLevel(p.airspeed)) * (1 - smoothstep(150, 450, finiteOr(frame.probe.agl, 1e3)));
     this.ambienceBusGain.set(MIX.ambience * Math.pow(10, (AMBIENCE_LIFT_DB * masking) / 20), now);
     this.windCarveGain.set(WIND_CARVE_DB * masking, now);
@@ -388,6 +429,40 @@ export class AudioEngine {
       case 'discover':
         playDiscover(this.ui, now, MIX.discover * vol);
         break;
+      case 'thunder': {
+        this.samples?.request('storm');
+        // A world sound without a position: the storm is all around; volume encodes distance.
+        const pl = placement({ gain: MIX.thunder * Math.min(vol, 1), pan: (this.sfx.rng() - 0.5) * 1.2, reverb: 0.45, width: 1, cutoff: 2500 + 14000 * Math.min(vol, 1) });
+        playThunder(this.sfx, now, Math.min(vol, 1), pl);
+        break;
+      }
+      case 'wing-snap': {
+        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+        pl.gain *= MIX.wingSnap * vol;
+        pl.closeness = this.bodyCloseness();
+        playWingSnap(this.sfx, now, 1, pl);
+        break;
+      }
+      case 'whoosh': {
+        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+        pl.gain *= MIX.whoosh * vol;
+        playWhoosh(this.sfx, now, 1, pl);
+        break;
+      }
+      case 'rein-snap': {
+        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+        pl.gain *= MIX.reinSnap * vol;
+        pl.closeness = this.bodyCloseness();
+        playReinSnap(this.sfx, now, 1, pl);
+        break;
+      }
+      case 'purr': {
+        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+        pl.gain *= MIX.purr * vol;
+        pl.closeness = this.bodyCloseness();
+        playPurr(this.sfx, now, 1, pl);
+        break;
+      }
     }
   }
 
@@ -494,6 +569,7 @@ export class AudioEngine {
     this.fire.dispose();
     this.ambience.dispose();
     this.creature.dispose();
+    this.rain.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();

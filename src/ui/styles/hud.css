@@ -550,31 +550,32 @@
 
 /* ---------------- discovery card ---------------- */
 
+/* Compact: tucked under the discovery counter (top right), out of the flight's way. */
 .hud-dcard {
   position: absolute;
-  left: 50%;
-  bottom: calc(var(--gutter) + 4px);
-  width: min(460px, 36vw);
-  padding: 15px 20px 14px;
+  top: calc(var(--gutter) + 46px);
+  right: var(--gutter);
+  width: min(300px, 26vw);
+  padding: 11px 14px 12px;
   overflow: hidden;
-  transform: translateX(-50%);
 }
 
 .hud-dcard.is-out {
-  transform: translate(-50%, 10px);
+  transform: translateX(12px);
 }
 
 .dcard-top {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 7px;
+  gap: 8px;
+  margin-bottom: 5px;
 }
 
 .dcard-badge {
-  padding: 3px 7px 3px 8px;
+  flex: none;
+  padding: 2px 6px 2px 7px;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 750;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -583,41 +584,41 @@
 }
 
 .dcard-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--accent-2);
   opacity: 0.9;
+}
+
+.dcard-dist {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--ink-3);
 }
 
 .dcard-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 16.5px;
   font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.014em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
   text-wrap: balance;
 }
 
 .dcard-info {
-  margin: 6px 0 0;
-  font-size: 13.5px;
-  line-height: 1.5;
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
   color: var(--ink-2);
   text-wrap: pretty;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.dcard-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--ink-3);
 }
 
 .dcard-timer {
@@ -655,10 +656,6 @@
 
 .hud-hints.is-out {
   transform: translate(-50%, 6px);
-}
-
-.hud-dcard:not(.is-out) ~ .hud-hints {
-  opacity: 0;
 }
 
 .hint-row {
@@ -761,7 +758,6 @@
   transform: translate(-50%, 4px);
 }
 
-.hud-dcard:not(.is-out) ~ .hud-shot,
 .hud-hints:not(.is-out) ~ .hud-shot {
   opacity: 0;
 }
@@ -865,16 +861,11 @@
   }
 
   .hud-dcard {
-    width: min(420px, 38vw);
+    width: min(280px, 28vw);
   }
 
   .dcard-title {
-    font-size: 20px;
-  }
-
-  .dcard-info {
-    font-size: 13px;
-    -webkit-line-clamp: 2;
+    font-size: 15.5px;
   }
 }
 
@@ -918,7 +909,81 @@
   }
 
   .hud-dcard {
-    width: min(360px, 30vw);
-    padding: 13px 16px 12px;
+    width: min(260px, 30vw);
+    padding: 10px 12px 11px;
+  }
+}
+
+/* ---------------- maneuver caption ---------------- */
+
+.hud-maneuver {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--gutter) + 150px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.hud-maneuver.is-out {
+  transform: translate(-50%, 6px);
+}
+
+/* Lifted clear of the hover controls when they share the bottom centre. */
+.hud-hints-hover:not(.is-out) ~ .hud-maneuver {
+  bottom: calc(var(--gutter) + 214px);
+}
+
+.mnv-label {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.012em;
+  color: var(--ink);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+.mnv-label.is-pop {
+  animation: mnv-pop 420ms var(--ease-out);
+}
+
+.mnv-rule {
+  width: 26px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(232, 184, 114, 0.45);
+  transform-origin: 50% 50%;
+  transition: transform 520ms var(--ease-out);
+}
+
+.hud-maneuver.is-out .mnv-rule {
+  transform: scaleX(0.25);
+}
+
+/* A refused trick explains itself quietly. */
+.hud-maneuver.is-hint .mnv-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.hud-maneuver.is-hint .mnv-rule {
+  background: var(--ink-4);
+  box-shadow: none;
+}
+
+@keyframes mnv-pop {
+  from {
+    opacity: 0.35;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

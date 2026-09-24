@@ -9,12 +9,17 @@
  *   node scripts/flight-test.mjs --json                       # raw JSON only
  *   node scripts/flight-test.mjs --shots .shots/flight        # also real-time third-person screenshots
  *   node scripts/flight-test.mjs --only roll --shots .shots/flight --shotonly wheld,rudder
+ *   node scripts/flight-test.mjs --only landWind --at 3119,-916      # every manoeuvre starts from x,z
  *
  * Target envelope: cruise 25-45 m/s, glide ratio 8-12, stall 13-16 m/s (CLmax ~1.5 @ 18-20°),
  * folded dive 80-90 m/s, 60° bank turn at ~2 g, soft landing (< 3 m/s), water skim with splashes.
+ * Maneuvers (trickRoll, trickLoop, freefall, urge, leap): a 360° roll in ~1.2 s within 15 m of height, a loop that comes
+ * out on its entry heading, >= 7 m/s² of drop in the first 1.5 s of a free fall and a catch that never hits the
+ * surface, a +8-12 m/s urge surge kept level.
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
+import { acquireSlot, releaseSlot, CHROME_ARGS } from './lib/gpu-slot.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -29,6 +34,11 @@ const ONLY = opt('only', '')
   .filter(Boolean);
 const JSON_ONLY = args.includes('--json');
 const SHOTS = opt('shots', '');
+/** Start every manoeuvre from x,z (400 m up), so spot searches do not depend on where the previous test ended. */
+const AT = opt('at', '')
+  .split(',')
+  .map(Number)
+  .filter((v) => Number.isFinite(v));
 const SHOT_ONLY = opt('shotonly', '')
   .split(',')
   .map((x) => x.trim())
@@ -389,12 +399,20 @@ const MANEUVERS = {
     const hovering = T.state().mode;
     const y0 = T.state().y;
     const rel = T.simulate(5);
+    // Shift in a high hover folds the wings and drops (free fall); a low hover keeps the controlled descent.
+    const drop = T.simulate(3, (t, sim, cmd) => { cmd.dive = true; });
+    T.teleport(w.x, 40, w.z, 20, 0, 25);
+    T.simulate(8, (t, sim, cmd) => { cmd.brake = true; });
+    const low = T.state();
     const desc = T.simulate(3, (t, sim, cmd) => { cmd.dive = true; });
     let tOut = null;
     const out = T.simulate(10, (t, sim, cmd) => { cmd.pitch = 1; if (tOut === null && sim.mode === 'flying') tOut = t; });
     return {
       secondsToHover: tHover && r1(tHover), secondsToLanding: tLanding && r1(tLanding), secondsToGrounded: tGround && r1(tGround), maxHoverClearance: r1(maxClear), modeAfterRelease: afterBrake.final.mode,
-      latch: { modeAfterBrake: hovering, modeAfterRelease5s: rel.final.mode, driftAfterRelease: r2(rel.final.y - y0), descentRateWithShift: r2((desc.final.y - rel.final.y) / 3), modeWithShift: desc.final.mode, secondsToFlyingWithW: tOut && r1(tOut), modeAfterW: out.final.mode },
+      latch: {
+        modeAfterBrake: hovering, modeAfterRelease5s: rel.final.mode, driftAfterRelease: r2(rel.final.y - y0), shiftHighHover: { mode: drop.final.mode, fallRate: r2((drop.final.y - rel.final.y) / 3) },
+        lowHoverAt: r1(low.footClearance), descentRateWithShift: r2((desc.final.y - low.y) / 3), modeWithShift: desc.final.mode, secondsToFlyingWithW: tOut && r1(tOut), modeAfterW: out.final.mode,
+      },
     };
   `,
   waterLand: `
@@ -566,8 +584,10 @@ const MANEUVERS = {
       T.setStamina(1);
       T.teleport(s.x - 200, s.y + 45, s.z, 90, 0, 24);
       let tGround = null, touchGs = null, maxBankLow = 0, minTip = 1e9, yaws = [], maxBankDescent = 0;
+      const hits = [];
       const r = T.simulate(60, (t, sim, cmd) => {
         cmd.landPressed = t < 0.004;
+        if (sim.impact.speed > 2.5 && hits.length < 4 && (hits.length === 0 || t - hits[hits.length - 1].t > 0.3)) hits.push({ t: r2(t), surface: sim.impact.surface, speed: r1(sim.impact.speed), mode: sim.mode, flare: sim.controller.hoverDescent, clearance: r1(sim.footClearance), vy: r1(sim.body.velocity.y), gs: r1(Math.hypot(sim.body.velocity.x, sim.body.velocity.z)) });
         if (sim.mode === 'landing' || sim.mode === 'hovering') minTip = Math.min(minTip, tipNow());
         if (sim.mode === 'landing' && sim.controller.hoverDescent) maxBankDescent = Math.max(maxBankDescent, Math.abs(sim.bank) / DEG);
         if (sim.mode === 'landing' && sim.footClearance < 4) maxBankLow = Math.max(maxBankLow, Math.abs(sim.bank) / DEG);
@@ -578,7 +598,7 @@ const MANEUVERS = {
       out[label] = {
         ok: tGround !== null && maxBankLow < 10 && yawSpan < 12 && minTip > 1 && r.events.impact === 0,
         secondsToGround: tGround && r1(tGround), touchdownGroundSpeed: touchGs && r1(touchGs), maxBankHoverDescentDeg: r1(maxBankDescent), maxBankBelow4mDeg: r1(maxBankLow),
-        yawChangeLast3mDeg: r1(yawSpan), minWingtipClearance: r1(minTip), impacts: r.events.impact, finalMode: r.final.mode,
+        yawChangeLast3mDeg: r1(yawSpan), minWingtipClearance: r1(minTip), impacts: r.events.impact, finalMode: r.final.mode, ...(hits.length ? { hits } : {}),
       };
     }
     return out;
@@ -618,6 +638,157 @@ const MANEUVERS = {
     const b = r.final;
     const glide = T.simulate(10);
     return { ok: b.stamina < a.stamina, staminaStart: a.stamina, staminaAfter10sFire: b.stamina, perSecond: r2((b.stamina - a.stamina) / 10 * 100) / 100, staminaAfter10sGlide: glide.final.stamina, firing: b.firing };
+  `,
+  trickRoll: `
+    // A / D double tap: a 360° roll in ~1.1-1.4 s, height kept (< 15 m), no stall; held = continuous spin; refused low.
+    calm();
+    const w = water();
+    const one = (dir, speed, holdSecs) => {
+      T.teleport(w.x, 600, w.z, 20, 0, speed);
+      T.simulate(2);
+      const y0 = T.sim.body.position.y;
+      let tEnd = null, minDy = 0, maxDy = 0, minV = 99, maxG = -9, minG = 9, stall = 0, maxRate = 0;
+      const r = T.simulate(8, (t, sim, cmd) => {
+        cmd[dir > 0 ? 'rollRightPressed' : 'rollLeftPressed'] = t < 0.004;
+        if (t < holdSecs) cmd.roll = dir;
+        const dy = sim.body.position.y - y0;
+        minDy = Math.min(minDy, dy); maxDy = Math.max(maxDy, dy);
+        if (sim.maneuvers.kind === 'roll') { minV = Math.min(minV, sim.airspeed); maxG = Math.max(maxG, sim.loadFactor); minG = Math.min(minG, sim.loadFactor); maxRate = Math.max(maxRate, Math.abs(sim.body.angularVelocity.z)); }
+        if (sim.mode === 'stalling') stall++;
+        if (tEnd === null && t > 0.05 && sim.maneuvers.kind !== 'roll') tEnd = t;
+      });
+      const m = T.maneuver();
+      return { seconds: tEnd && r2(tEnd), rolledDeg: m.rolledDeg * dir, revolutions: m.revolutions, altitudeMin: r1(minDy), altitudeMax: r1(maxDy), altitudeAfter8s: r1(r.final.y - y0), minAirspeed: r1(minV), loadFactor: [r2(minG), r2(maxG)], peakRateDegPerSec: Math.round(maxRate / DEG), stallingSec: r2(stall / 120), bankAfter: r.final.bankDeg, maneuverEvents: r.events.maneuver };
+    };
+    const right = one(1, 32, 0);
+    const left = one(-1, 32, 0);
+    const slow = one(1, 24, 0);
+    const spin = one(1, 32, 2.6);
+    T.teleport(w.x, 18, w.z, 20, 0, 32);
+    const low = T.simulate(2, (t, sim, cmd) => { cmd.rollRightPressed = t < 0.004; });
+    return {
+      ok: [right, left, slow].every((x) => x.revolutions === 1 && x.seconds >= 1 && x.seconds <= 1.5 && Math.min(x.altitudeMin, -x.altitudeMax) > -15 && x.stallingSec === 0),
+      right, left, slow24: slow, holdSpin: spin, refusedLow: { trick: T.maneuver().kind, maneuverEvents: low.events.maneuver },
+    };
+  `,
+  trickLoop: `
+    // S double tap: an inside loop (>= 23 m/s, >= 60 m clearance); comes out on the entry heading, near the entry height.
+    calm();
+    const w = water();
+    const one = (speed) => {
+      T.teleport(w.x, 500, w.z, 20, 0, speed);
+      T.simulate(0.5, (t, sim, cmd) => { cmd.flap = true; });
+      const y0 = T.sim.body.position.y, V0 = T.sim.airspeed, h0 = T.state().headingDeg;
+      let tEnd = null, top = 0, minV = 99, maxG = -9, stall = 0, maxDeg = 0;
+      const r = T.simulate(12, (t, sim, cmd) => {
+        cmd.loopPressed = t < 0.004;
+        top = Math.max(top, sim.body.position.y - y0);
+        if (sim.maneuvers.kind === 'loop') { minV = Math.min(minV, sim.airspeed); maxG = Math.max(maxG, sim.loadFactor); maxDeg = T.maneuver().loopDeg; }
+        if (sim.mode === 'stalling') stall++;
+        if (tEnd === null && t > 0.05 && sim.maneuvers.kind !== 'loop') tEnd = { t, y: sim.body.position.y - y0, V: sim.airspeed };
+      });
+      let dh = r.final.headingDeg - h0; dh = ((dh + 540) % 360) - 180;
+      return { entrySpeed: r1(V0), seconds: tEnd && r2(tEnd.t), loopDeg: maxDeg, top: r1(top), exitAltitude: tEnd && r1(tEnd.y), exitSpeed: tEnd && r1(tEnd.V), minAirspeed: r1(minV), maxLoadFactor: r2(maxG), stallingSec: r2(stall / 120), headingChange: r1(dh) };
+    };
+    const cruise = one(32);
+    const slowish = one(24);
+    T.teleport(w.x, 500, w.z, 20, 0, 19);
+    const tooSlow = T.simulate(2, (t, sim, cmd) => { cmd.loopPressed = t < 0.004; });
+    return {
+      ok: [cruise, slowish].every((x) => x.loopDeg >= 350 && x.stallingSec === 0 && x.maxLoadFactor <= 4.8 && Math.abs(x.headingChange) < 10),
+      cruise32: cruise, slow24: slowish, refused19: { trick: T.maneuver().kind, hints: tooSlow.events.maneuver },
+    };
+  `,
+  freefall: `
+    // Shift in a hover / slow / double tap: a real drop (>= 7 m/s² down over the first 1.5 s); releasing Shift or
+    // Space opens the wings into a 2-3 g swoop; held all the way down, the automatic catch never hits the surface.
+    calm();
+    const w = water();
+    const fall = (label, setup, script, secs = 12) => {
+      setup();
+      const y0 = T.sim.body.position.y;
+      let t0 = null, vy15 = null, tCatch = null, vCatch = null, maxG = 0, minClear = 1e9, tLevel = null, peakV = 0;
+      const r = T.simulate(secs, (t, sim, cmd) => {
+        script(t, sim, cmd);
+        const k = sim.maneuvers.kind;
+        if (t0 === null && k === 'drop') t0 = { t, vy: sim.body.velocity.y };
+        if (t0 && vy15 === null && t >= t0.t + 1.5) vy15 = sim.body.velocity.y;
+        if (tCatch === null && k === 'catch') { tCatch = t; vCatch = sim.airspeed; }
+        if (tCatch !== null && tLevel === null && k === 'none') tLevel = t;
+        if (tCatch !== null) maxG = Math.max(maxG, sim.loadFactor);
+        minClear = Math.min(minClear, sim.footClearance);
+        peakV = Math.max(peakV, sim.airspeed);
+      });
+      return {
+        dropped: t0 !== null, downAccelFirst1_5s: t0 && vy15 !== null ? r2((t0.vy - vy15) / 1.5) : null, catchAt: tCatch && r2(tCatch), airspeedAtCatch: vCatch && r1(vCatch), peakAirspeed: r1(peakV),
+        catchMaxLoad: r2(maxG), swoopDoneAt: tLevel && r2(tLevel), altitudeLost: r1(y0 - Math.min(y0, r.final.y)), minFootClearance: r1(minClear), impacts: r.events.impact, finalMode: r.final.mode, finalAirspeed: r.final.airspeed,
+      };
+    };
+    const hover = () => { T.teleport(w.x, 260, w.z, 20, 0, 25); T.simulate(8, (t, sim, cmd) => { cmd.brake = true; }); };
+    const out = {
+      hoverShift2s: fall('hover', hover, (t, sim, cmd) => { cmd.dive = t < 2; }),
+      cruiseDoubleTapHold2s: fall('cruise', () => { T.teleport(w.x, 400, w.z, 20, 0, 32); T.simulate(2); }, (t, sim, cmd) => { cmd.dropPressed = t < 0.004; cmd.dive = t < 2; }),
+      cruiseDoubleTapSpaceAt1_5s: fall('space', () => { T.teleport(w.x, 400, w.z, 20, 0, 32); T.simulate(2); }, (t, sim, cmd) => { cmd.dropPressed = t < 0.004; cmd.dive = true; cmd.flapPressed = Math.abs(t - 1.5) < 0.004; }),
+      slow18Shift2s: fall('slow', () => { T.teleport(w.x, 300, w.z, 20, 0, 18); }, (t, sim, cmd) => { cmd.dive = t < 2; }),
+      holdToWater: fall('auto', hover, (t, sim, cmd) => { cmd.dive = true; }, 20),
+    };
+    // Over land, held all the way down from a hover.
+    const p0 = T.sim.body.position;
+    const spot = T.findSpot('land', p0.x, p0.z, 9000, 200);
+    if (spot) {
+      out.holdToLand = fall('land', () => { T.teleport(spot.x, spot.y + 200, spot.z, 90, 0, 25); T.simulate(8, (t, sim, cmd) => { cmd.brake = true; }); }, (t, sim, cmd) => { cmd.dive = true; }, 20);
+    }
+    const all = Object.values(out);
+    out.ok = all.every((x) => x.dropped && x.impacts === 0 && x.minFootClearance > 5 && x.catchMaxLoad <= 3.6) && out.hoverShift2s.downAccelFirst1_5s >= 7 && out.cruiseDoubleTapHold2s.downAccelFirst1_5s >= 7;
+    return out;
+  `,
+  urge: `
+    // V: rein snap, ~3 strong beats and a +8-12 m/s surge in ~2 s, kept level; 2.5 s cooldown; grounded = running take-off.
+    calm();
+    const w = water();
+    T.teleport(w.x, 400, w.z, 20, 0, 32);
+    T.simulate(4);
+    const a = T.state();
+    let maxV = 0, tMax = 0, beats = 0, minY = 1e9, maxY = -1e9;
+    const r = T.simulate(4, (t, sim, cmd) => {
+      cmd.urgePressed = t < 0.004 || Math.abs(t - 1) < 0.004;
+      if (sim.airspeed > maxV) { maxV = sim.airspeed; tMax = t; }
+      if (sim.beat.downstrokeStarted && t < 2) beats++;
+      minY = Math.min(minY, sim.body.position.y); maxY = Math.max(maxY, sim.body.position.y);
+    });
+    const air = { speedBefore: a.airspeed, speedGain: r1(maxV - a.airspeed), peakAt: r2(tMax), beatsIn2s: beats, altitudeRange: [r1(minY - a.y), r1(maxY - a.y)], staminaCost: r2(a.stamina - r.final.stamina), urgesAccepted: r.events.maneuver };
+    const p0 = T.sim.body.position;
+    const spot = T.findSpot('land', p0.x, p0.z, 9000, 200);
+    let ground = null;
+    if (spot) {
+      T.teleport(spot.x, spot.y + T.sim.standHeight, spot.z, 90, 0, 0);
+      T.ground();
+      T.simulate(1);
+      const y0 = T.state().y;
+      let tLeap = null, tFly = null;
+      const g = T.simulate(10, (t, sim, cmd) => { cmd.urgePressed = t < 0.004; if (tLeap === null && sim.mode === 'takeoff') tLeap = t; if (tFly === null && sim.mode === 'flying') tFly = t; });
+      ground = { leapAt: tLeap && r2(tLeap), flyingAt: tFly && r2(tFly), altitudeGain10s: r1(g.final.y - y0), mode: g.final.mode, impacts: g.events.impact };
+    }
+    return { ok: air.speedGain >= 8 && air.speedGain <= 13 && air.altitudeRange[0] > -5 && air.urgesAccepted === 1 && (!ground || ground.mode === 'flying'), air, ground };
+  `,
+  leap: `
+    // Space on the ground: a crouch, the jump and the first big beats (Phase 04: >= 10 m within 1.5 s is the goal).
+    calm();
+    const p0 = T.sim.body.position;
+    const spot = T.findSpot('land', p0.x, p0.z, 9000, 200);
+    if (!spot) return { error: 'no land' };
+    T.teleport(spot.x, spot.y + T.sim.standHeight, spot.z, 90, 0, 0);
+    T.ground();
+    T.simulate(1);
+    const y0 = T.state().y;
+    let tLeap = null, h15 = null, tFly = null;
+    const r = T.simulate(10, (t, sim, cmd) => {
+      cmd.flapPressed = t < 0.004;
+      if (tLeap === null && sim.mode === 'takeoff') tLeap = t;
+      if (h15 === null && t >= 1.5) h15 = sim.body.position.y - y0;
+      if (tFly === null && sim.mode === 'flying') tFly = t;
+    });
+    return { crouchSeconds: tLeap && r2(tLeap), heightAt1_5s: h15 && r1(h15), flyingAt: tFly && r2(tFly), altitudeGain10s: r1(r.final.y - y0), speedAfter10s: r.final.airspeed, mode: r.final.mode, events: r.events };
   `,
   collide: `
     calm();
@@ -708,6 +879,20 @@ const SHOT_JOBS = [
       T.snapCamera();`,
   },
   { name: 'hoverwind', setup: `T.wind(8, 0); T.input({ brake: true }); T.simulate(8); T.input(null); T.simulate(6); T.snapCamera();` },
+  /* Maneuvers: set up by fast-forward, then triggered in real time (captions, sounds and rider cues run live). */
+  { name: 'trick-roll', setup: `T.simulate(1.5); T.snapCamera(); T.press('rollRight');`, wait: 560 },
+  { name: 'trick-loop', setup: `T.simulate(1); T.snapCamera(); T.press('loop');`, wait: 1700 },
+  {
+    name: 'trick-freefall',
+    setup: `const p = T.sim.body.position; T.teleport(p.x, 340, p.z, 30, 0, 25); T.input({ brake: true }); T.simulate(8); T.snapCamera(); T.input({ dive: true });`,
+    wait: 1000,
+  },
+  {
+    name: 'trick-catch',
+    setup: `const p = T.sim.body.position; T.teleport(p.x, 380, p.z, 30, 0, 25); T.input({ brake: true }); T.simulate(8); T.input({ dive: true }); T.simulate(1.9); T.snapCamera(); T.input(null);`,
+    wait: 560,
+  },
+  { name: 'trick-urge', setup: `T.simulate(1.5); T.snapCamera(); T.press('urge');`, wait: 600 },
   {
     name: 'pilotskim',
     setup: `const p = T.sim.body.position; const w = T.findSpot('water', p.x, p.z, 6000);
@@ -747,7 +932,7 @@ async function shoot(browser, job) {
         await p.waitForTimeout(250);
       }
       await p.evaluate(`(() => { window.__shotToken = 1; const T = window.__flightTest; T.options({ turbulence: false }); ${job.setup} })()`);
-      await p.waitForTimeout(800);
+      await p.waitForTimeout(job.wait ?? 800);
       const alive = await p.evaluate(() => window.__shotToken === 1).catch(() => false);
       if (!alive) {
         await p.close();
@@ -774,11 +959,9 @@ async function main() {
     console.error(`Dev server not reachable at ${BASE}`);
     process.exit(2);
   }
-  const browser = await chromium.launch({
-    channel: 'chrome',
-    headless: true,
-    args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'],
-  });
+  // GPU browsers are queued machine-wide (other agents and the player share the GPU).
+  await acquireSlot();
+  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: CHROME_ARGS });
   const results = {};
   const errors = [];
   try {
@@ -808,7 +991,8 @@ async function main() {
       const t = Date.now();
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          results[name] = await page.evaluate(`(() => { ${PREAMBLE} ${body} })()`);
+          const at = AT.length === 2 ? `T.teleport(${AT[0]}, 400, ${AT[1]}, 0, 0, 30);` : '';
+          results[name] = await page.evaluate(`(() => { ${PREAMBLE} ${at} ${body} })()`);
           break;
         } catch (e) {
           const msg = String(e.message || e);
@@ -830,6 +1014,7 @@ async function main() {
     }
   } finally {
     await browser.close();
+    releaseSlot();
   }
   if (JSON_ONLY) {
     console.log(JSON.stringify({ results, errors }, null, 1));

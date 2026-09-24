@@ -8,6 +8,7 @@ import { BodyAxes, BodyState } from './body';
 import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
+import { MANEUVER_LABELS, Maneuvers } from './maneuvers';
 import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, HOVER, INERTIA, MASS, PROXIMITY, STAMINA } from './params';
 import type { AssistOverrides, PilotCommand, SimEvent, SimOptions, SimWorld } from './types';
 import { createOverrides } from './types';
@@ -28,6 +29,7 @@ export class FlightSim {
   readonly contacts = new BodyContacts();
   readonly controller = new FlightController();
   readonly targets = createControlTargets();
+  readonly maneuvers = new Maneuvers();
   readonly wing: WingShape = createWingShape();
   readonly overrides: AssistOverrides = createOverrides();
   readonly options: SimOptions = { autoFlap: true, stallProtection: true, turbulence: true, thermals: true, wind: true };
@@ -35,7 +37,7 @@ export class FlightSim {
   readonly events: SimEvent[] = [];
   /** When false, events are counted but not queued (fast-forward tests). */
   queueEvents = true;
-  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, dust: 0, landed: 0, mode: 0 };
+  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, dust: 0, landed: 0, mode: 0, maneuver: 0, sound: 0, shake: 0 };
 
   mode: FlightMode = 'flying';
   modeTime = 0;
@@ -83,6 +85,10 @@ export class FlightSim {
   readonly invInertia = new THREE.Vector3();
 
   /* Locomotion state. */
+  /** Seconds left of the crouch before a leap take-off (0 = none). */
+  leapCharge = 0;
+  /** Seconds into a running take-off (the urge on the ground; 0 = none). */
+  runTakeoff = 0;
   groundSpeed = 0;
   groundYaw = 0;
   groundYawRate = 0;
@@ -140,6 +146,9 @@ export class FlightSim {
     this.mode = mode;
     this.modeTime = 0;
     this.controller.onModeEnter(mode);
+    if (mode === 'landing') {
+      this.emit({ type: 'maneuver', id: 'land', label: MANEUVER_LABELS.land });
+    }
   }
 
   emit(event: SimEvent): void {
@@ -175,6 +184,9 @@ export class FlightSim {
     this.bank = 0;
     this.beat.reset();
     this.controller.reset(0);
+    this.maneuvers.reset();
+    this.leapCharge = 0;
+    this.runTakeoff = 0;
     this.aheadTimer = 0;
     this.splashDistance = 0;
     this.wind.reseed(4711);
@@ -261,6 +273,7 @@ export class FlightSim {
     this.touchingWater = false;
     this.axes.update(this.body.quaternion);
     this.sampleSurface();
+    this.maneuvers.tick(h);
 
     if (this.mode === 'grounded') {
       stepGrounded(this, cmd, h);
@@ -268,6 +281,7 @@ export class FlightSim {
       stepSwimming(this, cmd, h);
     } else {
       this.updateLookahead(h);
+      this.maneuvers.begin(this, cmd, h);
       this.airborneModeTransitions(cmd);
       stepAirborne(this, cmd, h);
     }
@@ -287,9 +301,14 @@ export class FlightSim {
 
   private airborneModeTransitions(cmd: PilotCommand): void {
     const V = this.airspeed;
+    const trick = this.maneuvers.displayMode();
+    if (trick) {
+      this.setMode(trick);
+      return;
+    }
     switch (this.mode) {
       case 'takeoff':
-        if ((this.modeTime > 0.8 && V > 14.5 && this.footClearance > 4) || this.modeTime > 6) {
+        if ((this.modeTime > 0.8 && V > 16 && this.footClearance > 6) || this.modeTime > 6) {
           this.controller.holdPath(Math.max(this.gamma, 8 * DEG));
           this.setMode('flying');
         }

@@ -7,7 +7,7 @@ import type { EngineContext, GeoQuery, System } from '../../core/contracts';
 import { RenderLayers, UpdateOrder } from '../../core/contracts';
 import type { QualitySettings } from '../../core/quality';
 import { CityColliders } from './colliders';
-import { osmEnabled, osmExclusionRect } from '../osm/area';
+import { osmExclusionRect } from '../osm/area';
 import { GeoWindowCutter, buildInitMessage, buildOccupancy } from './geo-window';
 import { LampPool } from './lamps';
 import { CityMaterials } from './materials/building-material';
@@ -92,7 +92,7 @@ export class CitySystem implements System {
   private setup(ctx: EngineContext, geo: GeoQuery): void {
     const t0 = performance.now();
     this.masks = levelMasks(buildOccupancy(geo, BASE_CELL));
-    this.cutter = new GeoWindowCutter(geo, osmEnabled(ctx.debug.params) ? osmExclusionRect() : null);
+    this.cutter = new GeoWindowCutter(geo, osmExclusionRect());
     this.pool = new CityWorkerPool(workerCount());
     this.pool.init(buildInitMessage(geo));
 

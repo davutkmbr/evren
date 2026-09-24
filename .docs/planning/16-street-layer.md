@@ -107,7 +107,7 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 ## Keep / change / stop
 
 - **Keep:** the live flight game and web demo; the engine skeleton and the tsc + snap.mjs loop; phase-01 bug fixes;
-  the Galata slice frozen behind `?osm=1` (its generators become compiler inputs); the Kadıköy research as the hero list
+  the Galata slice frozen (always on since 24 September 2026; its generators become compiler inputs); the Kadıköy research as the hero list
   (piers, Haldun Taner, İskele Camii, Şehremaneti, Osmanağa, Surp Takavor, the Boğa, Süreyya and Bahariye at walking
   scale; stadium, marina, lighthouse and parks stay flight-scale landmarks).
 - **Change:** build Kadıköy once, at walking scale (its low-detail tiles are the view from the air); phases 08/09

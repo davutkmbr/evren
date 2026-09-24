@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { DragonPose, DragonRig, DragonState } from '../../core/contracts';
-import { buildBoneSpecs, HEAD_FWD, LANDMARKS, RIDER, TAIL_JOINTS } from './anatomy';
+import { buildBoneSpecs, HEAD_FWD, JAW_HINGE, LANDMARKS, RIDER, TAIL_JOINTS } from './anatomy';
 import { DEFAULT_POSE, STANDING_ROOT_HEIGHT } from './constants';
 import { buildSkeleton, type RigSkeleton } from './skeleton';
-import { MeshBuilder } from './geometry/buffers';
+import { MeshBuilder, SkinAccumulator } from './geometry/buffers';
 import { BodySurface } from './geometry/body';
 import { buildFrillMembranes, buildHead, buildRictus } from './geometry/head';
 import { buildWings } from './geometry/wings';
@@ -15,6 +15,7 @@ import { createBodyMaterial, type BodyMaterialUniforms } from './materials/body-
 import { bakeMembraneTextures, type MembraneTextures } from './materials/membrane-textures';
 import { createMembraneMaterial, type MembraneUniforms } from './materials/membrane-material';
 import { DragonAnimator } from './animation/animator';
+import type { SurfaceAnchor } from './animation/rider-pose';
 import { buildRider, RIDER_HIDE_POINT } from './geometry/rider';
 import { buildTack } from './geometry/tack';
 import { createRiderMaterial, type RiderUniforms } from './materials/rider-material';
@@ -30,6 +31,33 @@ function anisotropyFor(textureSize: number): number {
 }
 
 const BOUNDS = new THREE.Sphere(new THREE.Vector3(0, 0, 0.8), 15);
+/**
+ * Where the fire leaves the mouth, as a fraction of the way from the jaw hinge to the lips: inside the mouth cavity,
+ * so the jet streams out between the open jaws instead of starting in front of the upper jaw.
+ */
+const MOUTH_DEPTH = 0.72;
+const _jawHalf = new THREE.Quaternion();
+
+/**
+ * Petting stroke: a line on the right side of the neck's top, just ahead of the saddle blanket (back to front), with
+ * the skin weights of each point so the rider's palm can follow the surface as the neck moves.
+ */
+function buildPetTrack(body: BodySurface): SurfaceAnchor[] {
+  const anchors: SurfaceAnchor[] = [];
+  const acc = new SkinAccumulator();
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const s = body.sAtZ(THREE.MathUtils.lerp(-3.22, -3.5, t));
+    const theta = THREE.MathUtils.lerp(0.34, 0.3, t);
+    body.skinForSurface(s, theta, acc);
+    const bones: number[] = [];
+    const weights: number[] = [];
+    acc.resolve(bones, weights);
+    anchors.push({ position: body.surfacePoint(s, theta), normal: body.surfaceNormal(s, theta), bones, weights });
+  }
+  return anchors;
+}
 
 function makeSkinned(geometry: THREE.BufferGeometry, material: THREE.Material, skel: RigSkeleton, name: string): THREE.SkinnedMesh {
   const mesh = new THREE.SkinnedMesh(geometry, material);
@@ -73,6 +101,11 @@ export class DragonRigImpl implements DragonRig {
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
+  /** Mouth anchor inputs (head bone frame): the lips at rest and the jaw hinge. */
+  private readonly jaw: THREE.Bone;
+  private readonly mouthRest = new THREE.Vector3();
+  private readonly jawHinge = new THREE.Vector3();
+  private readonly eyeRest = new THREE.Vector3();
 
   constructor(opts: RigBuildOptions) {
     this.root.name = 'dragon-rig';
@@ -131,11 +164,15 @@ export class DragonRigImpl implements DragonRig {
 
     // Anchors.
     const headBone = this.skel.bone('head');
+    this.jaw = this.skel.bone('jaw');
+    this.mouthRest.copy(head.mouthPoint).sub(LANDMARKS.skullBase);
+    this.jawHinge.copy(JAW_HINGE).sub(LANDMARKS.skullBase);
     this.mouth.position.copy(head.mouthPoint).sub(LANDMARKS.skullBase);
     this.mouth.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), HEAD_FWD);
     headBone.add(this.mouth);
     const riderHeadBone = this.skel.bone('riderHead');
     this.riderHead.position.copy(RIDER.eye).sub(RIDER.head);
+    this.eyeRest.copy(this.riderHead.position);
     // The rider looks forward along the neck, slightly down (hands, reins and the dragon's head in view).
     this.riderHead.rotation.set(THREE.MathUtils.degToRad(-8), 0, 0);
     riderHeadBone.add(this.riderHead);
@@ -153,7 +190,18 @@ export class DragonRigImpl implements DragonRig {
     this.dimensions.height = Math.round((STANDING_ROOT_HEIGHT + 2.1) * 10) / 10;
 
     this.animator = new DragonAnimator(this.skel);
+    this.animator.setPetTrack(buildPetTrack(body));
     this.applyPose(0, undefined);
+  }
+
+  /** Side the head comes round on when the dragon looks back at the rider: +1 left, -1 right. */
+  setGazeSide(side: number, immediate = false): void {
+    this.animator.setGazeSide(side, immediate);
+  }
+
+  /** Debug (screenshots): freeze the urge snap phase (0..1) and the petting stroke phase (rad); null = animate. */
+  setDebugPhases(urge: number | null, stroke: number | null): void {
+    this.animator.setDebugPhases(urge, stroke);
   }
 
   setPose(p: Partial<DragonPose>): void {
@@ -169,6 +217,11 @@ export class DragonRigImpl implements DragonRig {
 
   getPose(): Readonly<DragonPose> {
     return this.pose;
+  }
+
+  /** True once per rein crack of the rider's "dehh" gesture (for the sound). */
+  consumeReinSnap(): boolean {
+    return this.animator.consumeReinSnap();
   }
 
   setFirstPerson(enabled: boolean): void {
@@ -189,6 +242,11 @@ export class DragonRigImpl implements DragonRig {
     this.animator.setAngularVelocity(state ? state.angularVelocity : null);
     this.animator.setWind(wind ?? null);
     this.animator.update(this.pose, dt, state);
+    this.riderHead.position.copy(this.eyeRest).add(this.animator.povEyeOffset);
+    // The fire's source sits halfway between the jaws (half the jaw's opening about the hinge), inside the mouth; the
+    // jet keeps the head's aim.
+    _jawHalf.identity().slerp(this.jaw.quaternion, 0.5);
+    this.mouth.position.copy(this.mouthRest).sub(this.jawHinge).multiplyScalar(MOUTH_DEPTH).applyQuaternion(_jawHalf).add(this.jawHinge);
     const o = this.animator.outputs;
     this.bodyUniforms.uBreath.value = o.breath;
     this.membraneUniforms.uBillow.value.set(o.billowLeft, o.billowRight);

@@ -1,4 +1,4 @@
-import type { CameraMode, EngineContext } from '../../core/contracts';
+import type { CameraMode, EngineContext, WeatherPreset, WeatherService, WeatherSettings } from '../../core/contracts';
 import type { QualityPreset } from '../../core/quality';
 import { el } from '../dom';
 import { formatClock, formatDecimal } from '../format';
@@ -25,6 +25,8 @@ export class SettingsPanel {
   private readonly timeOfDay: Control<number>;
   private readonly timeSpeed: Control<number>;
   private readonly camera: Control<CameraMode>;
+  private readonly weatherPreset: Control<WeatherPreset | 'custom'>;
+  private readonly weatherSliders: Record<keyof WeatherSettings, Control<number>>;
 
   constructor(private readonly options: SettingsPanelOptions) {
     const { ctx, prefs } = options;
@@ -119,6 +121,44 @@ export class SettingsPanel {
       },
     );
 
+    const weather = (): WeatherService | undefined => ctx.services.tryGet('weather');
+    this.weatherPreset = segmented<WeatherPreset | 'custom'>(
+      'Hava durumu',
+      [
+        { value: 'clear', label: 'Açık' },
+        { value: 'haze', label: 'Pus' },
+        { value: 'fog', label: 'Sis' },
+        { value: 'rain', label: 'Yağmur' },
+        { value: 'storm', label: 'Fırtına' },
+      ],
+      weather()?.preset ?? 'clear',
+      (preset) => {
+        if (preset !== 'custom') {
+          weather()?.setPreset(preset);
+          this.refreshWeather();
+        }
+      },
+    );
+    const weatherSlider = (key: keyof WeatherSettings, label: string, fallback: number): Control<number> =>
+      slider({
+        label,
+        min: 0,
+        max: 1,
+        step: 0.05,
+        value: weather()?.settings[key] ?? fallback,
+        format: (v) => (v <= 0 ? 'Kapalı' : percentFormat.format(v)),
+        onInput: (v) => {
+          weather()?.set({ [key]: v });
+          this.weatherPreset.set(weather()?.preset ?? 'custom');
+        },
+      });
+    this.weatherSliders = {
+      fog: weatherSlider('fog', 'Sis', 0),
+      rain: weatherSlider('rain', 'Yağmur', 0),
+      storm: weatherSlider('storm', 'Fırtına', 0),
+      farBlur: weatherSlider('farBlur', 'Uzak bulanıklık', 0.6),
+    };
+
     const resetButton = el('button', 'btn-quiet', 'Sıfırla', { type: 'button' });
     let confirmTimer = 0;
     resetButton.addEventListener('click', () => {
@@ -142,6 +182,13 @@ export class SettingsPanel {
       settingSection('Görüntü', [
         settingRow('Grafik kalitesi', 'Gölge, bulut, yansıma ve çizim mesafesi', this.quality.root),
         settingRow('Kamera', 'C tuşuyla da değiştirilebilir', this.camera.root),
+        settingRow('Uzak bulanıklık', 'Uzaktaki şehri havanın yaptığı gibi yumuşatır', this.weatherSliders.farBlur.root),
+      ]),
+      settingSection('Hava', [
+        settingRow('Hava durumu', 'N tuşuyla da değiştirilebilir', this.weatherPreset.root),
+        settingRow('Sis', 'Yerde sis bankları, kalın pus', this.weatherSliders.fog.root),
+        settingRow('Yağmur', 'Yağmur, kapalı gökyüzü, yağmur sesi', this.weatherSliders.rain.root),
+        settingRow('Fırtına', 'Şimşek ve gök gürültüsü', this.weatherSliders.storm.root),
       ]),
       settingSection('Zaman', [
         settingRow('Günün saati', '[ ve ] tuşlarıyla yarım saat ileri, geri', this.timeOfDay.root),
@@ -169,5 +216,18 @@ export class SettingsPanel {
     this.timeSpeed.set(ctx.time.dayTimeScale);
     const mode = ctx.services.tryGet('cameraRig')?.mode;
     this.camera.set(mode === 'free' || !mode ? 'third' : mode);
+    this.refreshWeather();
+  }
+
+  /** Weather changes from the N key or a preset: re-read every weather control. */
+  private refreshWeather(): void {
+    const weather = this.options.ctx.services.tryGet('weather');
+    if (!weather) {
+      return;
+    }
+    this.weatherPreset.set(weather.preset);
+    for (const key of Object.keys(this.weatherSliders) as (keyof WeatherSettings)[]) {
+      this.weatherSliders[key].set(weather.settings[key]);
+    }
   }
 }

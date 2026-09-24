@@ -50,6 +50,10 @@ export class DragonTracker {
   readonly specificForceBody = new THREE.Vector3(0, GRAVITY, 0);
   /** Load factor estimated from the specific force (g). */
   loadFactor = 1;
+  /** 0..1: the rider is (nearly) weightless in a fall (folded wings, a push-over), smoothed. */
+  weightless = 0;
+  /** Smoothed rate of change of the load factor (g/s): a catch or a hard pull-out loads up quickly. */
+  loadOnset = 0;
   flapPhase = 0;
   flapAmplitude = 0;
   mode: FlightMode = 'flying';
@@ -67,6 +71,7 @@ export class DragonTracker {
   /** Height of the rider's head above the body origin (m), body frame. */
   riderHeight = 2.6;
 
+  private prevLoad = 1;
   private prevVelocity = new THREE.Vector3();
   private prevPosition = new THREE.Vector3();
   private prevYaw = 0;
@@ -162,6 +167,9 @@ export class DragonTracker {
       this.pitchRate = 0;
       this.specificForceBody.set(0, GRAVITY, 0);
       this.loadFactor = 1;
+      this.prevLoad = 1;
+      this.weightless = 0;
+      this.loadOnset = 0;
       this.prevVelocity.copy(this.velocity);
       this.prevPosition.copy(this.position);
       this.prevYaw = this.travelYaw;
@@ -188,6 +196,15 @@ export class DragonTracker {
       _tmp.set(this.accel.x, this.accel.y + GRAVITY, this.accel.z).applyQuaternion(_invQ);
       this.specificForceBody.copy(_tmp);
       this.loadFactor = _tmp.length() / GRAVITY;
+
+      // Falling with next to nothing holding the dragon up: the stomach-drop cues (camera lag, FOV, flutter).
+      const airborne = this.mode !== 'grounded' && this.mode !== 'swimming';
+      const falling = airborne && this.velocity.y < -2;
+      const weightless = falling ? smoothstep(0.6, 0.2, this.loadFactor) : 0;
+      this.weightless += (weightless - this.weightless) * expAlpha(weightless > this.weightless ? 8 : 3, dt);
+      const onset = clamp((this.loadFactor - this.prevLoad) / dt, -20, 20);
+      this.loadOnset += (onset - this.loadOnset) * expAlpha(12, dt);
+      this.prevLoad = this.loadFactor;
     }
     this.prevVelocity.copy(this.velocity);
     this.prevPosition.copy(this.position);

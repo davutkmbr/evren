@@ -56,3 +56,8 @@ For each item: open the link, download the format named below and extract it int
   - Download: Download 3D Model → glTF (the zip includes Sketchfab's `license.txt`); extract the whole zip
   - Target folder: `assets-src/model/simit_cart_byrokestudios/`
   - Conditions: Remove the İBB emblem from the side panel before the asset is used in any build (the "SİMİTÇİ" lettering may stay); Check the archive for readme or licence files and texture credits; reject it if its textures come from Textures.com, Quixel Megascans or Poliigon; Record the attribution and a note of the changes in public/models/LICENSES.md on integration
+- [x] **Animated Pigeon - Rigged & Optimized** by GAMICO (CC BY 4.0)
+  - Link: <https://sketchfab.com/3d-models/animated-pigeon-rigged-optimized-6cdb9b2f5f784d8f9abc92e4c132f116>
+  - Download: Download 3D Model → glTF (the zip includes Sketchfab's `license.txt`); extract the whole zip
+  - Target folder: `assets-src/model/pigeon_gamico/`
+  - Conditions: Keep the credit in public/models/LICENSES.md

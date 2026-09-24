@@ -98,14 +98,18 @@ void main() {
       vec3 flow = vel - uWindFx * VOL_WIND[0] - P.carrier;
       float fs = length(flow);
       float ext = min(fs * FLAME_SHEAR_TIME, radius * FLAME_MAX_ASPECT + 0.6);
+      // The tongue trails back at most to where it was born (in the moving air): a young flame would otherwise
+      // reach back into the mouth and show over the jaw.
+      float extBack = min(ext, fs * age);
       if (ext > 0.02 * radius) {
         vec3 axis = flow / fs;
         vec3 pv = (viewMatrix * vec4(pos, 1.0)).xyz;
         vec3 av = mat3(viewMatrix) * axis * ext;
+        vec3 ab = mat3(viewMatrix) * axis * extBack;
         float d = max(-pv.z, 1e-3);
         float dMin = max(0.4 * d, uNearFade);
         vec2 q1 = (pv.xy + av.xy) * (d / max(d - av.z, dMin));
-        vec2 q0 = (pv.xy - av.xy) * (d / max(d + av.z, dMin));
+        vec2 q0 = (pv.xy - ab.xy) * (d / max(d + ab.z, dMin));
         vec2 seg = q1 - q0;
         float segL = length(seg);
         vec2 mid = (q0 + q1) * 0.5 - pv.xy;
@@ -114,7 +118,7 @@ void main() {
           dir = seg / segL;
         }
         halfSize.x = radius + 0.5 * segL;
-        float a = radius + ext;
+        float a = radius + 0.5 * (ext + extBack);
         float ca = dot(axis, normalize(pos - cameraPosition));
         halfDepth = radius * inversesqrt(ca * ca * (radius * radius) / (a * a) + 1.0 - ca * ca);
         noiseStretch = 1.0 + min(0.35 * segL / radius, 2.5);

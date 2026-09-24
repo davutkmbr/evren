@@ -544,12 +544,14 @@ async function boot(): Promise<void> {
   if (water) systems.push(water.createWaterSystem());
   if (params.get('world') === 'full' && !iso) {
     const city = await optional('city', () => import('../src/world/city'));
+    const osm = await optional('osm', () => import('../src/world/osm'));
     const veg = await optional('vegetation', () => import('../src/world/vegetation'));
     const mosques = await optional('mosques', () => import('../src/world/landmarks/mosques'));
     const structures = await optional('structures', () => import('../src/world/landmarks/structures'));
     const heritage = await optional('heritage', () => import('../src/world/landmarks/heritage'));
     const clouds = await optional('clouds', () => import('../src/render/clouds'));
     if (city) systems.push(city.createCitySystem());
+    if (osm) systems.push(osm.createOsmSystem());
     if (veg) systems.push(veg.createVegetationSystem());
     if (mosques) systems.push(mosques.createMosqueSystem());
     if (structures) systems.push(structures.createStructureSystem());

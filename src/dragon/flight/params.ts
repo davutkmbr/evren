@@ -287,8 +287,15 @@ export const GROUND = {
   dropToFall: 2.2,
   strideWalk: 3.4,
   strideRun: 7.5,
-  leapUp: 5.5,
-  leapForward: 3,
+  leapUp: 8,
+  leapForward: 4,
+  /** Crouch before the leap (s): the dragon rears a little and raises its wings for the first big downstroke. */
+  leapCrouch: 0.3,
+  leapRear: 0.09,
+  /** Running take-off (the urge on the ground): gallop up to this speed (m/s) within runTime (s), then leap. */
+  runTakeoffSpeed: 12,
+  runTakeoffTime: 1.3,
+  runTakeoffAccel: 7,
 } as const;
 
 export const SWIM = {
@@ -310,3 +317,74 @@ export const BODY_SPHERES: ReadonlyArray<readonly [number, number, number, numbe
 
 export const DEFAULT_RIG_LENGTH = 18;
 export const DEFAULT_RIG_HEIGHT = 4;
+
+/**
+ * Tricks and rider-driven maneuvers (maneuvers.ts). Speeds m/s, clearances m (lowest body point above the surface),
+ * times s, rates rad/s, accelerations rad/s², loads g.
+ */
+export const TRICKS = {
+  /* Barrel roll (A / D double tap): a velocity-axis roll with the wings half folded. */
+  rollRate: 6.2,
+  rollAccel: 24,
+  rollDecel: 22,
+  rollSpread: 0.55,
+  rollSweep: 0.45,
+  rollMinSpeed: 22,
+  rollMinClearance: 30,
+  /** Extra revolutions stop once the clearance gets below this. */
+  rollKeepClearance: 45,
+  rollMaxRevolutions: 6,
+  /** Angular speed limit while rolling (rad/s; otherwise MOMENTS.maxAngularSpeed keeps collision tumbles sane). */
+  rollMaxSpin: 7.5,
+  /** Control authority multipliers while rolling (pitch, yaw, roll). */
+  rollAuthority: [5, 12, 4] as readonly [number, number, number],
+  /* Loop (S double tap). */
+  loopMinSpeed: 23,
+  loopMinClearance: 60,
+  /** A loop starts from roughly level flight (flight path within this, rad). */
+  loopMaxEntryPath: 35 * (Math.PI / 180),
+  /** Loop loads (g): the pull-up, over the top (inverted, into the saddle) and the pull-out. */
+  loopLoad: 3.8,
+  loopTopLoad: 2.6,
+  loopExitLoad: 4,
+  loopMaxLoad: 4.5,
+  loopLiftBoost: 0.35,
+  loopThrust: 1.2,
+  loopMaxTime: 9,
+  /* Free fall (Shift slow / hovering / double tap) and the catch (Shift released, Space). */
+  dropMaxSpeed: 20,
+  dropMinClearance: 35,
+  /** A double-tapped drop lasts at least this long before releasing Shift catches. */
+  dropMinTime: 1.1,
+  /** Space catches a drop only after this long (the tap that started a flap must not end it at once). */
+  dropSpaceDelay: 0.25,
+  catchLoad: 2.6,
+  /** Catch load at dive speed (from ~75 m/s). */
+  fastCatchLoad: 3,
+  urgentCatchLoad: 3.1,
+  /** Falling room (m) a drop needs on top of the pull-out before it starts. */
+  dropMinFall: 12,
+  /** Seconds for the pull-out load to build (jerk limit: a firm but comfortable squeeze). */
+  catchOnset: 0.3,
+  /** Height kept in hand by the automatic catch (m) and the reaction time it assumes (s). */
+  catchMargin: 22,
+  catchDelay: 0.45,
+  /** Longest catch (s), plus V / 25 (a dive-speed swoop takes longer). */
+  catchMaxTime: 2.5,
+  /** A released Shift dive this steep (rad), fast (m/s) and long (s) ends in a catch too. */
+  diveCatchPath: -20 * (Math.PI / 180),
+  diveCatchSpeed: 30,
+  diveCatchTime: 0.6,
+  /* Urge "dehh" (V): strong beats and a surge. */
+  urgeDuration: 1.7,
+  urgeCooldown: 2.5,
+  urgeGain: 11,
+  urgeThrust: 2.3,
+  urgeStamina: 0.03,
+  /** The rider's gesture envelope (s). */
+  urgeGesture: 1.2,
+  /** Seconds the rider cheers after a finished trick. */
+  cheer: 1.3,
+  /** Refused-trick hints repeat at most this often (s). */
+  hintInterval: 6,
+} as const;

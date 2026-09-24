@@ -20,6 +20,11 @@ const TUNING = {
   horizonHold: 0.22,
   fovBase: 75,
   fovSpeed: 8,
+  /** Free fall: extra FOV (deg) and the head floating up off the saddle (m). */
+  fallFov: 5,
+  fallFloat: 0.05,
+  /** A sudden g onset (a catch) punches the FOV in by up to this (deg). */
+  onsetKick: 4,
   near: 0.05,
   /**
    * Neutral posture: the rider sits tall (eyes this far above the rig's head anchor) and looks this far below
@@ -70,6 +75,7 @@ export class PovController implements CameraController {
   private leanPitch = 0;
   private readonly horizon = new Spring();
   private readonly fov = new Spring(TUNING.fovBase);
+  private readonly kick = new Spring();
   private readonly speedFx = new Spring();
   /** Slow average of the rig head's pitch in the body frame (its static posture, not its animation). */
   private headPitchSlow = 0;
@@ -100,6 +106,7 @@ export class PovController implements CameraController {
     this.lookPitch.reset(0);
     this.idle = 99;
     this.fov.reset(this.fovTarget(frame));
+    this.kick.reset(0);
     this.speedFx.reset(0);
     this.initialized = true;
   }
@@ -172,7 +179,7 @@ export class PovController implements CameraController {
 
     _local.copy(this.relPosSmooth).addScaledVector(_hf, TUNING.headMotionKeep);
     // Sit-tall offset, reduced when looking down at one's own body.
-    _local.y += this.bob + TUNING.eyeRaise * (1 - 0.6 * smoothstep(-15 * DEG, -50 * DEG, pitch));
+    _local.y += this.bob + TUNING.eyeRaise * (1 - 0.6 * smoothstep(-15 * DEG, -50 * DEG, pitch)) + TUNING.fallFloat * t.weightless;
     _local.add(this.headLag.x);
     _eye.applyQuaternion(this.relRotSmooth);
     _local.add(_eye);
@@ -203,7 +210,7 @@ export class PovController implements CameraController {
     rotateLocal(out.quaternion, AXIS_X, torsoPitch + pitch + this.nod + this.leanPitch);
     rotateLocal(out.quaternion, AXIS_Z, this.leanRoll);
 
-    out.fov = this.fov.update(this.fovTarget(frame), 2.2, sdt);
+    out.fov = this.fov.update(this.fovTarget(frame), 2.2, sdt) + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt);
     out.near = TUNING.near;
     out.speedEffect = clamp(this.speedFx.update(0.85 * smoothstep(45, 115, t.speed), 3, sdt), 0, 1);
     out.shakeTranslation = 0.12;
@@ -242,6 +249,7 @@ export class PovController implements CameraController {
   }
 
   private fovTarget(frame: CameraFrame): number {
-    return TUNING.fovBase + TUNING.fovSpeed * smoothstep(35, 105, frame.target.speed);
+    const t = frame.target;
+    return TUNING.fovBase + TUNING.fovSpeed * smoothstep(35, 105, t.speed) + TUNING.fallFov * t.weightless;
   }
 }

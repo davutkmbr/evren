@@ -31,11 +31,14 @@ procedural solution:
    in our engine) saved under `.shots/assets/<topic>/`.
 2. Do not add unapproved candidates to `public/` or reference them in code. Keep building the procedural version
    (or a placeholder) so the work does not stall, and report the candidates as pending approval.
-3. After approval, record every integrated asset in `public/models/LICENSES.md` or `public/textures/LICENSES.md`.
+3. After approval, record every integrated asset in `public/models/LICENSES.md`, `public/textures/LICENSES.md` or
+   `public/audio/LICENSES.md`.
 
 Already approved: the CC0 Poly Haven texture sets listed in `public/textures/LICENSES.md`, OpenStreetMap data
 (ODbL, attribution shown in the UI), MetaHuman characters + Mixamo animations for humans, Epic's free MetaHuman wardrobe on Fab (private store), and — for the S1 realism pass (user approval 2026-09-24) — CC0
-textures, decals and HDRI skies from Poly Haven and ambientCG, each one recorded in `tools/assets/approved.json`.
+textures, decals and HDRI skies from Poly Haven and ambientCG, each one recorded in `tools/assets/approved.json`, and the
+18 CC0 Freesound recordings for wind, wing flaps, thunder and rain (user approval 2026-09-24,
+`.docs/assets/candidates/sounds.md`).
 
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy

@@ -41,10 +41,13 @@ void main() {
   vec4 prm2 = texelFetch(uTrail, ivec2(n + 1, row), 0);
   int head = int(prm.z + 0.5);
   int count = int(prm.w + 0.5);
-  if (i >= count || count < 2) {
+  if (count < 2) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
   }
+  // Rows past the recorded samples collapse onto the last one (zero-area quads). Moving only those vertices off
+  // screen would stretch the last quad into a sliver reaching across the view.
+  i = min(i, count - 1);
   vec4 p = trailSample(row, head, i, n);
   vec4 h0 = trailSample(row, head, 0, n);
   vec4 h1 = trailSample(row, head, 1, n);

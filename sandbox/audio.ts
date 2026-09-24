@@ -2,6 +2,7 @@
  * Audio sandbox.
  *   /sandbox/audio.html                 offline validation report (every sound rendered through the real engine + metrics)
  *   /sandbox/audio.html?cases=roar-pov  only the listed case ids
+ *   /sandbox/audio.html?samples=0       synthesis only (A/B against the recorded sounds)
  *   /sandbox/audio.html?mode=live       interactive lab: sliders drive a fake dragon; click once to unlock audio
  */
 import type { System } from '../src/core/contracts';
@@ -10,7 +11,7 @@ import { startSandbox } from '../src/core/sandbox';
 import { createAudioSystem } from '../src/audio';
 import { createLiveHarness, type LiveState } from '../src/audio/analysis/live-panel';
 import { createReportView, wavBase64 } from '../src/audio/analysis/report-view';
-import { CASES, renderCase, type RenderResult } from '../src/audio/analysis/scenarios';
+import { CASES, renderCase, useRecordedSounds, type RenderResult } from '../src/audio/analysis/scenarios';
 
 interface AudioReportApi {
   done: boolean;
@@ -21,6 +22,7 @@ interface AudioReportApi {
 const params = new URLSearchParams(window.location.search);
 
 function reportSystem(): System {
+  useRecordedSounds(params.get('samples') !== '0');
   const only = params.get('cases')?.split(',').filter(Boolean);
   const cases = only ? CASES.filter((c) => only.includes(c.id)) : CASES;
   let remaining = cases.length;

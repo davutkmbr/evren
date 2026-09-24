@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { weatherHazeFactor, weatherSunFactor } from '../weather/presets';
 import type { EngineContext, EnvironmentState, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
 import { VIEW_PRESETS } from '../../core/debug';
@@ -178,7 +179,9 @@ export function createSkySystem(): System {
       return hazeOverride;
     }
     const morning = Math.exp(-(((clock.hours - 7.5) / 2.2) ** 2)) * HAZE.morningBoost;
-    return THREE.MathUtils.lerp(HAZE.poyraz, HAZE.lodos, wind.lodos) * (1 + morning);
+    const weather = ctx?.services.tryGet('weather');
+    const weatherHaze = weather ? weatherHazeFactor(weather.current) : 1;
+    return THREE.MathUtils.lerp(HAZE.poyraz, HAZE.lodos, wind.lodos) * (1 + morning) * weatherHaze;
   }
 
   function updateCelestialAndLights(c: EngineContext): void {
@@ -191,13 +194,15 @@ export function createSkySystem(): System {
     const moonLevel = MOON_ILLUMINANCE_FULL * moonPhaseBrightness(celestial.moonPhaseAngle);
     moonIllum.copy(MOON_KEY_TINT).multiplyScalar(moonLevel);
 
+    const weather = c.services.tryGet('weather');
+    const overcast = weather ? weatherSunFactor(weather.current) : 1;
     keyIsMoon = sunElev < -3.5;
     if (keyIsMoon) {
       keyDir.copy(celestial.moonDirection);
-      keyIllum.copy(moonIllum).multiplyScalar(smoothstep(-3.5, -9, sunElev));
+      keyIllum.copy(moonIllum).multiplyScalar(smoothstep(-3.5, -9, sunElev) * overcast);
     } else {
       keyDir.copy(celestial.sunDirection);
-      keyIllum.copy(sunIllum);
+      keyIllum.copy(sunIllum).multiplyScalar(overcast);
     }
     keyLight.update(keyDir, keyIllum, hazeMul, aerosolMul);
     if (keyIsMoon) {
@@ -220,7 +225,7 @@ export function createSkySystem(): System {
     airglow.set(AIRGLOW.color[0], AIRGLOW.color[1], AIRGLOW.color[2]).multiplyScalar(AIRGLOW.strength * state.night);
 
     twilightSkyDirection(celestial.sunDirection, sunElev, lightsForLut.lightDirA);
-    lightsForLut.lightIllumA.copy(sunIllum).multiplyScalar(overrides.boost ?? twilightSkyBoost(sunElev));
+    lightsForLut.lightIllumA.copy(sunIllum).multiplyScalar((overrides.boost ?? twilightSkyBoost(sunElev)) * (0.35 + 0.65 * overcast));
     lightsForLut.lightDirB.copy(celestial.moonDirection);
     const moonSky = overrides.moonSky ?? (celestial.moonElevationDeg > -6 ? moonLevel * MOON_SKY_SCALE * nightWeight : 0);
     lightsForLut.lightIllumB.setScalar(moonSky);
@@ -288,13 +293,17 @@ export function createSkySystem(): System {
     const earthshine = 0.012 * (1 - Math.cos(celestial.moonPhaseAngle)) * 0.5;
     // The Milky Way drowns in moonlight (and in the city's skyglow, which the additive band cannot out-shine).
     const moonUp = moonPhaseBrightness(celestial.moonPhaseAngle) * smoothstep(-3, 20, celestial.moonElevationDeg);
-    milkyWay.setScalar(MILKY_WAY_RADIANCE * smoothstep(-10, -18, sunElev) * (1 - 0.85 * moonUp));
+    // A closed rain deck hides the sun disk, the stars and the Milky Way.
+    const weather = ctx?.services.tryGet('weather');
+    const clear = weather ? weatherSunFactor(weather.current) ** 2 : 1;
+    milkyWay.setScalar(MILKY_WAY_RADIANCE * smoothstep(-10, -18, sunElev) * (1 - 0.85 * moonUp) * clear);
+    domeParams.sunDiskRadiance = SUN_DISK_RADIANCE * clear;
     domeParams.sunFlatten = sunFlatten;
     domeParams.moonRadius = celestial.moonAngularRadius;
     domeParams.earthshine = earthshine;
     dome.update(domeParams);
     // Visibility per star follows the local sky brightness (limiting magnitude in the star shader).
-    stars.update(celestial.equatorialToLocal, STAR_BRIGHTNESS * smoothstep(-1, -5, sunElev), celestial.moonDirection, celestial.moonAngularRadius);
+    stars.update(celestial.equatorialToLocal, STAR_BRIGHTNESS * smoothstep(-1, -5, sunElev) * clear, celestial.moonDirection, celestial.moonAngularRadius);
   }
 
   function updateLuts(c: EngineContext, force: boolean): void {
@@ -490,7 +499,7 @@ export function createSkySystem(): System {
 
       wind.update(c.time.elapsed);
       state.wind.copy(wind.vector);
-      hazeMul += (targetHaze() - hazeMul) * Math.min(1, c.time.realDt * 0.2);
+      hazeMul += (targetHaze() - hazeMul) * Math.min(1, c.time.realDt * 0.6);
 
       updateCelestialAndLights(c);
       writeGlobals(c);

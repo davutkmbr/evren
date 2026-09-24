@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { clamp, lerp } from '../../core/math/noise';
+import { clamp, lerp, smoothstep } from '../../core/math/noise';
+import { MANEUVER_LABELS } from './maneuvers';
 import { GRAVITY, GROUND, SWIM } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
@@ -62,8 +63,37 @@ function leap(sim: FlightSim, up: number, forward: number): void {
   sim.spread = Math.max(sim.spread, 0.5);
   sim.legsOut = 1;
   sim.hoverBlend = 0.8;
-  sim.beat.phase = 5.6;
+  sim.beat.phase = Math.max(sim.beat.phase, 5.6);
+  sim.leapCharge = 0;
+  sim.runTakeoff = 0;
   sim.setMode('takeoff');
+  sim.emit({ type: 'maneuver', id: 'takeoff', label: MANEUVER_LABELS.takeoff });
+}
+
+/** The jump off the ground: dust kicked up by the hind legs and a small camera kick. */
+function groundLeap(sim: FlightSim, up: number, forward: number, dust: number): void {
+  const p = sim.body.position;
+  sim.emit({ type: 'dust', point: new THREE.Vector3(p.x, sim.surfaceY, p.z), strength: dust });
+  sim.emit({ type: 'shake', amount: 0.14 });
+  leap(sim, up, forward);
+}
+
+/** Crouch before the leap: the dragon rears a little and lifts its wings through the upstroke, ready to beat. */
+function crouch(sim: FlightSim, h: number): number {
+  const k = 1 - sim.leapCharge / GROUND.leapCrouch;
+  sim.spread = approach(sim.spread, 0.8, 3.5, h);
+  sim.sweep = approach(sim.sweep, 0, 3, h);
+  sim.legsOut = 1;
+  sim.hoverBlend = approach(sim.hoverBlend, 0.6, 2, h);
+  sim.brake = 0;
+  sim.attachment = 1;
+  sim.updateInertia();
+  const beat = sim.beat;
+  beat.amplitude = approach(beat.amplitude, 0.9, 4, h);
+  beat.effort = approach(beat.effort, 0.6, 3, h);
+  beat.phase = 4.2 + 1.95 * k;
+  beat.downstrokeStarted = false;
+  return GROUND.leapRear * Math.sin(Math.min(k, 1) * Math.PI * 0.5);
 }
 
 export function enterGrounded(sim: FlightSim): void {
@@ -75,6 +105,9 @@ export function enterGrounded(sim: FlightSim): void {
   sim.hoverBlend = 0;
   sim.brake = 0;
   sim.attachment = 1;
+  sim.leapCharge = 0;
+  sim.runTakeoff = 0;
+  sim.maneuvers.cancel();
   sim.setMode('grounded');
 }
 
@@ -87,6 +120,7 @@ export function enterSwimming(sim: FlightSim): void {
   sim.hoverBlend = 0;
   sim.brake = 0;
   sim.attachment = 1;
+  sim.maneuvers.cancel();
   sim.setMode('swimming');
 }
 
@@ -108,21 +142,49 @@ function alignBody(sim: FlightSim, up: THREE.Vector3, extraPitch: number, extraR
   sim.axes.update(sim.body.quaternion);
 }
 
-/** Quadruped walking on terrain and rooftops (W/S walk, A/D turn, Shift run, Space/L take off). */
+/**
+ * Quadruped walking on terrain and rooftops (W/S walk, A/D turn, Shift run). Space/L: a crouch, then the leap
+ * take-off; V (the rider's "dehh"): a galloping run into a running take-off.
+ */
 export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const b = sim.body;
   const p = b.position;
   const collision = sim.world.collision;
-  if (cmd.flapPressed || cmd.flap || cmd.landPressed) {
-    leap(sim, GROUND.leapUp, GROUND.leapForward);
-    return;
+  if (cmd.urgePressed && sim.leapCharge <= 0 && sim.runTakeoff <= 0 && sim.maneuvers.tryUrge(sim)) {
+    sim.runTakeoff = h;
+  }
+  if (sim.leapCharge <= 0 && sim.runTakeoff <= 0 && (cmd.flapPressed || cmd.flap || cmd.landPressed)) {
+    sim.leapCharge = GROUND.leapCrouch;
+  }
+  let rear = 0;
+  if (sim.leapCharge > 0) {
+    sim.leapCharge -= h;
+    if (sim.leapCharge <= 0) {
+      groundLeap(sim, GROUND.leapUp, GROUND.leapForward, 0.9);
+      return;
+    }
+    rear = crouch(sim, h);
+  }
+  if (sim.runTakeoff > 0) {
+    sim.runTakeoff += h;
+    if (sim.runTakeoff > GROUND.runTakeoffTime || sim.groundSpeed > GROUND.runTakeoffSpeed - 0.5) {
+      groundLeap(sim, GROUND.leapUp * 0.85, GROUND.leapForward * 0.5, 0.7);
+      return;
+    }
   }
 
   const run = cmd.dive;
   const fwd = clamp(cmd.pitch, -1, 1);
   const target = fwd > 0 ? fwd * (run ? GROUND.runSpeed : GROUND.walkSpeed) : fwd * GROUND.backSpeed;
   const settling = Math.abs(sim.groundSpeed) > Math.abs(target) + 1.5 && Math.abs(sim.groundSpeed) > GROUND.walkSpeed;
-  sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * (settling ? 0.9 : run ? 1.4 : 2.4)));
+  if (sim.runTakeoff > 0) {
+    // Galloping run-up: accelerate hard whatever W/S say.
+    sim.groundSpeed = Math.min(GROUND.runTakeoffSpeed, sim.groundSpeed + GROUND.runTakeoffAccel * h);
+  } else if (sim.leapCharge > 0) {
+    sim.groundSpeed *= 1 - Math.min(1, 2.5 * h);
+  } else {
+    sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * (settling ? 0.9 : run ? 1.4 : 2.4)));
+  }
   const turn = clamp(cmd.roll + cmd.yaw, -1, 1);
   sim.groundYawRate = (-turn * GROUND.turnRate) / (1 + Math.abs(sim.groundSpeed) * 0.08);
   sim.groundYaw += sim.groundYawRate * h;
@@ -163,7 +225,7 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
     _normal.set(0, 1, 0);
   }
   _up.set(0, 1, 0).lerp(_normal, 0.7).normalize();
-  alignBody(sim, _up, 0, 0, 8, h);
+  alignBody(sim, _up, rear, 0, 8, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   if (collision && sim.contacts.resolveWalls(b, collision, sim.impact)) {
@@ -180,7 +242,21 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
   sim.walkPhase = (sim.walkPhase + Math.sign(sim.groundSpeed || 1) * TWO_PI * cadence * h + TWO_PI) % TWO_PI;
   sim.walkAmount += (clamp((speed + Math.abs(sim.groundYawRate) * 2.5) / 2.2, 0, 1) - sim.walkAmount) * (1 - Math.exp(-h * 6));
 
-  relaxWings(sim, 0.06, 0, h);
+  if (sim.leapCharge > 0) {
+    // crouch() already set the wings.
+  } else if (sim.runTakeoff > 0) {
+    // The wings open and start beating over the last strides.
+    const k = smoothstep(0.3, GROUND.runTakeoffTime, sim.runTakeoff);
+    sim.spread = approach(sim.spread, 0.3 + 0.6 * k, 2, h);
+    sim.sweep = approach(sim.sweep, 0.2 * (1 - k), 2, h);
+    sim.legsOut = 1;
+    sim.brake = 0;
+    sim.attachment = 1;
+    sim.updateInertia();
+    sim.beat.update(h, 0.25 + 0.6 * k, 0.3);
+  } else {
+    relaxWings(sim, 0.06, 0, h);
+  }
   fillLocomotionTelemetry(sim);
 }
 
@@ -189,7 +265,8 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const b = sim.body;
   const p = b.position;
   const v = b.velocity;
-  if (cmd.flapPressed || cmd.flap || cmd.landPressed) {
+  const urged = cmd.urgePressed && sim.maneuvers.tryUrge(sim);
+  if (urged || cmd.flapPressed || cmd.flap || cmd.landPressed) {
     sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, 0, p.z), strength: 1.2 });
     leap(sim, SWIM.leapUp, SWIM.leapForward);
     return;

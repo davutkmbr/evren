@@ -24,7 +24,7 @@ npm run typecheck:world
 | `--no-validate` | off | skips the glTF-Validator |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
 
-The compiler runs the renderer-independent code of the `?osm=1` slice in Node (via `tsx`):
+The compiler runs the renderer-independent code of the OSM slice in Node (via `tsx`):
 
 - terrain: the flight world's geo build (`src/world/geo/build`);
 - street raster and `StreetSurface` (`src/world/osm/shared`): carriageways, sidewalks, kerbs, paths, ground cover;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
 import { globalUniforms } from '../../core/uniforms';
+import { RiderBehavior } from './behavior/rider-behavior';
 import { DragonRigImpl } from './rig';
 
 function textureSizeFor(preset: string): number {
@@ -27,6 +28,7 @@ function keyLightDirection(light: THREE.Object3D | undefined, out: THREE.Vector3
 /** Procedural dragon + rider model and rig. Provides the 'rig' service (DragonRig). */
 export function createDragonModelSystem(): System {
   let rig: DragonRigImpl | undefined;
+  let rider: RiderBehavior | undefined;
   let unsubscribe: (() => void) | undefined;
   let fallbackLight: THREE.Object3D | undefined;
   let scanCountdown = 0;
@@ -42,6 +44,7 @@ export function createDragonModelSystem(): System {
           `tris body ${s.bodyTriangles} + membrane ${s.membraneTriangles} + rider ${s.riderTriangles}`,
       );
       ctx.services.provide('rig', rig);
+      rider = new RiderBehavior(rig, ctx);
       unsubscribe = ctx.quality.onChange((settings) => {
         rig?.setTextureQuality(textureSizeFor(settings.preset));
       });
@@ -68,10 +71,16 @@ export function createDragonModelSystem(): System {
         _lightDir.copy(env ? env.sunDirection : (globalUniforms.uSunDir.value as THREE.Vector3));
       }
       const wind = env ? env.wind : (globalUniforms.uWind.value as THREE.Vector3);
+      // Rider actions and the dragon's attention go on top of this frame's flight pose.
+      rider?.update(dt, ctx);
       rig.applyPose(dt, ctx.services.tryGet('dragon'), _lightDir, wind);
+      if (rig.consumeReinSnap()) {
+        ctx.services.tryGet('audio')?.play('rein-snap');
+      }
     },
     dispose() {
       unsubscribe?.();
+      rider?.dispose();
       rig?.dispose();
     },
   };

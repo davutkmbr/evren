@@ -2,7 +2,9 @@
  * Dragon model sandbox.
  *   ?pose=flap|glide|dive|hover|walk|fire|idle|bank|tuck|half   &phase=0..6.28   &freeze=1
  *   ?view=side|left|front|top|three-quarter|head|headside|jaw|rider|saddle|saddlezoom|pov|back|chase|under|wing|
- *         shoulder|shouldertop|legs|tail|hero|riderfront|hands|face|mouth   (&look=deg pitches the pov camera)
+ *         shoulder|shouldertop|legs|tail|hero|riderfront|hands|face|mouth|pethand|gazeleft|gazeright|standside
+ *         (&look=deg pitches the pov camera)
+ *   Rider cues: window.__riderDebug.force({ riderStand: 1, gazeRider: 1, gazeSide: -1, urgePhase: 0.5, ... }) / .clear()
  *   ?sun=azimuthDeg,elevationDeg   ?env=0   ?ground=0   ?fp=1 (first person hide)   ?sky=1&t=hours (real sky + post)
  *   ?alt=m (flight altitude of the rig origin, default 9)
  */
@@ -81,6 +83,11 @@ const VIEWS: Record<string, ViewDef> = {
   face: { pos: [0.35, 2.0, -3.45], target: [0, 1.92, -2.75] },
   goggles: { pos: [0.1, 1.97, -3.02], target: [0, 1.94, -2.8] },
   mouth: { pos: [1.3, 0.1, -9.0], target: [0, 0.8, -7.5] },
+  // Rider cues (window.__riderDebug.force({...})).
+  pethand: { pos: [0.85, 1.75, -2.95], target: [0.15, 1.1, -3.3] },
+  gazeleft: { pos: [0.55, 2.45, -1.7], target: [-1.6, 1.7, -4.3] },
+  gazeright: { pos: [-0.55, 2.45, -1.7], target: [1.6, 1.7, -4.3] },
+  standside: { pos: [2.4, 2.4, -2.2], target: [0, 1.75, -2.6] },
 };
 const view = VIEWS[viewName] ?? VIEWS['three-quarter'];
 

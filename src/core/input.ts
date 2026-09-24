@@ -13,6 +13,11 @@
  *   look    RMB held, or always in POV (mouse look)
  * Buttons (pressed this frame):
  *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U
+ * Rider and maneuvers:
+ *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
+ *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
+ *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
+ * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS.
  */
 export type AxisName = 'pitch' | 'roll' | 'yaw';
 export type ButtonName =
@@ -30,7 +35,21 @@ export type ButtonName =
   | 'photo'
   | 'hud'
   | 'roar'
-  | 'land';
+  | 'land'
+  | 'urge'
+  | 'pet'
+  | 'stand'
+  | 'weather'
+  | 'rollLeft'
+  | 'rollRight'
+  | 'pitchUp'
+  | 'pitchDown';
+
+/** Two presses of the same button within this window count as a double tap (ms). */
+export const DOUBLE_TAP_MS = 300;
+
+/** Buttons that only exist as edges (never reported as held). */
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather']);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -51,6 +70,18 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyU: 'hud',
   KeyR: 'roar',
   KeyL: 'land',
+  KeyV: 'urge',
+  KeyG: 'pet',
+  KeyT: 'stand',
+  KeyN: 'weather',
+  KeyA: 'rollLeft',
+  ArrowLeft: 'rollLeft',
+  KeyD: 'rollRight',
+  ArrowRight: 'rollRight',
+  KeyS: 'pitchUp',
+  ArrowDown: 'pitchUp',
+  KeyW: 'pitchDown',
+  ArrowUp: 'pitchDown',
 };
 
 export const CONTROL_HELP: Array<{ keys: string; action: string }> = [
@@ -58,11 +89,18 @@ export const CONTROL_HELP: Array<{ keys: string; action: string }> = [
   { keys: 'A / D', action: 'Sola / sağa yatış' },
   { keys: 'Q / E', action: 'Sola / sağa dönüş (dümen)' },
   { keys: 'Space', action: 'Kanat çırp (tırmanış, hız)' },
-  { keys: 'Shift', action: 'Kanatları kapat, dalış' },
+  { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan' },
+  { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş' },
+  { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes' },
+  { keys: 'A / D çift dokun', action: 'Takla at (basılı tut: dönmeye devam et)' },
+  { keys: 'S çift dokun', action: 'Looping' },
   { keys: 'Ctrl / X', action: 'Fren, havada asılı kal' },
   { keys: 'F / Sol tık', action: 'Ateş püskür' },
   { keys: 'R', action: 'Kükre' },
   { keys: 'L', action: 'İniş / kalkış' },
+  { keys: 'G (basılı)', action: 'Ejderhayı sev' },
+  { keys: 'T', action: 'Eyerde ayağa kalk / otur' },
+  { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına' },
   { keys: 'Fare', action: 'Etrafa bak (sağ tık basılı / POV)' },
   { keys: 'C', action: 'Kamera: üçüncü şahıs / POV / sinematik' },
   { keys: '[ / ]', action: 'Günün saatini değiştir' },
@@ -94,6 +132,9 @@ export class Input {
   private held = new Set<ButtonName>();
   private pressedNow = new Set<ButtonName>();
   private pressedQueue = new Set<ButtonName>();
+  private doubleNow = new Set<ButtonName>();
+  private doubleQueue = new Set<ButtonName>();
+  private readonly lastPressAt = new Map<ButtonName, number>();
   private mouseButtons = new Set<number>();
   private axes: Record<AxisName, AxisState> = {
     pitch: { value: 0, target: 0 },
@@ -144,10 +185,17 @@ export class Input {
     return this.pressedNow.has(name);
   }
 
+  /** True for one frame after the second press of a double tap (gamepad D-pad left/right count as one). */
+  wasDoubleTapped(name: ButtonName): boolean {
+    return this.doubleNow.has(name);
+  }
+
   /** Call once per frame (engine does it) before systems update. */
   update(dt: number): void {
     this.pressedNow = this.pressedQueue;
     this.pressedQueue = new Set();
+    this.doubleNow = this.doubleQueue;
+    this.doubleQueue = new Set();
     this.mouseDelta.x = this.pendingMouse.x;
     this.mouseDelta.y = this.pendingMouse.y;
     this.pendingMouse.x = 0;
@@ -165,7 +213,7 @@ export class Input {
     const held = new Set<ButtonName>();
     for (const code of this.keys) {
       const b = KEY_BUTTONS[code];
-      if (b && b !== 'camera' && b !== 'pause' && b !== 'map' && b !== 'help' && b !== 'photo' && b !== 'hud') {
+      if (b && !EDGE_ONLY.has(b)) {
         held.add(b);
       }
     }
@@ -218,6 +266,10 @@ export class Input {
       [8, 'map', true],
       [10, 'roar', true],
       [11, 'land', true],
+      [12, 'urge', true],
+      [13, 'pet', false],
+      [14, 'rollLeft', true],
+      [15, 'rollRight', true],
     ];
     let any = false;
     for (const [i, name, edge] of map) {
@@ -228,6 +280,9 @@ export class Input {
       if (edge) {
         if (now && !this.gamepadButtonsPrev[i]) {
           this.pressedNow.add(name);
+          if (name === 'rollLeft' || name === 'rollRight') {
+            this.doubleNow.add(name);
+          }
         }
       } else if (now) {
         held.add(name);
@@ -277,6 +332,13 @@ export class Input {
       const b = KEY_BUTTONS[e.code];
       if (b) {
         this.pressedQueue.add(b);
+        const now = performance.now();
+        if (now - (this.lastPressAt.get(b) ?? -Infinity) < DOUBLE_TAP_MS) {
+          this.doubleQueue.add(b);
+          this.lastPressAt.delete(b);
+        } else {
+          this.lastPressAt.set(b, now);
+        }
       }
     }
     this.keys.add(e.code);

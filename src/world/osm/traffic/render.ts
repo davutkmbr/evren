@@ -53,6 +53,14 @@ const _v4 = new THREE.Vector4();
 const _sphere = new THREE.Sphere();
 
 export class VehicleRenderer {
+  /** Cars cast shadows (off from high up, where a car is smaller than a shadow texel). */
+  setShadows(on: boolean): void {
+    this.moving.mesh.castShadow = on;
+    if (this.parked) {
+      this.parked.mesh.castShadow = on;
+    }
+  }
+
   readonly group = new THREE.Group();
   readonly material = createVehicleMaterial();
   private readonly geometries: THREE.BufferGeometry[][] = [];

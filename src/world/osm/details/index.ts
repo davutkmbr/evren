@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { RenderLayers, type GeoQuery } from '../../../core/contracts';
 import type { OsmData } from '../data';
 import { LayerBase } from '../shared/layer';
-import { addInstanced, addMesh, countTriangles, toGeometry } from '../shared/three';
+import { InstanceLod } from '../shared/instance-lod';
+import { addMesh, countTriangles, toGeometry } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { createCoverMaterial } from './cover/material';
@@ -63,8 +64,15 @@ function landmarkPads(geo: GeoQuery, grow: number): number[] {
   return out;
 }
 
+/** Trees shape the city from the air (always drawn) but cast shadows only within this distance (m, "high"). */
+const TREE_SHADOW_RADIUS = 450;
+/** Camera height above the ground (m) above which the merged street props stop casting shadows (sub-texel there). */
+const PROPS_SHADOW_AGL = 120;
+
 class DetailsLayer extends LayerBase {
   private crowd: Crowd | null = null;
+  private readonly trees: InstanceLod[] = [];
+  private propsMesh: THREE.Mesh | null = null;
   private result: DetailsResult | null = null;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
@@ -133,10 +141,15 @@ class DetailsLayer extends LayerBase {
     });
     const geos = treeGeometries();
     for (const s of TREE_SPECIES) {
-      addInstanced(this.group, `osm-tree-${s}`, res.trees[s], geos[s], treeMat, { castShadow: true });
+      const records = res.trees[s];
+      if (records?.length) {
+        this.trees.push(new InstanceLod(this.group, `osm-tree-${s}`, records, geos[s], treeMat, { radius: Infinity, shadowRadius: TREE_SHADOW_RADIUS }));
+      } else {
+        geos[s].dispose();
+      }
     }
     if (res.props) {
-      addMesh(this.group, 'osm-details-props', res.props, this.propMaterial, { castShadow: true, layer: RenderLayers.NoReflection });
+      this.propsMesh = addMesh(this.group, 'osm-details-props', res.props, this.propMaterial, { castShadow: true, layer: RenderLayers.NoReflection });
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -225,6 +238,14 @@ class DetailsLayer extends LayerBase {
       }
     }
     this.crowd?.update(ctx.engine.time.elapsed, ctx.engine.camera.position);
+    const cam = ctx.engine.camera.position;
+    const preset = ctx.engine.quality.settings.preset;
+    for (const t of this.trees) {
+      t.update(cam, preset);
+    }
+    if (this.propsMesh) {
+      this.propsMesh.castShadow = cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL;
+    }
   }
 }
 

@@ -1,3 +1,5 @@
+import type { LoopSample } from '../samples';
+
 /**
  * Starts a layer's source nodes only while the layer is audible. Silent-but-running sources still cost
  * audio-thread DSP (every downstream filter keeps processing); stopped sources let Chrome propagate silence.
@@ -53,12 +55,19 @@ export class SourceGate {
   }
 }
 
-/** Looping noise source helper for gate factories. */
-export function loopSource(ctx: BaseAudioContext, buffer: AudioBuffer, when: number, rate: number, rng: () => number): AudioBufferSourceNode {
+/** Looping source helper for gate factories: a noise buffer, or a recorded loop (its seamless cycle), from a random point. */
+export function loopSource(ctx: BaseAudioContext, src: AudioBuffer | LoopSample, when: number, rate: number, rng: () => number): AudioBufferSourceNode {
   const s = ctx.createBufferSource();
-  s.buffer = buffer;
   s.loop = true;
   s.playbackRate.value = rate;
-  s.start(when, rng() * buffer.duration);
+  if (src instanceof AudioBuffer) {
+    s.buffer = src;
+    s.start(when, rng() * src.duration);
+  } else {
+    s.buffer = src.buffer;
+    s.loopStart = src.loopStart;
+    s.loopEnd = src.loopEnd;
+    s.start(when, src.loopStart + rng() * (src.loopEnd - src.loopStart));
+  }
   return s;
 }

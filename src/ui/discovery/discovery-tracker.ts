@@ -7,13 +7,12 @@ import { DiscoveryCard } from './discovery-card';
 const CHECK_INTERVAL_S = 0.25;
 const BASE_RANGE_M = 800;
 const FACING_HALF_ANGLE_DEG = 55;
-const RESHOW_COOLDOWN_MS = 4 * 60 * 1000;
 /** A card stays at least this long before another landmark may replace it. */
 const MIN_CARD_MS = 5000;
 
 /**
- * Detects when the rider is near (≈800 m) and roughly facing a geo landmark, shows the card, and records
- * first-time discoveries (event + sound + localStorage).
+ * Detects when the rider is near (≈800 m) and roughly facing a landmark not yet discovered, records the discovery
+ * (event + sound + localStorage) and shows its card once. Landmarks already discovered never show a card again.
  */
 export class DiscoveryTracker implements DiscoveryState {
   readonly card = new DiscoveryCard();
@@ -85,6 +84,9 @@ export class DiscoveryTracker implements DiscoveryState {
     let best: LandmarkDef | null = null;
     let bestDistance = Infinity;
     for (const landmark of this.landmarks) {
+      if (this.discovered.has(landmark.id)) {
+        continue;
+      }
       const d = this.distanceTo(s, landmark);
       const range = this.rangeFor(landmark);
       if (d.total > range || d.total >= bestDistance) {
@@ -100,11 +102,6 @@ export class DiscoveryTracker implements DiscoveryState {
     if (!best || best === showing) {
       return;
     }
-    const isNew = !this.discovered.has(best.id);
-    const last = this.lastShown.get(best.id);
-    if (!isNew && last !== undefined && performance.now() - last < RESHOW_COOLDOWN_MS) {
-      return;
-    }
     this.present(best, Math.max(0, bestDistance - best.radius * 0.3));
   }
 
@@ -118,7 +115,7 @@ export class DiscoveryTracker implements DiscoveryState {
       this.ctx.services.tryGet('audio')?.play('discover');
     }
     this.ctx.events.emit('landmark-near', { id: landmark.id, distance });
-    this.card.show(landmark, isNew, this.discovered.size, this.total, distance);
+    this.card.show(landmark, isNew, distance);
     this.emitChange(isNew);
   }
 

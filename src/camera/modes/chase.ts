@@ -49,6 +49,12 @@ const TUNING = {
   wingClearance: 7,
   fovMin: 60,
   fovMax: 74,
+  /** Free fall: extra FOV (deg) and how far the camera hangs back above the dropping dragon (m per m/s of sink, max). */
+  fallFov: 4,
+  fallLagPerSink: 0.09,
+  fallLagMax: 3,
+  /** A sudden g onset (a catch) punches the FOV in by up to this (deg). */
+  onsetKick: 4.5,
   recenterDelay: 2.0,
   recenterOmega: 2.3,
   /** Boom collision: soft margin eased toward, hard margin never crossed (m); spring rates (rad/s). */
@@ -91,6 +97,8 @@ export class ChaseController implements CameraController {
   private readonly leadYaw = new Spring();
   private readonly leadPitch = new Spring();
   private readonly fov = new Spring(TUNING.fovMin);
+  private readonly fallLag = new Spring();
+  private readonly kick = new Spring();
   private readonly speedFx = new Spring();
   private readonly boomLength = new Spring(30);
   /** True while an obstacle holds the boom in (then it releases slowly once clear). */
@@ -131,6 +139,8 @@ export class ChaseController implements CameraController {
     this.leadYaw.reset(0);
     this.leadPitch.reset(0);
     this.fov.reset(this.fovTarget(frame));
+    this.fallLag.reset(0);
+    this.kick.reset(0);
     this.speedFx.reset(this.speedFxTarget(frame));
     this.groundedBlend.reset(this.isGrounded(frame) ? 1 : 0);
     this.boomLength.reset(1e4);
@@ -214,6 +224,9 @@ export class ChaseController implements CameraController {
     _lagTarget.multiplyScalar(1 - 0.7 * g);
     this.lag.update(_lagTarget, 4.5, sdt);
     _desired.copy(_pivot).add(_offset).add(this.lag.x);
+    // Stomach drop: the camera hangs back above while the dragon falls away, and swoops after it on the catch.
+    const fallLag = this.fallLag.update(t.weightless * clamp(-t.velocity.y * TUNING.fallLagPerSink, 0, TUNING.fallLagMax), t.weightless > 0.5 ? 3 : 2, sdt);
+    _desired.y += fallLag;
 
     // Terrain/water under the eye: slide up along the surface instead of shortening the boom.
     const floor = frame.collision.groundHeight(_desired.x, _desired.z) + TUNING.groundClearance;
@@ -259,7 +272,7 @@ export class ChaseController implements CameraController {
     rotateLocal(out.quaternion, AXIS_X, framing + lead);
     rotateLocal(out.quaternion, AXIS_Z, -this.roll.x * alongBoom);
 
-    out.fov = fov;
+    out.fov = fov + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt);
     out.near = TUNING.near;
     out.speedEffect = clamp(this.speedFx.update(this.speedFxTarget(frame), 3, sdt), 0, 1);
     out.shakeTranslation = 1;
@@ -295,7 +308,7 @@ export class ChaseController implements CameraController {
   private fovTarget(frame: CameraFrame): number {
     const t = frame.target;
     const dive = t.mode === 'diving' ? 3 : 0;
-    return TUNING.fovMin + (TUNING.fovMax - TUNING.fovMin) * smoothstep(25, 100, t.speed) + dive;
+    return TUNING.fovMin + (TUNING.fovMax - TUNING.fovMin) * smoothstep(25, 100, t.speed) + dive + TUNING.fallFov * t.weightless;
   }
 
   private speedFxTarget(frame: CameraFrame): number {

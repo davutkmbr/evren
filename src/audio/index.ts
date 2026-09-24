@@ -17,8 +17,9 @@ export interface AudioDebugHandle {
 }
 
 /**
- * Procedural audio system (service 'audio'). Everything is synthesized with WebAudio at runtime.
- * The AudioContext is created on the first user gesture; until then the system costs nothing.
+ * Audio system (service 'audio'): WebAudio synthesis plus the recorded CC0 sounds in public/audio/
+ * (src/audio/samples.ts). The AudioContext is created on the first user gesture; until then the system only builds the
+ * noise bank in a worker and fetches and decodes the flight recordings.
  */
 export function createAudioSystem(): System {
   let context: AudioContext | null = null;
@@ -67,7 +68,7 @@ export function createAudioSystem(): System {
           return;
         }
         // Without pre-built assets the engine generates its noise bank and reverb synchronously (~60 ms, once).
-        engine = new AudioEngine(ctxRef, a ? { noise: a.noise, impulse: a.impulse } : {});
+        engine = new AudioEngine(ctxRef, a ? { noise: a.noise, impulse: a.impulse, samples: a.samples } : {});
         engine.setVolume(volume);
         engine.setPaused(paused);
         engine.setQuality(qualityPreset);
@@ -198,6 +199,9 @@ export function createAudioSystem(): System {
       const realDt = Math.min(0.25, Math.max(0, finiteOr(ctx.time.realDt, 0)));
       frame.dt = realDt;
       frame.paused = ctx.time.paused;
+      const weather = ctx.services.tryGet('weather');
+      frame.rain = weather?.current.rain ?? 0;
+      frame.storm = weather?.current.storm ?? 0;
 
       // The camera system has already placed the camera this frame; refresh its world matrix before reading.
       // A non-finite camera (one glitched frame, e.g. during a camera-mode switch) keeps the last good listener pose.

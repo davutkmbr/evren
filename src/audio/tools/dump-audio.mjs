@@ -5,7 +5,8 @@
  *   .shots/audio/metrics.json  peak / pre-dynamics peak / gain reduction / clipping / LUFS / sub-30 Hz / bands per case
  *   .shots/audio/report.png    the visual report (waveforms + spectrograms)
  *
- *   node src/audio/tools/dump-audio.mjs [--cases id1,id2] [--no-wav] [--base http://127.0.0.1:5199]
+ *   node src/audio/tools/dump-audio.mjs [--cases id1,id2] [--no-wav] [--synth] [--base http://127.0.0.1:5199]
+ * --synth renders without the recorded sounds (synthesis only).
  * Requires the Vite dev server.
  */
 import { chromium } from 'playwright-core';
@@ -32,7 +33,14 @@ try {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto(`${BASE}/sandbox/audio.html${cases ? `?cases=${cases}` : ''}`, { waitUntil: 'load' });
+  const query = new URLSearchParams();
+  if (cases) {
+    query.set('cases', cases);
+  }
+  if (args.includes('--synth')) {
+    query.set('samples', '0');
+  }
+  await page.goto(`${BASE}/sandbox/audio.html${query.size ? `?${query}` : ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__audioReport?.done === true, null, { timeout: 300000, polling: 250 });
   const results = await page.evaluate(() => window.__audioReport.results());
   if (!args.includes('--no-wav')) {

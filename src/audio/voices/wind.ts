@@ -3,6 +3,7 @@ import { SourceGate, loopSource } from '../dsp/gate';
 import { clamp, clamp01, finiteOr, smoothstep } from '../dsp/math';
 import type { NoiseBank } from '../dsp/noise';
 import { SmoothParam } from '../dsp/param';
+import type { LoopSample, SampleBank } from '../samples';
 
 /** Airflow state at the listener, derived from the dragon (third/POV) or the free camera. */
 export interface WindParams {
@@ -46,6 +47,19 @@ const HISS_DRIFT = 0.018;
 const BODY_DRIFT = 0.009;
 /** Layer gains are calibrated at a 40 m/s cruise, where the base airflow level is this. */
 const CRUISE_LOUD = 0.356;
+/**
+ * Recorded airflow (zazz 819581 rush for the body, klankbeeld 611197 ear buffet for the rumble; public/audio/wind/).
+ * The rush plays through a low-pass that opens with speed and a playback rate that rises with it (faster air sounds
+ * faster and brighter); the trims put the offline wind-* cases ~0.5 LU under the synthesized bed (already cut for
+ * being too loud). The ear recording has its own buffeting, so the synthesized buffet AM only adds a little on top.
+ */
+const RUSH_CUT_MIN = 380;
+const RUSH_CUT_SPAN = 4600;
+const RUSH_TRIM = 0.37;
+const EARS_TRIM = 0.73;
+const EARS_BUFFET = 0.35;
+const HISS_RECORDED = 0.6;
+const BANK_RECORDED = 0.4;
 /** Airflow level (dB relative to 40 m/s) against airspeed (m/s); interpolated in log-speed. */
 const SPEED_DB: ReadonlyArray<readonly [number, number]> = [
   [3, -80],
@@ -94,6 +108,8 @@ export function speedLevel(v: number): number {
  *  cloth   POV only: the rider's cloak/sleeves flogging in the airstream (fast irregular AM, like a flag)
  * Output: static soft clip (peak shaver) -> destination. Levels follow speedLevel() (compressed above cruise).
  * The gust signals also drift the body/hiss loops' playback rates, so steady cruise never exposes a noise loop.
+ * With the recorded airflow loaded, the rush recording feeds body (L/R channels, low-passed) and bank, and the ear
+ * recording feeds rumble; a running layer keeps its sources, so a late load takes over the next time airflow starts.
  */
 export class WindVoice {
   private readonly nodes: AudioNode[] = [];
@@ -134,6 +150,11 @@ export class WindVoice {
   private readonly clothRate: SmoothParam;
 
   private readonly master: SmoothParam;
+  private readonly rushRate: SmoothParam;
+  private readonly earsRate: SmoothParam;
+  /** The running core layer plays the recordings. */
+  private recorded = false;
+  private bankRecorded = false;
 
   private readonly coreGate: SourceGate;
   private readonly whistleGate: SourceGate;
@@ -147,6 +168,7 @@ export class WindVoice {
     noise: NoiseBank,
     out: AudioNode,
     rng: () => number = Math.random,
+    samples: SampleBank | null = null,
   ) {
     const gain = (v: number): GainNode => {
       const g = ctx.createGain();
@@ -168,7 +190,7 @@ export class WindVoice {
       this.nodes.push(s);
       return s;
     };
-    const loop = (buffer: AudioBuffer, when: number, rate: number, dest: AudioNode): AudioBufferSourceNode => {
+    const loop = (buffer: AudioBuffer | LoopSample, when: number, rate: number, dest: AudioNode): AudioBufferSourceNode => {
       const s = loopSource(ctx, buffer, when, rate, rng);
       s.connect(dest);
       return s;
@@ -236,13 +258,25 @@ export class WindVoice {
     [this.hissCutR, this.hissGainR] = hissR.params;
 
     this.buffetRate = new SmoothParam(scratchParam(), 1, 0.3);
+    this.rushRate = new SmoothParam(scratchParam(), 1, 0.4);
+    this.earsRate = new SmoothParam(scratchParam(), 1, 0.4);
+    const rushSplit = ctx.createChannelSplitter(2);
+    this.nodes.push(rushSplit);
+    rushSplit.connect(bodyL.bp, 0);
+    rushSplit.connect(bodyR.bp, 1);
     this.coreGate = new SourceGate((t, aux) => {
+      const rush = samples?.windRush;
+      const ears = samples?.windEars;
+      this.recorded = !!(rush && ears);
+      // Low-pass Q is in dB in WebAudio: -3 dB is the flat (Butterworth) response; the band-pass Q is linear.
+      for (const f of [bodyL.bp, bodyR.bp]) {
+        f.type = this.recorded ? 'lowpass' : 'bandpass';
+        f.Q.value = this.recorded ? -3 : 0.55;
+      }
       const buffet = loop(noise.buffet, t, 1, bDepth);
       this.buffetRate.bind(buffet.playbackRate);
       const gustL = loop(noise.gust, t, 0.9 + rng() * 0.25, bodyL.gd);
       const gustR = loop(noise.gust, t, 0.9 + rng() * 0.25, bodyR.gd);
-      const bodySrcL = loop(noise.pink, t, 1.006, bodyL.bp);
-      const bodySrcR = loop(noise.pink, t, 0.973, bodyR.bp);
       const hissSrcL = loop(noise.white, t, 1.013, hissL.hp);
       const hissSrcR = loop(noise.white, t, 0.991, hissR.hp);
       // The unmodulated hiss would expose its loop as frozen, repeating noise: the gusts also make every broadband
@@ -255,6 +289,16 @@ export class WindVoice {
       };
       drift(gustL, hissSrcL, HISS_DRIFT);
       drift(gustR, hissSrcR, -HISS_DRIFT);
+      if (rush && ears) {
+        const rushSrc = loop(rush, t, 1, rushSplit);
+        this.rushRate.bind(rushSrc.playbackRate);
+        const earsSrc = loop(ears, t, 1, rLp1);
+        this.earsRate.bind(earsSrc.playbackRate);
+        drift(gustR, rushSrc, BODY_DRIFT);
+        return [earsSrc, buffet, gustL, gustR, rushSrc, hissSrcL, hissSrcR];
+      }
+      const bodySrcL = loop(noise.pink, t, 1.006, bodyL.bp);
+      const bodySrcR = loop(noise.pink, t, 0.973, bodyR.bp);
       drift(gustR, bodySrcL, BODY_DRIFT);
       drift(gustL, bodySrcR, -BODY_DRIFT);
       return [loop(noise.brown, t, 0.994, rLp1), buffet, gustL, gustR, bodySrcL, bodySrcR, hissSrcL, hissSrcR];
@@ -276,7 +320,10 @@ export class WindVoice {
     this.bankFreq = new SmoothParam(bBp.frequency, 600, 0.12);
     this.bankGain = new SmoothParam(bGain.gain, 0, 0.1);
     this.bankPan = new SmoothParam(bPan.pan, 0, 0.2);
-    this.bankGate = new SourceGate((t) => [loop(noise.pink, t, 0.987, bBp)], 2);
+    this.bankGate = new SourceGate((t) => {
+      this.bankRecorded = !!samples?.windRush;
+      return [loop(samples?.windRush ?? noise.pink, t, 0.987, bBp)];
+    }, 2);
     this.gates.push(this.bankGate);
 
     const fBp = filter('bandpass', 180, 1.3);
@@ -357,18 +404,22 @@ export class WindVoice {
     // In POV the ears sit in the airstream: more buffeting, pushed up into the 60-300 Hz range small speakers can play.
     // Low-frequency buffeting grows slower than the broadband roar: faster flow moves the energy up in frequency.
     const turbulence = 1 + 0.75 * aoaN + 0.2 * p.diving + 1.0 * p.stall;
-    const rumble = 1.5 * CRUISE_LOUD * Math.pow(rel, 0.6) * exposure * (0.3 + 0.45 * pov) * turbulence;
+    const rec = this.recorded;
+    const rumble = 1.5 * CRUISE_LOUD * Math.pow(rel, 0.6) * exposure * (0.3 + 0.45 * pov) * turbulence * (rec ? EARS_TRIM : 1);
     this.coreGate.update(on && loud > AUDIBLE, now);
     this.rumbleCut1.set(70 + 210 * sN + 60 * p.stall + 70 * pov, now);
     this.rumbleCut2.set(110 + 220 * sN + 90 * pov, now);
     this.rumbleGain.set(rumble, now);
     this.buffetRate.set(0.45 + 1.25 * sN + 0.6 * p.stall, now);
-    this.buffetDepth.set(rumble * (0.5 + 0.3 * aoaN + 0.15 * pov), now);
+    this.buffetDepth.set(rumble * (0.5 + 0.3 * aoaN + 0.15 * pov) * (rec ? EARS_BUFFET : 1), now);
+    const sR = Math.min(sN, 1.3);
+    this.rushRate.set(0.9 + 0.26 * sR, now);
+    this.earsRate.set(0.85 + 0.35 * sR, now);
 
-    const center = 170 + 1150 * Math.pow(sN, 1.2) + 280 * aoaN;
+    const center = rec ? RUSH_CUT_MIN + RUSH_CUT_SPAN * Math.pow(sR, 1.1) + 600 * aoaN : 170 + 1150 * Math.pow(sN, 1.2) + 280 * aoaN;
     this.bodyFreqL.set(center * 0.94, now);
     this.bodyFreqR.set(center * 1.06, now);
-    const body = 1.05 * loud * (1 - 0.25 * p.stall);
+    const body = 1.05 * loud * (1 - 0.25 * p.stall) * (rec ? RUSH_TRIM : 1);
     this.bodyGainL.set(body, now);
     this.bodyGainR.set(body, now);
     const gust = clamp(0.2 + p.ambientWind * 0.03, 0.2, 0.55);
@@ -378,27 +429,28 @@ export class WindVoice {
     this.panL.set(-width, now);
     this.panR.set(width, now);
 
-    const hissCut = 2400 + 3600 * Math.min(sN, 1.3);
+    const hissCut = 2000 + 2400 * Math.min(sN, 1.3);
     this.hissCutL.set(hissCut, now);
     this.hissCutR.set(hissCut * 1.08, now);
-    const hiss = 0.1 * Math.pow(rel, 1.3) * exposure * (0.55 + 0.45 * pov) * (1 + 0.3 * p.diving);
+    const hiss = 0.045 * Math.pow(rel, 1.3) * exposure * (0.55 + 0.45 * pov) * (1 + 0.3 * p.diving) * (rec ? HISS_RECORDED : 1);
     this.hissGainL.set(hiss, now);
     this.hissGainR.set(hiss, now);
 
-    const whistle = 0.0185 * Math.pow(rel, 1.2) * (0.35 + 1.8 * slipN) * exposure;
+    const whistle = 0.008 * Math.pow(rel, 1.2) * (0.35 + 1.8 * slipN) * exposure;
     this.whistleGate.update(on && whistle > AUDIBLE, now);
     this.whistleFreq.set(520 + 820 * Math.min(sN, 1.3) + 480 * slipN, now);
     this.whistleGain.set(whistle, now);
 
     const bankAmt = clamp01(Math.abs(p.turnRate) / 0.9 + Math.abs(p.rollRate) / 2.2);
-    const bank = 1.1 * bankAmt * Math.sqrt(Math.min(sN, 1.4)) * exposure;
+    const bank = 1.1 * bankAmt * Math.sqrt(Math.min(sN, 1.4)) * exposure * (this.bankRecorded ? BANK_RECORDED : 1);
     this.bankGate.update(on && bank > AUDIBLE, now);
     this.bankFreq.set(320 + 1200 * bankAmt * Math.min(sN, 1.2), now);
     this.bankGain.set(bank, now);
     const side = Math.abs(p.turnRate) > 0.02 ? Math.sign(p.turnRate) : Math.sign(p.rollRate);
     this.bankPan.set(side * 0.65 * (0.4 + 0.6 * pov), now);
 
-    const flutterAmt = Math.max(p.diving * smoothstep(30, 85, v), p.stall * smoothstep(5, 20, v));
+    // Folded membranes flutter from free-fall speeds on (a drop from a hover is heard before it gets fast).
+    const flutterAmt = Math.max(p.diving * smoothstep(14, 75, v), p.stall * smoothstep(5, 20, v));
     const flutter = 0.6 * flutterAmt * exposure;
     this.flutterGate.update(on && flutter > AUDIBLE, now);
     this.flutterRate.set(11 + 22 * Math.min(sN, 1.4), now);
@@ -408,7 +460,7 @@ export class WindVoice {
     this.skimGate.update(on && skim > AUDIBLE, now);
     this.skimGain.set(skim, now);
 
-    const cloth = 0.15 * pov * Math.pow(rel, 0.9);
+    const cloth = 0.09 * pov * Math.pow(rel, 0.9);
     this.clothGate.update(on && cloth > AUDIBLE, now);
     this.clothGain.set(cloth, now);
     this.clothRate.set(1.2 + 3.2 * Math.min(sN, 1.3), now);

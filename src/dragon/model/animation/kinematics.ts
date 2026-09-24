@@ -95,6 +95,47 @@ export function aimBoneUp(
   bone.quaternion.copy(_qi).multiply(_q);
 }
 
+/** Rig-space rotation that maps the frame (restDir, restUp) onto (targetDir, targetUp). */
+export function mapFrame(restDir: THREE.Vector3, restUp: THREE.Vector3, targetDir: THREE.Vector3, targetUp: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
+  basisFrom(targetDir, targetUp, _m1);
+  basisFrom(restDir, restUp, _m2);
+  _m1.multiply(_m2.transpose());
+  return out.setFromRotationMatrix(_m1);
+}
+
+/** Signed angle (rad) of the twist component of `q` about the unit `axis` (swing-twist decomposition). */
+export function twistAngle(q: THREE.Quaternion, axis: THREE.Vector3): number {
+  const d = q.x * axis.x + q.y * axis.y + q.z * axis.z;
+  return 2 * Math.atan2(d, q.w);
+}
+
+const _limbDir = new THREE.Vector3();
+
+/**
+ * Two-bone IK that also returns the bend-plane normal (unit, bendDir x chainDir). Orienting both bones with
+ * mapFrame(rest, restNormal, current, normal) keeps the middle joint a pure hinge (no twist between the bones),
+ * also when the limb is straight.
+ */
+export function solveLimb(
+  root: THREE.Vector3,
+  target: THREE.Vector3,
+  l1: number,
+  l2: number,
+  pole: THREE.Vector3,
+  outMid: THREE.Vector3,
+  outEnd: THREE.Vector3,
+  outNormal: THREE.Vector3,
+): void {
+  solveTwoBone(root, target, l1, l2, pole, outMid, outEnd);
+  _limbDir.subVectors(outEnd, root).normalize();
+  outNormal.subVectors(pole, root);
+  outNormal.addScaledVector(_limbDir, -outNormal.dot(_limbDir));
+  if (outNormal.lengthSq() < 1e-8) {
+    outNormal.set(0, 1, 0).addScaledVector(_limbDir, -_limbDir.y);
+  }
+  outNormal.normalize().cross(_limbDir).normalize();
+}
+
 /**
  * Analytic two-bone IK: returns the middle joint position for a chain root -> mid -> end with lengths l1, l2
  * reaching toward `target`, bending toward `pole`.

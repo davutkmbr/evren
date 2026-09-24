@@ -1,7 +1,7 @@
 /** Main-thread helpers turning worker output (MeshArrays, instance records) into three.js objects. */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
-import { INSTANCE_STRIDE, type MeshArrays } from './protocol';
+import type { MeshArrays } from './protocol';
 
 export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -36,38 +36,34 @@ export function addMesh(group: THREE.Object3D, name: string, m: MeshArrays | und
 }
 
 /**
- * Adds an InstancedMesh for INSTANCE_STRIDE records (x, y, z, yaw, horizontal scale, vertical scale, r, g, b) and
- * takes ownership of `geometry` (disposed right away when there are no records). Defaults to the NoReflection layer.
+ * Adds a worker mesh as one mesh per tile over shared buffers (`tiles` from shared/mesh-tiles.ts tileIndex), so the
+ * camera and each shadow cascade cull the tiles separately. Returns the tile meshes.
  */
-export function addInstanced(group: THREE.Object3D, name: string, records: Float32Array | undefined, geometry: THREE.BufferGeometry, material: THREE.Material, opt: MeshOptions = {}): THREE.InstancedMesh | null {
-  const n = records ? records.length / INSTANCE_STRIDE : 0;
-  if (!records || !n) {
-    geometry.dispose();
-    return null;
+export function addTiledMesh(group: THREE.Object3D, name: string, m: MeshArrays | undefined, tiles: Float32Array, material: THREE.Material, opt: MeshOptions = {}): THREE.Mesh[] {
+  if (!m || m.index.length === 0) {
+    return [];
   }
-  const mesh = new THREE.InstancedMesh(geometry, material, n);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const p = new THREE.Vector3();
-  const s = new THREE.Vector3();
-  const c = new THREE.Color();
-  const up = new THREE.Vector3(0, 1, 0);
-  for (let i = 0; i < n; i++) {
-    const o = i * INSTANCE_STRIDE;
-    p.set(records[o], records[o + 1], records[o + 2]);
-    q.setFromAxisAngle(up, records[o + 3]);
-    s.set(records[o + 4], records[o + 5], records[o + 4]);
-    mesh.setMatrixAt(i, m4.compose(p, q, s));
-    mesh.setColorAt(i, c.setRGB(records[o + 6], records[o + 7], records[o + 8]));
+  const shared = toGeometry(m);
+  shared.boundingSphere = null;
+  const meshes: THREE.Mesh[] = [];
+  for (let k = 0; k < tiles.length; k += 6) {
+    const g = new THREE.BufferGeometry();
+    for (const [attrName, attr] of Object.entries(shared.attributes)) {
+      g.setAttribute(attrName, attr);
+    }
+    g.setIndex(shared.index);
+    g.setDrawRange(tiles[k], tiles[k + 1]);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(tiles[k + 2], tiles[k + 3], tiles[k + 4]), tiles[k + 5]);
+    const mesh = new THREE.Mesh(g, material);
+    mesh.name = name;
+    mesh.castShadow = opt.castShadow ?? false;
+    mesh.receiveShadow = opt.receiveShadow ?? true;
+    mesh.matrixAutoUpdate = false;
+    mesh.layers.set(opt.layer ?? RenderLayers.Default);
+    group.add(mesh);
+    meshes.push(mesh);
   }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.computeBoundingSphere();
-  mesh.name = name;
-  mesh.castShadow = opt.castShadow ?? false;
-  mesh.receiveShadow = opt.receiveShadow ?? true;
-  mesh.layers.set(opt.layer ?? RenderLayers.NoReflection);
-  group.add(mesh);
-  return mesh;
+  return meshes;
 }
 
 /** Disposes the geometries of every mesh under `root` and detaches it (materials belong to their layer). */

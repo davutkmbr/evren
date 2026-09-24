@@ -12,7 +12,9 @@ import type { OsmData } from '../data';
 import { BoxGrid, segDist } from '../shared/geometry';
 import { LayerBase } from '../shared/layer';
 import { CARRIAGEWAY_KINDS } from '../shared/street-field';
-import { addInstanced, addMesh, toGeometry } from '../shared/three';
+import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
+import { INSTANCE_STRIDE } from '../shared/protocol';
+import { addMesh, addTiledMesh } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { PROP_KINDS, type PropKind } from './kinds';
@@ -72,7 +74,13 @@ function trianglesOf(root: THREE.Object3D): number {
   return Math.round(tris);
 }
 
+/** Street furniture is drawn within 450 m (far lamps live on as the night head sprites); only tram canopies cast shadows. */
+const PROP_LOD: InstanceLodOptions = { radius: 450, shadowRadius: 0 };
+const CANOPY_LOD: InstanceLodOptions = { radius: 1200, shadowRadius: 300 };
+
 class StreetsLayer extends LayerBase {
+  private readonly props: InstanceLod[] = [];
+
   constructor(ctx: OsmContext, data: OsmData) {
     super('streets');
     const materials = createStreetMaterials(ctx.engine.renderer);
@@ -93,6 +101,13 @@ class StreetsLayer extends LayerBase {
         }
       }),
     );
+  }
+
+  update(_dt: number, ctx: OsmContext): void {
+    const preset = ctx.engine.quality.settings.preset;
+    for (const p of this.props) {
+      p.update(ctx.engine.camera.position, preset);
+    }
   }
 
   /** Bridge decks for StreetSurface.topAt(): the core 'roadSurface' service, else structure colliders over OSM bridges. */
@@ -131,7 +146,8 @@ class StreetsLayer extends LayerBase {
   private upload(ctx: OsmContext, res: StreetsResult, materials: StreetMaterials, workerMs: number): void {
     const t1 = performance.now();
     materials.setStreetMask(ctx.base.street, res.pool, ctx.rect);
-    this.addGround(res, materials.ground);
+    // Flat streets barely show in the water's mirror image, but ~2 M triangles went into it every frame.
+    addTiledMesh(this.group, 'osm-ground', res.meshes.ground, res.groundTiles, materials.ground, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-paint', res.meshes.paint, materials.paint, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-rails', res.meshes.rails, materials.rails, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-trackbed', res.meshes.inlay, materials.inlay);
@@ -146,37 +162,15 @@ class StreetsLayer extends LayerBase {
     );
   }
 
-  /** The ground as one mesh per tile over shared buffers, so each tile is frustum-culled on its own. */
-  private addGround(res: StreetsResult, material: THREE.Material): void {
-    const m = res.meshes.ground;
-    if (!m || !m.index.length) {
+  private addProps(kind: PropKind, res: StreetsResult, materials: StreetMaterials): void {
+    const records = res.instances[kind];
+    if (!records?.length) {
       return;
     }
-    const shared = toGeometry(m);
-    shared.boundingSphere = null;
-    const t = res.groundTiles;
-    for (let k = 0; k < t.length; k += 6) {
-      const g = new THREE.BufferGeometry();
-      for (const [name, attr] of Object.entries(shared.attributes)) {
-        g.setAttribute(name, attr);
-      }
-      g.setIndex(shared.index);
-      g.setDrawRange(t[k], t[k + 1]);
-      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(t[k + 2], t[k + 3], t[k + 4]), t[k + 5]);
-      const mesh = new THREE.Mesh(g, material);
-      mesh.name = 'osm-ground';
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      this.group.add(mesh);
-    }
-  }
-
-  private addProps(kind: PropKind, res: StreetsResult, materials: StreetMaterials): void {
-    const mesh = addInstanced(this.group, `osm-${kind}`, res.instances[kind], propGeometry(kind), materials.props, { castShadow: kind === 'tramCanopy' });
     const lights = res.lights[kind];
-    if (mesh && lights.length === mesh.count) {
-      mesh.geometry.setAttribute('aLight', new THREE.InstancedBufferAttribute(lights, 1));
-    }
+    const lit = lights.length === records.length / INSTANCE_STRIDE;
+    const lod = kind === 'tramCanopy' ? CANOPY_LOD : PROP_LOD;
+    this.props.push(new InstanceLod(this.group, `osm-${kind}`, records, propGeometry(kind), materials.props, { ...lod, attributes: lit ? { aLight: { data: lights, itemSize: 1 } } : undefined }));
   }
 
   private addSprites(sprites: Float32Array): void {

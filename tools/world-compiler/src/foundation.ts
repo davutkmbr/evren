@@ -1,7 +1,7 @@
 /**
  * Compiler foundation: the flight world's terrain (the geo build, run in Node) cut to the area, the shoreline from
  * the OSM coastline (coast.ts), the shared street raster (src/world/osm/shared/street-field.ts) and the StreetSurface
- * query over them. Same code the ?osm=1 slice uses at runtime, so the tiles sit on the flight world's terrain.
+ * query over them. Same code the OSM slice uses at runtime, so the tiles sit on the flight world's terrain.
  *
  * Street-layer changes to the geo windows (they only feed the compiler):
  * - coast: signed distance to the OSM coastline on a 2 m grid (exact within 24 m of the shore, interpolated from an

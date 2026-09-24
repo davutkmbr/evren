@@ -9,7 +9,8 @@ import type { GeoQuery } from '../../../core/contracts';
 import type { OsmData, OsmPoint } from '../data';
 import { LayerBase } from '../shared/layer';
 import { COLLIDER_STRIDE } from '../shared/protocol';
-import { addInstanced, addMesh, countTriangles } from '../shared/three';
+import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
+import { addTiledMesh, countTriangles } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { Poi } from './build';
@@ -60,10 +61,24 @@ const PROP_GEOMETRY: Record<PropKind, () => THREE.BufferGeometry> = {
   minaret: minaretGeometry,
 };
 
+/**
+ * Rooftop props: drawn within `radius`, casting shadows within `shadowRadius` (m at the "high" preset). A 1 m tank is
+ * ~1.5 px at 650 m; drawing the whole slice's 7000 tanks into every shadow cascade used to cost ~5 M triangles a frame.
+ */
+const PROP_LOD: Record<PropKind, InstanceLodOptions> = {
+  tank: { radius: 650, shadowRadius: 220 },
+  solar: { radius: 800, shadowRadius: 260 },
+  chimney: { radius: 550, shadowRadius: 200 },
+  dish: { radius: 450, shadowRadius: 0 },
+  antenna: { radius: 420, shadowRadius: 0 },
+  minaret: { radius: Infinity, shadowRadius: Infinity },
+};
+
 class BuildingsLayer extends LayerBase {
   private collision: CollisionWorld | null = null;
   private colliderIds: number[] = [];
   private lod: DetailLod | null = null;
+  private readonly props: InstanceLod[] = [];
 
   constructor(ctx: OsmContext, data: OsmData) {
     super('buildings');
@@ -94,14 +109,21 @@ class BuildingsLayer extends LayerBase {
   update(_dt: number, ctx: OsmContext): void {
     const cam = ctx.engine.camera.position;
     this.lod?.update(cam, cam.y - ctx.geo.heightAt(cam.x, cam.z));
+    const preset = ctx.engine.quality.settings.preset;
+    for (const p of this.props) {
+      p.update(cam, preset);
+    }
   }
 
   private upload(ctx: OsmContext, res: BuildingsResult, materials: BuildingMaterials, workerMs: number): void {
     const t1 = performance.now();
-    addMesh(this.group, 'osm-facade', res.facade, materials.facade, { castShadow: true });
-    addMesh(this.group, 'osm-roof', res.roof, materials.roof, { castShadow: true });
+    addTiledMesh(this.group, 'osm-facade', res.facade, res.facadeTiles, materials.facade, { castShadow: true });
+    addTiledMesh(this.group, 'osm-roof', res.roof, res.roofTiles, materials.roof, { castShadow: true });
     for (const k of Object.keys(PROP_GEOMETRY) as PropKind[]) {
-      addInstanced(this.group, `osm-${k}`, res.props[k], PROP_GEOMETRY[k](), materials.prop, { castShadow: k !== 'dish' && k !== 'antenna' });
+      const records = res.props[k];
+      if (records?.length) {
+        this.props.push(new InstanceLod(this.group, `osm-${k}`, records, PROP_GEOMETRY[k](), materials.prop, PROP_LOD[k]));
+      }
     }
     this.lod = new DetailLod(this.group, res.details, res.tiles, materials, ctx.engine.quality.settings.preset);
     this.update(0, ctx);

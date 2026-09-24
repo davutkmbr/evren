@@ -13,7 +13,7 @@ import {
 } from './aero';
 import { integrateOrientation } from './body';
 import { enterGrounded, enterSwimming } from './locomotion';
-import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, SEA_LEVEL_DENSITY, WATER_DENSITY, WING } from './params';
+import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { maxAmplitudeForClearance } from './wingtip';
@@ -67,8 +67,8 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const t = sim.targets;
 
   // --- wing configuration dynamics (muscle-limited) ---------------------------------------
-  sim.spread = approach(sim.spread, t.spread, t.spread < sim.spread ? 2.6 : 1.8, h);
-  sim.sweep = approach(sim.sweep, t.sweep, 3, h);
+  sim.spread = approach(sim.spread, t.spread, t.spreadRate > 0 ? t.spreadRate : t.spread < sim.spread ? 2.6 : 1.8, h);
+  sim.sweep = approach(sim.sweep, t.sweep, t.sweepRate > 0 ? t.sweepRate : 3, h);
   sim.brake = approach(sim.brake, t.brake, 4, h);
   sim.legsOut = approach(sim.legsOut, t.legsOut, 1.3, h);
   sim.hoverBlend = approach(sim.hoverBlend, t.hover, 1.6, h);
@@ -89,7 +89,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const geLift = sim.overWater || sim.agl < 60 ? groundEffectLift(wingHeight, shape.span) : 0;
 
   const clAttached = attachedLift(alphaWing, shape.liftSlope) * sim.attachment;
-  const cl = liftCoefficient(alphaWing, sim.attachment, shape.liftSlope) * (1 + geLift) * thin;
+  const cl = liftCoefficient(alphaWing, sim.attachment, shape.liftSlope) * (1 + geLift + t.liftBoost) * thin;
   const cdi = shape.inducedFactor * clAttached * clAttached * geInduced;
   const cdSep = (1 - sim.attachment) * separatedDrag(alphaWing);
   const liftMag = qbar * shape.area * cl;
@@ -130,7 +130,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const forwardAir = Math.max(0, -_airBody.z);
   const efficiency = 1 / (1 + (forwardAir / FLAP.speedFalloff) ** 2);
   const ratio = lerp(FLAP.forwardRatio, FLAP.hoverRatio, sim.hoverBlend);
-  const flapMean = MASS * GRAVITY * ratio * beat.forceScale() * efficiency * thin * Math.sqrt(rho / SEA_LEVEL_DENSITY);
+  const flapMean = MASS * GRAVITY * ratio * beat.forceScale() * efficiency * thin * Math.sqrt(rho / SEA_LEVEL_DENSITY) * t.thrustBoost;
   const flapNow = flapMean * beat.profile();
   sim.flapForce = flapMean;
   const stroke = lerp(FLAP.strokeAngle, FLAP.hoverStrokeAngle, sim.hoverBlend);
@@ -183,7 +183,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
     I.y * MOMENTS.gainYaw * (t.rate.y - w.y) + _gyro.y - _aeroMoment.y,
     I.z * MOMENTS.gainRoll * (t.rate.z - w.z) + _gyro.z - _aeroMoment.z,
   );
-  const cap = sim.controlCapacity;
+  const cap = sim.controlCapacity.multiply(t.authority);
   sim.controlMoment.set(clamp(_desired.x, -cap.x, cap.x), clamp(_desired.y, -cap.y, cap.y), clamp(_desired.z, -cap.z, cap.z));
 
   // Body pitching with the wing beat (a disturbance the rate loop only partly cancels).
@@ -202,7 +202,9 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const collision = sim.world.collision;
   if (collision) {
     sim.contacts.tailEnabled = sim.mode !== 'landing' && sim.mode !== 'hovering' && sim.mode !== 'takeoff';
-    sim.contacts.resolveAirborne(b, collision, sim.invInertia, MASS, sim.impact);
+    // A deliberate roll spins faster than the tumble limit that keeps collisions sane.
+    const maxSpin = sim.maneuvers.kind === 'roll' ? TRICKS.rollMaxSpin : MOMENTS.maxAngularSpeed;
+    sim.contacts.resolveAirborne(b, collision, sim.invInertia, MASS, sim.impact, maxSpin);
     const n = sim.impact.normal;
     if (sim.impact.speed > 4 && Math.abs(n.y) < 0.7) {
       // Bounced off a wall: remember a heading that leads away from it (mirror of the approach).

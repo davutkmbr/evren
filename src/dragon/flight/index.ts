@@ -15,7 +15,7 @@ import { PoseDriver, type LookTarget } from './pose';
 import { FlightSim } from './sim';
 import { createTestControl, installFlightTestHook } from './test-hook';
 import type { PilotCommand, SimEvent } from './types';
-import { clearOverrides, copyPilotCommand, createPilotCommand } from './types';
+import { clearOverrides, clearPilotEdges, copyPilotCommand, createPilotCommand, latchPilotEdges, PILOT_EDGES } from './types';
 
 const DEFAULT_SPAWN_SPEED = 40;
 
@@ -47,7 +47,8 @@ export function createFlightSystem(): System {
   const testControl = createTestControl();
   const frameCmd = createPilotCommand();
   const stepCmd = createPilotCommand();
-  const latch = { flap: false, land: false, roar: false };
+  /** Edges seen by render frames, held until a physics substep consumes them. */
+  const latch = createPilotCommand();
   const look: LookTarget = { yaw: 0, pitch: 0, weight: 0 };
   const camForward = new THREE.Vector3();
   const invQ = new THREE.Quaternion();
@@ -88,9 +89,7 @@ export function createFlightSystem(): System {
   function gatherCommand(ctx: EngineContext): PilotCommand {
     if (testControl.command) {
       copyPilotCommand(testControl.command, frameCmd);
-      frameCmd.flapPressed = false;
-      frameCmd.landPressed = false;
-      frameCmd.roarPressed = false;
+      clearPilotEdges(frameCmd);
       sim.overrides.bankTarget = testControl.overrides.bankTarget;
       sim.overrides.pathTarget = testControl.overrides.pathTarget;
       sim.overrides.airspeedTarget = testControl.overrides.airspeedTarget;
@@ -103,10 +102,10 @@ export function createFlightSystem(): System {
         autopilot.reset();
       }
     }
-    frameCmd.flapPressed ||= testControl.pressed.flap;
-    frameCmd.landPressed ||= testControl.pressed.land;
-    frameCmd.roarPressed ||= testControl.pressed.roar;
-    testControl.pressed.flap = testControl.pressed.land = testControl.pressed.roar = false;
+    for (const [name, key] of Object.entries(PILOT_EDGES) as Array<[keyof typeof PILOT_EDGES, (typeof PILOT_EDGES)[keyof typeof PILOT_EDGES]]>) {
+      frameCmd[key] ||= testControl.pressed[name];
+      testControl.pressed[name] = false;
+    }
     return frameCmd;
   }
 
@@ -117,6 +116,7 @@ export function createFlightSystem(): System {
     }
     const fx = ctx.services.tryGet('fx');
     const cam = ctx.services.tryGet('cameraRig');
+    const audio = ctx.services.tryGet('audio');
     for (let i = 0; i < events.length; i++) {
       const e: SimEvent = events[i];
       switch (e.type) {
@@ -146,6 +146,15 @@ export function createFlightSystem(): System {
           } else {
             cam?.shake(clamp(e.speed * 0.04, 0.05, 0.6));
           }
+          break;
+        case 'maneuver':
+          ctx.events.emit('maneuver', { id: e.id, label: e.label });
+          break;
+        case 'sound':
+          audio?.play(e.name, e.volume);
+          break;
+        case 'shake':
+          cam?.shake(e.amount);
           break;
         default:
           break;
@@ -241,13 +250,11 @@ export function createFlightSystem(): System {
       }
       if (dt > 0) {
         const cmd = gatherCommand(ctx);
-        latch.flap ||= cmd.flapPressed;
-        latch.land ||= cmd.landPressed;
-        latch.roar ||= cmd.roarPressed;
+        latchPilotEdges(cmd, latch);
 
         roarCooldown = Math.max(0, roarCooldown - dt);
-        if (latch.roar) {
-          latch.roar = false;
+        if (latch.roarPressed) {
+          latch.roarPressed = false;
           if (roarCooldown <= 0 && !sim.firing) {
             roarCooldown = 2.6;
             poseDriver.roar();
@@ -260,10 +267,10 @@ export function createFlightSystem(): System {
         let steps = 0;
         while (accumulator >= PHYSICS_DT && steps < MAX_SUBSTEPS) {
           copyPilotCommand(cmd, stepCmd);
-          stepCmd.flapPressed = latch.flap;
-          stepCmd.landPressed = latch.land;
+          clearPilotEdges(stepCmd);
+          latchPilotEdges(latch, stepCmd);
           stepCmd.roarPressed = false;
-          latch.flap = latch.land = false;
+          clearPilotEdges(latch);
           previous.copy(sim.body);
           sim.step(PHYSICS_DT, stepCmd);
           touchedWater ||= sim.touchingWater && sim.airborne;
@@ -286,7 +293,7 @@ export function createFlightSystem(): System {
       writeTelemetry();
       state.gForce += (sim.loadFactor - state.gForce) * (dt > 0 ? 1 - Math.exp(-dt / 0.12) : 0);
       if (rig) {
-        rig.setPose(poseDriver.update(sim, dt, ctx.time.elapsed, updateLook(ctx)));
+        rig.setPose(poseDriver.update(sim, dt, ctx.time.elapsed, updateLook(ctx), dt > 0 ? frameCmd : null));
       }
     },
 

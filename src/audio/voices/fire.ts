@@ -52,7 +52,7 @@ export class FireVoice {
     const sink = ctx.createGain();
     sink.connect(this.stageIn);
     this.nodes.push(sink);
-    this.env = { ctx, noise, rng, out: sink, reverb: sink, stats };
+    this.env = { ctx, noise, samples: null, rng, out: sink, reverb: sink, stats };
   }
 
   /** Placement of the mouth relative to the listener (updated per frame, cheap). */

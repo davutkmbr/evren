@@ -5,6 +5,7 @@ import type { FlightHints, HoverHints, ShotCaption } from '../overlays/hints';
 import type { FlightSnapshot } from '../types';
 import { CompassTape } from './compass-tape';
 import { Instruments } from './instruments';
+import { ManeuverCaption } from './maneuver-caption';
 import { ClockChip, DiscoveryCounter } from './status';
 
 const TEXT_INTERVAL_S = 1 / 12;
@@ -16,6 +17,7 @@ export class Hud {
   readonly clock = new ClockChip();
   readonly counter = new DiscoveryCounter();
   readonly instruments = new Instruments();
+  readonly maneuver = new ManeuverCaption();
   private textTimer = 0;
 
   constructor(
@@ -34,6 +36,7 @@ export class Hud {
       card.root,
       hints.root,
       hoverHints.root,
+      this.maneuver.root,
       shotCaption.root,
     ]);
   }

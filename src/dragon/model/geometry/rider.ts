@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RIDER, SIDES, mirror, sideSign, type Side } from '../anatomy';
+import { RIDER, RIDER_CLOAK_PIVOT, SIDES, mirror, sideSign, type Side } from '../anatomy';
 import type { RigSkeleton } from '../skeleton';
 import { MeshBuilder, SkinAccumulator } from './buffers';
 import { RIDER_MAT } from './materials-ids';
@@ -207,18 +207,38 @@ function buildArm(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
     material: () => RIDER_MAT.linen,
     skin: (t, acc) => blendSkin(acc, fore, hand, smoothstep(0.9, 1.0, 0.4 + 0.5 * t)),
   });
-  buildFist(builder, side, hand);
+  buildFist(builder, rig, side);
 }
 
+/**
+ * Leg: thigh, tall boot and foot, skinned to riderThigh / riderShin / riderFoot with soft blends at the hip, knee and
+ * ankle (the rest pose is the seated pose, so the bones stay at identity while seated).
+ */
 function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
   const sgn = sideSign(side);
   const pelvis = rig.id('riderPelvis');
+  const thigh = rig.id(`riderThigh${side}`);
+  const shin = rig.id(`riderShin${side}`);
+  const foot = rig.id(`riderFoot${side}`);
   const hip = mirror(RIDER.hip, side);
   const knee = mirror(RIDER.knee, side);
   const ankle = mirror(RIDER.ankle, side);
   const toe = mirror(RIDER.toe, side);
-  const skin = (_t: number, acc: SkinAccumulator): void => {
-    acc.add(pelvis, 1);
+  // Thigh: pelvis -> thigh over the buttock / hip, then half-way into the shin at the knee.
+  const thighSkin = (t: number, acc: SkinAccumulator): void => {
+    const h = smoothstep(0.0, 0.32, t);
+    const k = smoothstep(0.8, 1.0, t) * 0.5;
+    acc.add(pelvis, 1 - h).add(thigh, h * (1 - k)).add(shin, h * k);
+  };
+  // Boot: continues the knee blend, then half-way into the foot at the ankle.
+  const bootSkin = (t: number, acc: SkinAccumulator): void => {
+    const kneeW = (1 - smoothstep(0.0, 0.14, t)) * 0.45;
+    const ankleW = smoothstep(0.84, 1.0, t) * 0.5;
+    acc.add(thigh, kneeW).add(shin, (1 - kneeW) * (1 - ankleW)).add(foot, (1 - kneeW) * ankleW);
+  };
+  const footSkin = (t: number, acc: SkinAccumulator): void => {
+    const s = (1 - smoothstep(0.0, 0.3, t)) * 0.45;
+    acc.add(shin, s).add(foot, 1 - s);
   };
   // Thigh: breeches over quadriceps / hamstrings, reinforced leather riding patch on the inside.
   buildTube(builder, {
@@ -234,7 +254,7 @@ function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
     spacing: 0.02,
     material: (t, theta) => (Math.sin(theta) * sgn < -0.45 && t > 0.3 ? RIDER_MAT.leather : RIDER_MAT.wool),
     bump: (t, theta) => 0.004 * Math.sin(theta * 6 + t * 10) * smoothstep(0.5, 1, t),
-    skin,
+    skin: thighSkin,
     capStart: true,
   });
   // Tall riding boot: cuff below the knee, shaft, ankle.
@@ -253,7 +273,26 @@ function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
     material: (t) => (t < 0.03 ? RIDER_MAT.wool : RIDER_MAT.darkLeather),
     bump: (t) => (t > 0.08 && t < 0.14 ? 0.004 : 0) + 0.002 * Math.pow(Math.max(0, Math.sin(t * 40)), 12) * smoothstep(0.7, 0.95, t),
     wear: (t) => (t > 0.08 && t < 0.15 ? 1 : 0.3 + 0.4 * smoothstep(0.7, 1, t)),
-    skin,
+    skin: bootSkin,
+  });
+  // Knee filler: hidden inside the thigh and boot cuff while seated, it closes the front of the knee as the leg
+  // straightens (standing).
+  const thighDir = knee.clone().sub(hip).normalize();
+  const shinDir = ankle.clone().sub(knee).normalize();
+  buildTube(builder, {
+    points: [knee.clone().addScaledVector(thighDir, -0.05), knee.clone(), knee.clone().addScaledVector(shinDir, 0.05)],
+    up: FWD,
+    keys: [
+      [0, 0.054, 0.054, 0.052],
+      [1, 0.054, 0.056, 0.054],
+    ],
+    segments: 14,
+    spacing: 0.01,
+    material: (t) => (t < 0.6 ? RIDER_MAT.wool : RIDER_MAT.darkLeather),
+    skin: (t, acc) => {
+      const k = smoothstep(0.2, 0.8, t);
+      acc.add(thigh, 1 - k).add(shin, k);
+    },
   });
   // Boot foot in the stirrup: heel, instep and a rounded toe.
   buildTube(builder, {
@@ -269,7 +308,7 @@ function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
     spacing: 0.015,
     material: () => RIDER_MAT.darkLeather,
     wear: (t) => 0.3 + 0.7 * smoothstep(0.75, 1, t),
-    skin,
+    skin: footSkin,
     capStart: true,
     capEnd: true,
   });
@@ -283,11 +322,12 @@ function buildLeg(builder: MeshBuilder, rig: RigSkeleton, side: Side): void {
 function buildCloak(builder: MeshBuilder, rig: RigSkeleton): void {
   const chest = rig.id('riderChest');
   const spine = rig.id('riderSpine');
+  const cloakBone = rig.id('riderCloak');
   const cols = 22;
   const rows = 18;
   const length = 1.2;
   const THICK = 0.007;
-  const center = new THREE.Vector3(0, 1.715, -2.628);
+  const center = RIDER_CLOAK_PIVOT.clone();
   const W = cols + 1;
   const grid: THREE.Vector3[] = [];
   const drape: THREE.Vector3[] = [];
@@ -349,7 +389,8 @@ function buildCloak(builder: MeshBuilder, rig: RigSkeleton): void {
   const addVertex = (i: number, layer: number, offsetInner = false): number => {
     const r = Math.floor(i / W);
     const t = r / rows;
-    skin.clear().add(chest, 1 - 0.35 * t).add(spine, 0.35 * t);
+    const free = smoothstep(0.0, 0.45, t);
+    skin.clear().add(chest, (1 - 0.35 * t) * (1 - free)).add(spine, 0.35 * t * (1 - free)).add(cloakBone, free);
     data.set(RIDER_MAT.cloak, t, 0, layer === 0 ? 1 : 2);
     uv.set((i % W) / cols, t);
     pos.copy(grid[i]).addScaledVector(normals[i], layer === 1 || offsetInner ? -THICK : 0);

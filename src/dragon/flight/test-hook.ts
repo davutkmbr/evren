@@ -4,13 +4,15 @@ import { VIEW_PRESETS } from '../../core/debug';
 import { headingToYaw, yawToHeading } from '../../core/geo-coords';
 import { DEG, PHYSICS_DT } from './params';
 import type { FlightSim } from './sim';
-import type { AssistOverrides, PilotCommand, SimEvent, SimOptions } from './types';
+import type { AssistOverrides, PilotCommand, PilotEdge, SimEvent, SimOptions } from './types';
 import { wingtipClearance } from './wingtip';
-import { clearOverrides, createPilotCommand } from './types';
+import { clearOverrides, clearPilotEdges, createPilotCommand, PILOT_EDGES } from './types';
 
 export interface FlightSnapshot {
   time: number;
   mode: string;
+  /** Running trick: 'none' | 'roll' | 'loop' | 'drop' | 'catch'. */
+  trick: string;
   x: number;
   y: number;
   z: number;
@@ -55,6 +57,7 @@ export function snapshot(sim: FlightSim): FlightSnapshot {
   return {
     time: r(sim.time),
     mode: sim.mode,
+    trick: sim.maneuvers.kind,
     x: r(b.position.x),
     y: r(b.position.y),
     z: r(b.position.z),
@@ -97,18 +100,21 @@ export function snapshot(sim: FlightSim): FlightSnapshot {
 export interface TestControl {
   command: PilotCommand | null;
   readonly overrides: AssistOverrides;
-  pressed: { flap: boolean; land: boolean; roar: boolean };
+  /** One-frame presses (edges), e.g. 'rollRight' = a D double tap, 'drop' = a Shift double tap, 'urge' = V. */
+  pressed: Record<PilotEdge, boolean>;
 }
 
 export function createTestControl(): TestControl {
   return {
     command: null,
     overrides: { bankTarget: null, pathTarget: null, airspeedTarget: null },
-    pressed: { flap: false, land: false, roar: false },
+    pressed: { flap: false, land: false, roar: false, rollLeft: false, rollRight: false, loop: false, drop: false, urge: false },
   };
 }
 
-export interface TestInput extends Partial<Omit<PilotCommand, 'flapPressed' | 'landPressed' | 'roarPressed'>> {
+type EdgeField = (typeof PILOT_EDGES)[PilotEdge];
+
+export interface TestInput extends Partial<Omit<PilotCommand, EdgeField>> {
   bankDeg?: number | null;
   pathDeg?: number | null;
   airspeed?: number | null;
@@ -155,10 +161,12 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
   const api = {
     sim,
     input: (input: TestInput | null): void => applyTestInput(control, input),
-    press: (name: 'flap' | 'land' | 'roar'): void => {
+    press: (name: PilotEdge): void => {
       control.pressed[name] = true;
     },
     state: (): FlightSnapshot => snapshot(sim),
+    /** The running trick (roll / loop / drop / catch), its progress and the urge / cheer envelopes. */
+    maneuver: () => ({ ...sim.maneuvers.describe(), urge: sim.maneuvers.urgeEnvelope, cheer: sim.maneuvers.cheer }),
     pose: (): DragonPose => ({ ...host.pose() }),
     snapCamera: (): void => host.snapCamera(),
     options: (o?: Partial<SimOptions>): SimOptions => {
@@ -234,14 +242,20 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
               continue;
             }
           }
+          // Probe the whole disc (rings every ~25 m, ~25 m apart along each ring): a building between two sparse
+          // rings would otherwise sit right next to a "clear" landing spot.
           let clear = true;
-          for (let k = 0; k < 32 && clear; k++) {
-            const b = (k / 16) * Math.PI * 2;
-            const rr = k < 16 ? clearRadius : clearRadius * 0.5;
-            const qx = px + Math.cos(b) * rr;
-            const qz = pz + Math.sin(b) * rr;
-            const th = col.terrainHeight(qx, qz);
-            clear = col.surfaceHeight(qx, qz) - th < 0.3 && th > 0.5 && Math.abs(th - terrain) < clearRadius * 0.12;
+          const rings = Math.max(2, Math.ceil(clearRadius / 25));
+          for (let ring = 1; ring <= rings && clear; ring++) {
+            const rr = (ring / rings) * clearRadius;
+            const count = Math.max(8, Math.ceil((2 * Math.PI * rr) / 25));
+            for (let k = 0; k < count && clear; k++) {
+              const b = (k / count) * Math.PI * 2;
+              const qx = px + Math.cos(b) * rr;
+              const qz = pz + Math.sin(b) * rr;
+              const th = col.terrainHeight(qx, qz);
+              clear = col.surfaceHeight(qx, qz) - th < 0.3 && th > 0.5 && Math.abs(th - terrain) < clearRadius * 0.12;
+            }
           }
           if (clear) {
             return { x: px, y: surface, z: pz };
@@ -278,9 +292,7 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
           cmd.dive = base?.dive ?? false;
           cmd.brake = base?.brake ?? false;
           cmd.fire = base?.fire ?? false;
-          cmd.flapPressed = false;
-          cmd.landPressed = false;
-          cmd.roarPressed = false;
+          clearPilotEdges(cmd);
           sim.overrides.bankTarget = control.overrides.bankTarget;
           sim.overrides.pathTarget = control.overrides.pathTarget;
           sim.overrides.airspeedTarget = control.overrides.airspeedTarget;

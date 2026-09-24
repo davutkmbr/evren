@@ -78,15 +78,23 @@ landmarks, ferries, gulls and night lights as you explore.
 - Physically based atmosphere (transmittance and sky-view LUTs), real sun and moon positions, stars, aerial perspective.
 - Raymarched volumetric clouds with temporal reprojection; you can fly through and above them; cloud shadows on the ground.
 - Gerstner-wave water with planar reflections, depth-based colour, shoreline foam and the Bosphorus surface current.
+- Weather you can switch on and off: drifting ground fog banks, rain streaks with an overcast sky and rain sound,
+  thunderstorms with branching lightning, sky flashes and thunder delayed by distance; plus an aerial softening of the
+  far city (Settings → Hava, or `N` to cycle).
 
 **The dragon**
 - A procedurally modelled, skinned dragon and rider (71 bones) with scale textures and back-lit wing membranes.
 - 6-DOF flight physics: lift and stall, flapping thrust, gliding, diving at ~85 m/s, hovering, landing, walking and swimming.
 - Fire breath with dynamic light, roars, splashes, wing-tip vortex trails.
+- Tricks and a real sense of falling: barrel rolls and continuous spins, loops, free fall with folded wings and a
+  wing-snap catch into a swoop, the "dehh" speed surge, leap take-offs; a short caption names each maneuver.
+- The rider shows every command (reins, crouch, rein snaps and heel kicks, pointing, cheering), also in first person;
+  they can pet the dragon, stand on the saddle, and the dragon turns its head back to look at them.
 - Third-person chase, first-person (POV) from the saddle, and an automatic cinematic camera.
 
 **Everything else**
-- 100% synthesized audio (WebAudio): wind, wingbeats, roars, fire, sea, gulls and city ambience.
+- Audio: recorded CC0 wind, wingbeats, thunder and rain (Freesound, `public/audio/`) with WebAudio synthesis for roars,
+  fire, sea, gulls and city ambience (and as the fallback for every recording).
 - Turkish UI: HUD, compass with landmark bearings, minimap, full map with teleport, discovery cards, photo mode, settings.
 - Four quality presets, dynamic resolution and auto exposure; 60 fps on an Apple M2 Max at 1600×900 ("high").
 
@@ -97,15 +105,22 @@ landmarks, ferries, gulls and night lights as you explore.
 | `W` / `S` | Nose down / up |
 | `A` / `D` | Bank left / right |
 | `Q` / `E` | Rudder left / right |
-| `Space` | Flap (climb, speed up); take off from the ground |
-| `Shift` | Fold wings and dive |
+| `Space` | Flap (climb, speed up); leap take-off from the ground |
+| `V` | "Dehh!": the rider snaps the reins, three strong beats and a speed surge |
+| `Shift` | Fold wings: dive, or free fall when slow (double tap: drop) |
+| `Shift` release / `Space` | Snap the wings open and catch the fall |
+| `A` / `D` double tap | Barrel roll (hold to keep spinning) |
+| `S` double tap | Loop |
 | `Ctrl` / `X` | Brake, hover |
 | `F` / left click | Fire breath |
 | `R` | Roar |
 | `L` | Land / take off |
+| `G` (hold) | Pet the dragon (it turns to look at you and purrs) |
+| `T` | Stand up on the saddle / sit down |
 | Mouse | Look around (hold right click, or always in POV) |
 | `C` | Camera: third person / POV / cinematic |
 | `[` / `]` | Change the time of day |
+| `N` | Weather: clear, haze, fog, rain, storm |
 | `M` | Map (click to teleport) |
 | `O` | Photo mode |
 | `U` | Hide the HUD |
@@ -144,6 +159,9 @@ Then open <http://127.0.0.1:5199/>.
 | `cam` | `?cam=pov` | Camera mode: `third`, `pov`, `cinematic` |
 | `q` | `?q=ultra` | Quality preset: `low`, `medium`, `high`, `ultra` |
 | `autopilot` | `?autopilot=1` | Gentle hands-off flight |
+| `weather` | `?weather=storm` | Weather preset: `clear`, `haze`, `fog`, `rain`, `storm` |
+| `fog`, `rain`, `storm` | `?fog=0.6&rain=0.3` | Individual weather amounts 0..1 (override the preset) |
+| `farblur` | `?farblur=0` | Distance softening of far buildings 0..1 (default 0.6, 0 = off) |
 | `autostart` | `?autostart=1` | Skip the start screen |
 | `stats` | `?stats=1` | Performance overlay |
 | `nohud` | `?nohud=1` | Hide the HUD |
@@ -194,7 +212,7 @@ flowchart LR
 | `dragon/flight` | Flight physics, controls, landing and locomotion, animation driver |
 | `camera` | Third-person, POV, cinematic and free cameras |
 | `fx` | Particles: fire, splashes, trails, speed streaks |
-| `audio` | Synthesized sound effects and ambience |
+| `audio` | Sound effects and ambience: WebAudio synthesis plus the recorded CC0 sounds in `public/audio/` |
 | `ui` | Loading screen, HUD, map, discovery, menus |
 
 Some technical choices worth knowing:

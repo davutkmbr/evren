@@ -80,9 +80,6 @@ interface TrackLane {
   outer: boolean;
 }
 
-/** Pedestrian-only streets (no cars). */
-const CAR_FREE = new Set(['istiklal-caddesi']);
-
 /** Metres over which cars fade out when entering an excluded rectangle. */
 const EXCLUDE_FADE = 15;
 
@@ -261,7 +258,7 @@ function snapToDeck(path: PathPoint[], deck: DeckAxis): { path: PathPoint[]; alo
  * point, hide weight and the lateral surface profile) and lays out right-hand traffic lanes with car phases.
  * Bridge decks come only from the core 'roadSurface' service: the roads are re-aligned onto the published deck
  * centre lines and take their surface heights (and lanes) from there. `hide` is 1 inside the optional `exclude`
- * rectangle (the ?osm=1 slice, which runs its own traffic) and 0 elsewhere.
+ * rectangle (the OSM slice, which runs its own traffic) and 0 elsewhere.
  */
 export class RoadNetwork {
   readonly tracks: RoadTrack[] = [];
@@ -280,7 +277,8 @@ export class RoadNetwork {
     const pts: number[] = [];
     const kinds: number[] = [];
     for (const def of geo.roads) {
-      if (CAR_FREE.has(def.id) || def.points.length < 2) continue;
+      // Roads wholly inside the excluded rectangle (e.g. İstiklal in the OSM slice) would only carry hidden cars.
+      if (def.points.length < 2 || (exclude && def.points.every((p) => p.x >= exclude.minX && p.x <= exclude.maxX && p.z >= exclude.minZ && p.z <= exclude.maxZ))) continue;
       let path = densify(def.points);
       const crossed: DeckAxis[] = [];
       let deckLength = 0;

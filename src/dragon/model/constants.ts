@@ -19,4 +19,13 @@ export const DEFAULT_POSE = {
   breath: 0.3,
   riderLeanPitch: 0,
   riderLeanRoll: 0,
+  riderReinLeft: 0,
+  riderReinRight: 0,
+  riderTuck: 0,
+  riderUrge: 0,
+  riderPoint: 0,
+  riderCheer: 0,
+  riderPet: 0,
+  riderStand: 0,
+  gazeRider: 0,
 };

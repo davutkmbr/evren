@@ -1,15 +1,15 @@
 [
-  { "out": ".shots/slice/canon/01-galata-preset-overview-160m.jpg", "url": "/?osm=1&nohud=1&view=galata&t=16", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/02-istiklal-south-end-looking-north-60m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.028, 28.97418, 105, 32, -25, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/03-galata-tower-from-galip-dede-30m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.0272, 28.97455, 70, 189, -3, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/04-karakoy-waterfront-kemankes-40m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.0214, 28.9748, 40, 55, -14, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/05-galata-bridge-deck-to-eminonu-20m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.0214, 28.9741, 20, 209, -5, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/06-eminonu-square-yeni-cami-60m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.018, 28.9737, 60, 228, -15, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/07-cihangir-streets-45deg-120m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.03074, 28.9850, 183, 315, -45, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/08-tophane-kilic-ali-pasa-t1-50m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.0265, 28.9832, 50, 268, -12, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/09-karakoy-top-down-150m.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.shotLatLon(41.0232, 28.9765, 156, 0, -89, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/10-night-istiklal-60m.jpg", "url": "/?osm=1&nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.028, 28.97418, 105, 32, -25, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/11-night-galata-bridge-20m.jpg", "url": "/?osm=1&nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.0214, 28.9741, 20, 209, -5, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/12-night-karakoy-waterfront-40m.jpg", "url": "/?osm=1&nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.0214, 28.9748, 40, 55, -14, 60)", "settle": 2500, "timeout": 90000 },
-  { "out": ".shots/slice/canon/13-dragon-flight-low-karakoy-tophane.jpg", "url": "/?osm=1&nohud=1&t=16", "eval": "__evren.ctx.events.emit('teleport', { x: -3710.9, y: 110, z: 2643.1, headingDeg: 30, pitchDeg: 0, speed: 30 })", "settle": 2500, "timeout": 90000 }
+  { "out": ".shots/slice/canon/01-galata-preset-overview-160m.jpg", "url": "/?nohud=1&view=galata&t=16", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/02-istiklal-south-end-looking-north-60m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.028, 28.97418, 105, 32, -25, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/03-galata-tower-from-galip-dede-30m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.0272, 28.97455, 70, 189, -3, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/04-karakoy-waterfront-kemankes-40m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.0214, 28.9748, 40, 55, -14, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/05-galata-bridge-deck-to-eminonu-20m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.0214, 28.9741, 20, 209, -5, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/06-eminonu-square-yeni-cami-60m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.018, 28.9737, 60, 228, -15, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/07-cihangir-streets-45deg-120m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.03074, 28.9850, 183, 315, -45, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/08-tophane-kilic-ali-pasa-t1-50m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.0265, 28.9832, 50, 268, -12, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/09-karakoy-top-down-150m.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.shotLatLon(41.0232, 28.9765, 156, 0, -89, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/10-night-istiklal-60m.jpg", "url": "/?nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.028, 28.97418, 105, 32, -25, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/11-night-galata-bridge-20m.jpg", "url": "/?nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.0214, 28.9741, 20, 209, -5, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/12-night-karakoy-waterfront-40m.jpg", "url": "/?nohud=1&t=21.5", "eval": "__evren.shotLatLon(41.0214, 28.9748, 40, 55, -14, 60)", "settle": 2500, "timeout": 90000 },
+  { "out": ".shots/slice/canon/13-dragon-flight-low-karakoy-tophane.jpg", "url": "/?nohud=1&t=16", "eval": "__evren.ctx.events.emit('teleport', { x: -3710.9, y: 110, z: 2643.1, headingDeg: 30, pitchDeg: 0, speed: 30 })", "settle": 2500, "timeout": 90000 }
 ]

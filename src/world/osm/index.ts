@@ -1,6 +1,6 @@
 /**
  * OSM vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane, Cihangir): real OpenStreetMap streets,
- * buildings, traffic and details. Only active with `?osm=1`; the city, vegetation and life systems then keep their
+ * buildings, traffic and details, always part of the map; the city, vegetation and life systems keep their
  * procedural buildings, urban trees and road traffic out of the area (area.ts osmExclusionRect()).
  *
  * This system loads the data (data.ts), builds the shared foundation once (geo windows + street raster in
@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
-import { OSM_DATA_URL, osmAreaRect, osmEnabled, osmExclusionRect } from './area';
+import { OSM_DATA_URL, osmAreaRect, osmExclusionRect } from './area';
 import { loadOsmData, type OsmData } from './data';
 import { buildWorkerBase } from './shared/foundation';
 import { FootprintIndex } from './shared/footprints';
@@ -47,9 +47,6 @@ class OsmSystem implements System {
   private disposed = false;
 
   init(engine: EngineContext): void {
-    if (!osmEnabled(engine.debug.params)) {
-      return;
-    }
     this.root.name = 'osm';
     engine.scene.add(this.root);
     this.loading = 1;

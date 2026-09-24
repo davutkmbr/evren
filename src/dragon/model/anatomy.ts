@@ -142,8 +142,51 @@ export const RIDER = {
   toe: v(0.74, 0.48, -2.86),
 };
 
+/** Where the cloak hangs from the shoulders (pivot of the riderCloak bone). */
+export const RIDER_CLOAK_PIVOT = v(0, 1.715, -2.628);
+
 /** Extra saddle padding (m) that lifts the seat (and the rider) above the neck for a clear view over the head. */
 export const SADDLE_LIFT = 0.08;
+
+/**
+ * Rest frame of a rein fist (thumbs-up grip, palms facing each other): `fwd` runs along the metacarpals, `up` is the
+ * grip channel axis (pinky at the bottom, index and thumb on top), `medial` points from the back of the hand to the
+ * palm. The rein runs up through `channel`, entering under the little finger and leaving between thumb and index.
+ */
+export interface FistFrame {
+  wrist: THREE.Vector3;
+  fwd: THREE.Vector3;
+  up: THREE.Vector3;
+  medial: THREE.Vector3;
+  channel: THREE.Vector3;
+}
+
+export function fistFrame(side: Side): FistFrame {
+  const sgn = sideSign(side);
+  const wrist = mirror(RIDER.wrist, side);
+  const elbow = mirror(RIDER.elbow, side);
+  // The wrist is slightly cocked down from the forearm line.
+  const fwd = wrist.clone().sub(elbow).normalize().add(new THREE.Vector3(0, -0.12, 0)).normalize();
+  const up = new THREE.Vector3(0, 1, 0).addScaledVector(fwd, -fwd.y).normalize();
+  const medial = new THREE.Vector3().crossVectors(fwd, up).normalize();
+  if (medial.x * sgn > 0) {
+    medial.negate();
+  }
+  const channel = wrist.clone().addScaledVector(fwd, 0.1).addScaledVector(medial, 0.02);
+  return { wrist, fwd, up, medial, channel };
+}
+
+/** Point in a fist frame: f along the metacarpals, u along the grip axis, m toward the palm (m). */
+export function fistPoint(frame: FistFrame, f: number, u: number, m: number): THREE.Vector3 {
+  return frame.wrist.clone().addScaledVector(frame.fwd, f).addScaledVector(frame.up, u).addScaledVector(frame.medial, m);
+}
+
+/**
+ * Finger joints shared by the four curled fingers (they are stacked along the grip axis, so one hinge about `up`
+ * opens them all): A = end of the proximal phalanx, B = middle of the wrap around the rein, C = last joint before
+ * the tucked tip. `thumb` = thumb base.
+ */
+export const FIST_JOINTS = { a: [0.104, 0.001], b: [0.122, 0.02], c: [0.108, 0.04], thumb: [0.012, 0.024, 0.02] } as const;
 
 export function buildBoneSpecs(): BoneSpec[] {
   const specs: BoneSpec[] = [];
@@ -186,6 +229,18 @@ export function buildBoneSpecs(): BoneSpec[] {
     add(`riderUpperArm${side}`, 'riderChest', mirror(RIDER.shoulder, side));
     add(`riderForearm${side}`, `riderUpperArm${side}`, mirror(RIDER.elbow, side));
     add(`riderHand${side}`, `riderForearm${side}`, mirror(RIDER.wrist, side));
+    const fist = fistFrame(side);
+    add(`riderFingerA${side}`, `riderHand${side}`, fistPoint(fist, FIST_JOINTS.a[0], 0, FIST_JOINTS.a[1]));
+    add(`riderFingerB${side}`, `riderFingerA${side}`, fistPoint(fist, FIST_JOINTS.b[0], 0, FIST_JOINTS.b[1]));
+    add(`riderFingerC${side}`, `riderFingerB${side}`, fistPoint(fist, FIST_JOINTS.c[0], 0, FIST_JOINTS.c[1]));
+    add(`riderThumb${side}`, `riderHand${side}`, fistPoint(fist, FIST_JOINTS.thumb[0], FIST_JOINTS.thumb[1], FIST_JOINTS.thumb[2]));
+    add(`riderThigh${side}`, 'riderPelvis', mirror(RIDER.hip, side));
+    add(`riderShin${side}`, `riderThigh${side}`, mirror(RIDER.knee, side));
+    add(`riderFoot${side}`, `riderShin${side}`, mirror(RIDER.ankle, side));
   }
+  // Grip of the right rein: follows the right fist, or the left fist while the right hand is busy (one-handed riding).
+  add('riderReinR', 'chest', mirror(RIDER.wrist, 'R'));
+  // Lower cloak: pivots at the shoulders so the cloth keeps streaming back when the rider leans far forward.
+  add('riderCloak', 'riderChest', RIDER_CLOAK_PIVOT);
   return specs;
 }
