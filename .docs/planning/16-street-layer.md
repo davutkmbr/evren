@@ -90,6 +90,16 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
   below spec; the first reason no longer holds (agents drive the open editor through tools/unreal's Python job runner),
   the user accepts desktop, and co-op needs Steam anyway. Measure it with the same test; its web gap and Mac
   performance are part of the result.
+- Target hardware (decided 2026-09-24): a PC that runs CS2 at 60 fps must run the game at 60 fps with good graphics.
+  Tiers: **Medium** = GTX 1060/1650 / RX 580 class at 1080p, 60 fps (baked lighting at 4 times of day, cheap haze,
+  AO, lens effects, crowd impostors); **High** = RTX 3060 class at 1080p, 60 fps (dynamic GI, volumetric fog, denser
+  crowd). Development is Mac-only (M2 Max, no Windows PC), so the test uses proxy thresholds on the M2 Max (its GPU is
+  roughly RTX 3060 class, ~3× a GTX 1060): **High ≥ 60 fps and Medium ≥ 150 fps at 1080p** on the M2 Max, with extra
+  margin for Metal-vs-Windows driver differences.
+- Windows builds (decided 2026-09-24): streamers and most Steam players are on Windows. Godot and three.js can build
+  Windows versions from the Mac and smoke-test them on GitHub's free Windows runners (no GPU, so no fps). Unreal can only
+  package Windows builds on a Windows host and does not fit the free runners, so Unreal stays in S2 as the visual
+  reference but can only be chosen if a Windows machine (a PC or a paid cloud VM) becomes available.
 - Decision rule: Blender fails → fix the kit, not the engine. Both pass → three.js WebGPU (keeps the web link and the
   flight game) unless Godot is clearly better side by side **or clearly better for co-op readiness**. Only one passes
   → that one. Neither passes while Blender does → rerun once at lower density, then take the closer one.
