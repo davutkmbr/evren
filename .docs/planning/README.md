@@ -100,6 +100,7 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 14 | [Multi-dragon foundation](14-multi-dragon-foundation.md) | F · Multiplayer | M | 01, 12 |
 | 15 | [Multiplayer](15-multiplayer.md) | F · Multiplayer | L | 14 |
 | 16 | [Street track S0–S8: walkable Kadıköy](16-street-layer.md) | G · On foot | L×many | 01 (bug fixes only) |
+| 17 | [Hamallar: co-op moving game in Kadıköy](17-hamallar-coop.md) | H · Co-op | L×many | 16 S4 (walk, enter, talk), S2 runtime decision |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 

@@ -80,9 +80,14 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 - Visuals: 10 shots paired with reference photos pass the checklist (façade depth visible, shopfront density and
   signage, kerbs and sidewalks, furniture and people, AO in corners, no visible LOD swap within 30 m, no flicker on
   railings, shutters, cables or signs); the user signs off.
+- Co-op readiness (added 2026-09-24 for [17 — Hamallar](17-hamallar-coop.md)): for each runtime, a short spike and a
+  written assessment of (a) host-authoritative networking for 4 players carrying shared physics objects, (b) Steam
+  integration — lobbies, invites, friends, achievements (GodotSteam for Godot; Electron/Tauri + steamworks.js for a
+  three.js build), (c) proximity voice chat, (d) a streamer mode (muted licensed audio, hidden join codes). Streamers
+  play co-op games on Steam, so a desktop Steam build is expected for the co-op game whichever runtime wins.
 - Decision rule: Blender fails → fix the kit, not the engine. Both pass → three.js WebGPU (keeps the web link and the
-  flight game) unless Godot is clearly better side by side. Only one passes → that one. Neither passes while Blender
-  does → rerun once at lower density, then take the closer one.
+  flight game) unless Godot is clearly better side by side **or clearly better for co-op readiness**. Only one passes
+  → that one. Neither passes while Blender does → rerun once at lower density, then take the closer one.
 
 ## Keep / change / stop
 
