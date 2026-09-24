@@ -140,6 +140,11 @@ export interface PropRec {
   source: string;
   /** Lights attached to every instance (prop-local positions; see LightRec). */
   lights?: Omit<LightRec, 'id' | 'ref'>[];
+  /**
+   * Decimated LODs (street/prop-lod.ts): same nodes and materials in `glb` (relative to the index); draw level k from
+   * `distance` metres on (LOD0 = `glb` above before the first), `error` = its largest geometric error (m).
+   */
+  lods?: { level: number; glb: string; hash: string; bytes: number; triangles: number; error: number; distance: number }[];
 }
 
 export interface AssetCreditRec {

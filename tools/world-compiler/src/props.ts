@@ -19,6 +19,7 @@ import { kelvinToRgb, lightRange, pointCandela, spotCandela } from './lights';
 import { type EmissiveDef, linearRgb, type MaterialDef, type MaterialName } from './materials';
 import { TileMesh, type Vec3 } from './mesh';
 import { approvedAssets, assetDir, type AssetCredit, CACHE_DIR, conditionStatus, type TextureBaker } from './textures';
+import { writePropLods } from './street/prop-lod';
 
 export interface PropLight {
   type: 'point' | 'spot';
@@ -416,6 +417,7 @@ export class PropBaker {
     scene.setExtras({ prop: def.id, variants });
     const glb = externalizeImages(await new NodeIO().writeBinary(doc), TEXTURE_URI);
     writeFileSync(join(this.outDir, 'props', `${def.id}.glb`), glb);
+    const lods = await writePropLods(doc, def.id, this.outDir);
     const rec: PropRec = {
       id: def.id,
       glb: `props/${def.id}.glb`,
@@ -428,6 +430,7 @@ export class PropBaker {
       castShadow: def.castShadow ?? true,
       source: def.asset ?? 'procedural',
       ...(lights.length ? { lights } : {}),
+      ...(lods.length ? { lods } : {}),
     };
     return { rec, credit };
   }

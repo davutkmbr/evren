@@ -1,0 +1,112 @@
+/**
+ * Street lamps and shopfront light of the street tiles (format 1), replacing the core lamp fixtures (../fixtures.ts,
+ * which still runs on the other tiles):
+ * - lamp records of the manifest (lamps.ts: the flight slice's lighting rules) become instances as in the core step:
+ *   kerb masts (sodium 2000 K / LED 4000 K / warm 3000 K), wall brackets (street_lamp_02) and post lanterns
+ *   (street_lamp_01) — except post lanterns within PENDANT_REACH of a span-wire pendant (furniture.ts), which lights
+ *   the pedestrian lanes as in the photos (warm pendants every 11-14 m at 5-6 m, s1-strip.md §3 night light);
+ * - every storefront door with a POI gets its interior spill: a spot inside the shop window aimed out and down
+ *   (cafés and restaurants 3000 K, shops 4500 K, pharmacies 6000 K), on at night; half of them also a sign light
+ *   above the door (warm 2400 K or cool 6500 K). Doors that a façade or shopfront step already lit (its window /
+ *   interior lights) are skipped, so this is the fallback for the other storefronts.
+ */
+import { hash } from '../../../../src/world/osm/shared/geometry';
+import type { LampRec, XYZ } from '../format';
+import { lampFixturesStep } from '../fixtures';
+import { headingYaw } from '../instances';
+import { LAMP_KELVIN } from '../lights';
+import type { CompileStep, TileContext } from '../registry';
+import { streetTile } from './common';
+import { streetPlan } from './furniture';
+
+const PENDANT_REACH = 7;
+
+const LAMP_PROPS: Record<string, { prop: string; variantByLight: boolean; lift?: number }> = {
+  arm: { prop: 'lamp_mast', variantByLight: true },
+  armLow: { prop: 'lamp_mast_low', variantByLight: true },
+  double: { prop: 'lamp_mast_double', variantByLight: true },
+  lantern: { prop: 'street_lamp_01', variantByLight: false },
+  wall: { prop: 'street_lamp_02', variantByLight: false, lift: 3.9 },
+};
+
+const FOOD = /^amenity=(cafe|restaurant|fast_food|ice_cream|bar|pub)$/;
+
+function placeLamps(t: TileContext): { lamps: number; replaced: number } {
+  const plan = streetPlan(t.area);
+  let lamps = 0;
+  let replaced = 0;
+  t.manifest.lamps.forEach((l: LampRec, k) => {
+    const spec = LAMP_PROPS[l.kind];
+    if (!spec) {
+      return;
+    }
+    if (l.kind === 'lantern' && plan.pendants.some(([x, z]) => Math.hypot(x - l.position[0], z - l.position[2]) < PENDANT_REACH)) {
+      replaced++;
+      return;
+    }
+    const pos: XYZ = [l.position[0], l.position[1] + (spec.lift ?? 0), l.position[2]];
+    t.place(spec.prop, pos, headingYaw(l.heading, '+Z'), {
+      ...(spec.variantByLight ? { variant: l.light } : {}),
+      ref: `${t.id}/lamp${k}`,
+      lights: { kelvin: LAMP_KELVIN[l.light] },
+    });
+    lamps++;
+  });
+  return { lamps, replaced };
+}
+
+function shopLights(t: TileContext): { windows: number; signs: number } {
+  // Doors a façade / shopfront step already lit (window or interior lights by door id, shop interiors by POI id).
+  const refs = t.lights.list.filter((l) => l.source === 'window' || l.source === 'sign' || l.source === 'interior').map((l) => l.ref ?? '');
+  const lit = (d: { id: string; pois: string[] }): boolean => refs.some((r) => r.startsWith(`${d.id}/`) || d.pois.some((p) => r === `${t.id}/shop:${p}`));
+  const pois = new Map(t.manifest.pois.map((p) => [p.id, p]));
+  let windows = 0;
+  let signs = 0;
+  for (const d of t.manifest.doors) {
+    if (!d.pois.length || lit(d)) {
+      continue;
+    }
+    const kind = pois.get(d.pois[0])?.kind ?? '';
+    const [nx, , nz] = d.normal;
+    const [x, y, z] = d.position;
+    const kelvin = FOOD.test(kind) ? 3000 : kind === 'amenity=pharmacy' ? 6000 : 4500;
+    const dl = Math.hypot(nx, 0.75, nz);
+    t.lights.add({
+      type: 'spot',
+      position: [x - nx * 0.5, y + 2.6, z - nz * 0.5],
+      direction: [nx / dl, -0.75 / dl, nz / dl],
+      kelvin,
+      lumens: FOOD.test(kind) ? 1600 : 2000,
+      cone: { inner: 35, outer: 75 },
+      night: true,
+      source: 'window',
+      ref: `${d.id}/window`,
+    });
+    windows++;
+    if (hash(x * 0.71 + z * 1.3) < 0.5) {
+      t.lights.add({
+        type: 'point',
+        position: [x + nx * 0.4, y + 3.3, z + nz * 0.4],
+        kelvin: hash(x + z) < 0.6 ? 2400 : 6500,
+        lumens: 500,
+        night: true,
+        source: 'sign',
+        ref: `${d.id}/sign`,
+      });
+      signs++;
+    }
+  }
+  return { windows, signs };
+}
+
+export const streetLightsStep: CompileStep = {
+  id: 'streetLights',
+  tile(t) {
+    if (!streetTile(t)) {
+      return lampFixturesStep.tile!(t);
+    }
+    const l = placeLamps(t);
+    const s = shopLights(t);
+    t.record('streetLights', { ...l, ...s });
+  },
+};

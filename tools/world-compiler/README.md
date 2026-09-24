@@ -304,6 +304,10 @@ prop's foot at the origin and its front / reach along **+Z**. The root nodes are
   `sitting`, facing +Z; placeholder for the MetaHuman crowd), `lamp_mast` / `lamp_mast_low` / `lamp_mast_double`
   (8.3 / 6.2 / 9.3 m kerb masts with the arm along +Z, variants `sodium`, `led`, `warm`).
 
+Props of 1500+ triangles also get decimated LODs (`props/<id>.lod1.glb`, `.lod2.glb`: same nodes and materials,
+meshoptimizer, seams kept), listed in `props[id].lods` as `{ level, glb, hash, bytes, triangles, error, distance }`: draw
+level k from `distance` metres on (where its geometric `error` is under a pixel at 1600×900, 60° FOV), LOD0 before.
+
 A model that is not downloaded yet, or whose approval conditions are not met, is skipped: its instances are dropped
 and the summary lists it under `props.skipped`. `props[id].lights` is the light template every instance gets
 (prop-local positions; `TileContext.place` adds them to the tile's lights).
@@ -421,3 +425,4 @@ The compile must keep working after every change: `npm run compile:world -- --ar
 | `@gltf-transform/core` | MIT | Standard glTF 2.0 document model and GLB writer. |
 | `gltf-validator` | Apache-2.0 | Khronos reference validator. |
 | `@types/node` | MIT | Node typings for `npm run typecheck:world` only. The root tsconfig restricts `types`, so they do not leak into the game. |
+| `meshoptimizer` | MIT | Decimated prop LODs (`src/street/prop-lod.ts`): the approved post lantern alone has 30.6k triangles on 900+ lamps. |
