@@ -39,6 +39,16 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   Still open: facade detail instances near the camera (arches ~0.65 M within 210 m), parked cars in the shadow
   cascades, inactive cascades on low / medium still get the casters that skip culling; city-wide rollout needs the
   compiler's tiles + HLOD.
+- **Eminönü street layer in the flight game** (`src/world/street/`, still opt-in `?street=1`; 25 September 2026):
+  compiled tiles are drawn through BatchedMeshes per material group (`src/street/tile-batches.ts`: one layout per
+  material, materials differing only in factors merged, emissive ones too in the game) plus one position-only shadow
+  proxy batch per shadow side (far cascades skip small casters); props cast through proxies as well. Tiles cross-fade
+  with the flight-scale city (per-tile fade slots shared by the hole mask, `src/street/fade.ts`), are copied in over
+  frames within a time budget, and the hole mask repaints only the changed region. Street-layer cost: square at 30 m
+  +496 → +74 draw calls, CPU +3.1 → ~+1.0 ms; Hasırcılar lane at 3 m +738 → +76 draws, CPU +3.9 → ~+1.4 ms (more
+  when GPU-bound). Not yet default: CPU is above the 0.8 ms budget and a 30 m pass while tiles stream has more
+  50 ms frames than before (GPU-bound frames plus the per-frame copy work); hidden flight-scale geometry under live
+  tiles is still drawn and discarded (the slice's LOD meshes are larger than the street area).
 - **Vessels** (`src/world/life/`): realistic ferries, fishing boats, tugs, cargo ships, Kelvin wakes, collision-free
   lanes. Declared good enough for now. External model candidates await approval in
   `.docs/assets/candidates/vessels.md` (agent's advice: only vapur, bulk carrier, tug).

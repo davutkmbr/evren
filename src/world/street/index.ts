@@ -8,12 +8,17 @@
  *   belongs to the tile of its centroid and may overhang it) plus the rest of the live tiles, except the footprints
  *   of buildings that belong to tiles not loaded, so no flight-scale building is cut at a tile edge;
  * - never inside landmark footprints, where the game's own mosque and landmark models keep showing.
+ * Tiles cross-fade with the city they replace (a screen-door dissolve over FADE_SECONDS, street/fade.ts): each live
+ * tile owns a fade slot, the mask stores the slot per texel, and both sides dither against the slot's fade. A tile fades
+ * in once its hole is painted and fades out before it is dropped, so neither streaming nor the activation height pops.
+ * Opt-in with `?street=1`.
  * The slice's trees stay (the compiled tiles only carry OSM-mapped trees), as do the game's crowd and traffic: the
  * compiled placeholders for those are left out.
  */
 import * as THREE from 'three';
-import { UpdateOrder, type EngineContext, type System } from '../../core/contracts';
+import { RenderLayers, UpdateOrder, type EngineContext, type System } from '../../core/contracts';
 import { globalUniforms, patchMaterial } from '../../core/uniforms';
+import { STREET_DITHER_GLSL } from '../../street/fade';
 import { fetchJson, type StreetIndex, type StreetTileManifest, type StreetTileRef } from '../../street/format';
 import { TileStreamer } from '../../street/tile-streamer';
 
@@ -37,6 +42,13 @@ const MASK_CELL = 0.5;
 const GROW_LIVE = 1.6;
 const GROW_KEEP = 0.35;
 const GROW_LANDMARK = 1;
+/** Tiles within this distance (m) of a tile's square may own buildings that reach into it. */
+const NEIGHBOUR_REACH = 40;
+/** Cross-fade time (s) of a tile with the flight-scale city under it. */
+const FADE_SECONDS = 0.6;
+/** Main-thread time (ms) per frame for copying loaded tiles into the draw batches and for rasterizing footprints. */
+const WORK_BUDGET_MS = 2.5;
+const MASK_BUDGET_MS = 1;
 /** Prop assets the game draws itself: its crowd, its traffic and the slice's trees. */
 const EXCLUDED_PROPS = ['st_person', 'st_vehicle', 'st_tree'];
 
@@ -119,20 +131,39 @@ function footprintsOf(manifest: StreetTileManifest): Footprint[] {
 
 const overlaps = (a: Rect, b: Rect, grow: number): boolean => a.minX - grow < b.maxX && a.maxX + grow > b.minX && a.minZ - grow < b.maxZ && a.maxZ + grow > b.minZ;
 
+const growRect = (r: Rect, d: number): Rect => ({ minX: r.minX - d, minZ: r.minZ - d, maxX: r.maxX + d, maxZ: r.maxZ + d });
+
+/** A live tile as the mask paints it. */
+interface MaskTile {
+  ref: StreetTileRef;
+  slot: number;
+}
+
 /**
- * The hole mask of one area (RG8, MASK_CELL m texels): red = ground hole (live tiles minus landmarks), green =
- * building hole (see the module comment).
+ * The hole mask of one area (RG8, MASK_CELL m texels). Each texel holds the fade slot of the live tile whose geometry
+ * replaces the flight-scale city there (0 = no hole): red = ground (the live tiles' squares minus landmarks), green =
+ * buildings (see the module comment). A live tile is painted once its own and its neighbours' footprints are known and
+ * rasterized (rasterization is spread over frames within a time budget); only the region a change touches is repainted
+ * and uploaded, so a tile coming or going costs well under a millisecond.
  */
 class HoleMask {
   readonly texture: THREE.DataTexture;
   private readonly data: Uint8Array;
   private readonly w: number;
   private readonly h: number;
-  private signature = '';
   /** Texel indices covered by a footprint grown by some distance, per building id and growth. */
   private readonly cells = new Map<string, Int32Array>();
+  /** Painted tiles: id -> slot. */
+  private readonly painted = new Map<string, number>();
+  /** Tiles whose footprints were known at the last update. */
+  private readonly known = new Set<string>();
+  private readonly dirty: Rect[] = [];
 
-  constructor(private readonly rect: Rect) {
+  constructor(
+    private readonly rect: Rect,
+    private readonly index: StreetIndex,
+    private readonly footprints: Map<string, Footprint[] | 'loading' | 'failed'>,
+  ) {
     this.w = Math.ceil((rect.maxX - rect.minX) / MASK_CELL);
     this.h = Math.ceil((rect.maxZ - rect.minZ) / MASK_CELL);
     this.data = new Uint8Array(this.w * this.h * 2);
@@ -145,6 +176,29 @@ class HoleMask {
 
   get vector(): THREE.Vector4 {
     return new THREE.Vector4(this.rect.minX, this.rect.minZ, this.w * MASK_CELL, this.h * MASK_CELL);
+  }
+
+  /** Whether the tile's hole is in the mask with this slot (the tile may fade in). */
+  isPainted(id: string, slot: number): boolean {
+    return this.painted.get(id) === slot;
+  }
+
+  /** Rasterizations still queued for the live tiles. */
+  backlog = 0;
+
+  private footprintsOf(id: string): readonly Footprint[] {
+    const f = this.footprints.get(id);
+    return Array.isArray(f) ? f : [];
+  }
+
+  private isKnown(id: string): boolean {
+    const f = this.footprints.get(id);
+    return Array.isArray(f) || f === 'failed';
+  }
+
+  /** Tiles whose buildings can reach into the tile's square (buildings overhang their tile by less than a tile). */
+  private neighbours(ref: StreetTileRef): StreetTileRef[] {
+    return this.index.tiles.filter((t) => t !== ref && overlaps(t.bounds, ref.bounds, NEIGHBOUR_REACH));
   }
 
   /** Texels whose centre lies inside the footprint or within `grow` m of its outline. */
@@ -173,56 +227,168 @@ class HoleMask {
     return out;
   }
 
-  private paint(cells: Int32Array, channel: 0 | 1, value: number): void {
-    for (let k = 0; k < cells.length; k++) {
-      this.data[cells[k] * 2 + channel] = value;
-    }
+  /** Growth a footprint is painted with when its tile is live / not live. */
+  private static growth(fp: Footprint, live: boolean): number {
+    return fp.landmark ? GROW_LANDMARK : live ? GROW_LIVE : GROW_KEEP;
   }
 
   /**
-   * Rebuilds when the live tiles or the known footprints changed. `live` are the tiles in the scene whose manifest is
-   * ready; `others` the footprints of the tiles around them that are not loaded.
+   * Rasterizes what painting the tile needs (its footprints grown as live, its neighbours' as keep-outs) within the
+   * time budget; returns whether everything is ready.
    */
-  update(live: readonly { ref: StreetTileRef; footprints: readonly Footprint[] }[], others: readonly { id: string; footprints: readonly Footprint[] }[]): void {
-    const signature = `${live.map((t) => t.ref.id).sort().join(',')}|${others.map((t) => t.id).sort().join(',')}`;
-    if (signature === this.signature) {
-      return;
+  private prepare(ref: StreetTileRef, deadline: number): boolean {
+    for (const fp of this.footprintsOf(ref.id)) {
+      const key = `${fp.id}|${HoleMask.growth(fp, true)}`;
+      if (!this.cells.has(key)) {
+        if (performance.now() > deadline) {
+          return false;
+        }
+        this.cellsOf(fp, HoleMask.growth(fp, true));
+      }
     }
-    this.signature = signature;
+    for (const n of this.neighbours(ref)) {
+      for (const fp of this.footprintsOf(n.id)) {
+        if (!overlaps(fp.bbox, ref.bounds, GROW_LIVE + GROW_LANDMARK)) {
+          continue;
+        }
+        const g = HoleMask.growth(fp, false);
+        if (!this.cells.has(`${fp.id}|${g}`)) {
+          if (performance.now() > deadline) {
+            return false;
+          }
+          this.cellsOf(fp, g);
+        }
+      }
+    }
+    return true;
+  }
+
+  /** Square of the tile plus every footprint of it (grown), i.e. every texel the tile can paint. */
+  private extent(id: string, ref: StreetTileRef): Rect {
+    const r = { ...ref.bounds };
+    for (const fp of this.footprintsOf(id)) {
+      r.minX = Math.min(r.minX, fp.bbox.minX);
+      r.minZ = Math.min(r.minZ, fp.bbox.minZ);
+      r.maxX = Math.max(r.maxX, fp.bbox.maxX);
+      r.maxZ = Math.max(r.maxZ, fp.bbox.maxZ);
+    }
+    return growRect(r, Math.max(GROW_LIVE, GROW_LANDMARK) + MASK_CELL);
+  }
+
+  /** Brings the mask in line with the live tiles; rasterization work stops at `budgetMs`. */
+  update(live: readonly MaskTile[], budgetMs: number): void {
+    const deadline = performance.now() + budgetMs;
+    const refs = new Map(this.index.tiles.map((t) => [t.id, t]));
+    const wanted = new Map<string, number>();
+    this.backlog = 0;
+    for (const t of live) {
+      if (t.slot <= 0 || !this.isKnown(t.ref.id) || !this.neighbours(t.ref).every((n) => this.isKnown(n.id))) {
+        this.backlog++;
+        continue;
+      }
+      if (this.painted.get(t.ref.id) === t.slot || this.prepare(t.ref, deadline)) {
+        wanted.set(t.ref.id, t.slot);
+      } else {
+        this.backlog++;
+      }
+    }
+    for (const [id, slot] of this.painted) {
+      if (wanted.get(id) !== slot) {
+        this.painted.delete(id);
+        this.dirty.push(this.extent(id, refs.get(id)!));
+      }
+    }
+    for (const [id, slot] of wanted) {
+      if (!this.painted.has(id)) {
+        this.painted.set(id, slot);
+        this.dirty.push(this.extent(id, refs.get(id)!));
+      }
+    }
+    // Footprints that arrive later only matter where they reach painted tiles (keep-outs).
+    for (const [id, f] of this.footprints) {
+      if (Array.isArray(f) && !this.known.has(id)) {
+        this.known.add(id);
+        if (!this.painted.has(id) && this.painted.size) {
+          this.dirty.push(this.extent(id, refs.get(id)!));
+        }
+      }
+    }
+    if (this.dirty.length) {
+      this.repaint(refs);
+    }
+  }
+
+  private repaint(refs: ReadonlyMap<string, StreetTileRef>): void {
     const d = this.data;
-    d.fill(0);
-    const cell = (x: number, z: number): [number, number] => [Math.floor((x - this.rect.minX) / MASK_CELL), Math.floor((z - this.rect.minZ) / MASK_CELL)];
-    for (const { ref } of live) {
-      const [x0, z0] = cell(ref.bounds.minX, ref.bounds.minZ);
-      const [x1, z1] = cell(ref.bounds.maxX, ref.bounds.maxZ);
-      for (let z = Math.max(0, z0); z < Math.min(this.h, z1); z++) {
-        d.fill(255, (z * this.w + Math.max(0, x0)) * 2, (z * this.w + Math.min(this.w, x1)) * 2);
+    const w = this.w;
+    const toCell = (v: number, min: number, n: number): number => THREE.MathUtils.clamp(Math.floor((v - min) / MASK_CELL), 0, n);
+    const paintedRects = [...this.painted].map(([id, slot]) => ({ id, slot, rect: refs.get(id)!.bounds }));
+    for (const region of this.dirty.splice(0)) {
+      const x0 = toCell(region.minX, this.rect.minX, w);
+      const x1 = toCell(region.maxX, this.rect.minX, w);
+      const z0 = toCell(region.minZ, this.rect.minZ, this.h);
+      const z1 = toCell(region.maxZ, this.rect.minZ, this.h);
+      if (x1 <= x0 || z1 <= z0) {
+        continue;
       }
-    }
-    for (const { footprints } of live) {
-      for (const fp of footprints) {
-        if (!fp.landmark) {
-          this.paint(this.cellsOf(fp, GROW_LIVE), 1, 255);
-        }
+      for (let z = z0; z < z1; z++) {
+        d.fill(0, (z * w + x0) * 2, (z * w + x1) * 2);
       }
-    }
-    const liveRects = live.map((t) => t.ref.bounds);
-    for (const { footprints } of others) {
-      for (const fp of footprints) {
-        if (liveRects.some((r) => overlaps(fp.bbox, r, GROW_LIVE))) {
-          this.paint(this.cellsOf(fp, GROW_KEEP), 1, 0);
-        }
-      }
-    }
-    for (const list of [live, others]) {
-      for (const { footprints } of list) {
-        for (const fp of footprints) {
-          if (fp.landmark && liveRects.some((r) => overlaps(fp.bbox, r, GROW_LANDMARK))) {
-            const cells = this.cellsOf(fp, GROW_LANDMARK);
-            this.paint(cells, 0, 0);
-            this.paint(cells, 1, 0);
+      const inRegion = (c: number): boolean => {
+        const x = c % w;
+        const z = (c - x) / w;
+        return x >= x0 && x < x1 && z >= z0 && z < z1;
+      };
+      const paint = (cells: Int32Array, channel: 0 | 1 | -1, value: number): void => {
+        for (let k = 0; k < cells.length; k++) {
+          const c = cells[k];
+          if (inRegion(c)) {
+            if (channel < 0) {
+              d[c * 2] = value;
+              d[c * 2 + 1] = value;
+            } else {
+              d[c * 2 + channel] = value;
+            }
           }
         }
+      };
+      // Live squares (both channels), then the live buildings' overhangs (green).
+      for (const { slot, rect } of paintedRects) {
+        const a0 = Math.max(x0, toCell(rect.minX, this.rect.minX, w));
+        const a1 = Math.min(x1, toCell(rect.maxX, this.rect.minX, w));
+        const b0 = Math.max(z0, toCell(rect.minZ, this.rect.minZ, this.h));
+        const b1 = Math.min(z1, toCell(rect.maxZ, this.rect.minZ, this.h));
+        for (let z = b0; z < b1; z++) {
+          d.fill(slot, (z * w + a0) * 2, (z * w + a1) * 2);
+        }
+      }
+      for (const { id, slot } of paintedRects) {
+        for (const fp of this.footprintsOf(id)) {
+          if (!fp.landmark && overlaps(fp.bbox, region, GROW_LIVE)) {
+            paint(this.cellsOf(fp, GROW_LIVE), 1, slot);
+          }
+        }
+      }
+      // Buildings of tiles that are not painted keep their flight-scale twin; landmarks keep the game's models.
+      const nearPainted = (fp: Footprint, grow: number): boolean => paintedRects.some((p) => overlaps(fp.bbox, p.rect, grow));
+      for (const [id, f] of this.footprints) {
+        if (!Array.isArray(f)) {
+          continue;
+        }
+        const isPainted = this.painted.has(id);
+        for (const fp of f) {
+          if (fp.landmark) {
+            if (overlaps(fp.bbox, region, GROW_LANDMARK) && nearPainted(fp, GROW_LANDMARK)) {
+              paint(this.cellsOf(fp, GROW_LANDMARK), -1, 0);
+            }
+          } else if (!isPainted && overlaps(fp.bbox, region, GROW_KEEP) && nearPainted(fp, GROW_LIVE)) {
+            paint(this.cellsOf(fp, GROW_KEEP), 1, 0);
+          }
+        }
+      }
+      // Upload the region row by row (update ranges count 4 components per texel whatever the format).
+      for (let z = z0; z < z1; z++) {
+        this.texture.addUpdateRange((z * w + x0) * 4, (x1 - x0) * 4);
       }
     }
     this.texture.needsUpdate = true;
@@ -307,8 +473,8 @@ function adaptMaterial(m: THREE.Material): void {
 
 /**
  * Shadow casters of the flight-scale city cut by the hole mask would still cast their shadows onto the street tiles:
- * their meshes get a depth material that discards the same fragments (per mask channel). Materials with their own
- * depth material, alpha test or a hole anchor (instanced details) keep theirs.
+ * their meshes get a depth material that discards the same fragments (per mask channel) once the tile there is half
+ * faded in. Materials with their own depth material, alpha test or a hole anchor (instanced details) keep theirs.
  */
 const holeDepthMaterials = new Map<number, THREE.MeshDepthMaterial>();
 
@@ -326,14 +492,19 @@ function holeDepthMaterial(channel: number): THREE.MeshDepthMaterial {
   vHoleW = (modelMatrix * vec4(transformed, 1.0)).xz;
 #endif`,
       );
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vHoleW;\nuniform sampler2D uStreetHoleMask;\nuniform vec4 uStreetHoleRect;').replace(
-        '#include <clipping_planes_fragment>',
-        `#include <clipping_planes_fragment>
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\nvarying vec2 vHoleW;\nuniform sampler2D uStreetHoleMask;\nuniform vec4 uStreetHoleRect;\nuniform sampler2D uStreetFade;\n${STREET_DITHER_GLSL}`)
+        .replace(
+          '#include <clipping_planes_fragment>',
+          `#include <clipping_planes_fragment>
   {
     vec2 streetUv = (vHoleW - uStreetHoleRect.xy) / uStreetHoleRect.zw;
-    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0))) && texture2D(uStreetHoleMask, streetUv)[${channel}] > 0.5) discard;
+    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0)))) {
+      float streetSlot = floor(texture2D(uStreetHoleMask, streetUv)[${channel}] * 255.0 + 0.5);
+      if (streetSlot > 0.5 && streetFadeAt(uStreetFade, streetSlot) > 0.5) discard;
+    }
   }`,
-      );
+        );
     });
     holeDepthMaterials.set(channel, m);
   }
@@ -356,6 +527,14 @@ function assignHoleDepth(scene: THREE.Scene, done: WeakSet<THREE.Object3D>): voi
   });
 }
 
+/**
+ * Whether the street layer runs: opt-in (`?street=1`) until it fits the default budget (see
+ * .docs/planning/README.md: CPU and streaming hitches at eye level are still above it).
+ */
+function streetLayerEnabled(): boolean {
+  return new URLSearchParams(window.location.search).get('street') === '1';
+}
+
 export function createStreetLayerSystem(): System {
   const areas: Area[] = [];
   let mask: HoleMask | null = null;
@@ -364,6 +543,7 @@ export function createStreetLayerSystem(): System {
   let active = false;
   let pendingInit = 0;
   const emptyMask = globalUniforms.uStreetHoleMask.value as THREE.Texture;
+  const defaultFade = globalUniforms.uStreetFade.value as THREE.Texture;
   const depthChecked = new WeakSet<THREE.Object3D>();
 
   const setMask = (area: Area | null): void => {
@@ -372,8 +552,9 @@ export function createStreetLayerSystem(): System {
     }
     maskArea = area;
     mask?.texture.dispose();
-    mask = area ? new HoleMask(area.rect) : null;
+    mask = area ? new HoleMask(area.rect, area.index, area.footprints) : null;
     globalUniforms.uStreetHoleMask.value = mask ? mask.texture : emptyMask;
+    globalUniforms.uStreetFade.value = area ? area.streamer.batches.fade.texture : defaultFade;
     if (mask) {
       (globalUniforms.uStreetHoleRect.value as THREE.Vector4).copy(mask.vector);
     }
@@ -394,32 +575,12 @@ export function createStreetLayerSystem(): System {
     }
   };
 
-  const updateMask = (a: Area): void => {
-    const live: { ref: StreetTileRef; footprints: readonly Footprint[] }[] = [];
-    const liveIds = new Set<string>();
-    for (const t of a.streamer.liveTiles()) {
-      const fp = a.footprints.get(t.ref.id);
-      if (t.manifest && Array.isArray(fp)) {
-        live.push({ ref: t.ref, footprints: fp });
-        liveIds.add(t.ref.id);
-      }
-    }
-    const others: { id: string; footprints: readonly Footprint[] }[] = [];
-    for (const [id, fp] of a.footprints) {
-      if (!liveIds.has(id) && Array.isArray(fp)) {
-        others.push({ id, footprints: fp });
-      }
-    }
-    mask!.update(live, others);
-  };
-
   return {
     name: 'street-layer',
     order: UpdateOrder.World + 20,
 
     init(ctx: EngineContext): void {
-      // Opt-in (?street=1) until the compiled tiles read clearly better than the Galata slice at landing distance.
-      if (new URLSearchParams(window.location.search).get('street') !== '1') {
+      if (!streetLayerEnabled()) {
         return;
       }
       for (const id of AREAS) {
@@ -427,6 +588,8 @@ export function createStreetLayerSystem(): System {
         pendingInit++;
         void fetchJson<StreetIndex>(`${baseUrl}index.json`)
           .then((index) => {
+            const footprints: Area['footprints'] = new Map();
+            const area: Partial<Area> = { id, baseUrl, index, rect: tileRect(index.tiles), footprints };
             const streamer = new TileStreamer({
               baseUrl,
               index,
@@ -437,10 +600,19 @@ export function createStreetLayerSystem(): System {
               excludeAssets: EXCLUDED_PROPS,
               adaptMaterial,
               compile: (o) => ctx.renderer.compileAsync(o, ctx.camera, ctx.scene),
+              fadeSeconds: FADE_SECONDS,
+              // A tile fades in once the flight-scale city under it is cut (its hole is in the mask with its slot).
+              gate: (ref, slot) => maskArea === area && !!mask && mask.isPainted(ref.id, slot),
+              workBudgetMs: WORK_BUDGET_MS,
+              // The water's planar reflection draws the tiles' walls, roofs and glass, not their small detail.
+              detailLayer: RenderLayers.NoReflection,
+              // Night glow follows the sky in the shader (adaptMaterial), so emissive materials can share batches.
+              mergeEmissive: true,
             });
+            area.streamer = streamer;
             streamer.root.visible = false;
             ctx.scene.add(streamer.root);
-            areas.push({ id, baseUrl, index, streamer, rect: tileRect(index.tiles), footprints: new Map() });
+            areas.push(area as Area);
           })
           .catch((err: unknown) => console.info(`[street] no compiled street tiles for ${id} (${String(err)})`))
           .finally(() => pendingInit--);
@@ -462,24 +634,31 @@ export function createStreetLayerSystem(): System {
           active = false;
         }
       }
+      let shown: Area | null = null;
       for (const a of areas) {
         const on = active && a === near;
         if (on) {
           a.streamer.update(cam.x, cam.z);
           ensureFootprints(a, cam.x, cam.z);
         } else if (a.streamer.liveTiles().length) {
-          // Far away: drop every tile (a focus far outside the area unloads them).
+          // Far away or high up: every tile fades out and is dropped (a focus far outside the area unloads them).
           a.streamer.update(a.rect.minX - 1e5, a.rect.minZ - 1e5);
         }
-        a.streamer.root.visible = on;
+        const live = a.streamer.liveTiles();
+        a.streamer.root.visible = live.length > 0;
+        if (live.length && (!shown || on)) {
+          shown = a;
+        }
       }
-      const shown = active ? near : null;
       if (shown && shown !== maskArea) {
         assignHoleDepth(ctx.scene, depthChecked);
       }
       setMask(shown);
       if (shown && mask) {
-        updateMask(shown);
+        mask.update(
+          shown.streamer.liveTiles().map((t) => ({ ref: t.ref, slot: t.slot })),
+          MASK_BUDGET_MS,
+        );
       }
     },
 
@@ -493,7 +672,7 @@ export function createStreetLayerSystem(): System {
           }
         }
       }
-      return n;
+      return n + (mask?.backlog ?? 0);
     },
 
     dispose(): void {

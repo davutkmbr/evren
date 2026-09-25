@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTFParser } from 'three/examples/jsm/loaders/GLTFLoad
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { fetchJson, GROUND_MATERIALS, type LightRec, SHADOW_CASTER_MATERIALS, type StreetIndex, type StreetTileManifest, type StreetTileRef } from './format';
 import { type PropDistances, PropBatches, type PropStats } from './props';
+import { batchCounters, type TilePart, TileBatches } from './tile-batches';
 
 export interface TileStreamerOptions {
   /** URL of the area folder that holds index.json (e.g. "/world/kadikoy/"). */
@@ -29,12 +30,43 @@ export interface TileStreamerOptions {
   excludeAssets?: readonly string[];
   /** Called once for every material the streamer introduces (tiles and props), before it is first compiled. */
   adaptMaterial?: (material: THREE.Material) => void;
+  /** Seconds a tile takes to fade in once it is ready and out before it is dropped (0 = instant, the default). */
+  fadeSeconds?: number;
+  /**
+   * A ready tile fades in only once this returns true (e.g. the host has cut its own geometry under the tile, keyed by
+   * the tile's fade slot).
+   */
+  gate?: (ref: StreetTileRef, slot: number) => boolean;
+  /** Main-thread time (ms) per update spent copying loaded tiles into the draw batches. */
+  workBudgetMs?: number;
+  /** Object layer of the tile batches that draw small detail (see TileBatches) and of the props; default 0. */
+  detailLayer?: number;
+  /**
+   * Emissive tile materials share batches (their emissive colour baked per vertex). Off by default: a host that sets
+   * each emissive material's intensity itself (emissiveMaterials()) needs them apart.
+   */
+  mergeEmissive?: boolean;
 }
 
 interface LoadedLod {
   level: number;
   glb: string;
-  object: THREE.Object3D;
+  /** Key of the tile's entry in the draw batches. */
+  key: string;
+  /** Walkable surface meshes (ground height queries). */
+  ground: TilePart[];
+}
+
+/** A tile in the scene as the host sees it. */
+export interface LiveTile {
+  ref: StreetTileRef;
+  manifest: StreetTileManifest | null;
+  /** Fade slot (fade.ts) the host's own geometry under the tile should follow; 0 = none. */
+  slot: number;
+  /** Current fade (0..1). */
+  fade: number;
+  /** Fading out before it is dropped. */
+  retiring: boolean;
 }
 
 interface TileSlot {
@@ -42,7 +74,14 @@ interface TileSlot {
   /** In the scene. */
   live: LoadedLod | null;
   /** Requested or parsed, not yet in the scene. */
-  pending: { level: number; glb: string; loaded: LoadedLod | null } | null;
+  pending: { level: number; glb: string; loaded: { level: number; glb: string; parts: TilePart[] } | null } | null;
+  /** The pending LOD is being copied into the batches (replaces `live` once complete). */
+  committing: LoadedLod | null;
+  /** Fade slot (0 until the tile first enters the batches) and current fade. */
+  fadeSlot: number;
+  fade: number;
+  /** Out of range: fading out, then dropped. */
+  retiring: boolean;
   /** The pending result is no longer wanted (tile left the radius or the wanted LOD changed). */
   cancelled: boolean;
   /** A request failed (e.g. the compiler is rewriting the file): no new request before this time (performance.now). */
@@ -96,6 +135,9 @@ export interface StreamerStats {
   /** Tiles, manifests or props waiting for a retry after a failed load. */
   retrying: number;
 }
+
+// Decode the meshopt-compressed tiles and props off the main thread (a tile is ~1 MB; decoding it stalls a frame).
+MeshoptDecoder.useWorkers(2);
 
 /** Backoff after the n-th failed load of a file (ms). */
 const retryDelay = (attempts: number): number => Math.min(30000, 1000 * 2 ** attempts);
@@ -157,6 +199,10 @@ export class TileStreamer {
   private readonly textureCache = new Map<string, Promise<THREE.Texture | null>>();
   private readonly excluded: ReadonlySet<string>;
   readonly props: PropBatches | null;
+  /** Draw batches of the tiles' meshes (per material) and their shadow proxies. */
+  readonly batches: TileBatches;
+  private lastUpdate = NaN;
+  private keySeq = 0;
   private radius: number;
   private readonly unloadMargin: number;
   private readonly maxInFlight: number;
@@ -179,6 +225,9 @@ export class TileStreamer {
 
   constructor(private readonly opts: TileStreamerOptions) {
     this.root.name = `street:${opts.index.area}`;
+    // Debug access from the page (e.g. scene.getObjectByName('street:eminonu').userData.streamer.stats()).
+    this.root.userData.streamer = this;
+    this.root.userData.batchCounters = batchCounters;
     this.radius = opts.radius ?? 300;
     this.unloadMargin = opts.unloadMargin ?? 40;
     this.maxInFlight = opts.maxInFlight ?? 4;
@@ -189,10 +238,13 @@ export class TileStreamer {
     this.excluded = new Set(opts.excludeAssets ?? []);
     const aniso = opts.anisotropy ?? 8;
     this.loader.register((parser) => new SharedTextures(parser, this.textureCache, aniso) as never);
+    this.batches = new TileBatches(this.shadows, opts.compile, opts.detailLayer, opts.mergeEmissive);
+    this.root.add(this.batches.group);
     this.props = opts.index.props
       ? new PropBatches(opts.baseUrl, opts.index.props, this.loader, opts.propDistances, this.shadows, (m) => this.noteMaterial(m), opts.compile)
       : null;
     if (this.props) {
+      this.props.layer = opts.detailLayer ?? 0;
       this.root.add(this.props.group);
     }
     for (const ref of opts.index.tiles) {
@@ -200,6 +252,10 @@ export class TileStreamer {
         ref,
         live: null,
         pending: null,
+        committing: null,
+        fadeSlot: 0,
+        fade: 0,
+        retiring: false,
         cancelled: false,
         retryAt: 0,
         attempts: 0,
@@ -254,24 +310,37 @@ export class TileStreamer {
     this.focusX = x;
     this.focusZ = z;
     const now = performance.now();
+    const dt = Number.isFinite(this.lastUpdate) ? Math.min(0.25, (now - this.lastUpdate) / 1000) : 0;
+    this.lastUpdate = now;
+    const fading = (this.opts.fadeSeconds ?? 0) > 0;
     const wanted: { slot: TileSlot; level: number; glb: string; d: number }[] = [];
     for (const slot of this.slots.values()) {
       const d = TileStreamer.distanceToBounds(slot.ref, x, z);
       slot.distance = d;
       const keep = d <= this.radius + this.unloadMargin;
       if (!keep) {
-        if (slot.live) {
-          this.unload(slot);
-        }
         if (slot.pending) {
           slot.cancelled = true;
         }
+        if (slot.committing) {
+          this.batches.removeTile(slot.committing.key);
+          slot.committing = null;
+        }
+        if (slot.live && fading) {
+          slot.retiring = true;
+        } else if (slot.live || slot.fadeSlot) {
+          this.unload(slot);
+        }
         continue;
       }
+      slot.retiring = false;
       const level = this.wantedLevel(slot, d);
       const glb = this.glbOf(slot, level);
-      if (slot.live && slot.live.glb === glb) {
-        slot.live.level = level;
+      const have = slot.committing?.glb ?? slot.live?.glb;
+      if (have === glb) {
+        if (slot.live && slot.live.glb === glb) {
+          slot.live.level = level;
+        }
         if (slot.pending) {
           slot.cancelled = true;
         }
@@ -280,7 +349,7 @@ export class TileStreamer {
       } else if (now >= slot.retryAt && (d <= this.radius || slot.live)) {
         wanted.push({ slot, level, glb, d });
       }
-      if (slot.live && this.format >= 1) {
+      if (slot.live && slot.fade > 0 && this.format >= 1) {
         this.ensureProps(slot, now);
       }
     }
@@ -292,34 +361,63 @@ export class TileStreamer {
       }
       this.request(w.slot, w.level, w.glb);
     }
+    // Loaded tiles enter the draw batches (copied over the next updates within the work budget).
     this.addedLastUpdate = 0;
     this.readyQueue.sort((a, b) => a.distance - b.distance);
     while (this.readyQueue.length && this.addedLastUpdate < this.maxAdds) {
       const slot = this.readyQueue.shift()!;
       const loaded = slot.pending?.loaded;
       if (!loaded || slot.cancelled) {
-        if (loaded && loaded.object !== slot.live?.object) {
-          TileStreamer.disposeObject(loaded.object);
-        }
         slot.pending = null;
         slot.cancelled = false;
         continue;
       }
-      if (slot.live) {
-        this.root.remove(slot.live.object);
-        TileStreamer.disposeObject(slot.live.object);
-      } else {
-        this.lightsCache = null;
+      if (slot.committing) {
+        this.batches.removeTile(slot.committing.key);
       }
-      this.root.add(loaded.object);
-      slot.live = loaded;
+      if (!slot.fadeSlot) {
+        slot.fadeSlot = fading ? this.batches.fade.acquire() : 0;
+        slot.fade = 0;
+      }
+      const key = `${slot.ref.id}#${this.keySeq++}`;
+      this.batches.addTile(key, loaded.parts, slot.fadeSlot);
+      const format = this.format;
+      slot.committing = { level: loaded.level, glb: loaded.glb, key, ground: loaded.parts.filter((p) => isGround(p.material, format)) };
       slot.pending = null;
-      slot.ground = null;
-      this.version++;
-      this.loadTimes.push(performance.now() - slot.requestedAt);
-      this.loads++;
       this.addedLastUpdate++;
     }
+    this.batches.work(this.opts.workBudgetMs ?? 3);
+    for (const slot of this.slots.values()) {
+      if (slot.committing && this.batches.isComplete(slot.committing.key)) {
+        if (slot.live) {
+          this.batches.removeTile(slot.live.key);
+        } else {
+          this.lightsCache = null;
+        }
+        slot.live = slot.committing;
+        slot.committing = null;
+        slot.ground = null;
+        this.version++;
+        this.loadTimes.push(performance.now() - slot.requestedAt);
+        this.loads++;
+      }
+      if (!slot.live) {
+        continue;
+      }
+      const target = !slot.retiring && (!this.opts.gate || this.opts.gate(slot.ref, slot.fadeSlot)) ? 1 : 0;
+      if (!fading) {
+        slot.fade = target;
+      } else if (slot.fade !== target) {
+        const step = dt / (this.opts.fadeSeconds ?? 1);
+        slot.fade = target > slot.fade ? Math.min(target, slot.fade + step) : Math.max(target, slot.fade - step);
+      }
+      this.batches.fade.set(slot.fadeSlot, slot.fade);
+      this.batches.setShown(slot.live.key, slot.fadeSlot ? slot.fade : target);
+      if (slot.retiring && slot.fade <= 0) {
+        this.unload(slot);
+      }
+    }
+    this.batches.refresh();
   }
 
   private request(slot: TileSlot, level: number, glb: string): void {
@@ -330,18 +428,13 @@ export class TileStreamer {
     const url = new URL(glb, new URL(this.opts.baseUrl, window.location.href)).href;
     this.loader
       .loadAsync(url)
-      .then(async (gltf) => {
-        const introduced = this.prepare(gltf.scene);
-        if (introduced && this.opts.compile) {
-          await this.opts.compile(gltf.scene).catch(() => undefined);
-        }
+      .then((gltf) => {
+        const parts = this.prepare(gltf.scene);
         this.inFlight--;
         slot.attempts = 0;
         if (slot.pending && slot.pending.glb === glb) {
-          slot.pending.loaded = { level, glb, object: gltf.scene };
+          slot.pending.loaded = { level, glb, parts };
           this.readyQueue.push(slot);
-        } else {
-          TileStreamer.disposeObject(gltf.scene);
         }
       })
       .catch((err: unknown) => {
@@ -393,12 +486,10 @@ export class TileStreamer {
     }
   }
 
-  /**
-   * Shares materials by name, sets shadow flags and freezes the (static) transforms. Returns whether the tile
-   * introduced a material name not seen before.
-   */
-  private prepare(scene: THREE.Object3D): boolean {
-    let introduced = false;
+  /** Shares materials by name (format 0: sets their caster flag) and lists the tile's meshes in world space. */
+  private prepare(scene: THREE.Object3D): TilePart[] {
+    scene.updateMatrixWorld(true);
+    const parts: TilePart[] = [];
     scene.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) {
@@ -406,28 +497,23 @@ export class TileStreamer {
       }
       const own = mesh.material as THREE.Material;
       const name = own.name;
-      const shared = this.materials.get(name);
+      let shared = this.materials.get(name);
       if (shared) {
         if (shared !== own) {
           TileStreamer.adoptMaps(shared, own);
           own.dispose();
         }
-        mesh.material = shared;
       } else {
+        shared = own;
+        if (this.format < 1) {
+          own.userData.castShadow = SHADOW_CASTER_MATERIALS.has(name);
+        }
         this.materials.set(name, own);
         this.noteMaterial(own);
-        introduced = true;
       }
-      const mat = mesh.material as THREE.Material;
-      const casts = this.format >= 1 ? mat.userData.castShadow === true : SHADOW_CASTER_MATERIALS.has(name);
-      mesh.castShadow = this.shadows && casts;
-      mesh.receiveShadow = this.shadows;
+      parts.push({ material: shared, geometry: mesh.geometry, matrix: mesh.matrixWorld.clone() });
     });
-    scene.updateMatrixWorld(true);
-    scene.traverse((o) => {
-      o.matrixAutoUpdate = false;
-    });
-    return introduced;
+    return parts;
   }
 
   /** A shared material created while one of its textures was missing (a recompile in progress) takes them later. */
@@ -448,30 +534,31 @@ export class TileStreamer {
 
   private unload(slot: TileSlot): void {
     if (slot.live) {
-      this.root.remove(slot.live.object);
-      TileStreamer.disposeObject(slot.live.object);
+      this.batches.removeTile(slot.live.key);
       slot.live = null;
       this.version++;
+      this.unloads++;
+    }
+    if (slot.committing) {
+      this.batches.removeTile(slot.committing.key);
+      slot.committing = null;
     }
     if (slot.propsAdded) {
       this.props?.removeTile(slot.ref.id);
       slot.propsAdded = false;
     }
+    this.batches.fade.release(slot.fadeSlot);
+    slot.fadeSlot = 0;
+    slot.fade = 0;
+    slot.retiring = false;
     this.lightsCache = null;
     slot.ground = null;
-    this.unloads++;
   }
 
-  private static disposeObject(object: THREE.Object3D): void {
-    object.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.geometry.dispose();
-      }
-    });
-  }
-
-  /** Outstanding work within the radius: tiles without their wanted LOD in the scene, and props being built. */
+  /**
+   * Outstanding work within the radius: tiles without their wanted LOD in the scene (or still being copied into the
+   * batches or fading in), and props being built.
+   */
   pending(): number {
     if (!Number.isFinite(this.focusX)) {
       return 1;
@@ -483,7 +570,7 @@ export class TileStreamer {
         continue;
       }
       const wantGlb = this.glbOf(slot, this.wantedLevel(slot, slot.distance));
-      if (!slot.live || slot.live.glb !== wantGlb || slot.pending) {
+      if (!slot.live || slot.live.glb !== wantGlb || slot.pending || slot.committing || slot.fade < 1) {
         n++;
       } else if (this.format >= 1 && this.props && slot.manifestState !== 'failed' && (!slot.propsAdded || this.props.isPending(slot.ref.id))) {
         n++;
@@ -544,18 +631,21 @@ export class TileStreamer {
     };
   }
 
-  /** Materials shared by name across all tiles (e.g. for a debug view). */
-  /** Tiles in the scene and their manifests (null while a format 1 manifest is still loading). */
-  liveTiles(): { ref: StreetTileRef; manifest: StreetTileManifest | null }[] {
-    const out: { ref: StreetTileRef; manifest: StreetTileManifest | null }[] = [];
+  /**
+   * Tiles in the scene or being copied into it, with their manifests (null while a format 1 manifest is still loading),
+   * fade slots and fades.
+   */
+  liveTiles(): LiveTile[] {
+    const out: LiveTile[] = [];
     for (const slot of this.slots.values()) {
-      if (slot.live) {
-        out.push({ ref: slot.ref, manifest: slot.manifest });
+      if (slot.live || slot.committing) {
+        out.push({ ref: slot.ref, manifest: slot.manifest, slot: slot.fadeSlot, fade: slot.live ? slot.fade : 0, retiring: slot.retiring });
       }
     }
     return out;
   }
 
+  /** Materials shared by name across all tiles (e.g. for a debug view). */
   sharedMaterials(): ReadonlyMap<string, THREE.Material> {
     return this.materials;
   }
@@ -589,7 +679,7 @@ export class TileStreamer {
     if (!slot || !slot.live) {
       return null;
     }
-    const grid = (slot.ground ??= buildGroundGrid(slot.live.object, this.format));
+    const grid = (slot.ground ??= buildGroundGrid(slot.live.ground));
     const cx = Math.floor((x - grid.minX) / grid.cell);
     const cz = Math.floor((z - grid.minZ) / grid.cell);
     if (cx < 0 || cz < 0 || cx >= grid.nx || cz >= grid.nz) {
@@ -629,10 +719,11 @@ export class TileStreamer {
 
   dispose(): void {
     for (const slot of this.slots.values()) {
-      if (slot.live) {
+      if (slot.live || slot.committing || slot.fadeSlot) {
         this.unload(slot);
       }
     }
+    this.batches.dispose();
     for (const m of this.materials.values()) {
       m.dispose();
     }
@@ -649,14 +740,7 @@ function isGround(m: THREE.Material, format: number): boolean {
   return format >= 1 ? m.userData.surface === 'ground' : GROUND_MATERIALS.has(m.name);
 }
 
-function buildGroundGrid(tile: THREE.Object3D, format: number): GroundGrid {
-  const meshes: THREE.Mesh[] = [];
-  tile.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (mesh.isMesh && isGround(mesh.material as THREE.Material, format)) {
-      meshes.push(mesh);
-    }
-  });
+function buildGroundGrid(meshes: readonly TilePart[]): GroundGrid {
   let count = 0;
   for (const m of meshes) {
     count += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
@@ -673,7 +757,7 @@ function buildGroundGrid(tile: THREE.Object3D, format: number): GroundGrid {
     const index = m.geometry.index;
     const n = index ? index.count : pos.count;
     for (let k = 0; k < n; k++) {
-      v.fromBufferAttribute(pos, index ? index.getX(k) : k).applyMatrix4(m.matrixWorld);
+      v.fromBufferAttribute(pos, index ? index.getX(k) : k).applyMatrix4(m.matrix);
       tris[t++] = v.x;
       tris[t++] = v.y;
       tris[t++] = v.z;

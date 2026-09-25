@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { InstanceRec, PropRef } from './format';
+import { castsThroughProxy, type DrawListCache, fastSetGeometryAt, proxyMaterial, resetDrawLists, shadowOnly, shadowSideOf, writeDrawList } from './tile-batches';
 
 /** Distance policy of the props (from the quality preset). */
 export interface PropDistances {
@@ -39,6 +40,12 @@ class Batch {
   private maxVertices = 16384;
   private maxIndices = 49152;
   live = 0;
+  /** Per instance: geometry, world bounding sphere (instances never move) and visibility, for the draw list. */
+  private readonly instances: ({ geometryId: number; sphere: THREE.Sphere; visible: boolean; matrix: THREE.Matrix4 } | undefined)[] = [];
+  private readonly drawLists: DrawListCache = new Map();
+  private readonly sortDraws: boolean;
+  /** Ids of the visible instances (rebuilt when visibility changed), so culling skips the hidden thousands. */
+  private visibleIds: number[] | null = null;
 
   constructor(key: string, material: THREE.Material, castShadow: boolean, receiveShadow: boolean) {
     this.mesh = new THREE.BatchedMesh(256, this.maxVertices, this.maxIndices, material);
@@ -50,6 +57,38 @@ class Batch {
     this.mesh.perObjectFrustumCulled = true;
     this.mesh.sortObjects = true;
     this.mesh.matrixAutoUpdate = false;
+    // Only transparent parts need depth order; opaque ones are drawn in placement order.
+    this.sortDraws = material.transparent;
+    this.mesh.onBeforeRender = (_r, _s, camera, geometry, m) => this.cull(camera, geometry, m);
+    this.mesh.onBeforeShadow = (_r, _o, _c, shadowCamera, geometry, m) => this.cull(shadowCamera, geometry, m);
+    this.mesh.setGeometryAt = (geometryId: number, geometry: THREE.BufferGeometry) => fastSetGeometryAt(this.mesh, geometryId, geometry);
+  }
+
+  private cull(camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material): void {
+    if (!this.visibleIds) {
+      this.visibleIds = [];
+      this.instances.forEach((inst, id) => inst?.visible && this.visibleIds!.push(id));
+    }
+    const cascade = (camera as THREE.OrthographicCamera).isOrthographicCamera ? (this.mesh.userData.shadowFrustum as THREE.Frustum | undefined) : undefined;
+    writeDrawList(this.mesh, camera, geometry, material, this.instances, this.sortDraws, this.drawLists, this.visibleIds, false, cascade);
+  }
+
+  /** Shows an instance with the given geometry, or hides it (geometry < 0). */
+  show(id: number, geometryId: number): void {
+    const inst = this.instances[id]!;
+    if (inst.visible !== geometryId >= 0) {
+      this.visibleIds = null;
+    }
+    if (geometryId < 0) {
+      inst.visible = false;
+      return;
+    }
+    if (inst.geometryId !== geometryId) {
+      this.mesh.setGeometryIdAt(id, geometryId);
+      inst.geometryId = geometryId;
+      this.mesh.getBoundingSphereAt(geometryId, inst.sphere)!.applyMatrix4(inst.matrix);
+    }
+    inst.visible = true;
   }
 
   addGeometry(g: THREE.BufferGeometry): number {
@@ -69,16 +108,23 @@ class Batch {
   addInstance(geometryId: number, matrix: THREE.Matrix4): number {
     if (this.live >= this.mesh.maxInstanceCount) {
       this.mesh.setInstanceCount(this.mesh.maxInstanceCount * 2);
+      resetDrawLists(this.drawLists);
     }
     const id = this.mesh.addInstance(geometryId);
     this.mesh.setMatrixAt(id, matrix);
     this.mesh.setVisibleAt(id, false);
+    const sphere = this.mesh.getBoundingSphereAt(geometryId, new THREE.Sphere())!.applyMatrix4(matrix);
+    this.instances[id] = { geometryId, sphere, visible: false, matrix: matrix.clone() };
     this.live++;
     return id;
   }
 
   deleteInstance(id: number): void {
     this.mesh.deleteInstance(id);
+    if (this.instances[id]?.visible) {
+      this.visibleIds = null;
+    }
+    this.instances[id] = undefined;
     this.live--;
   }
 }
@@ -270,7 +316,8 @@ function collectParts(root: THREE.Object3D): PropPart[] {
  * BatchedMeshes (one per material; the untextured parts of every prop share one vertex-colour material), so the draw
  * calls do not grow with tiles, props or variants. Each instance picks its LOD level (props[id].lods, with
  * hysteresis) and is culled by distance (drawDistance, with tighter caps for people and small props); the batches
- * cull the remaining instances against the camera and the sun's shadow camera per instance.
+ * cull the remaining instances against the camera and the sun's shadow camera per instance. Casting props draw into the
+ * shadow maps through position-only proxy batches (one per shadow side, tile-batches.ts shadowOnly), not per material.
  * Loads that fail (e.g. a file being rewritten by the compiler) are retried with backoff.
  */
 export class PropBatches {
@@ -294,6 +341,8 @@ export class PropBatches {
   version = 0;
   /** LOD or cull switches so far. */
   lodChanges = 0;
+  /** Object layer of every prop batch (e.g. one a planar reflection camera skips). */
+  layer = 0;
 
   constructor(
     private readonly baseUrl: string,
@@ -458,18 +507,7 @@ export class PropBatches {
   }
 
   private show(pl: Placed, k: number): void {
-    pl.model.slots.forEach((slot, s) => {
-      const id = pl.ids[s];
-      const g = k >= 0 ? slot.geometry[k] : -1;
-      if (g < 0) {
-        slot.batch.mesh.setVisibleAt(id, false);
-      } else {
-        if (slot.batch.mesh.getGeometryIdAt(id) !== g) {
-          slot.batch.mesh.setGeometryIdAt(id, g);
-        }
-        slot.batch.mesh.setVisibleAt(id, true);
-      }
-    });
+    pl.model.slots.forEach((slot, s) => slot.batch.show(pl.ids[s], k >= 0 ? slot.geometry[k] : -1));
     pl.level = k;
   }
 
@@ -568,11 +606,33 @@ export class PropBatches {
     return { model, x: inst.position[0], z: inst.position[2], level: -1, ids };
   }
 
+  /**
+   * The shadow proxy batch of one shadow side: every casting prop's parts merged into positions only, so the cascades
+   * draw one batch per side instead of every casting material.
+   */
+  private proxyBatch(side: THREE.Side, fresh: Set<Batch>): Batch {
+    const key = `shadow|${side}`;
+    let b = this.batches.get(key);
+    if (!b) {
+      b = new Batch(key, proxyMaterial(side), this.shadows, false);
+      // Prop shadows are small: the near cascades only.
+      shadowOnly(b.mesh, false);
+      b.mesh.castShadow = this.shadows;
+      b.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
+      b.mesh.userData.castShadow = true;
+      b.mesh.layers.set(this.layer);
+      this.batches.set(key, b);
+      fresh.add(b);
+    }
+    return b;
+  }
+
   private batch(key: string, material: THREE.Material, cast: boolean, fresh: Set<Batch>): Batch {
     let b = this.batches.get(key);
     if (!b) {
       b = new Batch(key, material, this.shadows && cast, this.shadows);
       b.mesh.userData.castShadow = cast;
+      b.mesh.layers.set(this.layer);
       this.batches.set(key, b);
       fresh.add(b);
     }
@@ -583,6 +643,8 @@ export class PropBatches {
     let shared = this.materials.get(m.name);
     if (!shared) {
       shared = m;
+      // Double-sided glass and the like in one pass instead of two (back then front faces).
+      m.forceSinglePass = true;
       this.materials.set(m.name, m);
       this.onMaterial(m);
     }
@@ -618,9 +680,21 @@ export class PropBatches {
         return;
       }
       const parts = collectParts(root);
+      // Casters without cut-outs cast through the shadow proxies; the others from their own batch.
+      const bySide = new Map<THREE.Side, PropPart[]>();
+      for (const p of cast ? parts.filter((q) => castsThroughProxy(q.material)) : []) {
+        const side = shadowSideOf(p.material);
+        bySide.set(side, [...(bySide.get(side) ?? []), p]);
+      }
+      for (const [side, list] of bySide) {
+        const g = mergeParts(list, { flat: false, color: false });
+        g.deleteAttribute('normal');
+        g.deleteAttribute('uv');
+        put(this.proxyBatch(side, fresh), level, g);
+      }
       const flat = parts.filter((p) => isFlat(p.material));
       if (flat.length) {
-        put(this.batch(cast ? 'flat' : 'flat|noshadow', this.flatMaterial, cast, fresh), level, mergeParts(flat, { flat: true, color: false }));
+        put(this.batch('flat|noshadow', this.flatMaterial, false, fresh), level, mergeParts(flat, { flat: true, color: false }));
       }
       const byMaterial = new Map<string, PropPart[]>();
       for (const p of parts) {
@@ -633,7 +707,8 @@ export class PropBatches {
       for (const [name, list] of byMaterial) {
         const material = this.sharedMaterial(list[0].material);
         const color = (material as THREE.MeshStandardMaterial).vertexColors === true;
-        put(this.batch(`${name}${cast ? '' : '|noshadow'}`, material, cast, fresh), level, mergeParts(list, { flat: false, color }));
+        const own = cast && !castsThroughProxy(material);
+        put(this.batch(`${name}${own ? '' : '|noshadow'}`, material, own, fresh), level, mergeParts(list, { flat: false, color }));
       }
     });
     // A level missing from a batch falls back to the next finer one (LOD glbs share nodes and materials).

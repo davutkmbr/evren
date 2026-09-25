@@ -1,5 +1,18 @@
 import * as THREE from 'three';
 import { SHARED_GLSL } from '../render/shaders';
+import { FADE_SLOTS, STREET_DITHER_GLSL } from '../street/fade';
+
+/** Fade table of the street tiles (see street/fade.ts) until the street layer sets its own: every slot fully in. */
+function defaultStreetFade(): THREE.DataTexture {
+  const data = new Uint8Array(FADE_SLOTS).fill(255);
+  data[0] = 0;
+  const t = new THREE.DataTexture(data, FADE_SLOTS, 1, THREE.RedFormat, THREE.UnsignedByteType);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.unpackAlignment = 1;
+  t.needsUpdate = true;
+  return t;
+}
 
 /**
  * Global uniforms shared by every shader. The objects are shared by reference: modules may
@@ -26,11 +39,13 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uFogHeightFalloff: { value: 0.0012 },
   uFogColor: { value: new THREE.Color(0.62, 0.68, 0.78) },
   /**
-   * Street layer (src/world/street): hole mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red > 0.5 = hole for
-   * ground materials, green > 0.5 = hole for building materials (streetHole).
+   * Street layer (src/world/street): hole mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red = ground materials,
+   * green = building materials (streetHole). A texel holds the fade slot (byte value, 0 = no hole) of the street tile
+   * that replaces the geometry there; uStreetFade maps slots to that tile's fade (see street/fade.ts).
    */
   uStreetHoleMask: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },
   uStreetHoleRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+  uStreetFade: { value: defaultStreetFade() },
 };
 
 /**
@@ -130,6 +145,8 @@ ${SHARED_GLSL}
   #ifdef STREET_HOLE
     uniform sampler2D uStreetHoleMask;
     uniform vec4 uStreetHoleRect;
+    uniform sampler2D uStreetFade;
+    ${STREET_DITHER_GLSL}
   #endif
 #endif
 `;
@@ -142,7 +159,11 @@ ${SHARED_GLSL}
     #else
     vec2 streetUv = (vFogWorldPos.xz - uStreetHoleRect.xy) / uStreetHoleRect.zw;
     #endif
-    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0))) && texture2D(uStreetHoleMask, streetUv)[STREET_HOLE] > 0.5) discard;
+    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0)))) {
+      float streetSlot = floor(texture2D(uStreetHoleMask, streetUv)[STREET_HOLE] * 255.0 + 0.5);
+      // Complementary to the street tile's own dither (street/fade.ts): each pixel shows one of the two.
+      if (streetSlot > 0.5 && streetFadeAt(uStreetFade, streetSlot) > streetDither()) discard;
+    }
   }
   #endif
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);
