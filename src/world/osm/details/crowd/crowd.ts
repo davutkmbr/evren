@@ -1,9 +1,9 @@
 /**
  * The slice's pedestrians: event-driven walkers on the walk graph (crowd/graph.ts) plus stationary people, drawn as
- * two instanced LOD meshes (crowd/people.ts). The GPU extrapolates every walker along its current straight segment;
- * the CPU only touches a walker when it reaches a vertex (a few dozen per frame). The far mesh draws every instance
- * from the shared buffer with a light body; the detailed near mesh only gets the instances around the camera, copied
- * into its own small buffer each frame.
+ * three instanced LOD meshes (crowd/people.ts). The GPU extrapolates every walker along its current straight segment;
+ * the CPU only touches a walker when it reaches a vertex (a few dozen per frame). Each frame the instances within
+ * each LOD's range (detailed near body, light mid body, far box figure) are copied from the shared buffer into that
+ * mesh's own buffer, so nothing past the draw distance is submitted.
  *
  * Walkers do a weighted random walk (edges weighted by their lane density, preferring to keep straight), sometimes
  * pause to look around and sometimes turn back. Friends and families walk in groups: followers replay their leader's
@@ -14,11 +14,18 @@ import { hash } from '../../shared/geometry';
 import { Pose, STANDER_STRIDE, VERT_STRIDE, type WalkGraph } from '../protocol';
 import { PERSON_COLOR_STRIDE, PERSON_STRIDE, Style, createPeopleMaterial, createPeopleMesh, personGeometry } from './people';
 
-/** Near LOD / draw distance (m). */
+/**
+ * LOD ranges (m at the "high" preset, scaled with LOD_RADIUS_SCALE): detailed people within NEAR_LOD, the light body
+ * within MID_LOD (a person is ~7 px tall there at 1600 x 900), box figures out to DRAW_DISTANCE.
+ */
 const NEAR_LOD = 95;
+const MID_LOD = 170;
 const DRAW_DISTANCE = 620;
-/** Most instances the near mesh holds. */
+/** Most instances the near / mid meshes hold. */
 const NEAR_CAPACITY = 3000;
+const MID_CAPACITY = 6000;
+/** Frames between two gathers of the far figures. */
+const FAR_EVERY = 3;
 /** Most walkers a frame may advance (bounds the CPU after long frames). */
 const EVENT_BUDGET = 600;
 const MAX_WALKERS = 12000;
@@ -92,8 +99,10 @@ export interface CrowdStats {
   walkers: number;
   standers: number;
   groups: number;
-  /** Instances in the near LOD this frame. */
+  /** Instances in the near / mid LOD this frame. */
   near: number;
+  mid: number;
+  far: number;
 }
 
 export class Crowd {
@@ -102,11 +111,20 @@ export class Crowd {
   private readonly buf: Float32Array;
   private readonly colors: Uint8Array;
   private readonly count: number;
-  private readonly ib: THREE.InstancedInterleavedBuffer;
   private readonly nearBuf: Float32Array;
   private readonly nearColors: Uint8Array;
   private readonly nearIb: THREE.InstancedInterleavedBuffer;
   private readonly nearCb: THREE.InstancedInterleavedBuffer;
+  private readonly midBuf: Float32Array;
+  private readonly midColors: Uint8Array;
+  private readonly midIb: THREE.InstancedInterleavedBuffer;
+  private readonly midCb: THREE.InstancedInterleavedBuffer;
+  private readonly farBuf: Float32Array;
+  private readonly farColors: Uint8Array;
+  private readonly farIb: THREE.InstancedInterleavedBuffer;
+  private readonly farCb: THREE.InstancedInterleavedBuffer;
+  private lodScale = 1;
+  private frame = 0;
   private readonly materials: THREE.MeshStandardMaterial[];
   private readonly geometries: THREE.InstancedBufferGeometry[];
   private readonly v: Float32Array;
@@ -124,7 +142,6 @@ export class Crowd {
   private readonly memberLat: Float32Array;
   private readonly memberDelay: Float32Array;
   private readonly heap: EventHeap;
-  private readonly dirty: number[] = [];
   private seedCounter = 1;
 
   constructor(
@@ -148,7 +165,7 @@ export class Crowd {
     const groups = sizes.length;
     const walkers = sizes.reduce((a, b) => a + b, 0);
     const count = standing + walkers;
-    this.stats = { walkers, standers: standing, groups, near: 0 };
+    this.stats = { walkers, standers: standing, groups, near: 0, mid: 0, far: 0 };
     this.count = count;
     this.buf = new Float32Array(Math.max(1, count) * PERSON_STRIDE);
     const colors = new Uint8Array(Math.max(1, count) * PERSON_COLOR_STRIDE);
@@ -211,28 +228,33 @@ export class Crowd {
       }
       this.heap.push(g);
     }
-    this.dirty.length = 0;
 
-    this.ib = new THREE.InstancedInterleavedBuffer(this.buf, PERSON_STRIDE);
-    this.ib.setUsage(THREE.DynamicDrawUsage);
-    const cb = new THREE.InstancedInterleavedBuffer(colors, PERSON_COLOR_STRIDE);
     this.nearBuf = new Float32Array(NEAR_CAPACITY * PERSON_STRIDE);
     this.nearColors = new Uint8Array(NEAR_CAPACITY * PERSON_COLOR_STRIDE);
     this.nearIb = new THREE.InstancedInterleavedBuffer(this.nearBuf, PERSON_STRIDE).setUsage(THREE.DynamicDrawUsage);
     this.nearCb = new THREE.InstancedInterleavedBuffer(this.nearColors, PERSON_COLOR_STRIDE).setUsage(THREE.DynamicDrawUsage);
-    this.materials = [createPeopleMaterial(0, NEAR_LOD, DRAW_DISTANCE), createPeopleMaterial(1, NEAR_LOD, DRAW_DISTANCE)];
-    this.geometries = [personGeometry(0), personGeometry(1)];
+    this.midBuf = new Float32Array(MID_CAPACITY * PERSON_STRIDE);
+    this.midColors = new Uint8Array(MID_CAPACITY * PERSON_COLOR_STRIDE);
+    this.midIb = new THREE.InstancedInterleavedBuffer(this.midBuf, PERSON_STRIDE).setUsage(THREE.DynamicDrawUsage);
+    this.midCb = new THREE.InstancedInterleavedBuffer(this.midColors, PERSON_COLOR_STRIDE).setUsage(THREE.DynamicDrawUsage);
+    this.farBuf = new Float32Array(Math.max(1, count) * PERSON_STRIDE);
+    this.farColors = new Uint8Array(Math.max(1, count) * PERSON_COLOR_STRIDE);
+    this.farIb = new THREE.InstancedInterleavedBuffer(this.farBuf, PERSON_STRIDE).setUsage(THREE.DynamicDrawUsage);
+    this.farCb = new THREE.InstancedInterleavedBuffer(this.farColors, PERSON_COLOR_STRIDE).setUsage(THREE.DynamicDrawUsage);
+    this.materials = [createPeopleMaterial(0, NEAR_LOD, MID_LOD), createPeopleMaterial(1, NEAR_LOD, MID_LOD), createPeopleMaterial(2, MID_LOD, DRAW_DISTANCE)];
+    this.geometries = [personGeometry(0), personGeometry(1), personGeometry(2)];
+    const names = ['near', 'mid', 'far'];
     this.geometries.forEach((geo, lod) => {
-      const ib = lod ? this.ib : this.nearIb;
-      const colorBuf = lod ? cb : this.nearCb;
+      const ib = lod === 2 ? this.farIb : lod === 1 ? this.midIb : this.nearIb;
+      const colorBuf = lod === 2 ? this.farCb : lod === 1 ? this.midCb : this.nearCb;
       geo.setAttribute('iP', new THREE.InterleavedBufferAttribute(ib, 4, 0));
       geo.setAttribute('iV', new THREE.InterleavedBufferAttribute(ib, 4, 4));
       geo.setAttribute('iY', new THREE.InterleavedBufferAttribute(ib, 4, 8));
       geo.setAttribute('iC1', new THREE.InterleavedBufferAttribute(colorBuf, 4, 0, true));
       geo.setAttribute('iC2', new THREE.InterleavedBufferAttribute(colorBuf, 4, 4, true));
       geo.setAttribute('iC3', new THREE.InterleavedBufferAttribute(colorBuf, 4, 8, true));
-      geo.instanceCount = lod ? count : 0;
-      this.group.add(createPeopleMesh(geo, this.materials[lod], `osm-people-${lod ? 'far' : 'near'}`));
+      geo.instanceCount = 0;
+      this.group.add(createPeopleMesh(geo, this.materials[lod], `osm-people-${names[lod]}`));
     });
     this.group.name = 'osm-crowd';
   }
@@ -376,7 +398,6 @@ export class Crowd {
       buf[o + 7] = Number.isFinite(phase) ? phase % 6283.18 : 0;
       buf[o + 8] = yaw;
       buf[o + 9] = Number.isFinite(yawPrev) ? yawPrev : yaw;
-      this.dirty.push(i);
     }
   }
 
@@ -438,75 +459,96 @@ export class Crowd {
       }
       this.heap.push(g);
     }
-    this.flush();
     this.gatherNear(now, camera);
   }
 
-  /** Copies the instances within the near LOD range (plus a margin) into the near mesh's buffers. */
+  /** Scales the LOD ranges (quality preset, LOD_RADIUS_SCALE). */
+  setLodScale(scale: number): void {
+    if (scale === this.lodScale) {
+      return;
+    }
+    this.lodScale = scale;
+    const near = Math.max(60, NEAR_LOD * scale);
+    const mid = Math.max(near + 20, MID_LOD * scale);
+    const draw = DRAW_DISTANCE * scale;
+    (this.materials[0].userData.range as THREE.Vector3).setX(near);
+    (this.materials[1].userData.range as THREE.Vector3).setX(near).setY(mid);
+    (this.materials[2].userData.range as THREE.Vector3).setX(mid).setY(draw);
+  }
+
+  /** Copies the instances within the near / mid LOD ranges (plus a margin) into their meshes' buffers. */
   private gatherNear(now: number, camera: THREE.Vector3): void {
-    const r = NEAR_LOD + 4;
-    const r2 = r * r;
+    const range = this.materials[1].userData.range as THREE.Vector3;
+    // Around each border both meshes get the person; the shaders split them exactly.
+    const nearIn = (range.x + 4) ** 2;
+    const midIn = (range.y + 4) ** 2;
+    const midFrom = Math.max(0, range.x - 4) ** 2;
+    const farRange = this.materials[2].userData.range as THREE.Vector3;
+    // The far figures are re-gathered every FAR_EVERY frames (with a wider margin): at their distance a walker's
+    // stale segment for a frame or two is invisible, and the copy is the bulk of the crowd.
+    const farNow = this.frame++ % FAR_EVERY === 0;
+    const farIn = farNow ? (farRange.y + 10) ** 2 : -1;
+    const farFrom = Math.max(0, farRange.x - 10) ** 2;
     const cx = camera.x;
     const cy = camera.y;
     const cz = camera.z;
     const buf = this.buf;
-    const out = this.nearBuf;
-    const col = this.colors;
-    const outCol = this.nearColors;
     let n = 0;
-    for (let i = 0; i < this.count && n < NEAR_CAPACITY; i++) {
+    let m = 0;
+    let f = 0;
+    for (let i = 0; i < this.count; i++) {
       const o = i * PERSON_STRIDE;
       const t = now - buf[o + 3];
       const dx = buf[o] + buf[o + 4] * t - cx;
       const dy = buf[o + 1] + buf[o + 5] * t - cy;
       const dz = buf[o + 2] + buf[o + 6] * t - cz;
-      if (dx * dx + dy * dy + dz * dz > r2) {
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= farFrom && d2 <= farIn) {
+        this.copyPerson(i, this.farBuf, this.farColors, f++);
+      }
+      if (d2 > midIn) {
         continue;
       }
-      const q = n * PERSON_STRIDE;
-      for (let k = 0; k < PERSON_STRIDE; k++) {
-        out[q + k] = buf[o + k];
+      if (d2 <= nearIn && n < NEAR_CAPACITY) {
+        this.copyPerson(i, this.nearBuf, this.nearColors, n++);
       }
-      const c = i * PERSON_COLOR_STRIDE;
-      const qc = n * PERSON_COLOR_STRIDE;
-      for (let k = 0; k < PERSON_COLOR_STRIDE; k++) {
-        outCol[qc + k] = col[c + k];
+      if (d2 >= midFrom && m < MID_CAPACITY) {
+        this.copyPerson(i, this.midBuf, this.midColors, m++);
       }
-      n++;
     }
-    const geo = this.geometries[0];
-    if (n || geo.instanceCount) {
-      this.nearIb.clearUpdateRanges();
-      this.nearIb.addUpdateRange(0, Math.max(1, n) * PERSON_STRIDE);
-      this.nearIb.needsUpdate = true;
-      this.nearCb.clearUpdateRanges();
-      this.nearCb.addUpdateRange(0, Math.max(1, n) * PERSON_COLOR_STRIDE);
-      this.nearCb.needsUpdate = true;
+    this.upload(this.geometries[0], this.nearIb, this.nearCb, n);
+    this.upload(this.geometries[1], this.midIb, this.midCb, m);
+    if (farNow) {
+      this.upload(this.geometries[2], this.farIb, this.farCb, f);
+      this.stats.far = f;
     }
-    geo.instanceCount = n;
     this.stats.near = n;
+    this.stats.mid = m;
   }
 
-  /** Uploads the changed instances (sorted and merged into few ranges). */
-  private flush(): void {
-    const d = this.dirty;
-    if (!d.length) {
-      return;
+  private copyPerson(i: number, out: Float32Array, outCol: Uint8Array, slot: number): void {
+    const o = i * PERSON_STRIDE;
+    const q = slot * PERSON_STRIDE;
+    for (let k = 0; k < PERSON_STRIDE; k++) {
+      out[q + k] = this.buf[o + k];
     }
-    d.sort((p, q) => p - q);
-    let s = d[0];
-    let e = d[0];
-    for (let k = 1; k <= d.length; k++) {
-      const i = k < d.length ? d[k] : Infinity;
-      if (i - e <= 24) {
-        e = i;
-        continue;
-      }
-      this.ib.addUpdateRange(s * PERSON_STRIDE, (e - s + 1) * PERSON_STRIDE);
-      s = e = i;
+    const c = i * PERSON_COLOR_STRIDE;
+    const qc = slot * PERSON_COLOR_STRIDE;
+    for (let k = 0; k < PERSON_COLOR_STRIDE; k++) {
+      outCol[qc + k] = this.colors[c + k];
     }
-    this.ib.needsUpdate = true;
-    d.length = 0;
+  }
+
+  private upload(geo: THREE.InstancedBufferGeometry, ib: THREE.InstancedInterleavedBuffer, cb: THREE.InstancedInterleavedBuffer, n: number): void {
+    if (n || geo.instanceCount) {
+      ib.clearUpdateRanges();
+      ib.addUpdateRange(0, Math.max(1, n) * PERSON_STRIDE);
+      ib.needsUpdate = true;
+      cb.clearUpdateRanges();
+      cb.addUpdateRange(0, Math.max(1, n) * PERSON_COLOR_STRIDE);
+      cb.needsUpdate = true;
+    }
+    geo.instanceCount = n;
   }
 
   dispose(): void {

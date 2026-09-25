@@ -11,6 +11,7 @@ import { LotHint, LotStyle, buildCover, buildCoverMesh, coverRaster, type LotReg
 import { buildWalkGraph, poiDensity } from './crowd/graph';
 import { Placer, placeFurniture } from './props/placement';
 import { PropStamper } from './props/stamp';
+import { lodTileIndex, TriLod } from '../shared/mesh-tiles';
 import type { DetailsRequest, DetailsResult } from './protocol';
 import { placeTrees } from './trees/placement';
 import { buildBoats } from './waterfront/boats';
@@ -62,12 +63,21 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   }
   const placed = placeFurniture(placer, data, boats.anchors);
   const t4 = performance.now();
+  const props = stamper.take();
+  let propsTiles: Float64Array | null = null;
+  if (props) {
+    // Tiled (no far version): drawn and shadowed only near the camera (index.ts).
+    const tiled = lodTileIndex(props.attributes.position.array as Float32Array, props.index, new Uint8Array(props.index.length / 3).fill(TriLod.Near));
+    props.index = tiled.index;
+    propsTiles = tiled.leaves;
+  }
   return {
     cover: coverMesh.count ? { mesh: coverMesh.take(), raster: coverRaster(cover) } : null,
     trees: trees.trees,
     walk: walk.graph,
     standers: placed.standers,
-    props: stamper.take(),
+    props,
+    propsTiles,
     boats: boats.mesh,
     flags: placed.flags,
     pigeons: placed.pigeons,

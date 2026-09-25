@@ -11,8 +11,8 @@ export interface StreetsRequest {
 
 export interface StreetsResult {
   meshes: Partial<Record<'ground' | 'paint' | 'rails' | 'inlay' | 'masonry' | 'wires', MeshArrays>>;
-  /** Ground mesh tiles (index sorted by tile): first index, index count, bounding sphere cx, cy, cz, r. */
-  groundTiles: Float32Array;
+  /** Near / far leaf table of the ground mesh (shared/mesh-tiles.ts lodTileIndex; far = plain 5 m grid cells). */
+  groundTiles: Float64Array;
   /** INSTANCE_STRIDE records per street furniture model. */
   instances: Record<PropKind, Float32Array>;
   /** Light type (kinds.ts Light) per instance. */

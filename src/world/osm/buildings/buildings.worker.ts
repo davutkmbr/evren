@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 /** Builds the OSM building meshes, detail instances, rooftop props and colliders off the main thread (index.ts). */
-import { tileIndex } from '../shared/mesh-tiles';
+import { LOD_LEAF_STRIDE, lodTileIndex } from '../shared/mesh-tiles';
 import { StreetSurface } from '../shared/street-surface';
 import { serveWorker } from '../shared/worker';
 import { buildBuildings } from './build';
@@ -18,15 +18,22 @@ serveWorker<BuildingsRequest, BuildingsResult>((req) => {
   const props = Object.fromEntries(PROP_KINDS.map((k) => [k, b.props[k].take()])) as Record<PropKind, Float32Array>;
   const facade = b.facade.take();
   const roof = b.roof.take();
-  const facadeTiles = tileIndex(facade.attributes.position.array as Float32Array, facade.index);
-  const roofTiles = tileIndex(roof.attributes.position.array as Float32Array, roof.index);
+  const facadeTiles = lodTileIndex(facade.attributes.position.array as Float32Array, facade.index, b.facade.takeTriLod());
+  const roofTiles = lodTileIndex(roof.attributes.position.array as Float32Array, roof.index, b.roof.takeTriLod());
+  const farTris = (leaves: Float64Array): number => {
+    let n = 0;
+    for (let k = 3; k < leaves.length; k += LOD_LEAF_STRIDE) {
+      n += leaves[k] / 3;
+    }
+    return n;
+  };
   facade.index = facadeTiles.index;
   roof.index = roofTiles.index;
   return {
     facade,
-    facadeTiles: facadeTiles.tiles,
+    facadeTiles: facadeTiles.leaves,
     roof,
-    roofTiles: roofTiles.tiles,
+    roofTiles: roofTiles.leaves,
     details: details.kinds,
     tiles: details.tiles,
     props,
@@ -37,6 +44,8 @@ serveWorker<BuildingsRequest, BuildingsResult>((req) => {
       ...Object.fromEntries(Object.entries(details.counts).map(([k, v]) => [`d_${k}`, v])),
       facadeTris: b.facade.triangles,
       roofTris: b.roof.triangles,
+      facadeFarTris: farTris(facadeTiles.leaves),
+      roofFarTris: farTris(roofTiles.leaves),
       infillMs: Math.round(t1 - t0),
       ms: Math.round(performance.now() - t0),
     },

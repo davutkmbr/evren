@@ -10,6 +10,7 @@
  */
 import { LandUse } from '../../../core/contracts';
 import { MeshBuf } from '../shared/buffers';
+import { TriLod } from '../shared/mesh-tiles';
 import { GROUND_STEP } from '../shared/ground';
 import { Ground, PATH_RANGE, decodeSigned } from '../shared/street-field';
 import { QUAY_EDGE, type StreetSurface } from '../shared/street-surface';
@@ -359,10 +360,13 @@ export function buildGroundMesh(surface: StreetSurface, padded: PadTest): { mesh
       }
       const k = j * nx + i;
       const maxLift = Math.max(lift[k], lift[k + 1], lift[k + nx], lift[k + nx + 1]);
-      if (anyIn && anyOut && maxLift > 0.004) {
+      const refined = anyIn && anyOut && maxLift > 0.004;
+      if (refined) {
         stats.refined++;
+        mesh.lod = TriLod.Near;
         refine(i, j);
-        continue;
+        // The far version keeps the plain grid cell (corners on the same side as their neighbours: no cracks).
+        mesh.lod = TriLod.Far;
       }
       const a = coarse(i, j, byteAt(ti0, tj0) > ZERO);
       const b = coarse(i + 1, j, byteAt(ti0 + step, tj0) > ZERO);
@@ -370,6 +374,7 @@ export function buildGroundMesh(surface: StreetSurface, padded: PadTest): { mesh
       const d = coarse(i + 1, j + 1, byteAt(ti0 + step, tj0 + step) > ZERO);
       landTri(a, c, b);
       landTri(b, c, d);
+      mesh.lod = TriLod.Both;
     }
   }
   stats.meshMs = Math.round(performance.now() - tStart) - stats.prepMs;

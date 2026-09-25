@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { Arch, Balcony, Flag, groundRow, Kind, styleCode } from './archetypes';
 import { emitPlane, type EmitContext, layoutFor, type Plane, planeFrom } from './facade';
+import { TriLod } from '../shared/mesh-tiles';
 import { F, type StateMesh } from './mesh';
 import { type BuildingPlan, CORNICE_PROFILES, corniceDrop } from './plan';
 
@@ -36,8 +37,9 @@ function setTrim(m: StateMesh, plan: BuildingPlan, topV: number, tint: THREE.Col
  * One horizontal moulding band [y0, y1] projecting `proj` from the exposed edges of a ring; mitred where two
  * exposed edges meet, cut square next to party walls.
  */
-export function band(m: StateMesh, edges: readonly Edge[], y0: number, y1: number, proj: number, gMin: number): void {
+export function band(m: StateMesh, edges: readonly Edge[], y0: number, y1: number, proj: number, gMin: number, front: number = TriLod.Near): void {
   const n = edges.length;
+  const lod = m.lod;
   for (let i = 0; i < n; i++) {
     const e = edges[i];
     if (!e.exposed || e.len < 0.4) {
@@ -66,8 +68,12 @@ export function band(m: StateMesh, edges: readonly Edge[], y0: number, y1: numbe
     const p0t: V3 = [p0x, y1, p0z];
     const p1t: V3 = [p1x, y1, p1z];
     const uvWall = (x: number, y: number, z: number): [number, number] => [(x - e.ax) * -e.nz + (z - e.az) * e.nx, y - gMin];
+    // The far version keeps at most the front face (cornices); undersides, tops and ends are sub-pixel there.
+    m.lod = TriLod.Near;
     m.poly([w0b, w1b, p1b, p0b], 0, -1, 0, (x, _y, z) => [x, z]);
+    m.lod = front;
     m.poly([p0b, p1b, p1t, p0t], e.nx, 0, e.nz, uvWall);
+    m.lod = TriLod.Near;
     m.poly([p0t, p1t, [e.bx, y1, e.bz], [e.ax, y1, e.az]], 0, 1, 0, (x, _y, z) => [x, z]);
     // Square ends against party walls.
     if (!prev.exposed) {
@@ -77,6 +83,7 @@ export function band(m: StateMesh, edges: readonly Edge[], y0: number, y1: numbe
       m.poly([w1b, p1b, p1t, [e.bx, y1, e.bz]], e.nz, 0, -e.nx, (x, y, z) => [(x - e.bx) * e.nx + (z - e.bz) * e.nz, y - gMin]);
     }
   }
+  m.lod = lod;
 }
 
 /** Cornice under the eave / at the roof slab, and string courses at the upper floor lines. */
@@ -91,7 +98,7 @@ export function mouldings(c: EmitContext, edges: readonly Edge[], gMin: number, 
     const maxProj = pitched ? 0.3 : 10;
     let y = top - drop;
     for (const [h, proj] of profile) {
-      band(mesh, edges, y, y + h, Math.min(proj, maxProj), gMin);
+      band(mesh, edges, y, y + h, Math.min(proj, maxProj), gMin, TriLod.Both);
       y += h;
     }
     c.stats.cornices++;
@@ -180,6 +187,8 @@ export function bayWindow(c: EmitContext, parent: Plane, top: number, pitched: b
   emitPlane(c, bayPlane(parent, plan, a0x, a0z, a1x, a1z, -parent.tx, -parent.tz, y0, y1, true));
   emitPlane(c, bayPlane(parent, plan, b1x, b1z, b0x, b0z, parent.tx, parent.tz, y0, y1, true));
   setTrim(mesh, plan, top - parent.gMin, plan.bay === 'cumba' && plan.arch === Arch.Wood ? new THREE.Color().copy(tint).multiplyScalar(0.8) : plan.trim);
+  const lod = mesh.lod;
+  mesh.lod = TriLod.Near;
   mesh.poly(
     [
       [a0x, y0, a0z],
@@ -192,6 +201,7 @@ export function bayWindow(c: EmitContext, parent: Plane, top: number, pitched: b
     0,
     (x, _y, z) => [x, z],
   );
+  mesh.lod = lod;
   mesh.poly(
     [
       [a0x, y1, a0z],

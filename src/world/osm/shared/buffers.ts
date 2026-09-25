@@ -30,7 +30,11 @@ export class FloatBuf {
 export class MeshBuf {
   readonly attrs: Record<string, { buf: FloatBuf; size: number }> = {};
   private readonly idx: number[] = [];
+  private readonly cls: number[] = [];
   count = 0;
+  /** Class of the triangles written from now on (shared/mesh-tiles.ts TriLod); only recorded once set. */
+  lod = 0;
+  private tracked = false;
 
   constructor(layout: Record<string, number>) {
     for (const [name, size] of Object.entries(layout)) {
@@ -58,11 +62,35 @@ export class MeshBuf {
 
   tri(a: number, b: number, c: number): void {
     this.idx.push(a, b, c);
+    this.mark(1);
   }
 
   /** Triangles (a, b, c) and (a, c, d). */
   quad(a: number, b: number, c: number, d: number): void {
     this.idx.push(a, b, c, a, c, d);
+    this.mark(2);
+  }
+
+  private mark(n: number): void {
+    if (this.lod !== 0 && !this.tracked) {
+      this.tracked = true;
+      this.cls.length = this.idx.length / 3 - n;
+      this.cls.fill(0);
+    }
+    if (this.tracked) {
+      for (let k = 0; k < n; k++) {
+        this.cls.push(this.lod);
+      }
+    }
+  }
+
+  /** Per-triangle TriLod classes (all Both when `lod` was never set). */
+  takeTriLod(): Uint8Array {
+    const out = new Uint8Array(this.idx.length / 3);
+    if (this.tracked) {
+      out.set(this.cls);
+    }
+    return out;
   }
 
   get triangles(): number {

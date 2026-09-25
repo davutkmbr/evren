@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { hash, pointInRing, ringArea, segDist } from '../shared/geometry';
+import { TriLod } from '../shared/mesh-tiles';
 import { INSTANCE_STRIDE } from '../shared/protocol';
 import { Arch, Kind, styleCode } from './archetypes';
 import { type Obb, obbPoint, offsetRing } from './footprint';
@@ -106,6 +107,8 @@ function ridgeCap(c: RoofContext, a: V3, b: V3): void {
   const wx = -dz / hl;
   const wz = dx / hl;
   setRoof(c, RoofPart.Ridge);
+  const lod = c.roof.lod;
+  c.roof.lod = TriLod.Near;
   for (const s of [1, -1]) {
     const w = 0.15 * s;
     const pts: V3[] = [
@@ -119,6 +122,7 @@ function ridgeCap(c: RoofContext, a: V3, b: V3): void {
     const nl = Math.hypot(nx, 0.8, nz);
     c.roof.poly(pts, nx / nl, 0.8 / nl, nz / nl, (x, y, z) => [(x - a[0]) * (dx / hl) + (z - a[2]) * (dz / hl), y]);
   }
+  c.roof.lod = lod;
 }
 
 /** Eave soffit (horizontal, facing down) and fascia board (vertical) along every ring edge. */
@@ -127,6 +131,8 @@ function eaves(c: RoofContext, eave: number[], eaveY: number, fascia: THREE.Colo
   const n = r.length / 2;
   const y0 = eaveY - 0.16;
   setTrim(c, Kind.Trim, fascia);
+  const lod = c.facade.lod;
+  c.facade.lod = TriLod.Near;
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     const w0: V3 = [r[i * 2], y0, r[i * 2 + 1]];
@@ -139,6 +145,7 @@ function eaves(c: RoofContext, eave: number[], eaveY: number, fascia: THREE.Colo
     const nz = -(e1[0] - e0[0]) / len;
     c.facade.poly([e0, e1, [e1[0], eaveY + 0.02, e1[2]], [e0[0], eaveY + 0.02, e0[2]]], nx, 0, nz, (x, y, z) => [(x - e0[0]) * -nz + (z - e0[2]) * nx, y - c.gMin]);
   }
+  c.facade.lod = lod;
 }
 
 /** Height of the pitched roof surface at OBB coords (s, t) above `top` (hipped / gabled / pyramidal). */
@@ -210,6 +217,8 @@ function pitchedRoof(c: RoofContext): number {
       c.facade.poly([g0, g1, g2], box.dx * side, 0, box.dz * side, (x, y, z) => [(x - g0[0]) * -box.dz * side + (z - g0[2]) * box.dx * side, y - c.gMin]);
     }
     setTrim(c, Kind.Trim, fascia);
+    const lod = c.facade.lod;
+    c.facade.lod = TriLod.Near;
     for (const side of [1, -1]) {
       const w0 = P(-L, side * box.hw, eaveY - 0.16);
       const w1 = P(L, side * box.hw, eaveY - 0.16);
@@ -220,6 +229,7 @@ function pitchedRoof(c: RoofContext): number {
       const nz = box.dx * side;
       c.facade.poly([e0, e1, [e1[0], eaveY + 0.02, e1[2]], [e0[0], eaveY + 0.02, e0[2]]], nx, 0, nz, (x, y, z) => [x * -nz + z * nx, y - c.gMin]);
     }
+    c.facade.lod = lod;
   } else {
     const eave = offsetRing(r, overhang);
     const ridgeHalf = plan.roof === 'pyramidal' ? 0 : Math.max(0, box.hl - box.hw);
@@ -457,12 +467,28 @@ function flatRoof(c: RoofContext, box: Obb, lead = false): void {
     }
     return out;
   });
+  const lod = c.facade.lod;
   if (lead) {
     setRoof(c, RoofPart.Flat, RoofCover.Lead);
     slab(c.roof, contour, holeV, roofY);
   } else {
     setTrim(c, Kind.Slab, new THREE.Color(1, 1, 1));
     c.facade.get(F.Sty)[3] = plan.slab;
+    // Far version: one cap over the whole outline at the wall top instead of the sunken slab and the parapet.
+    c.facade.lod = TriLod.Far;
+    const outerV: THREE.Vector2[] = [];
+    for (let i = 0; i < n; i++) {
+      outerV.push(new THREE.Vector2(r[i * 2], r[i * 2 + 1]));
+    }
+    const holeOuter = c.holes.map((h) => {
+      const out: THREE.Vector2[] = [];
+      for (let i = 0; i < h.length; i += 2) {
+        out.push(new THREE.Vector2(h[i], h[i + 1]));
+      }
+      return out;
+    });
+    slab(c.facade, outerV, holeOuter, top);
+    c.facade.lod = TriLod.Near;
     slab(c.facade, contour, holeV, roofY);
   }
   // Parapet: inner faces and cap.
@@ -486,6 +512,7 @@ function flatRoof(c: RoofContext, box: Obb, lead = false): void {
       c.facade.poly([[outer[i * 2], top, outer[i * 2 + 1]], [outer[j * 2], top, outer[j * 2 + 1]], [bx, top, bz], [ax, top, az]], 0, 1, 0, (x, _y, z) => [x, z]);
     }
   }
+  c.facade.lod = lod;
   if (lead) {
     return;
   }

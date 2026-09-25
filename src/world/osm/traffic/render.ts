@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
+import { setShadowGate } from '../../../core/shadow-gate';
 import { MODEL_COUNT, MODEL_LENGTH, Model } from './catalog';
 import { createPoolMaterial, createSpriteMaterial, createVehicleMaterial, type BatchTextures } from './materials';
 import { buildModelGeometry, LOD_COUNT, modelLights } from './models';
@@ -19,6 +20,11 @@ const LOD_MID = 190;
 const LOD_HYST = 1.12;
 /** Light sprites per moving slot (2 head + 2 tail). */
 const SPRITES_PER_SLOT = 4;
+/**
+ * Vehicles cast shadows only into the cascades that start within this view depth (m): past it a car is a few pixels
+ * and its shadow a blur, but the whole batch would be drawn into the last cascade again.
+ */
+const SHADOW_DEPTH = 400;
 /** Parked vehicles are culled per grid cell (m); their LODs refresh every PARKED_LOD_FRAMES frames. */
 const PARKED_CELL = 48;
 const PARKED_LOD_FRAMES = 4;
@@ -158,6 +164,7 @@ export class VehicleRenderer {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.layers.set(RenderLayers.NoReflection);
+    setShadowGate(mesh, { below: SHADOW_DEPTH });
     const geometry: number[][] = [];
     for (let m = 0; m < MODEL_COUNT; m++) {
       geometry.push(models.includes(m) ? this.geometries[m].map((g) => mesh.addGeometry(g)) : []);

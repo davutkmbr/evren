@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SunLightShadow } from 'three/examples/jsm/lights/SunLightShadow.js';
+import { shadowGatePasses } from '../../core/shadow-gate';
 
 /** Cascade slots compiled into every lit shader (2x2 atlas). Fewer can be active at runtime (quality). */
 export const SHADOW_CASCADES = 4;
@@ -51,10 +52,13 @@ interface CullingContext {
  * 2. it is larger than a fraction of a shadow texel of that cascade, and
  * 3. its shadow volume (the sphere swept along the light direction down to the ground) overlaps the view-depth range
  *    in which cascade i is actually sampled.
+ * Objects can also be limited to the near or the far cascades (core/shadow-gate.ts), e.g. full-detail meshes near
+ * and their simplified proxies far.
  * The last test stops near-camera casters (the dragon) from being re-rendered into far cascades whose bounding sphere
  * happens to contain the camera, while keeping long shadows (low sun, high flight) that do land far away.
  */
 class CascadeFrustum extends THREE.Frustum {
+  readonly isCascadeFrustum = true;
   active = true;
   depthMin = -Infinity;
   depthMax = Infinity;
@@ -65,7 +69,7 @@ class CascadeFrustum extends THREE.Frustum {
   }
 
   override intersectsObject(object: THREE.Object3D): boolean {
-    if (!this.active) {
+    if (!this.active || !shadowGatePasses(object, this.depthMin)) {
       return false;
     }
     const o = object as BoundedObject;

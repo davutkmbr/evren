@@ -79,6 +79,8 @@ export interface DetailsResult {
   standers: Float32Array;
   /** Static street furniture merged into one vertex-coloured mesh (position, normal, color, aGlow). */
   props: MeshArrays | null;
+  /** Leaf table of `props` (shared/mesh-tiles.ts lodTileIndex, every triangle Near). */
+  propsTiles: Float64Array | null;
   /** Rocking boats (position, normal, color, aGlow, aPivot = pivot x, z, rocking amplitude, phase). */
   boats: MeshArrays | null;
   flags: Float32Array;

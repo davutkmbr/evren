@@ -14,7 +14,8 @@ import { LayerBase } from '../shared/layer';
 import { CARRIAGEWAY_KINDS } from '../shared/street-field';
 import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
 import { INSTANCE_STRIDE } from '../shared/protocol';
-import { addMesh, addTiledMesh } from '../shared/three';
+import { LodTiledMesh } from '../shared/lod-tiles';
+import { addMesh } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { PROP_KINDS, type PropKind } from './kinds';
@@ -77,9 +78,15 @@ function trianglesOf(root: THREE.Object3D): number {
 /** Street furniture is drawn within 450 m (far lamps live on as the night head sprites); only tram canopies cast shadows. */
 const PROP_LOD: InstanceLodOptions = { radius: 450, shadowRadius: 0 };
 const CANOPY_LOD: InstanceLodOptions = { radius: 1200, shadowRadius: 300 };
+/**
+ * Beyond this distance (m at "high") the ground drops its 1 m kerb refinement and kerb faces for the plain 5 m grid
+ * cells: a 15 cm kerb step is a third of a pixel there, and the street look comes from the ground shader's raster.
+ */
+const GROUND_FAR_DISTANCE = 400;
 
 class StreetsLayer extends LayerBase {
   private readonly props: InstanceLod[] = [];
+  private ground: LodTiledMesh | null = null;
 
   constructor(ctx: OsmContext, data: OsmData) {
     super('streets');
@@ -105,6 +112,7 @@ class StreetsLayer extends LayerBase {
 
   update(_dt: number, ctx: OsmContext): void {
     const preset = ctx.engine.quality.settings.preset;
+    this.ground?.update(ctx.engine.camera.position, preset);
     for (const p of this.props) {
       p.update(ctx.engine.camera.position, preset);
     }
@@ -147,7 +155,11 @@ class StreetsLayer extends LayerBase {
     const t1 = performance.now();
     materials.setStreetMask(ctx.base.street, res.pool, ctx.rect);
     // Flat streets barely show in the water's mirror image, but ~2 M triangles went into it every frame.
-    addTiledMesh(this.group, 'osm-ground', res.meshes.ground, res.groundTiles, materials.ground, { layer: RenderLayers.NoReflection });
+    if (res.meshes.ground?.index.length) {
+      this.ground = new LodTiledMesh(this.group, 'osm-ground', res.meshes.ground, res.groundTiles, materials.ground, { distance: GROUND_FAR_DISTANCE });
+      this.ground.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+      this.ground.update(ctx.engine.camera.position, ctx.engine.quality.settings.preset);
+    }
     addMesh(this.group, 'osm-paint', res.meshes.paint, materials.paint, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-rails', res.meshes.rails, materials.rails, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-trackbed', res.meshes.inlay, materials.inlay);

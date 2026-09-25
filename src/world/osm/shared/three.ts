@@ -35,37 +35,6 @@ export function addMesh(group: THREE.Object3D, name: string, m: MeshArrays | und
   return mesh;
 }
 
-/**
- * Adds a worker mesh as one mesh per tile over shared buffers (`tiles` from shared/mesh-tiles.ts tileIndex), so the
- * camera and each shadow cascade cull the tiles separately. Returns the tile meshes.
- */
-export function addTiledMesh(group: THREE.Object3D, name: string, m: MeshArrays | undefined, tiles: Float32Array, material: THREE.Material, opt: MeshOptions = {}): THREE.Mesh[] {
-  if (!m || m.index.length === 0) {
-    return [];
-  }
-  const shared = toGeometry(m);
-  shared.boundingSphere = null;
-  const meshes: THREE.Mesh[] = [];
-  for (let k = 0; k < tiles.length; k += 6) {
-    const g = new THREE.BufferGeometry();
-    for (const [attrName, attr] of Object.entries(shared.attributes)) {
-      g.setAttribute(attrName, attr);
-    }
-    g.setIndex(shared.index);
-    g.setDrawRange(tiles[k], tiles[k + 1]);
-    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(tiles[k + 2], tiles[k + 3], tiles[k + 4]), tiles[k + 5]);
-    const mesh = new THREE.Mesh(g, material);
-    mesh.name = name;
-    mesh.castShadow = opt.castShadow ?? false;
-    mesh.receiveShadow = opt.receiveShadow ?? true;
-    mesh.matrixAutoUpdate = false;
-    mesh.layers.set(opt.layer ?? RenderLayers.Default);
-    group.add(mesh);
-    meshes.push(mesh);
-  }
-  return meshes;
-}
-
 /** Disposes the geometries of every mesh under `root` and detaches it (materials belong to their layer). */
 export function disposeGeometries(root: THREE.Object3D): void {
   root.traverse((o) => {
@@ -78,13 +47,13 @@ export function disposeGeometries(root: THREE.Object3D): void {
   root.removeFromParent();
 }
 
-/** Triangle count of everything under `root` (instanced meshes counted per instance). */
+/** Triangle count of the visible meshes under `root` (draw ranges honoured, instanced meshes counted per instance). */
 export function countTriangles(root: THREE.Object3D): number {
   let tris = 0;
-  root.traverse((o) => {
+  root.traverseVisible((o) => {
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh) {
-      const per = (mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count) / 3;
+      const per = Math.min(mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count, mesh.geometry.drawRange.count) / 3;
       tris += per * ((o as THREE.InstancedMesh).isInstancedMesh ? (o as THREE.InstancedMesh).count : 1);
     }
   });

@@ -24,8 +24,21 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   furniture and trees stream by distance with a near shadow ring (`shared/instance-lod.ts`), facades, roofs and the
   ground are tiled so the camera and each shadow cascade cull them per tile, cars and merged props stop casting
   shadows above 120 m. The Galata view went from 39.7 M to 17.5 M drawn triangles (the slice itself 32.9 M → 10.7 M).
-  Still without LOD: the building shells beyond their tiles (no simplified far version), the ground mesh and the far
-  crowd; city-wide rollout needs the compiler's tiles + HLOD.
+  LOD round two (25 September 2026): facades, roofs and the ground carry a far version in the same buffers
+  (`shared/mesh-tiles.ts` lodTileIndex, `shared/lod-tiles.ts`): an 8 x 8 quadtree of ~300 m leaves, full detail within
+  450 m (ground 400 m, scaled by preset), far leaves merged per quarter of the slice. Far shells drop string courses,
+  cornice tops, eaves, ridge caps, bay undersides and parapets (flat roofs get one cap at the wall top); the far
+  ground drops the 1 m kerb refinement. Near leaves cast their far version into cascades that start beyond 450 m; the
+  water reflection draws the whole far version in one call per mesh. Shadow gates (`core/shadow-gate.ts`) keep
+  small casters (window caps, railings, street props, the prop/tree shadow rings, vehicles) out of cascades that
+  start beyond their reach. The crowd has three LODs (near body, light body to 170 m, box figures to 620 m, scaled
+  by preset), each gathered per frame so nothing past the draw distance is submitted. Merged street props are tiled
+  and drawn within 450 m. Per pass at "high" (`?freeze=1`): Galata 17.5 M / 540 calls → 11.4 M / 371, Karaköy at
+  60 m 22.7 M / 519 → 14.8 M / 385, 600 m 15.9 M / 459 → 9.9 M / 267, Bosphorus 15.2 M / 417 → 9.1 M / 231; the
+  reflection went 2.8 M / 119 calls → 2.0 M / 57. `?osmlod=0` turns the shell, ground and prop LOD off for A/B shots.
+  Still open: facade detail instances near the camera (arches ~0.65 M within 210 m), parked cars in the shadow
+  cascades, inactive cascades on low / medium still get the casters that skip culling; city-wide rollout needs the
+  compiler's tiles + HLOD.
 - **Vessels** (`src/world/life/`): realistic ferries, fishing boats, tugs, cargo ships, Kelvin wakes, collision-free
   lanes. Declared good enough for now. External model candidates await approval in
   `.docs/assets/candidates/vessels.md` (agent's advice: only vapur, bulk carrier, tug).

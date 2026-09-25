@@ -135,6 +135,7 @@ export class PlanarReflection {
   constructor(anisotropy: number, samples = 0) {
     this.samples = samples;
     this.camera.layers.set(RenderLayers.Default);
+    this.camera.layers.enable(RenderLayers.ReflectionOnly);
     this.camera.matrixAutoUpdate = true;
     // Mark the mirror camera as reversed-Z up front: the renderer would otherwise rebuild its projection (and drop
     // the oblique clip plane) on first use.

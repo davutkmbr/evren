@@ -8,7 +8,7 @@ import { buildBarriers } from './barriers';
 import { buildCatenary } from './catenary';
 import { buildDecals } from './decals';
 import { buildFurniture } from './furniture';
-import { tileIndex } from '../shared/mesh-tiles';
+import { LOD_LEAF_STRIDE, lodTileIndex } from '../shared/mesh-tiles';
 import { buildGroundMesh } from './ground-mesh';
 import { buildLamps } from './lamps';
 import { buildPlatforms, buildQuay, buildSteps, masonryMesh } from './masonry';
@@ -38,10 +38,14 @@ serveWorker<StreetsRequest, StreetsResult>((req) => {
   const barriers = buildBarriers(masonry, req.data, surface, padded, req.base.rect);
   const { instances, lights } = sink.take();
   const groundArrays = ground.mesh.take();
-  const tiled = tileIndex(groundArrays.attributes.position.array as Float32Array, groundArrays.index);
+  const tiled = lodTileIndex(groundArrays.attributes.position.array as Float32Array, groundArrays.index, ground.mesh.takeTriLod());
   groundArrays.index = tiled.index;
+  let groundFarTris = 0;
+  for (let k = 3; k < tiled.leaves.length; k += LOD_LEAF_STRIDE) {
+    groundFarTris += tiled.leaves[k] / 3;
+  }
   return {
-    groundTiles: tiled.tiles,
+    groundTiles: tiled.leaves,
     meshes: {
       ground: groundArrays,
       paint: decals.paint.take('color'),
@@ -58,6 +62,7 @@ serveWorker<StreetsRequest, StreetsResult>((req) => {
       streets: streets.length,
       paths: paths.length,
       groundTris: ground.mesh.triangles,
+      groundFarTris,
       refinedCells: ground.stats.refined,
       kerbFaces: ground.stats.kerbFaces,
       groundPrepMs: ground.stats.prepMs,

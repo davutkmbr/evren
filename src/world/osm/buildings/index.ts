@@ -10,7 +10,8 @@ import type { OsmData, OsmPoint } from '../data';
 import { LayerBase } from '../shared/layer';
 import { COLLIDER_STRIDE } from '../shared/protocol';
 import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
-import { addTiledMesh, countTriangles } from '../shared/three';
+import { LodTiledMesh } from '../shared/lod-tiles';
+import { countTriangles } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { Poi } from './build';
@@ -74,7 +75,16 @@ const PROP_LOD: Record<PropKind, InstanceLodOptions> = {
   minaret: { radius: Infinity, shadowRadius: Infinity },
 };
 
+/**
+ * Facades and roofs switch to their far version (walls, cornice fronts, roof planes and caps; no string courses,
+ * cornice tops, eaves, ridge caps or parapets) beyond this distance (m at "high"): the parts it drops are at most
+ * ~0.6 m, one pixel at 1600 x 900 and 60 degrees there. The far version also fills the far shadow cascades and the
+ * water reflection. `?osmlod=0` turns it off for A/B comparisons.
+ */
+const SHELL_FAR_DISTANCE = 450;
+
 class BuildingsLayer extends LayerBase {
+  private readonly shells: LodTiledMesh[] = [];
   private collision: CollisionWorld | null = null;
   private colliderIds: number[] = [];
   private lod: DetailLod | null = null;
@@ -110,6 +120,9 @@ class BuildingsLayer extends LayerBase {
     const cam = ctx.engine.camera.position;
     this.lod?.update(cam, cam.y - ctx.geo.heightAt(cam.x, cam.z));
     const preset = ctx.engine.quality.settings.preset;
+    for (const s of this.shells) {
+      s.update(cam, preset);
+    }
     for (const p of this.props) {
       p.update(cam, preset);
     }
@@ -117,8 +130,17 @@ class BuildingsLayer extends LayerBase {
 
   private upload(ctx: OsmContext, res: BuildingsResult, materials: BuildingMaterials, workerMs: number): void {
     const t1 = performance.now();
-    addTiledMesh(this.group, 'osm-facade', res.facade, res.facadeTiles, materials.facade, { castShadow: true });
-    addTiledMesh(this.group, 'osm-roof', res.roof, res.roofTiles, materials.roof, { castShadow: true });
+    const lodOn = ctx.engine.debug.params.get('osmlod') !== '0';
+    for (const [name, arrays, leaves, material] of [
+      ['osm-facade', res.facade, res.facadeTiles, materials.facade],
+      ['osm-roof', res.roof, res.roofTiles, materials.roof],
+    ] as const) {
+      if (arrays.index.length) {
+        const shell = new LodTiledMesh(this.group, name, arrays, leaves, material, { distance: SHELL_FAR_DISTANCE, castShadow: true, reflection: true });
+        shell.setEnabled(lodOn);
+        this.shells.push(shell);
+      }
+    }
     for (const k of Object.keys(PROP_GEOMETRY) as PropKind[]) {
       const records = res.props[k];
       if (records?.length) {
@@ -141,7 +163,7 @@ class BuildingsLayer extends LayerBase {
       this.colliderIds = [];
     });
     const debug = window as unknown as { __osmBuildings?: unknown };
-    debug.__osmBuildings = { stats: res.stats, lod: () => this.lod?.counts() };
+    debug.__osmBuildings = { stats: res.stats, lod: () => this.lod?.counts(), shells: () => this.shells.map((s) => ({ name: s.name, ...s.counts() })) };
     console.info(
       `[osm:buildings] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`,
     );

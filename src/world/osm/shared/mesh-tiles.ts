@@ -1,11 +1,20 @@
 /** Spatial tiling of worker-built meshes (streets ground, building facades and roofs). */
+/** Triangle classes of a two-level mesh (lodTileIndex): in both versions, only near, only far. */
+export const TriLod = { Both: 0, Near: 1, Far: 2 } as const;
+
+/** Floats per leaf in the lodTileIndex table. */
+export const LOD_LEAF_STRIDE = 10;
+
 /**
- * Reorders a mesh index by tile (TILES x TILES over the vertex extent) and returns the tile table: per tile the first
- * index, index count and bounding sphere (cx, cy, cz, r), 6 floats each; empty tiles are left out. Drawn as one mesh
- * per tile over shared buffers (three.ts addTiledMesh), each tile is culled on its own by the camera and by every
- * shadow cascade, instead of one mesh the size of the whole area being drawn everywhere.
+ * Two-level tiling for meshes with a simplified far version (shared/lod-tiles.ts draws it). Triangles are bucketed
+ * by centroid into a 2^levels x 2^levels grid of leaves in quadtree (Morton) order, so every quadtree node covers a
+ * contiguous index range. The index holds a near section (per leaf: Both + Near triangles) followed by a far section
+ * (per leaf: Both + Far triangles); Both triangles are listed twice. Per leaf the table has near start, near count,
+ * far start, far count (in indices) and the leaf's bounds (min xyz, max xyz); empty leaves keep their slot.
  */
-export function tileIndex(positions: Float32Array, index: Uint32Array, TILES = 6): { index: Uint32Array; tiles: Float32Array } {
+export function lodTileIndex(positions: Float32Array, index: Uint32Array, triLod: Uint8Array, levels = 3): { index: Uint32Array; leaves: Float64Array } {
+  const side = 1 << levels;
+  const leafCount = side * side;
   let x0 = Infinity;
   let z0 = Infinity;
   let x1 = -Infinity;
@@ -16,49 +25,82 @@ export function tileIndex(positions: Float32Array, index: Uint32Array, TILES = 6
     z0 = Math.min(z0, positions[k + 2]);
     z1 = Math.max(z1, positions[k + 2]);
   }
-  const sx = TILES / Math.max(1e-3, x1 - x0);
-  const sz = TILES / Math.max(1e-3, z1 - z0);
+  const sx = side / Math.max(1e-3, x1 - x0);
+  const sz = side / Math.max(1e-3, z1 - z0);
+  const morton = (i: number, j: number): number => {
+    let m = 0;
+    for (let b = 0; b < levels; b++) {
+      m |= ((i >> b) & 1) << (2 * b);
+      m |= ((j >> b) & 1) << (2 * b + 1);
+    }
+    return m;
+  };
   const n = index.length / 3;
-  const tileOf = new Uint8Array(n);
-  const counts = new Uint32Array(TILES * TILES);
+  const leafOf = new Uint16Array(n);
+  const nearCounts = new Uint32Array(leafCount);
+  const farCounts = new Uint32Array(leafCount);
+  const lo = new Float32Array(leafCount * 3).fill(Infinity);
+  const hi = new Float32Array(leafCount * 3).fill(-Infinity);
   for (let t = 0; t < n; t++) {
     const a = index[t * 3] * 3;
-    const i = Math.min(TILES - 1, Math.floor((positions[a] - x0) * sx));
-    const j = Math.min(TILES - 1, Math.floor((positions[a + 2] - z0) * sz));
-    tileOf[t] = j * TILES + i;
-    counts[j * TILES + i]++;
-  }
-  const starts = new Uint32Array(TILES * TILES);
-  for (let k = 1; k < starts.length; k++) {
-    starts[k] = starts[k - 1] + counts[k - 1];
-  }
-  const fill = starts.slice();
-  const out = new Uint32Array(index.length);
-  const lo = new Float32Array(TILES * TILES * 3).fill(Infinity);
-  const hi = new Float32Array(TILES * TILES * 3).fill(-Infinity);
-  for (let t = 0; t < n; t++) {
-    const k = tileOf[t];
-    const o = fill[k]++ * 3;
-    for (let c = 0; c < 3; c++) {
-      const v = index[t * 3 + c];
-      out[o + c] = v;
+    const b = index[t * 3 + 1] * 3;
+    const c = index[t * 3 + 2] * 3;
+    const cx = (positions[a] + positions[b] + positions[c]) / 3;
+    const cz = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+    const i = Math.min(side - 1, Math.max(0, Math.floor((cx - x0) * sx)));
+    const j = Math.min(side - 1, Math.max(0, Math.floor((cz - z0) * sz)));
+    const leaf = morton(i, j);
+    leafOf[t] = leaf;
+    const cls = triLod[t];
+    if (cls !== TriLod.Far) {
+      nearCounts[leaf]++;
+    }
+    if (cls !== TriLod.Near) {
+      farCounts[leaf]++;
+    }
+    for (const v of [a, b, c]) {
       for (let q = 0; q < 3; q++) {
-        const p = positions[v * 3 + q];
-        lo[k * 3 + q] = Math.min(lo[k * 3 + q], p);
-        hi[k * 3 + q] = Math.max(hi[k * 3 + q], p);
+        lo[leaf * 3 + q] = Math.min(lo[leaf * 3 + q], positions[v + q]);
+        hi[leaf * 3 + q] = Math.max(hi[leaf * 3 + q], positions[v + q]);
       }
     }
   }
-  const tiles: number[] = [];
-  for (let k = 0; k < TILES * TILES; k++) {
-    if (!counts[k]) {
-      continue;
-    }
-    const cx = (lo[k * 3] + hi[k * 3]) / 2;
-    const cy = (lo[k * 3 + 1] + hi[k * 3 + 1]) / 2;
-    const cz = (lo[k * 3 + 2] + hi[k * 3 + 2]) / 2;
-    const r = Math.hypot(hi[k * 3] - cx, hi[k * 3 + 1] - cy, hi[k * 3 + 2] - cz);
-    tiles.push(starts[k] * 3, counts[k] * 3, cx, cy, cz, r);
+  const nearStart = new Uint32Array(leafCount);
+  const farStart = new Uint32Array(leafCount);
+  let acc = 0;
+  for (let k = 0; k < leafCount; k++) {
+    nearStart[k] = acc;
+    acc += nearCounts[k];
   }
-  return { index: out, tiles: Float32Array.from(tiles) };
+  for (let k = 0; k < leafCount; k++) {
+    farStart[k] = acc;
+    acc += farCounts[k];
+  }
+  const out = new Uint32Array(acc * 3);
+  const nearFill = nearStart.slice();
+  const farFill = farStart.slice();
+  for (let t = 0; t < n; t++) {
+    const leaf = leafOf[t];
+    const cls = triLod[t];
+    if (cls !== TriLod.Far) {
+      out.set(index.subarray(t * 3, t * 3 + 3), nearFill[leaf]++ * 3);
+    }
+    if (cls !== TriLod.Near) {
+      out.set(index.subarray(t * 3, t * 3 + 3), farFill[leaf]++ * 3);
+    }
+  }
+  const leaves = new Float64Array(leafCount * LOD_LEAF_STRIDE);
+  for (let k = 0; k < leafCount; k++) {
+    const o = k * LOD_LEAF_STRIDE;
+    leaves[o] = nearStart[k] * 3;
+    leaves[o + 1] = nearCounts[k] * 3;
+    leaves[o + 2] = farStart[k] * 3;
+    leaves[o + 3] = farCounts[k] * 3;
+    for (let q = 0; q < 3; q++) {
+      const empty = !(lo[k * 3 + q] <= hi[k * 3 + q]);
+      leaves[o + 4 + q] = empty ? 0 : lo[k * 3 + q];
+      leaves[o + 7 + q] = empty ? 0 : hi[k * 3 + q];
+    }
+  }
+  return { index: out, leaves };
 }

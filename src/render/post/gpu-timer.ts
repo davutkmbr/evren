@@ -8,12 +8,18 @@ const RING_SIZE = 6;
 /**
  * Measures GPU time between begin()/end() with EXT_disjoint_timer_query_webgl2.
  * Results arrive a few frames late; `lastMs` holds the newest valid measurement (or -1).
- * Caveat: on ANGLE/Metal (Chrome on macOS) TIME_ELAPSED is derived from command-buffer GPU start/end times, so a
- * short span (e.g. only the post chain) also counts time the GPU spent on other processes' work while that
- * command buffer was in flight. Whole-frame spans are meaningful; short spans are only an upper bound.
+ * Caveat: on ANGLE/Metal (Chrome/Safari on macOS) TIME_ELAPSED is not the time between begin and end. ANGLE sums
+ * `GPUEndTime - GPUStartTime` of every Metal command buffer committed while the query is active
+ * (libANGLE/renderer/metal/mtl_command_buffer.mm, recordCommandBufferTimeElapsed). Command buffers queued back to
+ * back overlap in time, so the sum grows with the number of flushes rather than the GPU work: measured on an Apple
+ * GPU, 16 draws in 16 command buffers read 62 ms for 8 ms of wall time, the same 16 draws in one command buffer
+ * 0.6 ms (4 ms wall), and whole frames read 50-150 ms for 18-50 ms frame intervals. `reliable` is false there;
+ * the values remain useful only as relative diagnostics (?postprof, ?postbench).
  */
 export class GpuTimer {
   readonly supported: boolean;
+  /** False where TIME_ELAPSED is known not to measure GPU time (ANGLE's Metal backend, see above). */
+  readonly reliable: boolean;
   lastMs = -1;
   /** performance.now() of the newest result. */
   lastResultTime = 0;
@@ -35,6 +41,7 @@ export class GpuTimer {
   ) {
     this.ext = enabled ? (gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerQueryExt | null) : null;
     this.supported = !!this.ext;
+    this.reliable = this.supported && !isAngleMetal(gl);
     for (let i = 0; i < RING_SIZE; i++) {
       this.queries.push(this.ext ? gl.createQuery() : null);
       this.pending.push(false);
@@ -144,4 +151,10 @@ export class GpuTimer {
     }
     this.queries.length = 0;
   }
+}
+
+function isAngleMetal(gl: WebGL2RenderingContext): boolean {
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  return /metal/i.test(renderer);
 }

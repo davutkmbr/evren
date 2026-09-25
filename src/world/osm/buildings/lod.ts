@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
+import { setShadowGate } from '../../../core/shadow-gate';
 import type { QualityPreset } from '../../../core/quality';
 import { LOD_RADIUS_SCALE as RADIUS_SCALE } from '../shared/instance-lod';
 import { DETAIL_RADIUS, type DetailKind, type DetailStream, type DetailTiles } from './details';
@@ -15,6 +16,12 @@ import { acGeometry, awningGeometry, balconyGeometry, frameGeometry, railingGeom
 
 /** Kinds whose shadows read at street level (the rest are too thin to matter). */
 const SHADOW_KINDS = new Set<DetailKind>(['surroundCap', 'balcony', 'railing', 'parapet', 'awning', 'sign']);
+/**
+ * Casters live only within their kind's radius, so they are kept out of the cascades that start beyond it; thin ones
+ * (window caps, railings: a few cm of shadow) also out of every cascade starting beyond THIN_SHADOW_DEPTH (m).
+ */
+const THIN_SHADOW = new Set<DetailKind>(['surroundCap', 'railing']);
+const THIN_SHADOW_DEPTH = 150;
 /** Camera travel (m) that triggers a re-stream. */
 const RESTREAM_STEP = 12;
 
@@ -108,6 +115,9 @@ export class DetailLod {
     for (const k of this.kinds) {
       const r = k.radius * this.scale;
       k.fade.value.set(r * 0.8, r);
+      if (k.mesh.castShadow) {
+        setShadowGate(k.mesh, { below: THIN_SHADOW.has(k.kind) ? Math.min(r, THIN_SHADOW_DEPTH * this.scale) : r });
+      }
     }
   }
 

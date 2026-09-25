@@ -35,8 +35,14 @@ export class StateMesh {
   private readonly uv = new Grow(1 << 15);
   private readonly state: { attr: StateAttr; buf: Grow; cur: Float32Array }[];
   private idx = new Uint32Array(1 << 16);
+  private cls = new Uint8Array(1 << 14);
   private ni = 0;
   count = 0;
+  /**
+   * Class of the triangles written from now on (shared/mesh-tiles.ts TriLod): Both, Near (detail the far version
+   * leaves out) or Far (stand-ins that only the far version has).
+   */
+  lod = 0;
 
   constructor(attrs: StateAttr[]) {
     this.state = attrs.map((attr) => ({ attr, buf: new Grow(attr.size << 14), cur: new Float32Array(attr.size) }));
@@ -83,6 +89,13 @@ export class StateMesh {
       next.set(this.idx);
       this.idx = next;
     }
+    const t = this.ni / 3;
+    if (t >= this.cls.length) {
+      const next = new Uint8Array(this.cls.length * 2);
+      next.set(this.cls);
+      this.cls = next;
+    }
+    this.cls[t] = this.lod;
     this.idx[this.ni++] = a;
     this.idx[this.ni++] = b;
     this.idx[this.ni++] = c;
@@ -121,6 +134,22 @@ export class StateMesh {
       } else {
         this.pushIdx(base, base + i, base + i + 1);
       }
+    }
+  }
+
+  /** Per-triangle TriLod classes (see `lod`). */
+  takeTriLod(): Uint8Array {
+    return this.cls.slice(0, this.ni / 3);
+  }
+
+  /** Runs `fn` with `lod` set to `cls` (nested calls keep the outer class unless they set their own). */
+  with(cls: number, fn: () => void): void {
+    const prev = this.lod;
+    this.lod = cls;
+    try {
+      fn();
+    } finally {
+      this.lod = prev;
     }
   }
 

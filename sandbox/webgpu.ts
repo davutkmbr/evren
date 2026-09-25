@@ -24,7 +24,8 @@ import { OSM_DATA_URL, osmAreaRect, osmExclusionRect } from '../src/world/osm/ar
 import { loadOsmData } from '../src/world/osm/data';
 import { buildWorkerBase } from '../src/world/osm/shared/foundation';
 import { runWorker } from '../src/world/osm/shared/worker';
-import { addTiledMesh, countTriangles } from '../src/world/osm/shared/three';
+import { countTriangles } from '../src/world/osm/shared/three';
+import { LodTiledMesh } from '../src/world/osm/shared/lod-tiles';
 import { InstanceLod, type InstanceLodOptions } from '../src/world/osm/shared/instance-lod';
 import { loadPbrArrays, loadTexture, REPEAT_M, type TextureSet } from '../src/world/osm/shared/textures';
 import { landmarkPads, poiTriples } from '../src/world/osm/buildings/index';
@@ -407,8 +408,15 @@ async function main(): Promise<void> {
   mark('materialsMs', t);
 
   t = performance.now();
-  addTiledMesh(group, 'osm-facade', res.facade, res.facadeTiles, facadeMat, { castShadow: true });
-  addTiledMesh(group, 'osm-roof', res.roof, res.roofTiles, roofMat, { castShadow: true });
+  // Full detail everywhere (the game's far shell LOD is off in the spike).
+  for (const [name, arrays, leaves, mat] of [
+    ['osm-facade', res.facade, res.facadeTiles, facadeMat],
+    ['osm-roof', res.roof, res.roofTiles, roofMat],
+  ] as const) {
+    const shell = new LodTiledMesh(group, name, arrays, leaves, mat, { distance: 450, castShadow: true });
+    shell.setEnabled(false);
+    shell.update(camera.position, 'high');
+  }
   const props: InstanceLod[] = [];
   if (useProps) {
     for (const k of Object.keys(PROP_GEOMETRY) as PropKind[]) {

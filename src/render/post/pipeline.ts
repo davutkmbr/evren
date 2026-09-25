@@ -3,7 +3,7 @@ import type { EngineContext, HdrPass, HdrPassInputs, RenderPipeline, TimeState }
 import { globalUniforms } from '../../core/uniforms';
 import { FxaaPass, SmaaPass, smaaAvailable, type AntialiasPass } from './antialias';
 import { BloomChain } from './bloom';
-import { DynamicResolution, type DynamicResolutionInput } from './dynamic-resolution';
+import { DynamicResolution, type DynamicResolutionInput, type DynamicResolutionStats } from './dynamic-resolution';
 import { AutoExposure } from './exposure';
 import { CompositePass, type CompositeFrame } from './composite-pass';
 import { FullscreenRenderer } from './fullscreen';
@@ -76,6 +76,7 @@ export class PostPipeline implements RenderPipeline {
     dt: 0,
     gpuMs: -1,
     frameMs: 0,
+    paceFloorMs: 0,
     cpuMs: 0,
     targetFrameMs: 16.6,
     minScale: 1,
@@ -199,6 +200,11 @@ export class PostPipeline implements RenderPipeline {
 
   get renderScale(): number {
     return this.dynres.scale;
+  }
+
+  /** Dynamic resolution state (window.__evren.stats().dynres). */
+  get renderScaleStats(): DynamicResolutionStats {
+    return this.dynres.stats;
   }
 
   get exposure(): number {
@@ -396,11 +402,13 @@ export class PostPipeline implements RenderPipeline {
    * Runs before the engine's frame callback (registered earlier): collect async GPU results with an empty queue,
    * then open the frame-mode GPU query so it also covers GPU work issued by other systems' update/preRender.
    */
-  private readonly onFrameStart = (t: number): void => {
+  private readonly onFrameStart = (): void => {
     if (this.disposed) {
       return;
     }
-    this.frameStart = t;
+    // Not the rAF timestamp: in Chrome that is the frame's begin time and can lag the callback by tens of ms,
+    // which inflated cpuMs (and discarded valid GPU queries as stale).
+    this.frameStart = performance.now();
     this.exposureCtl.poll();
     this.timer.poll();
     if (this.profileMode === 'frame') {
@@ -473,8 +481,10 @@ export class PostPipeline implements RenderPipeline {
     const s = this.settings;
     const input = this.dynresInput;
     input.dt = ctx.time.realDt;
-    input.gpuMs = this.profileMode === 'frame' ? this.timer.recentPercentile(GPU_PERCENTILE, GPU_WINDOW) : -1;
+    // An unreliable timer (ANGLE/Metal, see GpuTimer) reads 2-8x high and would pin the scale to the preset floor.
+    input.gpuMs = this.profileMode === 'frame' && this.timer.reliable ? this.timer.recentPercentile(GPU_PERCENTILE, GPU_WINDOW) : -1;
     input.frameMs = ctx.time.realDt * 1000;
+    input.paceFloorMs = ctx.time.paceFloorMs;
     input.cpuMs = this.lastCpuMs;
     input.targetFrameMs = s.targetFrameMs;
     input.minScale = s.minScale;

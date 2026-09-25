@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { RenderLayers, type GeoQuery } from '../../../core/contracts';
 import type { OsmData } from '../data';
 import { LayerBase } from '../shared/layer';
-import { InstanceLod } from '../shared/instance-lod';
+import { InstanceLod, LOD_RADIUS_SCALE } from '../shared/instance-lod';
+import { LodTiledMesh } from '../shared/lod-tiles';
 import { addMesh, countTriangles, toGeometry } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
@@ -68,11 +69,18 @@ function landmarkPads(geo: GeoQuery, grow: number): number[] {
 const TREE_SHADOW_RADIUS = 450;
 /** Camera height above the ground (m) above which the merged street props stop casting shadows (sub-texel there). */
 const PROPS_SHADOW_AGL = 120;
+/**
+ * Merged street props (benches, bins, bollards, shelters, kiosks, café tables) are drawn within this distance of
+ * their tile (m at "high"; street furniture instances use 450 m) and cast shadows only into the cascades that start
+ * within PROPS_SHADOW_DEPTH (a bench shadow is below a texel of the far cascades).
+ */
+const PROPS_DISTANCE = 450;
+const PROPS_SHADOW_DEPTH = 150;
 
 class DetailsLayer extends LayerBase {
   private crowd: Crowd | null = null;
   private readonly trees: InstanceLod[] = [];
-  private propsMesh: THREE.Mesh | null = null;
+  private props: LodTiledMesh | null = null;
   private result: DetailsResult | null = null;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
@@ -148,8 +156,9 @@ class DetailsLayer extends LayerBase {
         geos[s].dispose();
       }
     }
-    if (res.props) {
-      this.propsMesh = addMesh(this.group, 'osm-details-props', res.props, this.propMaterial, { castShadow: true, layer: RenderLayers.NoReflection });
+    if (res.props && res.propsTiles) {
+      this.props = new LodTiledMesh(this.group, 'osm-details-props', res.props, res.propsTiles, this.propMaterial, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
+      this.props.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -237,14 +246,16 @@ class DetailsLayer extends LayerBase {
         }
       }
     }
-    this.crowd?.update(ctx.engine.time.elapsed, ctx.engine.camera.position);
     const cam = ctx.engine.camera.position;
     const preset = ctx.engine.quality.settings.preset;
+    this.crowd?.setLodScale(LOD_RADIUS_SCALE[preset] ?? 1);
+    this.crowd?.update(ctx.engine.time.elapsed, cam);
     for (const t of this.trees) {
       t.update(cam, preset);
     }
-    if (this.propsMesh) {
-      this.propsMesh.castShadow = cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL;
+    if (this.props) {
+      this.props.update(cam, preset);
+      this.props.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
     }
   }
 }

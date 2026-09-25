@@ -17,10 +17,10 @@ export interface BuildingsRequest {
 
 export interface BuildingsResult {
   facade: MeshArrays;
-  /** Tile table of `facade` / `roof` (shared/mesh-tiles.ts tileIndex). */
-  facadeTiles: Float32Array;
+  /** Near / far leaf tables of `facade` / `roof` (shared/mesh-tiles.ts lodTileIndex). */
+  facadeTiles: Float64Array;
   roof: MeshArrays;
-  roofTiles: Float32Array;
+  roofTiles: Float64Array;
   details: Partial<Record<DetailKind, DetailStream>>;
   tiles: DetailTiles;
   /** INSTANCE_STRIDE records per rooftop prop kind. */

@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
+import { setShadowGate } from '../../../core/shadow-gate';
 import type { QualityPreset } from '../../../core/quality';
 import { INSTANCE_STRIDE } from './protocol';
 
@@ -177,6 +178,11 @@ export class InstanceLod {
     this.lastScale = scale;
     const radius = this.opt.radius * scale;
     const shadow = this.opt.shadowRadius * scale;
+    // The shadow ring only holds casters within `shadow` (plus a tile): cascades starting beyond it get none of them.
+    const caster = this.parts[0].mesh;
+    if (caster.castShadow && Number.isFinite(shadow)) {
+      setShadowGate(caster, { below: shadow + TILE });
+    }
     const near: number[] = [];
     const far: number[] = [];
     // A tile counts as inside when its nearest point is (tile half-diagonal of slack).

@@ -34,6 +34,11 @@ export interface TimeState {
   /** Day of year 1..365 (used for sun declination). */
   dayOfYear: number;
   paused: boolean;
+  /**
+   * Shortest frame interval reachable whatever the load (ms): the display refresh interval (smallest rAF interval
+   * seen), or the ?fps cap rounded up to whole refresh intervals. Frame pacing below this is not a slowdown.
+   */
+  paceFloorMs: number;
 }
 
 export interface EngineContext {
@@ -58,12 +63,16 @@ export interface EngineContext {
 
 /**
  * Object layers. The main camera sees Default + NoReflection; the water's planar reflection camera sees
- * only Default. Put small/numerous detail (trees, particles, street props, tiny boats) on NoReflection via
- * `object.layers.set(RenderLayers.NoReflection)`. Shadow cameras must enable all layers (sky does this).
+ * Default + ReflectionOnly. Put small/numerous detail (trees, particles, street props, tiny boats) on NoReflection via
+ * `object.layers.set(RenderLayers.NoReflection)`. ReflectionOnly holds cheap stand-ins drawn only into the mirror
+ * image (far building proxies), ShadowOnly holds stand-ins seen only by the shadow cameras. Shadow cameras must enable
+ * all layers (sky does this).
  */
 export const RenderLayers = {
   Default: 0,
   NoReflection: 1,
+  ReflectionOnly: 2,
+  ShadowOnly: 5,
 } as const;
 
 /** Update ordering buckets. Lower runs first. */
@@ -128,6 +137,8 @@ export interface RenderPipeline {
   setSize(width: number, height: number, pixelRatio: number): void;
   /** Current internal render scale (dynamic resolution), 1 = native. */
   readonly renderScale: number;
+  /** Dynamic resolution debug state (window.__evren.stats().dynres), when the pipeline has one. */
+  readonly renderScaleStats?: object;
   /** Exposure multiplier currently applied (auto exposure). */
   readonly exposure: number;
   /** Screen-space radial speed effect strength 0..1 (set by camera/flight). */

@@ -33,8 +33,22 @@ interface Part {
   style: number;
 }
 
-function bodyParts(lod: 0 | 1): Part[] {
+function bodyParts(lod: 0 | 1 | 2): Part[] {
   const out: Part[] = [];
+  if (lod === 2) {
+    // Far figure (a few pixels tall): swinging legs, torso and head as boxes without bottoms, no arms or hair.
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => {
+      const g = new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+      const idx = Array.from(g.index!.array);
+      g.setIndex([...idx.slice(0, 18), ...idx.slice(24)]);
+      return g;
+    };
+    out.push({ g: box(0.13, 0.9, 0.16, 0.09, 0.47, 0), bone: B.ThighL, mat: M.Bottom, style: S.Always });
+    out.push({ g: box(0.13, 0.9, 0.16, -0.09, 0.47, 0), bone: B.ThighR, mat: M.Bottom, style: S.Always });
+    out.push({ g: box(0.4, 0.58, 0.24, 0, 1.16, 0), bone: B.Torso, mat: M.Top, style: S.Always });
+    out.push({ g: box(0.17, 0.3, 0.2, 0, 1.6, 0), bone: B.Head, mat: M.Skin, style: S.Always });
+    return out;
+  }
   const seg = lod === 0 ? 7 : 4;
   const add = (g: THREE.BufferGeometry, bone: number, mat: number, style: number = S.Always): void => {
     out.push({ g, bone, mat, style });
@@ -77,9 +91,10 @@ function bodyParts(lod: 0 | 1): Part[] {
 
 /**
  * Merged body geometry with aBone / aMat / aStyle. LOD 0 is faceted (non-indexed, flat normals); LOD 1, the far
- * version, keeps the parts' index and smooth normals and leaves out hands and shoes (~190 vertices).
+ * version, keeps the parts' index and smooth normals and leaves out hands and shoes (~190 vertices); LOD 2, the far
+ * figure, is four open boxes (40 triangles).
  */
-export function personGeometry(lod: 0 | 1): THREE.InstancedBufferGeometry {
+export function personGeometry(lod: 0 | 1 | 2): THREE.InstancedBufferGeometry {
   const pos: number[] = [];
   const nrm: number[] = [];
   const bone: number[] = [];
@@ -105,7 +120,7 @@ export function personGeometry(lod: 0 | 1): THREE.InstancedBufferGeometry {
       mat.push(p.mat);
       style.push(p.style);
     }
-    if (lod === 1 && g.index) {
+    if (lod >= 1 && g.index) {
       for (let i = 0; i < g.index.count; i++) {
         index.push(base + g.index.getX(i));
       }
@@ -306,10 +321,10 @@ vec3 pedNrm = normal;
 `;
 
 /**
- * Standard material patched with the crowd animation. `range` = (near LOD end, far LOD end, lod): the near material
- * draws people closer than x, the far one between x and y.
+ * Standard material patched with the crowd animation. `range` = (start, end, lod): the near material (lod 0) draws
+ * people closer than x, the others between x and y.
  */
-export function createPeopleMaterial(lod: 0 | 1, near: number, far: number): THREE.MeshStandardMaterial {
+export function createPeopleMaterial(lod: 0 | 1 | 2, near: number, far: number): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ name: `osm-people-${lod}`, roughness: 0.82, metalness: 0 });
   const range = { value: new THREE.Vector3(near, far, lod) };
   m.userData.range = range.value;

@@ -1,10 +1,11 @@
+import { RenderLayers } from '../../core/contracts';
 import type { QualitySettings } from '../../core/quality';
 
 /** Streaming tile edge (m). */
 export const TILE_SIZE = 256;
 
 /** Object layer seen only by the shadow cameras (they enable every layer): LOD1 shadow proxies. */
-export const SHADOW_ONLY_LAYER = 5;
+export const SHADOW_ONLY_LAYER = RenderLayers.ShadowOnly;
 
 export interface VegetationLodConfig {
   /** LOD0 -> LOD1 switch distance (m) and half width of the dithered cross-fade band. */

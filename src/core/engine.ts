@@ -34,6 +34,8 @@ export interface EngineStats {
   textures: number;
   programs: number;
   renderScale: number;
+  /** Dynamic resolution state: signal in use, median frame vs target, GPU timer trust, drop/raise counts. */
+  dynres?: object;
   pending: number;
   colliders: number;
   heapMB: number;
@@ -65,6 +67,10 @@ export class Engine {
   private lastTime = 0;
   /** Optional frame-rate cap from ?fps= (tooling: keeps headless screenshot sessions cheap). 0 = uncapped. */
   private readonly minFrameMs: number;
+  /** Previous animation-frame timestamp (every rAF, including frames skipped by the fps cap). */
+  private lastRafTime = -1;
+  /** Display refresh interval estimate: the smallest rAF interval seen (rAF timestamps are vsync aligned). */
+  private refreshMs = Infinity;
   private fpsAcc = 0;
   private fpsFrames = 0;
   private fps = 0;
@@ -134,6 +140,7 @@ export class Engine {
       dayTimeScale: 0,
       dayOfYear: 266,
       paused: debug.freeze,
+      paceFloorMs: 0,
     };
 
     const services = new ServiceRegistry();
@@ -224,6 +231,13 @@ export class Engine {
   private frame(now: number): void {
     if (!this.running) {
       return;
+    }
+    const rafDelta = this.lastRafTime < 0 ? 0 : now - this.lastRafTime;
+    this.lastRafTime = now;
+    if (rafDelta >= 4 && rafDelta < this.refreshMs) {
+      this.refreshMs = rafDelta;
+      const refresh = rafDelta;
+      this.ctx.time.paceFloorMs = this.minFrameMs > 0 ? Math.max(1, Math.ceil(this.minFrameMs / refresh - 0.05)) * refresh : refresh;
     }
     if (this.minFrameMs > 0 && now - this.lastTime < this.minFrameMs) {
       return;
@@ -330,6 +344,7 @@ export class Engine {
       textures: info.memory.textures,
       programs: info.programs?.length ?? 0,
       renderScale: this.ctx.pipeline.renderScale,
+      dynres: this.ctx.pipeline.renderScaleStats,
       pending: this.pending(),
       colliders: this.ctx.services.get('collision').colliderCount,
       heapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0,
