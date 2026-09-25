@@ -106,9 +106,18 @@ export interface LightRec {
 }
 
 /** The fields of a tile manifest the sandbox reads (format 1). */
+export interface StreetBuildingRec {
+  id: string;
+  /** Flat [x, z, ...]. */
+  footprint: number[];
+  /** Format 1: compiled as plain massing or (--landmarks none) left out; the runtime may draw its own model. */
+  landmark?: string;
+}
+
 export interface StreetTileManifest {
   id: string;
   detail?: 'full' | 'greybox';
+  buildings?: StreetBuildingRec[];
   instances?: InstanceRec[];
   lights?: LightRec[];
 }

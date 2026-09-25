@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import type { WorldBounds } from '../../../../core/contracts';
-import { patchMaterial } from '../../../../core/uniforms';
+import { patchMaterial, streetHole } from '../../../../core/uniforms';
 import { loadPbrArrays, maxAnisotropy, REPEAT_M } from '../../shared/textures';
 import type { CoverRaster } from '../protocol';
 
@@ -109,7 +109,7 @@ export function createCoverMaterial(renderer: THREE.WebGLRenderer, raster: Cover
     uCoverFade: { value: new THREE.Vector4(fade.minX, fade.minZ, fade.maxX, fade.maxZ) },
     uCoverRep: { value: new THREE.Vector2(REPEAT_M.sidewalk, REPEAT_M.asphalt) },
   };
-  const material = new THREE.MeshStandardMaterial({
+  const material = streetHole(new THREE.MeshStandardMaterial({
     name: 'osm-cover',
     roughness: 1,
     metalness: 0,
@@ -118,7 +118,7 @@ export function createCoverMaterial(renderer: THREE.WebGLRenderer, raster: Cover
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -4,
-  });
+  }));
   patchMaterial(material, 'osm-cover-v3', (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader

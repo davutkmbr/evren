@@ -537,6 +537,17 @@ export class TileStreamer {
   }
 
   /** Materials shared by name across all tiles (e.g. for a debug view). */
+  /** Tiles in the scene and their manifests (null while a format 1 manifest is still loading). */
+  liveTiles(): { ref: StreetTileRef; manifest: StreetTileManifest | null }[] {
+    const out: { ref: StreetTileRef; manifest: StreetTileManifest | null }[] = [];
+    for (const slot of this.slots.values()) {
+      if (slot.live) {
+        out.push({ ref: slot.ref, manifest: slot.manifest });
+      }
+    }
+    return out;
+  }
+
   sharedMaterials(): ReadonlyMap<string, THREE.Material> {
     return this.materials;
   }

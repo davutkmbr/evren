@@ -3,7 +3,7 @@
  * kiosk windows, cart lamps), and the same for boats, which additionally rock around their own keel (`aPivot`).
  */
 import * as THREE from 'three';
-import { patchMaterial } from '../../../../core/uniforms';
+import { patchMaterial, streetHole } from '../../../../core/uniforms';
 
 const GLOW_VERTEX = /* glsl */ `
 attribute float aGlow;
@@ -33,7 +33,7 @@ vec3 rockBoat(vec3 p, vec4 pv, out mat3 rot) {
 `;
 
 export function createPropMaterial(name: string, rocking = false): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name, vertexColors: true, roughness: 0.7, metalness: 0.05 });
+  const m = streetHole(new THREE.MeshStandardMaterial({ name, vertexColors: true, roughness: 0.7, metalness: 0.05 }));
   patchMaterial(m, `osm-details-${name}-v1`, (shader) => {
     let vs = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${GLOW_VERTEX}${rocking ? ROCK_VERTEX : ''}`)

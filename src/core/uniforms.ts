@@ -25,7 +25,20 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uFogDensity: { value: 0.00006 },
   uFogHeightFalloff: { value: 0.0012 },
   uFogColor: { value: new THREE.Color(0.62, 0.68, 0.78) },
+  /** Street layer (src/world/street): per-tile mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red > 0.5 = hole. */
+  uStreetHoleMask: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },
+  uStreetHoleRect: { value: new THREE.Vector4(0, 0, 1, 1) },
 };
+
+/**
+ * Flight-scale materials that the street layer replaces up close: fragments inside a loaded street tile are discarded
+ * (the tile brings its own buildings, ground and props). Needs the material's fog (the hook sits in the fog chunk).
+ */
+export function streetHole<T extends THREE.Material>(material: T): T {
+  material.defines = { ...(material.defines ?? {}), STREET_HOLE: '' };
+  material.needsUpdate = true;
+  return material;
+}
 
 export function registerGlobalUniform(name: string, uniform: THREE.IUniform): THREE.IUniform {
   const existing = globalUniforms[name];
@@ -106,10 +119,20 @@ ${SHARED_GLSL}
     uniform float fogNear;
     uniform float fogFar;
   #endif
+  #ifdef STREET_HOLE
+    uniform sampler2D uStreetHoleMask;
+    uniform vec4 uStreetHoleRect;
+  #endif
 #endif
 `;
   THREE.ShaderChunk.fog_fragment = /* glsl */ `
 #ifdef USE_FOG
+  #ifdef STREET_HOLE
+  {
+    vec2 streetUv = (vFogWorldPos.xz - uStreetHoleRect.xy) / uStreetHoleRect.zw;
+    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0))) && texture2D(uStreetHoleMask, streetUv).r > 0.5) discard;
+  }
+  #endif
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);
 #endif
 `;

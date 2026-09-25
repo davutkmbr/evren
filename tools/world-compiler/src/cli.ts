@@ -4,6 +4,7 @@
  *
  *   npm run compile:world -- --area kadikoy [--out public/world/kadikoy] [--format 0|1] [--strip auto|none|x0,z0,x1,z1]
  *   [--no-compress]  (format 1 glbs are meshopt-compressed by default, see compress.ts)
+ *   [--landmarks block|none]  (none: landmark buildings get no geometry, for runtimes with their own models)
  *                            [--tiles all|strip] [--tex-max 2048] [--all-props] [--no-validate] [--min-walk-share 0.9]
  *
  * Format 0: greybox. Format 1 (default): textured PBR materials with shared external textures, UV0/UV1, LOD glbs
@@ -37,7 +38,7 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { useDistrict } from './district';
+import { landmarkOf, setLandmarkBlocks, useDistrict } from './district';
 import { buildFoundation } from './foundation';
 import { GENERATOR, GENERATOR_V1, weatherRecord, writeTileGlb, writeTileGlbV1 } from './gltf';
 import { exportLaneGraph, exportWalkGraph } from './graphs';
@@ -96,6 +97,12 @@ async function main(): Promise<void> {
   const outDir = resolve(ROOT, argOf('--out') ?? `public/world/${area.id}`);
   const validate = !args.includes('--no-validate');
   setCompression(format === 1 && !args.includes('--no-compress'));
+  const landmarkMode = argOf('--landmarks') ?? 'block';
+  if (landmarkMode !== 'block' && landmarkMode !== 'none') {
+    throw new Error(`--landmarks must be block or none, got '${landmarkMode}'`);
+  }
+  const landmarkBlocks = landmarkMode === 'block';
+  setLandmarkBlocks(landmarkBlocks);
   const minWalkShare = Number(argOf('--min-walk-share') ?? MIN_WALK_SHARE);
   const onlyStrip = argOf('--tiles') === 'strip';
   const texMax = argOf('--tex-max') ? Number(argOf('--tex-max')) : null;
@@ -119,6 +126,7 @@ async function main(): Promise<void> {
   const land = landField(f, piers);
   const heights = groundHeights(f.surface);
   const solids = makeSolids(data.buildings, heights).filter((s) => inRect(s.cx, s.cz));
+  const landmarkOsmIds = new Set(data.buildings.filter((b) => landmarkOf(b)).map((b) => b.id));
   const { stats: doorStats, poiDoor } = placeDoors(solids, data.points, f.surface, f.footprints, land, (p) => inRect(p.x, p.z));
   const replaced = new Map<object, object>();
   for (const s of solids) {
@@ -340,7 +348,7 @@ async function main(): Promise<void> {
     solids,
     tileOfSolid,
     outlines: outlineIndex(data.buildings),
-    cover: solidCover(solids),
+    cover: solidCover(landmarkBlocks ? solids : solids.filter((s) => !landmarkOsmIds.has(s.rec.osmId))),
     district: profile,
     manifests,
     walk,

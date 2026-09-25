@@ -16,6 +16,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'water', load: () => import('./world/water').then((m) => m.createWaterSystem) },
   { name: 'city', load: () => import('./world/city').then((m) => m.createCitySystem) },
   { name: 'osm', load: () => import('./world/osm').then((m) => m.createOsmSystem) },
+  { name: 'street-layer', load: () => import('./world/street').then((m) => m.createStreetLayerSystem) },
   { name: 'vegetation', load: () => import('./world/vegetation').then((m) => m.createVegetationSystem) },
   { name: 'mosques', load: () => import('./world/landmarks/mosques').then((m) => m.createMosqueSystem) },
   { name: 'structures', load: () => import('./world/landmarks/structures').then((m) => m.createStructureSystem) },

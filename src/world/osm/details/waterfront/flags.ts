@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../../core/contracts';
-import { patchMaterial } from '../../../../core/uniforms';
+import { patchMaterial, streetHole } from '../../../../core/uniforms';
 import { FLAG_STRIDE } from '../protocol';
 
 function flagTexture(): THREE.CanvasTexture {
@@ -54,7 +54,7 @@ export function createFlags(records: Float32Array): { mesh: THREE.InstancedMesh;
   }
   const geo = new THREE.PlaneGeometry(1.5, 1, 10, 4).translate(0.75, -0.5, 0);
   const tex = flagTexture();
-  const mat = new THREE.MeshStandardMaterial({ name: 'osm-flag', map: tex, side: THREE.DoubleSide, roughness: 0.75 });
+  const mat = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-flag', map: tex, side: THREE.DoubleSide, roughness: 0.75 }));
   patchMaterial(mat, 'osm-flag-v1', (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uWind;')

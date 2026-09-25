@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import type { WorldBounds } from '../../../core/contracts';
-import { patchMaterial } from '../../../core/uniforms';
+import { patchMaterial, streetHole } from '../../../core/uniforms';
 import { MASK_RANGE, SIDEWALK_MAX, type StreetRaster } from '../shared/protocol';
 import { BUILDING_RANGE, FLAG_KERBED, FLAG_PEDESTRIAN, Ground, PATH_RANGE, Surf, SURF_MASK } from '../shared/street-field';
 import { BARE_FRONTAGE, BARE_WIDEN, FRONTAGE } from '../shared/street-surface';
@@ -345,7 +345,7 @@ export function createStreetMaterials(renderer: THREE.WebGLRenderer): StreetMate
     uFade: { value: new THREE.Vector4() },
     uGroundMap: { value: groundMap },
   };
-  const ground = new THREE.MeshStandardMaterial({ name: 'ground', roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+  const ground = streetHole(new THREE.MeshStandardMaterial({ name: 'ground', roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
   patchMaterial(ground, 'osm-ground-v4', (shader) => {
     Object.assign(shader.uniforms, groundUniforms);
     shader.vertexShader = shader.vertexShader
@@ -359,10 +359,10 @@ export function createStreetMaterials(renderer: THREE.WebGLRenderer): StreetMate
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += gEmis;');
   });
 
-  const paint = new THREE.MeshStandardMaterial({ name: 'paint', vertexColors: true, roughness: 0.62, metalness: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
-  const rails = new THREE.MeshStandardMaterial({ name: 'rails', vertexColors: true, roughness: 0.42, metalness: 0.8, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+  const paint = streetHole(new THREE.MeshStandardMaterial({ name: 'paint', vertexColors: true, roughness: 0.62, metalness: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
+  const rails = streetHole(new THREE.MeshStandardMaterial({ name: 'rails', vertexColors: true, roughness: 0.42, metalness: 0.8, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
 
-  const props = new THREE.MeshStandardMaterial({ name: 'street-props', vertexColors: true, roughness: 0.5, metalness: 0.35 });
+  const props = streetHole(new THREE.MeshStandardMaterial({ name: 'street-props', vertexColors: true, roughness: 0.5, metalness: 0.35 }));
   patchMaterial(props, 'osm-street-props-v3', (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aGlow;\nattribute float aLight;\nvarying float vGlow;\nvarying float vLight;\nvarying float vSignal;')
@@ -402,11 +402,11 @@ export function createStreetMaterials(renderer: THREE.WebGLRenderer): StreetMate
         );
     });
   };
-  const masonry = new THREE.MeshStandardMaterial({ name: 'masonry', vertexColors: true, roughness: 0.9, metalness: 0 });
+  const masonry = streetHole(new THREE.MeshStandardMaterial({ name: 'masonry', vertexColors: true, roughness: 0.9, metalness: 0 }));
   patchMasonry(masonry, 'osm-masonry-v2');
-  const inlay = new THREE.MeshStandardMaterial({ name: 'inlay', vertexColors: true, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const inlay = streetHole(new THREE.MeshStandardMaterial({ name: 'inlay', vertexColors: true, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
   patchMasonry(inlay, 'osm-inlay-v1');
-  const wire = new THREE.MeshBasicMaterial({ name: 'wire', color: 0x16181a });
+  const wire = streetHole(new THREE.MeshBasicMaterial({ name: 'wire', color: 0x16181a }));
 
   const ready = loadPbrArrays(GROUND_LAYERS, ARRAY_SIZE, aniso).then(([a, n]) => {
     arrays.uGroundAlb.value = a;

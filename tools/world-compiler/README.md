@@ -27,6 +27,7 @@ id; areas without their own profile use the generic one.
 | `--all-props` | off | processes every registered prop, also those no tile places (inspection, Blender) |
 | `--no-validate` | off | skips the glTF-Validator |
 | `--no-compress` | off | format 1: writes plain float glbs instead of quantized, meshopt-compressed ones |
+| `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); manifest records stay |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
 
 The compiler runs the renderer-independent code of the OSM slice in Node (via `tsx`):

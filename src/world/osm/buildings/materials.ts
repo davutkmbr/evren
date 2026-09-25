@@ -9,7 +9,7 @@
  * - detail: near-LOD facade elements (anchored instancing, distance fade, shadows with matching depth material).
  */
 import * as THREE from 'three';
-import { patchMaterial } from '../../../core/uniforms';
+import { patchMaterial, streetHole } from '../../../core/uniforms';
 import { bindPbr, loadPbrArrays, maxAnisotropy, REPEAT_M, type TextureSet } from '../shared/textures';
 import type { DetailKind } from './details';
 import { FACADE_FRAGMENT_PARS, FACADE_LIGHT, FACADE_MAIN, FACADE_NORMAL, FACADE_VERTEX_MAIN, FACADE_VERTEX_PARS } from './facade-glsl';
@@ -31,7 +31,7 @@ const LAYER_NORMAL: Partial<Record<TextureSet, number>> = { plaster: 0.7, plaste
 const f = (v: number): string => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 function makeFacadeMaterial(uniforms: Record<string, THREE.IUniform>): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: 'osm-facade', vertexColors: true, roughness: 1, metalness: 0 });
+  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-facade', vertexColors: true, roughness: 1, metalness: 0 }));
   patchMaterial(m, 'osm-facade-v4', (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${FACADE_VERTEX_PARS}`).replace('#include <project_vertex>', `#include <project_vertex>\n${FACADE_VERTEX_MAIN}`);
@@ -120,7 +120,7 @@ float rFlat = 0.0;
 `;
 
 function makeRoofMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: 'osm-roof', vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-roof', vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
   patchMaterial(m, 'osm-roof-v3', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${ROOF_VERTEX_PARS}`).replace('#include <project_vertex>', `#include <project_vertex>\n${ROOF_VERTEX_MAIN}`);
     shader.fragmentShader = shader.fragmentShader
@@ -275,7 +275,7 @@ float dMetal = 0.0;
 
 function detailMaterial(kind: DetailKind, fade: THREE.IUniform<THREE.Vector2>): { material: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial } {
   const shade = DETAIL_SHADE[kind];
-  const material = new THREE.MeshStandardMaterial({ name: `osm-detail-${kind}`, vertexColors: true, roughness: 0.85, metalness: 0, side: shade === 2 || shade === 4 ? THREE.DoubleSide : THREE.FrontSide });
+  const material = streetHole(new THREE.MeshStandardMaterial({ name: `osm-detail-${kind}`, vertexColors: true, roughness: 0.85, metalness: 0, side: shade === 2 || shade === 4 ? THREE.DoubleSide : THREE.FrontSide }));
   const kindU = { value: shade };
   patchMaterial(material, 'osm-detail-v3', (shader) => {
     shader.uniforms.uFade = fade;
@@ -347,7 +347,7 @@ export function createBuildingMaterials(renderer: THREE.WebGLRenderer, detailKin
   };
   const facade = makeFacadeMaterial(uniforms);
   const roof = makeRoofMaterial();
-  const prop = new THREE.MeshStandardMaterial({ name: 'osm-prop', vertexColors: true, roughness: 0.65, metalness: 0.05 });
+  const prop = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-prop', vertexColors: true, roughness: 0.65, metalness: 0.05 }));
   const details = {} as BuildingMaterials['details'];
   for (const k of detailKinds) {
     const fade = { value: new THREE.Vector2(1e5, 1e5 + 1) };

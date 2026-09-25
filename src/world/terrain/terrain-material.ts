@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { patchMaterial } from '../../core/uniforms';
+import { patchMaterial, streetHole } from '../../core/uniforms';
 import { LOD_COUNT, type TerrainTierId } from './config';
 import { FRAGMENT_MAIN_GLSL, FRAGMENT_PARS_GLSL } from './glsl/fragment.glsl';
 import { VERTEX_BEGIN_GLSL, VERTEX_PARS_GLSL, VERTEX_TERRAIN_GLSL } from './glsl/vertex.glsl';
@@ -100,7 +100,7 @@ function lightsChunkWithDirectScale(): string {
  * cloud shadows, environment lighting and aerial perspective all stay consistent with the rest of the scene.
  */
 export function createTerrainMaterial(uniforms: TerrainUniforms, tier: TerrainTierId): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, name: `terrain-tier${tier}` });
+  const material = streetHole(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, name: `terrain-tier${tier}` }));
   material.defines = { TERRAIN_TIER: tier };
   patchMaterial(material, `terrain-cdlod-3-tier${tier}`, (shader) => {
     for (const key of Object.keys(uniforms)) {

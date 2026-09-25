@@ -20,7 +20,7 @@ import { LOD0, LOD1, type TileMesh, type Vec3 } from '../mesh';
 import { lin, scale } from './frame';
 import type { AreaContext, CompileStep } from '../registry';
 import { osmWords } from '../shopfront/names';
-import { district, landmarkOf } from '../district';
+import { district, landmarkBlocksEnabled, landmarkOf } from '../district';
 import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
 import { type FacadePlan, parentOf, planFacade, planTop } from './plan';
@@ -248,7 +248,9 @@ export const facadeStep: CompileStep = {
       if (sh.massing.has(s)) {
         const before = t.mesh.triangles(LOD0);
         if (s.rec.landmark) {
-          emitBlock(s, t.mesh, 'fac_stone', 'fac_roof_flat');
+          if (landmarkBlocksEnabled()) {
+            emitBlock(s, t.mesh, 'fac_stone', 'fac_roof_flat');
+          }
         } else {
           t.mesh.withLod(LOD0, () => emitSolid(s, t.mesh));
           t.mesh.withLod(LOD1, () => emitBlock(s, t.mesh));

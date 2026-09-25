@@ -106,6 +106,20 @@ const LANDMARK_AMENITY = new Set(['place_of_worship', 'public_bath', 'monastery'
  * Landmarks get simple stone massing instead of an apartment façade or shopfronts, and the manifest flags them so a
  * runtime that draws its own landmark models can hide them.
  */
+let landmarkBlocks = true;
+
+/**
+ * `--landmarks none`: landmark buildings get no geometry at all (a runtime that draws its own landmark models, e.g. the
+ * flight game's mosques and the Galata slice's buildings, shows through); their manifest records stay for colliders.
+ */
+export function setLandmarkBlocks(on: boolean): void {
+  landmarkBlocks = on;
+}
+
+export function landmarkBlocksEnabled(): boolean {
+  return landmarkBlocks;
+}
+
 export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string }): string | null {
   if (district().buildings.landmarkIds.has(b.id)) {
     return b.amenity === 'marketplace' ? 'market' : 'landmark';
