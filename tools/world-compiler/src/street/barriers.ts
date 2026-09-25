@@ -7,6 +7,7 @@ import { district } from '../district';
 import { LOD0, LOD1, type Vec3 } from '../mesh';
 import type { CompileStep, TileContext } from '../registry';
 import { inTile, streetTile } from './common';
+import { placementRules } from './placement';
 import { beam } from './shapes';
 
 const HEIGHT = 1.05;
@@ -18,6 +19,7 @@ const BALUSTER = 0.022;
 
 function emitRailing(t: TileContext, pts: readonly number[]): number {
   const h = t.area.heights;
+  const rules = placementRules(t.area);
   let pieces = 0;
   for (let i = 0; i + 3 < pts.length; i += 2) {
     const ax = pts[i];
@@ -32,6 +34,18 @@ function emitRailing(t: TileContext, pts: readonly number[]): number {
       const x1 = ax + ((bx - ax) * (k + 1)) / n;
       const z1 = az + ((bz - az) * (k + 1)) / n;
       if (!inTile(t, (x0 + x1) / 2, (z0 + z1) / 2)) {
+        continue;
+      }
+      // Rule railing: a piece whose ends or middle stand on a vehicular carriageway or its gutter, in a building or
+      // across a door's approach is dropped (railings run along kerbs and plots, never across the road or a door).
+      const blocked = [0, 0.5, 1].some((f) => {
+        const x = x0 + (x1 - x0) * f;
+        const z = z0 + (z1 - z0) * f;
+        const surf = rules.surface(x, z);
+        return surf === 'carriageway' || surf === 'gutter' || surf === 'building' || surf === 'water' || rules.doorBlocked(x, z);
+      });
+      rules.log.note('railing', blocked ? 'dropped' : 'kept');
+      if (blocked) {
         continue;
       }
       pieces++;

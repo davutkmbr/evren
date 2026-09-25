@@ -5,12 +5,13 @@
  * - lane and edge lines on the main roads (RoadLines010 dashed / solid columns), kept out of junctions and zebras;
  * - manhole covers (ManholeCover003, foundry mark removed: conditions.json) on carriageways and pedestrian lanes;
  * - gully grates in the gutters of kerbed streets;
- * - yellow tactile strips on every dropped kerb;
+ * - yellow tactile pads on every dropped kerb, following the kerb line;
  * - grooved rails of the T3 tram embedded in the street;
  * - on the arrival square a white guide line of pavers (bus stop to the piers and the crossing) and manholes;
  * - wet films (BLEND, COLOR_0 alpha falling to 0 at the rim): puddles in the square, wet paving in front of fish
  *   stalls and round gully grates.
- * A marking belongs to the tile that holds its centre (strips: each quad by its midpoint).
+ * A marking belongs to the tile that holds its centre (strips: each quad by its midpoint). Every marking is clipped by
+ * the placement rules (placement.ts): paint only on paintable carriageway, tactile only on pavement.
  */
 import { BoxGrid, segDist } from '../../../../src/world/osm/shared/geometry';
 import type { Street } from '../../../../src/world/osm/shared/street-field';
@@ -18,6 +19,7 @@ import { LOD0, LOD1, type Vec2, type Vec3 } from '../mesh';
 import type { MaterialName } from '../materials';
 import type { CompileStep, TileContext } from '../registry';
 import { GUTTER_WIDTH, hash, inTile, KERB_WIDTH, streetContext, streetTile, type StreetContext } from './common';
+import { placementRules } from './placement';
 import { wearPlan } from './wear';
 
 /** Lift (m) of paint and ironwork above the ground. */
@@ -29,6 +31,8 @@ const LINE004_U: [number, number] = [0.277, 0.736];
 const LINE010_DASHED = 0.25;
 const LINE010_SOLID = 0.974;
 const LINE010_REPEAT = 36;
+/** Half the standard gauge plus the rail head (m): a manhole keeps clear of the rails from here. */
+const TRAM_GAUGE_HALF = 0.75;
 
 interface Strip {
   pos: number[];
@@ -73,10 +77,11 @@ function flush(t: TileContext, m: MaterialName, s: Strip, lod: number): void {
  * Rectangle on the ground from centre line a -> b with half width hw, subdivided every `step` metres along it; UVs:
  * u across (u0 left .. u1 right), v along (v0 at a .. v1 at b). Quads outside the tile are skipped.
  */
-function drapedRect(t: TileContext, s: Strip, y: (x: number, z: number) => number, ax: number, az: number, bx: number, bz: number, hw: number, u: [number, number], v: [number, number], lift: number, step = 1): void {
+function drapedRect(t: TileContext, s: Strip, y: (x: number, z: number) => number, ax: number, az: number, bx: number, bz: number, hw: number, u: [number, number], v: [number, number], lift: number, step = 1, keep?: (x: number, z: number) => boolean): { kept: number; dropped: number } {
+  const out = { kept: 0, dropped: 0 };
   const len = Math.hypot(bx - ax, bz - az);
   if (len < 1e-3) {
-    return;
+    return out;
   }
   const tx = (bx - ax) / len;
   const tz = (bz - az) / len;
@@ -96,6 +101,14 @@ function drapedRect(t: TileContext, s: Strip, y: (x: number, z: number) => numbe
       const z = az + (bz - az) * f + rz * hw * side;
       return [x, y(x, z) + lift, z];
     };
+    if (keep) {
+      const corners = [p(f0, -1), p(f0, 1), p(f1, 1), p(f1, -1)];
+      if (!keep(cx, cz) || corners.some((q) => !keep(q[0], q[2]))) {
+        out.dropped++;
+        continue;
+      }
+      out.kept++;
+    }
     const vv = (f: number): number => v[0] + (v[1] - v[0]) * f;
     quad(s, [p(f0, -1), p(f0, 1), p(f1, 1), p(f1, -1)], [
       [u[0], vv(f0)],
@@ -104,6 +117,7 @@ function drapedRect(t: TileContext, s: Strip, y: (x: number, z: number) => numbe
       [u[0], vv(f1)],
     ]);
   }
+  return out;
 }
 
 interface Junctions {
@@ -170,6 +184,8 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   const s = a.foundation.surface;
   const y = sc.groundY;
   const stats: MarkingStats = { zebras: 0, lineM: 0, manholes: 0, gullies: 0, tactile: 0, railM: 0 };
+  const rules = placementRules(a);
+  const log = rules.log;
   const paint = newStrip();
   const lines = newStrip();
   const manhole = newStrip();
@@ -181,7 +197,9 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   const gullies: [number, number][] = [];
   const nearCrossing = (x: number, z: number, r: number): boolean => sc.crossings.some((c) => segDist(x, z, c.ax, c.az, c.bx, c.bz) < r + c.width / 2);
 
-  /* Zebras: bars 0.5 m wide (along the crossing) and `width` long (along the traffic), 1 m apart, 0.4 m off the kerbs. */
+  /* Zebras: bars 0.5 m wide (along the crossing) and `width` long (along the traffic), 1 m apart, 0.4 m off the kerbs.
+     Rule paint.zebraBar: each bar is clipped (from its middle outwards) to where both of its long edges lie on
+     paintable carriageway; a bar left shorter than 1 m is dropped. */
   for (const c of sc.crossings) {
     const len = Math.hypot(c.bx - c.ax, c.bz - c.az);
     const cx = (c.bx - c.ax) / len;
@@ -189,14 +207,36 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
     const bars = Math.max(2, Math.floor((len - 0.8 + 0.5) / 1.0));
     const start = (len - (bars - 1) * 1.0) / 2;
     const quadW = 0.5 / (LINE004_U[1] - LINE004_U[0]);
+    const half = c.width / 2;
     let own = false;
     for (let i = 0; i < bars; i++) {
       const f = start + i;
       const mx = c.ax + cx * f;
       const mz = c.az + cz * f;
-      own ||= inTile(t, mx, mz);
+      const mine = inTile(t, mx, mz);
+      const onRoad = (g: number): boolean => [-0.25, 0.25].every((o) => rules.paintable(mx + c.tx * g + cx * o, mz + c.tz * g + cz * o, 0.05, false));
+      let lo = 0;
+      let hi = 0;
+      if (onRoad(0)) {
+        while (hi + 0.1 <= half + 1e-6 && onRoad(hi + 0.1)) {
+          hi += 0.1;
+        }
+        while (lo - 0.1 >= -half - 1e-6 && onRoad(lo - 0.1)) {
+          lo -= 0.1;
+        }
+      }
+      if (hi - lo < 1) {
+        if (mine) {
+          log.note('paint.zebraBar', 'dropped');
+        }
+        continue;
+      }
+      if (mine) {
+        log.note('paint.zebraBar', hi - lo < c.width - 0.15 ? 'shortened' : 'kept');
+      }
+      own ||= mine;
       const vOff = hash(i * 3.1 + c.ax) * 0.6;
-      drapedRect(t, paint, a.heights.carriage, mx - c.tx * c.width * 0.5, mz - c.tz * c.width * 0.5, mx + c.tx * c.width * 0.5, mz + c.tz * c.width * 0.5, quadW / 2, [0, 1], [vOff, vOff + c.width / 5], PAINT_LIFT, 2);
+      drapedRect(t, paint, a.heights.carriage, mx + c.tx * lo, mz + c.tz * lo, mx + c.tx * hi, mz + c.tz * hi, quadW / 2, [0, 1], [vOff + (lo + half) / 5, vOff + (hi + half) / 5], PAINT_LIFT, 2);
     }
     if (own) {
       stats.zebras++;
@@ -210,19 +250,20 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       continue;
     }
     const lanes = st.lanes || Math.max(st.oneway ? 1 : 2, Math.round((st.hw * 2) / 3.3));
-    const offsets: { o: number; dashed: boolean }[] = [];
+    const offsets: { o: number; dashed: boolean; edge: number }[] = [];
     if (st.kerbed) {
-      offsets.push({ o: -(st.hw - GUTTER_WIDTH - 0.25), dashed: false }, { o: st.hw - GUTTER_WIDTH - 0.25, dashed: false });
+      offsets.push({ o: -(st.hw - GUTTER_WIDTH - 0.25), dashed: false, edge: -1 }, { o: st.hw - GUTTER_WIDTH - 0.25, dashed: false, edge: 1 });
     }
     if (st.oneway) {
       const lw = (st.hw * 2) / lanes;
       for (let l = 1; l < lanes; l++) {
-        offsets.push({ o: -st.hw + l * lw, dashed: true });
+        offsets.push({ o: -st.hw + l * lw, dashed: true, edge: 0 });
       }
     } else {
-      offsets.push({ o: 0, dashed: st.hw < 5.5 });
+      offsets.push({ o: 0, dashed: st.hw < 5.5, edge: 0 });
     }
-    for (const { o, dashed } of offsets) {
+    for (const { o: nominal, dashed, edge } of offsets) {
+      const rule = edge ? 'paint.edgeLine' : 'paint.laneLine';
       let along = 0;
       for (let k = 2; k < st.pts.length; k += 2) {
         const ax = st.pts[k - 2];
@@ -238,18 +279,61 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
         const rx = -tz;
         const rz = tx;
         const m = Math.ceil(len / 1.5);
+        // Rule paint.edgeLine: an edge line follows the real kerb (the raster's carriageway edge along the normal), a
+        // gutter plus 0.3 m inside it (0.35 m inside a kerbless edge), not the tagged half width.
+        const offsetAt = (f: number): number | null => {
+          if (!edge) {
+            return nominal;
+          }
+          const px = ax + tx * f;
+          const pz = az + tz * f;
+          const e = rules.edgeAlong(px, pz, rx * edge, rz * edge, st.hw + 4);
+          if (e === null) {
+            // No edge: the carriageway runs on into another one (a divided road's other half, a merge). The tagged
+            // offset stays; the stripe checks below still keep it on this carriageway.
+            return nominal;
+          }
+          // Kerbed as the ground builds the gutter: a raised kerb stone at a point in the gutter band.
+          const ex = px + rx * edge * (e - 0.15);
+          const ez = pz + rz * edge * (e - 0.15);
+          return edge * (e - (rules.kerbStone(ex, ez) ? GUTTER_WIDTH + 0.3 : 0.35));
+        };
         for (let i = 0; i < m; i++) {
           const f0 = (i / m) * len;
           const f1 = ((i + 1) / m) * len;
-          const x0 = ax + tx * f0 + rx * o;
-          const z0 = az + tz * f0 + rz * o;
-          const x1 = ax + tx * f1 + rx * o;
-          const z1 = az + tz * f1 + rz * o;
-          const mx = (x0 + x1) / 2;
-          const mz = (z0 + z1) / 2;
-          if (!inTile(t, mx, mz) || !junc.outside(mx, mz) || nearCrossing(mx, mz, 1.5) || s.distance(mx, mz) > -0.2) {
+          const mx0 = ax + tx * (f0 + f1) * 0.5 + rx * nominal;
+          const mz0 = az + tz * (f0 + f1) * 0.5 + rz * nominal;
+          if (!inTile(t, mx0, mz0) || !junc.outside(mx0, mz0) || nearCrossing(mx0, mz0, 1.5)) {
             continue;
           }
+          const o0 = offsetAt(f0);
+          const o1 = offsetAt(f1);
+          if (o0 === null || o1 === null || (edge && (o0 * edge < 0.5 || o1 * edge < 0.5)) || Math.abs(o0 - o1) > 0.6) {
+            log.note(rule, 'dropped');
+            continue;
+          }
+          const x0 = ax + tx * f0 + rx * o0;
+          const z0 = az + tz * f0 + rz * o0;
+          const x1 = ax + tx * f1 + rx * o1;
+          const z1 = az + tz * f1 + rz * o1;
+          const mx = (x0 + x1) / 2;
+          const mz = (z0 + z1) / 2;
+          // Rule paint.laneLine / paint.edgeLine: every corner of the 0.3 m stripe on paintable carriageway (off kerbs,
+          // gutters, pedestrian paving, parking and tram tracks), on a carriageway that runs the stripe's way.
+          const corners: [number, number][] = [
+            [x0 - rx * 0.15, z0 - rz * 0.15],
+            [x0 + rx * 0.15, z0 + rz * 0.15],
+            [x1 - rx * 0.15, z1 - rz * 0.15],
+            [x1 + rx * 0.15, z1 + rz * 0.15],
+          ];
+          if (!junc.outside(mx, mz) || nearCrossing(mx, mz, 1.5)) {
+            continue;
+          }
+          if (corners.some(([qx, qz]) => !rules.paintable(qx, qz, 0.05, true)) || !rules.axisAgrees(mx, mz, Math.atan2(tz, tx))) {
+            log.note(rule, 'dropped');
+            continue;
+          }
+          log.note(rule, Math.abs(o0 - nominal) > 0.1 || Math.abs(o1 - nominal) > 0.1 ? 'moved' : 'kept');
           const col = dashed ? LINE010_DASHED : LINE010_SOLID;
           drapedRect(t, lines, a.heights.carriage, x0, z0, x1, z1, 0.15, [col - 0.012, col + 0.012], [(along + f0) / LINE010_REPEAT, (along + f1) / LINE010_REPEAT], PAINT_LIFT, 2);
           stats.lineM += f1 - f0;
@@ -281,7 +365,12 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
         const o = (hash(next * 1.37 + st.road) - 0.5) * st.hw * 0.9;
         const x = ax + tx * f - tz * o;
         const z = az + tz * f + tx * o;
+        // Rule manhole: never on (or within 0.7 m of) a tram rail.
+        const clearOfRails = sc.tramDist(x, z) >= TRAM_GAUGE_HALF + 0.7;
         if (inTile(t, x, z) && s.distance(x, z) < -0.6 && junc.outside(x, z) && !nearCrossing(x, z, 1.2)) {
+          log.note('manhole', clearOfRails ? 'kept' : 'dropped');
+        }
+        if (clearOfRails && inTile(t, x, z) && s.distance(x, z) < -0.6 && junc.outside(x, z) && !nearCrossing(x, z, 1.2)) {
           const r = 0.4;
           const ang = hash(next * 7.7) * Math.PI * 2;
           const ca = Math.cos(ang) * r;
@@ -333,15 +422,76 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
     }
   }
 
-  /* Tactile strips on the dropped kerbs: 0.6 m deep, just behind the kerb stone. */
+  /* Tactile (blister) pads on the dropped kerbs: 0.6 m deep, just behind the kerb stone. Rule tactile.pad: the pad
+     follows the real kerb line (found along the crossing from every station, 0.25 m apart) instead of a straight
+     strip at the crossing's end, and a station is kept only where the whole depth lies on pavement (behind the kerb
+     stone, not in a building or a door's approach, 0.2 m off façades); the pad is shortened to its kept stations and
+     dropped when fewer than three remain. */
   for (const d of sc.dropped) {
     if (!inTile(t, d.x, d.z)) {
       continue;
     }
     const half = d.half - 0.25;
-    const x0 = d.x + d.nx * (KERB_WIDTH + 0.45);
-    const z0 = d.z + d.nz * (KERB_WIDTH + 0.45);
-    drapedRect(t, tactile, y, x0 - d.tx * half, z0 - d.tz * half, x0 + d.tx * half, z0 + d.tz * half, 0.3, [0, 0.6 / 3.6], [0, (2 * half) / 3.6], 0.01, 0.25);
+    const n = Math.max(2, Math.round((2 * half) / 0.25) + 1);
+    const inner = KERB_WIDTH + 0.05;
+    const depth = 0.6;
+    const stations: ({ ix: number; iz: number; ox: number; oz: number; s: number } | null)[] = [];
+    for (let k = 0; k < n; k++) {
+      const sAlong = -half + (2 * half * k) / (n - 1);
+      // From 1.5 m out in the road, find the kerb line along the crossing's outward direction.
+      const bx = d.x + d.tx * sAlong - d.nx * 1.5;
+      const bz = d.z + d.tz * sAlong - d.nz * 1.5;
+      const e = rules.edgeAlong(bx, bz, d.nx, d.nz, 4);
+      if (e === null) {
+        stations.push(null);
+        continue;
+      }
+      const kx = bx + d.nx * e;
+      const kz = bz + d.nz * e;
+      const [gx, gz] = rules.outward(kx, kz);
+      // Pad axis: the kerb normal, kept within 35° of the crossing so a corner radius does not swing it round.
+      let nx = gx;
+      let nz = gz;
+      if (nx * d.nx + nz * d.nz < 0.82) {
+        nx = d.nx;
+        nz = d.nz;
+      }
+      const ix = kx + nx * inner;
+      const iz = kz + nz * inner;
+      const ox = kx + nx * (inner + depth);
+      const oz = kz + nz * (inner + depth);
+      const ok = [0, 0.5, 1].every((f) => {
+        const px = ix + (ox - ix) * f;
+        const pz = iz + (oz - iz) * f;
+        return rules.surface(px, pz) === 'pavement' && s.distance(px, pz) >= KERB_WIDTH && s.buildingDistance(px, pz) >= 0.2 && !rules.doorBlocked(px, pz);
+      });
+      stations.push(ok ? { ix, iz, ox, oz, s: sAlong + half } : null);
+    }
+    const kept = stations.filter((q) => q).length;
+    if (kept < 3) {
+      log.note('tactile.pad', 'dropped');
+      continue;
+    }
+    log.note('tactile.pad', kept < n ? 'shortened' : 'kept');
+    for (let k = 1; k < n; k++) {
+      const p = stations[k - 1];
+      const q = stations[k];
+      if (!p || !q) {
+        continue;
+      }
+      const lift = 0.01;
+      quad(tactile, [
+        [p.ix, y(p.ix, p.iz) + lift, p.iz],
+        [p.ox, y(p.ox, p.oz) + lift, p.oz],
+        [q.ox, y(q.ox, q.oz) + lift, q.oz],
+        [q.ix, y(q.ix, q.iz) + lift, q.iz],
+      ], [
+        [0, p.s / 3.6],
+        [depth / 3.6, p.s / 3.6],
+        [depth / 3.6, q.s / 3.6],
+        [0, q.s / 3.6],
+      ]);
+    }
     stats.tactile++;
   }
 
@@ -368,6 +518,11 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       }
       if (inTile(t, (ax + bx) / 2, (az + bz) / 2)) {
         stats.railM += len;
+        // Rule rail.track: rails belong on the carriageway (the corrected tracks are moved there when OSM draws them
+        // within 5 m of it); a stretch left on raised pavement (a separate tram right-of-way) is kept for the
+        // track's continuity and flagged.
+        const surf = rules.surface((ax + bx) / 2, (az + bz) / 2);
+        log.note('rail.track', surf === 'pavement' || surf === 'kerb' ? 'flagged' : 'kept');
       }
     }
   }
@@ -382,9 +537,16 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       [P0[0], P0[1], sp[4], sp[5]],
       [P0[0] - 8, P0[1] - 1.5, 236, 5893],
     ];
+    // Rule tactile.guide: guide pavers only on pavement or pedestrian paving (never on the road or the kerb).
+    const walkable = (x: number, z: number): boolean => {
+      const surf = rules.surface(x, z);
+      return surf === 'pavement' || surf === 'pedestrianLane';
+    };
     for (const [ax, az, bx, bz] of legs) {
       const len = Math.hypot(bx - ax, bz - az);
-      drapedRect(t, guide, y, ax, az, bx, bz, 0.15, [0, 0.5], [0, len / 0.6], PAINT_LIFT - 0.004, 0.6);
+      const r = drapedRect(t, guide, y, ax, az, bx, bz, 0.15, [0, 0.5], [0, len / 0.6], PAINT_LIFT - 0.004, 0.6, walkable);
+      log.note('tactile.guide', 'kept', r.kept);
+      log.note('tactile.guide', 'dropped', r.dropped);
     }
     for (let k = 0; k < 9; k++) {
       const x = 185 + hash(k * 3.7) * 110;

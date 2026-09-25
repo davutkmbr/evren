@@ -223,6 +223,54 @@ triangles, byte sizes, doors, kerb-step lengths, graph sizes and connectivity, a
 lightmap densities, materials, textures (and skipped sets), props (and skipped ones), instances, lights by source,
 asset credits, per-step times, validator totals by message code and timings.
 
+## Placement rules
+
+Small street details are not taken from OSM as-is: OSM crossing ways stop short of the kerb, tagged road widths
+differ from the carriageway raster, trees and bollard rows sit in the road. `src/street/placement.ts` holds the
+predicates every street emitter asks before it emits a detail. A detail that breaks its rule is moved to the nearest
+valid spot, shortened or dropped. Every district gets the same rules.
+
+Surfaces (`PlacementRules.surface`) follow what `street/ground.ts` draws:
+
+| surface | where |
+|---|---|
+| `carriageway` | carriageway distance D < 0, no pedestrian street wins the texel |
+| `gutter` | the 0.3 m band in front of a raised kerb |
+| `pedestrianLane` | carriageway raster of a pedestrian street (paving, no traffic) |
+| `kerb` | the 0.15 m kerb stone behind a raised kerb line |
+| `pavement` | everything else that is walkable: raised sidewalks, kerbless paving, squares, paths, lots |
+| `building`, `water` | building outlines, water |
+
+| rule | emitter | predicate | on failure |
+|---|---|---|---|
+| `crossing.span` | `street/common.ts` | a marked crossing runs from kerb to kerb, has no building or water 0.8 m past either end and is no more than 30 m long | an end inside the carriageway is extended to the kerb line, up to 6 m (`moved`). An end with no edge within 6 m (a traffic island, a junction) stays open (`flagged`). A crossing that fails the checks is `dropped`. Dropped kerbs go only where an end lies within 0.3 m of the kerb line |
+| `paint.zebraBar` | `street/markings.ts` | both long edges of the bar are paintable: carriageway 0.05 m inside the edge, 0.3 m clear of pedestrian paving | clipped outwards from the bar's middle (`shortened`); `dropped` when less than 1 m is left |
+| `paint.laneLine` | markings | every corner of the 0.3 m stripe is paintable, out of the gutter band, off parking ground, 1.25 m from tram tracks, and the carriageway that wins the texel runs the stripe's way (within 25°) | the 1.5 m segment is `dropped` |
+| `paint.edgeLine` | markings | as `paint.laneLine`. The offset comes from the kerb line found along the normal (gutter plus 0.3 m inside a kerb, 0.35 m inside a kerbless edge), not from the tagged width. Where no edge lies within the half width plus 4 m (a divided road's other half, a merge), the tagged offset stays | `moved` when the offset differs from the tagged one by more than 0.1 m; `dropped` when the stripe fails the checks or its offset jumps by more than 0.6 m within a segment |
+| `tactile.pad` | markings | blister pads 0.6 m deep follow the kerb line, found from each 0.25 m station along the dropped kerb. The whole depth of a station is `pavement`, behind the kerb stone, 0.2 m off façades and out of door approaches | stations that fail are left out (`shortened`); a pad with fewer than 3 stations is `dropped` |
+| `tactile.guide` | markings (arrival square) | guide pavers on `pavement` or `pedestrianLane` only | 0.6 m quads `dropped` |
+| `manhole` | markings | at least 1.45 m from a tram track centre line (and, as before, 0.6 m inside the carriageway, off junctions and zebras) | `dropped` |
+| `rail.corrected` | common.ts | tram track samples OSM draws on the pavement or too close to the kerb (within 5 m of the carriageway) | `moved` onto the carriageway (1 m samples) |
+| `rail.track` | markings | rails lie on the carriageway | a stretch on raised pavement (a separate right-of-way) is kept for the track's continuity and `flagged` (1 m segments) |
+| `prop.tree` | `street/furniture.ts` | off the carriageway, 0.6 m behind the kerb line, 0.8 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 2.5 m, else `dropped` |
+| `prop.bollard` | furniture | 0.2 m behind the kerb line, 0.3 m off façades, out of door approaches; on pedestrian paving only, never on a vehicular carriageway | moved up to 1.2 m, else `dropped` |
+| `prop.bollardMouth` | furniture | the bollard row across a pedestrian lane's mouth stands 0.8 m inside the lane's own paving, not where the OSM end node lies in the crossing road | `moved` inwards (up to 12 m along the lane); `dropped` when the lane never leaves the carriageway |
+| `prop.pole` | furniture, `street/lights.ts` | signals, stop poles, lamp masts and post lanterns: off every carriageway, 0.3 m behind the kerb line, 0.3 m off façades, out of door approaches | moved up to 1.5 m, else `dropped` (wall brackets are exempt) |
+| `prop.furniture` | furniture | benches, bins, cabinets, planters, lantern columns, parasols, café sets, chairs and A-frames: 0.45 m behind the kerb line, 0.2 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 1.5 m, else `dropped` |
+| `railing` | `street/barriers.ts` | the ends and middle of each 2.4 m railing piece stand off the carriageway and gutter, out of buildings and door approaches | `dropped` |
+
+- A door approach is the area in front of a door, up to 1.3 m out and 0.2 m past each jamb.
+- Props placed from reference photos (the Kadıköy S1 fits, e.g. the c05 stop and the gate A plaza) are never moved.
+  A violation is counted as `flagged`.
+- Hanging pendants, vehicles, chalk menus (they stand on their A-frame) and wall lamps are exempt.
+
+The compile summary lists the counts per rule and outcome under `placement` (`kept`, `moved`, `shortened`,
+`dropped`, `flagged`). Zebra bars, pads and stripes are counted in the tile that owns them. A change in these counts
+shows a regression. `src/street/tools/placement-scan.ts <area>` checks compiled tiles independently: it decodes the
+full-detail glbs and instances and counts, against the surface raster, paint triangles off the carriageway, on
+pedestrian paving, parking or tram beds; tactile triangles on the road, on kerbs or in buildings; rails off the
+carriageway; and props on the carriageway or kerb. It also lists the worst 4 m cells, as places to take shots.
+
 ## Not in format 0
 
 - Façade depth, windows, roof shapes, textures, UVs, LODs, baked AO and colliders beyond footprints.

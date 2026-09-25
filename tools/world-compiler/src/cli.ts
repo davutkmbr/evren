@@ -57,6 +57,7 @@ import { intersects, readStrip } from './strip';
 import { type BakedSet, DEFAULT_TEXTURES, TextureBaker, tilingOf } from './textures';
 import { validateGlb, type ValidationSummary } from './validate';
 import { compressionEnabled, setCompression } from './compress';
+import type { PlacementLog } from './street/placement';
 
 const COMPILER_VERSION = '0.2.0';
 /** The run fails when the largest walk-graph component holds less than this share of the vertices (--min-walk-share). */
@@ -676,6 +677,7 @@ async function main(): Promise<void> {
           instances: { total: index.totals!.instances, byAsset: countBy(all.flatMap((m) => m.instances ?? []).map((i) => i.asset)), dropped: droppedInstances },
           lights: { total: allLights.length, night: allLights.filter((l) => l.night).length, bySource: countBy(allLights.map((l) => l.source)), byType: countBy(allLights.map((l) => l.type)), inStrip: all.filter((m) => m.detail === 'full').reduce((s, m) => s + (m.lights?.length ?? 0), 0) },
           assets: index.assets!.length,
+          placement: (actx.shared.get('placementLog') as PlacementLog | undefined)?.summary() ?? {},
           stepMs: Object.fromEntries(Object.entries(stepMs).map(([k, v]) => [k, Math.round(v)])),
         }
       : {}),

@@ -16,8 +16,9 @@ import { lampFixturesStep } from '../fixtures';
 import { headingYaw, rotateYaw } from '../instances';
 import { LAMP_KELVIN } from '../lights';
 import type { CompileStep, TileContext } from '../registry';
-import { streetTile } from './common';
+import { streetContext, streetTile } from './common';
 import { streetPlan } from './furniture';
+import { placementRules, propRule } from './placement';
 
 const PENDANT_REACH = 7;
 
@@ -33,6 +34,7 @@ const FOOD = /^amenity=(cafe|restaurant|fast_food|ice_cream|bar|pub)$/;
 
 function placeLamps(t: TileContext): { lamps: number; replaced: number } {
   const plan = streetPlan(t.area);
+  const rules = placementRules(t.area);
   let lamps = 0;
   let replaced = 0;
   t.manifest.lamps.forEach((l: LampRec, k) => {
@@ -44,7 +46,22 @@ function placeLamps(t: TileContext): { lamps: number; replaced: number } {
       replaced++;
       return;
     }
-    const pos: XYZ = [l.position[0], l.position[1] + (spec.lift ?? 0), l.position[2]];
+    // Placement rule of the lamp's prop (placement.ts: masts and post lanterns behind the kerb, off façades and door
+    // approaches); wall brackets are exempt.
+    const rule = propRule(spec.prop);
+    let pos: XYZ = [l.position[0], l.position[1] + (spec.lift ?? 0), l.position[2]];
+    if (rule) {
+      const spot = rules.settle(pos[0], pos[2], rule.spec, rule.reach);
+      if (!spot) {
+        rules.log.note(rule.rule, 'dropped');
+        return;
+      }
+      const moved = spot[0] !== pos[0] || spot[1] !== pos[2];
+      rules.log.note(rule.rule, moved ? 'moved' : 'kept');
+      if (moved) {
+        pos = [spot[0], streetContext(t.area).groundY(spot[0], spot[1]) + (spec.lift ?? 0), spot[1]];
+      }
+    }
     const yaw = headingYaw(l.heading, '+Z');
     const lantern = spec.prop === 'street_lamp_01' || spec.prop === 'street_lamp_02';
     t.place(spec.prop, pos, yaw, {

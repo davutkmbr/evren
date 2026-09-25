@@ -15,6 +15,7 @@ import { district } from '../district';
 import type { XYZ } from '../format';
 import type { OsmStreetRoad } from '../osm-street';
 import type { AreaContext, TileContext } from '../registry';
+import { placementLog } from './placement';
 
 export { hash };
 
@@ -289,6 +290,7 @@ export function streetContext(a: AreaContext): StreetContext {
     const reach = n.street.hw + 2;
     onCarriageway([p.x - cx * reach, p.z - cz * reach, p.x + cx * reach, p.z + cz * reach], p.crossing ?? 'marked');
   }
+  spanCrossings(a, crossings);
   /* Dropped kerbs at both ends of every crossing that meets a kerb. */
   const dropped: DroppedKerb[] = [];
   for (const c of crossings) {
@@ -303,7 +305,8 @@ export function streetContext(a: AreaContext): StreetContext {
       nz /= l;
       const px = x + nx * 0.5;
       const pz = z + nz * 0.5;
-      if (!s.kerbed(px, pz) || s.liftAt(px, pz) < 0.08) {
+      // Only where the crossing really ends at the kerb line (placement rule crossing.span).
+      if (Math.abs(s.distance(x, z)) > 0.3 || !s.kerbed(px, pz) || s.liftAt(px, pz) < 0.08) {
         continue;
       }
       dropped.push({ x, z, tx: -nz, tz: nx, nx, nz, half: c.width / 2 + 0.3 });
@@ -385,6 +388,79 @@ export function streetContext(a: AreaContext): StreetContext {
 }
 
 /**
+ * Placement rule `crossing.span`: a marked crossing runs from kerb to kerb and has pavement at both ends. OSM
+ * crossing ways often stop short of the kerb (inside the carriageway raster, which then got a dropped kerb and a
+ * tactile pad in the road): an end inside the carriageway is extended along the crossing to the carriageway edge
+ * (up to 6 m, `moved`). An end that finds no edge within 6 m (a traffic island, a junction, a divided road) stays
+ * open, without a dropped kerb (`flagged`). A crossing is `dropped` when a building or water lies 0.8 m past an end,
+ * or when it grows longer than 30 m.
+ */
+function spanCrossings(a: AreaContext, crossings: Crossing[]): void {
+  const s = a.foundation.surface;
+  const fp = a.foundation.footprints;
+  const log = placementLog(a);
+  const keep: Crossing[] = [];
+  for (const c of crossings) {
+    const len0 = Math.hypot(c.bx - c.ax, c.bz - c.az) || 1;
+    const ux = (c.bx - c.ax) / len0;
+    const uz = (c.bz - c.az) / len0;
+    let moved = false;
+    let open = false;
+    let ok = true;
+    for (const end of [-1, 1]) {
+      const x = end < 0 ? c.ax : c.bx;
+      const z = end < 0 ? c.az : c.bz;
+      const dx = ux * end;
+      const dz = uz * end;
+      let t = 0;
+      if (s.distance(x, z) < -0.15) {
+        let prev = s.distance(x, z);
+        let hit: number | null = null;
+        for (let q = 0.05; q <= 6; q += 0.05) {
+          const d = s.distance(x + dx * q, z + dz * q);
+          if (d >= 0) {
+            hit = q - 0.05 * (d / (d - prev || 1));
+            break;
+          }
+          prev = d;
+        }
+        if (hit === null) {
+          // The carriageway runs on (a traffic island, a junction, a divided road): the end stays open, without a
+          // dropped kerb or tactile pad.
+          open = true;
+          continue;
+        }
+        t = hit;
+        moved = true;
+      }
+      const ex = x + dx * t;
+      const ez = z + dz * t;
+      const px = ex + dx * 0.8;
+      const pz = ez + dz * 0.8;
+      if (fp.inside(px, pz) || a.land(px, pz) <= 0) {
+        ok = false;
+        break;
+      }
+      if (end < 0) {
+        c.ax = ex;
+        c.az = ez;
+      } else {
+        c.bx = ex;
+        c.bz = ez;
+      }
+    }
+    if (!ok || Math.hypot(c.bx - c.ax, c.bz - c.az) > 30) {
+      log.note('crossing.span', 'dropped');
+      continue;
+    }
+    log.note('crossing.span', moved ? 'moved' : open ? 'flagged' : 'kept');
+    keep.push(c);
+  }
+  crossings.length = 0;
+  crossings.push(...keep);
+}
+
+/**
  * The street tram tracks, resampled every TRAM_STEP m; a stretch that OSM draws on the pavement or with its near rail
  * closer than TRAM_KERB to the kerb (but within 5 m of the carriageway) is moved along the carriageway distance
  * gradient until the near rail clears the kerb by TRAM_KERB, the samples next to a moved stretch ease into it, so the track bends instead of kinking.
@@ -461,6 +537,7 @@ function correctTramTracks(a: AreaContext): TramTrack[] {
       }
       off = next;
     }
+    placementLog(a).note('rail.corrected', 'moved', moved.reduce((n, v, k) => n + (k % 2 === 0 && (v !== 0 || moved[k + 1] !== 0) ? 1 : 0), 0));
     out.push({ pts: pts.map((v, k) => v + off[k]), gauge: tr.gauge });
   }
   return out;

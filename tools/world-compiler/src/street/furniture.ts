@@ -24,6 +24,7 @@ import { headingYaw } from '../instances';
 import { LOD0, type Vec3 } from '../mesh';
 import type { AreaContext, CompileStep, PlaceOptions } from '../registry';
 import { inTile, rng, streetContext, type StreetContext } from './common';
+import { type Outcome, placementRules, propRule } from './placement';
 import { sagLine, tube } from './shapes';
 import { VEHICLE_HALF_LENGTH } from './vehicles';
 
@@ -132,6 +133,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
   const streetTileId = (id: string): boolean => a.manifests.has(id) && (a.detailOf(id) === 'full' || sc.kitTiles.has(id));
   const onStreetTile = (x: number, z: number): boolean => streetTileId(tileOf(x, z));
   const occupied = new Spacing(10);
+  const rules = placementRules(a);
   const items: Placement[] = [];
   const cables: Cable[] = [];
   const seats: Seat[] = [];
@@ -144,15 +146,38 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
   /** Free, walkable spot off the carriageway (or on a pedestrian lane), clear of façades by `wall` metres. */
   const open = (x: number, z: number, wall = 0.3, carriage = false): boolean =>
     onStreetTile(x, z) && !fp.inside(x, z) && s.buildingDistance(x, z) >= wall && a.land(x, z) > 0.3 && (carriage || s.distance(x, z) > 0.3 || s.pedestrianStreet(x, z));
-  const put = (p: Placement, keep: number): boolean => {
+  const at = (x: number, z: number): XYZ => [x, y(x, z), z];
+  /**
+   * Adds an item that keeps `keep` m from other furniture. Its prop's placement rule (placement.ts propRule) is checked
+   * first: an item on the wrong surface or too near a kerb, façade or door is moved to the nearest valid spot within
+   * the rule's reach, or dropped. `fitted` items (placed from reference photos) are never moved: a violation is flagged.
+   */
+  const put = (p: Placement, keep: number, fitted = false): boolean => {
+    const rule = propRule(p.prop);
+    let outcome: Outcome = 'kept';
+    if (rule) {
+      const spot = rules.settle(p.pos[0], p.pos[2], rule.spec, fitted ? 0 : rule.reach);
+      if (!spot) {
+        if (!fitted) {
+          rules.log.note(rule.rule, 'dropped');
+          return false;
+        }
+        outcome = 'flagged';
+      } else if (spot[0] !== p.pos[0] || spot[1] !== p.pos[2]) {
+        p.pos = at(spot[0], spot[1]);
+        outcome = 'moved';
+      }
+    }
     if (keep > 0 && !occupied.claim(p.pos[0], p.pos[2], keep)) {
       return false;
     }
     items.push(p);
     count(`${p.prop}${p.variant ? `:${p.variant}` : ''}`);
+    if (rule) {
+      rules.log.note(rule.rule, outcome);
+    }
     return true;
   };
-  const at = (x: number, z: number): XYZ => [x, y(x, z), z];
   const vehicleCams = camerasForClearance();
   const clearOfCameras = (x: number, z: number, r: number): boolean =>
     vehicleCams.every((c) => {
@@ -273,7 +298,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       [179.7, 5938.8, 'lamp_mast_low', 'led', 1],
     ];
     fitted.forEach(([x, z, prop, variant, scale], k) => {
-      if (onStreetTile(x, z) && !fp.inside(x, z) && put({ prop, variant, pos: at(x, z), yaw: 0.35, scale, ref: `square/photoMast${k}` }, 2)) {
+      if (onStreetTile(x, z) && !fp.inside(x, z) && put({ prop, variant, pos: at(x, z), yaw: 0.35, scale, ref: `square/photoMast${k}` }, 2, true)) {
         lampAt.push([x, z]);
       }
     });
@@ -310,7 +335,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       if (!sc.inSquare(x, z) || !open(x, z, 1.5)) {
         continue;
       }
-      if (put({ prop: 'st_bench', variant: 'metal', pos: at(x, z), yaw: yawZ(-fnx, -fnz), ref: `square/pierRow${rowK}` }, 1.6)) {
+      if (put({ prop: 'st_bench', variant: 'metal', pos: at(x, z), yaw: yawZ(-fnx, -fnz), ref: `square/pierRow${rowK}` }, 1.6, true)) {
         seats.push({ x, y: y(x, z), z, yaw: yawZ(-fnx, -fnz) });
         const bx = x + ftx * 1.5;
         const bz = z + ftz * 1.5;
@@ -324,7 +349,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       const x = 177.4 + q * 0.42;
       const z = 5937.6 - q * 1.15;
       if (open(x, z, 0.3)) {
-        put({ prop: 'st_bollard', variant: 'post', pos: at(x, z), yaw: yawZ(0.94, 0.34), ref: `square/c02posts${q}` }, 0.5);
+        put({ prop: 'st_bollard', variant: 'post', pos: at(x, z), yaw: yawZ(0.94, 0.34), ref: `square/c02posts${q}` }, 0.5, true);
       }
     }
     // Ball-top bollards along the square's Rıhtım kerb (s1-strip.md §3), 0.45 m in from the kerb, every 1.8 m,
@@ -447,8 +472,23 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       if (!(s.distance(ox, oz) < 0 && !s.pedestrianStreet(ox, oz))) {
         continue;
       }
-      const mx = x0 + tx * 2.5;
-      const mz = z0 + tz * 2.5;
+      // Rule prop.bollard (mouth): the row stands on the pedestrian street's own paving, 0.8 m in from where it
+      // leaves the vehicular carriageway (the OSM end node often lies well inside the crossing road).
+      let inset = -1;
+      for (let f = 0; f <= Math.min(12, l); f += 0.25) {
+        const surf = rules.surface(x0 + tx * f, z0 + tz * f);
+        if (surf !== 'carriageway' && surf !== 'gutter') {
+          inset = f + 0.8;
+          break;
+        }
+      }
+      if (inset < 0) {
+        rules.log.note('prop.bollardMouth', 'dropped');
+        continue;
+      }
+      rules.log.note('prop.bollardMouth', inset > 2.6 ? 'moved' : 'kept');
+      const mx = x0 + tx * Math.max(2.5, inset);
+      const mz = z0 + tz * Math.max(2.5, inset);
       if (!mouths.claim(mx, mz, 10)) {
         continue;
       }
@@ -549,13 +589,13 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
     const rz = Math.sin(h);
     const rel = (ahead: number, left: number): [number, number] => [c05.x + fx * ahead - rx * left, c05.z + fz * ahead - rz * left];
     const [px, pz] = rel(2.6, 0.45);
-    put({ prop: 'st_stop_pole', variant: 'tram', pos: at(px, pz), yaw: headingYaw(c05.heading + 90, '+X'), ref: 'stop/c05/pole' }, 0);
+    put({ prop: 'st_stop_pole', variant: 'tram', pos: at(px, pz), yaw: headingYaw(c05.heading + 90, '+X'), ref: 'stop/c05/pole' }, 0, true);
     const [bx, bz] = rel(3.4, 2.1);
-    if (put({ prop: 'st_bench', variant: 'flat', pos: at(bx, bz), yaw: yawZ(rx + fx * 0.3, rz + fz * 0.3), ref: 'stop/c05/bench' }, 0)) {
+    if (put({ prop: 'st_bench', variant: 'flat', pos: at(bx, bz), yaw: yawZ(rx + fx * 0.3, rz + fz * 0.3), ref: 'stop/c05/bench' }, 0, true)) {
       seats.push({ x: bx, y: y(bx, bz), z: bz, yaw: yawZ(rx + fx * 0.3, rz + fz * 0.3) });
     }
     const [ix, iz] = rel(2.2, 1.05);
-    put({ prop: 'st_bin', variant: 'ibb', pos: at(ix, iz), yaw: 0, ref: 'stop/c05/bin' }, 0);
+    put({ prop: 'st_bin', variant: 'ibb', pos: at(ix, iz), yaw: 0, ref: 'stop/c05/bin' }, 0, true);
     for (const [ah, lf, sc2] of [
       [7.5, 4.8, 1.25],
       [15, 6.5, 1.1],
@@ -563,7 +603,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
     ] as const) {
       const [tx, tz] = rel(ah, lf);
       if (open(tx, tz, 0.5)) {
-        put({ prop: 'st_tree', variant: 'street', pos: at(tx, tz), yaw: hash(tx) * 6.28, scale: sc2, ref: `c05/tree${ah}` }, 0);
+        put({ prop: 'st_tree', variant: 'street', pos: at(tx, tz), yaw: hash(tx) * 6.28, scale: sc2, ref: `c05/tree${ah}` }, 0, true);
       }
     }
   }
@@ -665,9 +705,7 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       for (const o of [0.55, 0.9, 1.4]) {
         const x = ex + nx * o - dx * up;
         const z = ez + nz * o - dz * up;
-        if (s.distance(x, z) > 0.3 && open(x, z, 0.3) && occupied.claim(x, z, 0.8)) {
-          items.push({ prop: 'st_signal', variant: 'combo', pos: at(x, z), yaw: yawZ(-dx, -dz), ref: `crossing${k}/signal${ex === c.ax ? 'a' : 'b'}` });
-          count('st_signal:combo');
+        if (s.distance(x, z) > 0.3 && open(x, z, 0.3) && put({ prop: 'st_signal', variant: 'combo', pos: at(x, z), yaw: yawZ(-dx, -dz), ref: `crossing${k}/signal${ex === c.ax ? 'a' : 'b'}` }, 0.8)) {
           break;
         }
       }
@@ -870,8 +908,9 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       const bz = dz - tz * side * 1.35 + nz * 0.85;
       if (open(bx, bz, 0.4) && open(bx + nx * 1.6, bz + nz * 1.6, 0.3)) {
         const yaw = yawZ(tx, tz);
-        if (put({ prop: 'standing_chalkboard_01', pos: at(bx, bz), yaw, ref: `${d.id}/board` }, 0.9)) {
-          put({ prop: 'st_chalk_menu', variant: `menu${Math.floor(hash(bx * 0.37 + bz) * 6)}`, pos: at(bx, bz), yaw, ref: `${d.id}/menu` }, 0);
+        const boardItem: Placement = { prop: 'standing_chalkboard_01', pos: at(bx, bz), yaw, ref: `${d.id}/board` };
+        if (put(boardItem, 0.9)) {
+          put({ prop: 'st_chalk_menu', variant: `menu${Math.floor(hash(bx * 0.37 + bz) * 6)}`, pos: [...boardItem.pos], yaw, ref: `${d.id}/menu` }, 0);
         }
       }
     }
@@ -1012,14 +1051,14 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
       ];
       kit.forEach(([left, out, prop, variant, yaw, keep], q) => {
         const [x, z] = P(left, out);
-        if (open(x, z, 0.3) && put({ prop, ...(variant ? { variant } : {}), pos: at(x, z), yaw, ref: `plaza/gateA/${prop}${q}` }, keep) && prop === 'st_bench') {
+        if (open(x, z, 0.3) && put({ prop, ...(variant ? { variant } : {}), pos: at(x, z), yaw, ref: `plaza/gateA/${prop}${q}` }, keep, true) && prop === 'st_bench') {
           seats.push({ x: x + nx * 0.05, y: y(x, z), z: z + nz * 0.05, yaw });
         }
       });
       for (let q = 0; q < 4; q++) {
         const [x, z] = P(-0.5 - q * 1.3, 11 + q * 0.2);
         if (open(x, z, 0.3)) {
-          put({ prop: 'st_bollard', variant: 'cube', pos: at(x, z), yaw: yawZ(tx, tz), ref: `plaza/gateA/cube${q}` }, 0.6);
+          put({ prop: 'st_bollard', variant: 'cube', pos: at(x, z), yaw: yawZ(tx, tz), ref: `plaza/gateA/cube${q}` }, 0.6, true);
         }
       }
     }
