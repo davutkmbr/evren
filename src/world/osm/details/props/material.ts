@@ -33,7 +33,9 @@ vec3 rockBoat(vec3 p, vec4 pv, out mat3 rot) {
 `;
 
 export function createPropMaterial(name: string, rocking = false): THREE.MeshStandardMaterial {
-  const m = streetHole(new THREE.MeshStandardMaterial({ name, vertexColors: true, roughness: 0.7, metalness: 0.05 }));
+  // Moored boats float on the game's water, which the street tiles do not replace: they are never cut out.
+  const plain = new THREE.MeshStandardMaterial({ name, vertexColors: true, roughness: 0.7, metalness: 0.05 });
+  const m = rocking ? plain : streetHole(plain);
   patchMaterial(m, `osm-details-${name}-v1`, (shader) => {
     let vs = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${GLOW_VERTEX}${rocking ? ROCK_VERTEX : ''}`)

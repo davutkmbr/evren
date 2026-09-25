@@ -25,17 +25,25 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uFogDensity: { value: 0.00006 },
   uFogHeightFalloff: { value: 0.0012 },
   uFogColor: { value: new THREE.Color(0.62, 0.68, 0.78) },
-  /** Street layer (src/world/street): per-tile mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red > 0.5 = hole. */
+  /**
+   * Street layer (src/world/street): hole mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red > 0.5 = hole for
+   * ground materials, green > 0.5 = hole for building materials (streetHole).
+   */
   uStreetHoleMask: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },
   uStreetHoleRect: { value: new THREE.Vector4(0, 0, 1, 1) },
 };
 
 /**
- * Flight-scale materials that the street layer replaces up close: fragments inside a loaded street tile are discarded
- * (the tile brings its own buildings, ground and props). Needs the material's fog (the hook sits in the fog chunk).
+ * Flight-scale materials that the street layer replaces up close: fragments the street hole mask marks are discarded
+ * (the live street tiles bring their own buildings, ground and props). Needs the material's fog (the hook sits in the
+ * fog chunk). `ground` materials (terrain, street ground, cover, street furniture) read the mask's red channel, which
+ * covers the live tiles; `building` materials read the green channel, which follows whole buildings (the compiled
+ * buildings' footprints, minus the buildings the live tiles do not draw), so no slice building is cut at a tile edge.
+ * `at` is a GLSL vec2 expression (world xz, a varying of the material) tested instead of the fragment's position,
+ * e.g. the anchor of an instanced facade detail.
  */
-export function streetHole<T extends THREE.Material>(material: T): T {
-  material.defines = { ...(material.defines ?? {}), STREET_HOLE: '' };
+export function streetHole<T extends THREE.Material>(material: T, channel: 'ground' | 'building' = 'ground', at?: string): T {
+  material.defines = { ...(material.defines ?? {}), STREET_HOLE: channel === 'building' ? 1 : 0, ...(at ? { STREET_HOLE_AT: at } : {}) };
   material.needsUpdate = true;
   return material;
 }
@@ -129,8 +137,12 @@ ${SHARED_GLSL}
 #ifdef USE_FOG
   #ifdef STREET_HOLE
   {
+    #ifdef STREET_HOLE_AT
+    vec2 streetUv = (STREET_HOLE_AT - uStreetHoleRect.xy) / uStreetHoleRect.zw;
+    #else
     vec2 streetUv = (vFogWorldPos.xz - uStreetHoleRect.xy) / uStreetHoleRect.zw;
-    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0))) && texture2D(uStreetHoleMask, streetUv).r > 0.5) discard;
+    #endif
+    if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0))) && texture2D(uStreetHoleMask, streetUv)[STREET_HOLE] > 0.5) discard;
   }
   #endif
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);

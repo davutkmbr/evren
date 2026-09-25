@@ -7,6 +7,7 @@
 import type { MaterialDef } from '../materials';
 import type { PropDef } from '../props';
 import type { CompileStep } from '../registry';
+import { streetBarriersStep } from './barriers';
 import { CHALK_PROPS } from './chalk';
 import { streetCrowdStep } from './crowd';
 import { streetFurnitureStep } from './furniture';
@@ -24,4 +25,4 @@ export { streetGroundStep };
 export const STREET_MATERIALS: MaterialDef[] = [...MATERIALS, ...VEHICLE_MATERIALS];
 export const STREET_PROPS: PropDef[] = [...KIT_PROPS, ...CHALK_PROPS, ...VEHICLE_PROPS];
 /** Run after the ground and buildings steps (registry.ts), in this order. */
-export const STREET_STEPS: CompileStep[] = [streetMarkingsStep, streetWearStep, streetFurnitureStep, streetLightsStep, precinctStep, streetCrowdStep];
+export const STREET_STEPS: CompileStep[] = [streetMarkingsStep, streetWearStep, streetFurnitureStep, streetBarriersStep, streetLightsStep, precinctStep, streetCrowdStep];

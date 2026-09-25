@@ -129,6 +129,10 @@ export function registerAll(): void {
   for (const set of MATERIAL_SETS) {
     defineMaterials(set);
   }
+  const local = district().materials;
+  if (local) {
+    defineMaterials(local.map((d) => ({ ...d, replace: true })));
+  }
   for (const set of PROP_SETS) {
     defineProps(set);
   }

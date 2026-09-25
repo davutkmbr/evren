@@ -25,6 +25,10 @@ export interface TileStreamerOptions {
    * `(o) => renderer.compileAsync(o, camera, scene)`, so a new program never compiles mid-frame.
    */
   compile?: (object: THREE.Object3D) => Promise<unknown>;
+  /** Prop assets whose instances are not placed (e.g. placeholders a host draws itself: people, parked cars). */
+  excludeAssets?: readonly string[];
+  /** Called once for every material the streamer introduces (tiles and props), before it is first compiled. */
+  adaptMaterial?: (material: THREE.Material) => void;
 }
 
 interface LoadedLod {
@@ -151,6 +155,7 @@ export class TileStreamer {
   private readonly materials = new Map<string, THREE.Material>();
   private readonly emissive = new Set<THREE.Material>();
   private readonly textureCache = new Map<string, Promise<THREE.Texture | null>>();
+  private readonly excluded: ReadonlySet<string>;
   readonly props: PropBatches | null;
   private radius: number;
   private readonly unloadMargin: number;
@@ -181,6 +186,7 @@ export class TileStreamer {
     this.shadows = opts.shadows ?? true;
     this.tileSize = opts.index.tileSize;
     this.format = opts.index.format;
+    this.excluded = new Set(opts.excludeAssets ?? []);
     const aniso = opts.anisotropy ?? 8;
     this.loader.register((parser) => new SharedTextures(parser, this.textureCache, aniso) as never);
     this.props = opts.index.props
@@ -373,13 +379,15 @@ export class TileStreamer {
     }
     if (slot.manifestState === 'ready' && !slot.propsAdded && this.props) {
       slot.propsAdded = true;
-      if (slot.manifest?.instances?.length) {
-        this.props.addTile(slot.ref.id, slot.manifest.instances);
+      const instances = this.excluded.size ? slot.manifest?.instances?.filter((i) => !this.excluded.has(i.asset)) : slot.manifest?.instances;
+      if (instances?.length) {
+        this.props.addTile(slot.ref.id, instances);
       }
     }
   }
 
   private noteMaterial(m: THREE.Material): void {
+    this.opts.adaptMaterial?.(m);
     if (m.userData.emissive) {
       this.emissive.add(m);
     }

@@ -11,6 +11,7 @@ import type { OsmBuilding } from '../../../src/world/osm/data';
 import { DISTRICTS, GENERIC } from '../districts';
 import type { BalconyMode, SpecRow, Typology } from './facade/plan';
 import type { Bounds2 } from './format';
+import type { MaterialDef } from './materials';
 import type { Trade } from './shopfront/names';
 
 export type Weighted<T> = readonly (readonly [T, number])[];
@@ -80,7 +81,11 @@ export interface DistrictProfile {
   street: {
     /** Placeholder crowd density (people / m²) where no reference spine drives it: pedestrian streets, pavements, squares. */
     crowd: { pedestrian: number; sidewalk: number; square: number };
+    /** Iron railings along OSM barrier=fence lines (streetBarriers step). Default off. */
+    barriers?: boolean;
   };
+  /** District versions of registered materials (same id, registered over the lanes' definitions), e.g. local paving. */
+  materials?: readonly MaterialDef[];
 }
 
 let active: DistrictProfile | null = null;

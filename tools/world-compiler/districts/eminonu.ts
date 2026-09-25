@@ -7,6 +7,9 @@
  * neighbourhood names only. Mosques and Mısır Çarşısı are landmarks (simple massing, flagged in the manifest).
  */
 import type { DistrictProfile } from '../src/district';
+import { TIMBER_WEATHER } from '../src/facade/materials';
+import { MATERIALS } from '../src/materials';
+import { GROUND_WEATHER } from '../src/street/materials';
 import { GENERIC } from './generic';
 
 export const EMINONU: DistrictProfile = {
@@ -47,6 +50,9 @@ export const EMINONU: DistrictProfile = {
         [0xa7a79c, 0.7],
         [0xb89c8c, 0.5],
         [0xd2cab8, 0.8],
+        // Ochre and faded terracotta renders, so a lane does not read as one grey.
+        [0xcfae7c, 0.7],
+        [0xb98a6e, 0.4],
       ],
       T2: [
         [0xb9ae98, 1.3],
@@ -56,6 +62,8 @@ export const EMINONU: DistrictProfile = {
         [0xd0c6b0, 0.9],
         [0x9c9a8e, 0.6],
         [0xb7ab9f, 0.8],
+        [0xd4b27a, 0.8],
+        [0xc2946a, 0.5],
       ],
       T3: [
         [0x7d8185, 1],
@@ -102,5 +110,16 @@ export const EMINONU: DistrictProfile = {
       'shop=toys': 'housewares',
     },
   },
-  street: { crowd: { ...GENERIC.street.crowd, pedestrian: 0.08, sidewalk: 0.04, square: 0.03 } },
+  street: { crowd: { ...GENERIC.street.crowd, pedestrian: 0.08, sidewalk: 0.04, square: 0.03 }, barriers: true },
+  materials: [
+    // The square, the quays and the piers are laid with large light granite slabs (not Kadıköy's grey interlocking
+    // pavers): the granite set's own colour and joints at ~0.8 m, cooled towards grey.
+    { id: 'st_pavers', color: 0xeef0f2, textures: { asset: 'granite_tile_04' }, tiling: [4, 4], normalScale: 0.8, surface: 'ground', weather: GROUND_WEATHER },
+    // Open ground away from the streets (yards, the park round Yeni Cami, lots) is paved in the centre: concrete,
+    // not Kadıköy's gravel yard.
+    { id: 'lot', color: 0xe6e2da, flat: MATERIALS.lot, textures: { public: 'concrete' }, tiling: [2.7, 2.7], surface: 'ground' },
+    // Wooden shutters in faded brown paint: the set's own colour (dark teal paint on black) reads as black noise at
+    // street distance; its grain stays in the normal and ORM maps.
+    { id: 'fac_shutter_wood', color: 0x8a7458, textures: { asset: 'wood_peeling_paint_weathered' }, maps: { baseColor: false }, tiling: [0.76, 0.76], surface: 'wood', castShadow: true, weather: TIMBER_WEATHER },
+  ],
 };

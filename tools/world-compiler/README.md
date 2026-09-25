@@ -400,6 +400,8 @@ and lane graphs. A profile holds only what is district-flavoured:
 | `facade` | paint per typology and trims, T1 balcony layout weights, T2 balcony share, AC unit share, flag colours, the market end | photo-sampled paint, yellow-navy flags, fish end | older, muted stone and ochre, few balconies, fewer AC units | neutral |
 | `shops` | first words of the fictional names (place words of the district), filler trades, market filler, fallback trades, POI kind → trade overrides | Rıhtım, İskele, Vapur... | Eminönü, Tahtakale, Haliç, Mahmutpaşa...; spice, nuts, coffee, textiles, housewares, hardware, jewellery | no place words |
 | `street.crowd` | placeholder crowd density (people / m²) on pedestrian streets, pavements and squares where no reference spine drives it | (spine-driven) | 0.08 / 0.04 / 0.03 | 0.07 / 0.03 / 0.03 |
+| `street.barriers` | iron railings (1.05 m, posts, three rails, balusters; `st_iron`) along OSM `barrier=fence` lines, step `streetBarriers` | off | on | off |
+| `materials` | district versions of registered materials (same id, registered over the lanes' definitions) | none | `st_pavers`: light granite slabs (granite_tile_04 colour, 0.8 m); `lot`: concrete; `fac_shutter_wood`: faded brown paint over the wood relief | none |
 
 - Without reference cameras the whole street-kit area counts as the spine: the spine-gated rules (quay benches,
   junction planters, café seat use, browsers at shop doors, traffic before signalised crossings) run everywhere, and

@@ -33,7 +33,7 @@ const RUST_WEATHER: WeatherDef = { dirt: { tint: 0x6a3a22, blend: 'mix', strengt
 const SOFT_WEATHER: WeatherDef = { dirt: { ...W.dirt, strength: 1 }, streak: W.streak };
 /** Window frames: grime on the bottom rails; painted timber also wears to bare wood on its arrises. */
 const FRAME_WEATHER: WeatherDef = { dirt: W.dirt };
-const TIMBER_WEATHER: WeatherDef = { dirt: W.dirt, edge: { tint: 0x8c6c4a, blend: 'mix', strength: 1, roughness: 0.8, curvature: 0.75 } };
+export const TIMBER_WEATHER: WeatherDef = { dirt: W.dirt, edge: { tint: 0x8c6c4a, blend: 'mix', strength: 1, roughness: 0.8, curvature: 0.75 } };
 
 /** Emissive colour of lit shop sign faces and neon letters (sRGB). */
 export const SIGN_GLOW = { white: 0xfff6e8, red: 0xff3a2a, green: 0x39ff6a, yellow: 0xffd23a, blue: 0x4aa8ff } as const;

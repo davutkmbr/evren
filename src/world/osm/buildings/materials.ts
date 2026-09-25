@@ -31,7 +31,7 @@ const LAYER_NORMAL: Partial<Record<TextureSet, number>> = { plaster: 0.7, plaste
 const f = (v: number): string => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 function makeFacadeMaterial(uniforms: Record<string, THREE.IUniform>): THREE.MeshStandardMaterial {
-  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-facade', vertexColors: true, roughness: 1, metalness: 0 }));
+  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-facade', vertexColors: true, roughness: 1, metalness: 0 }), 'building');
   patchMaterial(m, 'osm-facade-v4', (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${FACADE_VERTEX_PARS}`).replace('#include <project_vertex>', `#include <project_vertex>\n${FACADE_VERTEX_MAIN}`);
@@ -120,7 +120,7 @@ float rFlat = 0.0;
 `;
 
 function makeRoofMaterial(): THREE.MeshStandardMaterial {
-  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-roof', vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
+  const m = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-roof', vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }), 'building');
   patchMaterial(m, 'osm-roof-v3', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${ROOF_VERTEX_PARS}`).replace('#include <project_vertex>', `#include <project_vertex>\n${ROOF_VERTEX_MAIN}`);
     shader.fragmentShader = shader.fragmentShader
@@ -205,6 +205,7 @@ bool dRailOpen(vec3 l, vec3 s, float h) {
 
 const DETAIL_FRAGMENT_PARS = /* glsl */ `
 uniform float uKind;
+varying vec2 vHoleAt;
 ${SIGN_GLSL}
 varying vec3 vDL;
 varying vec3 vDS;
@@ -275,16 +276,20 @@ float dMetal = 0.0;
 
 function detailMaterial(kind: DetailKind, fade: THREE.IUniform<THREE.Vector2>): { material: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial } {
   const shade = DETAIL_SHADE[kind];
-  const material = streetHole(new THREE.MeshStandardMaterial({ name: `osm-detail-${kind}`, vertexColors: true, roughness: 0.85, metalness: 0, side: shade === 2 || shade === 4 ? THREE.DoubleSide : THREE.FrontSide }));
+  // The street hole follows the element's building: tested 0.4 m behind its wall anchor, inside the footprint.
+  const material = streetHole(new THREE.MeshStandardMaterial({ name: `osm-detail-${kind}`, vertexColors: true, roughness: 0.85, metalness: 0, side: shade === 2 || shade === 4 ? THREE.DoubleSide : THREE.FrontSide }), 'building', 'vHoleAt');
   const kindU = { value: shade };
   patchMaterial(material, 'osm-detail-v3', (shader) => {
     shader.uniforms.uFade = fade;
     shader.uniforms.uKind = kindU;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${DETAIL_VERTEX_PARS}`)
+      .replace('#include <common>', `#include <common>\n${DETAIL_VERTEX_PARS}\nvarying vec2 vHoleAt;`)
       .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = normal * dScale();')
       .replace('#include <begin_vertex>', DETAIL_BEGIN)
-      .replace('#include <project_vertex>', '#include <project_vertex>\n  vDW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\n  vDO = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;');
+      .replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\n  vDW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\n  vDO = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;\n  vHoleAt = vDO.xz - normalize((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xz + 1e-6) * 0.4;',
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${DETAIL_FRAGMENT_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${DETAIL_FRAGMENT_MAIN}`)
@@ -347,7 +352,7 @@ export function createBuildingMaterials(renderer: THREE.WebGLRenderer, detailKin
   };
   const facade = makeFacadeMaterial(uniforms);
   const roof = makeRoofMaterial();
-  const prop = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-prop', vertexColors: true, roughness: 0.65, metalness: 0.05 }));
+  const prop = streetHole(new THREE.MeshStandardMaterial({ name: 'osm-prop', vertexColors: true, roughness: 0.65, metalness: 0.05 }), 'building');
   const details = {} as BuildingMaterials['details'];
   for (const k of detailKinds) {
     const fade = { value: new THREE.Vector2(1e5, 1e5 + 1) };

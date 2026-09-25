@@ -151,7 +151,10 @@ function isFlat(m: THREE.Material): boolean {
 /** Untextured prop parts share one material; colour, roughness and metalness travel as vertex attributes. */
 function createFlatMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ name: 'props-flat', vertexColors: true, roughness: 1, metalness: 0 });
-  m.onBeforeCompile = (shader) => {
+  // The host's default hook runs first (the flight game injects its global uniforms there: without them the
+  // atmosphere's samplers stay unbound and clash with the BatchedMesh data textures).
+  m.onBeforeCompile = function (shader, renderer) {
+    THREE.Material.prototype.onBeforeCompile.call(this, shader, renderer);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 roughMetal;\nvarying vec2 vRoughMetal;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoughMetal = roughMetal;');

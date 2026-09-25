@@ -4,10 +4,12 @@
  * wind sway that grows with height.
  */
 import * as THREE from 'three';
-import { patchMaterial, streetHole } from '../../../../core/uniforms';
+import { patchMaterial } from '../../../../core/uniforms';
 
 export function createTreeMaterial(atlas: THREE.Texture): THREE.MeshStandardMaterial {
-  const m = streetHole(new THREE.MeshStandardMaterial({
+  // Not cut by the street layer's hole mask: the compiled tiles bring few trees (OSM-mapped ones only), so the
+  // street layer keeps these and leaves its own out (src/world/street).
+  const m = new THREE.MeshStandardMaterial({
     name: 'osm-tree',
     map: atlas,
     alphaTest: 0.42,
@@ -15,7 +17,7 @@ export function createTreeMaterial(atlas: THREE.Texture): THREE.MeshStandardMate
     vertexColors: true,
     roughness: 0.86,
     metalness: 0,
-  }));
+  });
   patchMaterial(m, 'osm-tree-v2', (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uWind;')
