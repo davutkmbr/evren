@@ -36,13 +36,13 @@ function emitRailing(t: TileContext, pts: readonly number[]): number {
       if (!inTile(t, (x0 + x1) / 2, (z0 + z1) / 2)) {
         continue;
       }
-      // Rule railing: a piece whose ends or middle stand on a vehicular carriageway or its gutter, in a building or
+      // Rule railing: a piece whose ends or middle stand on a vehicular carriageway, its gutter or a tram track bed, in a building or
       // across a door's approach is dropped (railings run along kerbs and plots, never across the road or a door).
       const blocked = [0, 0.5, 1].some((f) => {
         const x = x0 + (x1 - x0) * f;
         const z = z0 + (z1 - z0) * f;
         const surf = rules.surface(x, z);
-        return surf === 'carriageway' || surf === 'gutter' || surf === 'building' || surf === 'water' || rules.doorBlocked(x, z);
+        return surf === 'carriageway' || surf === 'gutter' || surf === 'track' || surf === 'building' || surf === 'water' || rules.doorBlocked(x, z);
       });
       rules.log.note('railing', blocked ? 'dropped' : 'kept');
       if (blocked) {

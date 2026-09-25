@@ -518,11 +518,15 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       }
       if (inTile(t, (ax + bx) / 2, (az + bz) / 2)) {
         stats.railM += len;
-        // Rule rail.track: rails belong on the carriageway (the corrected tracks are moved there when OSM draws them
-        // within 5 m of it); a stretch left on raised pavement (a separate tram right-of-way) is kept for the
-        // track's continuity and flagged.
-        const surf = rules.surface((ax + bx) / 2, (az + bz) / 2);
-        log.note('rail.track', surf === 'pavement' || surf === 'kerb' ? 'flagged' : 'kept');
+        // Rule rail.track: rails lie at carriageway level: on the carriageway (the corrected tracks are moved there
+        // when OSM draws them within 5 m of it) or in the flush track bed where they leave it (common.ts trackBed).
+        // A segment whose rails still stand on raised ground is flagged.
+        const raised = [-1, 1].some((side) => {
+          const px = (ax + bx) / 2 + rx * side * (g + 0.035);
+          const pz = (az + bz) / 2 + rz * side * (g + 0.035);
+          return y(px, pz) - a.heights.carriage(px, pz) > 0.05;
+        });
+        log.note('rail.track', raised ? 'flagged' : 'kept');
       }
     }
   }

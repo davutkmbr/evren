@@ -26,6 +26,7 @@ import type { HeroShared } from '../hero';
 import { headingYaw } from '../instances';
 import { interiorDoorViews } from '../interiors';
 import type { AreaContext, CompileStep, TileContext } from '../registry';
+import { placementLog } from './placement';
 import { inTile, rng, streetContext } from './common';
 import { camerasForClearance, streetPlan, type Placement } from './furniture';
 import { PERSON_PALETTES } from './kit-props';
@@ -100,7 +101,18 @@ function planCrowd(a: AreaContext): CrowdState {
       // The near field: nobody inside the view within 6.5 m (a figure there fills half the frame), then an 11 m wedge.
       return (Math.hypot(dx, dz) < 6.5 && along > 0 && side < along * 0.85 + 0.6) || (along > -0.5 && along < 11 && side < 1.0 + 0.33 * along);
     });
-  const blocked = (x: number, z: number): boolean => inCameraView(x, z) || fp.inside(x, z) || s.buildingDistance(x, z) < 0.35 || a.land(x, z) < 0.5 || (s.distance(x, z) < 0 && !s.pedestrianStreet(x, z)) || nearHero(x, z);
+  const log = placementLog(a);
+  const blocked = (x: number, z: number): boolean => {
+    if (inCameraView(x, z) || fp.inside(x, z) || s.buildingDistance(x, z) < 0.35 || a.land(x, z) < 0.5 || (s.distance(x, z) < 0 && !s.pedestrianStreet(x, z)) || nearHero(x, z)) {
+      return true;
+    }
+    // Placement rule crowd.track: nobody stands or walks on the tram track bed (candidate spots rejected).
+    if (sc.trackBed(x, z) > 0) {
+      log.note('crowd.track', 'dropped');
+      return true;
+    }
+    return false;
+  };
   /**
    * Districts without a reference spine: the profile's densities on pedestrian streets and squares, kerbed pavements
    * (the walk graph's lanes there), else nothing.

@@ -99,6 +99,12 @@ export interface StreetContext {
   tram: TramTrack[];
   /** Distance from (x, z) to the nearest tram track centre line (Infinity without tracks). */
   tramDist(x: number, z: number): number;
+  /**
+   * Signed distance (m) into the flush tram track bed (> 0 inside, clamped at -5): TRACK_BED_HALF m either side of
+   * the corrected track where its rails leave the carriageway. The bed lies at carriageway level (groundY, the street
+   * ground) with a kerb step where raised pavement meets it; placement rules treat it as track.
+   */
+  trackBed(x: number, z: number): number;
 }
 
 export interface TramTrack {
@@ -111,6 +117,11 @@ export interface TramTrack {
 const TRAM_STEP = 1;
 /** Clearance (m) from the kerb line to the near rail of a tram track in a kerb lane. */
 const TRAM_KERB = 0.85;
+
+/** Half width (m) of the flush track bed: half the gauge plus 1.2 m (the tram body overhangs the rails by ~0.6 m). */
+export const TRACK_BED_HALF = 1.435 / 2 + 1.2;
+/** The bed runs on this many track samples (TRAM_STEP m each) into the carriageway past an off-road stretch. */
+const TRACK_BED_LEAD = 3;
 
 /** Range (m) of StreetContext.winMargin. */
 const WIN_RANGE = 12;
@@ -334,7 +345,6 @@ export function streetContext(a: AreaContext): StreetContext {
     }
     return Math.max(0, s.liftAt(x, z) - DROPPED_KERB) * w;
   };
-  const groundY = (x: number, z: number): number => (s.distance(x, z) < 0 ? a.heights.carriage(x, z) : a.heights.off(x, z) - drop(x, z));
 
   // Without reference cameras (every district but Kadıköy) the whole street-kit area counts as the spine: the
   // spine-gated rules (quay benches, junction planters, café seat use, door browsers, traffic at signals) run everywhere.
@@ -366,6 +376,62 @@ export function streetContext(a: AreaContext): StreetContext {
     }
     return d;
   };
+  /* Track bed: the stretches of the corrected tracks whose rails still leave the carriageway (a separate right-of-way,
+     a square, a pavement) get a flush bed TRACK_BED_HALF m either side of the centre line, at carriageway level. */
+  const bedGrid = new BoxGrid(20);
+  const bedSegs: [number, number, number, number][] = [];
+  let bedM = 0;
+  for (const tr of tram) {
+    const P = tr.pts;
+    const n = P.length / 2;
+    const off = new Uint8Array(n);
+    const g = tr.gauge / 2 + 0.05;
+    for (let i = 0; i < n; i++) {
+      const j = Math.min(n - 1, i + 1);
+      const h = Math.max(0, i - 1);
+      let tx = P[j * 2] - P[h * 2];
+      let tz = P[j * 2 + 1] - P[h * 2 + 1];
+      const l = Math.hypot(tx, tz) || 1;
+      tx /= l;
+      tz /= l;
+      const x = P[i * 2];
+      const z = P[i * 2 + 1];
+      if (s.distance(x - tz * g, z + tx * g) >= -0.05 || s.distance(x + tz * g, z - tx * g) >= -0.05) {
+        off[i] = 1;
+      }
+    }
+    // Grow each off-road stretch by TRACK_BED_LEAD samples, so the bed runs on into the carriageway.
+    const bed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (off[i]) {
+        for (let k = Math.max(0, i - TRACK_BED_LEAD); k <= Math.min(n - 1, i + TRACK_BED_LEAD); k++) {
+          bed[k] = 1;
+        }
+      }
+    }
+    for (let i = 1; i < n; i++) {
+      if (!bed[i] || !bed[i - 1]) {
+        continue;
+      }
+      const ax = P[i * 2 - 2];
+      const az = P[i * 2 - 1];
+      const bx = P[i * 2];
+      const bz = P[i * 2 + 1];
+      const id = bedSegs.push([ax, az, bx, bz]) - 1;
+      bedGrid.add(id, Math.min(ax, bx) - 6, Math.min(az, bz) - 6, Math.max(ax, bx) + 6, Math.max(az, bz) + 6);
+      bedM += Math.hypot(bx - ax, bz - az);
+    }
+  }
+  const trackBed = (x: number, z: number): number => {
+    let d = 5 + TRACK_BED_HALF;
+    for (const id of bedGrid.at(x, z)) {
+      const [ax, az, bx, bz] = bedSegs[id];
+      d = Math.min(d, segProject(x, z, ax, az, bx, bz).d);
+    }
+    return TRACK_BED_HALF - d;
+  };
+  placementLog(a).note('track.bedM', 'kept', Math.round(bedM));
+  const groundY = (x: number, z: number): number => (s.distance(x, z) < 0 || trackBed(x, z) > 0 ? a.heights.carriage(x, z) : a.heights.off(x, z) - drop(x, z));
   const ctx: StreetContext = {
     streets,
     axis,
@@ -382,6 +448,7 @@ export function streetContext(a: AreaContext): StreetContext {
     inSquare: (x, z) => cam.square.length >= 6 && pointInRing(cam.square, x, z),
     tram,
     tramDist,
+    trackBed,
   };
   a.shared.set('street', ctx);
   return ctx;

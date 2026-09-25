@@ -6,6 +6,7 @@
  * shows up as a changed count. Surfaces follow what street/ground.ts draws:
  * - carriageway: signed carriageway distance D < 0 where no pedestrian street wins the texel (winMargin);
  * - gutter: the GUTTER_WIDTH band in front of a raised kerb; kerb: the KERB_WIDTH stone behind the kerb line;
+ * - track: the flush tram track bed where rails leave the carriageway (common.ts trackBed), at road level;
  * - pedestrianLane: carriageway raster of a pedestrian street (slabs / küp taş, no traffic);
  * - pavement: everything walkable off the carriageway (raised sidewalks, kerbless paving, squares, paths, lots);
  * - building, water.
@@ -17,7 +18,7 @@ import type { AreaContext } from '../registry';
 import { GUTTER_WIDTH, KERB_WIDTH, streetContext, type StreetContext } from './common';
 
 export type Outcome = 'kept' | 'moved' | 'shortened' | 'dropped' | 'flagged';
-export type Surface = 'water' | 'building' | 'carriageway' | 'gutter' | 'pedestrianLane' | 'kerb' | 'pavement';
+export type Surface = 'water' | 'building' | 'track' | 'carriageway' | 'gutter' | 'pedestrianLane' | 'kerb' | 'pavement';
 
 /** Per-rule outcome counts (compile summary `placement`). */
 export class PlacementLog {
@@ -123,6 +124,9 @@ export class PlacementRules {
     if (this.a.foundation.footprints.inside(x, z)) {
       return 'building';
     }
+    if (this.sc.trackBed(x, z) > 0) {
+      return 'track';
+    }
     const d = s.distance(x, z);
     if (d < 0) {
       if (this.pedestrianMargin(x, z) > 0) {
@@ -206,7 +210,7 @@ export class PlacementRules {
   violation(x: number, z: number, spec: StandSpec): string | null {
     const s = this.s;
     const surf = this.surface(x, z);
-    if (surf === 'water' || surf === 'building' || surf === 'carriageway' || surf === 'gutter') {
+    if (surf === 'water' || surf === 'building' || surf === 'track' || surf === 'carriageway' || surf === 'gutter') {
       return surf;
     }
     if (surf === 'pedestrianLane') {

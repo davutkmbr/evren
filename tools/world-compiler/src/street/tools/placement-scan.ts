@@ -3,7 +3,7 @@
  * small details on the wrong surface (npx tsx placement-scan.ts <area> [--spots N] [--json out.json]):
  * - road paint (st_paint zebras, st_paint_lines lane / edge lines) off the carriageway, on pedestrian streets or kerbs;
  * - tactile strips (st_tactile) on the carriageway or inside buildings;
- * - tram rails (st_rail) off the carriageway; gully grates (st_iron) outside the gutter;
+ * - tram rails (st_rail) raised above carriageway level (on a raised pavement or kerb);
  * - prop instances (street furniture, lamps, trees, bins, bollards) on the carriageway or inside buildings.
  * Counts are per triangle (centroid) for geometry and per instance for props; `--spots` prints the worst 4 m cells.
  */
@@ -48,7 +48,7 @@ const dir = resolve(ROOT, `public/world/${areaId}`);
 await MeshoptDecoder.ready;
 const io = new NodeIO().registerExtensions([EXTMeshoptCompression, KHRMeshQuantization]).registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
 
-type Check = (x: number, z: number) => string | null;
+type Check = (x: number, z: number, y: number) => string | null;
 /** Road paint: must lie on a vehicular carriageway, clear of the kerb (gutter excluded for lane lines). */
 const paintCheck = (lane: boolean): Check => (x, z) => {
   const d = s.distance(x, z);
@@ -82,7 +82,8 @@ const tactileCheck: Check = (x, z) => {
   }
   return null;
 };
-const railCheck: Check = (x, z) => (s.distance(x, z) >= 0 && !s.tramBed(x, z) ? (s.zone(x, z) === Zone.Sidewalk ? 'onSidewalk' : 'offCarriageway') : null);
+/** Rails: raised above carriageway level (a raised pavement or kerb) is wrong; off the raster's carriageway at road level is the flush track bed. */
+const railCheck: Check = (x, z, y) => (y - s.baseAt(x, z) > 0.06 ? (s.zone(x, z) === Zone.Sidewalk ? 'raisedOnSidewalk' : 'raised') : null);
 
 const CHECKS: Record<string, Check> = { st_paint: paintCheck(false), st_paint_lines: paintCheck(true), st_tactile: tactileCheck, st_rail: railCheck };
 const counts = new Map<string, Map<string, number>>();
@@ -122,9 +123,9 @@ for (const tile of index.tiles) {
           continue;
         }
         const v = [0, 0, 0];
-        const world = (i: number): [number, number] => {
+        const world = (i: number): [number, number, number] => {
           pos.getElement(i, v);
-          return [w[0] * v[0] + w[4] * v[1] + w[8] * v[2] + w[12], w[2] * v[0] + w[6] * v[1] + w[10] * v[2] + w[14]];
+          return [w[0] * v[0] + w[4] * v[1] + w[8] * v[2] + w[12], w[2] * v[0] + w[6] * v[1] + w[10] * v[2] + w[14], w[1] * v[0] + w[5] * v[1] + w[9] * v[2] + w[13]];
         };
         for (let k = 0; k < idx.getCount(); k += 3) {
           const a = world(idx.getScalar(k));
@@ -133,7 +134,8 @@ for (const tile of index.tiles) {
           const x = (a[0] + b[0] + c[0]) / 3;
           const z = (a[1] + b[1] + c[1]) / 3;
           totals.set(m, (totals.get(m) ?? 0) + 1);
-          let bad = check(x, z);
+          const yc = (a[2] + b[2] + c[2]) / 3;
+          let bad = check(x, z, yc);
           if (!bad && (m === 'st_paint_lines' || m === 'st_paint') && [a, b, c].some((q) => s.distance(q[0], q[1]) > 0)) {
             bad = 'cornerOverKerb';
           }

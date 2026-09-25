@@ -236,6 +236,7 @@ Surfaces (`PlacementRules.surface`) follow what `street/ground.ts` draws:
 |---|---|
 | `carriageway` | carriageway distance D < 0, no pedestrian street wins the texel |
 | `gutter` | the 0.3 m band in front of a raised kerb |
+| `track` | the flush tram track bed (below) |
 | `pedestrianLane` | carriageway raster of a pedestrian street (paving, no traffic) |
 | `kerb` | the 0.15 m kerb stone behind a raised kerb line |
 | `pavement` | everything else that is walkable: raised sidewalks, kerbless paving, squares, paths, lots |
@@ -251,7 +252,9 @@ Surfaces (`PlacementRules.surface`) follow what `street/ground.ts` draws:
 | `tactile.guide` | markings (arrival square) | guide pavers on `pavement` or `pedestrianLane` only | 0.6 m quads `dropped` |
 | `manhole` | markings | at least 1.45 m from a tram track centre line (and, as before, 0.6 m inside the carriageway, off junctions and zebras) | `dropped` |
 | `rail.corrected` | common.ts | tram track samples OSM draws on the pavement or too close to the kerb (within 5 m of the carriageway) | `moved` onto the carriageway (1 m samples) |
-| `rail.track` | markings | rails lie on the carriageway | a stretch on raised pavement (a separate right-of-way) is kept for the track's continuity and `flagged` (1 m segments) |
+| `track.bedM` | common.ts | metres of corrected track (whole area) that get a flush bed | (a length, counted as `kept`) |
+| `rail.track` | markings | both rails of each 1 m segment stand at carriageway level (on the carriageway or the bed) | `flagged` |
+| `crowd.track` | `street/crowd.ts` | nobody stands or walks on the track bed | candidate spots `dropped` (counted per rejected candidate) |
 | `prop.tree` | `street/furniture.ts` | off the carriageway, 0.6 m behind the kerb line, 0.8 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 2.5 m, else `dropped` |
 | `prop.bollard` | furniture | 0.2 m behind the kerb line, 0.3 m off façades, out of door approaches; on pedestrian paving only, never on a vehicular carriageway | moved up to 1.2 m, else `dropped` |
 | `prop.bollardMouth` | furniture | the bollard row across a pedestrian lane's mouth stands 0.8 m inside the lane's own paving, not where the OSM end node lies in the crossing road | `moved` inwards (up to 12 m along the lane); `dropped` when the lane never leaves the carriageway |
@@ -259,6 +262,15 @@ Surfaces (`PlacementRules.surface`) follow what `street/ground.ts` draws:
 | `prop.furniture` | furniture | benches, bins, cabinets, planters, lantern columns, parasols, café sets, chairs and A-frames: 0.45 m behind the kerb line, 0.2 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 1.5 m, else `dropped` |
 | `railing` | `street/barriers.ts` | the ends and middle of each 2.4 m railing piece stand off the carriageway and gutter, out of buildings and door approaches | `dropped` |
 
+- **Track bed.** Where the rails of a corrected tram track leave the carriageway (a separate right-of-way, a
+  square, a pavement: either rail within 0.05 m of the carriageway edge or off it), `StreetContext.trackBed` marks a
+  bed 1.2 m past each rail (half the gauge plus 1.2 m either side of the centre line). The bed runs on 3 m into the
+  carriageway past each such stretch. `street/ground.ts` cuts the ground along the bed's edge. Inside the bed the
+  ground lies at carriageway level: asphalt where it cuts through raised pavement, the surrounding paving where the
+  ground around it is level. Where the pavement beside the bed is raised, a kerb stone and a kerb step line the bed.
+  The carriageway kerb stops at the bed, so no kerb step runs across the track. `groundY` follows the bed, so rails,
+  props and people stand on it. Every placement rule treats the bed as `track`: no props, tactile pads, railings or
+  people on it, and no lane paint within 1.25 m of the rails.
 - A door approach is the area in front of a door, up to 1.3 m out and 0.2 m past each jamb.
 - Props placed from reference photos (the Kadıköy S1 fits, e.g. the c05 stop and the gate A plaza) are never moved.
   A violation is counted as `flagged`.
@@ -268,8 +280,9 @@ The compile summary lists the counts per rule and outcome under `placement` (`ke
 `dropped`, `flagged`). Zebra bars, pads and stripes are counted in the tile that owns them. A change in these counts
 shows a regression. `src/street/tools/placement-scan.ts <area>` checks compiled tiles independently: it decodes the
 full-detail glbs and instances and counts, against the surface raster, paint triangles off the carriageway, on
-pedestrian paving, parking or tram beds; tactile triangles on the road, on kerbs or in buildings; rails off the
-carriageway; and props on the carriageway or kerb. It also lists the worst 4 m cells, as places to take shots.
+pedestrian paving, parking or tram beds; tactile triangles on the road, on kerbs or in buildings; rail triangles
+more than 6 cm above carriageway level (on raised ground); and props on the carriageway or kerb. It also lists the
+worst 4 m cells, as places to take shots.
 
 ## Not in format 0
 

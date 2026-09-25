@@ -6,6 +6,8 @@
  * - gutters: a concrete band GUTTER_WIDTH wide on the carriageway in front of the kerb;
  * - dropped kerbs at marked crossings (the pavement ramps down to DROPPED_KERB above the carriageway);
  * - granite coping COPING_WIDTH wide on the quay edge and stone quay walls;
+ * - the flush tram track bed (common.ts trackBed) at carriageway level, lined with kerb stones and a kerb step where
+ *   the pavement beside it is raised; the carriageway kerb stops at it;
  * - paving per street: patched asphalt on main roads, slabs in the pedestrian lanes (küp taş where OSM tags sett /
  *   cobblestone), pavers on sidewalks and squares; paving UVs follow the street's axis (world-metre scale);
  * - COLOR_0 wear: low-frequency blotches everywhere, gutter dirt in front of kerbs and contact darkening within
@@ -41,8 +43,10 @@ const SKIRT = 0.5;
 const TAG_NONE = 0;
 const TAG_COAST = 1;
 const TAG_KERB = 2;
+/** Edge of the flush tram track bed: a kerb step where the pavement beside it is raised. */
+const TAG_TRACK = 3;
 
-type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W' | 'K' | 'Q' | 'S' | 'A';
+type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W' | 'K' | 'Q' | 'S' | 'A' | 'T';
 interface V {
   x: number;
   z: number;
@@ -64,6 +68,8 @@ interface V {
   Q: number;
   S: number;
   A: number;
+  /** Signed distance into the flush tram track bed (> 0 inside; common.ts trackBed). */
+  T: number;
 }
 interface Poly {
   v: V[];
@@ -83,6 +89,7 @@ const lerpV = (a: V, b: V, t: number): V => ({
   Q: a.Q + (b.Q - a.Q) * t,
   S: a.S + (b.S - a.S) * t,
   A: a.A + (b.A - a.A) * t,
+  T: a.T + (b.T - a.T) * t,
 });
 
 function split(p: Poly, f: Field, newTag: number, level = 0): { neg: Poly | null; pos: Poly | null } {
@@ -186,10 +193,10 @@ const splitAll = (ps: Poly[], f: Field, level: number): Poly[] =>
     return [r.neg, r.pos].filter((x): x is Poly => x !== null);
   });
 
-const FIELDS = ['x', 'z', 'L', 'D', 'P', 'B', 'G', 'W', 'K', 'Q', 'S', 'A'] as const;
+const FIELDS = ['x', 'z', 'L', 'D', 'P', 'B', 'G', 'W', 'K', 'Q', 'S', 'A', 'T'] as const;
 
 function centre(p: Poly): V {
-  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0, K: 0, Q: 0, S: 0, A: 0 };
+  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0, K: 0, Q: 0, S: 0, A: 0, T: 0 };
   const n = p.v.length;
   for (const v of p.v) {
     for (const f of FIELDS) {
@@ -264,6 +271,8 @@ export interface StreetGroundStats {
   gutterM: number;
   copingM: number;
   droppedKerbs: number;
+  /** Area (m²) of flush tram track bed off the carriageway. */
+  trackBedM2: number;
 }
 
 function isMain(st: Street): boolean {
@@ -291,6 +300,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
   const Q = new Float32Array(n);
   const S = new Float32Array(n);
   const A = new Float32Array(n);
+  const T = new Float32Array(n);
   const pavedAreas = a.data.areas.filter((ar) => {
     const g = groundOf(ar);
     if (g !== Ground.Plaza && g !== Ground.Worship && g !== Ground.Platform && g !== Ground.Quay) {
@@ -383,9 +393,10 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       Q[k] = sc.winMargin(x, z, (st) => st.pedestrian);
       S[k] = D[k] - s.sidewalkWidth(x, z);
       A[k] = pavedAreas.length ? pavedDist(x, z) : -3;
+      T[k] = sc.trackBed(x, z);
     }
   }
-  const stats: StreetGroundStats = { kerbStoneM: 0, gutterM: 0, copingM: 0, droppedKerbs: 0 };
+  const stats: StreetGroundStats = { kerbStoneM: 0, gutterM: 0, copingM: 0, droppedKerbs: 0, trackBedM2: 0 };
   const patches = new Map<string, Patch>();
   const patch = (m: MaterialName, fr: Frame): Patch => {
     const key = `${m}|${fr.key}`;
@@ -636,7 +647,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     const nv = p.v.length;
     for (let i = 0; i < nv; i++) {
       const tag = p.tag[i];
-      if (tag === TAG_NONE || (tag === TAG_KERB && carriage)) {
+      if (tag === TAG_NONE || ((tag === TAG_KERB || tag === TAG_TRACK) && carriage)) {
         continue;
       }
       const va = p.v[i];
@@ -663,7 +674,10 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       } else {
         const ca = a.heights.carriage(va.x, va.z);
         const cb = a.heights.carriage(vb.x, vb.z);
-        const stone = kerbStone((va.x + vb.x) / 2 - nx0 * 0.1, (va.z + vb.z) / 2 - nz0 * 0.1);
+        if (tag === TAG_TRACK && ya - ca < 0.01 && yb - cb < 0.01) {
+          continue;
+        }
+        const stone = tag === TAG_TRACK || kerbStone((va.x + vb.x) / 2 - nx0 * 0.1, (va.z + vb.z) / 2 - nz0 * 0.1);
         // Face UVs: u along the kerb, v down the face inside one stone course of the texture.
         const tx = -nz0;
         const tz = nx0;
@@ -714,14 +728,46 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     emitWalls(q, ys, true);
   };
 
+  /**
+   * Flush tram track bed off the carriageway (common.ts trackBed): at carriageway level, asphalt where the bed cuts
+   * through raised pavement, the surrounding paving where the ground around it is level (squares, kerbless lanes).
+   */
+  const emitTrackBed = (q: Poly): void => {
+    const c = centre(q);
+    const ys = q.v.map(carriageY);
+    const [m0, fr0] = liftOf(c.x, c.z) > 0.05 ? carriageMaterial(c) : offMaterial(c);
+    const { m, fr, tone } = dressed(m0, fr0, c, false);
+    const pts: Vec3[] = q.v.map((v, k) => [v.x, ys[k], v.z]);
+    const cols = q.v.map((v): RGBA => {
+      const w = wear(v, true);
+      return rgba(w[0] * tone, w[1] * tone, w[2] * tone);
+    });
+    const wx = q.v.map((v) => weatherOf(v, true));
+    if (fr === WORLD) {
+      mesh.groundPolygon(m, pts, { color: cols, weather: wx });
+    } else {
+      patch(m, fr).polygon(pts, cols, wx);
+    }
+    noteBorder(pts);
+    stats.trackBedM2 += polyArea(q);
+    emitWalls(q, ys, true);
+  };
+
   const emitOff = (q: Poly): void => {
     const c = centre(q);
+    if (c.T > 0 && !s.geo.isWater(c.x, c.z)) {
+      emitTrackBed(q);
+      return;
+    }
     const ys = q.v.map(offY);
     if (c.L < COPING_WIDTH && !s.geo.isWater(c.x, c.z)) {
       alongPiece('st_coping', q, ys, () => [0, 1, 0], (x, z) => a.land(x, z), (v) => v.L, false);
       stats.copingM += polyArea(q) / COPING_WIDTH;
     } else if (c.G > -GREEN_EDGE && c.G <= 0 && c.D > KERB_WIDTH) {
       alongPiece('st_kerb', q, ys, () => [0, 1, 0], (x, z) => greenDist(x, z), (v) => 0.2 + v.G, false);
+    } else if (c.T > -KERB_WIDTH && liftOf(c.x, c.z) > 0.05) {
+      // Kerb stones lining the track bed where the pavement beside it is raised.
+      alongPiece('st_kerb', q, ys, () => [0, 1, 0], (x, z) => -sc.trackBed(x, z), (v) => 0.12 - v.T, false);
     } else if (c.D < KERB_WIDTH && kerbStone(c.x, c.z)) {
       const isBevel = c.D < KERB_BEVEL;
       alongPiece(
@@ -763,7 +809,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
 
   const corner = (i: number, j: number): V => {
     const k = j * W + i;
-    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k], K: K[k], Q: Q[k], S: S[k], A: A[k] };
+    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k], K: K[k], Q: Q[k], S: S[k], A: A[k], T: T[k] };
   };
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
@@ -793,7 +839,8 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
           }
         }
         if (parts.pos) {
-          let pieces: Poly[] = [parts.pos];
+          const bed = split(parts.pos, 'T', TAG_TRACK);
+          let pieces: Poly[] = [bed.neg, bed.pos].filter((x): x is Poly => x !== null);
           for (const [field, level] of [
             ['D', KERB_BEVEL],
             ['D', KERB_WIDTH],
@@ -812,6 +859,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
             ['K', 0],
             ['S', 0],
             ['A', 0],
+            ['T', -KERB_WIDTH],
           ] as const) {
             pieces = splitAll(pieces, field, level);
           }
@@ -903,6 +951,6 @@ export const streetGroundStep: CompileStep = {
     const a = t.area;
     const st = t.mesh.withLod(LOD0, () => buildStreetGround(t, sc, totals));
     t.mesh.withLod(LOD1 | LOD2, () => buildGround(t.bounds, a.foundation, a.heights, a.land, t.mesh));
-    t.record('streetGround', { kerbStoneM: Math.round(st.kerbStoneM), gutterM: Math.round(st.gutterM), copingM: Math.round(st.copingM), droppedKerbs: st.droppedKerbs });
+    t.record('streetGround', { kerbStoneM: Math.round(st.kerbStoneM), gutterM: Math.round(st.gutterM), copingM: Math.round(st.copingM), droppedKerbs: st.droppedKerbs, ...(st.trackBedM2 ? { trackBedM2: Math.round(st.trackBedM2) } : {}) });
   },
 };
