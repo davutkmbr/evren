@@ -38,6 +38,7 @@ serveWorker<BuildingsRequest, BuildingsResult>((req) => {
     tiles: details.tiles,
     props,
     colliders: b.colliders,
+    colliderIds: b.colliderIds,
     stats: {
       ...b.stats,
       ...infill.stats,

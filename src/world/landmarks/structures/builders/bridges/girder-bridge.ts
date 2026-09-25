@@ -78,11 +78,13 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
     partLength: 200,
     led: spec.led ? { group: spec.led.group, u0: 0, u1: 1, strength: spec.led.strength } : undefined,
   });
-  for (let s = s0; s < s1 - 1; s += 50) {
-    const e = Math.min(s + 50, s1);
-    const pa = frame.point(s, 0, height(s) - section.depth / 2 + 0.4);
-    const pb = frame.point(e, 0, height(e) - section.depth / 2 + 0.4);
-    b.segmentCollider(pa, pb, section.halfWidth, section.depth / 2 + 0.4);
+  // Deck colliders: top at the drawn road surface (segmentCollider adds half the rise of each piece on top, so the
+  // pieces stay short); taller or longer boxes left invisible kerbs on the deck and a step at each abutment.
+  for (let s = s0; s < s1 - 1; s += 10) {
+    const e = Math.min(s + 10, s1);
+    const pa = frame.point(s, 0, height(s) - section.depth / 2);
+    const pb = frame.point(e, 0, height(e) - section.depth / 2);
+    b.segmentCollider(pa, pb, section.halfWidth, section.depth / 2);
   }
   const piers: number[] = [];
   for (const [from, to] of [

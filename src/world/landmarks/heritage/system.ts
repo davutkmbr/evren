@@ -129,7 +129,7 @@ export class HeritageSystem implements System {
     for (const c of r.chunks) {
       this.chunks.push(this.makeChunk(r.id, c, mat));
     }
-    this.addColliders(r.colliders);
+    this.addColliders(r.colliders, r.id);
   }
 
   private makeChunk(site: string, c: ChunkResult, mat: THREE.Material): Chunk {
@@ -156,16 +156,16 @@ export class HeritageSystem implements System {
     return { site, levels, box, level: -1, triangles };
   }
 
-  private addColliders(list: ColliderDesc[]): void {
+  private addColliders(list: ColliderDesc[], site: string): void {
     const col = this.collision;
     if (!col) {
       return;
     }
     for (const c of list) {
       if (c.kind === 'box') {
-        this.colliderIds.push(col.add({ kind: 'box', center: new THREE.Vector3(c.cx, c.cy, c.cz), halfSize: new THREE.Vector3(c.hx, c.hy, c.hz), yaw: c.yaw }, 'heritage'));
+        this.colliderIds.push(col.add({ kind: 'box', center: new THREE.Vector3(c.cx, c.cy, c.cz), halfSize: new THREE.Vector3(c.hx, c.hy, c.hz), yaw: c.yaw }, 'heritage', site));
       } else {
-        this.colliderIds.push(col.add({ kind: 'cylinder', base: new THREE.Vector3(c.x, c.y, c.z), radius: c.r, height: c.h }, 'heritage'));
+        this.colliderIds.push(col.add({ kind: 'cylinder', base: new THREE.Vector3(c.x, c.y, c.z), radius: c.r, height: c.h }, 'heritage', site));
       }
     }
   }

@@ -34,6 +34,8 @@ export class BodyContacts {
   bellyDepth = 1.6;
   /** The tail sphere is skipped while hovering/landing (the tail is lifted clear of the ground). */
   tailEnabled = true;
+  /** Debug/test: called for every blocking wall contact on the ground (collider id, tag, body sphere index, contact point). */
+  onWall: ((id: number, surface: string, sphere: number, point: THREE.Vector3) => void) | null = null;
   private readonly contact: ContactResult = { normal: new THREE.Vector3(), depth: 0, surface: '' };
 
   constructor() {
@@ -94,9 +96,10 @@ export class BodyContacts {
 
   /**
    * Ground/water locomotion: only push out of structures horizontally (the surface itself is followed kinematically).
-   * Returns true if a wall was hit.
+   * Colliders whose top is at or below `stepTop` are ledges the legs step onto (bridge deck ends, pier decks, low
+   * plinths), not walls. Returns true if a wall was hit.
    */
-  resolveWalls(body: BodyState, collision: CollisionWorld, report: ImpactReport): boolean {
+  resolveWalls(body: BodyState, collision: CollisionWorld, report: ImpactReport, stepTop = -Infinity): boolean {
     report.speed = 0;
     report.touched = false;
     let hit = false;
@@ -105,7 +108,7 @@ export class BodyContacts {
       _lever.copy(this.offsets[i]).applyQuaternion(body.quaternion);
       _center.copy(body.position).add(_lever);
       const c = this.query(collision, _center, r);
-      if (!c || c.surface === 'ground' || Math.abs(c.normal.y) > 0.7) {
+      if (!c || c.surface === 'ground' || Math.abs(c.normal.y) > 0.7 || (c.top ?? Infinity) <= stepTop) {
         continue;
       }
       _tmp.set(c.normal.x, 0, c.normal.z);
@@ -126,6 +129,7 @@ export class BodyContacts {
       }
       hit = true;
       report.touched = true;
+      this.onWall?.(c.id ?? -1, c.surface, i, _tmp2.copy(_center).addScaledVector(_tmp, -r));
     }
     return hit;
   }

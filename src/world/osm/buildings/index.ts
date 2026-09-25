@@ -8,7 +8,6 @@ import type { CollisionWorld } from '../../../core/collision';
 import type { GeoQuery } from '../../../core/contracts';
 import type { OsmData, OsmPoint } from '../data';
 import { LayerBase } from '../shared/layer';
-import { COLLIDER_STRIDE } from '../shared/protocol';
 import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
 import { LodTiledMesh } from '../shared/lod-tiles';
 import { countTriangles } from '../shared/three';
@@ -19,7 +18,7 @@ import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
 import { type BuildingMaterials, createBuildingMaterials } from './materials';
 import { antennaGeometry, chimneyGeometry, dishGeometry, minaretGeometry, solarGeometry, tankGeometry } from './props';
-import type { BuildingsRequest, BuildingsResult } from './protocol';
+import { type BuildingsRequest, type BuildingsResult, decodePrisms } from './protocol';
 import type { PropKind } from './roofs';
 
 const FOOD = /^amenity=(restaurant|cafe|fast_food|bar|pub|ice_cream|nightclub|biergarten)$|^shop=(bakery|confectionery|pastry|coffee|tea|deli)$/;
@@ -151,13 +150,10 @@ class BuildingsLayer extends LayerBase {
     this.update(0, ctx);
 
     const collision = ctx.engine.services.get('collision');
-    const boxes = [];
-    const b = res.colliders;
-    for (let i = 0; i < b.length; i += COLLIDER_STRIDE) {
-      boxes.push({ kind: 'box' as const, center: new THREE.Vector3(b[i], b[i + 1], b[i + 2]), halfSize: new THREE.Vector3(b[i + 3], b[i + 4], b[i + 5]), yaw: b[i + 6] });
-    }
     this.collision = collision;
-    this.colliderIds = collision.addMany(boxes, 'building');
+    decodePrisms(res.colliders, (bottom, top, rings, i) => {
+      this.colliderIds.push(collision.add({ kind: 'prism', rings, bottom, top }, 'building', `osm-building:${res.colliderIds[i]}`));
+    });
     this.onDispose(() => {
       this.collision?.removeMany(this.colliderIds);
       this.colliderIds = [];

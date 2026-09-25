@@ -108,12 +108,12 @@ export class StructureSystem implements System {
     for (const c of result.colliders) {
       if (c.kind === 'box') {
         this.colliderIds.push(
-          collision.add({ kind: 'box', center: new THREE.Vector3(...c.center), halfSize: new THREE.Vector3(...c.halfSize), yaw: c.yaw }, 'structure'),
+          collision.add({ kind: 'box', center: new THREE.Vector3(...c.center), halfSize: new THREE.Vector3(...c.halfSize), yaw: c.yaw }, 'structure', result.id),
         );
       } else if (c.kind === 'cylinder') {
-        this.colliderIds.push(collision.add({ kind: 'cylinder', base: new THREE.Vector3(...c.base), radius: c.radius, height: c.height }, 'structure'));
+        this.colliderIds.push(collision.add({ kind: 'cylinder', base: new THREE.Vector3(...c.base), radius: c.radius, height: c.height }, 'structure', result.id));
       } else {
-        this.colliderIds.push(collision.add({ kind: 'sphere', center: new THREE.Vector3(...c.center), radius: c.radius }, 'structure'));
+        this.colliderIds.push(collision.add({ kind: 'sphere', center: new THREE.Vector3(...c.center), radius: c.radius }, 'structure', result.id));
       }
     }
   }

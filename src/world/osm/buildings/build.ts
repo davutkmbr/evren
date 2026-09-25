@@ -3,7 +3,7 @@
  * - one facade mesh (every wall, trim, bay window, flat roof slab; facade texture array, see materials.ts),
  * - one roof mesh (tiles, lead domes, ridge caps),
  * - near-LOD detail instances per tile (details.ts), rooftop / minaret prop instances (roofs.ts),
- * - one oriented box collider per building.
+ * - one footprint prism collider per building (outline and courtyards, protocol.ts encodePrism).
  *
  * Walls are classified against their surroundings: party walls (another footprint right behind them) stay blank,
  * street walls get shops from mapped POIs or the neighbourhood's shop rate, courtyard walls get small windows.
@@ -11,7 +11,6 @@
 import type { WorldBounds } from '../../../core/contracts';
 import type { OsmBuilding } from '../data';
 import { BoxGrid, bounds, hash, pointInRing, ringArea, segDist } from '../shared/geometry';
-import { COLLIDER_STRIDE } from '../shared/protocol';
 import type { StreetSurface } from '../shared/street-surface';
 import { Arch, Balcony, Flag, groundRow, Kind } from './archetypes';
 import { DetailSink } from './details';
@@ -20,6 +19,7 @@ import { cleanRing, footprintInfo, orientedBox } from './footprint';
 import { bayWindow, type Edge, mouldings } from './massing';
 import { FACADE_STATE, RecordList, ROOF_STATE, StateMesh } from './mesh';
 import { clearanceOf, planBuilding, wallHeight } from './plan';
+import { encodePrism } from './protocol';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
 
 /** building=* values that are not solid buildings (canopies, ruins, bridge decks). */
@@ -43,7 +43,10 @@ export interface BuildOutput {
   roof: StateMesh;
   details: DetailSink;
   props: PropSink;
+  /** Prism records (protocol.ts encodePrism). */
   colliders: Float32Array;
+  /** OSM id per collider record (debug labels). */
+  colliderIds: Float64Array;
   stats: Record<string, number>;
 }
 
@@ -154,7 +157,8 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   const roof = new StateMesh(ROOF_STATE);
   const details = new DetailSink(rect);
   const props = createPropSink();
-  const colliders = new RecordList(COLLIDER_STRIDE);
+  const colliders: number[] = [];
+  const colliderIds: number[] = [];
   const stats: Record<string, number> = {
     built: 0,
     infill: 0,
@@ -390,8 +394,9 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     // Roof.
     const peak = buildRoof({ roof, facade, plan, ring: r, holes, box, top, gMin, props, stats });
 
-    const hy = (peak - yBase) / 2;
-    colliders.push(0, box.cx, yBase + hy, box.cz, box.hl, hy, box.hw, -Math.atan2(box.dz, box.dx));
+    // The drawn footprint itself (an oriented box over an L-shaped or concave outline blocks streets and squares).
+    encodePrism(colliders, yBase, peak, [r, ...holes]);
+    colliderIds.push(s.id);
     stats.built++;
     if (s.infill) {
       stats.infill++;
@@ -404,5 +409,5 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   for (const [k, v] of Object.entries(archStats)) {
     stats[`arch${k}`] = v;
   }
-  return { facade, roof, details, props, colliders: colliders.take(), stats };
+  return { facade, roof, details, props, colliders: new Float32Array(colliders), colliderIds: new Float64Array(colliderIds), stats };
 }

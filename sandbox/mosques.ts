@@ -145,9 +145,11 @@ function showColliders(scene: THREE.Scene, world: CollisionWorld): void {
     } else if (c.kind === 'cylinder') {
       mesh = new THREE.Mesh(new THREE.CylinderGeometry(c.radius, c.radius, c.height, 12, 1, true), mat);
       mesh.position.set(c.base.x, c.base.y + c.height / 2, c.base.z);
-    } else {
+    } else if (c.kind === 'sphere') {
       mesh = new THREE.Mesh(new THREE.SphereGeometry(c.radius, 16, 8), mat);
       mesh.position.copy(c.center);
+    } else {
+      continue;
     }
     scene.add(mesh);
   }

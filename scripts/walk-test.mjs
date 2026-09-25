@@ -12,9 +12,19 @@
  * live, triangles and draw calls per frame (shadow pass included), the tile-loaded triangle total, and the shots.
  * The browser waits in the machine-wide GPU queue (scripts/lib/gpu-slot.mjs) like snap.mjs. Requires the dev server
  * (port 5199) and compiled tiles (npm run compile:world -- --area kadikoy). Writes <out>/walk-test.json too.
+ *
+ * --dragon: collision walk instead (scripts/lib/collision-walk.mjs). The dragon walks Eminönü streets, the square, the
+ * tram line and the quay in the full game; every blocking contact is logged with its collider, and colliders with no
+ * rendered mesh at the contact are reported as phantoms (exit code 1 when any is found).
+ *
+ *   node scripts/walk-test.mjs --dragon                          # all Eminönü routes
+ *   node scripts/walk-test.mjs --dragon --route square,quay --url "/?view=galata&street=1"
+ *   node scripts/walk-test.mjs --dragon --legacy-boxes           # old oriented-box building colliders (comparison)
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { runDragonWalk } from './lib/collision-walk.mjs';
 import { launchGpuBrowser, releaseSlot } from './lib/gpu-slot.mjs';
 
 const args = process.argv.slice(2);
@@ -169,6 +179,27 @@ async function runRoute(browser, id) {
   };
 }
 
+async function dragonMain() {
+  const out = opt('out', '.shots/collision-walk');
+  log('waiting for a GPU slot...');
+  const browser = await launchGpuBrowser(chromium);
+  let report;
+  try {
+    const only = args.includes('--route') ? ROUTES : [];
+    const res = await runDragonWalk(browser, { base: BASE, root: fileURLToPath(new URL('..', import.meta.url)), only, log, url: opt('url', undefined), legacyBoxes: args.includes('--legacy-boxes') });
+    report = { date: new Date().toISOString(), ...res };
+  } finally {
+    await browser.close();
+    releaseSlot();
+  }
+  mkdirSync(out, { recursive: true });
+  writeFileSync(`${out}/collision-walk.json`, JSON.stringify(report, null, 1));
+  log(`report: ${out}/collision-walk.json`);
+  if (JSON_ONLY) console.log(JSON.stringify(report, null, 1));
+  // Stuck spots against rendered walls (18 m dragon in a 4 m alley) are reported but do not fail the run.
+  if (report.error || report.phantoms > 0 || report.errors?.length) process.exitCode = 1;
+}
+
 async function main() {
   try {
     const r = await fetch(BASE + '/');
@@ -194,4 +225,8 @@ async function main() {
   console.log(JSON.stringify(report, null, 1));
 }
 
-await main();
+if (args.includes('--dragon')) {
+  await dragonMain();
+} else {
+  await main();
+}

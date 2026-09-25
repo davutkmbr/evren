@@ -14,6 +14,7 @@ const _back = new THREE.Vector3();
 const _basis = new THREE.Matrix4();
 const _targetQ = new THREE.Quaternion();
 const _extraQ = new THREE.Quaternion();
+const _step = new THREE.Vector3();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 function approach(current: number, target: number, rate: number, h: number): number {
@@ -196,6 +197,10 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
   const nextSurface = collision ? collision.surfaceHeight(nx, nz) : sim.surfaceY;
   if (nextSurface - sim.surfaceY > GROUND.maxStep) {
     sim.groundSpeed *= 0.2;
+    if (collision && sim.contacts.onWall) {
+      _step.set(nx, nextSurface, nz);
+      sim.contacts.onWall(collision.surfaceSource(nx, nz), 'step', -1, _step);
+    }
   } else {
     p.x = nx;
     p.z = nz;
@@ -228,7 +233,7 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
   alignBody(sim, _up, rear, 0, 8, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
-  if (collision && sim.contacts.resolveWalls(b, collision, sim.impact)) {
+  if (collision && sim.contacts.resolveWalls(b, collision, sim.impact, sim.surfaceY + GROUND.maxStep)) {
     sim.groundSpeed *= 0.4;
     if (sim.impact.speed > 2.5 && sim.impactCooldown <= 0) {
       sim.impactCooldown = 0.4;

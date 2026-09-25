@@ -70,11 +70,21 @@ function lampPost(b: MeshBuilder, x: number, y: number, z: number, h: number): P
   return { x, y: y + h + 0.1, z };
 }
 
+/** Solid block of a pier for the collision world (local frame): centre x, z, width, depth, base y and height. */
+interface PierSolid {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  y0: number;
+  h: number;
+}
+
 /**
  * One ferry pier (iskele) in a local frame: x along the shore, z seaward (0 = shoreline), y up. Platform on piles,
- * fendered mooring face, a style-dependent waiting hall and lamp posts.
+ * fendered mooring face, a style-dependent waiting hall and lamp posts. `solids` receives the deck and the hall.
  */
-function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp[] {
+function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number, solids: PierSolid[]): PierLamp[] {
   const p = berth.pier;
   const F = p.frontage;
   const R = p.reach;
@@ -91,6 +101,8 @@ function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp
   // Platform slab (overlapping the shore) on piles.
   const zBack = -8;
   slab(b, rect(0, (zBack + R) / 2, F, R - zBack), DECK_Y, 0.55, deckS, concrete, concrete);
+  // The deck is walkable (a low step up from the quay); only the halls are walls.
+  solids.push({ x: 0, z: (zBack + R) / 2, w: F, d: R - zBack, y0: -1.5, h: DECK_Y + 1.5 });
   const pileBottom = -Math.min(Math.max(depthAtFace, 3), 9);
   for (let x = -F / 2 + 1.2; x <= F / 2 - 1.2; x += 4.2) {
     for (let z = 3; z <= R - 1; z += 4.5) b.cylinder(x, pileBottom, z, 0.32, 0.32, DECK_Y - 0.5 - pileBottom, 8, pileS, false);
@@ -110,6 +122,7 @@ function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp
     const h = floors === 2 ? 8.6 : 5.6;
     const hall = rect(0, hallZ, hallW, hallD);
     prism(b, hall, DECK_Y, h, cream, null);
+    solids.push({ x: 0, z: hallZ, w: hallW + 0.2, d: hallD + 0.2, y0: DECK_Y, h: h + (style === 'kadikoy' ? 11 : 3.3) });
     b.block(0, DECK_Y, hallZ, hallW + 0.2, 0.7, hallD + 0.2, trim, 1 | 2 | 16 | 32);
     for (let f = 0; f < floors; f++) {
       windowsOnPolygon(b, hall, DECK_Y + f * 4.2, { surf: glass, sill: 1.1, height: 2.2, width: 1.4, pitch: 2.6 });
@@ -150,6 +163,7 @@ function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp
     const hallW = F * 0.8;
     const h = 5.0;
     const hall = rect(0, hallZ, hallW, hallD);
+    solids.push({ x: 0, z: hallZ, w: hallW, d: hallD, y0: DECK_Y, h: h + 0.45 });
     const frame = surf(0xe3e5e2, { roughness: 0.45, metalness: 0.25, detail: Detail.Super });
     const glazing = surf(0x6b8390, { roughness: 0.06, metalness: 0.1, emit: Emit.Cabin, detail: Detail.Glass });
     prism(b, hall, DECK_Y, 0.9, frame, null);
@@ -170,6 +184,7 @@ function buildLocal(b: MeshBuilder, berth: Berth, depthAtFace: number): PierLamp
   } else {
     // Small island / village pier: timber hut with a hipped roof.
     const hut = rect(-F * 0.18, 4.5, 6, 5);
+    solids.push({ x: -F * 0.18, z: 4.5, w: 6, d: 5, y0: DECK_Y, h: 4.9 });
     prism(b, hut, DECK_Y, 3.1, surf(0xd9ccb0, { roughness: 0.8, detail: Detail.Wood }), null);
     windowsOnPolygon(b, hut, DECK_Y, { surf: glass, sill: 1.0, height: 1.1, width: 1.0, pitch: 2.0 });
     hipRoof(b, -F * 0.18, DECK_Y + 3.1, 4.5, 6.8, 5.8, 1.8, surf(0x8a4b35, { roughness: 0.7 }));
@@ -189,8 +204,6 @@ export function buildPiers(geo: GeoQuery, berths: Map<string, Berth[]>): PierBui
   const lamps: PierLamp[] = [];
   const m = new THREE.Matrix4();
   const up = new THREE.Vector3(0, 1, 0);
-  const q = new THREE.Quaternion();
-  const e = new THREE.Euler();
   for (const list of berths.values()) {
     for (const berth of list) {
       const xAxis = new THREE.Vector3(-berth.t.x, 0, -berth.t.z);
@@ -198,18 +211,18 @@ export function buildPiers(geo: GeoQuery, berths: Map<string, Berth[]>): PierBui
       m.makeBasis(xAxis, up, zAxis).setPosition(berth.shore.x, 0, berth.shore.z);
       const depth = -geo.heightAt(berth.face.x, berth.face.z);
       b.push(m);
-      const local = buildLocal(b, berth, depth);
+      const solids: PierSolid[] = [];
+      const local = buildLocal(b, berth, depth, solids);
       b.pop();
       for (const l of local) {
         const p = new THREE.Vector3(l.x, l.y, l.z).applyMatrix4(m);
         lamps.push({ x: p.x, y: p.y, z: p.z });
       }
-      q.setFromRotationMatrix(m);
-      e.setFromQuaternion(q, 'YXZ');
-      const R = berth.pier.reach;
-      const F = berth.pier.frontage;
-      const c = new THREE.Vector3(0, 0, (R - 8) / 2).applyMatrix4(m);
-      colliders.push({ kind: 'box', center: new THREE.Vector3(c.x, 4, c.z), halfSize: new THREE.Vector3(F / 2, 4.5, (R + 8) / 2), yaw: e.y });
+      // One box per drawn solid (the whole pier used to be one 9 m tall box reaching 8 m onto the quay).
+      for (const sol of solids) {
+        const c = new THREE.Vector3(sol.x, 0, sol.z).applyMatrix4(m);
+        colliders.push({ kind: 'box', center: new THREE.Vector3(c.x, sol.y0 + sol.h / 2, c.z), halfSize: new THREE.Vector3(sol.w / 2, sol.h / 2, sol.d / 2), yaw: Math.atan2(-xAxis.z, xAxis.x) });
+      }
     }
   }
   return { geometry: b.build(), colliders, lamps };

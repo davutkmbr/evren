@@ -72,7 +72,7 @@ export class LifeSystem implements System {
       this.pierMesh.receiveShadow = true;
       this.root.add(this.pierMesh);
       this.pierLamps = piers.lamps;
-      this.colliderIds = ctx.services.get('collision').addMany(piers.colliders, 'pier');
+      this.colliderIds = ctx.services.get('collision').addMany(piers.colliders, 'pier', piers.colliders.map(() => 'life:pier'));
       const t2 = performance.now();
       this.rebuildFleet(ctx.quality.settings);
       this.rebuildTraffic(ctx.quality.settings);

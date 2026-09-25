@@ -118,6 +118,7 @@ export class CityColliders {
               yaw: b[k + 6],
             },
             'building',
+            `city:${tile.ix},${tile.iz}`,
           ),
         );
         tile.cursor += COLLIDER_STRIDE;

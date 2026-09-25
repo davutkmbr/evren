@@ -70,9 +70,6 @@ export interface MeshArrays {
 /** Instance record: x, y, z, yaw, horizontal scale, vertical scale, r, g, b (linear). */
 export const INSTANCE_STRIDE = 9;
 
-/** Collider record: centre x, y, z, half sizes x, y, z, yaw. */
-export const COLLIDER_STRIDE = 7;
-
 /** Range (m) of the signed distance stored in StreetRaster R. */
 export const MASK_RANGE = 8;
 /** Largest sidewalk width (m) StreetRaster A can store. */

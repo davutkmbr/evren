@@ -28,6 +28,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'life', load: () => import('./world/life').then((m) => m.createLifeSystem) },
   { name: 'fx', load: () => import('./fx').then((m) => m.createFxSystem) },
   { name: 'audio', load: () => import('./audio').then((m) => m.createAudioSystem) },
+  { name: 'collider-overlay', load: () => import('./core/collider-overlay').then((m) => m.createColliderOverlaySystem) },
 ];
 
 async function boot(): Promise<void> {

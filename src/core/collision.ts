@@ -11,13 +11,31 @@ export type Collider =
   | { kind: 'box'; center: THREE.Vector3; halfSize: THREE.Vector3; yaw: number }
   /** Vertical cylinder standing on `base` (bottom center). */
   | { kind: 'cylinder'; base: THREE.Vector3; radius: number; height: number }
-  | { kind: 'sphere'; center: THREE.Vector3; radius: number };
+  | { kind: 'sphere'; center: THREE.Vector3; radius: number }
+  /**
+   * Vertical prism over a footprint polygon (buildings): `rings` are closed x, z loops (no repeated first point), the
+   * first the outline and the rest courtyards (even-odd). Solid from `bottom` to `top`.
+   */
+  | { kind: 'prism'; rings: Float32Array[]; bottom: number; top: number };
 
 export interface ContactResult {
   normal: THREE.Vector3;
   depth: number;
   /** 'ground' | 'water' | collider tag */
   surface: string;
+  /** Collider id (0 for terrain / water). */
+  id?: number;
+  /** Top of the collider (m); the surface height for terrain / water. */
+  top?: number;
+}
+
+export interface ColliderInfo {
+  id: number;
+  tag: string;
+  source: string;
+  kind: Collider['kind'];
+  /** minX, bottom, minZ, maxX, top, maxZ (m). */
+  bounds: [number, number, number, number, number, number];
 }
 
 export interface RayHit {
@@ -31,6 +49,8 @@ interface Entry {
   id: number;
   collider: Collider;
   tag: string;
+  /** Debug label of the registering system (e.g. 'osm-building:123'), '' when unknown. */
+  source: string;
   minX: number;
   maxX: number;
   minZ: number;
@@ -59,8 +79,8 @@ export class CollisionWorld {
     return this.entries.size;
   }
 
-  add(collider: Collider, tag = 'structure'): number {
-    const e = this.makeEntry(this.nextId++, collider, tag);
+  add(collider: Collider, tag = 'structure', source = ''): number {
+    const e = this.makeEntry(this.nextId++, collider, tag, source);
     this.entries.set(e.id, e);
     this.forCells(e, (key) => {
       let list = this.cells.get(key);
@@ -73,8 +93,8 @@ export class CollisionWorld {
     return e.id;
   }
 
-  addMany(colliders: Collider[], tag = 'structure'): number[] {
-    return colliders.map((c) => this.add(c, tag));
+  addMany(colliders: Collider[], tag = 'structure', sources?: readonly string[]): number[] {
+    return colliders.map((c, i) => this.add(c, tag, sources?.[i] ?? ''));
   }
 
   remove(id: number): void {
@@ -130,6 +150,20 @@ export class CollisionWorld {
     return h;
   }
 
+  /** Id of the collider whose top is the surface at x,z (0 for terrain / water). */
+  surfaceSource(x: number, z: number): number {
+    let h = this.groundHeight(x, z);
+    let id = 0;
+    for (const cid of this.cells.get(this.key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const e = this.entries.get(cid)!;
+      if (x >= e.minX && x <= e.maxX && z >= e.minZ && z <= e.maxZ && e.top > h && this.containsXZ(e.collider, x, z)) {
+        h = e.top;
+        id = e.id;
+      }
+    }
+    return id;
+  }
+
   /**
    * Sphere vs world. Returns the deepest contact (push-out normal and depth) or null.
    */
@@ -149,6 +183,8 @@ export class CollisionWorld {
       }
       res.depth = dGround;
       res.surface = tH >= 0 ? 'ground' : 'water';
+      res.id = 0;
+      res.top = gH;
     }
 
     this.stamp++;
@@ -181,6 +217,8 @@ export class CollisionWorld {
             res.depth = d;
             res.normal.copy(_n);
             res.surface = e.tag;
+            res.id = e.id;
+            res.top = e.top;
           }
         }
       }
@@ -255,6 +293,53 @@ export class CollisionWorld {
     return hit;
   }
 
+  /** Debug: every collider overlapping the XZ rectangle (for overlays and probes). */
+  debugEntries(minX: number, minZ: number, maxX: number, maxZ: number): ColliderInfo[] {
+    const out: ColliderInfo[] = [];
+    this.stamp++;
+    for (let cx = Math.floor(minX / CELL); cx <= Math.floor(maxX / CELL); cx++) {
+      for (let cz = Math.floor(minZ / CELL); cz <= Math.floor(maxZ / CELL); cz++) {
+        for (const id of this.cells.get(this.key(cx, cz)) ?? []) {
+          const e = this.entries.get(id)!;
+          if (e.stamp === this.stamp || e.maxX < minX || e.minX > maxX || e.maxZ < minZ || e.minZ > maxZ) {
+            continue;
+          }
+          e.stamp = this.stamp;
+          out.push(this.info(e));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Debug: every collider (not terrain) a sphere penetrates, deepest first. */
+  debugSphere(center: THREE.Vector3, radius: number): (ColliderInfo & { depth: number; normal: [number, number, number] })[] {
+    const out: (ColliderInfo & { depth: number; normal: [number, number, number] })[] = [];
+    const n = new THREE.Vector3();
+    for (const info of this.debugEntries(center.x - radius, center.z - radius, center.x + radius, center.z + radius)) {
+      const e = this.entries.get(info.id)!;
+      if (center.y - radius > e.top || center.y + radius < e.bottom) {
+        continue;
+      }
+      const d = this.sphereDepth(e.collider, center, radius, n);
+      if (d > 0) {
+        out.push({ ...info, depth: Math.round(d * 100) / 100, normal: [Math.round(n.x * 100) / 100, Math.round(n.y * 100) / 100, Math.round(n.z * 100) / 100] });
+      }
+    }
+    return out.sort((a, b) => b.depth - a.depth);
+  }
+
+  /** Debug: the collider record behind an id (shape included). */
+  debugCollider(id: number): { info: ColliderInfo; collider: Collider } | null {
+    const e = this.entries.get(id);
+    return e ? { info: this.info(e), collider: e.collider } : null;
+  }
+
+  private info(e: Entry): ColliderInfo {
+    const r = (v: number) => Math.round(v * 10) / 10;
+    return { id: e.id, tag: e.tag, source: e.source, kind: e.collider.kind, bounds: [r(e.minX), r(e.bottom), r(e.minZ), r(e.maxX), r(e.top), r(e.maxZ)] };
+  }
+
   /* ---------------------------------------------------------------- */
 
   private rayTerrain(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, includeWater: boolean): number | null {
@@ -298,6 +383,9 @@ export class CollisionWorld {
   }
 
   private rayCollider(c: Collider, o: THREE.Vector3, d: THREE.Vector3, nOut: THREE.Vector3): number | null {
+    if (c.kind === 'prism') {
+      return prismRay(c, o, d, nOut);
+    }
     if (c.kind === 'sphere') {
       _v.subVectors(o, c.center);
       const b = _v.dot(d);
@@ -398,6 +486,9 @@ export class CollisionWorld {
   }
 
   private sphereDepth(c: Collider, p: THREE.Vector3, r: number, nOut: THREE.Vector3): number {
+    if (c.kind === 'prism') {
+      return prismDepth(c, p, r, nOut);
+    }
     if (c.kind === 'sphere') {
       nOut.subVectors(p, c.center);
       const dist = nOut.length();
@@ -510,6 +601,9 @@ export class CollisionWorld {
     if (c.kind === 'cylinder') {
       return (x - c.base.x) ** 2 + (z - c.base.z) ** 2 <= c.radius * c.radius;
     }
+    if (c.kind === 'prism') {
+      return insideRings(c.rings, x, z);
+    }
     const cos = Math.cos(c.yaw);
     const sin = Math.sin(c.yaw);
     const lx0 = x - c.center.x;
@@ -519,7 +613,7 @@ export class CollisionWorld {
     return Math.abs(lx) <= c.halfSize.x && Math.abs(lz) <= c.halfSize.z;
   }
 
-  private makeEntry(id: number, c: Collider, tag: string): Entry {
+  private makeEntry(id: number, c: Collider, tag: string, source: string): Entry {
     let minX: number, maxX: number, minZ: number, maxZ: number, top: number, bottom: number;
     if (c.kind === 'sphere') {
       minX = c.center.x - c.radius;
@@ -535,6 +629,21 @@ export class CollisionWorld {
       maxZ = c.base.z + c.radius;
       top = c.base.y + c.height;
       bottom = c.base.y;
+    } else if (c.kind === 'prism') {
+      minX = Infinity;
+      maxX = -Infinity;
+      minZ = Infinity;
+      maxZ = -Infinity;
+      for (const ring of c.rings) {
+        for (let i = 0; i < ring.length; i += 2) {
+          minX = Math.min(minX, ring[i]);
+          maxX = Math.max(maxX, ring[i]);
+          minZ = Math.min(minZ, ring[i + 1]);
+          maxZ = Math.max(maxZ, ring[i + 1]);
+        }
+      }
+      top = c.top;
+      bottom = c.bottom;
     } else {
       const ex = Math.abs(Math.cos(c.yaw)) * c.halfSize.x + Math.abs(Math.sin(c.yaw)) * c.halfSize.z;
       const ez = Math.abs(Math.sin(c.yaw)) * c.halfSize.x + Math.abs(Math.cos(c.yaw)) * c.halfSize.z;
@@ -545,7 +654,7 @@ export class CollisionWorld {
       top = c.center.y + c.halfSize.y;
       bottom = c.center.y - c.halfSize.y;
     }
-    return { id, collider: c, tag, minX, maxX, minZ, maxZ, top, bottom, stamp: 0 };
+    return { id, collider: c, tag, source, minX, maxX, minZ, maxZ, top, bottom, stamp: 0 };
   }
 
   private forCells(e: Entry, fn: (key: number) => void): void {
@@ -563,4 +672,159 @@ export class CollisionWorld {
   private key(cx: number, cz: number): number {
     return (cx + 32768) * 65536 + (cz + 32768);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Footprint prisms                                                     */
+/* ------------------------------------------------------------------ */
+
+type Prism = Extract<Collider, { kind: 'prism' }>;
+
+/** Even-odd point-in-polygon over every ring. */
+function insideRings(rings: readonly Float32Array[], x: number, z: number): boolean {
+  let inside = false;
+  for (const ring of rings) {
+    const n = ring.length;
+    for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
+      const zi = ring[i + 1];
+      const zj = ring[j + 1];
+      if (zi > z !== zj > z && x < ((ring[j] - ring[i]) * (z - zi)) / (zj - zi) + ring[i]) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+const _near = { x: 0, z: 0, dist: 0 };
+
+/** Nearest point on any ring edge to x, z (written to _near). */
+function nearestEdge(rings: readonly Float32Array[], x: number, z: number): void {
+  let best = Infinity;
+  for (const ring of rings) {
+    const n = ring.length;
+    for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
+      const ax = ring[j];
+      const az = ring[j + 1];
+      const ex = ring[i] - ax;
+      const ez = ring[i + 1] - az;
+      const len2 = ex * ex + ez * ez;
+      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / len2)) : 0;
+      const qx = ax + ex * t;
+      const qz = az + ez * t;
+      const d2 = (x - qx) ** 2 + (z - qz) ** 2;
+      if (d2 < best) {
+        best = d2;
+        _near.x = qx;
+        _near.z = qz;
+      }
+    }
+  }
+  _near.dist = Math.sqrt(best);
+}
+
+/** Sphere vs prism: push-out depth and normal (0 when apart). Mirrors the cylinder case with a polygon outline. */
+function prismDepth(c: Prism, p: THREE.Vector3, r: number, nOut: THREE.Vector3): number {
+  const inside = insideRings(c.rings, p.x, p.z);
+  nearestEdge(c.rings, p.x, p.z);
+  const h = _near.dist;
+  // Horizontal direction away from the solid (outward).
+  let ox = 0;
+  let oz = 0;
+  if (h > 1e-6) {
+    ox = (inside ? _near.x - p.x : p.x - _near.x) / h;
+    oz = (inside ? _near.z - p.z : p.z - _near.z) / h;
+  } else {
+    ox = 1;
+  }
+  if (p.y >= c.top || p.y <= c.bottom) {
+    const above = p.y >= c.top;
+    const ey = above ? p.y - c.top : c.bottom - p.y;
+    const ex = inside ? 0 : h;
+    const dist = Math.hypot(ex, ey);
+    const d = r - dist;
+    if (d <= 0) {
+      return 0;
+    }
+    if (ex > 0) {
+      nOut.set(ox * ex, above ? ey : -ey, oz * ex).normalize();
+    } else {
+      nOut.set(0, above ? 1 : -1, 0);
+    }
+    return d;
+  }
+  if (!inside) {
+    const d = r - h;
+    if (d <= 0) {
+      return 0;
+    }
+    nOut.set(ox, 0, oz);
+    return d;
+  }
+  const side = h + r;
+  const up = c.top + r - p.y;
+  const down = p.y - c.bottom + r;
+  if (up <= side && up <= down) {
+    nOut.set(0, 1, 0);
+    return up;
+  }
+  if (down < side) {
+    nOut.set(0, -1, 0);
+    return down;
+  }
+  nOut.set(ox, 0, oz);
+  return side;
+}
+
+/** Ray vs prism (entry hits only; a ray starting inside returns null, like boxes). */
+function prismRay(c: Prism, o: THREE.Vector3, d: THREE.Vector3, nOut: THREE.Vector3): number | null {
+  const inXZ = insideRings(c.rings, o.x, o.z);
+  if (inXZ && o.y >= c.bottom && o.y <= c.top) {
+    return null;
+  }
+  let best = Infinity;
+  if (Math.abs(d.y) > 1e-9) {
+    const capY = o.y > c.top ? c.top : o.y < c.bottom ? c.bottom : NaN;
+    if (!Number.isNaN(capY)) {
+      const t = (capY - o.y) / d.y;
+      if (t >= 0 && insideRings(c.rings, o.x + d.x * t, o.z + d.z * t)) {
+        best = t;
+        nOut.set(0, capY === c.top ? 1 : -1, 0);
+      }
+    }
+  }
+  for (const ring of c.rings) {
+    const n = ring.length;
+    for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
+      const ax = ring[j];
+      const az = ring[j + 1];
+      const ex = ring[i] - ax;
+      const ez = ring[i + 1] - az;
+      const den = d.x * ez - d.z * ex;
+      if (Math.abs(den) < 1e-12) {
+        continue;
+      }
+      const wx = ax - o.x;
+      const wz = az - o.z;
+      const t = (wx * ez - wz * ex) / den;
+      const s = (wx * d.z - wz * d.x) / den;
+      if (t < 0 || t >= best || s < 0 || s > 1) {
+        continue;
+      }
+      const y = o.y + d.y * t;
+      if (y < c.bottom || y > c.top) {
+        continue;
+      }
+      best = t;
+      const len = Math.hypot(ex, ez);
+      let nx = ez / len;
+      let nz = -ex / len;
+      if (nx * d.x + nz * d.z > 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      nOut.set(nx, 0, nz);
+    }
+  }
+  return best < Infinity ? best : null;
 }
