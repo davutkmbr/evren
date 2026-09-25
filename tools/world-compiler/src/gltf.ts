@@ -16,6 +16,7 @@ import { WEATHER_CHANNEL } from './format';
 import { baseColor, linearRgb, materialDef, type MaterialName, variantFields, WEATHER_LAYERS } from './materials';
 import type { PartArrays } from './mesh';
 import { type BakedSet, tilingOf } from './textures';
+import { writeGlb } from './compress';
 
 export const GENERATOR = 'Evren world-compiler (format 0)';
 export const GENERATOR_V1 = 'Evren world-compiler (format 1)';
@@ -222,7 +223,7 @@ export async function writeTileGlbV1(input: TileGlbInput): Promise<Uint8Array> {
   const node = doc.createNode(input.name).setMesh(mesh).setTranslation(input.origin).setExtras(input.extras);
   const scene = doc.createScene(input.name).addChild(node);
   doc.getRoot().setDefaultScene(scene);
-  return externalizeImages(await new NodeIO().writeBinary(doc), TEXTURE_URI);
+  return externalizeImages(await writeGlb(doc), TEXTURE_URI);
 }
 
 /**

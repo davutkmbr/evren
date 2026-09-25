@@ -20,6 +20,7 @@ import { type EmissiveDef, linearRgb, type MaterialDef, type MaterialName, weath
 import { TileMesh, type Vec3 } from './mesh';
 import { approvedAssets, assetDir, type AssetCredit, CACHE_DIR, conditionStatus, type TextureBaker } from './textures';
 import { writePropLods } from './street/prop-lod';
+import { writeGlb } from './compress';
 
 export interface PropLight {
   type: 'point' | 'spot';
@@ -420,7 +421,7 @@ export class PropBaker {
     }
     const lights = this.lightTemplate(def, doc);
     scene.setExtras({ prop: def.id, variants });
-    const glb = externalizeImages(await new NodeIO().writeBinary(doc), TEXTURE_URI);
+    const glb = externalizeImages(await writeGlb(doc), TEXTURE_URI);
     writeFileSync(join(this.outDir, 'props', `${def.id}.glb`), glb);
     const lods = await writePropLods(doc, def.id, this.outDir);
     const rec: PropRec = {

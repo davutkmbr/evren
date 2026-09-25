@@ -3,6 +3,7 @@
  * scripts/data/fetch-osm.mjs) into ~100 m glTF tiles plus JSON manifests under public/world/<area>/ (gitignored).
  *
  *   npm run compile:world -- --area kadikoy [--out public/world/kadikoy] [--format 0|1] [--strip auto|none|x0,z0,x1,z1]
+ *   [--no-compress]  (format 1 glbs are meshopt-compressed by default, see compress.ts)
  *                            [--tiles all|strip] [--tex-max 2048] [--all-props] [--no-validate] [--min-walk-share 0.9]
  *
  * Format 0: greybox. Format 1 (default): textured PBR materials with shared external textures, UV0/UV1, LOD glbs
@@ -54,6 +55,7 @@ import { type AreaContext, type PlaceOptions, PROP_SETS, registerAll, stepsFor, 
 import { intersects, readStrip } from './strip';
 import { type BakedSet, DEFAULT_TEXTURES, TextureBaker, tilingOf } from './textures';
 import { validateGlb, type ValidationSummary } from './validate';
+import { compressionEnabled, setCompression } from './compress';
 
 const COMPILER_VERSION = '0.2.0';
 /** The run fails when the largest walk-graph component holds less than this share of the vertices (--min-walk-share). */
@@ -93,6 +95,7 @@ async function main(): Promise<void> {
   }
   const outDir = resolve(ROOT, argOf('--out') ?? `public/world/${area.id}`);
   const validate = !args.includes('--no-validate');
+  setCompression(format === 1 && !args.includes('--no-compress'));
   const minWalkShare = Number(argOf('--min-walk-share') ?? MIN_WALK_SHARE);
   const onlyStrip = argOf('--tiles') === 'strip';
   const texMax = argOf('--tex-max') ? Number(argOf('--tex-max')) : null;
@@ -591,6 +594,7 @@ async function main(): Promise<void> {
     format,
     area: area.id,
     compiler: { name: format === 0 ? GENERATOR : GENERATOR_V1, version: format === 0 ? '0.1.1' : COMPILER_VERSION },
+    ...(compressionEnabled() ? { compression: 'meshopt' as const } : {}),
     frame: { origin: { ...WORLD_ORIGIN }, axes: '+X east, +Y up, +Z south (north is -Z); glTF axes are the same', units: 'm', seaLevel: 0 },
     osm: { source: data.source, licence: 'Map data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)', fetched: data.fetched, osmBase: data.osmBase, bbox: area.bbox },
     tileSize: TILE_SIZE,

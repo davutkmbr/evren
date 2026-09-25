@@ -15,6 +15,7 @@ import { type Document, NodeIO } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { externalizeImages, TEXTURE_URI } from '../gltf';
 import { validateGlb } from '../validate';
+import { writeGlb } from '../compress';
 
 export interface PropLod {
   level: number;
@@ -155,7 +156,7 @@ export async function writePropLods(doc: Document, id: string, outDir: string): 
     if (tris > prev * 0.75) {
       continue;
     }
-    const glb = externalizeImages(await new NodeIO().writeBinary(doc), TEXTURE_URI);
+    const glb = externalizeImages(await writeGlb(doc), TEXTURE_URI);
     const file = `props/${id}.lod${L.level}.glb`;
     writeFileSync(join(outDir, file), glb);
     const report = await validateGlb(file, glb, (uri) => readFileSync(resolve(outDir, 'props', uri)));

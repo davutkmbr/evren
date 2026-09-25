@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTFParser } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { fetchJson, GROUND_MATERIALS, type LightRec, SHADOW_CASTER_MATERIALS, type StreetIndex, type StreetTileManifest, type StreetTileRef } from './format';
 import { type PropDistances, PropBatches, type PropStats } from './props';
 
@@ -145,7 +146,8 @@ class SharedTextures {
 export class TileStreamer {
   readonly root = new THREE.Group();
   private readonly slots = new Map<string, TileSlot>();
-  private readonly loader = new GLTFLoader();
+  /** Compiled glbs are meshopt-compressed and quantized (tools/world-compiler/src/compress.ts). */
+  private readonly loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   private readonly materials = new Map<string, THREE.Material>();
   private readonly emissive = new Set<THREE.Material>();
   private readonly textureCache = new Map<string, Promise<THREE.Texture | null>>();

@@ -47,6 +47,8 @@ export interface IndexManifest {
   format: FormatVersion;
   area: string;
   compiler: { name: string; version: string };
+  /** Format 1: glbs use KHR_mesh_quantization + EXT_meshopt_compression (a meshopt decoder is required). */
+  compression?: 'meshopt';
   frame: { origin: { lat: number; lon: number }; axes: string; units: 'm'; seaLevel: 0 };
   osm: { source: string; licence: string; fetched: string; osmBase: string | null; bbox: { south: number; west: number; north: number; east: number } };
   tileSize: number;

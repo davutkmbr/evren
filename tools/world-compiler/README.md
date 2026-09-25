@@ -26,6 +26,7 @@ id; areas without their own profile use the generic one.
 | `--tex-max <px>` | none | caps every processed texture (defaults: base colour and normal 2048, ORM 1024) |
 | `--all-props` | off | processes every registered prop, also those no tile places (inspection, Blender) |
 | `--no-validate` | off | skips the glTF-Validator |
+| `--no-compress` | off | format 1: writes plain float glbs instead of quantized, meshopt-compressed ones |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
 
 The compiler runs the renderer-independent code of the OSM slice in Node (via `tsx`):
@@ -53,6 +54,15 @@ It adds `area`, `extension: "street/1"` and these optional fields (typed in `src
 | points | `craft=<v>` POIs; `kerb=<v>` nodes without another kind; `kerb` on any point |
 | roads | `sidewalkWidth: [left, right]` (from `sidewalk:*:width`), `kerb` |
 | areas | `area:highway=<v>` kinds |
+
+## Compression
+
+Format 1 glbs (tiles, props, prop LODs) are welded, quantized (`KHR_mesh_quantization`: 14-bit positions, 10-bit
+normals, 12-bit texture coordinates in [0, 1], 8-bit colours and weather) and compressed with
+`EXT_meshopt_compression` (`src/compress.ts`); the index manifest says `"compression": "meshopt"`. Runtimes need a
+meshopt decoder (three.js: `GLTFLoader.setMeshoptDecoder`, as in `src/street/tile-streamer.ts`). The repeating
+world-space `TEXCOORD_0` stays float. Eminönü (47 full-detail tiles): tile glbs 1,043 MB → 203 MB; with
+`--tex-max 1024` the whole output is 252 MB, of which one landing streams a fraction.
 
 ## Output layout
 
