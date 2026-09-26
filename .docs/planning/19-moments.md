@@ -31,7 +31,8 @@ Data-driven points on the map, one record per moment, so new ones are data, not 
 - **Content:** a character or object (model, idle and reaction animations), Turkish subtitled lines, sound, an
   optional camera hint, an optional discovery card.
 - **External media:** an optional official video (YouTube embed of the rights holder's upload, start/end seconds),
-  played in a small in-game panel. The media is streamed from YouTube, never stored in the repository.
+  played in a small in-game panel. The media is streamed from YouTube, never stored in the repository. Built as the
+  moment's `sources` and the source sheet (see "Sources" below).
 - **Provenance:** every model, sound and text records its source and licence (CLAUDE.md rules); unapproved content
   cannot be referenced.
 
@@ -161,6 +162,52 @@ decay, flap rate), `STORK_SITE` in `site.ts` (search ring and cone, kettle depth
 `stork-instances.ts` (LOD and fade distances), the `SOUND` ranges in `stork-actor.ts`, and `MIX.stork*` /
 `MOMENT_BED_LEVEL` in the audio engine.
 
+## Sources: "Kaynağa bak" (built 26 September 2026)
+
+Owner request: when a moment quotes something, one key takes the player to the original (a text, a video, an image...).
+
+Code: `src/moments/sources.ts` (pure: validation, what may be embedded, embed URLs, the prompt window),
+`src/moments/source-prompt.ts` (prompt + key in the moments system), `src/moments/seen.ts` (moments seen, per viewer),
+`src/moments/data/sources.ts` (the lists), `src/ui/moments/` (source sheet, pause menu → Anlar, shared detail view).
+
+- **Data.** A record may carry `sources: MomentSource[]` (`src/moments/types.ts`). Each item: `kind` (`text`, `image`,
+  `video`, `audio`, `link`), a Turkish `title`, the canonical https `url` (Vikikaynak / Wikisource, Project
+  Gutenberg, a Wikimedia Commons file page, the rights holder's official YouTube upload, a museum page), an optional
+  `embed` (`{ kind: 'youtube', videoId, startSec?, endSec? }` or `{ kind: 'image', src, width, height }` with `src` on
+  `upload.wikimedia.org`), `attribution`, `licence`, `approved` and a developer `note`. Only URLs verified to exist are
+  added; wished-for items stay as TODO comments.
+- **Approval (CLAUDE.md).** `approved: true` means the owner approved the item for the game. Approved items must name
+  their attribution and licence, and only approved items that validate are **embedded**. An unapproved item is still
+  **listed as a plain external link** (title, domain, "Tarayıcıda aç"), never embedded, so the game itself loads nothing
+  from it; a link only leaves the game when the player chooses it. To approve: the owner confirms the item, set
+  `approved: true`, fill `attribution` / `licence`, and run `tools/headless/moment-sources-check.ts`.
+- **Prompt.** While a moment with sources plays, a quiet "[I] Kaynağa bak" rides under its subtitle line (the line owns
+  the hint zone then); for 10 s after the moment ends (the closing card's 9 s and a little more) it is a hint-line item
+  with the moment's title as caption (`HUD_PRIORITY.momentSource` = 35: below flight hints and moment lines, joinable,
+  deferred by a race). Never during a race; a race also ends the window. Key **I** (input button `source`; V stays
+  reserved, I is free in flight, races and the editor; the race picker's own I works only inside that sheet).
+- **Source sheet.** I pauses the game and opens a centred sheet ("Kaynak · oyun duraklatıldı", "[Esc] Kapat"): title,
+  category and author with dates, the full excerpt (the subtitle lines together), the card text, and the sources. Each
+  source shows its kind, title, attribution · licence, an approved embed (YouTube via `youtube-nocookie.com`, sandboxed
+  iframe, no autoplay, start/end; an image with its credit) and a key-first link "[1] Tarayıcıda aç  tr.wikisource.org"
+  (`target=_blank`, `rel="noopener noreferrer"`). Digits 1–9 open the links, Esc or I closes and resumes, the scrim
+  closes it too; mouse works everywhere.
+- **Pause menu → Anlar.** A fourth tab lists the moments seen (newest first, stored in localStorage
+  `evren.moments.seen.v1` when a moment starts, like the discoveries) with the same detail view; arrow keys move the
+  selection, digits open links.
+- **Privacy.** Nothing third-party is requested before the player opens the sheet or the tab (no preloading); embeds
+  are created when the detail renders and removed when it closes (the video stops). Iframes use `sandbox`,
+  `referrerpolicy` and a minimal `allow`; images `referrerpolicy="no-referrer"`. The site has no CSP today; the embed
+  hosts are fixed in code (`youtube-nocookie.com`, `upload.wikimedia.org`), so a CSP can allow exactly those
+  (`frame-src https://www.youtube-nocookie.com; img-src 'self' https://upload.wikimedia.org`). Offline
+  (`navigator.onLine` false) embeds are replaced by a calm note; a failed image shows a short message.
+- **First example.** The Orhan Veli poem: the poem on Vikikaynak (text) and Orhan Veli's Vikikaynak page (link), both
+  unapproved links for now (the pages were confirmed through a search index; the container cannot reach Wikimedia).
+  An official video and a Commons image are TODO comments until the owner picks them.
+- **Checks.** `moment-sources-check.ts` (validation rules, never embedding unapproved items, the embed URL, every
+  record's sources); `moments-runtime-check.ts` section 5 (the prompt window during and after a moment, not otherwise,
+  not during races; the hint item's priority and race deferral).
+
 ## Rights
 
 The game is non-commercial, open source on GitHub and played in the browser.
@@ -173,8 +220,8 @@ The game is non-commercial, open source on GitHub and played in the browser.
 
 ## Backlog (in order)
 
-1. **Moments system:** the data format, triggers, subtitles, discovery-card integration (built), the video panel (not
-   built yet).
+1. **Moments system:** the data format, triggers, subtitles, discovery-card integration (built), sources with the
+   "[I] Kaynağa bak" sheet and pause menu → Anlar (built; approved YouTube videos play in the sheet, see "Sources").
 2. **Stork and raptor migration over the Bosphorus** (autumn): flocks circling in thermals the dragon can join
    (brings the thermal lift of phase 05). (Storks playable; raptors not built yet.)
 3. **Hezarfen Ahmed Çelebi:** a ghost glider leaving the Galata Tower for Üsküdar; race it across the Bosphorus.
