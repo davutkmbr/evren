@@ -395,6 +395,121 @@
   background: var(--warn-soft);
 }
 
+/* settings pages: tab bar, key caps next to titles, dependent rows, advanced disclosure */
+
+.set-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  margin: 0 0 20px;
+  padding: 3px;
+  border-radius: 11px;
+  background: rgba(12, 14, 18, 0.72);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.set-tab {
+  flex: 1;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition: background-color 150ms, color 150ms, box-shadow 150ms;
+}
+
+.set-tab:hover {
+  color: var(--ink);
+}
+
+.set-tab.is-on {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.set-page[hidden] {
+  display: none;
+}
+
+.set-lede {
+  margin: -2px 0 10px 2px;
+  max-width: 62ch;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.set-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.set-keys kbd {
+  min-width: 20px;
+  height: 19px;
+  padding: 0 5px;
+  font-size: 10.5px;
+}
+
+.set-row-sub {
+  padding-left: 32px;
+}
+
+.set-row.is-disabled .set-text,
+.set-row.is-disabled .set-control {
+  opacity: 0.42;
+}
+
+.set-more-wrap {
+  border-top: 1px solid var(--line);
+}
+
+.set-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.set-more:hover {
+  color: var(--ink);
+}
+
+.set-more-chev {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 180ms var(--ease-out);
+}
+
+.set-more[aria-expanded='true'] .set-more-chev {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.set-more-body > .set-row {
+  border-top: 1px solid var(--line);
+}
+
 /* ---------------- teleport ---------------- */
 
 .tp-grid {
@@ -522,5 +637,10 @@
 
   .rng {
     width: 180px;
+  }
+
+  .set-tab {
+    padding: 0 8px;
+    font-size: 12.5px;
   }
 }
