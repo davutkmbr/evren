@@ -103,11 +103,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
    +4–7 ms near Kadıköy — over budget). **First step done (cloud session):** regions load at 1.8 km, unload at
    2.4 km, at most 5; facade detail buffers sized to what is in range; details result freed after upload; crowd
-   stepped only near; one shared foliage atlas. Needs a heap / ms re-measure on the reference machine. Next: free the
-   street and cover rasters after upload (`ctx.base`, cover texture data), size `InstanceLod` props to their radius,
-   hide a region's shells beyond ~1 km (the far layer draws them).
-4. OSM feature kits: built in PR #30 (plan 23). Left: swimming pools (`leisure=swimming_pool` is not in the fetch;
-   needs `fetch-osm.mjs` + a region re-fetch from the local extract).
+   stepped only near; one shared foliage atlas. Second step: prop / tree buffers sized to their radius, cover pixels
+   freed after upload, a region takes over from the far layer only inside 1.2 km (hidden and not streamed between
+   1.2 and 1.8 km). Needs a heap / ms re-measure on the reference machine. Next: free the street raster (`ctx.base`)
+   beyond the near range (StreetSurface and traffic read it).
+4. OSM feature kits: built in PR #30 (plan 23). Swimming pools: kit, rule and fetch tag done; the regions need a
+   re-fetch from the local extract before they show.
 5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe
    model; "port" unclear — ask); street layer test rerun on a quiet machine (`node scripts/street-layer-test.mjs`);
    flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
