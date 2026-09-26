@@ -18,8 +18,11 @@ export type PerchPlacement =
   | { kind: 'galata-cap' }
   /** Paved terrace of the Kız Kulesi islet, in the builder's local frame (u along the heading, v to the right). */
   | { kind: 'kiz-terrace'; u: number; v: number }
-  /** Main dome of an imperial landmark mosque, `offset` m from the crown toward the perch heading (clear of the alem). */
-  | { kind: 'mosque-dome'; landmarkId: string; offset: number }
+  /**
+   * Main dome of an imperial landmark mosque, `offset` m from the crown toward the perch heading and `side` m to its
+   * right (negative: left), so the alem on the crown stands beside the dragon instead of between its legs.
+   */
+  | { kind: 'mosque-dome'; landmarkId: string; offset: number; side?: number }
   /** Top of one of the Rumeli Hisarı great towers. */
   | { kind: 'fortress-tower'; tower: 'saruca' | 'halil' | 'zaganos' }
   /** Roof of a catalogued skyscraper; `along` = position on the plan's long axis (-1..1, slanted roofs: 1 = high end). */
@@ -85,7 +88,8 @@ export const PERCH_DATA: readonly PerchData[] = [
     surface: 'dome',
     gripRadius: 2.5,
     landmarkId: 'suleymaniye',
-    placement: { kind: 'mosque-dome', landmarkId: 'suleymaniye', offset: 2.5 },
+    // Beside the crown, not straight ahead of it: the alem stands next to the dragon instead of between its hind legs.
+    placement: { kind: 'mosque-dome', landmarkId: 'suleymaniye', offset: 1.5, side: -2.6 },
   },
   {
     id: 'kiz-kulesi',
@@ -95,7 +99,9 @@ export const PERCH_DATA: readonly PerchData[] = [
     surface: 'rock',
     gripRadius: 3.5,
     landmarkId: 'kiz-kulesi',
-    placement: { kind: 'kiz-terrace', u: -17, v: 0 },
+    // 21 m down the terrace from the islet's centre: closer to the tower the 24 m wingspan and the tail have no room
+    // between the tower and the islet's buildings (tools/headless/perch-landing-check.ts).
+    placement: { kind: 'kiz-terrace', u: -21, v: 0 },
   },
   {
     id: 'rumeli-hisari-zaganos',
