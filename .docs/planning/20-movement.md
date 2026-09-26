@@ -283,8 +283,8 @@ manoeuvring) takes part without registering anything.
   `maneuvers.ts`; `DragonState.flow` and `notePass()` (gates and speed rings, `passTightness()` in
   `activities/race.ts`); `addVelocity` re-bases the energy integration (a speed ring's push is not the dragon's).
   HUD: `src/ui/hud/flow-line.ts`. Maneuver id `'flow'` (caption "Kusursuz …").
-- **Motions (segmenter):** a *named* motion starts on the sim's `maneuver` event (any id but hints, `land`, `takeoff`
-  and the flow's own captions) and ends on the move's `ended` event, on the next named start, or once the maneuver
+- **Motions (segmenter):** a *named* motion starts on the sim's `maneuver` event (any id but hints, the plain
+  `takeoff` and the flow's own captions; a landing approach is a motion too, judged energy-neutral) and ends on the move's `ended` event, on the next named start, or once the maneuver
   system is idle and the manoeuvring has settled. An *unnamed* motion opens when the activity
   max(|ω| / 0.4 rad/s, |n − 1| / 0.55, |γ| / 20°) (low-passed 0.15 s, lift load only so the beat's own force does not
   count) stays above 1 for 0.2 s, and closes below 0.6 for 0.4 s; shorter than 0.5 s or turning less than 25° (and
@@ -360,8 +360,8 @@ manoeuvring) takes part without registering anything.
   input; `chains.ts`; `fuzz.ts`; `race-pilot.ts`).
   - Chains (mean H of the chained transitions, chained vs spaced by 4–7 s of steady flight): Split-S → dart → power
     stroke 0.67 vs 0.32; wingover → power stroke 0.66 vs 0.32; loop → Immelmann → dive → dart 0.68 vs 0.49; dart →
-    power → slip → roll → power 0.64 vs 0.34 (flow 0.20 vs 0); skim → run-out → touch-and-go 0.70 vs 0.55 from a plain
-    approach; a side-slip started on the beat: rhythm 0.97, half-way down the stroke 0.10.
+    power → slip → roll → power 0.64 vs 0.34 (flow 0.20 vs 0); skim → landing → run-out → touch-and-go 0.85 vs 0.66
+    from a plain approach (flow 0.82 vs 0.51); a side-slip started on the beat: rhythm 0.97, half-way down the stroke 0.10.
   - Fuzz (2000 random runs of 60 s, random gestures and timing, half of them chained): mean flow p50 0.07, p90 0.21,
     max 0.59; every gesture macro repeated back to back stays below a mean flow of 0.07; wasteful runs (> 1.3 × plain
     gliding's loss) stay under 0.5; the runs reaching 0.8 all fly within 1.12 × plain gliding's loss; the muscle-free

@@ -29,8 +29,8 @@ const JERK_SPACING = 0.05;
 const NAMED_IDLE = 0.15;
 /** ... and at the latest this long after, even while the manoeuvring goes on (s). */
 const NAMED_SETTLE = 1.5;
-/** Maneuver ids that are not motions. */
-const NOT_MOTIONS: ReadonlySet<string> = new Set(['hint', 'land', 'takeoff', 'flow']);
+/** Maneuver ids that are not motions (a refused move's hint, the plain take-off, the flow's own captions). */
+const NOT_MOTIONS: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow']);
 
 const _shape = createWingShape();
 
@@ -195,7 +195,16 @@ export class MotionSegmenter {
   /** True while the maneuver system or a ground / water move is running something. */
   private busy(sim: FlightSim): boolean {
     const m = sim.maneuvers;
-    return m.active || m.powerActive || m.urging || sim.skim.active || sim.mode === 'takeoff' || sim.mode === 'underwater' || (sim.mode === 'grounded' && (sim.moves.runOut || sim.moves.leap !== null));
+    return (
+      m.active ||
+      m.powerActive ||
+      m.urging ||
+      sim.skim.active ||
+      sim.mode === 'takeoff' ||
+      sim.mode === 'landing' ||
+      sim.mode === 'underwater' ||
+      (sim.mode === 'grounded' && (sim.moves.runOut || sim.moves.leap !== null))
+    );
   }
 
   /** Every substep, after the physics. */
