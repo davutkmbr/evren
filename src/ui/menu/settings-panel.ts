@@ -5,7 +5,7 @@ import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
 import { motionEffects, setMotionEffects, type MotionEffects } from '../../core/speed-feel';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
-import { loadAdaptiveMusic, loadMusicVolume } from '../../audio/music/settings';
+import { effectiveMusicStyle, loadAdaptiveMusic, loadMusicStyle, loadMusicVolume, type MusicStyle } from '../../audio/music/settings';
 import type { MomentCategory } from '../../moments/types';
 import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
 
@@ -55,6 +55,7 @@ export class SettingsPanel {
   private readonly volume: Control<number>;
   private readonly musicVolume: Control<number>;
   private readonly adaptiveMusic: Control<boolean>;
+  private readonly musicStyle: Control<MusicStyle>;
   private readonly timeOfDay: Control<number>;
   private readonly timeSpeed: Control<number>;
   private readonly camera: Control<CameraMode>;
@@ -160,6 +161,15 @@ export class SettingsPanel {
       format: (v) => percentFormat.format(v),
       onInput: (v) => ctx.services.tryGet('audio')?.setMusicVolume?.(v),
     });
+    this.musicStyle = segmented<MusicStyle>(
+      'Müzik tarzı',
+      [
+        { value: 'sparse', label: 'Seyrek' },
+        { value: 'continuous', label: 'Sürekli' },
+      ],
+      ctx.services.tryGet('audio')?.musicStyle ?? effectiveMusicStyle(loadMusicStyle(), false),
+      (v) => ctx.services.tryGet('audio')?.setMusicStyle?.(v),
+    );
     this.adaptiveMusic = toggle('Uyarlanabilir müzik', ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic(), (v) =>
       ctx.services.tryGet('audio')?.setAdaptiveMusic?.(v),
     );
@@ -326,6 +336,7 @@ export class SettingsPanel {
         settingSection('Ses', [
           settingRow('Ana ses', undefined, this.volume.root),
           settingRow('Müzik', undefined, this.musicVolume.root),
+          settingRow('Müzik tarzı', 'Seyrek: çoğu zaman sessizlik, arada tek çalgıdan kısa bir ezgi. Sürekli: parçalar döngüyle çalar', this.musicStyle.root),
           settingRow('Uyarlanabilir müzik', 'Müzik uçuşuna göre katman katman değişir; kapalıyken parçalar tam haliyle çalar', this.adaptiveMusic.root),
         ]),
       ],
@@ -403,6 +414,7 @@ export class SettingsPanel {
     this.volume.set(ctx.services.tryGet('audio')?.masterVolume ?? this.options.prefs.volume ?? 1);
     this.musicVolume.set(ctx.services.tryGet('audio')?.musicVolume ?? loadMusicVolume());
     this.adaptiveMusic.set(ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic());
+    this.musicStyle.set(ctx.services.tryGet('audio')?.musicStyle ?? effectiveMusicStyle(loadMusicStyle(), false));
     this.timeOfDay.set(Math.round(ctx.time.timeOfDay * 4) / 4);
     this.timeSpeed.set(ctx.time.dayTimeScale);
     const mode = ctx.services.tryGet('cameraRig')?.mode;

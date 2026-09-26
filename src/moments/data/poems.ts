@@ -39,6 +39,8 @@ export const istanbuluDinliyorum: Moment = {
   },
   content: {
     soundId: 'moments/shore-ambience-soft',
+    // a moment piece by mood (src/audio/music/moment-music.ts); none is approved yet, so the music only ducks
+    musicMood: ['nostalgic', 'sea'],
     // unhurried: 4 s per line, half a second of silence between lines
     subtitles: FIRST_STANZA.map((text, i) => ({ at: i * 4.5, duration: 4, text })),
     card: {

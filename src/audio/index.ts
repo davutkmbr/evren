@@ -196,8 +196,14 @@ export function createAudioSystem(): System {
     get adaptiveMusic(): boolean {
       return music.adaptiveMusic;
     },
-    setMomentMusic(active: boolean, musicId?: string): void {
-      music.setMomentMusic(active, musicId);
+    setMusicStyle(style: 'sparse' | 'continuous'): void {
+      music.setMusicStyle(style);
+    },
+    get musicStyle(): 'sparse' | 'continuous' {
+      return music.musicStyle;
+    },
+    setMomentMusic(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void {
+      music.setMomentMusic(active, musicId, info);
     },
   };
 
@@ -254,6 +260,10 @@ export function createAudioSystem(): System {
           eventFiring = false;
         }),
         ev.on('landmark-discovered', () => engine?.play('discover')),
+        ev.on('flow-moment', ({ kind }) => {
+          const d = ctx.services.tryGet('dragon');
+          engine?.flowMoment(kind, feelContext(!!d?.racing, d?.flow ?? 0));
+        }),
         ev.on('chain-link', ({ link, dv }) => {
           const d = ctx.services.tryGet('dragon');
           engine?.chainLink(link, dv, feelContext(!!d?.racing, d?.flow ?? 0));

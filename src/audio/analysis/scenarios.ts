@@ -358,6 +358,21 @@ export const CASES: RenderCase[] = [
       e.play('discover');
     }
   }),
+  oneShot('flow-moments', '"Kusursuz" anları: ritim, enerji, geçiş, çizgi (yarışta)', 6.4, [-31, -25], 'third', (t, p, e) => {
+    const kinds = ['rhythm', 'energy', 'handover', 'world'] as const;
+    kinds.forEach((kind, i) => {
+      if (crossed(t, p, 0.05 + i * 1.6)) {
+        e.flowMoment(kind, 1);
+      }
+    });
+  }),
+  oneShot('chain-links', 'Zincir halkaları 1-4: patlama hışırtısı ve yükselen ton (yarışta)', 5.2, [-28, -18], 'third', (t, p, e) => {
+    for (let k = 0; k < 4; k++) {
+      if (crossed(t, p, 0.05 + k * 1.25)) {
+        e.chainLink(k + 1, 6 + 2 * Math.min(k, 2), 1);
+      }
+    }
+  }),
   oneShot('gull', 'Martı çağrısı, 60 m', 3.2, [-36, -26], 'third', (t, p, e) => {
     if (crossed(t, p, 0.05)) {
       e.ambience.spawnGull(30, 60);
