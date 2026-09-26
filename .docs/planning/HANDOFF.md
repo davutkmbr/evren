@@ -27,6 +27,10 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    galata-kulesi and kadikoy are compiled in the new format 1.2 — recompile the rest.
 2. **City walls placement** (just started): offline bake `compile:walls` separate from `cli.ts`, runtime streaming
    system in `src/world/landmarks/walls/system/`, follow `.docs/planning/22-city-walls.md` steps 1–9.
+   **Owner report (live game): walls currently pass through buildings.** Fix generically first: no wall piece may
+   intersect any building (OSM slice/regions, compiled tiles, procedural city); end `flush` against buildings on the
+   line, small sheds/annexes step aside, larger buildings break the wall (thresholds + counts); procedural city keeps
+   out of the wall corridor; towers never inside buildings; an overlap check per stretch with target 0.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
 
 ## Next, in order (agreed with the owner)
