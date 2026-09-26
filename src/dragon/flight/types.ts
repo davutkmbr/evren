@@ -20,7 +20,9 @@ export interface PilotCommand {
   roarPressed: boolean;
   /**
    * Maneuver edges: A / D double tap (roll), S double tap (loop), Shift double tap (dart when fast, drop when slow),
-   * V (the rider's "dehh"), Space double tap (power stroke), Q / E double tap (side-slip).
+   * V (the rider's "dehh"), Space double tap (power stroke), Q / E double tap (side-slip). The same edges start the
+   * stage C reversals by context: S double tap while banked (wingover), A / D double tap in a steep dive (Split-S);
+   * the Immelmann reads the held roll axis during a loop.
    */
   rollLeftPressed: boolean;
   rollRightPressed: boolean;
@@ -75,10 +77,13 @@ export type ManeuverId =
   | 'dart'
   | 'slip'
   | 'skim'
+  | 'wingover'
+  | 'immelmann'
+  | 'splits'
   | 'hint';
 
-/** Phase 20 stage B moves that report a clean or unclean end (flow hooks). */
-export type MoveId = 'power' | 'dart' | 'slip' | 'skim';
+/** Phase 20 stage B and C moves that report a clean or unclean end (flow hooks). */
+export type MoveId = 'power' | 'dart' | 'slip' | 'skim' | 'wingover' | 'immelmann' | 'splits';
 
 /** A finished move (Maneuvers.log; headless checks and the future flow system). */
 export interface MoveRecord {
@@ -97,9 +102,12 @@ export interface MoveRecord {
   stalled: boolean;
   /** Ended early (too low, landed, splashed down). */
   forced: boolean;
-  /** Side-slip: lateral shift (m, along the slip) and heading change (rad). */
+  /** Side-slip: lateral shift (m, along the slip). */
   lateral: number;
+  /** Heading change (rad): of the track (the side-slip: of the body). */
   headingChange: number;
+  /** Specific energy at the end over the entry's (½V² + g·Δh, height from the entry; 1 = none lost). */
+  energyRatio: number;
 }
 
 /** One-shot sounds requested by the flight model (AudioService one-shots). */

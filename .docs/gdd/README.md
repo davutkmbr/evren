@@ -111,7 +111,7 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 |---|---|
 | Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off, V galloping take-off; in a run-out Ctrl/X skid to a stop, Space touch-and-go |
-| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; low, fast and level over water or flat ground: surface skim (automatic) |
+| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
 | Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
