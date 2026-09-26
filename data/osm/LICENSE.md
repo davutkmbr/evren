@@ -8,7 +8,13 @@
   md5 `e8f36db2459374f4031406539262e58c`, OSM data as of 2026-09-25T20:24:36Z), clipped to the İstanbul province
   (40.7–41.7 N, 27.9–30.0 E) by `scripts/data/osm-extract.mjs`. Geofabrik redistributes OpenStreetMap data under the
   same ODbL 1.0; the extract and its index live in `data/osm-src/` (gitignored). Files record their source in
-  `source` (`Geofabrik extract` or `Overpass API`) and the OSM data timestamp in `osmBase`.
+  `source` (the extract's host, or `Overpass API`) and the OSM data timestamp in `osmBase`.
+- Refresh of 2026-09-26 (phase 24): the regions, the Galata slice and every street area were re-fetched from one
+  extract, so near and far layers share one snapshot. `download.geofabrik.de` was unreachable from the cloud session,
+  so the same Turkey extract came from the OpenStreetMap France mirror
+  (`https://download.openstreetmap.fr/extracts/europe/turkey-latest.osm.pbf`, md5
+  `20b78addfc93d177d3911fdf47277532`, OSM data as of 2026-09-25T01:52:55Z; OpenStreetMap France redistributes it
+  under the same ODbL 1.0). `walls.json` was not re-fetched.
 - `walls.json` additionally contains the course of the Constantinople sea walls from OpenHistoricalMap
   ([way 198283607](https://www.openhistoricalmap.org/way/198283607)), OpenHistoricalMap contributors,
   [CC0 1.0](https://www.openhistoricalmap.org/copyright) ("Map data courtesy of the OpenHistoricalMap project, in the

@@ -30,7 +30,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
-import { overpassLocal, sourceArg } from './lib/osm-local.mjs';
+import { extractSource, overpassLocal, sourceArg } from './lib/osm-local.mjs';
 
 const args = process.argv.slice(2);
 const argOf = (name) => {
@@ -1171,7 +1171,7 @@ async function main() {
   const [x1, z0] = project(BBOX.north, BBOX.east);
   const out = {
     version: SCHEMA_VERSION,
-    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? 'Geofabrik extract' : 'Overpass API'})`,
+    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})`,
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
