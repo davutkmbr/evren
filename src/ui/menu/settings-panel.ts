@@ -25,7 +25,7 @@ const MOMENTS_OFF = 'Önce Anlar’ı aç';
 const MOMENT_ROWS: ReadonlyArray<{ category: MomentCategory; title: string; desc: string }> = [
   { category: 'legend', title: 'Efsaneler', desc: 'Hezarfen, Lagari, Kız Kulesi gibi şehir efsaneleri' },
   { category: 'city-life', title: 'Şehir hayatı', desc: 'Martılar, vapurlar, oltacılar, leylek göçü' },
-  { category: 'poem', title: 'Şiir altyazıları', desc: 'Kıyıda alçaktan süzülürken şiir dizeleri' },
+  { category: 'poem', title: 'Şiir ve edebiyat', desc: 'Şiirler, türküler, kitabeler, eski metinler ve seyyahlardan satırlar' },
 ];
 
 const percentFormat = new Intl.NumberFormat('tr-TR', { style: 'percent', maximumFractionDigits: 0 });
