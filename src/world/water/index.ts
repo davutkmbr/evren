@@ -18,6 +18,7 @@ import { PlanarReflection } from './reflection';
 import { SeaState } from './sea-state';
 import { buildRadialGrid } from './surface-grid';
 import { createBandTexture, createFlowTexture, createFoamTexture, createPlaceholders, createRegionTexture } from './textures';
+import { UnderwaterController } from './underwater';
 import { decodeRegionMaps, WaveQuery } from './wave-query';
 
 /** Debug handle (sandbox / console): window.__water */
@@ -57,6 +58,8 @@ export function createWaterSystem(): System {
 
   const sea = new SeaState();
   const waves = new WaveQuery();
+  const underwater = new UnderwaterController();
+  let geoRef: GeoQuery | null = null;
   const placeholders = createPlaceholders();
   const origin = new THREE.Vector2();
   const tmpWind = new THREE.Vector3();
@@ -137,6 +140,8 @@ export function createWaterSystem(): System {
       owner = ctx;
       waves.setCoast((x, z) => geo.coastDistance(x, z));
       ctx.services.provide('water', waves);
+      geoRef = geo;
+      underwater.init(ctx);
       anisotropy = ctx.quality.settings.anisotropy;
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
@@ -204,6 +209,8 @@ export function createWaterSystem(): System {
       sea.update(wind, ctx.time.elapsed, dt, origin.x, origin.y);
       waves.sync(sea, origin.x, origin.y, ctx.time.elapsed);
       uniforms.uOrigin.value.copy(origin);
+      underwater.update(ctx, waves, geoRef);
+      uniforms.uCamUnder.value = underwater.state.under ? 1 : 0;
     },
 
     preRender(ctx: EngineContext) {
@@ -220,7 +227,8 @@ export function createWaterSystem(): System {
       // change) lit materials would sample an unbound shadow sampler, so the pass waits a frame.
       const keyLight = ctx.services.tryGet('env')?.light as THREE.DirectionalLight | undefined;
       const shadowReady = !keyLight || !keyLight.castShadow || !!keyLight.shadow?.map;
-      const planar = quality.planar && shadowReady && PlanarReflection.seesWater(cam);
+      // Under water the surface shows its underside (Snell's window), which never samples the mirror.
+      const planar = quality.planar && shadowReady && !underwater.state.under && PlanarReflection.seesWater(cam);
       if (planar) {
         resizeReflection();
         reflection.render(ctx.renderer, ctx.scene, cam, mesh);
@@ -246,6 +254,7 @@ export function createWaterSystem(): System {
         owner.services.withdraw('water');
       }
       unsubscribeQuality?.();
+      underwater.dispose();
       client.dispose();
       if (mesh) {
         mesh.removeFromParent();
