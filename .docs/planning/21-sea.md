@@ -461,7 +461,12 @@ tail reversal. The swim is now a whole-body stroke, readable from the chase came
 - *When* (`seaFogTarget`, pure): fog weather gives a full bank in the morning window (forming 02:00–05:00, lifting
   08:30–11:30) and 30 % of it all day; humid air alone (env humidity 0.72 → 0.86, e.g. haze on a poyraz morning) up to
   0.6 in the morning only; a lodos (regime 0.35 → 0.65), a strong wind (U10 7 → 12) and rain (0.15 → 0.5) clear it.
-  Clear weather has none. While it lifts, the layer thins (−55 %) and rises (×2.2 scale height).
+  While it lifts, the layer thins (−55 %) and rises (×2.2 scale height).
+- *Foggy mornings of their own* (`seaFogDayAmount`, added 26 Sep): clear weather alone never reached the humidity
+  threshold on a poyraz morning (≈ 0.70 < 0.72), so the sea fog only came with the fog setting. Now about 30 % of game
+  days (a hash of `time.dayOfYear`: the same day always gives the same answer, a reload does not reroll it) get a
+  morning bank of 0.45–0.85 in the same window, even in clear weather; a lodos, a strong wind or rain still clear it.
+  On the other days clear weather has none.
 - `SeaFogModel` eases the amount with τ = 20 s and switches the layer with hysteresis (on above a target of 0.08, off
   once the amount is below 0.02): a lodos arriving on a foggy morning clears it in ~80 s. Off, the pass gets density 0
   and skips the branch (zero cost); the pass counts it in `active`. Debug `?seafog=0..1` forces the target;
@@ -494,7 +499,7 @@ wind / rain ramps, on / off hysteresis, tau, patches, bankSize, drift) in `src/r
 tracking, no NaNs) and the rider on the real rig in a U10 16 lodos; take-offs per sea state (1.2 s in calm water, longer
 with Hs, more stamina, crest leaps sometimes and never before 0.72 s, every run leaves the water); the rain ring
 uniforms and the JS port of the ring slope (zero without rain, growing with it, visible peak slopes, clock wrap, bad
-inputs); the sea fog logic (weather, time, regime, wind, rain, humidity; lifting; hysteresis without flicker; zero
+inputs); the sea fog logic (weather, time, regime, wind, rain, humidity, foggy days; lifting; hysteresis without flicker; zero
 density when off; clearing time; NaN inputs); the flow's clearance over waves; shader structure and cost estimates. The
 water fragment, water vertex and weather composite shaders parse with @shaderfrog/glsl-parser (scratch directory, not
 a dependency). The waves, foam (`--quick`), water (`--quick`), lowflight, underwater, movement, flow and races checks

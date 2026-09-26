@@ -33,7 +33,7 @@ import { RAIN_RINGS, SEA_WEATHER } from '../../src/world/water/weather/config';
 import { rainRingParams, rainRingSlope, seaWindU10 } from '../../src/world/water/weather/sea-weather';
 import { RAIN_RING_GLSL } from '../../src/world/water/weather/shaders.glsl';
 import { WATER_FRAGMENT_GLSL } from '../../src/world/water/shaders/water-fragment.glsl';
-import { SEA_FOG, SeaFogModel, seaFogLift, seaFogTarget, type SeaFogInputs } from '../../src/render/weather/sea-fog';
+import { SEA_FOG, SeaFogModel, seaFogDayAmount, seaFogLift, seaFogTarget, type SeaFogInputs } from '../../src/render/weather/sea-fog';
 import { buildHeadlessGeo } from './geo';
 import { createHeadlessSim, LiftEnv } from './lift-sim';
 import { createHeadlessSea } from './water-sea';
@@ -470,7 +470,12 @@ console.log('\n4. Rain on the water: drop rings (JS port of the shader) and damp
 /* ---------------------------------------------------------------------------------------------- */
 console.log('\n5. Sea fog: activation (weather, time, regime, wind, rain, humidity), lifting, hysteresis');
 {
-  const base: SeaFogInputs = { fog: 1, rain: 0, hours: 6.5, lodos: 0, u10: 4, humidity: 0.8 };
+  // A day without its own foggy morning, so the weather cases below measure the weather alone.
+  let clearDay = 1;
+  while (seaFogDayAmount(clearDay) > 0) clearDay++;
+  let fogDay = 1;
+  while (seaFogDayAmount(fogDay) === 0) fogDay++;
+  const base: SeaFogInputs = { fog: 1, rain: 0, hours: 6.5, lodos: 0, u10: 4, humidity: 0.8, day: clearDay };
   const at = (o: Partial<SeaFogInputs>): number => seaFogTarget({ ...base, ...o });
   const cases: Array<[string, number]> = [
     ['fog weather, poyraz, 06:30', at({})],
@@ -490,6 +495,29 @@ console.log('\n5. Sea fog: activation (weather, time, regime, wind, rain, humidi
   check(lodos === 0 && windy === 0 && rain === 0 && storm === 0, 'a lodos, a strong wind, rain and storms clear it');
   check(haze > 0.15 && haze < 0.8, 'haze on a humid poyraz morning: light banks');
   check(clear < 0.05 && clearNoon === 0, 'clear weather: none (a trace at most on a dry poyraz morning)');
+  // Foggy mornings of their own: about a third of the days, the same answer for the same day.
+  const days = Array.from({ length: 365 }, (_, i) => seaFogDayAmount(i + 1));
+  const foggyDays = days.filter((v) => v > 0);
+  const share = foggyDays.length / days.length;
+  console.log(`  own foggy mornings: ${foggyDays.length}/365 days (${f2(share)}), amounts ${f2(Math.min(...foggyDays))}..${f2(Math.max(...foggyDays))}; clear day ${clearDay}, foggy day ${fogDay}`);
+  check(share > 0.22 && share < 0.38, 'about 30 % of the days get a foggy morning of their own');
+  check(foggyDays.every((v) => v >= SEA_FOG.morningMin && v <= SEA_FOG.morningMax), 'its amount stays in the configured range');
+  check(days.every((v, i) => v === seaFogDayAmount(i + 1)), 'deterministic: the same day always gives the same morning');
+  let runs = 0;
+  for (let i = 1; i < days.length; i++) if ((days[i] > 0) !== (days[i - 1] > 0)) runs++;
+  check(runs > 60, 'foggy days are scattered, not in long blocks');
+  const own = { ...base, fog: 0, humidity: 0.68, day: fogDay };
+  const ownMorning = seaFogTarget(own);
+  const ownNoon = seaFogTarget({ ...own, hours: 13 });
+  const ownLodos = seaFogTarget({ ...own, lodos: 1 });
+  const ownRain = seaFogTarget({ ...own, rain: 0.8 });
+  console.log(`  clear foggy-day poyraz morning ${f3(ownMorning)}, 13:00 ${f3(ownNoon)}, lodos ${f3(ownLodos)}, rain ${f3(ownRain)}`);
+  check(ownMorning > 0.4 && ownNoon === 0, 'a foggy day: a bank on the clear poyraz morning, gone by midday');
+  check(ownLodos === 0 && ownRain === 0, 'a lodos or rain still clears the day\'s foggy morning');
+  const m0 = new SeaFogModel();
+  m0.update(0.016, own);
+  check(m0.active && m0.density > 0, 'the layer draws on a foggy day without any fog setting');
+
   const hours = [5, 7, 8.5, 9.5, 10.5, 11.5, 12];
   const lifting = hours.map((h) => at({ hours: h }));
   console.log(`  lifting through the morning (fog weather): ${hours.map((h, i) => `${h}h ${f2(lifting[i])}`).join(', ')}; layer lift ${hours.map((h) => f2(seaFogLift(h))).join(' ')}`);
@@ -527,7 +555,7 @@ console.log('\n5. Sea fog: activation (weather, time, regime, wind, rain, humidi
   console.log(`  a lodos arriving on a foggy morning: the fog clears and the layer turns off after ${f2(offAt)} s`);
   check(offAt > 30 && offAt < 200 && m4.density === 0, 'it clears gradually (tau 20 s) and then costs nothing');
   const m5 = new SeaFogModel();
-  m5.update(NaN, { fog: NaN, rain: NaN, hours: NaN, lodos: NaN, u10: NaN, humidity: NaN });
+  m5.update(NaN, { fog: NaN, rain: NaN, hours: NaN, lodos: NaN, u10: NaN, humidity: NaN, day: NaN });
   check(Number.isFinite(m5.density + m5.height + m5.amount), 'NaN inputs stay finite');
 }
 
