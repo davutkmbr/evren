@@ -33,8 +33,10 @@ Kits without a twin in the compiled street tiles (`props/stamp.ts` `THROUGH_HOLE
 layer's hole, so they stand in the landing spots too; shopfront kits (awnings, pharmacy / hotel signs, ATMs, market
 stalls) are cut there, the compiled façades carry their own.
 
-Flight-scale land use (highway verges and interchanges seen from the air, outside the OSM regions) is the phase 24
-map work (OSM land use stamped into the geo build, [24](24-far-osm-layer.md) S2).
+Flight-scale motorway verges and junction pockets (outside the OSM regions) are green in the geo build:
+`src/world/geo/build/landuse.ts` `markVerges` turns untagged urban cells within 28 m of a motorway, and pockets up to
+140 m enclosed by one, into park cover. The rest of the flight-scale land use is the phase 24 map work
+([24](24-far-osm-layer.md) S2).
 
 ## Idea
 
