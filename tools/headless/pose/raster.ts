@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import type { FrameRecord } from './runtime';
 
-export type View = 'side' | 'front' | 'top' | 'three-quarter';
-export const VIEWS: readonly View[] = ['side', 'front', 'top', 'three-quarter'];
+export type View = 'side' | 'front' | 'top' | 'three-quarter' | 'chase';
+export const VIEWS: readonly View[] = ['side', 'front', 'top', 'three-quarter', 'chase'];
 
 /** Part classes (index into PALETTE). */
 const enum Part {
@@ -235,6 +235,9 @@ export function makeCamera(view: View, yaw: number, center: THREE.Vector3, scale
       dir.copy(rightD).negate();
     } else if (view === 'front') {
       dir.copy(fwd).negate();
+    } else if (view === 'chase') {
+      // Like the chase camera: from behind, a little to the right and above, looking forward and down.
+      dir.copy(fwd).addScaledVector(rightD, -0.15).addScaledVector(Y, -0.42).normalize();
     } else {
       // From ahead-right and above: the camera sits at right + 0.8 forward + 0.7 up.
       dir.copy(rightD).addScaledVector(fwd, 0.8).addScaledVector(Y, 0.7).normalize().negate();

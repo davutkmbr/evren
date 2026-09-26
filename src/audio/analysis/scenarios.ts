@@ -191,6 +191,51 @@ const rainCase = (id: string, label: string, rain: number, airspeed: number, cam
   },
 });
 
+/**
+ * Phase 21 stage 5 v2: swimming, from the chase camera. Floating (0-3 s), swimming at 2.6 m/s (3-6.5 s), the fast
+ * swim at 4.5 m/s (6.5-10 s): the water bed around the body, each wing's stroke at the rig's rhythm (left catch at
+ * phase 0, right at pi, as strong as the stroke, as long as its power stroke), the breathing and the snorts. First-pass
+ * window, to be balanced by ear on the owner's machine.
+ */
+function swimCase(): RenderCase {
+  let phase = 0;
+  return {
+    id: 'swim',
+    label: 'Yüzme: süzülme → yüzme → hızlı yüzme (su yatağı, kanat kulaçları, burun üfleme)',
+    seconds: 10,
+    measure: 'integrated',
+    target: [-34, -22],
+    camera: 'third',
+    repeatMax: REPEAT_MAX,
+    step: (t, prev, f, e) => {
+      if (t <= prev || t < 0.02) {
+        phase = 0;
+      }
+      const speed = t < 3 ? 0 : t < 6.5 ? 2.6 : 4.5;
+      const stroke = t < 3 ? 0.22 : t < 6.5 ? 0.7 : 1;
+      const freq = t < 3 ? 0.2 : t < 6.5 ? 0.59 : 1.05;
+      f.dragon.airspeed = speed;
+      f.dragon.groundSpeed = speed;
+      f.dragon.grounded = true;
+      f.dragon.exertion = t < 6.5 ? 0.25 : 0.6;
+      f.dragon.swimming = 1;
+      f.dragon.position.y = -0.6;
+      Object.assign(f.probe, { agl: 3, altitude: 3, urban: 0, foliage: 0, water: 1, coast: 0, strait: 0 });
+      const next = phase + 2 * Math.PI * freq * Math.max(0, t - prev);
+      const catches: ReadonlyArray<readonly [number, number]> = [
+        [0, -1],
+        [Math.PI, 1],
+      ];
+      for (const [at, side] of catches) {
+        if (Math.floor((phase - at) / (2 * Math.PI)) !== Math.floor((next - at) / (2 * Math.PI))) {
+          e.swimStroke(stroke, side, 0.42 / freq);
+        }
+      }
+      phase = next;
+    },
+  };
+}
+
 export const CASES: RenderCase[] = [
   oneShot('flap-third', 'Kanat çırpma (3. şahıs) 0.5 + 1.0', 2.6, [-24, -18], 'third', (t, p, e) => {
     if (crossed(t, p, 0.2)) {
@@ -378,6 +423,7 @@ export const CASES: RenderCase[] = [
     f.dragon.skim = Math.min(1, t / 1.5);
     f.dragon.wake = Math.min(1, t / 1.5);
   }),
+  swimCase(),
   windCase('sea-steam', 'Ateş suya değiyor: buhar tıslaması (3. şahıs)', 'third', [-28, -14], (t, f) => {
     f.dragon.airspeed = 10;
     f.dragon.steam = t > 0.5 && t < 4.5 ? 1 : 0;
