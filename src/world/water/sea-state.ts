@@ -37,7 +37,7 @@ export interface SeaStateUniforms {
   uBandB: { value: THREE.Vector4[] };
   uFlowPhase: { value: THREE.Vector4 };
   uFlowJump: { value: THREE.Vector4 };
-  /** x = U10 (m/s), y = capillary mean square slope, z = whitecap Jacobian threshold, w = whitecap strength. */
+  /** x = U10 (m/s), y = capillary mean square slope, z / w = legacy whitecap threshold / strength (stage 7c: foam/whitecaps.ts). */
   uSeaParams: { value: THREE.Vector4 };
   /** xy = unit downwind direction, zw = accumulated gust/streak drift (m, wraps every 40 km). */
   uWindParams: { value: THREE.Vector4 };

@@ -178,6 +178,9 @@ export class LifeSystem implements System {
     const time = this.clock;
     if (this.wakes) {
       this.fleet.feedWakes(this.wakes, time);
+      // The water's foam field draws the near wakes (phase 21 stage 7c); the ribbons stay as the far level of detail.
+      const fw = ctx.services.tryGet('water')?.foam?.window;
+      this.wakes.setNearFade(fw ? fw.x : 0, fw ? fw.z : 0, fw ? fw.halfExtent : 0);
     }
     this.traffic?.update(dt, time, ctx.time.timeOfDay, this.camPos);
     if (this.flocks) {

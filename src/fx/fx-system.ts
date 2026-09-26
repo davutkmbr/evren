@@ -9,6 +9,7 @@ import { ParticlePool } from './particles/particle-pool';
 import { SHARP_PROFILES, VOL_PROFILES } from './particles/types';
 import { FireEmitter, type FireLightState } from './emitters/fire-emitter';
 import { SurfaceEmitter } from './emitters/surface-emitter';
+import { SeaSprayEmitter } from './emitters/sea-spray-emitter';
 import { TRAIL_LIFE, TRAIL_POINTS, WingTrails } from './emitters/wing-trails';
 import { isWaterAt, type EmitContext } from './emitters/emit-context';
 import { FxPass, MAX_MOTES, type FxRenderState } from './render/fx-pass';
@@ -37,6 +38,8 @@ export class FxSystem implements System, FxService {
   private sorter: DepthSorter | null = null;
   private readonly fire = new FireEmitter();
   private readonly surface = new SurfaceEmitter();
+  /** Spindrift, bow spray and rooster tails from the water's spray sources (phase 21 stage 7c). */
+  private readonly seaSpray = new SeaSprayEmitter();
   private readonly trails = new WingTrails();
   private emit: EmitContext | null = null;
   private readonly lights: FireLightState = {
@@ -188,6 +191,7 @@ export class FxSystem implements System, FxService {
     const low = ctx.services.tryGet('lowFlight');
     this.fire.update(emit, dragon, rig, this.lights, low);
     this.surface.update(emit, dragon, rig, low);
+    this.seaSpray.update(emit, ctx.services.tryGet('water')?.foam);
 
     let humidity = 0.8;
     if (dragon) {
