@@ -11,10 +11,11 @@
  * deck query the streets layer attaches (core 'roadSurface' service when a module provides it, otherwise the
  * structure colliders over OSM bridge ways).
  */
+import type { WorldBounds } from '../../../core/contracts';
 import { GeoSampler } from './geo';
-import { GROUND_STEP, GroundGrid } from './ground';
+import { GROUND_LIFT, GROUND_STEP, GroundGrid } from './ground';
 import { MASK_RANGE, SIDEWALK_MAX, type OsmWorkerBase, type StreetRaster } from './protocol';
-import { BUILDING_RANGE, decodeSigned, FLAG_KERBED, FLAG_PEDESTRIAN, FLAG_TRAM, Ground, PATH_RANGE, PLATFORM_HEIGHT, Surf, SURF_MASK } from './street-field';
+import { BUILDING_RANGE, decodeSigned, FLAG_KERBED, FLAG_PEDESTRIAN, FLAG_TRACK_BED, FLAG_TRAM, Ground, PATH_RANGE, PLATFORM_HEIGHT, Surf, SURF_MASK } from './street-field';
 
 export const Zone = {
   Water: 0,
@@ -45,6 +46,23 @@ export const QUAY_TOP = 0.95;
 const QUAY_FLAT = 14;
 const QUAY_FADE = 32;
 
+/**
+ * Height of the OSM ground before kerb lifts (carriageways) from the geo terrain height and signed coast distance at a
+ * point: terrain + GROUND_LIFT, coastal ground below QUAY_TOP raised towards it (quayGridValues() per grid vertex).
+ * Other modules use it to meet the drawn street exactly (bridge abutments, structures standing in the slice).
+ */
+export function osmGroundHeight(terrain: number, coast: number): number {
+  return terrain + GROUND_LIFT + quayRaise(terrain + GROUND_LIFT, coast);
+}
+
+function quayRaise(y: number, coast: number): number {
+  if (coast >= QUAY_FADE || y >= QUAY_TOP) {
+    return 0;
+  }
+  const t = Math.min(1, Math.max(0, (QUAY_FADE - coast) / (QUAY_FADE - QUAY_FLAT)));
+  return (QUAY_TOP - y) * t * t * (3 - 2 * t);
+}
+
 const PEDESTRIAN_GROUND = new Set<number>([Ground.Plaza, Ground.Platform, Ground.Quay, Ground.Worship]);
 
 export type DeckQuery = (x: number, z: number) => number | null;
@@ -57,10 +75,20 @@ export class StreetSurface {
   private quayGrid: Float32Array | null = null;
   private decks: DeckQuery | null = null;
 
+  /** Build rect: the OSM ground exists only here (lookups outside clamp to its edge). */
+  readonly rect: WorldBounds;
+
   constructor(base: OsmWorkerBase) {
     this.geo = new GeoSampler(base);
     this.ground = new GroundGrid(base.rect, this.geo);
     this.raster = base.street;
+    this.rect = base.rect;
+  }
+
+  /** Whether (x, z) lies on the OSM ground (inside the build rect). */
+  covers(x: number, z: number): boolean {
+    const r = this.rect;
+    return x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
   }
 
   /** Bilinear byte value (0..255) of RGBA channel `c` at (x, z), like the GPU's linear filter. */
@@ -104,6 +132,11 @@ export class StreetSurface {
     return (this.raster.rgba[this.texel(x, z) + 2] / 255) * SIDEWALK_MAX;
   }
 
+  /** Sidewalk width (m) bilinearly filtered like the ground shader samples it (smooth across texel borders). */
+  sidewalkWidthSmooth(x: number, z: number): number {
+    return (this.channel(x, z, 2) / 255) * SIDEWALK_MAX;
+  }
+
   /** Signed distance (m) to the nearest footway / path / steps edge (negative on the path), clamped to ±PATH_RANGE. */
   pathDistance(x: number, z: number): number {
     return decodeSigned(this.channel(x, z, 3), PATH_RANGE);
@@ -139,9 +172,25 @@ export class StreetSurface {
     return (this.raster.ids[this.texel(x, z)] & FLAG_PEDESTRIAN) !== 0;
   }
 
-  /** Inside the bed of an embedded tram track. */
+  /**
+   * Street tram tracks inside the rect as every layer draws them (kerb-lane tracks moved onto the carriageway,
+   * tram-tracks.ts correctTramTracks; bridge sections excluded), centre lines resampled every metre.
+   */
+  get tramTracks(): StreetRaster['tracks'] {
+    return this.raster.tracks;
+  }
+
+  /** Within the rail reach of a (corrected) street tram track. */
   tramBed(x: number, z: number): boolean {
     return (this.raster.ids[this.texel(x, z)] & FLAG_TRAM) !== 0;
+  }
+
+  /**
+   * Inside a flush tram track bed (median and own right-of-way tracks, street-field.ts stampTrackBeds): part of the
+   * carriageway (distance() < 0), at carriageway level.
+   */
+  trackBedAt(x: number, z: number): boolean {
+    return (this.raster.ids[this.texel(x, z)] & FLAG_TRACK_BED) !== 0;
   }
 
   /** Zone at (x, z), matching the ground shader's split. */
@@ -235,12 +284,7 @@ export class StreetSurface {
     for (let j = 0; j < g.nz; j++) {
       for (let i = 0; i < g.nx; i++) {
         const k = j * g.nx + i;
-        const c = this.geo.coast(g.x0 + i * GROUND_STEP, g.z0 + j * GROUND_STEP);
-        if (c >= QUAY_FADE || g.y[k] >= QUAY_TOP) {
-          continue;
-        }
-        const t = Math.min(1, Math.max(0, (QUAY_FADE - c) / (QUAY_FADE - QUAY_FLAT)));
-        out[k] = (QUAY_TOP - g.y[k]) * t * t * (3 - 2 * t);
+        out[k] = quayRaise(g.y[k], this.geo.groundCoast(g.x0 + i * GROUND_STEP, g.z0 + j * GROUND_STEP));
       }
     }
     this.quayGrid = out;

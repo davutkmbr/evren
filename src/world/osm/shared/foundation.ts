@@ -5,6 +5,7 @@
 import type { GeoQuery, GridData, WorldBounds } from '../../../core/contracts';
 import type { OsmData } from '../data';
 import type { FoundationRequest } from './foundation.worker';
+import { groundRect } from './ground';
 import type { GridWin, OsmWorkerBase, StreetRaster } from './protocol';
 import { streetRasterInput } from './street-field';
 import { runWorker, type WorkerJob } from './worker';
@@ -61,12 +62,17 @@ export function reservedPads(geo: GeoQuery): number[] {
   return out;
 }
 
-/** Builds the worker base (geo windows + street raster); `ms` is the raster worker time. */
-export function buildWorkerBase(geo: GeoQuery, data: OsmData, rect: WorldBounds, area: WorldBounds): WorkerJob<{ base: OsmWorkerBase; ms: number }> {
+/**
+ * Builds the worker base (geo windows + street raster) over `exclusion` grown to the ground lattice; `ms` is the raster
+ * worker time.
+ */
+export function buildWorkerBase(geo: GeoQuery, data: OsmData, exclusion: WorldBounds, area: WorldBounds): WorkerJob<{ base: OsmWorkerBase; ms: number }> {
+  // On the global ground lattice, like the compiled street tiles (ground.ts groundRect).
+  const rect = groundRect(exclusion);
   const windows = cutGeoWindows(geo, rect);
   const reserved = reservedPads(geo);
   const worker = new Worker(new URL('./foundation.worker.ts', import.meta.url), { type: 'module', name: 'osm-foundation' });
-  const job = runWorker<FoundationRequest, { street: StreetRaster; ms: number }>(worker, { data: streetRasterInput(data), rect });
+  const job = runWorker<FoundationRequest, { street: StreetRaster; ms: number }>(worker, { data: streetRasterInput(data, (x, z) => geo.coastDistance(x, z)), rect });
   return {
     promise: job.promise.then(({ street, ms }) => ({ base: { rect, area, ...windows, reserved, street }, ms })),
     cancel: job.cancel,

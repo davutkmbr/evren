@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { hash } from '../shared/geometry';
+import { passagePoint, passageProfile, wallHit, type Passage, type Wall } from '../shared/passages';
 import { Arch, ARCHETYPES, archRise, Balcony, balconyAt, Flag, groundRow, Head, Kind, nobileHalf, styleCode, topWindowRow } from './archetypes';
 import type { DetailSink } from './details';
 import { F, type StateMesh } from './mesh';
@@ -43,6 +44,11 @@ export interface Plane {
   balcony: Balcony;
   /** Detail-free range [u0, u1] from v >= v0 (hidden behind a cumba / çıkma). */
   skip?: [number, number, number];
+  /**
+   * Passage openings (shared/passages.ts, rule walk.passage): the wall leaves [u0, u1] open below the arch, whose
+   * points (u, v) run springing to springing; no window details below the crown there.
+   */
+  portals?: { u0: number; u1: number; arc: [number, number][]; crownV: number }[];
 }
 
 /** Plane from two points; the tangent follows cross(n, up), u starts at whichever end has the smaller u. */
@@ -106,18 +112,99 @@ export function emitPlane(c: EmitContext, p: Plane): void {
   const z1 = p.az + p.tz * p.len;
   const vb = p.yBot - p.gMin;
   const vt = p.yTop - p.gMin;
-  const a0 = mesh.v(x0, p.yBot, z0, p.nx, 0, p.nz, 0, vb);
-  const a1 = mesh.v(x0, p.yTop, z0, p.nx, 0, p.nz, 0, vt);
-  const b1 = mesh.v(x1, p.yTop, z1, p.nx, 0, p.nz, p.len, vt);
-  const b0 = mesh.v(x1, p.yBot, z1, p.nx, 0, p.nz, p.len, vb);
-  // Front face is counter-clockwise seen from +n.
-  if ((x1 - x0) * p.nz - (z1 - z0) * p.nx > 0) {
-    mesh.quad(a0, b0, b1, a1);
+  if (p.portals?.length) {
+    // The wall around the passage openings: full-height pieces between them and the spandrels over each arch.
+    const at = (u: number, v: number): [number, number, number] => [p.ax + p.tx * u, p.gMin + v, p.az + p.tz * u];
+    const uvOf = (x: number, y: number, z: number): [number, number] => [(x - p.ax) * p.tx + (z - p.az) * p.tz, y - p.gMin];
+    const piece = (ua: number, va: number, ub: number, vb2: number): void => {
+      if (ub - ua > 1e-4) {
+        mesh.poly([at(ua, va), at(ub, vb2), at(ub, vt), at(ua, vt)], p.nx, 0, p.nz, uvOf);
+      }
+    };
+    let u = 0;
+    for (const q of [...p.portals].sort((a, b) => a.u0 - b.u0)) {
+      piece(u, vb, q.u0, vb);
+      for (let k = 1; k < q.arc.length; k++) {
+        const [ua, va] = q.arc[k - 1];
+        const [ub, vb2] = q.arc[k];
+        if (ua < ub) {
+          piece(ua, va, ub, vb2);
+        } else {
+          piece(ub, vb2, ua, va);
+        }
+      }
+      u = Math.max(u, q.u1);
+    }
+    piece(u, vb, p.len, vb);
   } else {
-    mesh.quad(a0, a1, b1, b0);
+    const a0 = mesh.v(x0, p.yBot, z0, p.nx, 0, p.nz, 0, vb);
+    const a1 = mesh.v(x0, p.yTop, z0, p.nx, 0, p.nz, 0, vt);
+    const b1 = mesh.v(x1, p.yTop, z1, p.nx, 0, p.nz, p.len, vt);
+    const b0 = mesh.v(x1, p.yBot, z1, p.nx, 0, p.nz, p.len, vb);
+    // Front face is counter-clockwise seen from +n.
+    if ((x1 - x0) * p.nz - (z1 - z0) * p.nx > 0) {
+      mesh.quad(a0, b0, b1, a1);
+    } else {
+      mesh.quad(a0, a1, b1, b0);
+    }
   }
   if (p.kind === Kind.Wall) {
     windowDetails(c, p);
+  }
+}
+
+/**
+ * The lining of a building passage (shared/passages.ts): side walls and barrel vault as blank plaster facing into
+ * the passage, from the entry wall's plane to the exit wall's. `floorAt(s)`: floor height at distance s from the entry.
+ */
+export function emitLining(c: EmitContext, p: Passage, arch: { spring: number; crown: number }, walls: readonly [Wall, Wall], floorAt: (s: number) => number, gMin: number, wallTopV: number): void {
+  const { mesh, plan } = c;
+  const len = Math.hypot(p.bx - p.ax, p.bz - p.az);
+  mesh.set(F.Color, plan.tint.r * 0.85, plan.tint.g * 0.85, plan.tint.b * 0.85);
+  mesh.set(F.Fac, len, wallTopV, plan.seed, plan.wear);
+  mesh.set(F.Gnd, floorAt(0) - gMin, floorAt(len) - gMin);
+  mesh.set(F.Sty, plan.floorH, styleCode(plan.arch, plan.wall, plan.plinth), Kind.Blank, 0);
+  mesh.set(F.Win, 1, 0.3, plan.floorH, plan.floorH);
+  const prof = passageProfile(p, arch);
+  const pt = (k: number, w: Wall): [number, number, number] => {
+    const s = wallHit(p, prof.o[k], w);
+    const [x, z] = passagePoint(p, prof.o[k], s);
+    return [x, floorAt(s) + prof.h[k], z];
+  };
+  // Smooth normals round the vault; uv: metres along the passage and round the profile.
+  const round: number[] = [0];
+  for (let k = 1; k < prof.o.length; k++) {
+    round.push(round[k - 1] + Math.hypot(prof.o[k] - prof.o[k - 1], prof.h[k] - prof.h[k - 1]));
+  }
+  const vert = (q: [number, number, number], k: number): number =>
+    mesh.v(q[0], q[1], q[2], -p.dz * prof.nl[k], prof.nh[k], p.dx * prof.nl[k], (q[0] - p.ax) * p.dx + (q[2] - p.az) * p.dz, round[k]);
+  for (let k = 1; k < prof.o.length; k++) {
+    const a0 = pt(k - 1, walls[0]);
+    const a1 = pt(k, walls[0]);
+    const b0 = pt(k - 1, walls[1]);
+    const b1 = pt(k, walls[1]);
+    // Winding: front faces point into the passage (the strip's mean normal).
+    const nl = prof.nl[k - 1] + prof.nl[k];
+    const nh = prof.nh[k - 1] + prof.nh[k];
+    const ux = a1[0] - a0[0];
+    const uy = a1[1] - a0[1];
+    const uz = a1[2] - a0[2];
+    const wx = b0[0] - a0[0];
+    const wy = b0[1] - a0[1];
+    const wz = b0[2] - a0[2];
+    const cx = uy * wz - uz * wy;
+    const cy = uz * wx - ux * wz;
+    const cz = ux * wy - uy * wx;
+    const front = cx * -p.dz * nl + cy * nh + cz * p.dx * nl > 0;
+    const i0 = vert(a0, k - 1);
+    const i1 = vert(a1, k);
+    const j0 = vert(b0, k - 1);
+    const j1 = vert(b1, k);
+    if (front) {
+      mesh.quad(i0, i1, j1, j0);
+    } else {
+      mesh.quad(i0, j0, j1, i1);
+    }
   }
 }
 
@@ -153,6 +240,9 @@ function windowDetails(c: EmitContext, p: Plane): void {
     for (let r = gRow + 1; r <= topRow; r++) {
       const rowV = r * FH;
       if (rowV + p.sill < vBot - 0.01 || rowV + p.head > vTop + 0.01 || (hidden && rowV + p.head > p.skip![2])) {
+        continue;
+      }
+      if (p.portals?.some((q) => uc > q.u0 - 0.3 && uc < q.u1 + 0.3 && rowV < q.crownV + 0.2)) {
         continue;
       }
       const k = r - gRow - 1;

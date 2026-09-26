@@ -26,8 +26,54 @@ export function textureUrl(set: TextureSet, map: TextureMap): string {
   return `${import.meta.env.BASE_URL}textures/${set}/${map}.jpg`;
 }
 
-/** Repeating texture with a repeat of 1 / REPEAT_M (UVs in metres), sRGB for albedo. */
+interface SharedEntry {
+  job: Promise<THREE.Texture[]>;
+  refs: number;
+}
+
+const shared = new Map<string, SharedEntry>();
+
+/**
+ * Texture sets shared by every OSM region (streamed regions build their own materials over the same CC0 sets): one
+ * GPU copy per key. Each caller gets the same textures and disposes them as before; their dispose() only releases
+ * the caller's reference, and the last release really frees them.
+ */
+function share<T extends THREE.Texture[]>(key: string, make: () => Promise<T>): Promise<T> {
+  let entry = shared.get(key);
+  if (!entry) {
+    const e: SharedEntry = { job: make(), refs: 0 };
+    shared.set(key, e);
+    e.job
+      .then((textures) => {
+        for (const t of textures) {
+          const free = t.dispose.bind(t);
+          t.dispose = () => {
+            if (--e.refs <= 0) {
+              if (shared.get(key) === e) {
+                shared.delete(key);
+              }
+              free();
+            }
+          };
+        }
+      })
+      .catch(() => shared.delete(key));
+    entry = e;
+  }
+  const e = entry;
+  // One reference per texture handed out (callers dispose every texture they got).
+  return e.job.then((textures) => {
+    e.refs += textures.length;
+    return textures as T;
+  });
+}
+
+/** Repeating texture with a repeat of 1 / REPEAT_M (UVs in metres), sRGB for albedo (shared, see share()). */
 export function loadTexture(loader: THREE.TextureLoader, set: TextureSet, map: TextureMap, anisotropy: number): Promise<THREE.Texture> {
+  return share(`tex:${set}/${map}:${anisotropy}`, () => loadTextureOnce(loader, set, map, anisotropy).then((t) => [t])).then(([t]) => t);
+}
+
+function loadTextureOnce(loader: THREE.TextureLoader, set: TextureSet, map: TextureMap, anisotropy: number): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     loader.load(
       textureUrl(set, map),
@@ -74,9 +120,13 @@ export function pixels(img: CanvasImageSource, size: number): Uint8ClampedArray 
 
 /**
  * Two texture arrays over `sets` (one layer each, resampled to size x size): albedo RGB + roughness A (sRGB), and
- * tangent-space normal (linear).
+ * tangent-space normal (linear). Shared between callers asking for the same arrays (see share()).
  */
-export async function loadPbrArrays(sets: readonly TextureSet[], size: number, anisotropy: number): Promise<[THREE.DataArrayTexture, THREE.DataArrayTexture]> {
+export function loadPbrArrays(sets: readonly TextureSet[], size: number, anisotropy: number): Promise<[THREE.DataArrayTexture, THREE.DataArrayTexture]> {
+  return share(`arrays:${sets.join(',')}:${size}:${anisotropy}`, () => buildPbrArrays(sets, size, anisotropy));
+}
+
+async function buildPbrArrays(sets: readonly TextureSet[], size: number, anisotropy: number): Promise<[THREE.DataArrayTexture, THREE.DataArrayTexture]> {
   const n = sets.length;
   const layer = size * size * 4;
   const alb = new Uint8Array(layer * n);

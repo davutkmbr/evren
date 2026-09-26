@@ -281,7 +281,8 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
   if (!floors) {
     const [lo, hi] = district.floors;
     const t = H(5);
-    floors = lo + Math.floor(Math.pow(t, 0.85) * (hi - lo + 1));
+    // Estimated from tagged neighbours (regions, data.ts levelsFill): that storey count ±1, else the district range.
+    floors = b.levelsFill ? b.levelsFill + (t < 0.2 ? -1 : t > 0.85 ? 1 : 0) : lo + Math.floor(Math.pow(t, 0.85) * (hi - lo + 1));
     if (f.area < 25) {
       floors -= 2;
     } else if (f.area < 45) {
