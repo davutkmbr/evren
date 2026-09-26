@@ -14,7 +14,7 @@ import { playChainCue, playDiscover, playFlowMoment, playUiClick, type FlowMomen
 import { playChirp, playGrumble, playHuff, playPurr, playPurrDeep, playShortRoar, playSnap, playSneeze, playTrill, playYawn } from './sfx/bond';
 import { playBurstRush, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
-import { playGull } from './sfx/ambient';
+import { playFerryHorn, playGull } from './sfx/ambient';
 import { playBirdFlap } from './sfx/bird-flap';
 import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
@@ -313,7 +313,11 @@ const BOND_SPACING: Record<BondAudioCue, number> = {
   huff: 0.3,
   'roar-short': 1,
 };
-const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5 };
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5, 'ferry-horn': 8 };
+/** A vapur's whistle as a sound source: a big ship, heard far, with the hills' echo. */
+const FERRY_HORN_POINT: PlaceOptions = { refDistance: 90, reverb: 0.35, size: 20, delayAbove: 200 };
+/** The escort's arrival horn is softer than the ambience's distant horns at the same distance. */
+const FERRY_HORN_MIX = 0.55;
 /** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
 const PADDLE_OFFSET = 4;
 /** Seconds between two snorts while swimming (random within). */
@@ -392,7 +396,7 @@ export class AudioEngine {
   private lastPaddle = -1e9;
   private momentBedLevel = 0;
   private readonly lastBond: Partial<Record<BondAudioCue, number>> = {};
-  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9 };
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9, 'ferry-horn': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -739,7 +743,7 @@ export class AudioEngine {
       return;
     }
     this.lastCue[cue] = now;
-    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : STORK_POINT, this.place);
+    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : cue === 'ferry-horn' ? FERRY_HORN_POINT : STORK_POINT, this.place);
     const vol = clamp(finiteOr(volume, 1), 0, 1.5);
     switch (cue) {
       case 'stork-clatter':
@@ -762,6 +766,11 @@ export class AudioEngine {
         break;
       case 'gull-wingbeat':
         playBirdFlap(this.amb, now, Math.min(1, vol), pl);
+        break;
+      case 'ferry-horn':
+        // On the ambience bus, like the distant horns of the harbour.
+        pl.gain *= FERRY_HORN_MIX * Math.min(1, vol);
+        playFerryHorn(this.amb, now, pl);
         break;
     }
   }
