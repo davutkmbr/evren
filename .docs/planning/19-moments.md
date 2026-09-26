@@ -276,6 +276,36 @@ decay, flap rate), `STORK_SITE` in `site.ts` (search ring and cone, kettle depth
 `stork-instances.ts` (LOD and fade distances), the `SOUND` ranges in `stork-actor.ts`, and `MIX.stork*` /
 `MOMENT_BED_LEVEL` in the audio engine.
 
+## Music sources: from the world or as a memory (built 26 September 2026)
+
+Moment music is never heard "directly" (owner decision): each record's optional `content.musicSource` says where it
+comes from (details, chains and tuning: `.docs/audio/music-system.md`, Moment music sources).
+
+- **World kinds.** `gramophone` (a horn at a yalı window), `venue` (a coffeehouse heard from the street), `live` (a
+  Karagöz tent, a fasıl band), `ferry` (a deck radio following the moment's ferry). Positional: the highs fall first
+  with distance, then the level; the reach grows at night over calm water; speed and wind mask the music, hovering and
+  above all perching or standing within ~60 m give the clearest sound.
+- **Lead-in.** The music has its own proximity start: inside a source's reach (380–480 m by day) its piece starts,
+  before the moment's trigger and its subtitles. The moment carries the same piece on and opens it up a little (2 s);
+  afterwards it sinks back into the world and fades as the player leaves. If the moment never starts (rain, time of
+  day, altitude), the music simply stays a world sound. The moments system hands the music the nearest world source
+  of a playable moment whose category is on (`src/moments/music-source.ts`); the runner is untouched.
+- **Memory.** Moments in open sky or sea: a long airy reverb, band-limited, a slow wow and flutter, panned toward
+  `from` (the landmark) without distance attenuation, or centred and diffuse. A world source whose player flies far
+  mid-moment cross-fades into the memory treatment, so the moment keeps its music to the end.
+- **Records.** Kâtibim `venue` on the Üsküdar shore road (41.0258, 29.0135, between Şemsi Paşa and the İskele
+  square, ~50 m from the water); Karagöz `live` on Şehzadebaşı Caddesi (41.0129, 28.9584, beside the perde waypoint,
+  < 150 m from the Şehzade mosque); Kuyrukluyıldız `gramophone` at Hüseyin Rahmi's house by his monument on Heybeliada
+  (40.8768, 29.1004; reachScale 1.8 for the high, quiet night flight; the house's exact footprint is to confirm);
+  Yağmur `gramophone` at Aşiyan (41.08266, 29.05345); gull and simit `ferry`. Memories: Orhan Veli (centred: "gözlerim
+  kapalı"), Nedim and De Amicis from Topkapı / Sarayburnu, Prokopios from the Hagia Sophia dome, Sinan from his tomb,
+  the legends from their landmark. Other records default to a centred memory. Every point is checked against the geo
+  data by `moments-check` (land / water, landmark distance, district, the reach covering the trigger centre).
+- **Hear it now.** `?music=test,debug&moment=<id>` (e.g. `katibim-uskudar-yagmur`, `karagoz-sehzadebasi`,
+  `fikret-yagmur-asiyan`, `ferry-gull-simit`, `nedim-bu-sehr-i-sitanbul`); the debug overlay's `source` line shows the
+  kind, the distance / reach, the wind mask and the clarity. The real music will be public-domain 78 rpm recordings,
+  pending the owner's approval.
+
 ## Sources: "Kaynağa bak" (built 26 September 2026)
 
 Owner request: when a moment quotes something, one key takes the player to the original (a text, a video, an image...).

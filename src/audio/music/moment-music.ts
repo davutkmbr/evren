@@ -8,6 +8,10 @@
  *   variety   never the same piece for two moments in a row (unless a moment names it)
  *   playback  fade in over MOMENT_MUSIC_DEFAULTS.fadeInSec; a piece shorter than the moment ends on its own (its file
  *             tail plus a short edge fade), never looped; when the moment ends first it fades out over `endFadeSec`
+ *   sources   the piece is never heard "directly" (./moment-source.ts, ./source-graph.ts): a moment with a world source
+ *             (gramophone, venue, live, ferry) starts its piece as a world sound before the moment (the lead-in, when the
+ *             player comes within the source's reach), keeps it under the subtitles, and afterwards lets it sink back
+ *             into the world until the player leaves; a memory moment fades it out at the end as before
  *
  * The rules duck the world music strongly during every moment (rules.ts, `moment`), the sprinkle director holds, and
  * the player plays the piece on its own un-ducked branch of the music bus (volume and menu duck still apply).
@@ -34,6 +38,12 @@ export interface MomentMusicConfig {
   timeMissPenalty: number;
   /** Minimum score of a chosen piece (one category or mood match). */
   minScore: number;
+  /** Fade-in of a lead-in piece (s): slow, it starts far away anyway. */
+  leadFadeInSec: number;
+  /** Fade-out when the player leaves a world source (s). */
+  leaveFadeSec: number;
+  /** A source whose music stopped does not lead in again for this long (s). */
+  leadCooldownSec: number;
 }
 
 export const MOMENT_MUSIC_DEFAULTS: MomentMusicConfig = {
@@ -47,6 +57,9 @@ export const MOMENT_MUSIC_DEFAULTS: MomentMusicConfig = {
   timeWeight: 1,
   timeMissPenalty: 2,
   minScore: 2,
+  leadFadeInSec: 4,
+  leaveFadeSec: 3,
+  leadCooldownSec: 240,
 };
 
 /** What the moments system tells the music about the moment that plays (see AudioService.setMomentMusic). */
@@ -62,6 +75,10 @@ export interface MomentMusicRequest {
   mood: readonly string[];
   /** Current time-of-day tags ('day' / 'night', 'dawn', 'dusk'). */
   time: readonly string[];
+  /** The moment's id: a lead-in piece of the same moment carries on instead of a new choice. */
+  momentId?: string | null;
+  /** The moment's music follows a world source now (not a memory): after the moment it sinks back into the world. */
+  world?: boolean;
 }
 
 export const NO_MOMENT: MomentMusicRequest = { active: false, seq: 0, musicId: null, category: null, mood: [], time: [] };
@@ -138,23 +155,67 @@ export interface MomentMusicWorld {
   isReady(phraseId: string): boolean;
 }
 
+/** Where the playing moment piece stands: before its moment (lead-in), under it, or back in the world after it. */
+export type MomentVoicePhase = 'lead' | 'moment' | 'world';
+
+/** A world source within reach while no moment plays: its piece may start before the moment (the lead-in). */
+export interface LeadInRequest {
+  momentId: string;
+  musicId: string | null;
+  category: string | null;
+  mood: readonly string[];
+}
+
+/** What the source side (moment-source.ts, via the controller) tells the director every frame. */
+export interface MomentSourceState {
+  /** A world source within its reach that may lead in (null: none, or a moment plays). */
+  lead: LeadInRequest | null;
+  /** The current voice's world source is still within its release distance. */
+  inReach: boolean;
+}
+
+export const NO_SOURCE: MomentSourceState = { lead: null, inReach: false };
+
 export interface MomentMusicView {
   /** Piece playing now (also while fading out after the moment). */
   current: string | null;
   endsAt: number | null;
+  /** Moment the playing piece belongs to, and where it stands. */
+  momentId: string | null;
+  phase: MomentVoicePhase | null;
   /** Piece waiting for its audio. */
   pending: string | null;
   last: string | null;
   note: string;
 }
 
+interface CurrentVoice {
+  voice: number;
+  piece: MusicPhraseDef;
+  endsAt: number;
+  momentId: string | null;
+  phase: MomentVoicePhase;
+}
+
+interface PendingPiece {
+  piece: MusicPhraseDef;
+  since: number;
+  loadSent: boolean;
+  momentId: string | null;
+  phase: MomentVoicePhase;
+}
+
 export class MomentMusicDirector {
   private seq = 0;
-  private current: { voice: number; piece: MusicPhraseDef; endsAt: number } | null = null;
-  private pending: { piece: MusicPhraseDef; since: number; loadSent: boolean } | null = null;
+  private current: CurrentVoice | null = null;
+  private pending: PendingPiece | null = null;
   private lastId: string | null = null;
   private voiceSeq = 0;
   private note = 'idle';
+  /** The last active request said the moment's music follows a world source (it sinks back into the world at the end). */
+  private lastWorld = false;
+  /** When a source's music last stopped (s), by moment id: no new lead-in within `leadCooldownSec`. */
+  private readonly stoppedAt = new Map<string, number>();
   private readonly out: SprinkleCommand[] = [];
 
   constructor(
@@ -163,7 +224,8 @@ export class MomentMusicDirector {
   ) {}
 
   get view(): MomentMusicView {
-    return { current: this.current?.piece.id ?? null, endsAt: this.current?.endsAt ?? null, pending: this.pending?.piece.id ?? null, last: this.lastId, note: this.note };
+    const c = this.current;
+    return { current: c?.piece.id ?? null, endsAt: c?.endsAt ?? null, momentId: c?.momentId ?? null, phase: c?.phase ?? null, pending: this.pending?.piece.id ?? null, last: this.lastId, note: this.note };
   }
 
   /** A piece is audible now (the sprinkle director holds anyway during moments; the debug overlay shows it). */
@@ -178,40 +240,96 @@ export class MomentMusicDirector {
     if (this.pending) {
       this.pending.since += dt;
     }
+    for (const [k, v] of this.stoppedAt) {
+      this.stoppedAt.set(k, v + dt);
+    }
   }
 
-  private fadeOut(now: number, note: string): void {
-    if (this.current) {
-      if (now < this.current.endsAt - this.config.tailFadeSec) {
-        this.out.push({ type: 'stop', voice: this.current.voice, at: now, fade: this.config.endFadeSec });
+  private fadeOut(now: number, note: string, fade = this.config.endFadeSec): void {
+    const c = this.current;
+    if (c) {
+      if (now < c.endsAt - this.config.tailFadeSec) {
+        this.out.push({ type: 'stop', voice: c.voice, at: now, fade });
+      }
+      if (c.momentId) {
+        this.stoppedAt.set(c.momentId, now);
       }
       this.current = null;
     }
     this.note = note;
   }
 
-  tick(now: number, req: MomentMusicRequest, world: MomentMusicWorld): SprinkleCommand[] {
+  private cooling(momentId: string, now: number): boolean {
+    const t = this.stoppedAt.get(momentId);
+    return t !== undefined && now - t < this.config.leadCooldownSec;
+  }
+
+  tick(now: number, req: MomentMusicRequest, world: MomentMusicWorld, src: MomentSourceState = NO_SOURCE): SprinkleCommand[] {
     const c = this.config;
     const out = this.out;
     out.length = 0;
-    if (this.current && now >= this.current.endsAt) {
+    const cur = this.current;
+    if (cur && now >= cur.endsAt) {
+      if (cur.momentId) {
+        this.stoppedAt.set(cur.momentId, now);
+      }
       this.current = null;
       this.note = 'piece ended on its own';
     }
+    const momentId = req.momentId ?? null;
     if (req.active && req.seq !== this.seq) {
-      // A new moment: whatever still sounds from the last one fades, then this moment's piece is chosen.
       this.seq = req.seq;
-      this.fadeOut(now, 'new moment');
-      const pick = chooseMomentPiece(world.phrases, req, this.lastId, this.random, c);
-      this.pending = pick.piece ? { piece: pick.piece, since: now, loadSent: false } : null;
-      this.note = pick.piece ? `chose ${pick.piece.id} (${pick.why})` : pick.why;
-    }
-    if (!req.active) {
-      this.pending = null;
-      if (this.current) {
-        this.fadeOut(now, 'moment over: fading out');
+      const lead = this.current;
+      if (lead && momentId !== null && lead.momentId === momentId && lead.phase !== 'moment') {
+        // The lead-in (or the world sound of this moment) was already playing: it carries on under the subtitles.
+        lead.phase = 'moment';
+        this.pending = null;
+        this.note = `lead-in ${lead.piece.id} continues under the moment`;
+      } else {
+        // A new moment: whatever still sounds fades, then this moment's piece is chosen.
+        this.fadeOut(now, 'new moment');
+        const pick = chooseMomentPiece(world.phrases, req, this.lastId, this.random, c);
+        this.pending = pick.piece ? { piece: pick.piece, since: now, loadSent: false, momentId, phase: 'moment' } : null;
+        this.note = pick.piece ? `chose ${pick.piece.id} (${pick.why})` : pick.why;
       }
-      return out.slice();
+    }
+    if (req.active) {
+      this.lastWorld = !!req.world;
+    } else {
+      if (this.pending?.phase === 'moment') {
+        this.pending = null;
+      }
+      const v = this.current;
+      if (v?.phase === 'moment') {
+        if (this.lastWorld) {
+          // The moment is over: its music sinks back into the world and fades as the player leaves.
+          v.phase = 'world';
+          this.note = 'moment over: back in the world';
+        } else {
+          this.fadeOut(now, 'moment over: fading out');
+        }
+      }
+      if (this.current && this.current.phase !== 'moment' && !src.inReach) {
+        this.fadeOut(now, 'left the source', c.leaveFadeSec);
+      }
+      if (!this.current) {
+        const lead = src.lead;
+        if (this.pending?.phase === 'lead' && this.pending.momentId !== lead?.momentId) {
+          this.pending = null;
+          this.note = 'lead-in source out of reach';
+        }
+        if (!this.pending && lead && !this.cooling(lead.momentId, now)) {
+          const pick = chooseMomentPiece(world.phrases, { active: true, seq: this.seq, musicId: lead.musicId, category: lead.category, mood: lead.mood, time: req.time }, this.lastId, this.random, c);
+          if (pick.piece) {
+            this.pending = { piece: pick.piece, since: now, loadSent: false, momentId: lead.momentId, phase: 'lead' };
+            this.note = `lead-in ${pick.piece.id} for ${lead.momentId} (${pick.why})`;
+          } else {
+            // Nothing fits: remember it, so the choice is not retried every frame.
+            this.stoppedAt.set(lead.momentId, now);
+            this.note = `no lead-in piece for ${lead.momentId}: ${pick.why}`;
+          }
+        }
+      }
     }
     const p = this.pending;
     if (!p) {
@@ -224,6 +342,9 @@ export class MomentMusicDirector {
       }
       if (now - p.since > c.maxWaitSec) {
         this.pending = null;
+        if (p.momentId) {
+          this.stoppedAt.set(p.momentId, now);
+        }
         this.note = `${p.piece.id} decoded too slowly: dropped`;
       } else {
         this.note = `loading ${p.piece.id}`;
@@ -233,11 +354,13 @@ export class MomentMusicDirector {
     const at = now + c.lookaheadSec;
     const voice = ++this.voiceSeq;
     const d = p.piece.durationSec;
-    out.push({ type: 'play', voice, phraseId: p.piece.id, at, duration: d, fadeIn: Math.min(c.fadeInSec, d / 4), fadeOut: Math.min(c.tailFadeSec, d / 4) });
-    this.current = { voice, piece: p.piece, endsAt: at + d };
+    // A lead-in fades in slowly: the distance does the rest (it starts faint, far away).
+    const fadeIn = Math.min(p.phase === 'lead' ? c.leadFadeInSec : c.fadeInSec, d / 4);
+    out.push({ type: 'play', voice, phraseId: p.piece.id, at, duration: d, fadeIn, fadeOut: Math.min(c.tailFadeSec, d / 4) });
+    this.current = { voice, piece: p.piece, endsAt: at + d, momentId: p.momentId, phase: p.phase };
     this.lastId = p.piece.id;
     this.pending = null;
-    this.note = `play ${p.piece.id}`;
+    this.note = `play ${p.piece.id}${p.phase === 'lead' ? ' (lead-in)' : ''}`;
     return out.slice();
   }
 }
