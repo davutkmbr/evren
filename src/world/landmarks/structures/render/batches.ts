@@ -36,7 +36,7 @@ function toBufferGeometry(g: GeometryData, sphere: THREE.Sphere): THREE.BufferGe
 }
 
 /** LOD i covers distances [step * (2^i - 1), step * (2^(i+1) - 1)). */
-function lodFor(d: number, step: number, levels: number): number {
+export function lodFor(d: number, step: number, levels: number): number {
   return Math.min(Math.floor(Math.log2(d / step + 1)), levels - 1);
 }
 
