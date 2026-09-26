@@ -3,8 +3,9 @@ import type { ViewPreset } from '../../core/debug';
 import { el } from '../dom';
 import { formatClock } from '../format';
 import type { MapRaster } from '../map/map-raster';
+import { perchTeleportView } from '../perch-teleport';
 import { PlaceMap } from './place-map';
-import { buildPlaces, fold, perchView, REGIONS, type Place, type PlaceKind, type PlaceRegion } from './places';
+import { buildPlaces, fold, REGIONS, type Place, type PlaceKind, type PlaceRegion } from './places';
 
 export interface TeleportPanelOptions {
   raster: MapRaster;
@@ -310,7 +311,7 @@ export class TeleportPanel {
   private perch(): void {
     const place = this.current();
     if (place?.perch) {
-      this.options.onPerch(perchView(place.perch, 30, 30, -12));
+      this.options.onPerch(perchTeleportView(place.perch));
     }
   }
 }

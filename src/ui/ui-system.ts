@@ -17,6 +17,7 @@ import { ControlsView } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
+import { PERCH_TOAST } from './perch-teleport';
 import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
 import { HelpOverlay } from './overlays/help-overlay';
 import { StatsOverlay } from './overlays/stats-overlay';
@@ -97,10 +98,6 @@ export class UiSystem implements System {
     ctx.services.provide('hotbar', this.hud.hotbar);
     this.abilities = new DragonAbilities(this.hud.hotbar, () => ctx.services.tryGet('dragon'));
     this.statusToasts = new StatusToasts(this.toasts);
-    this.fullMap = new FullMap(this.raster, {
-      onTeleport: (target) => this.teleport(target),
-      onClose: () => this.closeModal(),
-    });
     this.settings = new SettingsPanel({
       ctx,
       prefs: this.prefs,
@@ -117,13 +114,20 @@ export class UiSystem implements System {
       }
       this.teleport({ x: view.x, y: view.y, z: view.z, headingDeg: view.headingDeg, pitchDeg: view.pitchDeg, label: view.label });
     };
+    const perchAt = (view: ViewPreset): void => {
+      flyTo(view);
+      this.toasts.push(PERCH_TOAST);
+    };
+    this.fullMap = new FullMap(this.raster, {
+      onTeleport: (target) => this.teleport(target),
+      onPerch: perchAt,
+      perches: () => ctx.services.tryGet('perches')?.points,
+      onClose: () => this.closeModal(),
+    });
     const teleportPanel = new TeleportPanel({
       raster: this.raster,
       onTeleport: flyTo,
-      onPerch: (view) => {
-        flyTo(view);
-        this.toasts.push('Konmak için L');
-      },
+      onPerch: perchAt,
       onOpenMap: () => this.openModal('map'),
     });
     this.pauseMenu = new PauseMenu({
