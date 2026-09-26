@@ -52,7 +52,7 @@ breach and flow with this phase.
 - Terrain: follows slopes within `GROUND.maxStep`; on water the run becomes a skim and a splash take-off.
 
 ### 1b. Leaping take-off ("sıçrayarak kalkış")
-- Standing: a deeper crouch (0.35–0.45 s: chest low, wings raised high and back, tail down), an explosive push
+- Standing: a slow, deep crouch (0.6–0.8 s, 0.7–0.85 m, owner feedback 26 Sep: chest low, wings raised high and back, tail down), an explosive push
   (hind legs extend, fore legs push off a beat later), two or three full-amplitude downstrokes with the neck
   stretched forward, legs tucking only after the second stroke.
 - From a walk or run: the leap blends into the stride (no stop to crouch).

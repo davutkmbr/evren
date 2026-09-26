@@ -6,6 +6,7 @@ import { DragonProbe, readListener } from './dragon-probe';
 import { GeoProbe } from './geo-probe';
 import { clamp01, finiteOr, smoothstep } from './dsp/math';
 import { loadVolume, saveVolume } from './settings';
+import { footfallOffsets } from '../core/gait';
 
 const TWO_PI = Math.PI * 2;
 
@@ -33,7 +34,8 @@ export function createAudioSystem(): System {
   const prevCam = { x: 0, y: 0, z: 0, valid: false };
   let lastFlapEventAt = -1e9;
   let prevFlapPhase = Number.NaN;
-  let prevStep = Number.NaN;
+  let prevCycle = Number.NaN;
+  const footfall = [0, 0.5, 0.25, 0.75];
   let eventFiring = false;
   let externalRoar = false;
   let dragonReportsFiring = false;
@@ -256,6 +258,8 @@ export function createAudioSystem(): System {
         const onSurface = dragon.mode === 'grounded' || dragon.mode === 'swimming' || dragon.mode === 'underwater';
         frame.dragon.grounded = onSurface;
         frame.dragon.exertion = clamp01(pose.breath);
+        frame.dragon.skid = dragon.mode === 'grounded' ? clamp01(pose.skid ?? 0) : 0;
+        frame.dragon.groundSpeed = Math.hypot(dragon.velocity.x, dragon.velocity.z);
         // Fallback when the flight model does not emit 'flap' events: follow the rig's wing-beat phase. The phase may
         // be wrapped to [0, 2pi) (the flight model does) or continuous (the contract allows both): detect either.
         const phase = pose.flapPhase;
@@ -266,15 +270,30 @@ export function createAudioSystem(): System {
           }
           prevFlapPhase = phase;
         }
-        // Quadruped walk: four footfalls per gait cycle (hind feet land heavier).
-        const step = Math.floor(pose.walkPhase / (Math.PI / 2));
-        if (dragon.mode === 'grounded' && Number.isFinite(prevStep) && step !== prevStep && pose.walkAmount > 0.15) {
-          const k = ((step % 4) + 4) % 4;
-          engine.step(pose.walkAmount * (k % 2 === 0 ? 1 : 0.75), k < 2 ? -1 : 1);
+        // Footsteps: one per foot as it plants, with the rig's footfall timing (walk, trot, gallop). Hind feet land
+        // heavier; faster gaits land harder; the wrists only step while they are fore feet; a skid digs in instead.
+        const cycle = pose.walkPhase / TWO_PI;
+        if (dragon.mode === 'grounded' && Number.isFinite(cycle) && Number.isFinite(prevCycle) && pose.walkAmount > 0.15) {
+          const gait = pose.gait ?? 0;
+          footfallOffsets(gait, footfall);
+          const fore = pose.foreGround ?? 1;
+          const skid = pose.skid ?? 0;
+          const base = pose.walkAmount * (0.85 + 0.2 * gait) * (1 - 0.6 * skid);
+          for (let i = 0; i < 4; i++) {
+            if (Math.floor(cycle + footfall[i]) === Math.floor(prevCycle + footfall[i])) {
+              continue;
+            }
+            const hind = i < 2;
+            if (!hind && fore < 0.5) {
+              continue;
+            }
+            engine.step(Math.min(1.2, base * (hind ? 1 : 0.75)), i % 2 === 0 ? -1 : 1);
+          }
         }
-        prevStep = Number.isFinite(step) ? step : Number.NaN;
+        prevCycle = Number.isFinite(cycle) && dragon.mode === 'grounded' ? cycle : Number.NaN;
       } else {
         frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming' || dragon?.mode === 'underwater';
+        frame.dragon.skid = 0;
       }
     },
 
