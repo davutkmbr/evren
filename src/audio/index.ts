@@ -238,7 +238,7 @@ export function createAudioSystem(): System {
       geoProbe.update(geo, lp.x, lp.y, lp.z, realDt, frame.probe);
       const dragonAgl = dragon ? finiteOr(dragon.agl, 1e3) : 1e3;
       const skimTarget =
-        dragon && geo && dragonAgl < 14 && dragon.mode !== 'swimming' && geo.isWater(frame.dragon.position.x, frame.dragon.position.z)
+        dragon && geo && dragonAgl < 14 && dragon.mode !== 'swimming' && dragon.mode !== 'underwater' && geo.isWater(frame.dragon.position.x, frame.dragon.position.z)
           ? (1 - Math.max(0, dragonAgl) / 14) * smoothstep(12, 35, frame.dragon.airspeed)
           : 0;
       frame.dragon.skim = finiteOr(frame.dragon.skim + (skimTarget - frame.dragon.skim) * (1 - Math.exp(-realDt * 6)), 0);
@@ -253,7 +253,7 @@ export function createAudioSystem(): System {
 
       if (rig && dragon) {
         const pose = rig.getPose();
-        const onSurface = dragon.mode === 'grounded' || dragon.mode === 'swimming';
+        const onSurface = dragon.mode === 'grounded' || dragon.mode === 'swimming' || dragon.mode === 'underwater';
         frame.dragon.grounded = onSurface;
         frame.dragon.exertion = clamp01(pose.breath);
         // Fallback when the flight model does not emit 'flap' events: follow the rig's wing-beat phase. The phase may
@@ -274,7 +274,7 @@ export function createAudioSystem(): System {
         }
         prevStep = Number.isFinite(step) ? step : Number.NaN;
       } else {
-        frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming';
+        frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming' || dragon?.mode === 'underwater';
       }
     },
 

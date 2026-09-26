@@ -42,7 +42,8 @@ export class DragonProbe {
     out.aoa = speed > 2 ? Math.atan2(-vb.y, u) : 0;
     out.sideslip = speed > 2 ? Math.atan2(vb.x, u) : 0;
     const airspeed = finiteOr(dragon.airspeed, speed);
-    out.airspeed = dragon.mode === 'grounded' || dragon.mode === 'swimming' ? Math.min(airspeed, speed) * 0.3 : airspeed;
+    const offAir = dragon.mode === 'grounded' || dragon.mode === 'swimming' || dragon.mode === 'underwater';
+    out.airspeed = offAir ? Math.min(airspeed, speed) * 0.3 : airspeed;
     out.turnRate = -dragon.angularVelocity.y;
     out.rollRate = -dragon.angularVelocity.z;
 

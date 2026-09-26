@@ -20,6 +20,8 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   urge: 'Dehh!',
   takeoff: 'Kalkış',
   land: 'İniş',
+  plunge: 'Dalış',
+  breach: 'Fırlama',
 };
 
 /** Largest angle of attack the tricks ask for (a margin below the stall). */
@@ -530,7 +532,9 @@ export class Maneuvers {
       this.predictTimer = PREDICT_INTERVAL;
       this.pullOutNeed = this.predictPullOut(sim, this.catchLoadFor(sim.airspeed)) + TRICKS.catchMargin;
     }
-    if (this.clearance(sim) < this.pullOutNeed) {
+    // Falling into water fit for a plunge with Shift held: no automatic catch (underwater.ts plunges in).
+    const plunging = sim.dive.clear && cmd.dive;
+    if (!plunging && this.clearance(sim) < this.pullOutNeed) {
       // Never a crash: the wings open on their own while there is still room to pull out.
       this.startCatch(sim, true);
       this.diveSuppressed = cmd.dive;
