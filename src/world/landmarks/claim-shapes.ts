@@ -6,6 +6,11 @@ export interface LandmarkClaims {
   pads: Float32Array;
   /** ax, az, bx, bz, body radius, corridor radius per segment of a line landmark. */
   lines: Float32Array;
+  /**
+   * Solid volumes of the structures without a ground pad (bridges), structure-volumes.ts STRUCTURE_STRIDE floats per
+   * box: a building or tree that would enter one is left out (height-aware: houses under a high deck stay).
+   */
+  structures?: Float32Array;
 }
 
 export const LINE_STRIDE = 6;

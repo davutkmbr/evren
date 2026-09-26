@@ -1,4 +1,5 @@
 import type { BuildInput } from '../types';
+import { CapMode } from '../../landmarks/structure-volumes';
 import { HEIGHT_GRID, sampleBilinear } from './grid';
 import type { NoiseFrame } from './noise-tile';
 import { stampDisc, stampPolyline } from './raster';
@@ -268,4 +269,65 @@ export function flattenPads(height: Float32Array, coast: Float32Array, pads: Bui
     });
   });
   return out;
+}
+
+/** Ground (m) a bridge box may have above its top before the cap lowers it (deck joints meet the street ground). */
+export const STRUCTURE_CAP_TOLERANCE = 1.2;
+/** The capped ground sits this far (m) above the box top: a deck joint still meets it. */
+const STRUCTURE_CAP_LIFT = 0.25;
+
+/**
+ * Lowers the terrain wherever it rises above a bridge's road (landmarks/structure-volumes.ts, STRUCTURE_STRIDE floats
+ * per box, the deck pieces by their CapMode): an approach cut into a hillside, a cross slope under a wide deck. Boxes are stored with their local x along the bridge axis: every height node over a box and within one
+ * cell to either side is capped at its top (bilinear sampling then stays under it across the deck), and the cap rises
+ * at 1:1 over the next two cells, so the cut has banks. Nothing widens along the axis, and only ground more than
+ * STRUCTURE_CAP_TOLERANCE above the top is touched: where an approach meets the ground nothing moves (the bridge
+ * builders end their approaches there), so a rebake of the volumes finds the same deck.
+ */
+/** Share of a bridge-end deck's half width around the axis where the cap leaves the ground alone. */
+const END_AXIS = 0.5;
+
+export function capUnderStructures(height: Float32Array, boxes: ArrayLike<number>, stride: number): number {
+  const g = HEIGHT_GRID;
+  const grow = g.cell;
+  const bank = g.cell * 2;
+  let capped = 0;
+  for (let o = 0; o + stride <= boxes.length; o += stride) {
+    const [cx, cz, hx, hz, yaw, top, mode] = [boxes[o], boxes[o + 1], boxes[o + 2], boxes[o + 3], boxes[o + 4], boxes[o + 7], boxes[o + 8]];
+    if (mode === CapMode.None) {
+      continue;
+    }
+    // Near a bridge end: only the ground beside the axis is lowered.
+    const end = mode === CapMode.DeckEnd;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const ex = Math.abs(cos) * hx + Math.abs(sin) * hz + grow + bank;
+    const ez = Math.abs(sin) * hx + Math.abs(cos) * hz + grow + bank;
+    const c0 = Math.max(0, Math.ceil((cx - ex - g.origin) / g.cell));
+    const c1 = Math.min(g.size - 1, Math.floor((cx + ex - g.origin) / g.cell));
+    const r0 = Math.max(0, Math.ceil((cz - ez - g.origin) / g.cell));
+    const r1 = Math.min(g.size - 1, Math.floor((cz + ez - g.origin) / g.cell));
+    for (let r = r0; r <= r1; r++) {
+      const z = g.origin + r * g.cell;
+      for (let c = c0; c <= c1; c++) {
+        const x = g.origin + c * g.cell;
+        const dx = x - cx;
+        const dz = z - cz;
+        // Box-local plan coordinates (core/collision.ts convention).
+        const lx = dx * cos - dz * sin;
+        const lz = dx * sin + dz * cos;
+        const d = Math.max(0, Math.abs(lz) - hz);
+        if (Math.abs(lx) > hx || d > grow + bank || (end && Math.abs(lz) < hz * END_AXIS)) {
+          continue;
+        }
+        const cap = top + STRUCTURE_CAP_LIFT + Math.max(0, d - grow);
+        const k = r * g.size + c;
+        if (height[k] > cap && height[k] > top + STRUCTURE_CAP_TOLERANCE) {
+          height[k] = cap;
+          capped++;
+        }
+      }
+    }
+  }
+  return capped;
 }
