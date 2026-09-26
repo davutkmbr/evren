@@ -77,7 +77,7 @@ stamina, the next gate).
 
 - **HUD (flight):** compass as a bare tape top centre; bottom centre cluster: speed (left), stamina wings + hotbar
   (centre; the flow line, a 2 px line under the wings, appears only while there is flow, with the chain length as a
-  small gold "×3" at its right end while a chain is alive), altitude (right); minimap
+  small gold "×3" at its right end while a chain is alive and a 34 px bar under it draining through the chain window), altitude (right); minimap
   bottom right (132 px circle). Everything transient is placed by the zones below.
 - **HUD zones (`src/ui/zones`):** the HUD composes itself. Every transient message (area title, race intro /
   countdown / warnings / callouts, discovery card, maneuver and shot captions, hover and start hints, the race's

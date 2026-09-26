@@ -202,7 +202,7 @@ export class MotionSegmenter {
   }
 
   /** True while the maneuver system or a ground / water move is running something. */
-  private busy(sim: FlightSim): boolean {
+  busy(sim: FlightSim): boolean {
     const m = sim.maneuvers;
     return (
       m.active ||

@@ -483,7 +483,8 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
       // side > 0: the dragon is left of the line (x right of travel is (-lz, lx)); slip right.
       fits.push(side > 0 ? 'slipR' : 'slipL');
     }
-    if (V > 26 && clearance > 40 && Math.abs(sim_.bank) < 25 * DEG && toGate > opts.rollGateDistance) {
+    // Never roll on the way down to the low line (a roll costs height the dive does not have).
+    if (V > 26 && clearance > 40 && !descending && Math.abs(sim_.bank) < 25 * DEG && toGate > opts.rollGateDistance) {
       fits.push('roll');
     }
     // Variety: never one of the chain's last two kinds of motion (a repeat keeps the chain but pays nothing); flow only
