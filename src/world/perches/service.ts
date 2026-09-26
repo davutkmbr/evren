@@ -1,6 +1,8 @@
 import type { GeoQuery, PerchPoint, PerchService } from '../../core/contracts';
 import { PERCH_DATA, type PerchData } from './data';
 import { resolvePerch } from './resolve';
+import { validatePerch } from './rules';
+import { wallTowerPerches } from './walls';
 
 export class PerchServiceImpl implements PerchService {
   private readonly byId = new Map<string, PerchPoint>();
@@ -31,15 +33,29 @@ export class PerchServiceImpl implements PerchService {
 
 /**
  * Resolves the catalogue against the world. An entry whose landmark or spec is missing is skipped with an error
- * instead of taking the whole service down.
+ * instead of taking the whole service down; one that breaks the placement rules (rules.ts) is not offered either.
+ * The city-wall tower perches are picked by rule from the walls bake's candidates (walls.ts, already validated).
  */
-export function buildPerchService(geo: GeoQuery, data: readonly PerchData[] = PERCH_DATA): PerchServiceImpl {
+export function buildPerchService(geo: GeoQuery, data: readonly PerchData[] = PERCH_DATA, walls = true): PerchServiceImpl {
   const points: PerchPoint[] = [];
   for (const d of data) {
     try {
-      points.push(resolvePerch(geo, d));
+      const p = resolvePerch(geo, d);
+      const broken = validatePerch(geo, p);
+      if (broken.length > 0) {
+        console.warn(`[perches] ${d.id} skipped: ${broken.join('; ')}`);
+        continue;
+      }
+      points.push(p);
     } catch (e) {
       console.error(`[perches] ${d.id} skipped`, e);
+    }
+  }
+  if (walls) {
+    try {
+      points.push(...wallTowerPerches(geo).map((w) => w.point));
+    } catch (e) {
+      console.error('[perches] wall towers skipped', e);
     }
   }
   return new PerchServiceImpl(points);

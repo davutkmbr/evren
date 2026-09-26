@@ -18,6 +18,47 @@ const RULES: Partial<Record<PropKind, StandRule>> = {
 };
 const DEFAULT_RULE: StandRule = { building: false };
 
+/**
+ * Feature kits the compiled street tiles have no twin for (props/features.ts): stamped into `kits`, which is drawn
+ * through the street layer's hole, so they stand in the landing spots too. Shopfront kits (awnings, pharmacy signs,
+ * ATMs, market stalls) stay with `mesh`: the compiled façades carry their own.
+ */
+export const THROUGH_HOLE: ReadonlySet<PropKind> = new Set<PropKind>([
+  'fuelCanopy',
+  'fuelPump',
+  'fuelShop',
+  'fuelSign',
+  'goal',
+  'basketHoop',
+  'swing',
+  'slide',
+  'climber',
+  'shrub',
+  'flowers',
+  'rock',
+  'cesme',
+  'fountainBasin',
+  'statue',
+  'hydrant',
+  'tombstone',
+  'fitness',
+  'hedge',
+  'telescope',
+  'recycling',
+  'bikeRack',
+  'metroEntrance',
+  'taxiStand',
+  'gsmMast',
+  'latticeTower',
+  'sunbed',
+  'beachUmbrella',
+  'picnicTable',
+  'kameriye',
+  'streetClock',
+  'infoBoard',
+  'billboard',
+]);
+
 interface Template {
   pos: Float32Array;
   nrm: Float32Array;
@@ -41,6 +82,8 @@ function flatten(g: THREE.BufferGeometry): Template {
 export class PropStamper {
   private readonly templates: Record<PropKind, Template>;
   readonly mesh = new MeshBuf({ position: 3, normal: 3, color: 3, aGlow: 1 });
+  /** The THROUGH_HOLE kits. */
+  readonly kits = new MeshBuf({ position: 3, normal: 3, color: 3, aGlow: 1 });
   readonly counts: Partial<Record<PropKind, number>> = {};
   /** Stand outcomes per kind (build stats). */
   readonly log = new StandLog();
@@ -69,7 +112,7 @@ export class PropStamper {
     const t = this.templates[kind];
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    const m = this.mesh;
+    const m = THROUGH_HOLE.has(kind) ? this.kits : this.mesh;
     for (let v = 0; v < t.count; v++) {
       const o = v * 3;
       const px = t.pos[o] * scale;
@@ -96,5 +139,9 @@ export class PropStamper {
 
   take(): MeshArrays | null {
     return this.mesh.count ? this.mesh.take('color') : null;
+  }
+
+  takeKits(): MeshArrays | null {
+    return this.kits.count ? this.kits.take('color') : null;
   }
 }

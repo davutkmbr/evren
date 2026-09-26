@@ -71,6 +71,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    the aqueduct material reads flat grey/plastic — reuse the city-wall kit's stone/brick material and weathering;
    11 heritage landmarks still have no builder (Topkapı, Dolmabahçe, Çırağan, Rumeli/Anadolu Hisarı, Yedikule,
    Haydarpaşa, Selimiye, Kuleli, Sirkeci, Hipodrom) — their OSM buildings show instead; model them one by one.
+   **Done (cloud session, PR #30):** all 11 have site builders (`heritage/build/sites/*`, checked by
+   `tools/headless/heritage-sites-check.ts`); Topkapı from the shipped OSM footprints (`scripts/data/heritage-footprints.ts`
+   → `heritage/data/topkapi.ts`); Yedikule / Anadolu Hisarı draw only their towers / keep, the walls bake leaves those
+   spots free (`HERITAGE_FORTRESS_TOWERS`); the aqueduct and the fortresses use the city-wall material
+   (`WALL_MATERIAL_SITES`). Anadolu Hisarı's landmark point moved onto the keep. Needs an in-game look (proportions,
+   Dolmabahçe / Selimiye claim discs dropping neighbouring OSM buildings).
 4. **Perches** (owner report): many perch points are hidden by trees and have bad camera angles. Rule: perches only on
    elevated structures (Galata Tower, bridge towers, Kız Kulesi, Beyazıt/Çamlıca towers, wall towers), never ground or
    bare hilltops; clear the tallest neighbour within ~40 m; perch camera frames the dragon in the lower third against
@@ -81,6 +87,10 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    `src/ui/menu/places.ts`, `scripts/perch-audit.mjs` + `scripts/lib/perch-measure.mjs`, headless perch checks.
    Before shots in `.shots/perches/audit/before`. Continue: `git merge wip/perches` into main (or cherry-pick),
    rerun the audit (`node scripts/perch-audit.mjs`), finish the camera composition and occluder fade, verify shots.
+   **Done (cloud session, PR #30):** view-cone and front-only own-structure rules; occluder fade
+   (`src/core/occluder-fade.ts`); city-wall tower perches picked by rule from the walls bake (`perches/walls.ts`,
+   `walls/data/towers.json`); no tree grows over a perch (`perches/clearings.ts`). Not perches (documented in
+   `perches/data.ts`): tower galleries / terraces, Beyazıt and Çamlıca Kulesi (the dragon's rig does not fit).
 5. Owner wants bigger race payoffs from chains (15–25 %, felt bursts, perceived-speed effects) — given to the cloud
    session as a prompt; not ours.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
@@ -92,10 +102,14 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
    +4–7 ms near Kadıköy — over budget; lower `MAX_LOADED`, drop base raster copy, merge far regions).
 4. OSM feature kits first batch (pitches, pools, bus stops, fuel stations) — extend the fetch to keep those tags.
-5. Small open items: bridge joints re-refined when later regions load (`structure-system.ts`); Haydarpaşa port and
-   Hazine Kapısı as landmarks; generic "no vehicles on water" rule in life traffic; street layer test rerun on a quiet
-   machine (`node scripts/street-layer-test.mjs`); street-layer-test gpu scenario errors with `THREE.Color: Unknown color kiremit` (find the named colour and
-   map it); flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
+5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe
+   model; "port" unclear — ask); street layer test rerun on a quiet machine (`node scripts/street-layer-test.mjs`);
+   flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
+   **Done (cloud session, PR #30):** bridge joints re-refined when later regions start drawing; no vehicles on the
+   water (`tools/headless/traffic-water-check.ts`); OSM colour tags incl. Turkish words (`osm/shared/colour.ts`, fixes
+   `Unknown color kiremit`).
+   Items 1–4 overlap the map session's phase 24 work (far OSM layer, re-fetched regions, one building rule): wait
+   for its merge before recompiling the spots or extending the fetch.
 
 ## Working notes
 

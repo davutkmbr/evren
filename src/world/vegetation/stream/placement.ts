@@ -7,6 +7,7 @@
 import { LandUse } from '../../../core/contracts';
 import { hash2i } from '../../../core/math/noise';
 import { latLonToLocal } from '../../../core/geo-coords';
+import { inClearing } from '../../perches/clearing-test';
 import { INSTANCE_STRIDE, Species } from '../species';
 import type { GridWindow, MosqueRingSite, PlacementInitMessage, RoadLine, TileRequestMessage, TileResultMessage } from './protocol';
 
@@ -235,6 +236,7 @@ export class PlacementContext {
   /** Cumulative polyline lengths per road. */
   private readonly roadArc: Float32Array[];
   private readonly height: number[];
+  private readonly clearings: number[];
   private readonly roadCells = new Map<number, number[]>();
   private static readonly ROAD_CELL = 512;
 
@@ -242,6 +244,7 @@ export class PlacementContext {
     this.mosques = init.mosques;
     this.roads = init.roads;
     this.height = init.height;
+    this.clearings = init.clearings ?? [];
     this.roadArc = init.roads.map((r) => {
       const n = r.pts.length / 2;
       const arc = new Float32Array(n);
@@ -330,6 +333,15 @@ export class PlacementContext {
     this.streetTrees(req, geo, out);
     this.mosqueTrees(req, geo, out);
     this.coastalPalms(req, geo, out);
+    // No tree grows over a perch (perches/clearings.ts).
+    if (this.clearings.length) {
+      for (let k = out.length - 1; k >= 0; k--) {
+        const t = out[k];
+        if (inClearing(this.clearings, t.x, t.z, t.y + this.height[t.code % 8] * t.scale)) {
+          out.splice(k, 1);
+        }
+      }
+    }
 
     out.sort((a, b) => a.rank - b.rank);
     const instances = new Float32Array(out.length * INSTANCE_STRIDE);

@@ -130,7 +130,11 @@ export interface BuildInput {
   reservedDiscs: { x: number; z: number; radius: number }[];
   reservedLines: { pts: Float64Array; halfWidth: number }[];
   reservedPolygons: FlatRing[];
-  roads: { pts: Float64Array; halfWidth: number; overWater: boolean }[];
+  /**
+   * Road corridors; `highway`: the name of a motorway or ring road (its sections share it): their verges and the
+   * junction pockets between two different highways turn green (landuse.ts).
+   */
+  roads: { pts: Float64Array; halfWidth: number; overWater: boolean; highway?: string }[];
   /** Breakwater centerlines (already part of landRings); painted as paved, non-buildable ground. */
   breakwaters: { pts: Float64Array; halfWidth: number }[];
   districts: { x: number; z: number; reach: number; side: number; density: number; historic: boolean }[];
