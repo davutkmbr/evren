@@ -102,7 +102,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const cdSep = (1 - sim.attachment) * separatedDrag(alphaWing);
   const liftMag = qbar * shape.area * cl;
   const parasite = shape.parasiteArea * t.dragScale * (1 - SKIM.dragCut * skim);
-  const dragMag = qbar * (shape.area * (cdi + cdSep) + parasite + sim.brake * BODY.brakeCdA);
+  const dragMag = qbar * (shape.area * (cdi + cdSep) + parasite + sim.brake * BODY.brakeCdA) * sim.flow.dragScale;
   const sideMag = qbar * BODY.sideArea * BODY.sideForceSlope * sim.beta;
   sim.lift = liftMag;
   sim.drag = dragMag;
@@ -142,7 +142,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const forwardAir = Math.max(0, -_airBody.z);
   const efficiency = 1 / (1 + (forwardAir / FLAP.speedFalloff) ** 2);
   const ratio = lerp(FLAP.forwardRatio, FLAP.hoverRatio, sim.hoverBlend);
-  const flapMean = MASS * GRAVITY * ratio * beat.forceScale() * efficiency * thin * Math.sqrt(rho / SEA_LEVEL_DENSITY) * t.thrustBoost;
+  const flapMean = MASS * GRAVITY * ratio * beat.forceScale() * efficiency * thin * Math.sqrt(rho / SEA_LEVEL_DENSITY) * t.thrustBoost * sim.flow.thrustScale;
   const flapNow = flapMean * beat.profile();
   sim.flapForce = flapMean;
   const stroke = lerp(FLAP.strokeAngle, FLAP.hoverStrokeAngle, sim.hoverBlend);
@@ -150,6 +150,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   _force.addScaledVector(_flapDir, flapNow);
   // Muscle push of a move (the side-slip's flick).
   _force.add(t.push);
+  sim.musclePower = (flapNow * _flapDir.dot(sim.airVelocity) + t.push.dot(sim.airVelocity)) / MASS;
 
   // --- water skim --------------------------------------------------------------------------
   if (applyWaterSkim(sim, h)) {

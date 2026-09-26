@@ -9,6 +9,7 @@ import { VIEW_PRESETS } from '../../core/debug';
 import { headingToYaw, yawToHeading } from '../../core/geo-coords';
 import { clamp } from '../../core/math/noise';
 import { BodyState } from './body';
+import { mountFlowDebug } from './flow/debug-overlay';
 import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, MAX_SUBSTEPS, PHYSICS_DT } from './params';
 import { Autopilot, hasPilotInput, readPilotInput } from './pilot';
 import { PoseDriver, type LookTarget } from './pose';
@@ -46,6 +47,11 @@ export function createFlightSystem(): System {
       sim.body.velocity.x += dx;
       sim.body.velocity.y += dy;
       sim.body.velocity.z += dz;
+      // An outside push is not the dragon's own energy management (flow's energy stewardship).
+      sim.flow.noteExternal(sim);
+    },
+    notePass(tightness) {
+      sim.flow.notePass(sim, tightness);
     },
     requestRoar() {
       return ctxRef ? roar(ctxRef) : false;
@@ -78,6 +84,7 @@ export function createFlightSystem(): System {
   let touchedWater = false;
   let ignoreTeleport = false;
   let removeTestHook: (() => void) | null = null;
+  let removeFlowDebug: (() => void) | null = null;
   const unsubscribe: Array<() => void> = [];
 
   function teleport(x: number, y: number, z: number, headingDeg: number, pitchDeg: number, speed: number): void {
@@ -230,6 +237,7 @@ export function createFlightSystem(): System {
     state.agl = Math.max(0, sim.agl - sim.standHeight);
     state.headingDeg = yawToHeading(sim.axes.yaw());
     state.stamina = sim.stamina;
+    state.flow = sim.flow.value;
     state.flapEffort = sim.beat.effort;
     state.firing = sim.firing;
     state.roarCooldown = roarCooldown / ROAR_COOLDOWN;
@@ -271,6 +279,9 @@ export function createFlightSystem(): System {
       teleport(preset.x, preset.y, preset.z, preset.headingDeg, preset.pitchDeg, DEFAULT_SPAWN_SPEED);
       writeTelemetry();
       ctx.services.provide('dragon', state);
+      if (ctx.debug.params.get('flowdebug') === '1') {
+        removeFlowDebug = mountFlowDebug(sim.flow);
+      }
       // Test/diagnostics hook: dev server, sandboxes and ?flighttest=1 only.
       if (!import.meta.env.DEV && !ctx.sandbox && !ctx.debug.params.has('flighttest')) {
         return;
@@ -349,6 +360,8 @@ export function createFlightSystem(): System {
       unsubscribe.forEach((u) => u());
       removeTestHook?.();
       removeTestHook = null;
+      removeFlowDebug?.();
+      removeFlowDebug = null;
       testControl.command = null;
       object.removeFromParent();
       if (ctxRef && sim.firing) {
