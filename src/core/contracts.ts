@@ -1178,6 +1178,11 @@ export interface GameEvents {
    */
   'chain-link': { link: number; dv: number; source: 'motion' | 'ring' | 'gate' };
   /**
+   * A "Kusursuz" moment of the flow system (phase 20): which harmony term peaked (on the beat, energy kept, a seamless
+   * handover, the world used). The caption comes separately as a `maneuver` event with id 'flow'.
+   */
+  'flow-moment': { kind: 'rhythm' | 'energy' | 'handover' | 'world' };
+  /**
    * A puff from the dragon's nostrils or mouth (phase 06 bond behaviours): smoke on a sneeze, a small flame at the end
    * of a yawn, a steam huff, water drops flung off by a shake. Purely visual; fx spawns it at the mouth anchor (the
    * drops around the head and neck).

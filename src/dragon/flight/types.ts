@@ -132,7 +132,9 @@ export type SimEvent =
   /** Camera jolt (CameraRigState.shake amount). */
   | { type: 'shake'; amount: number }
   /** A chain link landed (flow/burst.ts): its number in the chain, the speed burst it gives (m/s) and why. */
-  | { type: 'chain'; link: number; dv: number; source: 'motion' | 'ring' | 'gate' };
+  | { type: 'chain'; link: number; dv: number; source: 'motion' | 'ring' | 'gate' }
+  /** A "Kusursuz" moment (flow): which harmony term peaked (the caption comes as a `maneuver` event with id 'flow'). */
+  | { type: 'moment'; kind: 'rhythm' | 'energy' | 'handover' | 'world' };
 
 export function createPilotCommand(): PilotCommand {
   return {

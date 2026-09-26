@@ -6,7 +6,8 @@
  *   .shots/audio/report.png    the visual report (waveforms + spectrograms)
  *
  *   node src/audio/tools/dump-audio.mjs [--cases id1,id2] [--no-wav] [--synth] [--base http://127.0.0.1:5199]
- * --synth renders without the recorded sounds (synthesis only).
+ * --synth renders without the recorded sounds (synthesis only). DUMP_CHROME=<path> runs a given Chromium instead of the
+ * system Chrome (Linux containers).
  * Requires the Vite dev server.
  */
 import { chromium } from 'playwright-core';
@@ -23,7 +24,12 @@ const cases = opt('cases');
 const outDir = resolve(process.cwd(), '.shots/audio');
 mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+// DUMP_CHROME=<path>: a Chromium executable instead of the system Chrome (Linux containers).
+const browser = await chromium.launch(
+  process.env.DUMP_CHROME
+    ? { executablePath: process.env.DUMP_CHROME, headless: true, args: ['--autoplay-policy=no-user-gesture-required'] }
+    : { channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] },
+);
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   // Keep other modules' hot reloads from restarting the render midway.

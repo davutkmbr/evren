@@ -254,6 +254,10 @@ export function createAudioSystem(): System {
           eventFiring = false;
         }),
         ev.on('landmark-discovered', () => engine?.play('discover')),
+        ev.on('flow-moment', ({ kind }) => {
+          const d = ctx.services.tryGet('dragon');
+          engine?.flowMoment(kind, feelContext(!!d?.racing, d?.flow ?? 0));
+        }),
         ev.on('chain-link', ({ link, dv }) => {
           const d = ctx.services.tryGet('dragon');
           engine?.chainLink(link, dv, feelContext(!!d?.racing, d?.flow ?? 0));
