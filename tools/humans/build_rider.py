@@ -1,6 +1,7 @@
 """
 Builds a rider human with MPFB 2 from the approved CC0 MakeHuman assets, dresses it on the neutral standing (rest) pose
-and exports a glTF binary: mesh, skin weights, the mixamo-named skeleton, textures and the pose clips ("stand", "ride").
+and exports a glTF binary: mesh, skin weights, the mixamo-named skeleton, textures and the clips (on-foot clips from
+anim.py, "ride").
 Binding in the standing pose keeps the character ready for any clip (riding, gliding, landing, walking, running).
 
   node scripts/blender-run.mjs --no-slot tools/humans/build_rider.py -- <out.glb> [preview-dir]
@@ -146,7 +147,7 @@ preview("stand-")
 if OUT == "-" and os.environ.get("RIDER_POSE", "1") == "0":
     sys.exit(0)
 
-# --- Clips: "stand" (the rest pose) and "ride" (seated on the dragon, hands on the reins, feet in the stirrups).
+# --- Clips: on foot (anim.py) and "ride" (seated on the dragon, hands on the reins, feet in the stirrups).
 def key_clip(name):
     """Keys every bone's current pose into a new action (two identical frames: a held pose)."""
     act = bpy.data.actions.new(name)
@@ -162,7 +163,9 @@ def key_clip(name):
     return act
 
 
-key_clip("stand")
+# On-foot clips (idle, walk, run, stop, crouch, jump, glide): procedural, see anim.py.
+import anim  # noqa: E402
+print("CLIPS", anim.author(rig, [c for c in os.environ.get("RIDER_CLIPS", "").split(",") if c] or None))
 rig.animation_data.action = None
 # --- Riding pose. The spine leans forward a little; arms and legs are solved with Blender's IK toward the reins and
 # the stirrups (positions relative to the hips, Blender axes: +X the rider's left, -Y forward, +Z up), then baked.

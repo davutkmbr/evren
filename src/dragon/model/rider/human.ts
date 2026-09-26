@@ -24,10 +24,15 @@ export interface HumanRider {
   wind: WindBones;
 }
 
-export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchorRest: THREE.Vector3): Promise<HumanRider> {
+/**
+ * Loads a character built by the pipeline: skinned meshes (shadows on, cards alpha-tested), bones by Mixamo name,
+ * the bind pose, its clips on a mixer, the game's garment materials and the wind chains. In the bind pose, feet on
+ * the origin, facing +Z.
+ */
+export async function loadHumanModel(url: string): Promise<HumanRider> {
   const gltf = await new GLTFLoader().loadAsync(url);
   const root = gltf.scene;
-  root.name = 'rider-human';
+  root.name = 'human';
   const meshes: THREE.SkinnedMesh[] = [];
   const bones = new Map<string, THREE.Bone>();
   root.traverse((o) => {
@@ -59,6 +64,16 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   }
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
+  const human = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones) };
+  applyGarmentMaterials(human);
+  return human;
+}
+
+/** The rider on the dragon: the held riding pose, turned to face -Z with the hips on the seat, under `anchor`. */
+export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchorRest: THREE.Vector3): Promise<HumanRider> {
+  const rider = await loadHumanModel(url);
+  const { root, bones, mixer, clips } = rider;
+  root.name = 'rider-human';
   const ride = clips.get('ride');
   if (ride) {
     mixer.clipAction(ride).play();
@@ -72,8 +87,7 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   const turned = hipsPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   root.position.copy(SEAT_HIPS).sub(turned).sub(anchorRest);
   anchor.add(root);
-  const rider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones) };
-  applyGarmentMaterials(rider);
+  rider.wind.captureRest();
   return rider;
 }
 
