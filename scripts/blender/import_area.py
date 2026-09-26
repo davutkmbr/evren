@@ -1,5 +1,5 @@
 """
-Builds a Blender scene from a compiled Evren area (world compiler format 1, public/world/<area>/).
+Builds a Blender scene from a compiled area (world compiler format 1, public/world/<area>/).
 
     node scripts/blender-run.mjs scripts/blender/import_area.py -- [options]
       --area <id>            area folder under public/world (default kadikoy)
@@ -32,7 +32,7 @@ What it builds:
   (scripts/blender/weather.py), which blends their dirt, streak, edge and damp layers by the `_WEATHER` vertex
   attribute; materials without weather data are unchanged.
 
-Axes: Evren (x, y, z) -> Blender (x, -z, y); Evren quaternion [x, y, z, w] -> Blender (w, x, -z, y). The glTF
+Axes: World (x, y, z) -> Blender (x, -z, y); World quaternion [x, y, z, w] -> Blender (w, x, -z, y). The glTF
 importer converts the tile and prop glbs itself.
 
 Cycles device (use_cycles_device, used by render.py and bake_ao.py): EVREN_CYCLES_DEVICE=CPU|GPU picks it; without
@@ -103,7 +103,7 @@ def load_json(path):
 
 
 def to_blender(p):
-    """Evren (x, y, z) -> Blender (x, -z, y)."""
+    """World (x, y, z) -> Blender (x, -z, y)."""
     return Vector((p[0], -p[2], p[1]))
 
 
@@ -112,7 +112,7 @@ def dir_to_blender(d):
 
 
 def quat_to_blender(q):
-    """Evren unit quaternion [x, y, z, w] -> Blender Quaternion (w, x, y, z)."""
+    """World unit quaternion [x, y, z, w] -> Blender Quaternion (w, x, y, z)."""
     return Quaternion((q[3], q[0], -q[2], q[1]))
 
 

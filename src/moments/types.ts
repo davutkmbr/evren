@@ -171,7 +171,7 @@ export interface TextProvenance {
   kind: 'original' | 'public-domain';
   /** 'MIT' for our own writing, 'public domain' for PD works. */
   licence: string;
-  /** Author of the text as it appears in the game ("Evren contributors" for our own writing). */
+  /** Author of the text as it appears in the game ("Seventeen Skies contributors" for our own writing). */
   author: string;
   /** What the text is based on, e.g. "Evliya Çelebi, Seyahatname (17th century), public domain". */
   basis?: string;

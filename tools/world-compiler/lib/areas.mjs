@@ -63,7 +63,7 @@ export function readAreas() {
 }
 
 /**
- * Landing spots (SPOT_FILE) with their compiled square: `rect` in Evren local metres (+X east, +Z south) and `bbox`
+ * Landing spots (SPOT_FILE) with their compiled square: `rect` in world-local metres (+X east, +Z south) and `bbox`
  * (the same square in degrees, through the local projection, so the fetched bbox and the strip rect agree exactly).
  */
 export function readLandingSpots() {

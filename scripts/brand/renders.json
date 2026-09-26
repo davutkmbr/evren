@@ -1,0 +1,117 @@
+[
+  {
+    "url": "/sandbox/brand.html?show=icon&size=32&radius=0.2",
+    "out": "public/brand/favicon-32.png",
+    "w": 32,
+    "h": 32,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=192",
+    "out": "public/brand/icon-192.png",
+    "w": 192,
+    "h": 192,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=512",
+    "out": "public/brand/icon-512.png",
+    "w": 512,
+    "h": 512,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=180&radius=0",
+    "out": "public/brand/apple-touch-icon.png",
+    "w": 180,
+    "h": 180,
+    "transparent": false
+  },
+  {
+    "url": "/sandbox/brand.html?show=og",
+    "out": "public/brand/og.jpg",
+    "w": 1200,
+    "h": 630
+  },
+  {
+    "url": "/sandbox/brand.html?show=logo&w=2400",
+    "out": ".docs/brand/kit/png/logo-2400.png",
+    "w": 2400,
+    "h": 1438,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=logo&w=1200",
+    "out": ".docs/brand/kit/png/logo-1200.png",
+    "w": 1200,
+    "h": 719,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=logo&w=600",
+    "out": ".docs/brand/kit/png/logo-600.png",
+    "w": 600,
+    "h": 360,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=logo&w=1200&crest=0",
+    "out": ".docs/brand/kit/png/logo-title-1200.png",
+    "w": 1200,
+    "h": 515,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=logo&w=600&crest=0",
+    "out": ".docs/brand/kit/png/logo-title-600.png",
+    "w": 600,
+    "h": 258,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=1024&tile=0",
+    "out": ".docs/brand/kit/png/monogram-1024.png",
+    "w": 1024,
+    "h": 1024,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=1024",
+    "out": ".docs/brand/kit/png/monogram-tile-1024.png",
+    "w": 1024,
+    "h": 1024,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=512",
+    "out": ".docs/brand/kit/png/monogram-tile-512.png",
+    "w": 512,
+    "h": 512,
+    "transparent": true
+  },
+  {
+    "url": "/sandbox/brand.html?show=icon&size=400&radius=0",
+    "out": ".docs/brand/kit/social/avatar-400.png",
+    "w": 400,
+    "h": 400,
+    "transparent": false
+  },
+  {
+    "url": "/sandbox/brand.html?show=banner",
+    "out": ".docs/brand/kit/social/banner-1500x500.jpg",
+    "w": 1500,
+    "h": 500
+  },
+  {
+    "url": "/sandbox/brand.html?show=og",
+    "out": ".docs/brand/kit/social/og-1200x630.jpg",
+    "w": 1200,
+    "h": 630
+  },
+  {
+    "url": "/sandbox/brand.html",
+    "out": ".docs/brand/brand-sheet.jpg",
+    "w": 1200,
+    "h": 900
+  }
+]
