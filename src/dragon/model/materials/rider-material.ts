@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { keepThroughOccluderFade } from '../../../core/occluder-fade';
 import { patchMaterial } from '../../../core/uniforms';
 
 export interface RiderUniforms {
@@ -173,6 +174,7 @@ export function createRiderMaterial(hidePoint: THREE.Vector3): { material: THREE
     uHidePoint: { value: hidePoint.clone() },
   };
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
+  keepThroughOccluderFade(material);
   patchMaterial(material, 'dragon-rider-v3', (shader) => {
     shader.uniforms.uAirspeed = uniforms.uAirspeed;
     shader.uniforms.uAirflow = uniforms.uAirflow;
