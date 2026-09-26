@@ -77,8 +77,8 @@ control or costs speed.
   neck for 3 s, after a trick, and now and then while gliding, perched or resting — only when nothing asks for its eyes
   (not low, not fast, not near an obstacle ahead, not in a trick, race or landing). It blinks, gives a slow blink on
   eye contact, its pupils follow the light and its mood, and in cold or humid air its breath steams from the nostrils.
-  It glances at the landmark when a discovery card opens (the rider points), at a passing vapur, gulls and a stork
-  kettle, and at anything that calls for attention (`dragon-attention` event, e.g. a future ferry horn).
+  It glances at the landmark when a discovery card opens (the rider points), at a passing vapur, gulls, a stork
+  kettle and dolphins surfacing, and at anything that calls for attention (`dragon-attention` event, e.g. a future ferry horn).
 - **Petting (G held, POV and chase):** the rider's palm strokes the neck (IK on the skin, ±3 cm); the dragon purrs
   deeper the fonder it is, half closes its eyes, leans into the hand, raises its neck plates and slowly curls its tail
   tip; a light rumble on gamepads.
@@ -98,6 +98,13 @@ control or costs speed.
 - Landmarks: hand-modelled mosques, bridges, towers, palaces and fortresses at real size.
 - Street layer: compiled street tiles for walkable districts (Eminönü, Kadıköy), streamed in below 80 m.
 - Sky, clouds, weather presets (clear, haze, fog, rain, storm), day–night cycle; seasons planned.
+- Natural phenomena (phase 13): the stork migration (a moment, 5.5) and **dolphins in the Bosphorus**
+  (`src/world/life/dolphins/`): now and then a pod of 3–8 common (sometimes bottlenose) dolphins surfaces within view
+  on open water away from the shore, the lanes and the ferry routes — more often in the morning and on calm seas, never
+  in a storm. They porpoise, roll with the dorsal fin showing and now and then leap with a splash; the dragon glances
+  at them, a low pass alongside makes them ride beside it with more leaps, a plunge nearby scatters them for a few
+  seconds. The first close sighting shows a quiet "Yunuslar!" toast. Their sounds are real recordings pending the
+  owner's approval (`.docs/assets/candidates/dolphin-sounds.md`). `?dolphins=near` keeps a pod near the dragon.
 
 ### 5.3 Viewpoints (perches) — phase 03
 14 viewpoints (bridge towers, Galata cap, Süleymaniye dome, Kız Kulesi, Rumeli Hisarı, the Sapphire roof, hills). Built
@@ -173,7 +180,8 @@ bridge tower) inside the view frustum; occlusion is not tested. The data (radii,
 Planned: bond level with the dragon (the mood system of 5.1.1 is built; the level is not), unlocks (saddles, armour, dragon variants — phase 12).
 
 ### 5.8 Audio and music
-Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Adaptive music (phase 07, system built,
+Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Dolphin whistles, breaths and splashes
+have their slots wired (recorded only, no synthesis) and wait for approved recordings. Adaptive music (phase 07, system built,
 pieces pending the owner's approval): each piece is a set of equal-length stems (piano, strings, light motion, an
 Istanbul colour instrument, pads) that a small rules table fades with the flight — sparse on the ground and perched,
 fuller cruising, a pulse when fast or diving, the colour low over the water, a swell in thermals, softer at night —

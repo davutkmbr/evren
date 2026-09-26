@@ -124,6 +124,14 @@ export class SurfaceEmitter {
       // Part of a continuous skim: the rate-based curtain in update() takes over.
       return;
     }
+    this.worldSplash(ctx, p, strength);
+  }
+
+  /**
+   * A one-shot splash of something other than the dragon hitting the water (dolphins, world/life/dolphins): drops,
+   * crown, mist, rings and foam, without the skim-contact bookkeeping `splash` keeps for the dragon.
+   */
+  worldSplash(ctx: EmitContext, p: THREE.Vector3, strength: number): void {
     if (!this.dedupe(ctx, p)) {
       return;
     }

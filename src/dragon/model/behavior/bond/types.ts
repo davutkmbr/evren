@@ -9,7 +9,7 @@ export const MOODS: readonly DragonMood[] = ['content', 'curious', 'playful', 't
 
 /** A world thing worth a look, already turned into the dragon's body frame by the adapter. */
 export interface AttentionCandidate {
-  kind: 'landmark' | 'horn' | 'bird' | 'stork' | 'ferry' | 'sound';
+  kind: 'landmark' | 'horn' | 'bird' | 'stork' | 'ferry' | 'dolphin' | 'sound';
   /** Stable key (landmark id, vessel id, "bird") for the per-target cooldown. */
   key: string;
   /** Body-relative direction (rad): yaw > 0 = to the dragon's left, pitch > 0 = up. */
@@ -252,15 +252,18 @@ export const BOND = {
     birdTime: 1.6,
     ferryTime: 2.6,
     storkTime: 2.8,
+    dolphinTime: 2.6,
     hornTime: 2.4,
     birdCooldown: 14,
     ferryCooldown: 45,
     storkCooldown: 25,
+    dolphinCooldown: 20,
     hornCooldown: 8,
     /** Ranges (m) a candidate must be within. */
     birdRange: 70,
     ferryRange: 420,
     storkRange: 650,
+    dolphinRange: 500,
     hornRange: 1500,
     /** The rider points at a landmark / stork / ferry the dragon looks at, for this long. */
     showTime: 1.6,

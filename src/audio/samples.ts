@@ -6,7 +6,7 @@ import { NOISE_RMS } from './dsp/noise';
  * (1.3 MB) when it starts raining, thunder (1.4 MB) with the first storm, gulls (1.5 MB) near the water. Voices wait while a group is still loading
  * and synthesize when it failed.
  */
-export type SampleGroup = 'flight' | 'rain' | 'storm' | 'coast';
+export type SampleGroup = 'flight' | 'rain' | 'storm' | 'coast' | 'dolphin';
 
 export interface LoopSample {
   readonly buffer: AudioBuffer;
@@ -32,6 +32,10 @@ interface SampleSlots {
   thunderFar: SpriteSample | null;
   gullCalls: SpriteSample | null;
   gullBed: LoopSample | null;
+  /** Dolphins (world/life/dolphins): whistle and click phrases, surfacing breaths, leap splashes. */
+  dolphinCalls: SpriteSample | null;
+  dolphinBreaths: SpriteSample | null;
+  dolphinSplashes: SpriteSample | null;
 }
 
 export interface SampleBank extends Readonly<SampleSlots> {
@@ -62,7 +66,17 @@ const GROUPS: Record<SampleGroup, ReadonlyArray<readonly [keyof SampleSlots, str
     ['gullCalls', 'gull/calls'],
     ['gullBed', 'gull/bed'],
   ],
+  // Pending the owner's approval (.docs/assets/candidates/dolphin-sounds.md): until 'dolphin/*' entries exist in
+  // sounds.json nothing is fetched and the dolphins stay silent.
+  dolphin: [
+    ['dolphinCalls', 'dolphin/calls'],
+    ['dolphinBreaths', 'dolphin/breaths'],
+    ['dolphinSplashes', 'dolphin/splashes'],
+  ],
 };
+
+/** Groups whose entries are used one by one (each recording may be approved on its own). */
+const PARTIAL: ReadonlySet<SampleGroup> = new Set(['dolphin']);
 
 interface ManifestEntry {
   file: string;
@@ -114,6 +128,9 @@ export class SampleLibrary {
       thunderFar: null,
       gullCalls: null,
       gullBed: null,
+      dolphinCalls: null,
+      dolphinBreaths: null,
+      dolphinSplashes: null,
     };
     const loads = new Map<SampleGroup, Promise<void>>();
     const loading = new Set<SampleGroup>();
@@ -147,8 +164,9 @@ export class SampleLibrary {
         p = this.getManifest()
           .then(async (m) => {
             const decoded = await Promise.all(GROUPS[group].map(([, name]) => decodeEntry(m?.sounds[name])));
-            // A group is used whole or not at all (one missing file keeps the whole group synthesized).
-            if (decoded.every((d) => d)) {
+            // A group is used whole or not at all (one missing file keeps the whole group synthesized); partial
+            // groups take what they have.
+            if (PARTIAL.has(group) || decoded.every((d) => d)) {
               GROUPS[group].forEach(([key], i) => {
                 (slots as unknown as Record<string, LoopSample | SpriteSample | null>)[key] = decoded[i];
               });
