@@ -9,13 +9,16 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
+import { expandSlots, type ModuleGlb, parseModuleGlb } from '../../../../src/street/modules/expand';
 import type { ModulesRef, SlotsRef } from '../../../../src/street/modules/format';
+import type { XYZ } from '../format';
+import { LOD0, type PartArrays, type RGBA, type TileMesh } from '../mesh';
 import { district } from '../district';
 import { type BakedMap, writeTileGlbV1 } from '../gltf';
 import type { MaterialName } from '../materials';
-import type { PartArrays } from '../mesh';
+
 import { tilingOf } from '../textures';
-import { exportLibrary } from './library';
+import { authorLibrary, exportLibrary } from './library';
 import { encodeTileSlots, SLOTS_RECORD, type SlotRecord } from './slots';
 
 const sha16 = (b: Uint8Array | string): string => createHash('sha256').update(b).digest('hex').slice(0, 16);
@@ -36,6 +39,50 @@ export function takeTileSlots(outDir: string, tileId: string, extra: Record<stri
   const file = `tiles/${tileId}.slots.bin`;
   writeFileSync(resolve(outDir, file), enc.bytes);
   return { file, hash: sha16(enc.bytes), bytes: enc.bytes.byteLength, count: enc.count };
+}
+
+let parsed: Promise<Map<string, ModuleGlb>> | null = null;
+
+/**
+ * Bakes a tile's slots into its mesh (LOD0) with the same expansion the runtime runs: the output for Blender and
+ * other runtimes (every compile without `--web`) keeps complete façades. The slot records leave `extra`.
+ */
+export async function bakeTileSlots(mesh: TileMesh, extra: Record<string, unknown>, origin: XYZ): Promise<void> {
+  const keys = Object.keys(extra)
+    .filter((k) => k.startsWith(SLOTS_RECORD))
+    .sort();
+  const enc = encodeTileSlots(keys.map((k) => extra[k] as SlotRecord));
+  for (const k of keys) {
+    delete extra[k];
+  }
+  if (!enc) {
+    return;
+  }
+  const lib = await authorLibrary();
+  parsed ??= Promise.resolve(new Map([...lib.files].map(([f, b]) => [f, parseModuleGlb(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)])));
+  const glbs = await parsed;
+  const tiling = Object.fromEntries(lib.materials.map((m) => [m, tilingOf(m)]));
+  const flag = district().facade.flag;
+  const { parts } = expandSlots({ catalog: lib.catalog, mesh: (file, name) => glbs.get(file)?.get(name) }, enc.bytes.buffer.slice(enc.bytes.byteOffset, enc.bytes.byteOffset + enc.bytes.byteLength) as ArrayBuffer, {
+    tiling,
+    district: district().id,
+    origin: [origin[0], origin[2]],
+    colors: { flag: [hex(flag[0]), hex(flag[1])] },
+  });
+  mesh.withLod(LOD0, () => {
+    for (const p of parts) {
+      const n = p.position.length / 3;
+      const positions = new Float64Array(n * 3);
+      const color: RGBA[] = [];
+      for (let i = 0; i < n; i++) {
+        positions[i * 3] = p.position[i * 3] + origin[0];
+        positions[i * 3 + 1] = p.position[i * 3 + 1];
+        positions[i * 3 + 2] = p.position[i * 3 + 2] + origin[2];
+        color.push([p.color[i * 4], p.color[i * 4 + 1], p.color[i * 4 + 2], p.color[i * 4 + 3]]);
+      }
+      mesh.addMesh(p.material, { positions, indices: p.index, normals: p.normal, ...(p.uv ? { uv: p.uv } : {}), color });
+    }
+  });
 }
 
 /** A hex string of an sRGB colour number. */

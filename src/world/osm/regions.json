@@ -26,7 +26,10 @@
     "north": 41.119423,
     "east": 29.059783
    },
-   "file": "data/osm/regions/emirgan.json"
+   "file": "data/osm/regions/emirgan.json",
+   "bytes": 435203,
+   "gzipBytes": 122783,
+   "buildings": 2117
   },
   {
    "id": "emirgan-2",
@@ -43,7 +46,10 @@
     "north": 41.119423,
     "east": 29.071693
    },
-   "file": "data/osm/regions/emirgan-2.json"
+   "file": "data/osm/regions/emirgan-2.json",
+   "bytes": 39448,
+   "gzipBytes": 12441,
+   "buildings": 90
   },
   {
    "id": "emirgan-3",
@@ -60,7 +66,10 @@
     "north": 41.110418,
     "east": 29.059783
    },
-   "file": "data/osm/regions/emirgan-3.json"
+   "file": "data/osm/regions/emirgan-3.json",
+   "bytes": 489775,
+   "gzipBytes": 138007,
+   "buildings": 2177
   },
   {
    "id": "kanlica",
@@ -77,7 +86,10 @@
     "north": 41.110418,
     "east": 29.083604
    },
-   "file": "data/osm/regions/kanlica.json"
+   "file": "data/osm/regions/kanlica.json",
+   "bytes": 176145,
+   "gzipBytes": 49834,
+   "buildings": 801
   },
   {
    "id": "bebek",
@@ -94,7 +106,10 @@
     "north": 41.092409,
     "east": 29.035961
    },
-   "file": "data/osm/regions/bebek.json"
+   "file": "data/osm/regions/bebek.json",
+   "bytes": 270421,
+   "gzipBytes": 75553,
+   "buildings": 974
   },
   {
    "id": "rumeli-hisari",
@@ -111,7 +126,10 @@
     "north": 41.092409,
     "east": 29.059783
    },
-   "file": "data/osm/regions/rumeli-hisari.json"
+   "file": "data/osm/regions/rumeli-hisari.json",
+   "bytes": 513886,
+   "gzipBytes": 146549,
+   "buildings": 1959
   },
   {
    "id": "anadolu-hisari",
@@ -128,7 +146,10 @@
     "north": 41.092409,
     "east": 29.083604
    },
-   "file": "data/osm/regions/anadolu-hisari.json"
+   "file": "data/osm/regions/anadolu-hisari.json",
+   "bytes": 476227,
+   "gzipBytes": 135080,
+   "buildings": 2053
   },
   {
    "id": "eyup",
@@ -145,7 +166,10 @@
     "north": 41.065395,
     "east": 28.940673
    },
-   "file": "data/osm/regions/eyup.json"
+   "file": "data/osm/regions/eyup.json",
+   "bytes": 1158606,
+   "gzipBytes": 310049,
+   "buildings": 7432
   },
   {
    "id": "eyup-2",
@@ -162,7 +186,10 @@
     "north": 41.065395,
     "east": 28.952584
    },
-   "file": "data/osm/regions/eyup-2.json"
+   "file": "data/osm/regions/eyup-2.json",
+   "bytes": 286785,
+   "gzipBytes": 73633,
+   "buildings": 983
   },
   {
    "id": "arnavutkoy",
@@ -179,7 +206,10 @@
     "north": 41.0744,
     "east": 29.035961
    },
-   "file": "data/osm/regions/arnavutkoy.json"
+   "file": "data/osm/regions/arnavutkoy.json",
+   "bytes": 244324,
+   "gzipBytes": 72706,
+   "buildings": 863
   },
   {
    "id": "ortakoy",
@@ -196,7 +226,10 @@
     "north": 41.065395,
     "east": 29.02405
    },
-   "file": "data/osm/regions/ortakoy.json"
+   "file": "data/osm/regions/ortakoy.json",
+   "bytes": 143331,
+   "gzipBytes": 39355,
+   "buildings": 367
   },
   {
    "id": "arnavutkoy-2",
@@ -213,7 +246,10 @@
     "north": 41.0744,
     "east": 29.059783
    },
-   "file": "data/osm/regions/arnavutkoy-2.json"
+   "file": "data/osm/regions/arnavutkoy-2.json",
+   "bytes": 553831,
+   "gzipBytes": 158007,
+   "buildings": 2386
   },
   {
    "id": "anadolu-hisari-2",
@@ -230,7 +266,10 @@
     "north": 41.0744,
     "east": 29.083604
    },
-   "file": "data/osm/regions/anadolu-hisari-2.json"
+   "file": "data/osm/regions/anadolu-hisari-2.json",
+   "bytes": 429932,
+   "gzipBytes": 125599,
+   "buildings": 1413
   },
   {
    "id": "cengelkoy",
@@ -247,7 +286,10 @@
     "north": 41.065395,
     "east": 29.071693
    },
-   "file": "data/osm/regions/cengelkoy.json"
+   "file": "data/osm/regions/cengelkoy.json",
+   "bytes": 236894,
+   "gzipBytes": 66909,
+   "buildings": 1030
   },
   {
    "id": "eyup-3",
@@ -264,7 +306,10 @@
     "north": 41.056391,
     "east": 28.940673
    },
-   "file": "data/osm/regions/eyup-3.json"
+   "file": "data/osm/regions/eyup-3.json",
+   "bytes": 1229954,
+   "gzipBytes": 324838,
+   "buildings": 6802
   },
   {
    "id": "eyup-4",
@@ -281,7 +326,10 @@
     "north": 41.056391,
     "east": 28.952584
    },
-   "file": "data/osm/regions/eyup-4.json"
+   "file": "data/osm/regions/eyup-4.json",
+   "bytes": 351135,
+   "gzipBytes": 95732,
+   "buildings": 1366
   },
   {
    "id": "balat",
@@ -298,7 +346,10 @@
     "north": 41.047386,
     "east": 28.964495
    },
-   "file": "data/osm/regions/balat.json"
+   "file": "data/osm/regions/balat.json",
+   "bytes": 265082,
+   "gzipBytes": 72460,
+   "buildings": 1743
   },
   {
    "id": "taksim",
@@ -315,7 +366,10 @@
     "north": 41.056391,
     "east": 28.988317
    },
-   "file": "data/osm/regions/taksim.json"
+   "file": "data/osm/regions/taksim.json",
+   "bytes": 785585,
+   "gzipBytes": 194986,
+   "buildings": 4591
   },
   {
    "id": "galatasaray",
@@ -332,7 +386,10 @@
     "north": 41.047386,
     "east": 28.976406
    },
-   "file": "data/osm/regions/galatasaray.json"
+   "file": "data/osm/regions/galatasaray.json",
+   "bytes": 197577,
+   "gzipBytes": 54412,
+   "buildings": 960
   },
   {
    "id": "besiktas",
@@ -349,7 +406,10 @@
     "north": 41.056391,
     "east": 29.012139
    },
-   "file": "data/osm/regions/besiktas.json"
+   "file": "data/osm/regions/besiktas.json",
+   "bytes": 1013929,
+   "gzipBytes": 261211,
+   "buildings": 4182
   },
   {
    "id": "ortakoy-2",
@@ -366,7 +426,10 @@
     "north": 41.056391,
     "east": 29.035961
    },
-   "file": "data/osm/regions/ortakoy-2.json"
+   "file": "data/osm/regions/ortakoy-2.json",
+   "bytes": 324024,
+   "gzipBytes": 95153,
+   "buildings": 1205
   },
   {
    "id": "beylerbeyi",
@@ -383,7 +446,10 @@
     "north": 41.056391,
     "east": 29.059783
    },
-   "file": "data/osm/regions/beylerbeyi.json"
+   "file": "data/osm/regions/beylerbeyi.json",
+   "bytes": 433354,
+   "gzipBytes": 125673,
+   "buildings": 2301
   },
   {
    "id": "cengelkoy-2",
@@ -400,7 +466,10 @@
     "north": 41.056391,
     "east": 29.071693
    },
-   "file": "data/osm/regions/cengelkoy-2.json"
+   "file": "data/osm/regions/cengelkoy-2.json",
+   "bytes": 369033,
+   "gzipBytes": 104945,
+   "buildings": 2163
   },
   {
    "id": "eyup-5",
@@ -417,7 +486,10 @@
     "north": 41.038382,
     "east": 28.940673
    },
-   "file": "data/osm/regions/eyup-5.json"
+   "file": "data/osm/regions/eyup-5.json",
+   "bytes": 558732,
+   "gzipBytes": 147461,
+   "buildings": 2368
   },
   {
    "id": "balat-2",
@@ -434,7 +506,10 @@
     "north": 41.029377,
     "east": 28.940673
    },
-   "file": "data/osm/regions/balat-2.json"
+   "file": "data/osm/regions/balat-2.json",
+   "bytes": 461222,
+   "gzipBytes": 116333,
+   "buildings": 2610
   },
   {
    "id": "balat-3",
@@ -451,7 +526,10 @@
     "north": 41.038382,
     "east": 28.964495
    },
-   "file": "data/osm/regions/balat-3.json"
+   "file": "data/osm/regions/balat-3.json",
+   "bytes": 1510148,
+   "gzipBytes": 396497,
+   "buildings": 9079
   },
   {
    "id": "dolmabahce",
@@ -468,7 +546,10 @@
     "north": 41.038382,
     "east": 29.012139
    },
-   "file": "data/osm/regions/dolmabahce.json"
+   "file": "data/osm/regions/dolmabahce.json",
+   "bytes": 205986,
+   "gzipBytes": 56951,
+   "buildings": 602
   },
   {
    "id": "uskudar",
@@ -485,7 +566,10 @@
     "north": 41.038382,
     "east": 29.035961
    },
-   "file": "data/osm/regions/uskudar.json"
+   "file": "data/osm/regions/uskudar.json",
+   "bytes": 579054,
+   "gzipBytes": 159118,
+   "buildings": 2592
   },
   {
    "id": "beylerbeyi-2",
@@ -502,7 +586,10 @@
     "north": 41.038382,
     "east": 29.059783
    },
-   "file": "data/osm/regions/beylerbeyi-2.json"
+   "file": "data/osm/regions/beylerbeyi-2.json",
+   "bytes": 321172,
+   "gzipBytes": 93485,
+   "buildings": 1611
   },
   {
    "id": "kuzguncuk",
@@ -519,7 +606,10 @@
     "north": 41.029377,
     "east": 29.047872
    },
-   "file": "data/osm/regions/kuzguncuk.json"
+   "file": "data/osm/regions/kuzguncuk.json",
+   "bytes": 257987,
+   "gzipBytes": 71961,
+   "buildings": 856
   },
   {
    "id": "suleymaniye",
@@ -536,7 +626,10 @@
     "north": 41.020373,
     "east": 28.964495
    },
-   "file": "data/osm/regions/suleymaniye.json"
+   "file": "data/osm/regions/suleymaniye.json",
+   "bytes": 1774431,
+   "gzipBytes": 444286,
+   "buildings": 8348
   },
   {
    "id": "sultanahmet",
@@ -553,7 +646,10 @@
     "north": 41.01461,
     "east": 28.988317
    },
-   "file": "data/osm/regions/sultanahmet.json"
+   "file": "data/osm/regions/sultanahmet.json",
+   "bytes": 1276004,
+   "gzipBytes": 317277,
+   "buildings": 4406
   },
   {
    "id": "salacak",
@@ -570,7 +666,10 @@
     "north": 41.01461,
     "east": 29.012139
    },
-   "file": "data/osm/regions/salacak.json"
+   "file": "data/osm/regions/salacak.json",
+   "bytes": 53380,
+   "gzipBytes": 16104,
+   "buildings": 110
   },
   {
    "id": "salacak-2",
@@ -587,7 +686,10 @@
     "north": 41.020373,
     "east": 29.012139
    },
-   "file": "data/osm/regions/salacak-2.json"
+   "file": "data/osm/regions/salacak-2.json",
+   "bytes": 53043,
+   "gzipBytes": 16503,
+   "buildings": 256
   },
   {
    "id": "uskudar-2",
@@ -605,8 +707,8 @@
     "east": 29.035961
    },
    "file": "data/osm/regions/uskudar-2.json",
-   "bytes": 305724,
-   "gzipBytes": 87451,
+   "bytes": 305729,
+   "gzipBytes": 87456,
    "buildings": 1255
   },
   {
@@ -625,8 +727,8 @@
     "east": 29.02405
    },
    "file": "data/osm/regions/kadikoy.json",
-   "bytes": 119339,
-   "gzipBytes": 35687,
+   "bytes": 119344,
+   "gzipBytes": 35690,
    "buildings": 227
   },
   {
@@ -644,24 +746,10 @@
     "north": 41.002363,
     "east": 28.964495
    },
-   "file": "data/osm/regions/kumkapi.json"
-  },
-  {
-   "id": "kumkapi-2",
-   "spot": "kumkapi",
-   "area": {
-    "minX": -5660,
-    "maxX": -4660,
-    "minZ": 5735,
-    "maxZ": 6735
-   },
-   "bbox": {
-    "south": 40.984354,
-    "west": 28.952584,
-    "north": 40.993359,
-    "east": 28.964495
-   },
-   "file": "data/osm/regions/kumkapi-2.json"
+   "file": "data/osm/regions/kumkapi.json",
+   "bytes": 84526,
+   "gzipBytes": 23779,
+   "buildings": 122
   },
   {
    "id": "sultanahmet-2",
@@ -678,24 +766,10 @@
     "north": 41.002363,
     "east": 28.988317
    },
-   "file": "data/osm/regions/sultanahmet-2.json"
-  },
-  {
-   "id": "kumkapi-3",
-   "spot": "kumkapi",
-   "area": {
-    "minX": -4660,
-    "maxX": -3660,
-    "minZ": 5735,
-    "maxZ": 6735
-   },
-   "bbox": {
-    "south": 40.984354,
-    "west": 28.964495,
-    "north": 40.993359,
-    "east": 28.976406
-   },
-   "file": "data/osm/regions/kumkapi-3.json"
+   "file": "data/osm/regions/sultanahmet-2.json",
+   "bytes": 72811,
+   "gzipBytes": 19232,
+   "buildings": 160
   },
   {
    "id": "kadikoy-4",
@@ -713,8 +787,8 @@
     "east": 29.035961
    },
    "file": "data/osm/regions/kadikoy-4.json",
-   "bytes": 1173493,
-   "gzipBytes": 302338,
+   "bytes": 1173498,
+   "gzipBytes": 302344,
    "buildings": 5225
   },
   {
@@ -733,8 +807,8 @@
     "east": 29.047872
    },
    "file": "data/osm/regions/kadikoy-5.json",
-   "bytes": 706540,
-   "gzipBytes": 186560,
+   "bytes": 706373,
+   "gzipBytes": 186521,
    "buildings": 2882
   },
   {
@@ -753,8 +827,8 @@
     "east": 29.035961
    },
    "file": "data/osm/regions/moda-2.json",
-   "bytes": 276961,
-   "gzipBytes": 75964,
+   "bytes": 276941,
+   "gzipBytes": 75966,
    "buildings": 972
   },
   {
@@ -773,9 +847,9 @@
     "east": 29.047872
    },
    "file": "data/osm/regions/moda-3.json",
-   "bytes": 322831,
-   "gzipBytes": 91757,
-   "buildings": 1227
+   "bytes": 322811,
+   "gzipBytes": 91750,
+   "buildings": 1226
   },
   {
    "id": "heybeliada",
@@ -792,41 +866,10 @@
     "north": 40.894309,
     "east": 29.107426
    },
-   "file": "data/osm/regions/heybeliada.json"
-  },
-  {
-   "id": "buyukada",
-   "spot": "buyukada",
-   "area": {
-    "minX": 7340,
-    "maxX": 9340,
-    "minZ": 16735,
-    "maxZ": 18735
-   },
-   "bbox": {
-    "south": 40.876299,
-    "west": 29.107426,
-    "north": 40.894309,
-    "east": 29.131248
-   },
-   "file": "data/osm/regions/buyukada.json"
-  },
-  {
-   "id": "buyukada-2",
-   "spot": "buyukada",
-   "area": {
-    "minX": 9340,
-    "maxX": 10340,
-    "minZ": 16735,
-    "maxZ": 18735
-   },
-   "bbox": {
-    "south": 40.876299,
-    "west": 29.131248,
-    "north": 40.894309,
-    "east": 29.143159
-   },
-   "file": "data/osm/regions/buyukada-2.json"
+   "file": "data/osm/regions/heybeliada.json",
+   "bytes": 129466,
+   "gzipBytes": 35937,
+   "buildings": 668
   },
   {
    "id": "heybeliada-2",
@@ -843,24 +886,10 @@
     "north": 40.876299,
     "east": 29.107426
    },
-   "file": "data/osm/regions/heybeliada-2.json"
-  },
-  {
-   "id": "heybeliada-3",
-   "spot": "heybeliada",
-   "area": {
-    "minX": 6340,
-    "maxX": 7340,
-    "minZ": 19735,
-    "maxZ": 20735
-   },
-   "bbox": {
-    "south": 40.85829,
-    "west": 29.095515,
-    "north": 40.867295,
-    "east": 29.107426
-   },
-   "file": "data/osm/regions/heybeliada-3.json"
+   "file": "data/osm/regions/heybeliada-2.json",
+   "bytes": 75728,
+   "gzipBytes": 22471,
+   "buildings": 348
   },
   {
    "id": "buyukada-3",
@@ -877,7 +906,10 @@
     "north": 40.876299,
     "east": 29.131248
    },
-   "file": "data/osm/regions/buyukada-3.json"
+   "file": "data/osm/regions/buyukada-3.json",
+   "bytes": 371692,
+   "gzipBytes": 109091,
+   "buildings": 2114
   },
   {
    "id": "buyukada-4",
@@ -894,7 +926,10 @@
     "north": 40.876299,
     "east": 29.143159
    },
-   "file": "data/osm/regions/buyukada-4.json"
+   "file": "data/osm/regions/buyukada-4.json",
+   "bytes": 234802,
+   "gzipBytes": 68888,
+   "buildings": 1369
   }
  ]
 }

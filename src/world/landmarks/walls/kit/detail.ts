@@ -138,12 +138,39 @@ export function reliefSurface(mb: MeshBuilder, g: FacePoint[][], loss: number[][
         ny = -ny;
         nz = -nz;
       }
-      const v0 = mb.vertexCount;
-      for (const k of order) {
-        const v = q[k];
-        mb.vertex(v.x, v.y, v.z, nx / l, ny / l, nz / l, v.u, v.y, matFor(base, L[k]), 1 - 0.3 * L[k]);
+      // Two triangles with their own flat normals: on the steep reveals of a loss the halves of a quad face very
+      // different ways, and one averaged normal lit them wrongly.
+      for (const tri of [[order[0], order[1], order[2]], [order[0], order[2], order[3]]]) {
+        const [A, B, Cq] = tri.map((k) => q[k]);
+        const ux = B.x - A.x;
+        const uy = B.y - A.y;
+        const uz = B.z - A.z;
+        const wx = Cq.x - A.x;
+        const wy = Cq.y - A.y;
+        const wz = Cq.z - A.z;
+        let tx = uy * wz - uz * wy;
+        let ty = uz * wx - ux * wz;
+        let tz = ux * wy - uy * wx;
+        const tl = Math.hypot(tx, ty, tz);
+        if (tl < 1e-9) {
+          continue;
+        }
+        // Bent toward the face normal: the ceilings and sides of the recesses face down / sideways and got almost no
+        // sky light (black strips at low sun); real recesses keep some bounce light from the surrounding face.
+        tx = tx / tl + 0.7 * q[0].nx;
+        ty = ty / tl;
+        tz = tz / tl + 0.7 * q[0].nz;
+        const bl = Math.hypot(tx, ty, tz) || 1;
+        tx /= bl;
+        ty /= bl;
+        tz /= bl;
+        const v0 = mb.vertexCount;
+        for (const k of tri) {
+          const v = q[k];
+          mb.vertex(v.x, v.y, v.z, tx, ty, tz, v.u, v.y, matFor(base, L[k]), 1 - 0.15 * L[k]);
+        }
+        mb.tri(v0, v0 + 1, v0 + 2);
       }
-      mb.quad(v0, v0 + 1, v0 + 2, v0 + 3);
     }
   }
 }
@@ -206,7 +233,8 @@ export function faceFields(
     const rc: boolean[] = [];
     for (let r = 0; r < R; r++) {
       const q = g[i][r];
-      const v = noise2(q.u / 7, q.y / 5, seed + 131);
+      // Broad, tall patches (rebuilt breaches run up the whole wall).
+      const v = noise2(q.u / 3.2, q.y / 11, seed + 131);
       const on = repairs > 0 && v > 0.8 - 0.06 * repairs && loss[i][r] + loss[i + 1][r + 1] < 0.2;
       rc.push(on);
       if (on) {
@@ -224,7 +252,9 @@ export function faceFields(
       continue;
     }
     const q = g[a][b];
-    const d = 0.05 + 0.07 * hash(seed, 7000 + a * 41 + b);
+    // Bulging: proud by 5 cm at the patch edge, up to ~25 cm in its middle.
+    const v = noise2(q.u / 3.2, q.y / 11, seed + 131);
+    const d = 0.05 + 0.2 * Math.max(0, Math.min(1, (v - 0.78) / 0.12)) + 0.03 * hash(seed, 7000 + a * 41 + b);
     q.x += q.nx * d;
     q.z += q.nz * d;
   }

@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { join } from 'node:path';
 import { deserialize, serialize } from 'node:v8';
 import { threadId } from 'node:worker_threads';
-import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
+import { constants as zlibConstants, zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { CACHE_ROOT } from './cache';
 import type { InstanceRec, LightRec, TileManifest } from './format';
 import type { InstanceSink } from './instances';
@@ -523,7 +523,8 @@ export class TileStages {
     const { calls: _, ...state } = effect;
     for (const [name, value] of [[`${file}.calls`, calls], [file, state]] as const) {
       const tmp = join(this.dir, `.${name}.${process.pid}-${threadId}.tmp`);
-      writeFileSync(tmp, zstdCompressSync(serialize(value)));
+      // Level 1: effects are written once per tile and step on every cold compile; ~15 % larger than level 3.
+      writeFileSync(tmp, zstdCompressSync(serialize(value), { params: { [zlibConstants.ZSTD_c_compressionLevel]: 1 } }));
       renameSync(tmp, join(this.dir, name));
     }
     this.list().push(`${file}.calls`, file);

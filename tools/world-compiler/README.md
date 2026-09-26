@@ -80,10 +80,13 @@ public/world/<area>/            (gitignored; served by Vite at /world/<area>/)
   tiles/<i>_<j>.glb             one tile's geometry (format 1: LOD0)
   tiles/<i>_<j>.lod1.glb        format 1: LOD1, when it differs from LOD0 (full-detail tiles)
   tiles/<i>_<j>.json            one tile's manifest
+  tiles/<i>_<j>.slots.bin       format 1.2: the tile's façade module slots (full-detail tiles)
+  modules/palette.glb           format 1.2: the area's materials for the façade modules
   textures/<set>_<role>.jpg|png format 1: processed textures, shared by every tile and prop
   props/<prop>.glb              format 1: prop models placed by the tile manifests' instances
   walk.json                     walk graph
   lanes.json                    lane graph
+public/world/_shared/modules/   format 1.2: the façade module library (catalog.json and one glb per family, each also .gz)
 ```
 
 Frame: World-local metres (`src/core/geo-coords.ts`), +X east, +Y up, +Z south (north is -Z), origin 41.045 N,
@@ -774,6 +777,42 @@ the PNG's alpha). Every decal of one material in a tile lands in that material's
 material per tile), so decals cost one draw call per decal material and tile. Leaking003 / Leaking008 are
 top- / bottom-anchored stains: as tiled `weather` layers their phase is fixed in world height (`mirror` hides the
 seam), so sill-anchored streaks read best as decals or with a vertically tileable streak texture.
+
+## Format 1.2 — façade modules
+
+Full-detail tiles keep the wall shell and its openings (walls, reveals, trims, parapets, roofs, wear decals); what
+fills and dresses the openings is a list of **slots** per tile (`tiles/<id>.slots.bin`, binary, ~5 bytes per slot
+gzipped). A slot names a module family, a style, a 16-bit seed, a place on a wall frame (r along the wall, y, d
+out of it), the size it fills (w, h, d) and up to two tints (linear RGBA8: frame colour, glass, paint, trim...). The
+runtime picks one of the family's variants by style, size, the area's district and the seed, and assembles the
+chosen modules into merged geometry per material in a worker (`src/street/modules/`: format, expand, worker,
+expander). Adding a variant is adding a glb and a catalog entry to `public/world/_shared/modules/`: no tile
+recompiles. The binary layout, the catalog fields and the module conventions are documented in
+`src/street/modules/format.ts`.
+
+- **Families** (`src/modules/`): window frames and glass (casement, T2, ribbon, balcony doors; styles pvc / timber /
+  alu), room boxes (dark / lit / shop), curtains and blinds, cracked panes, roller shutters and boxes, sills, T2
+  surrounds, wooden shutters, boiler flues; balcony slabs, parapets, glazed enclosures, glass and steel railings
+  (flat-bar, square, iron, pipe), T2 brackets; shop rooms, ceiling lights, stocked shelves, clothes rails, fridges,
+  menu boards, barber and butcher fittings, café tables, vitrines, gondolas, window displays, counters; shop steps,
+  kepenk frames and curtains, glazing runs and doors, sign boards, blade signs, awnings; cable spans; text.
+- **Text**: sign names, trade words, door numbers, plaques, banners and graffiti are text slots whose style is the
+  string itself; the runtime sets it with the glyph modules (one per character of `shopfront/font.ts`).
+- **Authoring** (`modules/spec.ts`, `library.ts`): a variant is drawn with the façade `Batch` in the module frame
+  (x right along the wall seen from outside, y up, z out of the wall) at its reference size; the exporter draws it
+  again at slightly larger w, h, d and stores the per-metre movement of every vertex as `_DW`, `_DH`, `_DD`, and
+  refuses a variant whose vertices bend over its fit range (split the range into variants). Bays that repeat along
+  a run (railing bars, shelf stock, glazing panes, ceiling lights) use `repeat` with optional end caps.
+- **Output**: the library is exported on every compile into `<world>/_shared/modules/` (deterministic, written only
+  when it changed); the area gets `modules/palette.glb` (one tiny primitive per module material, with the area's own
+  material definitions and textures) and the index `modules` (catalog path and hash, palette, material tiling for
+  world-scale UV0, district, district colours). Tile refs get `slots` (file, hash, bytes, count).
+- **Runtime**: LOD0 of a tile with slots is loaded together with its expansion; module geometry is drawn by the tile
+  batches like the tile's own primitives. UV0 of module faces is the same world-scale projection TileMesh uses, so
+  textures continue across modules and walls. `_WEATHER` is not carried (the game does not read it); weathering and
+  paint variation come from COLOR_0 and the slot tints.
+- Prop instances (AC units, roof tanks, dishes, stalls, people) stay instances; the staff behind shop counters are
+  still placed by the compiler.
 
 ## Dev dependencies
 

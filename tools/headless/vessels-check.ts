@@ -15,7 +15,7 @@
  *    cross-track and along-track error against the navigation reference, ferries arriving at and docking alongside
  *    their berths (docking time, position while alongside), no hull ever closer to the land than its reference.
  * 7. Interactions: a dragon landing on a small boat (bounded, damped), a plunge splash beside one, a ferry's wake
- *    rocking a small boat more than calm water does.
+ *    (wave particles emitted by its hull, stage 7a) rocking a small boat more than calm water does.
  * 8. Performance: the full ultra fleet with the camera at Karaköy, physics CPU per frame (≤ 1 ms) at 60 and 24 fps.
  * 9. Frame-rate robustness: identical motion at dt 1/24, 1/60 and 1/144 (fixed sub-step) and no NaNs anywhere.
  */
@@ -31,6 +31,8 @@ import { buildHullBody, columnVolume, GRAVITY, RHO_SEA, type HullBody } from '..
 import { HullLod, RigidHull, wrapPi } from '../../src/world/life/vessels/physics/rigid-hull';
 import { VESSEL_PHYSICS, VesselPhysics } from '../../src/world/life/vessels/physics/vessel-physics';
 import { buildStraitLanes, placeBerths } from '../../src/world/life/vessels/routes';
+import { waveParticleQualityFor } from '../../src/world/water/particles/config';
+import { WaveParticles } from '../../src/world/water/particles/wave-particles';
 import { buildHeadlessGeo } from './geo';
 import { createHeadlessSea } from './water-sea';
 
@@ -59,6 +61,27 @@ class FlatWater implements WaterService {
   }
   velocityAt(_x: number, _z: number, out: THREE.Vector3): THREE.Vector3 {
     return out.set(0, 0, 0);
+  }
+  currentAt(_x: number, _z: number, out: THREE.Vector3): THREE.Vector3 {
+    return out.set(0, 0, 0);
+  }
+}
+
+/** Still water plus wave particles (stage 7a: the hulls' wakes); `dynamic.update(dt)` once per frame. */
+class ParticleWater implements WaterService {
+  readonly seaState: WaterSeaState = { windSpeed: 0, significantWaveHeight: 0, lodos: 0, regime: 'poyraz' };
+  readonly dynamic = new WaveParticles(waveParticleQualityFor('high'));
+  private readonly s = { height: 0, slopeX: 0, slopeZ: 0, vx: 0, vy: 0, vz: 0 };
+  heightAt(x: number, z: number): number {
+    return this.dynamic.sample(x, z, this.s).height;
+  }
+  normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
+    this.dynamic.sample(x, z, this.s);
+    return out.set(-this.s.slopeX, 1, -this.s.slopeZ).normalize();
+  }
+  velocityAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
+    this.dynamic.sample(x, z, this.s);
+    return out.set(this.s.vx, this.s.vy, this.s.vz);
   }
   currentAt(_x: number, _z: number, out: THREE.Vector3): THREE.Vector3 {
     return out.set(0, 0, 0);
@@ -509,12 +532,15 @@ console.log('\n7. Interactions (calm water unless stated)');
         list.push(ferry);
       }
       const physics = new VesselPhysics(list, null);
-      physics.water = flat;
+      const water = new ParticleWater();
+      water.dynamic.setFocus(cam.x, cam.z);
+      physics.water = water;
       let sum = 0;
       let n = 0;
       for (let t = 0; t < 90; t += dt) {
         for (const v of list) v.behaviour.update(dt, v.state);
         physics.update(dt, cam);
+        water.dynamic.update(dt);
         if (t > 20) {
           sum += boat.roll * boat.roll + boat.pitch * boat.pitch;
           n++;
@@ -524,8 +550,8 @@ console.log('\n7. Interactions (calm water unless stated)');
     };
     const calm = rollRms(false);
     const wake = rollRms(true);
-    console.log(`  fishing boat 80 m off a passing vapur (7 m/s): roll+pitch rms ${f2(deg(wake))}° (without the vapur ${f2(deg(calm))}°)`);
-    check(wake > 0.5 * DEG && wake > 10 * calm, "a ferry's wake rocks a small boat (rms > 0.5°, far above calm water)");
+    console.log(`  fishing boat 80 m off a passing vapur (7 m/s), wave-particle wake: roll+pitch rms ${f2(deg(wake))}° (without the vapur ${f2(deg(calm))}°)`);
+    check(wake > 0.5 * DEG && wake > 10 * calm, "a ferry's wake (wave particles from its hull) rocks a small boat (rms > 0.5°, far above calm water)");
   }
 }
 

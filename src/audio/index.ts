@@ -49,6 +49,10 @@ export function createAudioSystem(): System {
   let unlocked = false;
   let volume = loadVolume();
   let paused = false;
+  /** Coastal ambience lift requested by a playing moment (src/moments), 0..1. */
+  let ambienceLift = 0;
+  /** The probe's own coast / urban values: the geo probe samples only a few times a second, the lift is re-applied. */
+  const rawProbe = { coast: 0, urban: 0 };
   const frame = createAudioFrame();
   const dragonProbe = new DragonProbe();
   const geoProbe = new GeoProbe();
@@ -163,6 +167,9 @@ export function createAudioSystem(): System {
       return volume;
     },
     unlock,
+    setAmbienceLift(amount: number): void {
+      ambienceLift = clamp01(finiteOr(amount, 0));
+    },
   };
 
   const debugHandle: AudioDebugHandle = {
@@ -270,7 +277,14 @@ export function createAudioSystem(): System {
       frame.ambientWind = env ? finiteOr(env.wind.length(), 4) : 4;
       frame.probe.night = env ? clamp01(env.nightFactor) : 0;
       const geo = services.tryGet('geo');
+      frame.probe.coast = rawProbe.coast;
+      frame.probe.urban = rawProbe.urban;
       geoProbe.update(geo, lp.x, lp.y, lp.z, realDt, frame.probe);
+      rawProbe.coast = frame.probe.coast;
+      rawProbe.urban = frame.probe.urban;
+      // A calm moment (src/moments): the shore comes forward, the city steps back (the ambience smooths the change).
+      frame.probe.coast += (1 - frame.probe.coast) * 0.6 * ambienceLift;
+      frame.probe.urban *= 1 - 0.45 * ambienceLift;
       const dragonAgl = dragon ? finiteOr(dragon.agl, 1e3) : 1e3;
       // The sea's reaction to low flight (phase 21 stage 2): the same numbers the water surface and the sprays use.
       const low = services.tryGet('lowFlight');

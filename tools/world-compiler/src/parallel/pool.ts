@@ -8,6 +8,8 @@
  * Sizing (autoJobs): cores - 1, capped by memory (each thread holds a full area setup; the estimate grows with the
  * area) and by the number of tiles.
  */
+import { execFileSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { availableParallelism, freemem, totalmem } from 'node:os';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import { perfSnapshot } from '../perf';
@@ -74,11 +76,30 @@ export function workerMemory(tiles: number): number {
   return 400e6 + tiles * 4e5;
 }
 
+/**
+ * Memory the pool may use: on macOS free + inactive + speculative + purgeable pages (vm_stat; freemem() counts only
+ * free pages, far too pessimistic with the file cache full), elsewhere freemem(); never more than half the RAM when
+ * the system reports plenty (other programs run too), never less than 2 GB.
+ */
+function availableMemory(): number {
+  let avail = freemem();
+  if (process.platform === 'darwin') {
+    try {
+      const out = execFileSync('vm_stat', { encoding: 'utf8' });
+      const page = Number(/page size of (\d+)/.exec(out)?.[1] ?? 16384);
+      const pages = (name: string): number => Number(new RegExp(`Pages ${name}:\\s+(\\d+)`).exec(out)?.[1] ?? 0);
+      avail = (pages('free') + pages('inactive') + pages('speculative') + pages('purgeable')) * page;
+    } catch {
+      avail = totalmem() * 0.5;
+    }
+  }
+  return Math.max(2e9, Math.min(avail, totalmem() * 0.75));
+}
+
 /** Default --jobs: cores - 1, capped by memory (half the RAM, or what is free if more) and by the tiles to build. */
 export function autoJobs(tiles: number): number {
   const cores = Math.max(1, availableParallelism() - 1);
-  // macOS counts cached files as used memory, so freemem() alone is too pessimistic.
-  const avail = Math.max(freemem(), totalmem() * 0.5);
+  const avail = availableMemory();
   const byMemory = Math.max(1, Math.floor(avail / workerMemory(tiles)));
   return Math.max(1, Math.min(cores, byMemory, Math.ceil(tiles / 2)));
 }
@@ -131,6 +152,7 @@ export class TilePool {
   private readonly queue: string[] = [];
   private readonly waiting = new Map<string, { resolve: (o: TileOut) => void; reject: (e: Error) => void }>();
   private readonly perf: Record<string, number>[] = [];
+  private readonly bakeDirs: string[] = [];
   private failed: Error | null = null;
   private exited = 0;
   private closing: (() => void) | null = null;
@@ -143,8 +165,10 @@ export class TilePool {
     input: (k: number) => WorkerInput,
   ) {
     for (let k = 0; k < size; k++) {
+      const data = input(k);
+      this.bakeDirs.push(data.bakeDir);
       // stdout goes to stderr: the summary JSON owns the main thread's stdout.
-      const worker = new Worker(script, { workerData: input(k), stdout: true });
+      const worker = new Worker(script, { workerData: data, stdout: true });
       worker.stdout.pipe(process.stderr);
       const slot: Slot = { worker, ready: false, busy: null };
       this.slots.push(slot);
@@ -201,8 +225,18 @@ export class TilePool {
     });
   }
 
-  /** Stops the workers; returns their stage timers. */
+  /** Stops the workers and removes their bake folders; returns their stage timers. */
   async close(): Promise<Record<string, number>[]> {
+    try {
+      return await this.stop();
+    } finally {
+      for (const d of this.bakeDirs) {
+        rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+      }
+    }
+  }
+
+  private async stop(): Promise<Record<string, number>[]> {
     await new Promise<void>((done) => {
       this.closing = done;
       if (this.exited === this.slots.length) {

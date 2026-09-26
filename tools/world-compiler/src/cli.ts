@@ -78,7 +78,7 @@ import { askState, autoJobs, serveTiles, tellState, TilePool, workerInput } from
 import { ExitStates, localGate, OrderedChain, remoteGate } from './parallel/ordered';
 import { addInto, LoggedSet, statsApply, statsDelta, statsOf, statsReset, type TileOut } from './parallel/tile-out';
 import { checkAgainstSerial } from './parallel/check';
-import { takeTileSlots, writeAreaModules } from './modules/assemble';
+import { bakeTileSlots, takeTileSlots, writeAreaModules } from './modules/assemble';
 
 const COMPILER_VERSION = '0.2.0';
 /** The run fails when the largest walk-graph component holds less than this share of the vertices (--min-walk-share). */
@@ -593,6 +593,10 @@ async function main(): Promise<void> {
         cachedOut = out;
         return;
       }
+    }
+    if (format === 1 && !webProfile()) {
+      // Without --web (Blender, other runtimes) the façade modules are baked into the tile (modules/assemble.ts).
+      await bakeTileSlots(mesh, extra, m.origin);
     }
     m.triangles = mesh.triangles();
     if (!m.triangles) {

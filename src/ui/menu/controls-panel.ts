@@ -10,6 +10,7 @@ const GROUPS: ReadonlyArray<{ id: ControlGroup; title: string }> = [
   { id: 'tricks', title: 'Hız ve figürler' },
   { id: 'dragon', title: 'Ejderha ve binici' },
   { id: 'camera', title: 'Kamera ve dünya' },
+  { id: 'perch', title: 'Seyir noktaları' },
   { id: 'game', title: 'Oyun ve arayüz' },
 ];
 

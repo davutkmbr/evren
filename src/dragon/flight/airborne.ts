@@ -216,8 +216,9 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const collision = sim.world.collision;
   if (collision) {
     sim.contacts.tailEnabled = sim.mode !== 'landing' && sim.mode !== 'hovering' && sim.mode !== 'takeoff';
-    // A deliberate roll spins faster than the tumble limit that keeps collisions sane.
-    const maxSpin = sim.maneuvers.kind === 'roll' ? TRICKS.rollMaxSpin : MOMENTS.maxAngularSpeed;
+    // A deliberate roll (and the reversals' half rolls) spins faster than the tumble limit that keeps collisions sane.
+    const kind = sim.maneuvers.kind;
+    const maxSpin = kind === 'roll' || kind === 'splits' || kind === 'immelmann' ? TRICKS.rollMaxSpin : MOMENTS.maxAngularSpeed;
     sim.contacts.resolveAirborne(b, collision, sim.invInertia, MASS, sim.impact, maxSpin);
     const n = sim.impact.normal;
     if (sim.impact.speed > 4 && Math.abs(n.y) < 0.7) {

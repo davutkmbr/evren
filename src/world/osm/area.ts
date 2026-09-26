@@ -1,7 +1,7 @@
 /**
  * Vertical-slice area of real OpenStreetMap content (Eminönü, Galata Bridge, Karaköy, Galata, Tophane, Cihangir),
  * always part of the map. OSM_AREA is the single source of the bbox: scripts/data/fetch-osm.mjs parses it from this
- * file, and the procedural city / vegetation / life traffic exclusions derive from osmExclusionRect().
+ * file; its build rect (osmExclusionRect(), grown to the ground lattice) is the first entry of regions.ts.
  */
 import type { WorldBounds } from '../../core/contracts';
 import { latLonToLocal } from '../../core/geo-coords';
@@ -35,7 +35,9 @@ export interface OsmAreaDef {
 /**
  * Every OSM area. Keep one entry per line in this exact shape: fetch-osm.mjs and the world compiler parse it from the
  * source text (tools/world-compiler/lib/areas.mjs), and `bbox` must name an `export const X = { ... } as const` above.
- * Only 'galata' (OSM_AREA) feeds the runtime slice and the procedural exclusion rects; the others are compiler inputs.
+ * Only 'galata' (OSM_AREA) feeds the runtime slice; the others are compiler inputs. The flight-scale regions around the
+ * landing spots are planned separately (scripts/data/osm-regions.mjs -> regions.json, streamed by regions.ts / index.ts),
+ * and the procedural exclusion lists cover the slice and every region (regions.ts).
  */
 export const OSM_AREAS: readonly OsmAreaDef[] = [
   { id: 'galata', bbox: OSM_AREA, dataFile: 'public/data/osm/slice.json', profile: 'slice' },

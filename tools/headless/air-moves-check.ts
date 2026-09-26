@@ -1,5 +1,5 @@
 /**
- * Phase 20 stage B air-moves check, headless (no browser, no GPU): the real rig driven by the real FlightSim and
+ * Phase 20 stage B and C air-moves check, headless (no browser, no GPU): the real rig driven by the real FlightSim and
  * PoseDriver (tools/headless/pose/runtime.ts) through scripted inputs, delivered like the game's input (frame command
  * and edge latch).
  *
@@ -18,15 +18,21 @@
  * 6. Sıyırma: drag area measurably lower than the plain ground effect at the same height (land and water), never
  *    touching (feet, wings and tail over land; feet and wings over water), the assist clearance still holding, no
  *    skim when slow.
+ * 7. Stage C reversals: the wingover exits on the reverse heading ±15° with ≥ 90 % of the entry's specific energy
+ *    (½V² + g·Δh, height from the entry), slow over the top and past knife-edge; the Immelmann ends upright on the
+ *    reverse heading ±15°, higher (early, middle and late presses in the loop's top window); the Split-S ends upright on
+ *    the reverse heading ±15°, lower and faster (also from a folded Shift dive); the key held through its half roll spins
+ *    on as the diving barrel roll; collisions with the loop and the barrel roll; refusals near the ground, beside a
+ *    wall and under a deck; no stall, no contact.
  * Every move's end is checked on the flight-internal maneuver event (`ended`, `clean`).
  */
 import { writeFileSync } from 'node:fs';
 import * as THREE from 'three';
-import { DoubleTapRecognizer, DOUBLE_TAP_MS } from '../../src/core/gestures';
+import { AxisPress, DoubleTapRecognizer, DOUBLE_TAP_MS, inImmelmannWindow, resolvePitchUpDoubleTap, resolveRollDoubleTap } from '../../src/core/gestures';
 import type { Input } from '../../src/core/input';
 import { airDensity } from '../../src/dragon/flight/aero';
 import { slipDistance } from '../../src/dragon/flight/maneuvers';
-import { DART, FLAP, POWER_STROKE, SKIM } from '../../src/dragon/flight/params';
+import { DART, FLAP, IMMELMANN, POWER_STROKE, SKIM, SPLIT_S, WINGOVER } from '../../src/dragon/flight/params';
 import { readPilotInput } from '../../src/dragon/flight/pilot';
 import type { FlightSim } from '../../src/dragon/flight/sim';
 import { createPilotCommand, type MoveRecord, type SimEvent } from '../../src/dragon/flight/types';
@@ -198,6 +204,18 @@ function gestures(): void {
   check(!slow[0] && !slow[1], 'recogniser: presses 310 ms apart are two single taps');
   const mixed = [r.press('rollLeft', 2000), r.press('rollRight', 2100), r.press('rollLeft', 2200)];
   check(!mixed[0] && !mixed[1] && mixed[2], 'recogniser: keys are independent (A, D, A → the second A is a double tap of A only)');
+
+  // Stage C: the flight state picks the move of a shared gesture.
+  const R = Math.PI / 180;
+  const pitchUp = [0, 30, 45, 46, 65, -65].map((b) => resolvePitchUpDoubleTap(b * R, WINGOVER.minBank));
+  check(pitchUp.join(',') === 'loop,loop,loop,wingover,wingover,wingover', `resolver: S ×2 at bank 0 / 30 / 45 / 46 / 65 / −65° → ${pitchUp.join(', ')}`);
+  const rollTap = [0, 10, -20, -30, -31, -80].map((g) => resolveRollDoubleTap(g * R, SPLIT_S.maxPath));
+  check(rollTap.join(',') === 'roll,roll,roll,roll,splits,splits', `resolver: A / D ×2 at path 0 / 10 / −20 / −30 / −31 / −80° → ${rollTap.join(', ')}`);
+  const win = [90, 100, 150, 190, 200].map((a) => inImmelmannWindow(a * R, IMMELMANN.windowStart, IMMELMANN.windowEnd));
+  check(win.join(',') === 'false,true,true,true,false', `resolver: A / D in the loop at 90 / 100 / 150 / 190 / 200° → Immelmann ${win.join(', ')}`);
+  const axis = new AxisPress(0.5, 0.2);
+  const axisSeq = [0, 0.3, 0.6, 0.9, 0.4, 0.6, 0.1, -0.55, -1, 0, 1].map((v) => axis.update(v));
+  check(axisSeq.join(',') === '0,0,1,0,0,0,0,-1,0,0,1', `axis press: fresh presses past 0.5 after a release below 0.2 (${axisSeq.join(', ')})`);
 
   const cases: Array<{ name: string; keys: Button[]; want: string[] }> = [
     { name: 'Space', keys: ['flap'], want: ['flapPressed'] },
@@ -668,6 +686,248 @@ async function skim(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* 7. Stage C reversals                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Track heading change from `a` to `b` (deg, wrapped to ±180). */
+function trackTurn(a: FrameRecord, b: FrameRecord): number {
+  const d = trackHeading(b) - trackHeading(a);
+  return Math.atan2(Math.sin(d), Math.cos(d)) * DEG;
+}
+
+/** How far a heading change (deg) is from a full reversal (deg). */
+function offReverse(turnDeg: number): number {
+  return Math.abs(180 - Math.abs(turnDeg));
+}
+
+/** Script helper for a banked entry: the roll key held (D = +1) until `release` s, S ×2 at `at` s. */
+function bankedS(dir: number, at: number, release: number): Script {
+  const press = pressOnce();
+  return (t, _sim, input) => {
+    input.cmd.roll = t < release ? dir : 0;
+    press(t, at, input, 'loop');
+  };
+}
+
+/** A dive at `pathDeg` held by the assist override until `at` s, then A / D ×2 (`edge`); `hold` s of the key after it. */
+function diveThenTap(pathDeg: number, at: number, edge: 'rollLeft' | 'rollRight', hold = 0, shift = false): Script {
+  const press = pressOnce();
+  return (t, _sim, input) => {
+    if (t < at) {
+      input.pathDeg = pathDeg;
+    }
+    input.cmd.dive = shift && t < at + 3;
+    press(t, at, input, edge);
+    if (hold > 0 && t >= at && t < at + hold) {
+      input.cmd.roll = edge === 'rollRight' ? 1 : -1;
+    }
+  };
+}
+
+function diveSetup(height: number, speed: number, pathDeg: number, folded = false): Setup {
+  return {
+    height,
+    speed,
+    prep: (rt) => {
+      rt.teleport(0, GROUND_Y + height, 0, 0, speed, pathDeg);
+      const path = pathDeg / DEG;
+      rt.sim.body.velocity.set(0, Math.sin(path) * speed, -Math.cos(path) * speed);
+      if (folded) {
+        rt.sim.spread = 0.2;
+        rt.sim.sweep = 0.9;
+      }
+    },
+  };
+}
+
+/** Upright a moment after the end: |bank| below 30°, flying level-ish, no trick running. */
+function settled(run: Run, end: number): { rec: FrameRecord; upright: boolean } {
+  const rec = recordAt(run, end + 0.6);
+  return { rec, upright: Math.abs(rec.bankDeg) < 30 && rec.trick === 'none' };
+}
+
+function reversalRow(label: string, rec: MoveRecord, run: Run, clean: boolean | undefined): void {
+  const a = recordAt(run, rec.start);
+  const b = recordAt(run, rec.start + rec.duration);
+  table.push([
+    label,
+    f1(rec.entrySpeed),
+    f1(rec.exitSpeed),
+    f1(rec.exitSpeed - rec.entrySpeed),
+    f1(rec.heightChange),
+    '-',
+    '-',
+    f2(rec.duration),
+    String(clean),
+    `E ×${f2(rec.energyRatio)}, heading ${f1(Math.abs(trackTurn(a, b)))}°`,
+  ]);
+}
+
+async function reversals(): Promise<void> {
+  console.log('\n7. Stage C reversals (wingover, Immelmann, Split-S)');
+  // Wingover: D held (bank 65°), S ×2 at 1.5 s, keys released at 1.6 s.
+  for (const [speed, dir] of [
+    [28, 1],
+    [32, -1],
+    [38, 1],
+  ] as const) {
+    const run = await simulate({ height: 250, speed }, 14, bankedS(dir, 1.5, 1.6));
+    const rec = lastMove(run, 'wingover');
+    const ev = moveEvents(run, 'wingover');
+    const loops = run.records.some((r) => r.trick === 'loop');
+    if (!rec) {
+      check(false, `wingover at ${speed} m/s: runs (hints "${hints(run).join(' / ')}")`);
+      continue;
+    }
+    const a = recordAt(run, rec.start);
+    const end = recordAt(run, rec.start + rec.duration);
+    const { rec: after, upright } = settled(run, rec.start + rec.duration);
+    const turnEnd = trackTurn(a, end);
+    const turnAfter = trackTurn(a, after);
+    const window = run.records.filter((r) => r.time >= rec.start && r.time <= rec.start + rec.duration);
+    const top = window.reduce((m, r) => (r.position[1] > m.position[1] ? r : m), window[0]);
+    const maxBank = Math.max(...window.map((r) => Math.abs(r.bankDeg)));
+    const contact = window.some((r) => r.footClearance < 0);
+    console.log(
+      `  ${speed} m/s (${dir > 0 ? 'D' : 'A'}): ${f1(rec.entrySpeed)} → ${f1(rec.exitSpeed)} m/s, height ${f1(rec.heightChange)} m (top +${f1(top.position[1] - a.position[1])} m at ${f1(top.airspeed)} m/s, bank up to ${f1(maxBank)}°), energy ×${f2(rec.energyRatio)}; track turned ${f1(turnEnd)}° at the end, ${f1(turnAfter)}° rolled out; ${f2(rec.duration)} s`,
+    );
+    note(`wingover.${speed}.energy`, rec.energyRatio);
+    note(`wingover.${speed}.heading`, turnAfter);
+    reversalRow(`wingover ${speed}`, rec, run, ev.find((e) => e.ended)?.clean);
+    check(!loops && ev.length === 2 && !ev[0].ended && ev[1].ended && ev[1].clean === true, `wingover at ${speed} m/s: S ×2 while banked starts the wingover (no loop), announced, ends clean on the maneuver event`);
+    check(offReverse(turnEnd) <= 15 && offReverse(turnAfter) <= 15 && upright, `wingover at ${speed} m/s: exits on the reverse heading ±15° (${f1(offReverse(turnEnd))}° off at the end, ${f1(offReverse(turnAfter))}° rolled out), upright`);
+    check(rec.energyRatio >= 0.9, `wingover at ${speed} m/s: keeps ≥ 90 % of the entry energy (×${f2(rec.energyRatio)})`);
+    check(!rec.stalled && !rec.contact && !contact && top.airspeed < rec.entrySpeed - 4 && maxBank > 90, `wingover at ${speed} m/s: no stall or contact, slow over the top (${f1(top.airspeed)} m/s), pivots past knife-edge (${f1(maxBank)}°)`);
+  }
+
+  // Immelmann: S ×2 at 0.5 s, D (or A) pressed on the axis at a loop angle, held 0.3 s.
+  for (const [speed, at, dir] of [
+    [40, 150, 1],
+    [36, 110, -1],
+    [42, 185, 1],
+  ] as const) {
+    const press = pressOnce();
+    let rollAt = -1;
+    const run = await simulate({ height: 300, speed }, 9, (t, sim, input) => {
+      press(t, 0.5, input, 'loop');
+      if (rollAt < 0 && sim.maneuvers.kind === 'loop' && sim.maneuvers.describe().loopDeg >= at) {
+        rollAt = t;
+      }
+      input.cmd.roll = rollAt >= 0 && t < rollAt + 0.3 ? dir : 0;
+    });
+    const rec = lastMove(run, 'immelmann');
+    const ev = moveEvents(run, 'immelmann');
+    if (!rec) {
+      check(false, `Immelmann at ${speed} m/s (key at ${at}°): runs`);
+      continue;
+    }
+    const a = recordAt(run, rec.start);
+    const end = recordAt(run, rec.start + rec.duration);
+    const { rec: after, upright } = settled(run, rec.start + rec.duration);
+    const turn = trackTurn(a, end);
+    const contact = run.records.some((r) => r.footClearance < 0);
+    console.log(
+      `  ${speed} m/s, ${dir > 0 ? 'D' : 'A'} at ${at}°: ${f1(rec.entrySpeed)} → ${f1(rec.exitSpeed)} m/s, height +${f1(rec.heightChange)} m, energy ×${f2(rec.energyRatio)}; track turned ${f1(turn)}°, bank ${f1(end.bankDeg)}° at the end, ${f1(after.bankDeg)}° after; ${f2(rec.duration)} s from the loop's entry`,
+    );
+    note(`immelmann.${speed}.height`, rec.heightChange);
+    reversalRow(`Immelmann ${speed} (${at}°)`, rec, run, ev.find((e) => e.ended)?.clean);
+    check(ev.length === 2 && ev[1].ended && ev[1].clean === true, `Immelmann at ${speed} m/s (key at ${at}°): announced, ends clean on the maneuver event`);
+    check(upright && offReverse(turn) <= 15 && rec.heightChange > 20, `Immelmann at ${speed} m/s (key at ${at}°): upright on the reverse heading ±15° (${f1(offReverse(turn))}° off), higher (+${f1(rec.heightChange)} m)`);
+    check(!rec.stalled && !contact, `Immelmann at ${speed} m/s (key at ${at}°): no stall or contact`);
+  }
+  {
+    // A / D early in the loop (outside the window): the loop goes on.
+    const press = pressOnce();
+    let rollAt = -1;
+    const run = await simulate({ height: 300, speed: 40 }, 9, (t, sim, input) => {
+      press(t, 0.5, input, 'loop');
+      if (rollAt < 0 && sim.maneuvers.kind === 'loop' && sim.maneuvers.describe().loopDeg >= 45) {
+        rollAt = t;
+      }
+      input.cmd.roll = rollAt >= 0 && t < rollAt + 0.3 ? 1 : 0;
+    });
+    const loopEnd = run.records.filter((r) => r.trick === 'loop').pop();
+    check(moveEvents(run, 'immelmann').length === 0 && !!loopEnd && loopEnd.time > 3, `D pressed early in the loop (45°): no Immelmann, the loop goes on (loop until ${loopEnd ? f1(loopEnd.time) : 'n/a'} s)`);
+  }
+
+  // Split-S: A / D ×2 in a steep dive.
+  for (const [label, setup, script] of [
+    ['40° dive, 36 m/s, D ×2', diveSetup(400, 36, -40), diveThenTap(-40, 0.5, 'rollRight')],
+    ['60° dive, 40 m/s, A ×2', diveSetup(450, 40, -60), diveThenTap(-60, 0.5, 'rollLeft')],
+    ['Shift dive (wings folded), 45° at 45 m/s, D ×2', diveSetup(450, 45, -45, true), diveThenTap(-45, 0.5, 'rollRight', 0, true)],
+  ] as const) {
+    const run = await simulate(setup, 9, script);
+    const rec = lastMove(run, 'splits');
+    const ev = moveEvents(run, 'splits');
+    if (!rec) {
+      check(false, `Split-S (${label}): runs (hints "${hints(run).join(' / ')}")`);
+      continue;
+    }
+    const a = recordAt(run, rec.start);
+    const end = recordAt(run, rec.start + rec.duration);
+    const { rec: after, upright } = settled(run, rec.start + rec.duration);
+    const turn = trackTurn(a, end);
+    const minFoot = Math.min(...run.records.map((r) => r.footClearance));
+    console.log(
+      `  ${label}: ${f1(rec.entrySpeed)} → ${f1(rec.exitSpeed)} m/s, height ${f1(rec.heightChange)} m; track turned ${f1(turn)}°, path ${f1(Math.asin(Math.max(-1, Math.min(1, end.velocity[1] / Math.max(Math.hypot(...end.velocity), 1)))) * DEG)}° at the end, bank ${f1(after.bankDeg)}° after; ${f2(rec.duration)} s; lowest foot clearance ${f1(minFoot)} m; ${after.mode} after`,
+    );
+    reversalRow(`Split-S ${label.split(',')[0]}`, rec, run, ev.find((e) => e.ended)?.clean);
+    check(ev.length === 2 && ev[1].ended && ev[1].clean === true, `Split-S (${label}): announced, ends clean on the maneuver event`);
+    check(upright && offReverse(turn) <= 15 && rec.heightChange < 0 && rec.exitSpeed > rec.entrySpeed, `Split-S (${label}): upright on the reverse heading ±15° (${f1(offReverse(turn))}° off), lower (${f1(rec.heightChange)} m) and faster (+${f1(rec.exitSpeed - rec.entrySpeed)} m/s)`);
+    check(!rec.stalled && !rec.contact && minFoot > 0 && after.mode !== 'diving', `Split-S (${label}): no stall or contact, the wings stay open after it (${after.mode})`);
+  }
+  {
+    // The key held through the half roll: the spinning diving barrel roll instead.
+    const run = await simulate(diveSetup(450, 38, -45), 5, diveThenTap(-45, 0.5, 'rollRight', 1.2));
+    const tricks = run.records.map((r) => r.trick);
+    const rolled = tricks.includes('splits') && tricks.lastIndexOf('roll') > tricks.indexOf('splits');
+    const splitEvents = moveEvents(run, 'splits');
+    check(rolled && splitEvents.length === 0 && moveEvents(run, 'roll').length > 0, `D ×2 in a dive with D held: the diving barrel roll spins on (roll after the half roll, no Split-S announced)`);
+  }
+  // Collisions: A / D ×2 in a shallow dive stays the barrel roll; S ×2 up to 45° of bank stays the loop.
+  {
+    const run = await simulate(diveSetup(400, 36, -20), 3, diveThenTap(-20, 0.5, 'rollRight'));
+    const tricks = new Set(run.records.map((r) => r.trick));
+    check(tricks.has('roll') && !tricks.has('splits'), `D ×2 in a 20° dive: barrel roll, no Split-S`);
+  }
+  {
+    const press = pressOnce();
+    const run = await simulate({ height: 300, speed: 40 }, 3, (t, _sim, input) => {
+      input.bankDeg = t < 0.5 ? 35 : null;
+      press(t, 0.5, input, 'loop');
+    });
+    const tricks = new Set(run.records.map((r) => r.trick));
+    check(tricks.has('loop') && !tricks.has('wingover'), `S ×2 banked 35°: loop, no wingover`);
+  }
+
+  // Refusals near the ground / obstacles (hints in the existing style), never touching.
+  const wallRight = (rt: PoseRuntime): void => {
+    rt.sim.world.collision!.add({ kind: 'box', center: new THREE.Vector3(60, GROUND_Y + 150, -60), halfSize: new THREE.Vector3(3, 150, 150), yaw: 0 }, 'structure', 'test-wall');
+  };
+  const deck = (rt: PoseRuntime): void => {
+    const y = rt.sim.body.position.y + 25;
+    rt.sim.world.collision!.add({ kind: 'box', center: new THREE.Vector3(0, y + 2, -60), halfSize: new THREE.Vector3(200, 2, 200), yaw: 0 }, 'structure', 'test-deck');
+  };
+  for (const [label, setup, script, id, want] of [
+    ['Split-S 120 m over the ground (40° dive, 36 m/s)', diveSetup(120, 36, -40), diveThenTap(-40, 0.5, 'rollRight'), 'splits', 'Split-S için yüksel'],
+    ['wingover 18 m over the ground', { height: 18 + 2, speed: 32 }, bankedS(1, 1.2, 1.3), 'wingover', 'Kanat üstü dönüş için yüksel'],
+    ['wingover toward a wall 60 m to the right', { height: 150, speed: 32, prep: wallRight }, bankedS(1, 1.2, 1.3), 'wingover', 'Kanat üstü dönüş için yer yok'],
+    ['wingover under a deck 25 m overhead', { height: 150, speed: 32, prep: deck }, bankedS(1, 1.2, 1.3), 'wingover', 'Kanat üstü dönüş için yer yok'],
+  ] as const) {
+    const run = await simulate(setup as Setup, 4, script);
+    const started = moveEvents(run, id).length > 0;
+    const touched = run.records.some((r) => r.footClearance < 0) || run.rt.sim.impact.touched;
+    const h = hints(run);
+    check(!started && !touched && h.includes(want), `${label}: refused (hint "${h.join(' / ')}"), no contact`);
+  }
+  {
+    // The wingover toward the open side of the same wall is allowed.
+    const run = await simulate({ height: 150, speed: 32, prep: wallRight }, 3, bankedS(-1, 1.2, 1.3));
+    check(moveEvents(run, 'wingover').length > 0, `wingover away from a wall 60 m to the right: allowed`);
+  }
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now();
   gestures();
@@ -676,6 +936,7 @@ async function main(): Promise<void> {
   await dart();
   await sideSlip();
   await skim();
+  await reversals();
   console.log('\nSummary');
   const head = ['move', 'entry m/s', 'exit m/s', 'Δv', 'Δh m', 'lateral', 'stamina', 'time s', 'clean', 'notes'];
   console.log(`| ${head.join(' | ')} |`);

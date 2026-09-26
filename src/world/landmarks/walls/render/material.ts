@@ -137,30 +137,69 @@ vec3 wRecolour(vec3 c, vec3 tint, float mean, float keepHue) {
   return tint * mix(vec3(lum), c, keepHue) / max(mean, 0.02);
 }
 
-/* Limestone facing (Bricks102): a different part of the texture per 19 m stretch and per band field. */
+/*
+ * Limestone facing (Bricks102): a different part of the texture per 19 m stretch, cross-faded over ~2.5 m across a
+ * noisy stretch boundary so no seam shows.
+ */
+vec2 wStretchOff(float k) { return vec2(hash11(k * 1.7), hash11(k * 2.3)); }
 HS wFacing(vec2 p, vec3 tint, float fw, float field) {
-  float stretch = floor(p.x / 19.0);
-  vec2 off = vec2(hash11(stretch * 1.7 + field * 0.31), hash11(stretch * 2.3 + field * 0.77));
-  vec4 a = wAlbL(p, 0, off);
+  float xs = p.x / 19.0 + (vnoise2(vec2(p.y * 0.35, field)) - 0.5) * 0.08;
+  float stretch = floor(xs);
+  float t = fract(xs);
+  float w = smoothstep(0.87, 1.0, t);
+  vec2 offA = wStretchOff(stretch + field * 13.0);
+  vec2 offB = wStretchOff(stretch + 1.0 + field * 13.0);
+  vec4 a = wAlbL(p, 0, offA);
+  vec3 nA = wNrmL(p, 0, offA);
+  if (w > 0.001) {
+    vec4 b = wAlbL(p, 0, offB);
+    vec3 nB = wNrmL(p, 0, offB);
+    // Height-aware blend: the brighter (stone) texel wins, so the join follows the stones instead of a smear.
+    float la = dot(a.rgb, vec3(0.33));
+    float lb = dot(b.rgb, vec3(0.33));
+    float k = smoothstep(-0.08, 0.08, (lb - la) * 0.5 + (w - 0.5));
+    a = mix(a, b, k);
+    nA = mix(nA, nB, k);
+  }
   HS s = hsInit(wRecolour(a.rgb, tint, uWallMean.x, 0.55), mix(0.72, 0.98, a.a));
-  // Stones stand proud of the mortar: brighter texels are stone faces.
   float lum = dot(a.rgb, vec3(0.2126, 0.7152, 0.0722)) / max(uWallMean.x, 0.02);
   s.height = (lum - 1.0) * 0.012 * hDetail(fw, 0.1);
-  wTexN = wNrmL(p, 0, off);
+  wTexN = nA;
   wTexK = 1.0 - smoothstep(0.03, 0.1, fw);
   return s;
 }
 
-/* Brick (castle_brick_broken_06): dull, old brick in lime mortar; courses stretched to ~9 cm. */
+/* Mortar-ness of a brick texel: the joints are low-saturation grey, the bricks saturated red. */
+float wMortar(vec3 c) {
+  float mx = max(c.r, max(c.g, c.b));
+  float sat = (mx - min(c.r, min(c.g, c.b))) / max(mx, 1e-3);
+  return 1.0 - smoothstep(0.2, 0.36, sat);
+}
+
+/*
+ * Brick (castle_brick_broken_06): old brick shifted to the photos' dull pink-brown, courses stretched to ~9 cm, and
+ * the texture's own joints widened (dilated over neighbouring texels) into the thick pale lime mortar of Byzantine
+ * brickwork, where joints are about as thick as the bricks.
+ */
 HS wBrickTex(vec2 p, float fw, vec2 off) {
   vec4 a = wAlbL(p, 1, off);
-  vec3 c = a.rgb / max(uWallMean.y, 0.02) * vec3(0.26, 0.14, 0.1);
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(vec3(l), c, 0.6);
-  HS s = hsInit(c, mix(0.8, 0.97, a.a));
-  s.height = (dot(a.rgb, vec3(0.33)) / max(uWallMean.y, 0.02) - 1.0) * 0.01 * hDetail(fw, 0.05);
+  float m = wMortar(a.rgb);
+  float det = hDetail(fw, 0.03);
+  if (det > 0.01) {
+    float d = 0.009;
+    m = max(m, wMortar(wAlbL(p + vec2(0.0, d), 1, off).rgb));
+    m = max(m, wMortar(wAlbL(p - vec2(0.0, d), 1, off).rgb));
+    m = max(m, wMortar(wAlbL(p + vec2(d * 1.4, 0.0), 1, off).rgb) * 0.8);
+  }
+  m = mix(0.3, m, det);
+  float l = dot(a.rgb, vec3(0.2126, 0.7152, 0.0722)) / max(uWallMean.y, 0.02);
+  vec3 brick = vec3(0.32, 0.18, 0.13) * mix(vec3(l), a.rgb / max(uWallMean.y, 0.02), 0.3);
+  vec3 mortar = vec3(0.56, 0.5, 0.44) * (0.85 + 0.25 * vnoise2(p * 6.0));
+  HS s = hsInit(mix(brick, mortar, m), mix(mix(0.82, 0.97, a.a), 0.98, m));
+  s.height = ((1.0 - m) * 0.012 - 0.006) * det;
+  s.ao = mix(1.0, 0.75, m);
   wTexN = wNrmL(p, 1, off);
-  wTexK = 1.0 - smoothstep(0.02, 0.08, fw);
+  wTexK = (1.0 - m * 0.7) * (1.0 - smoothstep(0.02, 0.08, fw));
   return s;
 }
 
@@ -169,8 +208,8 @@ HS wCore(vec2 p, vec3 tint, float fw) {
   vec4 a = wAlbL(p, 2, vec2(0.0));
   HS s = hsInit(wRecolour(a.rgb, tint * 0.8, uWallMean.z, 0.5), mix(0.85, 1.0, a.a));
   float lum = dot(a.rgb, vec3(0.2126, 0.7152, 0.0722)) / max(uWallMean.z, 0.02);
-  s.albedo *= mix(0.55, 1.0, smoothstep(0.5, 1.0, lum));
-  s.ao = mix(0.55, 1.0, smoothstep(0.4, 1.0, lum));
+  s.albedo *= mix(0.75, 1.0, smoothstep(0.5, 1.0, lum));
+  s.ao = mix(0.75, 1.0, smoothstep(0.4, 1.0, lum));
   s.height = (lum - 1.0) * 0.03 * hDetail(fw, 0.1);
   wTexN = wNrmL(p, 2, vec2(0.0));
   wTexK = 1.0 - smoothstep(0.03, 0.1, fw);
@@ -196,11 +235,13 @@ HS wByzantine(vec2 p, vec3 wp, vec3 tint, float w, float hag, float vert, float 
   HS s;
   if (band >= period - brickH && !noBand) {
     s = wBrickTex(vec2(p.x, yb), fw, vec2(hash11(bandIdx), hash11(bandIdx + 0.5)));
+    // Band brick is the original fabric: warmer and redder than later repairs, so the bands read from afar.
+    s.albedo *= vec3(1.25, 0.92, 0.8);
     // Thick pale mortar lines at the band edges.
     float edge = min(band - (period - brickH), period - band);
     s.albedo = mix(s.albedo, vec3(0.5, 0.45, 0.39), (1.0 - smoothstep(0.0, 0.03, edge)) * 0.8);
   } else {
-    s = wFacing(vec2(p.x, yb), tint, fw, bandIdx);
+    s = wFacing(vec2(p.x, yb), tint, fw, 0.0);
   }
   float drift = fbm2(vec2(p.x * 0.02, p.y * 0.05) + wp.xz * 0.001, 3);
   s.albedo *= 0.78 + 0.4 * drift;
@@ -222,10 +263,10 @@ void wWear(inout HS s, vec2 p, vec3 wp, vec3 tint, float w, float hag, float ver
     vec3 n = wTexN;
     HS r = wCore(p, tint, fw);
     float rim = smoothstep(0.25, 0.45, ln) * (1.0 - coreM);
-    s.albedo = mix(s.albedo * (1.0 - 0.35 * rim), r.albedo, coreM);
+    s.albedo = mix(s.albedo * (1.0 - 0.15 * rim), r.albedo, coreM);
     s.rough = mix(s.rough, r.rough, coreM);
     s.height = mix(s.height, r.height, coreM);
-    s.ao = mix(s.ao * (1.0 - 0.3 * rim), r.ao * 0.8, coreM);
+    s.ao = mix(s.ao * (1.0 - 0.15 * rim), r.ao, coreM);
     wTexN = normalize(mix(n, wTexN, coreM));
     wTexK = mix(k, wTexK, coreM);
   }
@@ -340,12 +381,20 @@ HS wallsSurface() {
 `;
 
 const NORMAL_GLSL = /* glsl */ `
-  normal = wPerturb(-vViewPosition, normal, hs.height);
-  if (wTexK > 0.001) {
-    vec3 dp1 = dFdx(-vViewPosition);
-    vec3 dp2 = dFdy(-vViewPosition);
-    vec2 du1 = dFdx(vHUv);
-    vec2 du2 = dFdy(vHUv);
+  // The reveals of lost facing and openings are steep quads whose uv (u along the wall, v = height) barely changes
+  // across them: the derivative frames degenerate there, so both perturbations are skipped (they rendered black).
+  vec2 du1 = dFdx(vHUv);
+  vec2 du2 = dFdy(vHUv);
+  vec3 dp1 = dFdx(-vViewPosition);
+  vec3 dp2 = dFdy(-vViewPosition);
+  float uvArea = abs(du1.x * du2.y - du1.y * du2.x);
+  float posArea = length(cross(dp1, dp2));
+  bool frameOk = uvArea > posArea * 0.05 && posArea > 1e-12;
+  if (frameOk) {
+    vec3 np = wPerturb(-vViewPosition, normal, hs.height);
+    normal = (np == np) ? np : normal;
+  }
+  if (frameOk && wTexK > 0.001) {
     vec3 dp2perp = cross(dp2, normal);
     vec3 dp1perp = cross(normal, dp1);
     vec3 T = dp2perp * du1.x + dp1perp * du2.x;
@@ -353,7 +402,8 @@ const NORMAL_GLSL = /* glsl */ `
     float invmax = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
     vec3 tn = normalize(vec3(wTexN.xy * 1.2, max(wTexN.z, 0.2)));
     vec3 nt = normalize(T * invmax * tn.x + B * invmax * tn.y + normal * tn.z);
-    normal = normalize(mix(normal, nt, wTexK));
+    vec3 nn = normalize(mix(normal, nt, wTexK));
+    normal = (nn == nn && dot(nn, normal) > 0.2) ? nn : normal;
   }
 `;
 

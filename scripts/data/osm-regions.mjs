@@ -5,8 +5,9 @@
  * the always-loaded Galata slice (OSM_AREA).
  *
  *   node scripts/data/osm-regions.mjs plan                 # writes src/world/osm/regions.json (no network)
- *   node scripts/data/osm-regions.mjs fetch [--only a,b] [--force]
+ *   node scripts/data/osm-regions.mjs fetch [--only a,b] [--force] [--source local|overpass]
  *                                                          # fetch-osm.mjs --region <id> for each region, one at a time
+ *                                                          # (default source: the local extract index, no pauses)
  *   node scripts/data/osm-regions.mjs index                # drops empty regions, records sizes in regions.json
  *
  * Plan rules (generic, no per-place data):
@@ -188,6 +189,7 @@ async function fetchAll() {
   const m = readManifest();
   const only = argOf('--only')?.split(',');
   const force = args.includes('--force');
+  const source = args.includes('--source') ? argOf('--source') : 'local';
   for (const r of m.regions) {
     if (only && !only.includes(r.id)) continue;
     const file = resolve(ROOT, 'public', r.file);
@@ -198,7 +200,7 @@ async function fetchAll() {
     console.error(`[osm-regions] ${r.id}: fetching`);
     // OSM_CACHE_DIR keeps the raw Overpass answers, so re-runs (e.g. after a converter change) need no network.
     const cache = process.env.OSM_CACHE_DIR ? ['--cache', resolve(process.env.OSM_CACHE_DIR, `overpass-${r.id}.json`)] : [];
-    const res = spawnSync(process.execPath, [resolve(ROOT, 'scripts/data/fetch-osm.mjs'), '--region', r.id, ...cache], { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
+    const res = spawnSync(process.execPath, [resolve(ROOT, 'scripts/data/fetch-osm.mjs'), '--region', r.id, '--source', source, ...cache], { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
     if (res.status !== 0) {
       console.error(`[osm-regions] ${r.id}: fetch failed (exit ${res.status}), continuing`);
     } else {
@@ -206,7 +208,7 @@ async function fetchAll() {
       console.error(`[osm-regions] ${r.id}: ${summary.buildings} buildings, ${summary.roads} roads, ${(summary.bytes / 1e6).toFixed(2)} MB`);
     }
     // Be polite to the public Overpass servers: one region at a time, with a pause.
-    await new Promise((ok) => setTimeout(ok, 10_000));
+    if (source === 'overpass') await new Promise((ok) => setTimeout(ok, 10_000));
   }
 }
 

@@ -27,10 +27,11 @@ import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
  * skipped with a console error instead of taking the whole OSM area (or the game) down.
  */
-const LAYER_LOADERS: readonly { name: string; load: () => Promise<OsmLayerFactory> }[] = [
+const LAYER_LOADERS: readonly { name: string; load: () => Promise<OsmLayerFactory>; nearOnly?: true }[] = [
   { name: 'streets', load: () => import('./streets').then((m) => m.createStreetsLayer) },
   { name: 'buildings', load: () => import('./buildings').then((m) => m.createBuildingsLayer) },
-  { name: 'traffic', load: () => import('./traffic').then((m) => m.createTrafficLayer) },
+  // Vehicles are invisible from afar but simulated every frame: streamed regions run them only near the camera.
+  { name: 'traffic', load: () => import('./traffic').then((m) => m.createTrafficLayer), nearOnly: true },
   { name: 'details', load: () => import('./details').then((m) => m.createDetailsLayer) },
 ];
 
@@ -54,6 +55,9 @@ function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
 const LOAD_DISTANCE = 2600;
 const UNLOAD_DISTANCE = 3400;
 const MAX_LOADED = 8;
+/** Near-only layers (traffic) of a streamed region start inside NEAR_ON and stop beyond NEAR_OFF (m, "high"). */
+const NEAR_ON = 1000;
+const NEAR_OFF = 1400;
 const DISTANCE_SCALE: Record<QualityPreset, number> = { low: 0.55, medium: 0.75, high: 1, ultra: 1.3 };
 /** Camera travel (m) between two streaming decisions. */
 const RESELECT_STEP = 50;
@@ -73,6 +77,11 @@ class OsmRegion {
   private cancel: (() => void) | null = null;
   private disposed = false;
   private lines: GroundLine[] | null = null;
+  private factories: (OsmLayerFactory | null)[] = [];
+  /** Near-only layers by LAYER_LOADERS index while the region is near. */
+  private readonly nearLayers = new Map<number, OsmLayer>();
+  /** Near-only layers wanted (always for the fixed Galata slice). */
+  private near: boolean;
 
   constructor(
     readonly def: OsmRegionDef,
@@ -80,6 +89,7 @@ class OsmRegion {
     layers: OsmLayer[] = [],
   ) {
     this.layers = layers;
+    this.near = def.fixed;
     this.group.name = `osm-${def.id}`;
     parent.add(this.group);
   }
@@ -118,16 +128,10 @@ class OsmRegion {
     if (this.disposed) {
       return;
     }
-    factories.forEach((factory, i) => {
-      if (!factory) {
-        return;
-      }
-      try {
-        const layer = factory(ctx, data);
-        this.layers.push(layer);
-        this.group.add(layer.group);
-      } catch (e) {
-        console.error(`[osm:${this.def.id}] layer "${LAYER_LOADERS[i].name}" failed to build, skipping it`, e);
+    this.factories = factories;
+    factories.forEach((_, i) => {
+      if (!LAYER_LOADERS[i].nearOnly || this.near) {
+        this.addLayer(i);
       }
     });
     this.state = 'ready';
@@ -135,6 +139,47 @@ class OsmRegion {
     console.info(
       `[osm:${this.def.id}] data ${Math.round(t1 - t0)} ms (${data.buildings.length} buildings, ${data.roads.length} roads, ${data.points.length} points), street raster ${base.street.w}x${base.street.h} in ${ms} ms (total ${Math.round(t2 - t1)} ms), ways over water: ${clip.clipped} clipped, ${clip.removed} removed (${clip.metres} m), layers started`,
     );
+  }
+
+  private addLayer(i: number): void {
+    const factory = this.factories[i];
+    if (!factory || !this.ctx || !this.data) {
+      return;
+    }
+    try {
+      const layer = factory(this.ctx, this.data);
+      this.layers.push(layer);
+      this.group.add(layer.group);
+      if (LAYER_LOADERS[i].nearOnly) {
+        this.nearLayers.set(i, layer);
+      }
+    } catch (e) {
+      console.error(`[osm:${this.def.id}] layer "${LAYER_LOADERS[i].name}" failed to build, skipping it`, e);
+    }
+  }
+
+  /** Starts or stops the near-only layers. */
+  setNear(near: boolean): void {
+    if (near === this.near || this.def.fixed) {
+      return;
+    }
+    this.near = near;
+    if (this.state !== 'ready') {
+      return;
+    }
+    LAYER_LOADERS.forEach((l, i) => {
+      if (!l.nearOnly) {
+        return;
+      }
+      const layer = this.nearLayers.get(i);
+      if (near && !layer) {
+        this.addLayer(i);
+      } else if (!near && layer) {
+        layer.dispose();
+        this.nearLayers.delete(i);
+        this.layers.splice(this.layers.indexOf(layer), 1);
+      }
+    });
   }
 
   /** Outstanding jobs of this region (loading, layer workers, uploads). */
@@ -283,7 +328,14 @@ class OsmSystem implements System {
     if (Math.hypot(cam.x - this.lastCam.x, cam.z - this.lastCam.z) > RESELECT_STEP || !this.building) {
       this.select(cam.x, cam.z, engine.quality.settings.preset);
     }
+    const scale = DISTANCE_SCALE[engine.quality.settings.preset] ?? 1;
     for (const r of this.loaded.values()) {
+      const dist = rectDistance(r.def.rect, cam.x, cam.z);
+      if (dist < NEAR_ON * scale) {
+        r.setNear(true);
+      } else if (dist > NEAR_OFF * scale) {
+        r.setNear(false);
+      }
       if (!r.active && r.buildingsDrawn()) {
         r.active = true;
         setOsmRegionActive(r.def, true);
@@ -295,6 +347,10 @@ class OsmSystem implements System {
   /** Loads the nearest wanted region (one build at a time) and unloads regions that fell far behind. */
   private select(x: number, z: number, preset: QualityPreset): void {
     this.lastCam.set(x, 0, z);
+    // `?osmregions=0`: Galata slice only (A/B comparisons).
+    if (this.engine?.debug.params.get('osmregions') === '0') {
+      return;
+    }
     const scale = DISTANCE_SCALE[preset] ?? 1;
     const wanted = osmRegions()
       .filter((d) => !d.fixed)

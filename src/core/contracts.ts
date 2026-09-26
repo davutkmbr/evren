@@ -347,6 +347,36 @@ export interface DragonState {
   requestRoar?(): boolean;
   /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
   fireBurst?(seconds: number): void;
+  /** Perching on viewpoints (phase 03, dragon/flight/perch.ts); absent in sandboxes without perches. */
+  readonly perch?: DragonPerchState;
+}
+
+/**
+ * Perch phases: `free` (normal flight), `approach` (the guided approach flying to the perch, abortable), `perched`
+ * (sitting on the perch: the viewing mode), `leaving` (the drop take-off off the perch until clear of it).
+ */
+export type PerchPhase = 'free' | 'approach' | 'perched' | 'leaving';
+
+/** Why a perch landing was refused (the UI words it). */
+export type PerchRefusal = 'blocked' | 'unavailable';
+
+export interface DragonPerchState {
+  readonly phase: PerchPhase;
+  /** Seconds since the phase started (simulation time). */
+  readonly phaseTime: number;
+  /** Perch being approached, sat on or just left; null while free. */
+  readonly point: PerchPoint | null;
+  /** Perch in reach for a landing right now (the "[L] Kon" prompt), null when none or not free. */
+  readonly offer: PerchPoint | null;
+  /** Counts refused L presses (the UI shows a polite refusal when it changes) and the reason of the last one. */
+  readonly refusals: number;
+  readonly lastRefusal: PerchRefusal | null;
+  /** Counts aborted approaches (player input during the approach). */
+  readonly aborts: number;
+  /** Sits the dragon directly on a perch in the viewing mode (map / menu teleport). False when unknown. */
+  perchAt(id: string): boolean;
+  /** Leaves the perch with the drop take-off (same as Space / L while perched). False when not perched. */
+  leave(): boolean;
 }
 
 export interface DragonPose {
@@ -479,6 +509,11 @@ export interface CameraRigState {
   /** Caption of the current cinematic shot (cinematic mode only). */
   readonly shotLabel?: string;
   /**
+   * The viewing camera while perched (phase 03; C cycles it): the cinematic mode's slow orbit or still framing, the
+   * rider's eyes, or another camera.
+   */
+  readonly perchCamera?: 'orbit' | 'fixed' | 'rider' | 'other';
+  /**
    * Switch to the free camera and place it exactly (hard cut). Used by photo mode and screenshot tooling.
    * Angles in degrees: heading 0 = north (clockwise), pitch + up.
    */
@@ -548,6 +583,11 @@ export interface AudioService {
   readonly masterVolume?: number;
   /** Unlocks the AudioContext; call from a user gesture (start screen). */
   unlock?(): void;
+  /**
+   * Gently lifts the coastal ambience (surf up, city down) by `amount` 0..1 while a calm moment plays (src/moments);
+   * 0 restores the normal mix. The ambience's own smoothing makes the change a slow swell.
+   */
+  setAmbienceLift?(amount: number): void;
 }
 
 /**
@@ -714,8 +754,8 @@ export interface WaterSeaState {
 export interface WaterService {
   /**
    * Water surface height (m) at world (x, z), solved at the displaced surface point (Gerstner waves move water
-   * horizontally too). Stage 1 returns the ambient waves; the dynamic part (wave particles from hulls, the dragon
-   * and splashes, phase 21 strand 7) will be added to this sum later, so every caller floats on the same water.
+   * horizontally too): the ambient waves plus the dynamic part (wave particles from hulls, the dragon and splashes,
+   * phase 21 stage 7a), so every caller floats on the same water, wakes included.
    */
   heightAt(x: number, z: number): number;
   /** Unit surface normal at (x, z). */
@@ -725,6 +765,49 @@ export interface WaterService {
   /** Horizontal surface current at (x, z) (m/s, y = 0): the Bosphorus flow, zero in still water. */
   currentAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
   readonly seaState: Readonly<WaterSeaState>;
+  /**
+   * Wave particles (phase 21 stage 7a): the interactive part of the sea (hull wakes, the dragon, splashes), already
+   * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
+   */
+  readonly dynamic?: WaterDynamics;
+}
+
+/** The dynamic part of the water at one point (wave particles only). */
+export interface WaterDynamicSample {
+  /** Height (m) and its horizontal gradient. */
+  height: number;
+  slopeX: number;
+  slopeZ: number;
+  /** Orbital velocity of the surface water (m/s). */
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
+/**
+ * Wave particles of the sea (phase 21 stage 7a), owned by the water module and reached through `water.dynamic`.
+ * Sources emit wave fronts that travel with the deep-water group speed, spread, subdivide and fade; moving hulls get
+ * a bow and stern wave whose Kelvin pattern emerges from the dispersion relation. Source ids: vessels use their
+ * non-negative vessel id; negative ids are reserved (WATER_SOURCE in the water module).
+ */
+export interface WaterDynamics {
+  /** Live particles. */
+  readonly count: number;
+  /**
+   * Particles of this source are skipped by every query (heightAt included) while set; -1 = none. A hull sets its own
+   * id while sampling its buoyancy (it does not ride its own bow wave) and resets it afterwards.
+   */
+  exclude: number;
+  /** The particle field alone at (x, z) (allocation-free, result in `out`). */
+  sample(x: number, z: number, out: WaterDynamicSample): WaterDynamicSample;
+  /**
+   * A moving hull (call every frame while it moves): position of its centre, unit heading of its motion through the
+   * water, speed through the water (m/s) and its waterline length, beam and draft (m). Emission cadence, level of
+   * detail and the pool budget are handled inside.
+   */
+  hull(source: number, x: number, z: number, headingX: number, headingZ: number, speed: number, length: number, beam: number, draft: number): void;
+  /** A circular wave train (splash, plunge, stroke): amplitude (m) of the first ring and its wavelength (m). */
+  ring(source: number, x: number, z: number, amplitude: number, wavelength: number): void;
 }
 
 /**
@@ -824,6 +907,8 @@ export interface HudZonesService {
   /** Turns a context on or off ('race' while a race is prepared, run or its result is open). */
   setContext(name: string, on: boolean): void;
   isShown(id: string): boolean;
+  /** Is the context on (e.g. 'race')? */
+  hasContext?(name: string): boolean;
 }
 
 /** Typed service map. Use ctx.services.get('geo') etc. */
@@ -866,6 +951,11 @@ export interface GameEvents {
   'loading-progress': { label: string; progress: number };
   'loading-done': Record<string, never>;
   'toast': { text: string; kind?: 'info' | 'warn' };
+  /**
+   * Perching (phase 03): the dragon sat down on a viewpoint (`first` = never perched there before, the discovery) or
+   * left it. Emitted by the UI's perch viewing layer, which owns the visited set.
+   */
+  perch: { id: string; state: 'perched' | 'left'; first: boolean };
   /**
    * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, urge, takeoff, land...; the rider
    * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.

@@ -72,9 +72,27 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Sky, clouds, weather presets (clear, haze, fog, rain, storm), day–night cycle; seasons planned.
 
 ### 5.3 Viewpoints (perches) — phase 03
-14 viewpoints (bridge towers, Galata cap, Süleymaniye dome, Kız Kulesi, hills). Perch, watch in a slow cinematic
-orbit, time-lapse the sunset, open photo mode, drop off to fly again. Data and service exist (`perches`); landing and
-the viewing mode are next.
+14 viewpoints (bridge towers, Galata cap, Süleymaniye dome, Kız Kulesi, Rumeli Hisarı, the Sapphire roof, hills). Built
+(`src/dragon/flight/perch.ts`, `src/ui/perch-view.ts`, `src/camera/modes/perch-rig.ts`):
+- **Prompt:** within 260 m of a perch, below 44 m/s, inside a 70° cone around the direction of travel (any direction
+  while hovering) and at most 160 m above / 45 m below it, the hint line offers "[L] Kon: Galata Kulesi" (it stays
+  until 320 m / 52 m/s / 88°).
+- **Guided approach:** L plans a curve from the current state to the perch (arrivals around the perch heading, higher
+  arrivals, then detours over or around obstacles), checks it against the collision world, and flies it: the entry
+  speed kept for the first part, then bled off, a flare with the wings swept forward and back-strokes limited to the
+  room under the wings, the wings raised in a V for the last metres, and the feet set down exactly on the perch pose.
+  Any stick, dive, brake, Space or L again aborts back into free flight; a blocked approach is refused with a toast.
+- **Viewing mode:** the dragon sits (upright on its hind feet on a narrow cap, on all fours elsewhere), wings folded,
+  tail wrapped aside, head up with a slow look along the view now and then, the rider relaxed. The HUD fades to the
+  zones; the perch camera drifts slowly behind and beside the dragon framing the view (C: orbit → still framing →
+  rider's eyes); a quiet hint line names Space (take off), T (time-lapse: the clock runs 36 game minutes a second,
+  ramping in and out), O (photo) and C. Stamina refills.
+- **Leaving:** Space or L. Over an edge: a drop-off (crouch, push forward, a fall with the wings still until they have
+  room, then they snap open into the take-off's dive); on hills and wide tops the ground's own leap. Control is back
+  within 2 s.
+- **Discovery:** the first perch on a viewpoint is its discovery ("Yeni seyir noktası" with the name and info in the
+  title zone; the landmark it sits on is discovered too); the map / pause menu Işınlan puts the dragon straight into
+  the viewing mode.
 
 ### 5.4 Ring races — phase 13 (`src/activities/`)
 - Built-in courses: Boğaz turu (under the 15 Temmuz deck), Haliç kıvrımı, Adalar turu; speed rings give a short push.
@@ -88,6 +106,10 @@ Data-driven small scenes on the map: legends (Hezarfen, Lagari, Kız Kulesi, shi
 simit, anglers, stork migration), poems (Orhan Veli's first stanza while gliding low along the shore). Triggers by
 place, altitude, time, date, weather; once per session or with a cooldown; players can switch categories off
 (Ayarlar → Oyun → Anlar). Rights: no ripped media; official embeds only; stylised, original characters.
+Runtime built (`src/moments/system.ts`, pure logic in `runtime.ts`): one moment at a time, rare (a global gap), never
+taking control; subtitles in the lowerCenter zone fade with the glide. Playable today: the Orhan Veli poem (subtitle
+only; the coastal ambience lifts in place of its sound). The others wait for their characters, animations and sounds.
+`?moment=<id>` jumps to a moment's start and plays it once.
 
 ### 5.6 Hotbar, abilities and items
 Five slots on keys 1–5 (HUD, bottom centre). Today: fire (1) and roar (2). Items and special powers register through
@@ -111,7 +133,7 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 |---|---|
 | Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off, V galloping take-off; in a run-out Ctrl/X skid to a stop, Space touch-and-go |
-| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; low, fast and level over water or flat ground: surface skim (automatic) |
+| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
 | Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |

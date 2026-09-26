@@ -23,8 +23,8 @@ export interface TeleportTarget {
 
 export interface FullMapOptions {
   onTeleport(target: TeleportTarget): void;
-  /** Teleport next to a perch (the same flow as the pause menu's "Oraya kon ve izle"). */
-  onPerch(view: ViewPreset): void;
+  /** Sit on a perch in the viewing mode (the same flow as the pause menu's "Oraya kon ve izle"). */
+  onPerch(perch: PerchPoint): void;
   /** Current perch points (the 'perches' service), read when the map opens. */
   perches(): readonly PerchPoint[] | undefined;
   onClose(): void;
@@ -513,7 +513,7 @@ export class FullMap {
     }
     const pin = this.hitPin(sx, sy);
     if (pin && this.perchShown(pin)) {
-      this.options.onPerch(perchTeleportView(pin.perch!));
+      this.options.onPerch(pin.perch!);
       return;
     }
     if (pin?.landmark) {

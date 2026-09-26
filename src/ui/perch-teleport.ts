@@ -1,7 +1,8 @@
 /**
- * Teleporting to a perch, shared by the pause menu's Işınlan ("Oraya kon ve izle") and the full map: the target is a
- * spot just behind and above the grip point facing the perch's view; landing is up to the player (L), which the
- * toast tells them.
+ * Teleporting to a perch, shared by the pause menu's Işınlan ("Oraya kon ve izle") and the full map: the dragon is
+ * teleported just behind and above the grip point facing the perch's view, then sat down on the perch in the viewing
+ * mode (DragonPerchState.perchAt). Without the perch flight hook the landing is up to the player (L), which the toast
+ * tells them.
  */
 import type { PerchPoint } from '../core/contracts';
 import type { ViewPreset } from '../core/debug';

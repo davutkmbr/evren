@@ -111,7 +111,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'perch' | 'game';
 
 /**
  * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
@@ -147,6 +147,9 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Q / E ×2', action: 'Kayış: yönünü bozmadan yana kay', group: 'tricks' },
   { keys: 'A / D ×2', action: 'Takla at (basılı tut: dönmeye devam et)', group: 'tricks' },
   { keys: 'S ×2', action: 'Looping', group: 'tricks' },
+  { keys: 'A / D basılı + S ×2', action: 'Kanat üstü dönüş: yatışta tırman, yüksek kanadın üstünden dön, dalarak geri dön (enerjini korur)', group: 'tricks' },
+  { keys: 'Looping tepesinde A / D', action: 'Immelmann: yarım looping, tepede yarım takla ile düzel (yüksel, geri dön)', group: 'tricks' },
+  { keys: 'Dik dalışta A / D ×2', action: 'Split-S: sırtüstü dön, yarım looping ile aşağıdan geri dön (alçal, hızlan; basılı tut: takla atarak dal)', group: 'tricks' },
   { keys: 'W', action: 'Suya ya da düz zemine alçal: hızlı ve kanatlar düzken sıyırma (kendiliğinden)', group: 'tricks' },
   { keys: 'F / Sol tık', action: 'Ateş püskür', group: 'dragon' },
   { keys: 'R', action: 'Kükre', group: 'dragon' },
@@ -157,6 +160,13 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
   { keys: '[ / ]', action: 'Saati yarım saat geri / ileri', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
+  // Viewpoints (phase 03, src/dragon/flight/perch.ts, src/ui/perch-view.ts).
+  { keys: 'L', action: 'Seyir noktası yakındayken ("Kon" yazısı çıkınca): kon ve izle', group: 'perch' },
+  { keys: 'L / Space', action: 'Konmak üzereyken: vazgeç (yön tuşları da iptal eder)', group: 'perch' },
+  { keys: 'Space / L', action: 'Seyir noktasında: havalan, boşluğa atıl', group: 'perch' },
+  { keys: 'T', action: 'Seyir noktasında: zamanı hızlandır / normale döndür', group: 'perch' },
+  { keys: 'C', action: 'Seyir noktasında: kamera (yörünge, sabit, binici gözü)', group: 'perch' },
+  { keys: 'O', action: 'Seyir noktasında: fotoğraf modu', group: 'perch' },
   { keys: '1–5', action: 'Hotbar: yetenek / eşya kullan', group: 'game' },
   { keys: 'Y', action: 'Halka yarışı: parkur seç, parkur editörü (yarışta: iptal et, editörde: çık)', group: 'game' },
   { keys: 'B', action: 'Parkur editöründe: halka koy', group: 'game' },
