@@ -404,6 +404,11 @@ export interface DragonPose {
   /** 0..1 braking skid: hind feet braced forward, claws dug in. */
   skid?: number;
   /**
+   * 0..1 landing flare (optional): wings reaching forward and cupped with a steeper stroke, the neck in an S so the head
+   * stays level while the body rears up, the claws open for the touchdown.
+   */
+  landFlare?: number;
+  /**
    * Swimming at the surface (optional, 0 = not swimming): 0..1 weight of the floating posture (neck raised, wings folded
    * tight along the back, hind legs kicking under the body, no ground plane), the stroke phase (rad) of the body / tail
    * undulation and the leg kicks, and the stroke strength 0..1.
