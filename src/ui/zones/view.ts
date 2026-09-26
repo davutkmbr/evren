@@ -5,6 +5,7 @@
 import { keyHint } from '../components/key-hint';
 import { el } from '../dom';
 import type { HudDirector, HintItem } from './director';
+import { hintKeys, onPadHints, padHints } from './key-device';
 import './zones.css';
 
 /** Zone classes: position a node in its band (zones.css). */
@@ -38,17 +39,22 @@ export function fadeBinding(node: HTMLElement, hooks: { onShow?: () => void; onH
   };
 }
 
-/** A row of key hints; `keys` in keyCombo syntax ("Ctrl + W / S"). An optional caption leads the row. */
+/**
+ * A row of key hints; `keys` in keyCombo syntax ("Ctrl + W / S"). An optional caption leads the row. The keys follow
+ * the device (key-device.ts): the row refills itself when the player switches between the keyboard and a gamepad.
+ */
 export function hintRow(items: readonly HintItem[], caption = ''): HTMLElement {
   const row = el('ul', 'hint-row');
   fillHintRow(row, items, caption);
+  // Static rows (hover, photo mode) live as long as the UI: the listener is never removed.
+  onPadHints(() => fillHintRow(row, items, caption));
   return row;
 }
 
 function fillHintRow(row: HTMLElement, items: readonly HintItem[], caption: string): void {
   row.replaceChildren(
     ...(caption ? [el('li', 'hint-item hint-caption', caption)] : []),
-    ...items.map(([keys, label]) => el('li', 'hint-item', [keyHint(keys, label).root])),
+    ...items.map(([keys, label]) => el('li', 'hint-item', [keyHint(hintKeys(keys), label).root])),
   );
 }
 
@@ -62,12 +68,15 @@ export class HintLineView {
   private key = '';
   private readonly off: () => void;
 
+  private readonly offPad: () => void;
+
   constructor(private readonly director: HudDirector) {
     this.off = director.onChange((zone) => {
       if (zone === 'lowerCenter') {
         this.render();
       }
     });
+    this.offPad = onPadHints(() => this.render());
   }
 
   private render(): void {
@@ -76,7 +85,7 @@ export class HintLineView {
       this.root.classList.add('is-out');
       return;
     }
-    const key = `${line.caption}\u0001${line.hints.map((h) => h.join('\u0002')).join('\u0003')}`;
+    const key = `${padHints() ? 'pad' : 'kb'}\u0001${line.caption}\u0001${line.hints.map((h) => h.join('\u0002')).join('\u0003')}`;
     if (key !== this.key) {
       this.key = key;
       fillHintRow(this.row, line.hints, line.caption);
@@ -86,5 +95,6 @@ export class HintLineView {
 
   dispose(): void {
     this.off();
+    this.offPad();
   }
 }
