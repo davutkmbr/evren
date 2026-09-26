@@ -4,7 +4,7 @@
  * assets-src/<kind>/<id>/, then writes .docs/assets/approved-assets.md (what is cached) and
  * .docs/assets/manual-downloads.md (what has to be downloaded by hand).
  *
- *   node scripts/data/fetch-assets.mjs [--dry-run] [--budget-mb=600] [--kind=sound]
+ *   node scripts/data/fetch-assets.mjs [--dry-run] [--budget-mb=600] [--kind=sound] [--id=a,b]
  *
  * - Poly Haven (api.polyhaven.com): texture maps (Diffuse, nor_gl, Rough, AO, Displacement as JPG), the glTF with its
  *   textures, or an HDRI sky (kind 'hdri', Radiance .hdr), at the requested resolution.
@@ -14,7 +14,8 @@
  *
  * Downloads run one at a time with retries, and files that already exist with the expected size are skipped. If the
  * planned cache exceeds the budget, every asset is fetched one resolution step lower. public/ is never touched.
- * --kind limits the downloads to one asset kind; the generated docs still cover the whole manifest.
+ * --kind limits the downloads to one asset kind, --id to the listed asset ids; the generated docs still cover the whole
+ * manifest.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -65,6 +66,7 @@ const MANUAL_FORMAT = {
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const onlyKind = args.find((a) => a.startsWith('--kind='))?.split('=')[1];
+const onlyIds = args.find((a) => a.startsWith('--id='))?.split('=')[1]?.split(',');
 // 400 MB held the S1 textures and props; the six 4k HDRI skies of the realism pass add about 110 MB.
 const budgetMb = Number(args.find((a) => a.startsWith('--budget-mb='))?.split('=')[1] ?? 600);
 
@@ -417,7 +419,7 @@ ${items.join('\n')}
 
 async function main() {
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
-  const apiAssets = manifest.assets.filter((a) => a.download === 'api' && (!onlyKind || a.kind === onlyKind));
+  const apiAssets = manifest.assets.filter((a) => a.download === 'api' && (!onlyKind || a.kind === onlyKind) && (!onlyIds || onlyIds.includes(a.id)));
   const manual = manifest.assets.filter((a) => a.download === 'manual');
 
   let plans = await planAll(apiAssets, (a) => a.resolution);
