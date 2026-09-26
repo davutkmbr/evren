@@ -98,18 +98,23 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 ## Next, in order (agreed with the owner)
 
 1. Recompile all 28 spots in format 1.2 (`npm run compile:world -- --area <id> --landmarks none --web`).
-2. Fatih as one OSM region + compiled tiles (data from the local extract, not Overpass).
+2. Fatih compiled street tiles (local extract, not Overpass). The "one OSM region" half is covered by phase 24: the
+   far OSM layer draws Fatih's real buildings everywhere.
 3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
-   +4–7 ms near Kadıköy — over budget; lower `MAX_LOADED`, drop base raster copy, merge far regions).
-4. OSM feature kits first batch (pitches, pools, bus stops, fuel stations) — extend the fetch to keep those tags.
+   +4–7 ms near Kadıköy — over budget). **First step done (cloud session):** regions load at 1.8 km, unload at
+   2.4 km, at most 5; facade detail buffers sized to what is in range; details result freed after upload; crowd
+   stepped only near; one shared foliage atlas. Needs a heap / ms re-measure on the reference machine. Next: free the
+   street and cover rasters after upload (`ctx.base`, cover texture data), size `InstanceLod` props to their radius,
+   hide a region's shells beyond ~1 km (the far layer draws them).
+4. OSM feature kits: built in PR #30 (plan 23). Left: swimming pools (`leisure=swimming_pool` is not in the fetch;
+   needs `fetch-osm.mjs` + a region re-fetch from the local extract).
 5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe
    model; "port" unclear — ask); street layer test rerun on a quiet machine (`node scripts/street-layer-test.mjs`);
    flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
    **Done (cloud session, PR #30):** bridge joints re-refined when later regions start drawing; no vehicles on the
    water (`tools/headless/traffic-water-check.ts`); OSM colour tags incl. Turkish words (`osm/shared/colour.ts`, fixes
    `Unknown color kiremit`).
-   Items 1–4 overlap the map session's phase 24 work (far OSM layer, re-fetched regions, one building rule): wait
-   for its merge before recompiling the spots or extending the fetch.
+   Phase 24 (far OSM layer) is merged; items 1, 2 and the pool re-fetch are local runs.
 
 ## Working notes
 
