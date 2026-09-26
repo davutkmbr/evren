@@ -1,0 +1,389 @@
+{
+ "pieces": {
+  "kagithane-semaisi-1916": {
+   "id": "kagithane-semaisi-1916",
+   "recording": "loc-victor-69173-kagithane-semaisi",
+   "file": "jvm_victor_69173_01_b18808_02.wav",
+   "segment": [
+    7.5,
+    63.5
+   ],
+   "noiseRegion": [
+    0.15,
+    1.15
+   ],
+   "hum": null,
+   "clicksRepaired": 384,
+   "metrics": {
+    "raw": {
+     "music_db": -29.02,
+     "noise_db": -42.19,
+     "snr_db": 13.17,
+     "flatness_quiet": 0.3634,
+     "clicks_per_s": 5.95
+    },
+    "denoised": {
+     "music_db": -29.72,
+     "noise_db": -46.81,
+     "snr_db": 17.09,
+     "flatness_quiet": 0.3242,
+     "clicks_per_s": 1.54
+    },
+    "compare": {
+     "band_change_db": -0.54,
+     "hf_change_db": -2.23,
+     "band_change_vs_raw_db": -0.55,
+     "hf_change_vs_raw_db": -2.7,
+     "hiss_change_db": -4.77,
+     "kurtosis_ratio": 0.171
+    },
+    "snrGainDb": 3.92
+   },
+   "autoVariant": "denoised",
+   "autoReasons": [],
+   "variant": "denoised",
+   "variants": {
+    "denoised": {
+     "src": [
+      "moments/kagithane-semaisi-1916.opus",
+      "moments/kagithane-semaisi-1916.m4a"
+     ],
+     "lufs": -21.6,
+     "truePeakDb": -1.0,
+     "durationSec": 56.0
+    },
+    "raw": {
+     "src": [
+      "moments/kagithane-semaisi-1916.raw.opus",
+      "moments/kagithane-semaisi-1916.raw.m4a"
+     ],
+     "lufs": -24.0,
+     "truePeakDb": -1.0,
+     "durationSec": 56.0
+    }
+   }
+  },
+  "felek-bana-1916": {
+   "id": "felek-bana-1916",
+   "recording": "loc-victor-69175-felek-bana",
+   "file": "jvm_victor_69175_01_b18809_01.wav",
+   "segment": [
+    1.0,
+    116.5
+   ],
+   "noiseRegion": [
+    0.15,
+    1.85
+   ],
+   "hum": null,
+   "clicksRepaired": 213,
+   "metrics": {
+    "raw": {
+     "music_db": -19.06,
+     "noise_db": -33.79,
+     "snr_db": 14.74,
+     "flatness_quiet": 0.2731,
+     "clicks_per_s": 1.61
+    },
+    "denoised": {
+     "music_db": -19.79,
+     "noise_db": -37.61,
+     "snr_db": 17.81,
+     "flatness_quiet": 0.2306,
+     "clicks_per_s": 0.13
+    },
+    "compare": {
+     "band_change_db": -0.54,
+     "hf_change_db": -1.91,
+     "band_change_vs_raw_db": -0.54,
+     "hf_change_vs_raw_db": -1.91,
+     "hiss_change_db": -4.14,
+     "kurtosis_ratio": 0.528
+    },
+    "snrGainDb": 3.07
+   },
+   "autoVariant": "denoised",
+   "autoReasons": [],
+   "variant": "denoised",
+   "variants": {
+    "denoised": {
+     "src": [
+      "moments/felek-bana-1916.opus",
+      "moments/felek-bana-1916.m4a"
+     ],
+     "lufs": -20.5,
+     "truePeakDb": -1.0,
+     "durationSec": 115.5
+    },
+    "raw": {
+     "src": [
+      "moments/felek-bana-1916.raw.opus",
+      "moments/felek-bana-1916.raw.m4a"
+     ],
+     "lufs": -20.6,
+     "truePeakDb": -1.0,
+     "durationSec": 115.5
+    }
+   }
+  },
+  "aya-yorgi-apolitikiyonu-nafpliotis": {
+   "id": "aya-yorgi-apolitikiyonu-nafpliotis",
+   "recording": "analogion-nafpliotis-apolytikion-agios-georgios",
+   "file": "Apolytikion-AgGeorgiou-INafpliotis.mp3",
+   "segment": [
+    0.0,
+    75.0
+   ],
+   "noiseRegion": [
+    54.15,
+    55.15
+   ],
+   "hum": null,
+   "clicksRepaired": 6,
+   "metrics": {
+    "raw": {
+     "music_db": -18.04,
+     "noise_db": -27.39,
+     "snr_db": 9.35,
+     "flatness_quiet": 0.0056,
+     "clicks_per_s": 0.07
+    },
+    "denoised": {
+     "music_db": -19.84,
+     "noise_db": -30.89,
+     "snr_db": 11.05,
+     "flatness_quiet": 0.0051,
+     "clicks_per_s": 0.07
+    },
+    "compare": {
+     "band_change_db": -1.45,
+     "hf_change_db": -1.4,
+     "band_change_vs_raw_db": -1.46,
+     "hf_change_vs_raw_db": -1.43,
+     "hiss_change_db": -4.22,
+     "kurtosis_ratio": 0.359
+    },
+    "snrGainDb": 1.7
+   },
+   "autoVariant": "raw",
+   "autoReasons": [
+    "SNR gain 1.7 dB < 3 dB"
+   ],
+   "variant": "raw",
+   "variants": {
+    "denoised": {
+     "src": [
+      "moments/aya-yorgi-apolitikiyonu-nafpliotis.opus",
+      "moments/aya-yorgi-apolitikiyonu-nafpliotis.m4a"
+     ],
+     "lufs": -18.3,
+     "truePeakDb": -1.0,
+     "durationSec": 75.0
+    },
+    "raw": {
+     "src": [
+      "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.opus",
+      "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -1.55,
+     "durationSec": 75.0
+    }
+   }
+  },
+  "katibim-safiye-ayla-1949": {
+   "id": "katibim-safiye-ayla-1949",
+   "recording": "ia-safiye-ayla-katibim-1949",
+   "file": "KatibimUskudaraGiderIken-SafiyeAyla.mp3",
+   "segment": [
+    0.5,
+    99.0
+   ],
+   "noiseRegion": [
+    197.45,
+    198.45
+   ],
+   "hum": null,
+   "clicksRepaired": 800,
+   "metrics": {
+    "raw": {
+     "music_db": -21.47,
+     "noise_db": -40.46,
+     "snr_db": 18.99,
+     "flatness_quiet": 0.0529,
+     "clicks_per_s": 4.14
+    },
+    "denoised": {
+     "music_db": -21.89,
+     "noise_db": -43.2,
+     "snr_db": 21.31,
+     "flatness_quiet": 0.0446,
+     "clicks_per_s": 1.41
+    },
+    "compare": {
+     "band_change_db": -0.28,
+     "hf_change_db": -0.21,
+     "band_change_vs_raw_db": -0.29,
+     "hf_change_vs_raw_db": -0.21,
+     "hiss_change_db": -4.78,
+     "kurtosis_ratio": 0.166
+    },
+    "snrGainDb": 2.32
+   },
+   "autoVariant": "raw",
+   "autoReasons": [
+    "SNR gain 2.3 dB < 3 dB"
+   ],
+   "variant": "raw",
+   "variants": {
+    "denoised": {
+     "src": [
+      "private/katibim-safiye-ayla-1949.opus",
+      "private/katibim-safiye-ayla-1949.m4a"
+     ],
+     "lufs": -20.7,
+     "truePeakDb": -1.0,
+     "durationSec": 98.5
+    },
+    "raw": {
+     "src": [
+      "private/katibim-safiye-ayla-1949.raw.opus",
+      "private/katibim-safiye-ayla-1949.raw.m4a"
+     ],
+     "lufs": -20.4,
+     "truePeakDb": -1.0,
+     "durationSec": 98.5
+    }
+   }
+  },
+  "huseyni-taksim-hafiz-kemal": {
+   "id": "huseyni-taksim-hafiz-kemal",
+   "recording": "gallica-pathe-huseyni-taksim-saz-semaisi",
+   "file": "bpt6k1310275k-f1.mp3",
+   "segment": [
+    0.0,
+    87.2
+   ],
+   "noiseRegion": [
+    87.4,
+    89.6
+   ],
+   "hum": null,
+   "clicksRepaired": 2,
+   "metrics": {
+    "raw": {
+     "music_db": -18.13,
+     "noise_db": -35.19,
+     "snr_db": 17.07,
+     "flatness_quiet": 0.3393,
+     "clicks_per_s": 0.01
+    },
+    "denoised": {
+     "music_db": -19.72,
+     "noise_db": -41.2,
+     "snr_db": 21.48,
+     "flatness_quiet": 0.3246,
+     "clicks_per_s": 0.01
+    },
+    "compare": {
+     "band_change_db": -1.5,
+     "hf_change_db": -2.63,
+     "band_change_vs_raw_db": -1.5,
+     "hf_change_vs_raw_db": -2.63,
+     "hiss_change_db": -4.79,
+     "kurtosis_ratio": -0.115
+    },
+    "snrGainDb": 4.41
+   },
+   "autoVariant": "denoised",
+   "autoReasons": [],
+   "variant": "denoised",
+   "variants": {
+    "denoised": {
+     "src": [
+      "private/huseyni-taksim-hafiz-kemal.opus",
+      "private/huseyni-taksim-hafiz-kemal.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -4.07,
+     "durationSec": 87.2
+    },
+    "raw": {
+     "src": [
+      "private/huseyni-taksim-hafiz-kemal.raw.opus",
+      "private/huseyni-taksim-hafiz-kemal.raw.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -4.13,
+     "durationSec": 87.2
+    }
+   }
+  },
+  "huzzam-taksim-resad-bey": {
+   "id": "huzzam-taksim-resad-bey",
+   "recording": "gallica-pathe-huseyni-huzzam-taksim",
+   "file": "bpt6k13102426-f2.mp3",
+   "segment": [
+    0.4,
+    81.0
+   ],
+   "noiseRegion": [
+    79.4,
+    81.6
+   ],
+   "hum": null,
+   "clicksRepaired": 0,
+   "metrics": {
+    "raw": {
+     "music_db": -24.42,
+     "noise_db": -33.15,
+     "snr_db": 8.73,
+     "flatness_quiet": 0.4384,
+     "clicks_per_s": 0.0
+    },
+    "denoised": {
+     "music_db": -26.69,
+     "noise_db": -39.13,
+     "snr_db": 12.44,
+     "flatness_quiet": 0.4451,
+     "clicks_per_s": 0.0
+    },
+    "compare": {
+     "band_change_db": -1.54,
+     "hf_change_db": -2.03,
+     "band_change_vs_raw_db": -1.55,
+     "hf_change_vs_raw_db": -2.03,
+     "hiss_change_db": -4.8,
+     "kurtosis_ratio": -0.028
+    },
+    "snrGainDb": 3.71
+   },
+   "autoVariant": "raw",
+   "autoReasons": [
+    "music 300 Hz-3 kHz changed -1.54 dB (> 1.5 dB)"
+   ],
+   "variant": "raw",
+   "variants": {
+    "denoised": {
+     "src": [
+      "private/huzzam-taksim-resad-bey.opus",
+      "private/huzzam-taksim-resad-bey.m4a"
+     ],
+     "lufs": -22.7,
+     "truePeakDb": -1.0,
+     "durationSec": 80.6
+    },
+    "raw": {
+     "src": [
+      "private/huzzam-taksim-resad-bey.raw.opus",
+      "private/huzzam-taksim-resad-bey.raw.m4a"
+     ],
+     "lufs": -22.0,
+     "truePeakDb": -1.0,
+     "durationSec": 80.6
+    }
+   }
+  }
+ },
+ "generatedBy": "scripts/audio/prep-moment-music.py"
+}

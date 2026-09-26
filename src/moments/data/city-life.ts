@@ -3,6 +3,7 @@
  */
 import type { LatLon, Moment } from '../types';
 import { original } from './provenance';
+import { MUSIC_KAGITHANE } from './music-sources';
 
 /**
  * Rough corridor over the Bosphorus from Sarayburnu to the Black Sea mouth, both shores included (shared with the shore
@@ -35,6 +36,8 @@ export const storks: Moment = {
     repeat: { kind: 'repeatable', cooldownSec: 1800 },
   },
   content: {
+    // Kâğıthane Semaisi, Victor 69173 (1916): the airy flute and violin introduction.
+    musicId: 'kagithane-semaisi-1916',
     // Procedural (src/moments/content.ts): the instanced flock of src/moments/storks, its wing poses and the
     // synthesised stork sounds (src/audio/sfx/storks.ts) over a soft wind bed.
     actorId: 'moments/white-stork-flock',
@@ -61,6 +64,7 @@ export const storks: Moment = {
   },
   provenance: [original('subtitles', 'White stork and raptor migration over the Bosphorus (natural history)'), original('card', 'White stork and raptor migration over the Bosphorus (natural history)')],
   needs: [],
+  sources: [MUSIC_KAGITHANE],
   notes:
     'White storks peak from mid-August to mid-September, raptors continue into October; the range 15 Aug – 15 Oct covers both. ' +
     'Runtime: src/moments/storks spawns a kettle 320–800 m ahead of the dragon on the best real thermal of the lift field ' +
