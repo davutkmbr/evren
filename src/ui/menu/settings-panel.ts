@@ -35,11 +35,12 @@ export interface SettingsPanelOptions {
 }
 
 /**
- * Ayarlar, split into pages (Görüntü · Hava ve zaman · Kontrol · Ses · Oyun) behind a tab bar so each page stays short;
- * the last page is remembered. Advanced weather sliders sit under a disclosure.
+ * Ayarlar, split into pages (Görüntü · Hava ve zaman · Kontrol · Ses · Oyun) listed on the left so each page stays
+ * short; the last page is remembered. Advanced weather sliders sit under a disclosure.
  */
 export class SettingsPanel {
   readonly root: HTMLElement;
+  private readonly pane: HTMLElement;
   private readonly quality: Control<QualityPreset>;
   private readonly sensitivity: Control<number>;
   private readonly invertMouse: Control<boolean>;
@@ -226,7 +227,7 @@ export class SettingsPanel {
     });
     setRowsEnabled(momentSubRows, this.momentPrefs.enabled);
 
-    const controlsLink = el('button', 'btn-quiet', 'Tuş listesi', { type: 'button' });
+    const controlsLink = el('button', 'btn-quiet', 'Kontroller', { type: 'button' });
     controlsLink.addEventListener('click', () => options.onShowControls?.());
 
     const pageContent: Record<SettingsPage, HTMLElement[]> = {
@@ -272,25 +273,25 @@ export class SettingsPanel {
       ],
     };
 
-    const tabBar = el(
-      'div',
-      'set-tabs',
+    const nav = el(
+      'nav',
+      'menu-cats',
       PAGES.map((p) => {
-        const button = el('button', 'set-tab', p.label, { type: 'button', role: 'tab', 'aria-selected': 'false' });
+        const button = el('button', 'menu-cat', p.label, { type: 'button', role: 'tab', 'aria-selected': 'false' });
         button.addEventListener('click', () => this.showPage(p.id, true));
         this.tabs.set(p.id, button);
         return button;
       }),
-      { role: 'tablist', 'aria-label': 'Ayar bölümleri' },
+      { role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': 'Ayar bölümleri' },
     );
-    tabBar.addEventListener('keydown', (e) => {
-      if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') {
+    nav.addEventListener('keydown', (e) => {
+      if (e.code !== 'ArrowUp' && e.code !== 'ArrowDown') {
         return;
       }
       e.preventDefault();
       e.stopPropagation();
       const i = PAGES.findIndex((p) => p.id === this.page);
-      const next = PAGES[(i + (e.code === 'ArrowRight' ? 1 : PAGES.length - 1)) % PAGES.length].id;
+      const next = PAGES[(i + (e.code === 'ArrowDown' ? 1 : PAGES.length - 1)) % PAGES.length].id;
       this.showPage(next, true);
       this.tabs.get(next)?.focus();
     });
@@ -300,7 +301,8 @@ export class SettingsPanel {
       return node;
     });
 
-    this.root = el('div', 'menu-settings', [tabBar, ...pageNodes]);
+    this.pane = el('div', 'menu-pane set-pane', pageNodes);
+    this.root = el('div', 'menu-split menu-settings', [nav, this.pane]);
     const saved = prefs.settingsPage as SettingsPage | undefined;
     this.showPage(saved && this.pages.has(saved) ? saved : 'display', false);
   }
@@ -316,7 +318,7 @@ export class SettingsPanel {
       tab.setAttribute('aria-selected', String(on));
       tab.tabIndex = on ? 0 : -1;
     }
-    this.root?.parentElement?.scrollTo({ top: 0 });
+    this.pane?.scrollTo({ top: 0 });
     if (remember) {
       this.options.prefs.settingsPage = page;
       this.options.savePrefs();

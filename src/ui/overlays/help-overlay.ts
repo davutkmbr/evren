@@ -1,5 +1,5 @@
 import { el } from '../dom';
-import { buildControlsList } from '../menu/controls-panel';
+import { ControlsView } from '../menu/controls-panel';
 
 /** Non-modal controls reference (H). The game keeps running underneath. */
 export class HelpOverlay {
@@ -12,7 +12,7 @@ export class HelpOverlay {
     close.addEventListener('click', onClose);
     this.root = el('section', 'ejd-help ejd-glass ejd-fade is-out', [
       el('header', 'help-head', [el('div', undefined, [el('p', 'ejd-caps', 'Yardım'), el('h2', 'help-title', 'Kontroller')]), close]),
-      buildControlsList(),
+      new ControlsView({ compact: true }).root,
       el('p', 'help-foot', 'Bir simge yapıya yaklaşık 800 metre yaklaşıp ona yöneldiğinde keşfedilir. Oyun kolu da desteklenir.'),
     ], { role: 'dialog', 'aria-label': 'Kontroller' });
   }

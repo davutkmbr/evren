@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { CameraMode, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import type { ViewPreset } from '../core/debug';
 import type { QualityPreset } from '../core/quality';
 import { QUALITY_PRESETS } from '../core/quality';
 import { DiscoveryTracker } from './discovery/discovery-tracker';
@@ -12,7 +13,7 @@ import { LoadingScreen } from './loading/loading-screen';
 import { FullMap, type TeleportTarget } from './map/full-map';
 import { MapRaster } from './map/map-raster';
 import { Minimap } from './map/minimap';
-import { buildControlsList } from './menu/controls-panel';
+import { ControlsView } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
@@ -110,21 +111,35 @@ export class UiSystem implements System {
       },
       onShowControls: () => this.pauseMenu.show('controls'),
     });
-    const teleportPanel = new TeleportPanel((_name, preset) => {
-      if (preset.time !== undefined) {
-        ctx.services.tryGet('env')?.setTimeOfDay(preset.time);
+    const flyTo = (view: ViewPreset): void => {
+      if (view.time !== undefined) {
+        ctx.services.tryGet('env')?.setTimeOfDay(view.time);
       }
-      this.teleport({ x: preset.x, y: preset.y, z: preset.z, headingDeg: preset.headingDeg, pitchDeg: preset.pitchDeg, label: preset.label });
-    }, () => this.openModal('map'));
+      this.teleport({ x: view.x, y: view.y, z: view.z, headingDeg: view.headingDeg, pitchDeg: view.pitchDeg, label: view.label });
+    };
+    const teleportPanel = new TeleportPanel({
+      raster: this.raster,
+      onTeleport: flyTo,
+      onPerch: (view) => {
+        flyTo(view);
+        this.toasts.push('Konmak için L');
+      },
+      onOpenMap: () => this.openModal('map'),
+    });
     this.pauseMenu = new PauseMenu({
-      panels: { settings: this.settings.root, teleport: teleportPanel.root, controls: el('div', 'menu-controls', [el('p', 'menu-lede', 'Oyun sırasında H tuşuyla da bu listeyi açabilirsin.'), buildControlsList()]) },
+      panels: { teleport: teleportPanel, controls: new ControlsView(), settings: this.settings },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
           this.settings.refresh();
         } else if (tab === 'teleport') {
           teleportPanel.setPerches(ctx.services.tryGet('perches')?.points);
-          teleportPanel.reset();
+          teleportPanel.opened();
+        }
+      },
+      onTabClose: (tab) => {
+        if (tab === 'teleport') {
+          teleportPanel.closed();
         }
       },
       onClick: () => this.click(),
@@ -420,11 +435,19 @@ export class UiSystem implements System {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.repeat || this.modal === 'none') {
+    if (this.modal === 'none') {
       return;
     }
     const target = e.target as HTMLElement | null;
     if (target && target.tagName === 'INPUT' && e.code !== 'Escape') {
+      return;
+    }
+    // the open tab's own keys (list navigation, Enter to teleport; repeats allowed), before Esc / P
+    if (this.modal === 'pause' && e.code !== 'Escape' && e.code !== 'KeyP' && this.pauseMenu.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.repeat) {
       return;
     }
     if (this.modal === 'pause' && (e.code === 'Escape' || e.code === 'KeyP')) {
