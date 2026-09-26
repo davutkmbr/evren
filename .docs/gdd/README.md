@@ -130,6 +130,18 @@ control or costs speed.
 - Course editor: place gates and speed rings in flight, save, race, share as a code (`EVR1.…`).
 - Screens: picker, countdown, in-race readout, result with per-gate chart, editor (design language, section 3).
 
+### 5.4b Ferry escort ("Vapur eşliği") — phase 13 (`src/activities/escort/`)
+A chill activity: no timer, no fail state, no medals. Flying beside a vapur or city ferry in service (within 120 m,
+heading its way, not in a race) offers "[Z] Vapura eşlik et" on the hint line. While escorting, one quiet line under
+the compass reads "Sıradaki iskele: Kadıköy · 1,4 km" with a small closeness line (a gold dot that slides toward the
+end as the dragon falls behind); the ferry's gull flock (the gull-and-simit moment's flock, shared) circles the stern
+and the dragon glances at the ferry now and then. Beyond 200 m a gentle "Vapurdan uzaklaşıyorsun" note appears; after
+30 s away the escort ends quietly. When the ferry comes alongside, a soft horn sounds at the ferry and a small card
+appears in the corner ("Vapur eşliği · Eminönü → Kadıköy", the time, a warm line, "Eşlik edilen hatlar 3/24"); each
+directed leg of the vapur and city ferry lines (24) is recorded locally. Staying along, the escort continues with the
+next leg when the ferry leaves; Z stops it any time. Moments keep playing; a race ends it; pause and photo mode freeze
+it. `?escort=1` puts the dragon beside a ferry mid-crossing (`?escort=start` also starts the escort).
+
 ### 5.5 Moments — phase 19 (`src/moments/`)
 Data-driven small scenes on the map: legends (Hezarfen, Lagari, Kız Kulesi, ships over land), city life (gulls and
 simit, anglers, stork migration), poems (Orhan Veli's first stanza while gliding low along the shore). Triggers by
@@ -194,7 +206,7 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 | Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up, V encourage (pat and call) |
 | Camera and world | right mouse look, C camera, O photo mode (Enter takes a photo for the album), [ ] time of day, N weather |
-| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
+| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), Z escort the ferry alongside (stop escorting), M map, U hide HUD, H help, Esc/P pause |
 
 ## 7. Interface
 
@@ -209,7 +221,7 @@ component library (`src/ui/components/`).
   (CLAUDE.md). Private assets (MetaHuman, Mixamo) never enter the repository.
 - Performance budget: 60 fps on "high" at 1600 × 900 on an M2 Max, dynamic resolution ≥ 0.9; street layer CPU
   ≤ 0.8 ms.
-- Headless checks in `tools/headless/` (geography, perches, races, lift, clearance, moments) run without a GPU and
+- Headless checks in `tools/headless/` (geography, perches, races, ferry escort, lift, clearance, moments) run without a GPU and
   guard gameplay numbers.
 
 ## 9. Roadmap
