@@ -9,6 +9,11 @@ export function alem(b: MeshBuilder, height: number, lod: LodLevel): void {
   const h = height;
   const rodR = h * 0.022;
   const seg = lod === 0 ? 12 : 6;
+  if (h >= 1.2) {
+    // bulbs on the rod, then the crescent as a thin slab in its own plane (small finials on arcade domes get none)
+    b.colCylinder(0, 0, 0, h * 0.1, h * 0.62);
+    b.colBox(-h * 0.2, h * 0.6, -Math.max(0.12, h * 0.02), h * 0.2, h * 1.02, Math.max(0.12, h * 0.02));
+  }
   b.with({ mat: Mat.Gold, light: Light.Cap, lightBase: b.worldY(0, 0, 0) - 1.5, ao: 1 }, () => {
     if (lod === 2) {
       b.lathe([rodR * 1.8, 0, h * 0.09, h * 0.12, rodR, h * 0.28, rodR, h * 0.75, 0, h * 0.8], { seg: 4, facets: true });
