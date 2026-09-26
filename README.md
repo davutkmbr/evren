@@ -73,6 +73,11 @@ landmarks, ferries, gulls and night lights as you explore.
   Dolmabahçe palaces, Rumeli Hisarı, the Theodosian land walls and more, plus neighbourhood mosques and minarets
   across the city.
 - Trees by species (stone pine, cypress, plane tree), ferries and tankers on real routes, gull flocks, car light streams.
+- Close-range street detail at the dragon's landing spots (Eminönü, Karaköy, Galata, Sultanahmet, Ortaköy, Üsküdar,
+  Kadıköy and more, listed in `tools/world-compiler/districts/landing-spots.json`): below 80 m the flight-scale city
+  cross-fades into compiled street tiles (façades, shopfronts, paving, street furniture) streamed around you, across
+  neighbouring spots without seams or double drawing; textures are shared between spots, so a second landing
+  downloads mostly geometry (`?street=0` turns it off).
 
 **Sky and water**
 - Physically based atmosphere (transmittance and sky-view LUTs), real sun and moon positions, stars, aerial perspective.
@@ -236,6 +241,20 @@ Some technical choices worth knowing:
 
 - **Flight tests:** `scripts/flight-test.mjs` flies scripted manoeuvres (cruise, glide, stall, dive, turns, landing)
   and prints the measured flight envelope.
+- **Collision walks:** `scripts/walk-test.mjs --dragon` walks the dragon through any OSM area and fails (exit 1) on
+  phantom colliders (blocking with nothing drawn there) or page errors. Routes are built from the area's own OSM
+  streets, squares and quays (seeded, reproducible), so a new district needs no hand-picked points. The report
+  (`.shots/collision-walk/collision-walk.json`) lists every blocking collider with its source, every stuck spot
+  (phantom, narrow street, rendered obstacle, step) and the route coverage. Known issues per area live in
+  `scripts/lib/walk-routes.mjs` (`KNOWN`).
+
+  ```bash
+  node scripts/walk-test.mjs --dragon --area galata              # the whole Galata slice (default preset)
+  node scripts/walk-test.mjs --dragon --area eminonu --street    # with the street layer
+  node scripts/walk-test.mjs --dragon --bbox -4300,2900,-3900,3200 --length 2500 --seed 7
+  node scripts/walk-test.mjs --dragon --area kadikoy --plan      # print the planned routes only
+  node --test scripts/lib/walk-routes.test.mjs                   # route planner unit tests
+  ```
 
 ## Roadmap
 
