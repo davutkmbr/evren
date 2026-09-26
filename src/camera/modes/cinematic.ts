@@ -6,6 +6,7 @@ import { AngleSpring } from '../math/springs';
 import { FlybyShot, IncomingShot } from '../shots/fixed';
 import { LandmarkShot } from '../shots/landmark';
 import { OrbitShot } from '../shots/orbit';
+import { PerchCameraRig, type PerchCameraStyle } from './perch-rig';
 import { ShoulderShot } from '../shots/shoulder';
 import type { Shot, ShotEnv, ShotKind } from '../shots/shot';
 import { EstablishingShot, LowTrackingShot, SideTrackingShot } from '../shots/tracking';
@@ -57,6 +58,10 @@ export class CinematicController implements CameraController {
   private losTimer = 0;
   private blockedTime = 0;
   private cuts = 0;
+  /** Perched on a viewpoint (phase 03): the perch camera replaces the director while the dragon sits there. */
+  private readonly perchRig = new PerchCameraRig();
+  private perchActive = false;
+  private readonly perchAnchor = new THREE.Vector3();
 
   constructor() {
     this.env = {
@@ -72,11 +77,26 @@ export class CinematicController implements CameraController {
 
   /** Current shot label/kind (debugging, UI). */
   get shotKind(): ShotKind | null {
-    return this.current?.kind ?? null;
+    return this.perchActive ? null : (this.current?.kind ?? null);
   }
 
+  /** No caption while perched: the viewing mode's own hint line names the camera. */
   get shotLabel(): string {
-    return this.current?.label ?? '';
+    return this.perchActive ? '' : (this.current?.label ?? '');
+  }
+
+  /** Style of the perch camera (orbit / fixed); switching restarts it around the dragon. */
+  get perchStyle(): PerchCameraStyle {
+    return this.perchRig.style;
+  }
+
+  set perchStyle(style: PerchCameraStyle) {
+    this.perchRig.style = style;
+  }
+
+  /** The dragon sits on a perch: the perch camera frames it (true while it drives the view). */
+  get perching(): boolean {
+    return this.perchActive;
   }
 
   get cutCount(): number {
@@ -114,6 +134,9 @@ export class CinematicController implements CameraController {
 
   update(frame: CameraFrame, out: CameraPose): void {
     this.refreshEnv(frame);
+    if (this.updatePerch(frame, out)) {
+      return;
+    }
     if (!this.current) {
       this.cut();
     }
@@ -143,6 +166,37 @@ export class CinematicController implements CameraController {
         }
       }
     }
+  }
+
+  /**
+   * Perch viewing (phase 03): while the dragon is perched the perch camera frames the perch's view; when it leaves,
+   * the director cuts back in with a fresh shot. Returns true when the perch camera wrote the pose.
+   */
+  private updatePerch(frame: CameraFrame, out: CameraPose): boolean {
+    const perch = frame.target.dragon?.perch;
+    const point = perch && perch.phase === 'perched' ? perch.point : null;
+    if (!point) {
+      if (this.perchActive) {
+        this.perchActive = false;
+        this.cut();
+      }
+      return false;
+    }
+    const t = frame.target;
+    this.perchAnchor.copy(t.position);
+    const yaw = -point.headingDeg * (Math.PI / 180);
+    if (!this.perchActive) {
+      this.perchActive = true;
+      this.perchRig.begin(this.perchAnchor, yaw, t.size, frame.collision, null);
+    }
+    this.perchRig.update(frame.camDt, this.perchAnchor, yaw, frame.collision, frame.lookActive ? frame.lookYaw : 0, frame.lookActive ? frame.lookPitch : 0, out);
+    return true;
+  }
+
+  /** Restarts the perch camera (a style change). */
+  restartPerch(frame: CameraFrame): void {
+    this.perchActive = false;
+    this.refreshEnv(frame);
   }
 
   private refreshEnv(frame: CameraFrame): void {
