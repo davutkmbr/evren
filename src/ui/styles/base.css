@@ -97,7 +97,7 @@
   pointer-events: auto;
 }
 
-.ejd kbd,
+.ejd kbd:not(.ui-keycap),
 .ejd .ejd-kbd {
   display: inline-flex;
   align-items: center;
