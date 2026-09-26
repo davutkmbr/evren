@@ -282,3 +282,28 @@ export function minaret(ctx: SiteContext, x: number, z: number, g: number, h: nu
   }
   ctx.collider({ kind: 'cylinder', x, y: g - 1, z, r: r * 1.3, h: h + 1 });
 }
+
+/**
+ * The two front corners of a footprint facing `dir`: the ends of the side of its oriented bounding box whose outward
+ * normal is closest to `dir` (rounded or chamfered corners in the outline do not matter), pulled `inset` m in along
+ * that side.
+ */
+export function frontCorners(ring: readonly V2[], dir: V2, inset = 0): [V2, V2] {
+  const b = obb(ring);
+  const ax: V2 = [Math.cos(b.angle), Math.sin(b.angle)];
+  const sd: V2 = [-ax[1], ax[0]];
+  const sides: { n: V2; t: V2; depth: number; half: number }[] = [
+    { n: ax, t: sd, depth: b.len / 2, half: b.wid / 2 },
+    { n: [-ax[0], -ax[1]], t: sd, depth: b.len / 2, half: b.wid / 2 },
+    { n: sd, t: ax, depth: b.wid / 2, half: b.len / 2 },
+    { n: [-sd[0], -sd[1]], t: ax, depth: b.wid / 2, half: b.len / 2 },
+  ];
+  const f = sides.reduce((best, s) => (s.n[0] * dir[0] + s.n[1] * dir[1] > best.n[0] * dir[0] + best.n[1] * dir[1] ? s : best));
+  const mx = b.cx + f.n[0] * f.depth;
+  const mz = b.cz + f.n[1] * f.depth;
+  const h = f.half - inset;
+  return [
+    [mx - f.t[0] * h, mz - f.t[1] * h],
+    [mx + f.t[0] * h, mz + f.t[1] * h],
+  ];
+}
