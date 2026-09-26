@@ -103,10 +103,11 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   b.push();
   b.translate(0, 0, shift);
 
-  b.with({ mat: Mat.Stone, color: OTTOMAN_STONE, ao: 0.85 }, () => b.box(CORE.x0 - 6, -8, CORE.z0 - 14, CORE.x1 + 16, 0.3, CORE.z1 + 24, 'b'));
+  b.with({ mat: Mat.Stone, color: OTTOMAN_STONE, ao: 0.85 }, () => b.box(CORE.x0 - 6, -8, CORE.z0 - 14, CORE.x1 + 16, 0.3, CORE.z1 + 24, lod === 0 ? 'bt' : 'b'));
   if (lod === 0) {
     b.with({ mat: Mat.Paving, light: Light.Ground, lightBase: -2 }, () => {
-      b.quad([CORE.x0 - 6, 0.31, CORE.z1 + 24], [CORE.x1 + 16, 0.31, CORE.z1 + 24], [CORE.x1 + 16, 0.31, CORE.z0 - 14], [CORE.x0 - 6, 0.31, CORE.z0 - 14]);
+      // replaces the terrace top (not drawn at LOD0): 1 cm above it the two z-fought
+      b.quad([CORE.x0 - 6, 0.3, CORE.z1 + 24], [CORE.x1 + 16, 0.3, CORE.z1 + 24], [CORE.x1 + 16, 0.3, CORE.z0 - 14], [CORE.x0 - 6, 0.3, CORE.z0 - 14]);
     });
   }
 

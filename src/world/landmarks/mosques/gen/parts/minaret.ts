@@ -77,7 +77,9 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
       // Square base block with plinth and cornice.
       const hw = L.baseW / 2;
       b.box(-hw - 0.15, -3, -hw - 0.15, hw + 0.15, 0.6, hw + 0.15, 'b');
-      b.box(-hw, 0.6, -hw, hw, L.baseH, hw, 'b');
+      // 4 cm over baseH: specs often put a portico or courtyard roof at exactly the base height, and the two tops
+      // z-fought where the roof runs into the base
+      b.box(-hw, 0.6, -hw, hw, L.baseH + 0.04, hw, 'b');
       if (lod === 0) {
         const c = Math.max(0.25, r * 0.16);
         b.sweep(
@@ -212,8 +214,9 @@ function serefe(
     b.lathe([R, floorY - 0.02, R + 0.12, floorY + 0.02, R + 0.12, floorY + slabT, R + 0.05, floorY + slabT], { seg });
   });
   b.with({ mat: Mat.Lamp, light: Light.Lamp, ao: 1 }, () => {
-    b.lathe([R + 0.125, floorY + slabT * 0.3, R + 0.125, floorY + slabT * 0.8], { seg });
-    b.lathe([R + 0.075, floorY + slabT + parH - 0.26, R + 0.075, floorY + slabT + parH - 0.06], { seg });
+    // lamp strips 3 cm clear of the slab edge (R + 0.12) and the parapet face (R + 0.05) so they never z-fight
+    b.lathe([R + 0.15, floorY + slabT * 0.3, R + 0.15, floorY + slabT * 0.8], { seg });
+    b.lathe([R + 0.08, floorY + slabT + parH - 0.26, R + 0.08, floorY + slabT + parH - 0.06], { seg });
   });
   b.with({ mat: lod === 0 ? Mat.Carved : Mat.Smooth, color, light: Light.Minaret, lightBase: baseY + floorY - 8, lightTop: baseY + floorY + parH + 1.5 }, () => {
     b.lathe(

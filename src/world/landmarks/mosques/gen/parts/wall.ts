@@ -176,7 +176,8 @@ export function wallPanel(b: MeshBuilder, len: number, yb: number, top: number |
     if (opt.reveals === false) {
       continue;
     }
-    emitOpening(b, o, archSeg, seed, lod, opt.doubleSided ?? false);
+    // a door standing on the wall's foot has no sill face: it would lie in the plane of the paving outside
+    emitOpening(b, o, archSeg, seed, lod, opt.doubleSided ?? false, o.y0 <= yb + 1e-3);
   }
   for (const o of overlay) {
     seed = (seed * 1103515245 + 12345) >>> 0;
@@ -200,7 +201,7 @@ function backSurface(o: Opening, seed: number): Parameters<MeshBuilder['with']>[
   return { mat: Mat.Carved, ao: 0.8 };
 }
 
-function emitOpening(b: MeshBuilder, o: Opening, archSeg: number, seed: number, lod: LodLevel, doubleSided: boolean): void {
+function emitOpening(b: MeshBuilder, o: Opening, archSeg: number, seed: number, lod: LodLevel, doubleSided: boolean, noSill = false): void {
   const pts = outline(o, archSeg);
   const d = o.depth;
   const open = o.back === 'open';
@@ -209,7 +210,7 @@ function emitOpening(b: MeshBuilder, o: Opening, archSeg: number, seed: number, 
   b.with({ ao: Math.min(b.s.ao, 0.82) }, () => {
     let u = 0;
     for (let i = 0; i < n; i++) {
-      if (open && i === n - 1) {
+      if ((open || noSill) && i === n - 1) {
         break;
       }
       const p = pts[i];
