@@ -92,7 +92,7 @@ stamina, the next gate).
   | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while racing the race readout (gutter + 72 px) replaces it |
   | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; a perch's name and info; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
   | `center` | between title and lowerCenter (≥ 25 % of the height) | reserved for the aim and the ring: no text except small labels next to world markers (gate distance) |
-  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
+  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys; the contextual move hints), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
   | `bottom` | gutter + 10 px, 146 px tall | the static cluster (not a zone item) |
   | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card (also a moment's closing card, "Yeni an") / one toast at a time |
 
@@ -100,11 +100,16 @@ stamina, the next gate).
   race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > moment
   subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
   after it (35, joinable; while the moment plays the prompt rides quietly under its subtitle line) >
-  start-of-game hints and the compass label (30) > toasts (10); ties go to the newer message (a toast replaces the
+  start-of-game hints and the compass label (30) > contextual move hints (20, `src/ui/tutorial`) > toasts (10); ties go to the newer message (a toast replaces the
   current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
   (dropped after 8 s), the compass landmark label (the next gate is the target) and moment lines and cards (no moment
   starts during a race). Start hints and "[Y] iptal" are items of the same hint line and never share it; only hints
-  marked `joinable` ride along on a higher line. While perched on a viewpoint (the viewing mode, phase 03) the compass,
+  marked `joinable` ride along on a higher line. **Contextual move hints** (the tutorial, `src/ui/tutorial`): one
+  key-first hint at a time ("[Space ×2] Güç vuruşu", keyless for automatic moves: "Suya yakın uç: sıyırma") at the
+  lowest hint-line priority, requested only when the line, the title and the corner have been free for 3 s, never
+  during a race, a landing approach, perching, a menu or photo mode, at most one new hint per 60 s of play and none in
+  the first 45 s; displaced by any other message it does not come back; a move performed cleanly never shows its hint
+  again (Ayarlar → Oyun → İpuçları switches them off, "İpuçlarını sıfırla" starts over). While perched on a viewpoint (the viewing mode, phase 03) the compass,
   the bottom cluster and the minimap fade out: only the zones remain (the perch title, the viewing hint line, toasts).
 - **Small sheets (a moment's sources):** the same sheet look at ≈760 px wide, one column that scrolls, a top bar with
   the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
@@ -124,7 +129,7 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 
 | Component | API | What it is |
 |---|---|---|
-| Key cap | `keyCap(label, tone, { size, state })`, `keyCombo('Ctrl + W / S', tone, { size })`, `setKeyCapState(cap, state)` | a raised key; tones `gold` (main action), `ink`, `quiet`, `warn`; sizes `s` (inline, small slots), `m`, `l` (keyboard drawing, `--key` × `--w`); states `dim` / `lit` / `hot` for caps that light up |
+| Key cap | `keyCap(label, tone, { size, state })`, `keyCombo('Ctrl + W / S', tone, { size })` (a trailing "×2" is a double-tap mark), `setKeyCapState(cap, state)` | a raised key; tones `gold` (main action), `ink`, `quiet`, `warn`; sizes `s` (inline, small slots), `m`, `l` (keyboard drawing, `--key` × `--w`); states `dim` / `lit` / `hot` for caps that light up |
 | Key text | `keyText('Konmak için [L]')` | a sentence whose `[X]` parts become small key caps (toasts, hint sentences) |
 | Key hint | `keyHint(keys, label, tone)` | a key and what it does as plain text, not a button (key strips, HUD and loading hints) |
 | Prompt | `prompt(label, key, variant, onPress)`, `.setDisabled(on, reason)` | key + verb, the only action button; variants `primary` (gold key), `secondary`, `danger`; key `''` for a pointer-only action (verb alone) |
