@@ -1,7 +1,8 @@
-import type { LifeService, VesselPose } from '../../core/contracts';
+import type { FerryLegInfo, LifeService, VesselPose } from '../../core/contracts';
 import type { Flocks } from './birds/flocks';
 import type { Vessel } from './vessels/agents';
 import type { Fleet } from './vessels/fleet';
+import { FerryService } from './vessels/nav/ferry-service';
 
 /** What the service reads from the life system (the fleet and the flocks are rebuilt on quality changes). */
 export interface LifeServiceSource {
@@ -24,6 +25,27 @@ export function writeVesselPose(v: Vessel, out: VesselPose): VesselPose {
   out.beam = v.model.beam;
   out.draft = v.model.draft;
   out.airDraft = v.model.airDraft;
+  return out;
+}
+
+/** Writes the line and leg of a scheduled ferry into `out` (null for any other vessel). */
+export function writeFerryLeg(v: Vessel, out: FerryLegInfo): FerryLegInfo | null {
+  const b = v.behaviour;
+  if (!(b instanceof FerryService)) {
+    return null;
+  }
+  const plan = b.plan;
+  const leg = plan.legs[b.legIndex];
+  const from = plan.visits[leg.from].dock;
+  const to = plan.visits[leg.to].dock;
+  out.line = plan.line.id;
+  out.from = from.berth.pier.id;
+  out.to = to.berth.pier.id;
+  out.fromName = from.berth.pier.name;
+  out.toName = to.berth.pier.name;
+  out.phase = b.state;
+  out.dockX = to.x;
+  out.dockZ = to.z;
   return out;
 }
 
@@ -68,6 +90,10 @@ export function createLifeService(src: LifeServiceSource): LifeService {
     vessel(id, out) {
       const v = find(id);
       return v ? writeVesselPose(v, out) : null;
+    },
+    ferryLeg(id, out) {
+      const v = find(id);
+      return v ? writeFerryLeg(v, out) : null;
     },
     borrowGulls(id, out) {
       const f = syncBorrowed();

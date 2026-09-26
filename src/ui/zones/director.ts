@@ -29,10 +29,16 @@ export const HUD_PRIORITY = {
   momentLine: 45,
   /** Perching (phase 03): the "[L] Kon" prompt, the approach and viewing-mode hint lines. */
   perch: 45,
+  /** Ferry escort (src/activities/escort): "Vapurdan uzaklaşıyorsun · [Z] Eşliği bırak" while drifting away. */
+  escortNote: 43,
+  /** Ferry escort: the quiet "[Z] Vapura eşlik et" offer beside a ferry in service (joinable). */
+  escortPrompt: 42,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,
   /** "[I] Kaynağa bak" for a few seconds after a moment (src/moments/source-prompt.ts): quiet, joinable. */
   momentSource: 35,
+  /** Ferry escort: "Sıradaki iskele: Kadıköy" under the compass, in place of the landmark label while escorting. */
+  escortLine: 32,
   /** Start-of-game key hints and the compass landmark label. */
   startHint: 30,
   /** Contextual move hints (src/ui/tutorial): the quietest item of the hint line, one at a time, well paced. */

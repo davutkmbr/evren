@@ -115,6 +115,11 @@ export class FerryService implements Behaviour {
     return this.phase;
   }
 
+  /** Index into plan.legs of the leg being run (while alongside: the leg that departs next). */
+  get legIndex(): number {
+    return this.leg;
+  }
+
   ahead(dist: number, st: VesselState, out: TrackSample): void {
     const leg = this.plan.legs[this.leg];
     if (this.phase === 'route' || this.phase === 'pause') {
