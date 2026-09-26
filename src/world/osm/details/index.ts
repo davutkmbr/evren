@@ -19,10 +19,10 @@ import { addMesh, countTriangles, toGeometry } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { createCoverMaterial } from './cover/material';
-import { Crowd } from './crowd/crowd';
+import { Crowd, DRAW_DISTANCE as CROWD_DRAW_DISTANCE } from './crowd/crowd';
 import { createPropMaterial } from './props/material';
 import { STANDER_STRIDE, VERT_STRIDE, type DetailsRequest, type DetailsResult } from './protocol';
-import { createFoliageAtlas } from './trees/atlas';
+import { acquireFoliageAtlas } from './trees/atlas';
 import { createTreeMaterial } from './trees/material';
 import { treeGeometries } from './trees/models';
 import { TREE_SPECIES } from './trees/species';
@@ -33,6 +33,10 @@ import { landmarkClaims } from '../../landmarks/claims';
 import { mosquePads } from './mosque-pads';
 import { perchClearings } from '../../perches/clearings';
 
+/** Margin (m) beyond the crowd's draw distance before its walkers stop being stepped. */
+const CROWD_MARGIN = 100;
+/** Schedule events the crowd may handle on the frame it is stepped again. */
+const CROWD_CATCH_UP = 200_000;
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
 const DECK_TIMEOUT = 40;
@@ -55,6 +59,7 @@ class DetailsLayer extends LayerBase {
   private props: LodTiledMesh | null = null;
   private kits: LodTiledMesh | null = null;
   private result: DetailsResult | null = null;
+  private crowdOn = true;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
   private deckNext = 0;
@@ -119,10 +124,10 @@ class DetailsLayer extends LayerBase {
         }),
       );
     }
-    const atlas = createFoliageAtlas();
-    const treeMat = createTreeMaterial(atlas);
+    const atlas = acquireFoliageAtlas();
+    const treeMat = createTreeMaterial(atlas.texture);
     this.onDispose(() => {
-      atlas.dispose();
+      atlas.release();
       treeMat.dispose();
     });
     const geos = treeGeometries();
@@ -213,6 +218,8 @@ class DetailsLayer extends LayerBase {
     this.group.add(crowd.group);
     this.onDispose(() => crowd.dispose());
     this.stats.walkers = crowd.stats.walkers;
+    // Everything the crowd needed is taken: the rest of the result (mesh arrays, tree records) may be collected.
+    this.result = null;
     this.stats.standers = standers.length / STANDER_STRIDE;
     console.info(`[osm:details] ${JSON.stringify(this.stats)}, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`);
   }
@@ -232,8 +239,17 @@ class DetailsLayer extends LayerBase {
     }
     const cam = ctx.engine.camera.position;
     const preset = ctx.engine.quality.settings.preset;
-    this.crowd?.setLodScale(LOD_RADIUS_SCALE[preset] ?? 1);
-    this.crowd?.update(ctx.engine.time.elapsed, cam);
+    const lodScale = LOD_RADIUS_SCALE[preset] ?? 1;
+    this.crowd?.setLodScale(lodScale);
+    // Beyond the crowd's draw distance from the region the walkers are not stepped (the schedule catches up on return);
+    // one last pass empties the near buffers.
+    const r = ctx.rect;
+    const away = Math.hypot(Math.max(r.minX - cam.x, 0, cam.x - r.maxX), Math.max(r.minZ - cam.z, 0, cam.z - r.maxZ));
+    const crowdOn = away < CROWD_DRAW_DISTANCE * lodScale + CROWD_MARGIN;
+    if (crowdOn || this.crowdOn) {
+      this.crowd?.update(ctx.engine.time.elapsed, cam, crowdOn && !this.crowdOn ? CROWD_CATCH_UP : undefined);
+    }
+    this.crowdOn = crowdOn;
     for (const t of this.trees) {
       t.update(cam, preset);
     }

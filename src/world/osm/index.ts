@@ -20,7 +20,6 @@ import { buildWorkerBase } from './shared/foundation';
 import { clipWaysToLand } from './shared/land';
 import { groundLines, linesCrossing, type GroundLine, type GroundLineCrossing } from './shared/ground-lines';
 import { classifyStreets } from './shared/street-field';
-import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
@@ -218,7 +217,6 @@ class OsmRegion {
       fade: this.def.fade,
       base,
       surface: new StreetSurface(base),
-      footprints: new FootprintIndex(data.buildings),
     };
     this.ctx = ctx;
     this.data = data;
