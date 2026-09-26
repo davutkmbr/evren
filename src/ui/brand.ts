@@ -20,15 +20,11 @@ export const BRAND_COLORS = {
   night: '#070a12',
   /** Deep gök blue: secondary backgrounds and gradients. */
   gok: '#14223a',
-  /** Ülgen gold: the logo's mid tone and the UI accent (--accent). */
+  /** Ülgen gold: the UI accent (--accent). */
   gold: '#e8b872',
-  /** Pale gold: highlights (--accent-2). */
+  /** Pale gold: the middle of the logo's ink, highlights (--accent-2). */
   goldPale: '#f3d3a0',
-  /** Bronze: the logo's shadow tone. */
-  bronze: '#8c5420',
-  /** Outline brown behind the carved letters. */
-  outline: '#241406',
-  /** Dawn ember: sparing warm accent. */
+  /** Dusk ember: the foot of the logo's ink and the lowest layers of the sky. */
   ember: '#e0763a',
   /** Ivory: text on dark. */
   ivory: '#fbf6ee',

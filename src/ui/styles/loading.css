@@ -57,7 +57,7 @@
 
 .ejd-loading .ld-logo {
   margin: 0 auto;
-  width: min(560px, 74vw, 62vh);
+  width: min(600px, 78vw, 70vh);
   line-height: 0;
   animation: ld-rise 1600ms var(--ease-out) both;
 }
@@ -66,7 +66,6 @@
   width: 100%;
   height: auto;
   overflow: visible;
-  filter: drop-shadow(0 10px 40px rgba(8, 6, 14, 0.5));
 }
 
 .ejd-loading .ld-line {

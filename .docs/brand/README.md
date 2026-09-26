@@ -32,23 +32,26 @@ The constants live in `src/ui/brand.ts` (`BRAND`); UI code reads them from there
 
 ## Logo
 
-The logo is drawn in code (`src/ui/brand-logo.ts`), so it needs no font and stays sharp at every size.
+The logo is drawn in code (`src/ui/brand-logo.ts`), so it needs no font and stays sharp at every size. The tone is
+calm and luminous, the sky at dusk, never heavy, metallic or aggressive.
 
-- **Title logo** (`titleLogoSvg()`): SEVENTEEN set small over a large SKIES in carved, faceted capitals (a nod to
-  the chiselled Orkhon inscriptions), metallic gold lit from the upper left, with a dark bronze outline. Every
-  stroke is split along its centre line into two facets, each shaded by how it faces the light.
-- **Crest** (on by default): the rising wings behind the title, the eight-pointed star of the upper sky above it,
-  and the layered rules either side of SEVENTEEN. Use the crest for the loading screen, share images, store art
-  and anything above ~300 px wide. Below that use `crest: false` (the pause menu uses it at 132 px).
-- **Monogram** (`monogramSvg()`): a carved S under the star, over seventeen faint layers on a night-blue tile. App
-  icons, favicons, avatars.
+- **Lettering:** calligraphic capitals written with a broad nib, a nod to hat (Turkish calligraphy) rather than a
+  typeface: every stroke's width follows its direction (thick stems and down-strokes, hairline bars) and flares a
+  little at the ends. Small, widely spaced SEVENTEEN over a large SKIES. The ink runs from ivory at the top through
+  pale gold to dusk ember at the foot, with a soft warm glow.
+- **Crest** (`titleLogoSvg()`, on by default): the dome of the sky in seventeen hairlines, from the horizon at the
+  foot of SKIES up to the eight-pointed star, closer together as they rise and warmer near the horizon. The lines
+  part around the letters and leave the SEVENTEEN row clear. Use the crest for the loading screen, share images,
+  store art and anything above ~300 px wide; below that use `crest: false` (the pause menu uses it at 150 px).
+- **Monogram** (`monogramSvg()`): the nib S inside the same dome of seventeen layers, under the star, on a
+  night-blue tile warmed from below. App icons, favicons, avatars.
 
 Rules:
 
-- Place the logo on dark or mid-dark backgrounds (night sky, dusk, darkened game shots). On light backgrounds it
-  works but loses the glow; do not put it on busy bright areas without a scrim.
-- Do not recolour, stretch, outline, re-letter or add effects to it. Do not set the name in another font next to
-  the logo; the brand line is set in the UI font (`--font-display`).
+- Place the logo on dark or dusk backgrounds (night sky, sunset, darkened game shots). It is not made for light
+  backgrounds; use a dark panel or scrim behind it there.
+- Do not recolour, stretch, outline, re-letter or add hard shadows or bevels to it. Do not set the name in another
+  font next to the logo; the brand line is set in the UI font (`--font-display`).
 - Keep clear space of at least the height of SEVENTEEN around the title logo.
 
 ## Colours
@@ -57,12 +60,10 @@ Rules:
 |---|---|---|
 | night | `#070a12` | Backgrounds, theme colour |
 | gok | `#14223a` | Secondary backgrounds, gradients |
-| gold | `#e8b872` | Logo mid tone, UI accent (`--accent`) |
-| goldPale | `#f3d3a0` | Highlights, brand line (`--accent-2`) |
-| bronze | `#8c5420` | Logo shadow tone |
-| outline | `#241406` | Outline behind the carved letters |
-| ember | `#e0763a` | Sparing warm accent |
-| ivory | `#fbf6ee` | Text on dark |
+| gold | `#e8b872` | UI accent (`--accent`) |
+| goldPale | `#f3d3a0` | Middle of the logo's ink, brand line (`--accent-2`) |
+| ember | `#e0763a` | Foot of the logo's ink, the lowest layers of the sky |
+| ivory | `#fbf6ee` | Top of the logo's ink, the star, text on dark |
 
 ## Files
 
