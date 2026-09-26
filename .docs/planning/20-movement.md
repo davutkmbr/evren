@@ -507,7 +507,13 @@ removal above)
 **Checks**
 
 - `race-balance.ts`: 15 rules pass (every run finishes; plain bronze not silver; some chaining silver not gold;
-  chained gold; chained 15–25 % faster than plain).
+  chained gold; chained 15–25 % faster than plain). The rules use each racer's best run; the script also prints the
+  spread of the gap over every seed and line. With `--seeds 5` (26 Sep): chained Boğaz mean 9.7 ± 5.6 % (median
+  12.6, range 0.5–17.4), Haliç 18.1 ± 3.6 % (median 19.7, 13.0–23.1), Adalar 13.7 ± 3.3 % (median 15.3, 9.0–19.5);
+  some chaining 4.2 ± 2.0 / 7.7 ± 1.2 / 8.0 ± 0.9 %. The spread is the scripted pilot's hit rate, not the model: with
+  the same number of moves (~40 per Boğaz run) the links landed range 9–27 and the time follows them almost linearly
+  (a missed link window pays nothing). The 15–25 % band is what a player who chains reliably earns; an unreliable
+  chainer lands between plain and gold, which is the intended skill curve.
 - `flow-check.ts`: all pass, with a new section "5. Chain bursts": size by link (+6 / 8 / 10 m/s at 40 m/s and full
   flow), the cap, the flow factor, the envelope (sums to the push, peak twice the mean), the speed cap, variety, the
   link test, a varied chain through the real sim (dart → power → slip → roll → power: 3 links, longest 3; spaced 4 s
