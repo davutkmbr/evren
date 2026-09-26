@@ -154,6 +154,11 @@ export interface CityInitMessage {
   districtGrid: { data: Uint8Array; spec: GridSpecMsg };
   /** Coarse terrain heights for superblock orientation. */
   heightCoarse: { data: Float32Array; spec: GridSpecMsg };
+  /**
+   * Far OSM layer (phase 24, city/osm/format.ts): absolute URL of the bake folder and its block keys ("bi_bj"). The
+   * coverage mask's OSM cells then draw the baked buildings instead of the procedural lots. Null: procedural only.
+   */
+  osm: { base: string; blocks: string[] } | null;
 }
 
 /** Fine geography around a request, cut from the geo grids on the main thread. */
@@ -182,6 +187,8 @@ export interface TileRequestMsg {
   iz: number;
   densityScale: number;
   win: GeoWindowMsg;
+  /** Build rects (minX, minZ, maxX, maxZ) of the loaded OSM regions: the baked buildings they own are theirs. */
+  exclude: number[];
 }
 
 export interface ColliderRequestMsg {
@@ -192,6 +199,8 @@ export interface ColliderRequestMsg {
   size: number;
   densityScale: number;
   win: GeoWindowMsg;
+  /** As TileRequestMsg.exclude. */
+  exclude: number[];
 }
 
 /** Drops cached cell layouts overlapping a rectangle (the exclusion list changed there, geo-window.ts). */
