@@ -443,7 +443,9 @@ console.log('6. Far layer: the city bake draws what the regions draw');
       }
       for (const [id, list] of baked) {
         for (const b of list) {
-          if (!b.used && inRect(rect, b.cx, b.cz)) {
+          // The bake stores outlines at 0.2 m (format.ts XY_UNIT): a centroid on the rect edge may cross it.
+          const inner = { minX: rect.minX + 0.3, maxX: rect.maxX - 0.3, minZ: rect.minZ + 0.3, maxZ: rect.maxZ - 0.3 };
+          if (!b.used && inRect(inner, b.cx, b.cz)) {
             extra++;
             lines.push(`${r.id}: ${id} at ${b.cx.toFixed(0)}, ${b.cz.toFixed(0)} in the bake, not drawn by the region`);
           }
