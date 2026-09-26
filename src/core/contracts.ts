@@ -546,6 +546,40 @@ export interface WeatherService {
   cycle(): WeatherPreset;
 }
 
+/* ------------------------------------------------------------------ */
+/* Viewpoints (phase 03) — service key: 'perches'                        */
+/* ------------------------------------------------------------------ */
+
+export type PerchSurface = 'tower' | 'dome' | 'hill' | 'roof' | 'rock';
+
+/** A spot where the dragon can land and watch the city. */
+export interface PerchPoint {
+  /** Stable id, e.g. "galata-kulesi". */
+  id: string;
+  /** Turkish name shown in UI. */
+  name: string;
+  /** Grip point in local meters: where the claws hold (top surface of the structure or the ground on hills). */
+  x: number;
+  y: number;
+  z: number;
+  /** Compass heading the dragon faces while perched (toward the view). */
+  headingDeg: number;
+  surface: PerchSurface;
+  /** Radius (m) of the area the claws may grip around the point. */
+  gripRadius: number;
+  /** One or two sentence Turkish info text for the viewing screen. */
+  info: string;
+  /** Landmark this perch sits on, if any (LandmarkDef.id). */
+  landmarkId?: string;
+}
+
+export interface PerchService {
+  readonly points: readonly PerchPoint[];
+  get(id: string): PerchPoint | undefined;
+  /** Closest perch within `maxDistance` m (horizontal), or null. */
+  nearest(x: number, z: number, maxDistance?: number): { point: PerchPoint; distance: number } | null;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -558,6 +592,7 @@ export interface Services {
   audio: AudioService;
   roadSurface: RoadSurfaceService;
   weather: WeatherService;
+  perches: PerchService;
 }
 
 /* ------------------------------------------------------------------ */
@@ -586,6 +621,19 @@ export interface GameEvents {
   maneuver: { id: string; label: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
   teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
+  /**
+   * Activity progress (src/activities: ring races…). Emitted on start, every checkpoint, finish and abort.
+   * Times in seconds; `label` is the Turkish caption for the HUD.
+   */
+  activity: {
+    activityId: string;
+    state: 'started' | 'checkpoint' | 'finished' | 'aborted';
+    checkpoint: number;
+    total: number;
+    elapsed: number;
+    best?: number;
+    label: string;
+  };
 }
 
 /* ------------------------------------------------------------------ */
