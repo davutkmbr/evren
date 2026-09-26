@@ -14,7 +14,8 @@
  * - amenity=fountain: a marble çeşme against the wall it stands at, else a round basin (fountain areas: at their centre).
  * - tourism=artwork / historic=memorial: a statue on its plinth; tourism=viewpoint: a coin telescope.
  * - landuse=cemetery: rows of Ottoman headstones along the area's axis; amenity=marketplace: rows of stalls.
- * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges.
+ * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges, metro
+ *   entrances (railway=subway_entrance) and taxi stands (amenity=taxi).
  * - untagged lots (cover.ts LotStyle): shrubs on garden lots, stones and weedy scrub on vacant lots (the verges and
  *   leftover land along the big roads are mostly these).
  */
@@ -589,6 +590,8 @@ export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'
   placeAt(pl, data, ['amenity=recycling', 'amenity=waste_disposal'], 'recycling', 4, 0.5, 2.5);
   placeAt(pl, data, ['amenity=bicycle_parking'], 'bikeRack', 4, 0.5, 2.5);
   placeAt(pl, data, ['leisure=fitness_station'], 'fitness', 6, 2, 3);
+  placeAt(pl, data, ['railway=subway_entrance'], 'metroEntrance', 4, 1.5, 4);
+  placeAt(pl, data, ['amenity=taxi'], 'taxiStand', 6, 1, 3);
   placeMarkets(pl, data);
   placeFronts(pl, data.points);
   placeAtms(pl, data.points);

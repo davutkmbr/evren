@@ -48,7 +48,9 @@ export type PropKind =
   | 'atm'
   | 'telescope'
   | 'recycling'
-  | 'bikeRack';
+  | 'bikeRack'
+  | 'metroEntrance'
+  | 'taxiStand';
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const cyl = (r0: number, r1: number, h: number, x: number, y: number, z: number, seg = 8): THREE.BufferGeometry => new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z);
@@ -515,6 +517,32 @@ function bikeRack(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Metro entrance: glass canopy over the stair well (going down along -Z) and the red "M" totem at the front. */
+function metroEntrance(): THREE.BufferGeometry {
+  return merge([
+    part(box(2.8, 0.9, 5.2, 0, 0.45, -1.8), 0x8f9397),
+    part(box(2.4, 0.05, 4.6, 0, 0.92, -1.8), 0x2a2d30),
+    part(box(3.0, 0.12, 5.4, 0, 3.0, -1.8), 0x5f666c),
+    part(box(3.0, 2.0, 0.04, 0, 2.0, -4.45), 0x9fb6bf, 0.2),
+    part(box(0.04, 2.0, 5.4, -1.48, 2.0, -1.8), 0x9fb6bf, 0.2),
+    part(box(0.04, 2.0, 5.4, 1.48, 2.0, -1.8), 0x9fb6bf, 0.2),
+    part(box(0.18, 2.6, 0.18, 1.9, 1.3, 0.6), 0x3a3d40),
+    part(box(0.7, 0.7, 0.2, 1.9, 2.9, 0.6), 0xc8231c, 1),
+    part(box(0.5, 0.12, 0.22, 1.9, 2.95, 0.6), 0xf2f2f2, 1),
+  ]);
+}
+
+/** Taksi durağı: the small yellow booth with its lit roof sign and a bench. */
+function taxiStand(): THREE.BufferGeometry {
+  return merge([
+    part(box(2.0, 2.3, 1.6, 0, 1.15, 0), 0xe8c21a),
+    part(box(1.4, 0.9, 0.04, 0, 1.5, 0.81), 0x9fb6bf, 0.6),
+    part(box(2.2, 0.1, 1.8, 0, 2.35, 0), 0x3a3d40),
+    part(box(1.4, 0.35, 0.2, 0, 2.6, 0), 0xf2f2f2, 1),
+    part(box(1.6, 0.06, 0.4, 0, 0.45, 1.2), WOOD),
+  ]);
+}
+
 export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
   return {
     bench: bench(),
@@ -559,5 +587,7 @@ export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
     telescope: telescope(),
     recycling: recycling(),
     bikeRack: bikeRack(),
+    metroEntrance: metroEntrance(),
+    taxiStand: taxiStand(),
   };
 }
