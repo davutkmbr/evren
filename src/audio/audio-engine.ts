@@ -14,6 +14,8 @@ import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
 import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
+import { playGull } from './sfx/ambient';
+import { playBirdFlap } from './sfx/bird-flap';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
@@ -252,6 +254,9 @@ const FLAP_DUCK_DB = 3;
 const FLAP_DUCK_RIDER_DB = 2.5;
 const DRAGON_MOUTH: PlaceOptions = { refDistance: 30, reverb: 0.2, size: 8, backCutoffFactor: 0.28, delayAbove: 120 };
 const WORLD_POINT: PlaceOptions = { refDistance: 30, reverb: 0.18, size: 12, delayAbove: 80 };
+/** A calling gull and a gull's wing beats (src/moments): small point sources. */
+const CREATURE_POINT: PlaceOptions = { refDistance: 16, reverb: 0.14, size: 2, delayAbove: 80 };
+const BIRD_FLAP_POINT: PlaceOptions = { refDistance: 5, reverb: 0.08, size: 1.5, delayAbove: 80 };
 /** The water under the dragon (downwash patch, wake) and the steam cloud: broad sources on the surface. */
 const SEA_SURFACE: PlaceOptions = { refDistance: 28, reverb: 0.15, size: 24, delayAbove: 120 };
 const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delayAbove: 120 };
@@ -669,6 +674,26 @@ export class AudioEngine {
       pl.pan *= 0.5;
     }
     playBubbles(under ? this.water : this.sfx, now, 0.6 + 0.8 * clamp01(strength * 10), pl, under);
+  }
+
+  /**
+   * A creature at a world point (src/moments: the ferry gulls): 'gull' a recorded call (silent until the coast
+   * recordings have loaded), 'bird-flap' a few soft wing beats. On the ambience bus, so it follows the coastal mix.
+   */
+  creatureAt(name: 'gull' | 'bird-flap', position: Vec3, volume = 1): void {
+    if (this.stats.active > this.maxVoices || !Number.isFinite(position.x + position.y + position.z)) {
+      return;
+    }
+    const v = clamp01(finiteOr(volume, 1));
+    if (name === 'gull') {
+      this.samples?.request('coast');
+      const pl = placeSource(this.frame.listener, position, CREATURE_POINT, this.place);
+      pl.gain *= v;
+      playGull(this.amb, this.now, pl);
+    } else {
+      const pl = placeSource(this.frame.listener, position, BIRD_FLAP_POINT, this.place);
+      playBirdFlap(this.amb, this.now, v, pl);
+    }
   }
 
   /** Ground impact at `speed` m/s. */

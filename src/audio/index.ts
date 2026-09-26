@@ -170,6 +170,11 @@ export function createAudioSystem(): System {
     setAmbienceLift(amount: number): void {
       ambienceLift = clamp01(finiteOr(amount, 0));
     },
+    playAt(name, position, vol): void {
+      if (!paused) {
+        engine?.creatureAt(name, position, vol ?? 1);
+      }
+    },
   };
 
   const debugHandle: AudioDebugHandle = {

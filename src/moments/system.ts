@@ -5,18 +5,28 @@
  * (subtitle line, closing card, the coastal ambience lift) through the HUD zone director.
  *
  * Debug / discoverability: `?moment=<id>` puts the dragon at the moment's start waypoint once the game starts and plays
- * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`).
+ * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`). A moment anchored to a
+ * moving object (`?moment=ferry-gull-simit`) waits for one in service and puts the dragon next to it instead.
+ *
+ * Moving anchors (./anchors.ts: the ferries in service) are read from the 'life' service every frame; a moment with an
+ * actor (./actors: procedural scene content such as the ferry's gull flock) builds it when it starts and disposes it
+ * once the actor has wound down.
  */
 import type { DragonState, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import { MOMENT_ACTORS, actorSounds, type MomentActor } from './actors';
+import { AnchorFeed, ferryShortcut } from './anchors';
 import { ALL_MOMENTS } from './data';
 import { loadMomentPrefs, onMomentPrefsChange, type MomentPrefs } from './prefs';
 import { momentStartPose, MomentRunner, type MomentFrame, type MomentSink } from './runtime';
 import type { MomentContext } from './triggers';
+import type { Moment } from './types';
 import { MomentView } from './view';
 
 /** Seconds of running game after the ?moment= teleport before the forced moment starts (the camera settles). */
 const FORCE_DELAY_S = 2.5;
+/** Seconds the ?moment= shortcut of an anchored moment waits for its anchor (the fleet loads late) before giving up. */
+const FORCE_ANCHOR_WAIT_S = 90;
 
 export function createMomentSystem(): System {
   let ctxRef: EngineContext | null = null;
@@ -35,7 +45,12 @@ export function createMomentSystem(): System {
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
   };
-  const runner = new MomentRunner(ALL_MOMENTS, sink);
+  const runner = new MomentRunner(ALL_MOMENTS, sink, { availableSounds: actorSounds() });
+  const anchorFeed = new AnchorFeed();
+  let forceAnchor: number | undefined;
+  let forceWait = 0;
+  let actor: MomentActor | null = null;
+  let actorMoment: Moment | null = null;
 
   const worldContext: Omit<MomentContext, 'session'> = {
     position: { x: 0, z: 0 },
@@ -65,6 +80,7 @@ export function createMomentSystem(): System {
     c.timeOfDay = ctx.time.timeOfDay;
     c.dayOfYear = ctx.time.dayOfYear;
     c.weather = ctx.services.tryGet('weather')?.preset ?? 'clear';
+    c.anchors = anchorFeed.update(ctx.services.tryGet('life'));
     return c;
   }
 
@@ -98,17 +114,59 @@ export function createMomentSystem(): System {
     }
     if (forceTimer < 0) {
       const m = runner.playable.find((x) => x.id === forceId);
-      const pose = m && momentStartPose(m);
-      if (pose) {
-        ctx.events.emit('teleport', pose);
+      const anchor = m?.trigger.place.anchor;
+      if (anchor !== undefined) {
+        // Anchored moment: wait for an anchor in service, then place the dragon beside it.
+        const geo = ctx.services.tryGet('geo');
+        anchorFeed.update(ctx.services.tryGet('life'));
+        const shortcut = geo ? ferryShortcut(anchorFeed.vesselsOf(anchor), (x, z) => geo.coastDistance(x, z)) : null;
+        if (!shortcut) {
+          forceWait += dt;
+          if (forceWait > FORCE_ANCHOR_WAIT_S) {
+            console.warn(`[moments] ?moment=${forceId}: no '${anchor}' in service, giving up`);
+            forceId = null;
+          }
+          return;
+        }
+        forceAnchor = shortcut.anchorId;
+        ctx.events.emit('teleport', shortcut.pose);
+      } else {
+        const pose = m && momentStartPose(m);
+        if (pose) {
+          ctx.events.emit('teleport', pose);
+        }
       }
       forceTimer = FORCE_DELAY_S;
       return;
     }
     forceTimer -= dt;
     if (forceTimer <= 0) {
-      runner.force(forceId);
+      runner.force(forceId, forceAnchor);
       forceId = null;
+    }
+  }
+
+  /** Builds the playing moment's actor when it starts; runs it until it has wound down. */
+  function updateActor(ctx: EngineContext, dt: number): void {
+    const current = runner.current;
+    if (current && current !== actorMoment) {
+      const factory = current.content.actorId ? MOMENT_ACTORS[current.content.actorId] : undefined;
+      if (factory) {
+        actor?.dispose();
+        actor = factory.create(ctx, runner.currentAnchor);
+      }
+      actorMoment = current;
+    }
+    if (!current && !actor) {
+      actorMoment = null;
+    }
+    if (!actor) {
+      return;
+    }
+    actor.update(dt, current !== null && current === actorMoment);
+    if (actor.done) {
+      actor.dispose();
+      actor = null;
     }
   }
 
@@ -159,6 +217,7 @@ export function createMomentSystem(): System {
       frame.prefs = prefs;
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
+      updateActor(ctx, dt);
     },
 
     dispose(): void {
@@ -166,6 +225,8 @@ export function createMomentSystem(): System {
         fn();
       }
       ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(0);
+      actor?.dispose();
+      actor = null;
       view?.dispose();
       view = null;
     },
