@@ -1,7 +1,20 @@
 import * as THREE from 'three';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { InstanceRec, PropRef } from './format';
-import { castsThroughProxy, type DrawListCache, fastSetGeometryAt, proxyMaterial, resetDrawLists, shadowOnly, shadowSideOf, writeDrawList } from './tile-batches';
+import { type InstanceRec, loadGlb, type PropRef } from './format';
+import {
+  anyInFrustum,
+  castsThroughProxy,
+  type DrawListCache,
+  fastSetGeometryAt,
+  resetIndexRing,
+  proxyMaterial,
+  resetDrawLists,
+  shadowOnly,
+  shadowSideOf,
+  lazyUpload,
+  uploadWithinBudget,
+  writeDrawList,
+} from './tile-batches';
 
 /** Distance policy of the props (from the quality preset). */
 export interface PropDistances {
@@ -46,14 +59,19 @@ class Batch {
   private readonly sortDraws: boolean;
   /** Ids of the visible instances (rebuilt when visibility changed), so culling skips the hidden thousands. */
   private visibleIds: number[] | null = null;
+  /** Drawn since its buffers were (re)allocated. */
+  private warm = false;
 
   constructor(key: string, material: THREE.Material, castShadow: boolean, receiveShadow: boolean) {
     this.mesh = new THREE.BatchedMesh(256, this.maxVertices, this.maxIndices, material);
     this.mesh.name = `props:${key}`;
     this.mesh.castShadow = castShadow;
     this.mesh.receiveShadow = receiveShadow;
-    // The batch spans the whole area: each instance is culled against the camera (and the shadow camera) instead.
-    this.mesh.frustumCulled = false;
+    // The batch spans the whole area: it is drawn when one of its visible instances is in the frustum, and each
+    // instance is culled against the camera (and the shadow camera) in the draw list.
+    this.mesh.frustumCulled = true;
+    // Until its first draw after (re)allocation it is always drawn, so its buffers upload while its props are hidden.
+    this.mesh.intersectsFrustum = (frustum: THREE.Frustum | THREE.FrustumArray): boolean => !this.warm || anyInFrustum(this.instances, frustum as THREE.Frustum, this.visible());
     this.mesh.perObjectFrustumCulled = true;
     this.mesh.sortObjects = true;
     this.mesh.matrixAutoUpdate = false;
@@ -64,13 +82,19 @@ class Batch {
     this.mesh.setGeometryAt = (geometryId: number, geometry: THREE.BufferGeometry) => fastSetGeometryAt(this.mesh, geometryId, geometry);
   }
 
-  private cull(camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material): void {
+  /** Ids of the visible instances (rebuilt after visibility changed). */
+  private visible(): number[] {
     if (!this.visibleIds) {
       this.visibleIds = [];
       this.instances.forEach((inst, id) => inst?.visible && this.visibleIds!.push(id));
     }
+    return this.visibleIds;
+  }
+
+  private cull(camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material): void {
+    this.warm = true;
     const cascade = (camera as THREE.OrthographicCamera).isOrthographicCamera ? (this.mesh.userData.shadowFrustum as THREE.Frustum | undefined) : undefined;
-    writeDrawList(this.mesh, camera, geometry, material, this.instances, this.sortDraws, this.drawLists, this.visibleIds, false, cascade);
+    writeDrawList(this.mesh, camera, geometry, material, this.instances, this.sortDraws, this.drawLists, this.visible(), false, cascade);
   }
 
   /** Shows an instance with the given geometry, or hides it (geometry < 0). */
@@ -98,8 +122,12 @@ class Batch {
       this.maxVertices = Math.max(this.maxVertices * 2, this.vertices + v);
       this.maxIndices = Math.max(this.maxIndices * 2, this.indices + i);
       this.mesh.setGeometrySize(this.maxVertices, this.maxIndices);
+      resetIndexRing(this.mesh);
+      this.warm = false;
     }
     const id = this.mesh.addGeometry(g);
+    // Its buffers (new after setGeometrySize) upload only their filled part when created.
+    lazyUpload(this.mesh);
     this.vertices += v;
     this.indices += i;
     return id;
@@ -151,6 +179,8 @@ interface Placed {
 
 interface TileProps {
   placed: Placed[];
+  /** Placed but not drawn (the tile is loaded ahead and not shown yet). */
+  hidden: boolean;
   /** Instances whose prop is still loading, keyed by asset. */
   waiting: Map<string, InstanceRec[]>;
 }
@@ -341,6 +371,10 @@ export class PropBatches {
   version = 0;
   /** LOD or cull switches so far. */
   lodChanges = 0;
+  /** Batches waiting for their program, or for their textures' upload, before they join the scene. */
+  private compiling = 0;
+  /** Compiled batches that join the scene once their textures fit the frame's upload budget (textureBudget). */
+  private readonly joinQueue: Batch[] = [];
   /** Object layer of every prop batch (e.g. one a planar reflection camera skips). */
   layer = 0;
 
@@ -354,6 +388,11 @@ export class PropBatches {
     private readonly onMaterial: (m: THREE.Material) => void,
     /** Called before a batch with a new material is first drawn (e.g. renderer.compileAsync). */
     private readonly compile?: (o: THREE.Object3D) => Promise<unknown>,
+    /**
+     * Uploads a texture (e.g. `(t) => renderer.initTexture(t)`): a new batch's textures are uploaded within the frame's
+     * budget before it joins the scene, instead of all at once by its first draw.
+     */
+    private readonly initTexture?: (texture: THREE.Texture) => void,
   ) {
     this.group.name = 'props';
     this.group.matrixAutoUpdate = false;
@@ -375,7 +414,8 @@ export class PropBatches {
   /** Places a tile's instances (props load on first use). */
   addTile(tileId: string, instances: readonly InstanceRec[]): void {
     this.removeTile(tileId);
-    const tile: TileProps = { placed: [], waiting: new Map() };
+    // Hidden until the owner shows the tile (setTileVisible).
+    const tile: TileProps = { placed: [], waiting: new Map(), hidden: true };
     this.tiles.set(tileId, tile);
     for (const inst of instances) {
       if (!this.refs[inst.asset]) {
@@ -408,11 +448,36 @@ export class PropBatches {
     this.version++;
   }
 
+  /** Shows or hides a tile's props (e.g. loaded ahead of the tile's fade-in). */
+  setTileVisible(tileId: string, visible: boolean): void {
+    const tile = this.tiles.get(tileId);
+    if (tile && tile.hidden === visible) {
+      tile.hidden = !visible;
+      this.dirty = true;
+    }
+  }
+
+  /** Moves compiled batches into the scene, their textures uploaded within the frame's budget. */
+  private join(): void {
+    while (this.joinQueue.length) {
+      const b = this.joinQueue[0];
+      if (this.initTexture && !uploadWithinBudget(b.mesh.material as THREE.Material, this.initTexture)) {
+        return;
+      }
+      this.joinQueue.shift();
+      this.compiling--;
+      this.group.add(b.mesh);
+    }
+  }
+
   /** Whether the tile still waits for props that are loading (props in failure backoff do not count). */
   isPending(tileId: string): boolean {
     const tile = this.tiles.get(tileId);
     if (!tile) {
       return false;
+    }
+    if (this.compiling > 0) {
+      return true;
     }
     for (const asset of tile.waiting.keys()) {
       if (this.assets.get(asset)?.state === 'loading') {
@@ -424,6 +489,7 @@ export class PropBatches {
 
   /** LOD and distance culling of every instance; cheap unless the camera moved or instances changed. */
   update(x: number, z: number): void {
+    this.join();
     const now = performance.now();
     for (const [id, a] of this.assets) {
       if (a.state === 'failed' && now >= a.retryAt && this.isWanted(id)) {
@@ -445,7 +511,7 @@ export class PropBatches {
         const m = pl.model;
         const sw = m.switchAt;
         const d = Math.hypot(pl.x - x, pl.z - z);
-        const maxD = this.cullDistance(m);
+        const maxD = tile.hidden ? -1 : this.cullDistance(m);
         let k = pl.level;
         if (k < 0) {
           if (d < maxD) {
@@ -542,7 +608,7 @@ export class PropBatches {
     const levels = [{ glb: ref.glb, distance: 0 }, ...lods];
     const base = new URL(this.baseUrl, window.location.href);
     a.state = 'loading';
-    Promise.all(levels.map((l) => this.loader.loadAsync(new URL(l.glb, base).href)))
+    Promise.all(levels.map((l) => loadGlb(this.loader, new URL(l.glb, base).href)))
       .then((gltfs) => {
         a.scenes = gltfs.map((g) => {
           g.scene.updateMatrixWorld(true);
@@ -583,9 +649,15 @@ export class PropBatches {
       }
     }
     for (const b of fresh) {
-      this.group.add(b.mesh);
       if (this.compile) {
-        void this.compile(b.mesh).catch(() => undefined);
+        // Joins the scene once its program is compiled (it would otherwise link synchronously on its first draw).
+        this.compiling++;
+        void this.compile(b.mesh)
+          .catch(() => undefined)
+          .then(() => this.joinQueue.push(b));
+      } else {
+        this.compiling++;
+        this.joinQueue.push(b);
       }
     }
     this.dirty = true;
@@ -618,7 +690,6 @@ export class PropBatches {
       // Prop shadows are small: the near cascades only.
       shadowOnly(b.mesh, false);
       b.mesh.castShadow = this.shadows;
-      b.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
       b.mesh.userData.castShadow = true;
       b.mesh.layers.set(this.layer);
       this.batches.set(key, b);

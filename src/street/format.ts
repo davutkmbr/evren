@@ -1,3 +1,6 @@
+import type { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { ModulesRef, SlotsRef } from './modules/format';
+
 /**
  * The subset of the street formats (tools/world-compiler/README.md) that the sandbox loader reads. The compiler's
  * `tools/world-compiler/src/format.ts` is the source of truth; these types only mirror the fields used here.
@@ -31,6 +34,8 @@ export interface StreetTileRef {
   lods?: { level: number; glb: string; hash: string; bytes: number; triangles: number }[];
   instances?: number;
   lights?: number;
+  /** Format 1.2: façade module slots of the tile (modules/format.ts), expanded for LOD0. */
+  slots?: SlotsRef;
 }
 
 export interface LodPolicy {
@@ -73,6 +78,8 @@ export interface StreetIndex {
   strip?: { source: string; rect: Bounds2; tiles: string[] };
   materialDefs?: MaterialRef[];
   props?: Record<string, PropRef>;
+  /** Format 1.2: the façade module library and this area's palette for it. */
+  modules?: ModulesRef;
   totals?: { tiles: number; lod0Triangles: number; lod1Triangles: number; instances: number; lights: number; textureBytes: number; propBytes: number; glbBytes: number };
 }
 
@@ -140,10 +147,85 @@ export const GROUND_MATERIALS: ReadonlySet<string> = new Set(['road', 'sidewalk'
 /** Materials whose shadows matter at eye level in format 0 (building blocks); ground, kerbs and door leaves only receive. */
 export const SHADOW_CASTER_MATERIALS: ReadonlySet<string> = new Set(['wall', 'roof']);
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${url}`);
+/** Reads compiled files off the main thread (fetch and gzip inflate), see fetch.worker.ts. */
+let fetchWorker: Worker | null | undefined;
+let fetchSeq = 0;
+const fetchWaits = new Map<number, { resolve: (b: ArrayBuffer) => void; reject: (e: Error) => void; url: string }>();
+
+/** Files read through fetchBytes: count, bytes on the wire and inflated, per folder of the area (debug, size checks). */
+export const fetchStats: Record<string, { files: number; bytes: number; inflated: number }> = {};
+
+function noteFetch(url: string, wire: number, inflated: number): void {
+  const kind = /\/(tiles|props|textures)\/[^/]*$/.exec(url)?.[1] ?? 'other';
+  const k = `${kind}${/\.json(\.gz)?$/.test(url) ? ':json' : ''}`;
+  const s = (fetchStats[k] ??= { files: 0, bytes: 0, inflated: 0 });
+  s.files++;
+  s.bytes += wire;
+  s.inflated += inflated;
+}
+
+function worker(): Worker | null {
+  if (fetchWorker === undefined) {
+    try {
+      fetchWorker = new Worker(new URL('./fetch.worker.ts', import.meta.url), { type: 'module', name: 'street-fetch' });
+      fetchWorker.onmessage = (e: MessageEvent<{ id: number; bytes?: ArrayBuffer; wire?: number; error?: string }>) => {
+        const w = fetchWaits.get(e.data.id);
+        fetchWaits.delete(e.data.id);
+        if (e.data.bytes) {
+          noteFetch(w?.url ?? '', e.data.wire ?? 0, e.data.bytes.byteLength);
+          w?.resolve(e.data.bytes);
+        } else {
+          w?.reject(new Error(e.data.error ?? 'fetch failed'));
+        }
+      };
+    } catch {
+      fetchWorker = null;
+    }
   }
-  return (await res.json()) as T;
+  return fetchWorker;
+}
+
+/** Whether bytes start with the gzip magic. */
+export function isGzip(bytes: ArrayBuffer): boolean {
+  const b = new Uint8Array(bytes, 0, Math.min(2, bytes.byteLength));
+  return b.length === 2 && b[0] === 0x1f && b[1] === 0x8b;
+}
+
+/** Inflates gzip bytes (anything else is returned as is). */
+export async function inflate(bytes: ArrayBuffer): Promise<ArrayBuffer> {
+  return isGzip(bytes) ? new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : bytes;
+}
+
+/**
+ * Bytes of a compiled file. The web profile gzips glbs and manifests (`.gz`); they are inflated off the main thread
+ * (a host that already decoded them is detected by the gzip magic).
+ */
+export async function fetchBytes(url: string): Promise<ArrayBuffer> {
+  const abs = new URL(url, window.location.href).href;
+  const w = worker();
+  if (!w) {
+    const res = await fetch(abs);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${url}`);
+    }
+    const wire = await res.arrayBuffer();
+    const bytes = await inflate(wire);
+    noteFetch(abs, wire.byteLength, bytes.byteLength);
+    return bytes;
+  }
+  const id = ++fetchSeq;
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    fetchWaits.set(id, { resolve, reject, url: abs });
+    w.postMessage({ id, url: abs });
+  });
+}
+
+export async function fetchJson<T>(url: string): Promise<T> {
+  return JSON.parse(new TextDecoder().decode(await fetchBytes(url))) as T;
+}
+
+/** Loads a compiled glb (plain or gzipped) with the given loader; its external textures resolve next to it. */
+export async function loadGlb(loader: GLTFLoader, url: string): Promise<GLTF> {
+  const abs = new URL(url, window.location.href).href;
+  return loader.parseAsync(await fetchBytes(abs), abs.slice(0, abs.lastIndexOf('/') + 1));
 }
