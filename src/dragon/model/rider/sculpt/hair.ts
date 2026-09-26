@@ -120,7 +120,7 @@ function sculptFacialHair(c: SculptContext): void {
   }
   const skin = L.skin;
   const layer = L.beard;
-  const my = 0.004;
+  const my = 0.008;
   const shadow = style === 'stubble' ? 0.75 : 0.5;
   const paint = { layer: skin, op: PrimOp.Paint, bone: head, feather: 0.006, channels: [undefined, undefined, undefined, shadow] as [undefined, undefined, undefined, number] };
   const full = style === 'short' || style === 'full';
@@ -140,7 +140,14 @@ function sculptFacialHair(c: SculptContext): void {
   }
   const m = { layer, op: PrimOp.Mask, bone: head, k: 0.006 };
   if (moustache) {
-    sc.ellipsoid(m, p(0, my + 0.014, 0.104), R(0.027, 0.0065, 0.012), basis(rotated(hf, -0.3, 0, 0)));
+    sc.ellipsoid(m, p(0, my + 0.014, 0.1), R(0.027, 0.0065, 0.012), basis(rotated(hf, -0.3, 0, 0)));
+    // Pala bıyık: full sweeps out past the mouth corners, tips curling down.
+    for (const side of RSIDES) {
+      const sg = rsign(side);
+      const tuft = { layer, bone: head, k: 0.006, noise: { amp: 0.0012, freq: 140 } };
+      sc.cone(tuft, p(0.006 * sg, my + 0.014, 0.099), p(0.03 * sg, my + 0.006, 0.088), 0.0055 * hs, 0.0052 * hs, { sz: 0.6, hint: hf.z });
+      sc.cone(tuft, p(0.03 * sg, my + 0.006, 0.088), p(0.042 * sg, my - 0.01, 0.074), 0.0052 * hs, 0.0018 * hs, { sz: 0.6, hint: hf.z });
+    }
     sc.ellipsoid({ layer: skin, op: PrimOp.Paint, bone: head, feather: 0.003, channels: [undefined, undefined, undefined, 0.6] }, p(0, my + 0.014, 0.104), R(0.028, 0.008, 0.012), B);
   }
   if (chin) {

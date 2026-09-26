@@ -5,6 +5,25 @@ import { globalUniforms } from '../../core/uniforms';
 import { RiderBehavior } from './behavior/rider-behavior';
 import { BondBehavior } from './behavior/bond/bond-behavior';
 import { DragonRigImpl } from './rig';
+import { DEFAULT_APPEARANCE, sanitizeAppearance } from './rider/appearance';
+
+/** Work-in-progress rider rebuild: `?rider=new` (optionally `&look=<JSON appearance fields>`). */
+function newRiderFlag(): ReturnType<typeof sanitizeAppearance> | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('rider') !== 'new') {
+    return undefined;
+  }
+  let look: unknown = {};
+  try {
+    look = JSON.parse(q.get('look') ?? '{}');
+  } catch {
+    look = {};
+  }
+  return sanitizeAppearance({ ...DEFAULT_APPEARANCE, ...(look as object) });
+}
 
 function textureSizeFor(preset: string): number {
   return preset === 'low' ? 1024 : 2048;
@@ -39,7 +58,7 @@ export function createDragonModelSystem(): System {
     order: UpdateOrder.Animation,
     init(ctx) {
       const t0 = performance.now();
-      rig = new DragonRigImpl({ renderer: ctx.renderer, textureSize: textureSizeFor(ctx.quality.settings.preset) });
+      rig = new DragonRigImpl({ renderer: ctx.renderer, textureSize: textureSizeFor(ctx.quality.settings.preset), newRider: newRiderFlag() });
       const s = rig.stats;
       console.info(
         `[dragon] built in ${(performance.now() - t0).toFixed(0)} ms: ${s.bones} bones, ` +
