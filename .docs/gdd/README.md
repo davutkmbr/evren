@@ -147,9 +147,30 @@ Five slots on keys 1–5 (HUD, bottom centre). Today: fire (1) and roar (2). Ite
 the `hotbar` service (icon, count, cooldown, active state, activate). The inventory is planned on top of it.
 
 ### 5.7 Discovery and progression
-50 landmarks to discover (discovery card, map, pause menu counter). Medals and records per course. Planned: photo
-album and "golden hour" badges, bond level with the dragon (the mood system of 5.1.1 is built; the level is not),
-unlocks (saddles, armour, dragon variants — phase 12).
+50 landmarks to discover (discovery card, map, pause menu counter). Medals and records per course.
+
+**Photo album (built, `src/ui/album`).** In photo mode (O) [Enter] takes a photo of the frame as rendered (no HUD),
+copied right after the render and encoded to WebP (JPEG where WebP encoding is missing) in a worker, with a 400 px
+thumbnail; a short white flash and one quiet toast confirm it. Photos live only in the browser (IndexedDB, no network)
+with their metadata: real date and time, in-game time of day and day, weather, camera position and angles, the named
+place (a landmark in frame, else the perch, a landmark within 250 m, the district, the water body, "İstanbul"), the
+camera mode before photo mode, what the dragon was doing (perched, flying, on the ground, in the water) and the sun
+elevation. Storage policy: at most 60 photos and 150 MB, and never beyond 80 % of the origin's quota; when a photo does
+not fit, the toast asks first ("Albüm dolu … yine [Enter]") and the oldest photos are deleted (badge photos last)
+only after the new one is written. Quality (Yüksek / Dengeli / Küçük) is chosen in the album. Pause menu → **Albüm**:
+a thumbnail grid (newest first, arrow keys or the mouse), one photo large with a calm caption ("Galata Kulesi · 18:42 ·
+açık hava" and a quieter date line), "[Enter] İndir" (`seventeen-skies-<place>-<date>.webp`, ASCII file name),
+"[Del] Sil" with a confirmation, "[Esc] Geri", ← / → for the neighbours.
+
+**Golden-hour badges ("Altın saat", built).** A photo taken while the sun is between −4° and +6° (sunrise or sunset)
+with one of 12 iconic places in the picture earns that place's badge: Galata Kulesi, Kız Kulesi, Süleymaniye, Ayasofya,
+Sultanahmet, Sarayburnu (Topkapı), Galata Köprüsü, Ortaköy, 15 Temmuz Şehitler Köprüsü, Rumeli Hisarı, Fatih Sultan
+Mehmet Köprüsü and Çamlıca. "In the picture" = the camera within the place's radius (1–3 km) and the landmark (or a
+bridge tower) inside the view frustum; occlusion is not tested. The data (radii, aim height, anchors) is a list in
+`src/ui/album/badges.ts`. Earned badges are kept locally even if the photo is deleted; the album shows "Altın saat
+3/12" with a dot per place and a small gold mark on the photo that earned one; the toast names the new badge.
+
+Planned: bond level with the dragon (the mood system of 5.1.1 is built; the level is not), unlocks (saddles, armour, dragon variants — phase 12).
 
 ### 5.8 Audio and music
 Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Adaptive music (phase 07, system built,
@@ -172,7 +193,7 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off (running: the running leap); in a run-out Ctrl/X skid to a stop, Space touch-and-go |
 | Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up, V encourage (pat and call) |
-| Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
+| Camera and world | right mouse look, C camera, O photo mode (Enter takes a photo for the album), [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
 
 ## 7. Interface
