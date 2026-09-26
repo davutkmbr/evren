@@ -44,7 +44,7 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { landmarkOf, setLandmarkBlocks, useDistrict } from './district';
+import { landmarkClasses, setLandmarkBlocks, useDistrict } from './district';
 import { buildFoundation, type CoastSpec, coastGrid, coastPlan, coastRows, type SharedFoundation } from './foundation';
 import { CoastField } from './coast';
 import type { GridWin } from '../../../src/world/osm/shared/protocol';
@@ -178,7 +178,7 @@ async function main(): Promise<void> {
   const land = landField(f, piers);
   const heights = groundHeights(f.surface);
   const solids = timedSync('setup.solids', () => makeSolids(data.buildings, heights).filter((s) => inRect(s.cx, s.cz)));
-  const landmarkOsmIds = new Set(data.buildings.filter((b) => landmarkOf(b)).map((b) => b.id));
+  const landmarkOsmIds = new Set(landmarkClasses(data.buildings).keys());
   // Building passages (rule walk.passage): opened in the emitted buildings, walked by the walk network. Landmarks drawn
   // as plain blocks (--landmarks block) keep their walls, so no passage runs through them.
   const passages = attachPassages(
