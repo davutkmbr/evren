@@ -52,7 +52,7 @@ export interface OsmBuilding {
   roofHeight?: number;
   /** roof:shape ("flat", "gabled", "hipped", "pyramidal", "dome", "onion", "skillion", ...). */
   roofShape?: string;
-  /** roof:colour (CSS name or #hex, as tagged; THREE.Color.setStyle reads both). */
+  /** roof:colour (CSS name, #hex or a Turkish colour word, as tagged; read by osm/shared/colour.ts). */
   roofColour?: string;
   roofMaterial?: string;
   /** roof:orientation ("along" / "across"). */
