@@ -48,6 +48,8 @@ export const THROUGH_HOLE: ReadonlySet<PropKind> = new Set<PropKind>([
   'bikeRack',
   'metroEntrance',
   'taxiStand',
+  'gsmMast',
+  'latticeTower',
 ]);
 
 interface Template {

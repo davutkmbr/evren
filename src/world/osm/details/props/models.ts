@@ -50,7 +50,9 @@ export type PropKind =
   | 'recycling'
   | 'bikeRack'
   | 'metroEntrance'
-  | 'taxiStand';
+  | 'taxiStand'
+  | 'gsmMast'
+  | 'latticeTower';
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const cyl = (r0: number, r1: number, h: number, x: number, y: number, z: number, seg = 8): THREE.BufferGeometry => new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z);
@@ -543,6 +545,41 @@ function taxiStand(): THREE.BufferGeometry {
   ]);
 }
 
+/** GSM mast (about 25 m): tapered steel pole with three antenna panel sectors and a red-white tip. */
+function gsmMast(): THREE.BufferGeometry {
+  const parts = [part(box(2.4, 0.5, 2.4, 0, 0.25, 0), 0x9a968e), part(cyl(0.22, 0.4, 24, 0, 12.5, 0, 8), 0xb7bcbf), part(cyl(0.12, 0.12, 1.2, 0, 25.1, 0, 6), 0xc8342b)];
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    parts.push(part(box(0.35, 1.8, 0.12, Math.sin(a) * 0.6, 22.6, Math.cos(a) * 0.6).rotateY(a), 0xe8e8e4));
+    parts.push(part(box(0.35, 1.8, 0.12, Math.sin(a) * 0.6, 20.4, Math.cos(a) * 0.6).rotateY(a), 0xe8e8e4));
+  }
+  parts.push(part(cyl(0.9, 0.9, 0.1, 0, 21.4, 0, 10), 0x8f9397));
+  return merge(parts);
+}
+
+/** Lattice tower (radio / observation, about 30 m): four tapered legs, a platform and a red-white top section. */
+function latticeTower(): THREE.BufferGeometry {
+  const parts = [];
+  const legs: [number, number][] = [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ];
+  for (const [sx, sz] of legs) {
+    const g = new THREE.CylinderGeometry(0.1, 0.14, 28, 5);
+    const lean = 0.07;
+    g.rotateX(-sz * lean).rotateZ(sx * lean).translate(sx * 1.4, 14, sz * 1.4);
+    parts.push(part(g, 0x9aa0a4));
+  }
+  for (let y = 4; y < 27; y += 4.5) {
+    const w = 3.8 - y * 0.1;
+    parts.push(part(box(w, 0.08, 0.08, 0, y, w / 2), 0x9aa0a4), part(box(w, 0.08, 0.08, 0, y, -w / 2), 0x9aa0a4), part(box(0.08, 0.08, w, w / 2, y, 0), 0x9aa0a4), part(box(0.08, 0.08, w, -w / 2, y, 0), 0x9aa0a4));
+  }
+  parts.push(part(box(2.4, 0.15, 2.4, 0, 27.5, 0), 0x6f7478), part(cyl(0.18, 0.18, 4, 0, 29.6, 0, 6), 0xc8342b), part(cyl(0.18, 0.18, 1.5, 0, 32.3, 0, 6), 0xf2f2f2));
+  return merge(parts);
+}
+
 export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
   return {
     bench: bench(),
@@ -589,5 +626,7 @@ export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
     bikeRack: bikeRack(),
     metroEntrance: metroEntrance(),
     taxiStand: taxiStand(),
+    gsmMast: gsmMast(),
+    latticeTower: latticeTower(),
   };
 }
