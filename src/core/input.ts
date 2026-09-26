@@ -14,7 +14,7 @@
  * Buttons (pressed this frame):
  *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U
  * Rider and maneuvers:
- *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
+ *   pet G held / D-pad down, stand T, weather N (V and gamepad D-pad up are unbound: reserved for the bond phase)
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
  *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap
@@ -43,7 +43,6 @@ export type ButtonName =
   | 'hud'
   | 'roar'
   | 'land'
-  | 'urge'
   | 'pet'
   | 'stand'
   | 'weather'
@@ -84,7 +83,6 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyU: 'hud',
   KeyR: 'roar',
   KeyL: 'land',
-  KeyV: 'urge',
   KeyG: 'pet',
   KeyT: 'stand',
   KeyN: 'weather',
@@ -136,10 +134,9 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Shift + W', action: 'Koş', group: 'ground' },
   { keys: 'A / D', action: 'Dön', group: 'ground' },
   { keys: 'Space / L', action: 'Sıçrayarak kalk (çatı kenarında: boşluğa atıl)', group: 'ground' },
-  { keys: 'V', action: 'Dörtnala koşup kalk', group: 'ground' },
+  { keys: 'Space / L', action: 'Koşarken (Shift + W): koşu hızıyla sıçrayıp havalan', group: 'ground' },
   { keys: 'Ctrl / X', action: 'Koşarak inerken: fren yap, kayarak dur', group: 'ground' },
   { keys: 'Space', action: 'Koşarak inerken: dokun-kalk, hızını koruyarak uçuşa dön', group: 'ground' },
-  { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
   { keys: 'Space ×2', action: 'Güç vuruşu: iki derin kanat çırpışıyla hızlan (dayanıklılık harcar)', group: 'tricks' },
@@ -334,7 +331,6 @@ export class Input {
       [8, 'map', true],
       [10, 'roar', true],
       [11, 'land', true],
-      [12, 'urge', true],
       [13, 'pet', false],
       [14, 'rollLeft', true],
       [15, 'rollRight', true],
