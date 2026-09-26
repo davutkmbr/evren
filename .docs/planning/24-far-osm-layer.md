@@ -63,7 +63,7 @@ bake time; the runtime adds the quay raise, as the region layer now does.
 
 **Infill.** The flight layer's infill (`buildings/infill.ts`) is deterministic. The bake runs it with the same inputs:
 the region data extent, street raster and keep-out rects. The parcels a region will draw then already stand in the far
-layer. Alternative: drop infill once this layer lands. See decision 4 below.
+layer. Decision 4: baked.
 
 **Tiling** follows the procedural city's quadtree: 500 m, 1 km and 2 km tiles (`city/protocol.ts:116`). Each level is
 a pre-thinned set:
@@ -166,7 +166,7 @@ The procedural city and the OSM facades use different occupancy curves and emiss
 - city: `city.glsl.ts:126-164`;
 - OSM facades: `facade-glsl.ts:264-266, 715-729`.
 
-The two get one shared curve and one scale, so windows do not change when a region loads. Decision 3 below picks the
+The two get one shared curve and one scale, so windows do not change when a region loads. Decision 3: the city's
 curve. Roof and wall colours already match through the bake (section 1).
 
 ### 6. Checks
@@ -195,7 +195,7 @@ Performance checks with `snap.mjs --perf` on the reference machine:
 
 | # | Stage | Result | Gate |
 |---|---|---|---|
-| S0 | Audit | Build the extract index; count OSM buildings, footprint coverage and land-use polygons per 250 m cell over the square; coverage map image against the procedural density; bake size estimate | **User decides** coverage scope and storage (decisions 1–2) |
+| S0 | Audit | Build the extract index; count OSM buildings, footprint coverage and land-use polygons per 250 m cell over the square; coverage map image against the procedural density; bake size estimate | Size and coverage threshold reviewed with the user before S1 |
 | S1 | Bake | `osm-city.mjs` → L0/L1/L2 tiles, coverage mask and land-use polygons. Regions and street areas re-fetched from the same extract. `plan.ts` runs in Node | `check:map` far-vs-region section green |
 | S2 | Data mode | City worker emits baked buildings in covered cells; region exclusion by centroid ownership | Views recognisable against satellite imagery (phase 08 criteria); perf within budget |
 | S3 | Handover | Screen-door cross-fade between city and region content, both directions | No visible pop when flying into and out of every landing region |
@@ -205,21 +205,14 @@ Performance checks with `snap.mjs --perf` on the reference machine:
 S2 is useful on its own even before S3–S5. S3 also helps before S2, because it removes today's pop against the
 procedural city.
 
-## Decisions for the user
+## Decisions (user, 2026-09-26)
 
-1. **Coverage scope.**
-   - (a) The whole playable square, with the procedural fallback in poorly mapped cells. Recommended: this is what
-     fixes "the far map is different" everywhere.
-   - (b) Only the 46 region rects, plus a ring around them. Smaller, and it fixes only the landing approaches.
-2. **Storage of the bake** (10–30 MB gzip estimated, measured in S0).
-   - Commit it under `public/data/osm/city/`, like the region files are today.
-   - Or keep it gitignored and built locally like `public/world/`. Then the Pages deploy needs it from somewhere
-     (see HANDOFF.md's open question on publishing `public/world/`).
-   - Git LFS is the middle way.
-3. **Night light model.** The procedural city's curve, with the terrain carpet already matching it: evening peak
-   21 h, morning 6.7 h. Or the OSM facade curve.
-4. **Infill.** Bake the same deterministic infill into the far layer (consistent, bake cost only). Or drop infill once
-   real coverage decides where the city is.
+1. **Coverage: the whole playable square**, with the procedural fallback in cells OSM maps poorly (coverage mask).
+2. **Storage: committed** under `public/data/osm/city/`, like the region files. The Pages deploy serves it as is.
+3. **Night light model: the procedural city's** occupancy curve and emission scale (evening peak 21 h, morning 6.7 h;
+   the terrain carpet already matches it). The OSM facade shader (`facade-glsl.ts`) moves to it in S5.
+4. **Infill: baked.** The bake runs the flight layer's deterministic infill, so the parcels a region draws already
+   stand in the far layer.
 
 ## Not in this phase
 
