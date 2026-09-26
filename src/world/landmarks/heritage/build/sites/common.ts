@@ -300,8 +300,8 @@ export function minaret(ctx: SiteContext, x: number, z: number, g: number, h: nu
 
 /**
  * The two front corners of a footprint facing `dir`: the ends of the side of its oriented bounding box whose outward
- * normal is closest to `dir` (rounded or chamfered corners in the outline do not matter), pulled `inset` m in along
- * that side.
+ * normal is closest to `dir` (rounded or chamfered corners in the outline do not matter), each snapped to the nearest
+ * outline vertex (the box corner of an irregular footprint can lie outside it), pulled `inset` m in along that side.
  */
 export function frontCorners(ring: readonly V2[], dir: V2, inset = 0): [V2, V2] {
   const b = obb(ring);
@@ -316,9 +316,15 @@ export function frontCorners(ring: readonly V2[], dir: V2, inset = 0): [V2, V2] 
   const f = sides.reduce((best, s) => (s.n[0] * dir[0] + s.n[1] * dir[1] > best.n[0] * dir[0] + best.n[1] * dir[1] ? s : best));
   const mx = b.cx + f.n[0] * f.depth;
   const mz = b.cz + f.n[1] * f.depth;
-  const h = f.half - inset;
+  const snap = (x: number, z: number): V2 => ring.reduce((best, p) => (Math.hypot(p[0] - x, p[1] - z) < Math.hypot(best[0] - x, best[1] - z) ? p : best));
+  const h = f.half;
+  const p0 = snap(mx - f.t[0] * h, mz - f.t[1] * h);
+  const p1 = snap(mx + f.t[0] * h, mz + f.t[1] * h);
+  const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+  const ux = (p1[0] - p0[0]) / len;
+  const uz = (p1[1] - p0[1]) / len;
   return [
-    [mx - f.t[0] * h, mz - f.t[1] * h],
-    [mx + f.t[0] * h, mz + f.t[1] * h],
+    [p0[0] + ux * inset, p0[1] + uz * inset],
+    [p1[0] - ux * inset, p1[1] - uz * inset],
   ];
 }
