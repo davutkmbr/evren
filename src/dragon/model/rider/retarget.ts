@@ -24,10 +24,10 @@ const HUMAN_SIDE: Record<Side, string> = { L: 'Left', R: 'Right' };
 /** Old rider finger joint A's angle when the hand is fully open (rad), see rider-pose.ts OPEN_FINGERS. */
 const OPEN_A = 0.6;
 /** Fist: curl per finger joint (rad, base to tip) around the rein; the little finger closes a little more. */
-const CURL = [1.3, 1.5, 0.9];
+const CURL = [1.45, 1.65, 1.0];
 const PINKY_EXTRA = 0.12;
 /** Thumb: curl per joint over the index (rad). */
-const THUMB_CURL = [0.2, 0.45, 0.4];
+const THUMB_CURL = [0.55, 0.7, 0.5];
 /** The rope's channel through the human fist: along the metacarpals (share of the wrist → middle knuckle length) and
  * toward the palm (m). */
 const CHANNEL_ALONG = 0.95;
@@ -56,7 +56,7 @@ interface Hand {
   palm: THREE.Vector3;
   channel: THREE.Vector3;
   fist: FistFrame;
-  fingers: { bones: THREE.Bone[]; bind: THREE.Quaternion[]; thumb: boolean; pinky: boolean }[];
+  fingers: { bones: THREE.Bone[]; bind: THREE.Quaternion[]; thumb: boolean; pinky: boolean; axis: THREE.Vector3 }[];
   oldFingerA: THREE.Bone;
 }
 
@@ -200,7 +200,11 @@ export class RiderRetarget {
             list.push(b);
           }
         }
-        fingers.push({ bones: list, bind: list.map((b) => (bindLocal.get(b) ?? b.quaternion).clone()), thumb: f === 'Thumb', pinky: f === 'Pinky' });
+        const bind = list.map((b) => (bindLocal.get(b) ?? b.quaternion).clone());
+        // Curl axis (hand-local): the one turning the finger's own direction toward the palm.
+        const fdir = list.length > 1 ? list[1].position.clone().applyQuaternion(bind[0]).normalize() : dir.clone();
+        const axis = new THREE.Vector3().crossVectors(fdir, palm).normalize();
+        fingers.push({ bones: list, bind, thumb: f === 'Thumb', pinky: f === 'Pinky', axis });
       }
       this.hands.push({ side: s, arm, dir, palm, channel, fist: fistFrame(s), fingers, oldFingerA: o(`riderFingerA${s}`) });
     }
@@ -282,15 +286,13 @@ export class RiderRetarget {
     const qa = hd.oldFingerA.quaternion;
     const open = THREE.MathUtils.clamp((2 * Math.acos(Math.min(1, Math.abs(qa.w)))) / OPEN_A, 0, 1);
     const close = 1 - open * 0.9;
-    // Hand-local axis about which +angle turns `dir` toward the palm.
-    _axis.crossVectors(hd.dir, hd.palm).normalize();
     for (const f of hd.fingers) {
       // Rotation of the finger's parent relative to the hand, accumulated from the base.
       _q.identity();
       f.bones.forEach((b, i) => {
         b.quaternion.copy(f.bind[i]);
         const angle = (f.thumb ? THUMB_CURL[i] : CURL[i] + (f.pinky ? PINKY_EXTRA : 0)) * close;
-        _qb.setFromAxisAngle(f.thumb ? hd.palm : _axis, angle);
+        _qb.setFromAxisAngle(f.axis, angle);
         // local' = P⁻¹ · R · P · local, with R about the hand-local axis and P = parent relative to the hand.
         _qa.copy(_q).invert().multiply(_qb).multiply(_q);
         b.quaternion.premultiply(_qa);
