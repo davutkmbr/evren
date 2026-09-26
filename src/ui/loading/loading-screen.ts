@@ -50,7 +50,7 @@ export class LoadingScreen {
     this.progressBlock = el('div', 'ld-progress ejd-fade', [
       el('div', 'ld-row', [labelNode, percentNode]),
       el('div', 'ld-track', [this.fill], { role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Yükleniyor' }),
-      el('p', 'ld-tip', [el('span', 'ejd-caps ld-tip-caps', 'İpucu'), this.tipText]),
+      el('p', 'ld-tip', [this.tipText]),
     ]);
 
     this.cta = el('button', 'ld-cta', undefined, { type: 'button' });
@@ -76,10 +76,7 @@ export class LoadingScreen {
     this.root = el('section', 'ejd-loading ejd-interactive', [
       this.backdrop.canvas,
       el('div', 'ld-scrim'),
-      el('header', 'ld-title', [
-        el('p', 'ld-eyebrow', 'İstanbul üzerinde serbest uçuş'),
-        el('h1', 'ld-name', 'Evren'),
-      ]),
+      el('header', 'ld-title', [el('h1', 'ld-name', 'Evren'), el('p', 'ld-sub', 'İstanbul’un üstünde, bir ejderhanın sırtında')]),
       this.progressBlock,
       this.startBlock,
       el('p', 'ld-credit', [
