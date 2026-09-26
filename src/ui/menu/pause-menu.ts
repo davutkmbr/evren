@@ -79,7 +79,7 @@ export class PauseMenu {
       'menu-sheet',
       [
         el('header', 'menu-top', [
-          el('div', 'menu-brand', [el('span', 'menu-state', 'DURAKLATILDI'), el('span', 'menu-name', 'Evren')]),
+          el('div', 'menu-brand', [el('span', 'menu-state', 'Duraklatıldı'), el('span', 'menu-name', 'Evren')]),
           el('nav', 'menu-tabs-wrap', [tablist], { 'aria-label': 'Menü bölümleri' }),
           el('div', 'menu-top-end', [
             el('div', 'menu-progress', [

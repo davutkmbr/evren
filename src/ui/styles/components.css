@@ -1,4 +1,4 @@
-/* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd).
+/* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd); every key is a .ui-keycap.
    Rules that base.css also sets on `.ejd kbd` / `.ejd button` repeat the root class so the component wins inside it. */
 
 .ui-keycap,
