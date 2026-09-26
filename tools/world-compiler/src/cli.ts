@@ -379,7 +379,7 @@ async function main(): Promise<void> {
   /* Strip (format 1): full detail inside, greybox outside. */
   let strip: StripInfo | null = null;
   if (format === 1) {
-    const s = readStrip(argOf('--strip') === 'auto' ? null : argOf('--strip'));
+    const s = readStrip(argOf('--strip') === 'auto' ? null : argOf('--strip'), areaRect);
     if (s) {
       strip = { source: s.source, rect: s.rect, tiles: [...manifests.values()].filter((m) => intersects(m.bounds, s.rect)).map((m) => m.id) };
     }
