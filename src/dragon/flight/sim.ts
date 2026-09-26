@@ -109,9 +109,10 @@ export class FlightSim {
   groundYawRate = 0;
   walkPhase = 0;
   walkAmount = 0;
-  /** Swimming stroke: phase (rad) of the body / tail undulation and the hind-leg kicks, and its strength 0..1. */
+  /** Swimming stroke: phase (rad) of the whole-body swim (body wave, wing paddles, kicks), its strength 0..1 and frequency (Hz). */
   swimPhase = 0;
   swimStroke = 0;
+  swimFreq = 0;
   touchingWater = false;
   /** Seconds since the last splash event while skimming. */
   splashTimer = 0;

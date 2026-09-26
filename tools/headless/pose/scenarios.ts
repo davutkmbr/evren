@@ -481,7 +481,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'swim-idle',
-    description: 'floating at rest on a calm sea: slow tail sway, the head looking around',
+    description: 'floating at rest on a calm sea: breathing bob, lazy wing sculls, the tail drifting, the head looking around',
     sea: 30,
     setup: floatAt,
     seconds: 14,
@@ -495,7 +495,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'swim',
-    description: 'W held from floating (swim, 2.6 m/s): body and tail undulation, slow alternating kicks',
+    description: 'W held from floating (swim, 2.6 m/s): body and tail wave, alternating wing paddles, surge and kicks',
     sea: 30,
     setup: floatAt,
     seconds: 12,
@@ -511,7 +511,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'swim-fast',
-    description: 'W + Shift held from floating (fast swim, 4.5 m/s): stronger, quicker undulation and kicks',
+    description: 'W + Shift held from floating (fast swim, 4.5 m/s): full wing strokes, stronger wave, surge and kicks',
     sea: 30,
     setup: floatAt,
     seconds: 12,
@@ -525,6 +525,23 @@ export const SCENARIOS: Scenario[] = [
     view: 'side',
     camera: 'fixed',
     span: 24,
+  },
+  {
+    name: 'swim-turn',
+    description: 'W held from floating, D held from 5 s (swimming right turn): the body curves into it, the outer (left) wing strokes harder',
+    sea: 30,
+    setup: floatAt,
+    seconds: 12,
+    script: () => (t, _sim, input) => {
+      input.cmd.pitch = t >= 1 ? 1 : 0;
+      input.cmd.roll = t >= 5 ? 1 : 0;
+    },
+    frames: 16,
+    fps: 6,
+    window: () => 7,
+    view: 'top',
+    camera: 'follow',
+    span: 26,
   },
   {
     name: 'land-on-water',

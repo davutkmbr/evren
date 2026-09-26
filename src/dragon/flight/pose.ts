@@ -189,6 +189,10 @@ export class PoseDriver {
       const gallop = clamp(moves.gait - 1, 0, 1);
       const running = moves.runOut ? smoothstep(3, 10, sim.groundSpeed) : 0;
       tailYaw += 0.16 * Math.sin(sim.walkPhase + 0.9) * sim.walkAmount * (1 - 0.5 * gallop) + 0.07 * Math.sin(time * 0.6);
+      if (sim.mode === 'swimming') {
+        // The swimming body curves into the turn: the tail trails further inside it.
+        tailYaw -= turnRate * (SWIM_POSE.tailTurn - 0.5);
+      }
       tailPitch =
         sim.mode === 'swimming'
           ? SWIM_POSE.tailPitch

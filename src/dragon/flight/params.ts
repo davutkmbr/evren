@@ -507,21 +507,29 @@ export const SWIM = {
 
 /**
  * Swimming at the surface (locomotion.ts drives it, pose.ts turns it into DragonPose.swim / swimPhase / swimStroke,
- * the animator shapes the rig). The dragon floats low with the head and neck raised, the wings folded tight along the
- * back, the hind legs kicking slowly under the body; the side-to-side undulation of the body and tail is the stroke.
+ * the animator shapes the rig with its SWIM_RIG). The dragon floats low with the head and neck raised and swims like a
+ * big animal: a travelling wave from the shoulders down the tail, the wings paddling alternately (left wing's catch at
+ * swimPhase 0, the right one's at pi), the chest surging and lifting with each power stroke, the hind legs kicking.
  * Speeds m/s, times s, frequencies Hz, angles rad.
  */
 export const SWIM_POSE = {
-  /** Stroke (tail undulation) frequency: idle + per m/s of swim speed; Shift (fast swim) multiplies it. */
+  /** Stroke cycle frequency (one wave of body and tail, one stroke of each wing): idle + per m/s; Shift multiplies it. */
   freqIdle: 0.2,
-  freqPerSpeed: 0.13,
-  fastFreq: 1.3,
+  freqPerSpeed: 0.15,
+  fastFreq: 1.2,
   /** Stroke strength 0..1: the idle sway, the strength at paddle speed, and with Shift. */
   strokeIdle: 0.22,
   strokePaddle: 0.7,
   strokeFast: 1,
   /** Rate (1/s) at which the stroke strength follows the swim speed. */
   strokeRate: 1.6,
+  /**
+   * Surge: each wing's power stroke pushes the body forward, so the speed through the water swings by this share of the
+   * swim speed (± amplitude, two surges per cycle, zero mean: the average speed is unchanged). surgePhase is the stroke
+   * phase (rad) of the left wing's peak thrust (its mid power stroke); the right wing's comes half a cycle later.
+   */
+  surge: 0.1,
+  surgePhase: 1.35,
   /** Rate (1/s) at which the swim posture blends in (a landing settles into the float) and out. */
   blendIn: 2.2,
   blendOut: 5,
@@ -535,16 +543,15 @@ export const SWIM_POSE = {
   /** Neck raise (pose neckPitch, + = up) while floating, and extra with the stroke (the head pushes forward). */
   neckRaise: 0.42,
   neckStroke: -0.1,
-  /** Tail: carried at the surface (pitch, + = down), its lateral sweep (pose tailYaw) per unit of stroke. */
-  tailPitch: 0.04,
-  tailSweep: 0.28,
+  /**
+   * Tail: carried at the surface (pitch, + = down; slightly lifted so the sweeping tail shows at the waterline) and how
+   * far it trails into a turn (pose tailYaw per rad/s of turn rate).
+   */
+  tailPitch: -0.02,
+  tailTurn: 0.6,
   /** Idle look-around: seconds between head turns (random within) and the largest turn (rad). */
   lookEvery: [3.5, 8] as const,
   lookYaw: 0.55,
-  /** Paddle cue: a small splash at the tail on each stroke reversal above this speed, strength base + per m/s. */
-  splashSpeed: 1.2,
-  splashBase: 0.05,
-  splashPerSpeed: 0.025,
   /**
    * Water take-off run (Space / L while swimming): the body rises onto the surface and speeds up with the wings
    * beating and slapping the water (a splash at each wingtip per downstroke), then leaps into the air.

@@ -4,7 +4,7 @@
  * meshes on the CPU and draws flat silhouettes frame by frame into a contact sheet, plus a JSON sidecar with the
  * dragon's position, speed, mode and pose per frame.
  *
- *   npx tsx tools/headless/pose-strip.ts [scenario] [--view side|front|top|three-quarter] [--frames N] [--fps F]
+ *   npx tsx tools/headless/pose-strip.ts [scenario] [--view side|front|top|three-quarter|chase] [--frames N] [--fps F]
  *       [--size WxH] [--out dir] [--strip] [--cols N] [--span m] [--start s] [--render-fps F] [--ss N] [--svg]
  *   npx tsx tools/headless/pose-strip.ts --all        every scenario, side view, into <out>/all/
  *   npx tsx tools/headless/pose-strip.ts --list       scenario names
