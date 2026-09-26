@@ -50,6 +50,13 @@ export const THROUGH_HOLE: ReadonlySet<PropKind> = new Set<PropKind>([
   'taxiStand',
   'gsmMast',
   'latticeTower',
+  'sunbed',
+  'beachUmbrella',
+  'picnicTable',
+  'kameriye',
+  'streetClock',
+  'infoBoard',
+  'billboard',
 ]);
 
 interface Template {

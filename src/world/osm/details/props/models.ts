@@ -52,7 +52,15 @@ export type PropKind =
   | 'metroEntrance'
   | 'taxiStand'
   | 'gsmMast'
-  | 'latticeTower';
+  | 'latticeTower'
+  | 'hotelSign'
+  | 'sunbed'
+  | 'beachUmbrella'
+  | 'picnicTable'
+  | 'kameriye'
+  | 'streetClock'
+  | 'infoBoard'
+  | 'billboard';
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const cyl = (r0: number, r1: number, h: number, x: number, y: number, z: number, seg = 8): THREE.BufferGeometry => new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z);
@@ -580,6 +588,60 @@ function latticeTower(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Vertical hotel blade sign on the facade (back at z = 0), lit at night; white panel takes a tint. */
+function hotelSign(): THREE.BufferGeometry {
+  return merge([part(box(0.08, 0.08, 0.7, 0, 4.9, 0.35), 0x444444), part(box(0.08, 0.08, 0.7, 0, 3.1, 0.35), 0x444444), part(box(0.22, 2.2, 0.9, 0, 4.0, 0.75), 0xffffff, 1)]);
+}
+
+/** Beach sunbed (lounger), along z. */
+function sunbed(): THREE.BufferGeometry {
+  return merge([part(box(0.65, 0.08, 1.4, 0, 0.32, -0.15), 0xf0ece2), part(box(0.65, 0.08, 0.6, 0, 0.52, 0.72).rotateX(-0.7).translate(0, 0.0, -0.05), 0xf0ece2), part(box(0.6, 0.28, 0.06, 0, 0.14, -0.8), 0x9a9a9a), part(box(0.6, 0.28, 0.06, 0, 0.14, 0.5), 0x9a9a9a)]);
+}
+
+/** Straw beach umbrella (şemsiye) on a wooden pole. */
+function beachUmbrella(): THREE.BufferGeometry {
+  return merge([part(cyl(0.04, 0.05, 2.5, 0, 1.25, 0, 5), 0x7b5433), part(new THREE.ConeGeometry(1.4, 0.7, 10).translate(0, 2.55, 0), 0xc9a86a)]);
+}
+
+/** Picnic table with its two benches (along x). */
+function picnicTable(): THREE.BufferGeometry {
+  return merge([
+    part(box(1.8, 0.06, 0.8, 0, 0.75, 0), WOOD),
+    part(box(1.8, 0.05, 0.28, 0, 0.45, 0.62), WOOD),
+    part(box(1.8, 0.05, 0.28, 0, 0.45, -0.62), WOOD),
+    part(box(0.08, 0.75, 1.6, -0.7, 0.37, 0), 0x5b3d25),
+    part(box(0.08, 0.75, 1.6, 0.7, 0.37, 0), 0x5b3d25),
+  ]);
+}
+
+/** Kameriye: octagonal wooden park gazebo with a hipped roof and a bench ring. */
+function kameriye(): THREE.BufferGeometry {
+  const parts = [part(cyl(2.3, 2.3, 0.2, 0, 0.1, 0, 8), 0x9a958b), part(new THREE.ConeGeometry(2.9, 1.3, 8).translate(0, 3.35, 0), 0x7a3b2a)];
+  for (let k = 0; k < 8; k++) {
+    const a = ((k + 0.5) / 8) * Math.PI * 2;
+    parts.push(part(box(0.14, 2.6, 0.14, Math.sin(a) * 2.1, 1.5, Math.cos(a) * 2.1), 0x6b4a2f));
+    if (k !== 0) {
+      parts.push(part(box(1.5, 0.06, 0.4, Math.sin(a + 0.39) * 1.85, 0.45, Math.cos(a + 0.39) * 1.85).rotateY(0), 0x7b5433));
+    }
+  }
+  return merge(parts);
+}
+
+/** Street clock on a cast-iron column, four faces lit at night. */
+function streetClock(): THREE.BufferGeometry {
+  return merge([part(cyl(0.12, 0.16, 3.4, 0, 1.7, 0, 8), IRON), part(box(0.7, 0.7, 0.7, 0, 3.75, 0), 0x2b2e30), part(box(0.6, 0.6, 0.72, 0, 3.75, 0), 0xf2efe4, 0.8), part(box(0.72, 0.6, 0.6, 0, 3.75, 0), 0xf2efe4, 0.8)]);
+}
+
+/** Information board: two posts with a roofed panel (map side +Z). */
+function infoBoard(): THREE.BufferGeometry {
+  return merge([part(box(0.1, 2.3, 0.1, -0.7, 1.15, 0), 0x3a3d40), part(box(0.1, 2.3, 0.1, 0.7, 1.15, 0), 0x3a3d40), part(box(1.5, 1.0, 0.06, 0, 1.55, 0), 0xe6e0cf, 0.2), part(box(1.7, 0.08, 0.5, 0, 2.3, 0), 0x2f5a3a)]);
+}
+
+/** Billboard: 6 x 3 m lit panel on a single column, 7 m up. */
+function billboard(): THREE.BufferGeometry {
+  return merge([part(box(0.5, 7, 0.5, 0, 3.5, 0), 0x6f7478), part(box(6.2, 3.2, 0.3, 0, 8.4, 0), 0x3a3d40), part(box(6, 3, 0.05, 0, 8.4, 0.18), 0xffffff, 0.7)]);
+}
+
 export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
   return {
     bench: bench(),
@@ -628,5 +690,13 @@ export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
     taxiStand: taxiStand(),
     gsmMast: gsmMast(),
     latticeTower: latticeTower(),
+    hotelSign: hotelSign(),
+    sunbed: sunbed(),
+    beachUmbrella: beachUmbrella(),
+    picnicTable: picnicTable(),
+    kameriye: kameriye(),
+    streetClock: streetClock(),
+    infoBoard: infoBoard(),
+    billboard: billboard(),
   };
 }

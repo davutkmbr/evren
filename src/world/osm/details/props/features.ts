@@ -27,7 +27,7 @@ import { CoverChannel, LotStyle } from '../cover/cover';
 import type { Placer } from './placement';
 
 /** Per-slice budgets (instances). */
-const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500, tombstone: 2000, marketStall: 150, lotShrub: 1500, lotRock: 600 } as const;
+const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500, tombstone: 2000, marketStall: 150, lotShrub: 1500, lotRock: 600, hotelSign: 600, sunbed: 600 } as const;
 
 /** Brand colours by name (lower case, Turkish folded); anything else takes a neutral palette colour. */
 const BRANDS: [RegExp, [number, number, number]][] = [
@@ -55,6 +55,12 @@ const AWNING_TINTS: [number, number, number][] = [
   [0.55, 0.3, 0.1],
   [0.72, 0.42, 0.06],
   [0.25, 0.25, 0.27],
+];
+const HOTEL_TINTS: [number, number, number][] = [
+  [0.85, 0.2, 0.15],
+  [0.12, 0.35, 0.7],
+  [0.95, 0.82, 0.45],
+  [0.9, 0.9, 0.9],
 ];
 const SHRUB_TINTS: [number, number, number][] = [
   [0.2, 0.32, 0.12],
@@ -427,6 +433,53 @@ function placeAt(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>, kinds: rea
   }
 }
 
+function placeHotels(pl: Placer, points: readonly OsmPoint[]): void {
+  let left = BUDGET.hotelSign;
+  points.forEach((p, i) => {
+    if (p.kind !== 'tourism=hotel' || left <= 0 || !pl.inArea(p.x, p.z)) {
+      return;
+    }
+    const f = facadeSpot(pl, p.x, p.z);
+    if (f && pl.clearance(f.x, f.z) > 2.5 && pl.prop('hotelSign', f.x, f.z, f.yaw, 1, pick(HOTEL_TINTS, hash(i * 1.37)))) {
+      left--;
+    }
+  });
+}
+
+/** Sunbed pairs under a straw umbrella in rows across the beach, facing the water. */
+function placeBeaches(pl: Placer, areas: readonly OsmArea[]): void {
+  let left = BUDGET.sunbed;
+  const s = pl.ctx.surface;
+  areas.forEach((a, ai) => {
+    if (a.kind !== 'natural=beach' || left <= 0) {
+      return;
+    }
+    const b = orientedBox(a.ring);
+    for (let v = -b.wid / 2 + 3; v <= b.wid / 2 - 3; v += 6) {
+      for (let u = -b.len / 2 + 3; u <= b.len / 2 - 3 && left > 0; u += 4.5) {
+        const x = b.cx + b.ax * u - b.az * v;
+        const z = b.cz + b.az * u + b.ax * v;
+        if (!pl.inArea(x, z, 2) || !inArea(a, x, z) || s.geo.coast(x, z) < 4 || hash(ai + u * 3.1 + v * 7.7) > 0.8) {
+          continue;
+        }
+        // Face the sea: down the coast distance gradient.
+        const gx = s.geo.coast(x + 2, z) - s.geo.coast(x - 2, z);
+        const gz = s.geo.coast(x, z + 2) - s.geo.coast(x, z - 2);
+        const yaw = Math.atan2(-gx, -gz);
+        if (!pl.prop('beachUmbrella', x, z, 0)) {
+          continue;
+        }
+        for (const side of [-0.8, 0.8]) {
+          const [px, pz] = at(x, z, yaw, side, 0.2);
+          if (pl.props.add('sunbed', px, pl.y(px, pz), pz, yaw)) {
+            left--;
+          }
+        }
+      }
+    }
+  });
+}
+
 function placeAtms(pl: Placer, points: readonly OsmPoint[]): void {
   points.forEach((p) => {
     if (p.kind !== 'amenity=atm' || !pl.inArea(p.x, p.z)) {
@@ -596,6 +649,13 @@ export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'
   // Masts and towers mapped on the ground (rooftop masts sit inside a building footprint: the stand rule skips them).
   placeAt(pl, data, ['man_made=mast'], 'gsmMast', 3, 2, 3);
   placeAt(pl, data, ['man_made=tower'], 'latticeTower', 3, 3, 4);
+  placeAt(pl, data, ['amenity=shelter'], 'kameriye', 5, 2.5, 4);
+  placeAt(pl, data, ['leisure=picnic_table'], 'picnicTable', 3, 1.5, 2);
+  placeAt(pl, data, ['amenity=clock'], 'streetClock', 3, 1, 1.5);
+  placeAt(pl, data, ['tourism=information'], 'infoBoard', 3, 1, 1.5);
+  placeAt(pl, data, ['advertising=billboard'], 'billboard', 5, 3, 4);
+  placeHotels(pl, data.points);
+  placeBeaches(pl, data.areas);
   placeMarkets(pl, data);
   placeFronts(pl, data.points);
   placeAtms(pl, data.points);
