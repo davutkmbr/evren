@@ -1,7 +1,32 @@
 # 23 — OSM feature kits: one parametric kit per place type, placed by the world compiler
 
-Status: plan only (user-approved idea, 2026-09-26); no kit or rule exists yet. Pattern: [22 — City walls](22-city-walls.md)
-(kit first, generic compiler placement from OSM, counts and checks). Nothing here is hand-placed per spot.
+Status: first kits live in the runtime details layer (cloud session, PR #30, 2026-09-26; see
+[Runtime kits (built)](#runtime-kits-built)); the compiler twins for the landing spots are still to do. Pattern:
+[22 — City walls](22-city-walls.md) (kit first, generic placement from OSM, counts and checks). Nothing here is
+hand-placed per spot.
+
+## Runtime kits (built)
+
+`src/world/osm/details/props/features.ts` (rules) + `props/models.ts` (kits), from the shipped OSM regions only, no
+refetch. Every prop goes through the shared stand rule; per-slice budgets. Counts per region:
+`npx tsx tools/headless/osm-details-check.ts <region>`.
+
+| OSM | kit / rule |
+| --- | --- |
+| `amenity=fuel` | canopy + 2 pump islands facing the street, shop behind, price pylon; brand colour from the name |
+| `leisure=pitch` | football goals (small under 45 m) / basketball hoops at the ends of the long axis |
+| `leisure=playground` | swing, slide tower, climbing frame |
+| green areas (`landuse=grass`, park, garden, scrub, heath, meadow, bare rock, `landuse=flowerbed`) | shrubs, stones, flower clumps by density per kind |
+| untagged lots (cover.ts `LotStyle`) | shrubs on garden lots, stones + weedy scrub on vacant lots (road verges) |
+| cafés, restaurants, shops / `amenity=pharmacy` / `amenity=atm` | awning on the facade / lit "E" sign / wall ATM |
+| `amenity=fountain` | marble çeşme on its wall, else a round basin |
+| `tourism=artwork`, `historic=memorial/monument` / `tourism=viewpoint` | statue on plinth / coin telescope |
+| `landuse=cemetery`, `amenity=grave_yard` | rows of Ottoman headstones |
+| `amenity=marketplace` | rows of tinted stalls with produce |
+| `emergency=fire_hydrant`, `amenity=recycling/waste_disposal`, `amenity=bicycle_parking`, `leisure=fitness_station`, `barrier=hedge`, `railway=subway_entrance`, `amenity=taxi` | hydrant, recycling bins, bike rack, outdoor gym, hedge segments, metro entrance, taksi durağı |
+
+Flight-scale land use (highway verges and interchanges seen from the air, outside the OSM regions) is the phase 24
+map work (OSM land use stamped into the geo build, [24](24-far-osm-layer.md) S2).
 
 ## Idea
 
