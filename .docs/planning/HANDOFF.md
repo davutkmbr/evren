@@ -67,6 +67,10 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    edits in `src/world/osm/{buildings,details,index.ts}`, `geo/*`, `site-planner.ts`). Goal: every hand-made landmark
    renders inside OSM regions and street-layer areas, buildings inside a landmark footprint are skipped, roads pass
    under arches; per-landmark visibility audit. Bisect with `?osmregions=0` / `?street=0`.
+   **Done (ce05db7):** the aqueduct had no builder at all; now modelled + generic landmark ground claims. Follow-ups:
+   the aqueduct material reads flat grey/plastic — reuse the city-wall kit's stone/brick material and weathering;
+   11 heritage landmarks still have no builder (Topkapı, Dolmabahçe, Çırağan, Rumeli/Anadolu Hisarı, Yedikule,
+   Haydarpaşa, Selimiye, Kuleli, Sirkeci, Hipodrom) — their OSM buildings show instead; model them one by one.
 4. **Perches** (owner report): many perch points are hidden by trees and have bad camera angles. Rule: perches only on
    elevated structures (Galata Tower, bridge towers, Kız Kulesi, Beyazıt/Çamlıca towers, wall towers), never ground or
    bare hilltops; clear the tallest neighbour within ~40 m; perch camera frames the dragon in the lower third against
@@ -94,3 +98,4 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 - Before bulk fan-out, pick the tool that fits the scale (local extract, parallel compiler).
 - Commit per area; verify HEAD in an isolated `git worktree` typecheck before pushing; when merging the cloud branch,
   stash only overlapping dirty files and pop afterwards.
+- 2026-09-26 landmarks agent (uncommitted): Bozdoğan Kemeri was never built (the heritage `SITE_BUILDERS` held only Beylerbeyi) → new aqueduct builder (`heritage/build/sites/aqueduct.ts`, arches centred on OSM crossings from `scripts/data/landmark-crossings.ts` → `heritage/data/crossings.json`), anchors from the OSM way 23276526; generic landmark ground claims (`src/world/landmarks/claims.ts`: only modelled landmarks claim ground, line bodies drop touching OSM buildings, infill/trees/props respect them), OSM `building_passage` pieces under a line landmark become ground roads (`osm/shared/landmark-passages.ts`), heritage sites sample the visible (OSM) ground. 12 heritage landmarks still have no builder (OSM buildings now show there instead of empty pads). Shots: `.shots/landmarks/bozdogan/after-*`.
