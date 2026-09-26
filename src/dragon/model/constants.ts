@@ -38,4 +38,7 @@ export const DEFAULT_POSE = {
   heelLift: 0,
   legReach: 0,
   skid: 0,
+  swim: 0,
+  swimPhase: 0,
+  swimStroke: 0,
 };

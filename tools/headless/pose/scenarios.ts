@@ -111,6 +111,12 @@ function plungeFrom(height: number, speed: number, pathDeg: number): (rt: PoseRu
   };
 }
 
+/** Sea scenarios: floating at rest at the origin, heading north. */
+export function floatAt(rt: PoseRuntime): void {
+  rt.teleport(0, 0, 0, 0, 0);
+  rt.sim.placeOnGround();
+}
+
 /** The dive path held with Shift until the entry, then `after` (seconds since the entry). */
 function plungeScript(pathDeg: number, after: (under: number, sim: FlightSim, input: Parameters<FrameScript>[2]) => void): () => FrameScript {
   return () => {
@@ -472,6 +478,98 @@ export const SCENARIOS: Scenario[] = [
     view: 'side',
     camera: 'fixed',
     span: 40,
+  },
+  {
+    name: 'swim-idle',
+    description: 'floating at rest on a calm sea: slow tail sway, the head looking around',
+    sea: 30,
+    setup: floatAt,
+    seconds: 14,
+    script: neutral,
+    frames: 12,
+    fps: 1.5,
+    window: () => 5,
+    view: 'side',
+    camera: 'fixed',
+    span: 24,
+  },
+  {
+    name: 'swim',
+    description: 'W held from floating (swim, 2.6 m/s): body and tail undulation, slow alternating kicks',
+    sea: 30,
+    setup: floatAt,
+    seconds: 12,
+    script: () => (t, _sim, input) => {
+      input.cmd.pitch = t >= 1 ? 1 : 0;
+    },
+    frames: 16,
+    fps: 6,
+    window: (r) => firstTime(r, (x) => x.time > 1 && x.groundSpeed > 2.45, 7) + 1,
+    view: 'side',
+    camera: 'fixed',
+    span: 24,
+  },
+  {
+    name: 'swim-fast',
+    description: 'W + Shift held from floating (fast swim, 4.5 m/s): stronger, quicker undulation and kicks',
+    sea: 30,
+    setup: floatAt,
+    seconds: 12,
+    script: () => (t, _sim, input) => {
+      input.cmd.pitch = t >= 1 ? 1 : 0;
+      input.cmd.dive = t >= 1;
+    },
+    frames: 16,
+    fps: 8,
+    window: (r) => firstTime(r, (x) => x.time > 1 && x.groundSpeed > 4.3, 8) + 1,
+    view: 'side',
+    camera: 'fixed',
+    span: 24,
+  },
+  {
+    name: 'land-on-water',
+    description: 'L at 16 m/s, 12 m over the sea: approach, settle onto the water and into the float (no walking step)',
+    sea: 30,
+    setup: (rt) => rt.teleport(0, 12, 0, 0, 16),
+    seconds: 16,
+    script: pressAt(0.3, 'land'),
+    frames: 24,
+    fps: 5,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'swimming', 8) - 2),
+    view: 'side',
+    camera: 'fixed',
+    span: 30,
+  },
+  {
+    name: 'water-takeoff',
+    description: 'Space tapped while floating: the take-off run (wings beating the water), the leap and the first strokes',
+    sea: 30,
+    setup: floatAt,
+    seconds: 7,
+    script: pressAt(2, 'flap'),
+    frames: 24,
+    fps: 10,
+    window: () => 1.9,
+    view: 'side',
+    camera: 'fixed',
+    span: 40,
+  },
+  {
+    name: 'wade',
+    description: 'W held swimming toward a shore: the feet reach the seabed and the dragon wades out walking',
+    sea: 30,
+    terrain: (_x, z) => Math.min(2, -5 - z * 0.12),
+    setup: floatAt,
+    seconds: 16,
+    script: () => (t, _sim, input) => {
+      input.cmd.pitch = t >= 1 ? 1 : 0;
+    },
+    frames: 24,
+    fps: 4,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.time > 1 && x.mode === 'grounded', 8) - 2.5),
+    view: 'side',
+    camera: 'fixed',
+    span: 30,
   },
   {
     name: 'turn',

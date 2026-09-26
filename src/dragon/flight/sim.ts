@@ -106,6 +106,9 @@ export class FlightSim {
   groundYawRate = 0;
   walkPhase = 0;
   walkAmount = 0;
+  /** Swimming stroke: phase (rad) of the body / tail undulation and the hind-leg kicks, and its strength 0..1. */
+  swimPhase = 0;
+  swimStroke = 0;
   touchingWater = false;
   /** Seconds since the last splash event while skimming. */
   splashTimer = 0;
@@ -291,7 +294,8 @@ export class FlightSim {
     this.overWater = this.terrainY < -0.4 && this.surfaceY < 0.05;
     this.waterY = this.overWater ? this.waterHeight(p.x, p.z) : 0;
     if (this.overWater) {
-      this.surfaceY = this.waterY;
+      // Wading (standing in shallow water, see SWIM_POSE.wadeMargin): the feet stand on the seabed.
+      this.surfaceY = this.mode === 'grounded' ? this.terrainY : this.waterY;
     }
     this.agl = p.y - this.surfaceY;
     this.footClearance = this.agl - this.footDepth();

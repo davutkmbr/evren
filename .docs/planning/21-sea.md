@@ -3,8 +3,9 @@
 Milestone: B · Chill loop · Effort: L · Depends on: 20 (movement; shares skim, breach and flow), water module, fx
 
 Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test; stage 4 built (the camera follows the dragon under
-water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU review. Stages 1–2 can start
-in parallel with phase 20 stage B.
+water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU review; stage 5 swimming part
+built (a real swimming pose and stroke, the water take-off run, wading at the shore), awaiting the pose-sheet approval
+and the feel test. Stages 1–2 can start in parallel with phase 20 stage B.
 
 ## Goal
 
@@ -185,6 +186,52 @@ The owner's report: "it dives under water but we can't see under water"; the cam
 - **Company:** gulls land on the floating dragon's back; boats give it room (vessel agents treat the swimming dragon
   as an obstacle); anglers on the Galata Bridge react (moments).
 
+### Stage 5 as built: swimming
+
+The owner's report: "When I land slowly on the sea with L, the dragon should swim at the surface, but right now it
+looks like it's walking." Cause: swimming reused the ground walk (`walkAmount`, `walkPhase`, the wrists as fore feet)
+with no ground plane, so the rig walked its legs on its default standing plane under the water.
+
+- **Pose contract:** `DragonPose.swim` (0..1 floating posture), `swimPhase` (stroke phase, rad) and `swimStroke`
+  (strength 0..1), written by `pose.ts`, read by the animator. Swimming no longer drives the walk: `walkAmount` is 0,
+  the footstep audio already plays only in `grounded`.
+- **Posture** (`animator.ts`, `SWIM_RIG` shape constants): floating low (`SWIM.floatDepth` 0.6 m: the waterline runs
+  along the back, the saddle and the rider above it), neck raised with a swan-like S (lower neck up, upper neck
+  forward) and the head held level, wings folded tight along the back (the flight fold, higher and closer to the body;
+  never fore feet), hind legs kicking alternately below the body (thigh swinging back and forth, shin flexing and the
+  foot feathering on the recovery, no plane, no planted feet).
+- **Stroke** (`locomotion.ts` drives `sim.swimPhase` / `sim.swimStroke`, tunables in `SWIM_POSE` in `params.ts`): the
+  side-to-side undulation of the spine (root, lumbar, pelvis) runs into a travelling wave down the tail (the main
+  paddle); the chest and the rider stay steady and the neck undoes the body's swing so the head keeps to the course.
+  Frequency 0.2 Hz at rest + 0.13 Hz per m/s, × 1.3 toward the fast swim (0.2 / 0.54 / 1.0 Hz floating / W / W +
+  Shift), strength 0.22 / 0.7 / 1 (tail tip ±0.25 / ±0.46 / ±0.9 m). At rest: bobbing on the waves (physics), the slow
+  tail sway, a head turn to one side every 3.5–8 s (deterministic). A quiet splash at the tail on each stroke reversal
+  above 1.2 m/s (strength 0.05 + 0.025 per m/s, the existing splash sfx and fx) replaces the old timer splash.
+- **Landing onto the water (L):** the landing settles into the float without a walking step: for 1.5 s after entering
+  the body sinks no faster than 2 m/s and levels out at 1.6/s (no belly flop), the swim posture blends in at 2.2/s
+  (out at 5/s).
+- **Water take-off run** (Space or L while swimming): 1.2 s on the surface, speeding up to 8 m/s (7 m/s²) while the
+  body rises onto the surface (float depth 0.6 → 0.05 m), the wings open (spread 0.85) and beat hard with the stroke
+  amplitude limited to 0.7, each downstroke slapping the water with a splash at both wingtips; the hind legs paddle
+  quickly (1.5 Hz); then the leap (`SWIM.leapUp` / `leapForward` on top of the run's speed: it leaves the water at
+  ~10 m/s). V (urge) still leaps at once. Not yet: a longer run in rough seas (strand 6).
+- **Plunge / breach:** surfacing from `underwater` enters swimming through the same settle and blend; a breach leaves
+  as before.
+- **Shore (wading):** swimming turns into `grounded` where the seabed is within the legs' reach
+  (`standHeight + floatDepth − SWIM_POSE.wadeMargin`, ≈ 2.5 m deep), wading turns back into swimming beyond
+  `standHeight + floatDepth + floatMargin` (≈ 3.25 m; hysteresis, no flicker). While grounded over water the stance
+  stands on the seabed (`sim.sampleSurface` uses the seabed as the surface in `grounded`, and the next step's floor is
+  the seabed too), so the dragon walks out of the sea with its feet on the bottom instead of on the water surface.
+- **Checks:** `movement-check.ts` section "Swimming" (`--swim` runs it alone): the real rig in open calm water for
+  floating / W / W + Shift: no walk cycle, rider's torso and head ≥ 0.77 m and head ≥ 1.84 m above the water, the back
+  top 0.59–0.61 m above it, wings no deeper than 0.30 m, stroke frequency 0.20 < 0.54 < 1.02 Hz with the tail tip
+  sweeping at it (85–97 % of its sweep) and growing ±0.25 < ±0.46 < ±0.90 m; a slow L landing ends swimming with no
+  walk cycle, ≤ 1.1° and ≤ 4 cm per frame; the water take-off runs 1.2 s and is 4 m up 2.3 s after Space; swimming
+  toward a shore switches once to wading at 2.5 m, walking (no jump, kicking feet ≤ 0.21 m into the seabed before
+  it), and walking back out starts swimming once at 3.25 m. Pose strips `swim-idle`, `swim`, `swim-fast`,
+  `land-on-water`, `water-takeoff`, `wade`; sea sheets now tint what is under the surface in every view and draw the
+  water plane in the three-quarter and top views.
+
 ## Strand 6 — Weather and the sea
 
 - Lodos: big waves, spray blown off crests, harder water take-offs, the dragon rocks more while swimming.
@@ -263,7 +310,8 @@ only as the far LOD and as a fallback on "low".
 | Space under water / near the surface | stroke / breach |
 | L low and slow over water | claw dip (touch-and-go on the water) |
 | Swimming: Ctrl | duck under |
-| Swimming: Space | surface; hold for a water take-off run |
+| Swimming: Space or L | water take-off run (wings slapping the water), then the leap |
+| Swimming: V | instant leap out of the water |
 
 ## Tooling and verification
 
@@ -271,7 +319,8 @@ only as the far LOD and as a fallback on "low".
 - **Flight checks** (`movement-check.ts`): skim distance and speed loss; plunge depth vs entry speed and angle;
   breach exit speed and height; water take-off distance per sea state; swim drift in the current; refusals over
   shallow water.
-- **Pose strip:** scenarios `swim`, `swim-fast`, `water-takeoff`, `plunge`, `breach`, `claw-dip`, `shake-off`.
+- **Pose strip:** scenarios `swim-idle`, `swim`, `swim-fast`, `land-on-water`, `water-takeoff`, `wade` (built), `plunge`,
+  `breach` (built), `claw-dip`, `shake-off`.
 - **Owner review on a GPU:** downwash ripples, wakes, spray, steam, the underwater look (strand 4), feel.
 
 ## Stages
@@ -282,7 +331,7 @@ only as the far LOD and as a fallback on "low".
 | 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound | Owner GPU review OK; budget met |
 | 3 | Plunge, under-water movement, breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
 | 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
-| 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company | Checks and sheets approved; feel test OK |
+| 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company (swimming pose and stroke, take-off run, wading built) | Checks and sheets approved; feel test OK |
 | 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
 | 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes | Wake-angle and energy checks pass; budgets met; owner GPU review |
 | 7b | Vessels as floating rigid bodies with LOD; propulsion/rudder forces; moorings | Period, stability and interaction checks pass; CPU ≤ 1 ms |

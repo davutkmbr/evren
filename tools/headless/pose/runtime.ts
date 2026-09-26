@@ -79,10 +79,13 @@ export function flatGeo(height: number, terrain?: Terrain): GeoQuery {
   return geo as unknown as GeoQuery;
 }
 
-/** Open sea everywhere: a flat seabed at `seabed` m (negative), the surface at y = 0 (no water service: flat calm). */
-export function seaGeo(seabed: number): GeoQuery {
-  const geo = flatGeo(seabed) as unknown as Record<string, unknown>;
-  geo.isWater = () => true;
+/**
+ * Open sea everywhere: a flat seabed at `seabed` m (negative), the surface at y = 0 (no water service: flat calm). With
+ * `terrain` the seabed is shaped (a shore rising out of the water: land where it is above y = 0).
+ */
+export function seaGeo(seabed: number, terrain?: Terrain): GeoQuery {
+  const geo = flatGeo(seabed, terrain) as unknown as Record<string, unknown>;
+  geo.isWater = terrain ? (x: number, z: number) => terrain(x, z) < 0 : () => true;
   geo.coastDistance = () => -5000;
   return geo as unknown as GeoQuery;
 }
@@ -171,7 +174,7 @@ export class PoseRuntime {
     wind: readonly [number, number] | null = null,
   ) {
     const collision = new CollisionWorld();
-    const geo = sea ? seaGeo(groundY) : flatGeo(groundY, terrain);
+    const geo = sea ? seaGeo(groundY, terrain) : flatGeo(groundY, terrain);
     collision.setGeo(geo);
     this.sim.world.collision = collision;
     this.sim.world.geo = geo;
@@ -362,7 +365,7 @@ export class PoseRuntime {
       surfaceY: r(sim.surfaceY),
       agl: r(sim.agl, 100),
       footClearance: r(sim.footClearance, 100),
-      ...(this.sea ? { waterY: 0, seabedY: this.groundY } : {}),
+      ...(this.sea ? { waterY: 0, seabedY: r(this.sim.world.geo?.heightAt(object.position.x, object.position.z) ?? this.groundY) } : {}),
       pitchDeg: r(sim.pitch / DEG, 10),
       bankDeg: r(sim.bank / DEG, 10),
       headingDeg: r(yawToHeading(sim.axes.yaw()), 10),

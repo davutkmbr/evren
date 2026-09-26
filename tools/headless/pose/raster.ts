@@ -42,6 +42,10 @@ const BELOW_GROUND: RGB = [222, 44, 36];
 /** Sea scenarios: the water between the surface and the seabed, and the surface line. */
 const WATER_FILL: RGB = [206, 222, 230];
 const WATER_LINE: RGB = [86, 128, 150];
+/** Model colour seen through the water (sea scenarios). */
+function tintWet(c: RGB): RGB {
+  return [Math.round(c[0] * 0.55 + 70), Math.round(c[1] * 0.55 + 105), Math.round(c[2] * 0.55 + 125)];
+}
 
 const LIMB_BONE = /^(thigh|shin|meta|foot|humerus|forearm|hand|thumb|finger)/;
 
@@ -259,6 +263,8 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
   const depth = new Float32Array(W * H).fill(Infinity);
   const part = new Uint8Array(W * H);
   const below = new Uint8Array(W * H);
+  // Sea scenarios: pixels of the model under the water surface are tinted, so the waterline reads in every view.
+  const wet = new Uint8Array(W * H);
   // Sea scenarios draw the ground at the seabed (red = through it) and the water above it.
   const groundY = rec.seabedY ?? rec.surfaceY;
   const waterY = rec.waterY;
@@ -336,7 +342,9 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
           if (z < depth[k]) {
             depth[k] = z;
             part[k] = pc;
-            below[k] = w0 * ya + w1 * yb + w2 * yc < -0.05 ? 1 : 0;
+            const yk = w0 * ya + w1 * yb + w2 * yc;
+            below[k] = yk < -0.05 ? 1 : 0;
+            wet[k] = waterY !== undefined && yk + groundY < waterY ? 1 : 0;
           }
         }
       }
@@ -378,19 +386,19 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
           }
         }
       } else {
-        // Ray through the pixel meets the ground plane.
+        // Ray through the pixel meets the ground plane (sea scenarios: the water surface, gridded the same way).
         const ox = center.x + right.x * a + up.x * b;
         const oy = center.y + right.y * a + up.y * b;
         const oz = center.z + right.z * a + up.z * b;
-        const t = (groundY - oy) / dir.y;
+        const t = ((waterY ?? groundY) - oy) / dir.y;
         const gx = ox + dir.x * t;
         const gz = oz + dir.z * t;
-        c = GROUND_FILL;
+        c = waterY !== undefined ? WATER_FILL : GROUND_FILL;
         const mx = ((gx % tick) + tick) % tick;
         const mz = ((gz % tick) + tick) % tick;
         const lineW = 1.2 * pxW * (view3(dir) ? 1.5 : 1);
         if (mx < lineW || mz < lineW) {
-          c = GROUND_TICK;
+          c = waterY !== undefined ? tintWet(GROUND_TICK) : GROUND_TICK;
         }
       }
       put(k, c);
@@ -424,7 +432,8 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
           edge = true;
         }
       }
-      put(k, below[k] ? BELOW_GROUND : edge ? OUTLINE : PALETTE[p]);
+      const c = below[k] ? BELOW_GROUND : edge ? OUTLINE : PALETTE[p];
+      put(k, wet[k] && !below[k] ? tintWet(c) : c);
     }
   }
 
