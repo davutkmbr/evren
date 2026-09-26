@@ -1,5 +1,5 @@
 /**
- * Headless check of the "gull and simit on a ferry" flock (src/moments/actors/gull-simit/flock.ts). No browser, no GPU.
+ * Headless check of the "gull and simit on a ferry" flock (src/moments/gull-simit/flock.ts). No browser, no GPU.
  *
  *   npx tsx tools/headless/moments-gulls-check.ts           # all sections
  *   npx tsx tools/headless/moments-gulls-check.ts --quick   # skips the real-fleet section
@@ -20,8 +20,8 @@
 import * as THREE from 'three';
 import type { VesselPose } from '../../src/core/contracts';
 import { AnchorFeed, inService } from '../../src/moments/anchors';
-import { GULL_TUNING, GullFlock, GullState, type FerryFrame, type Point3 } from '../../src/moments/actors/gull-simit/flock';
-import { gullCountFor } from '../../src/moments/actors/gull-simit/actor';
+import { GULL_TUNING, GullFlock, GullState, type FerryFrame, type Point3 } from '../../src/moments/gull-simit/flock';
+import { gullCountFor } from '../../src/moments/gull-simit/actor';
 
 const QUICK = process.argv.includes('--quick');
 let failures = 0;

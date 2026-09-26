@@ -7,8 +7,9 @@
  * Exits non-zero on any failure. Warnings (placeholders, pending rights) are printed but do not fail.
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
+import { unresolvedContent } from '../../src/moments/content';
 import { ALL_MOMENTS } from '../../src/moments/data';
-import { MOMENT_ACTORS } from '../../src/moments/actors';
+import { createMomentActor } from '../../src/moments/actors';
 import { RUNTIME_ANCHORS } from '../../src/moments/anchors';
 import { defaultMomentPrefs } from '../../src/moments/prefs';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
@@ -130,7 +131,7 @@ function validateRecord(m: Moment): void {
     expect(!m.needs.includes('runtime-anchor'), w, `anchor '${p.anchor}' is supplied at runtime (src/moments/anchors.ts): drop 'runtime-anchor'`);
   }
   if (m.content.actorId && m.status === 'ready') {
-    expect(!!MOMENT_ACTORS[m.content.actorId], w, `ready with actor '${m.content.actorId}' that is not registered in src/moments/actors`);
+    expect(!!createMomentActor(m.content.actorId), w, `ready with actor '${m.content.actorId}' that has no scene implementation in src/moments/actors.ts`);
   }
 
   // Content: subtitles.
@@ -195,6 +196,8 @@ function validateRecord(m: Moment): void {
   if (m.status === 'ready') {
     expect(m.needs.length === 0, w, `ready but still needs ${m.needs.join(', ')}`);
     expect(!m.provenance.some((pr) => pr.pending), w, 'ready with pending provenance');
+    const missing = unresolvedContent(m.content);
+    expect(missing.length === 0, w, `ready but its content ids do not resolve to procedural content: ${missing.join(', ')}`);
   }
 }
 

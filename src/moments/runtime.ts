@@ -19,6 +19,7 @@ import { eligibleMoments, nearestAnchor, rejectReason, type MomentContext, type 
 import type { Moment, MomentNeed, MomentTrigger, SubtitleLine } from './types';
 import type { FlightMode } from '../core/contracts';
 import { latLonToLocal } from '../core/geo-coords';
+import { AVAILABLE_MOMENT_SOUNDS, unresolvedContent } from './content';
 
 export interface MomentPacing {
   /** Seconds after a moment ends before another may start (moments stay rare). */
@@ -66,19 +67,25 @@ export interface Playability {
 }
 
 /**
- * Can this moment play with what exists today? A 'ready' moment always can. A 'draft' moment can when its content is
+ * Can this moment play with what exists today? A 'ready' moment can when every content id it names resolves to the
+ * procedural content (./content.ts). A 'draft' moment can when its content is
  * complete: the only missing piece allowed is its sound, and only for a subtitle-only moment (no character, object or
  * animation), where the soft bed is optional and the existing coastal ambience stands in for it. Anything that needs a
  * model, an animation, a video link, a runtime anchor or text approval waits.
  *
- * `availableSounds` names the moment sounds that exist (none yet: no moment sound has been recorded or approved).
+ * `availableSounds` names the moment sounds that exist (the synthesised ones of ./content.ts by default).
  */
-export function momentPlayability(m: Moment, availableSounds: ReadonlySet<string> = new Set()): Playability {
+export function momentPlayability(m: Moment, availableSounds: ReadonlySet<string> = AVAILABLE_MOMENT_SOUNDS): Playability {
   const soundMissing = m.needs.includes('sound') || (m.content.soundId !== undefined && !availableSounds.has(m.content.soundId));
   if (m.content.subtitles.length === 0) {
     return { playable: false, reason: 'no subtitle lines', soundFallback: false };
   }
   if (m.status === 'ready') {
+    // The actor and its animations must exist; a missing sound falls back to the lifted coastal ambience.
+    const missing = unresolvedContent({ actorId: m.content.actorId, animationIds: m.content.animationIds });
+    if (missing.length > 0) {
+      return { playable: false, reason: `unresolved content ${missing.join(', ')}`, soundFallback: false };
+    }
     return { playable: true, soundFallback: soundMissing };
   }
   const blocking: MomentNeed[] = m.needs.filter((n) => n !== 'sound');
@@ -146,6 +153,10 @@ export interface MomentSink {
   showCard(moment: Moment): void;
   /** Coastal ambience lift 0..1 (the fallback bed for moments whose own sound is missing). */
   setAmbienceLift(amount: number): void;
+  /** The moment started (its scene actor, if any, spawns); `anchorId` names the moving anchor it started at. */
+  startMoment?(moment: Moment, forced: boolean, anchorId?: number): void;
+  /** The moment ended; its actor may live on and leave by itself. */
+  endMoment?(moment: Moment, reason: MomentEndReason): void;
 }
 
 /** One frame of input. */
@@ -335,6 +346,7 @@ export class MomentRunner {
     };
     this.lastFired.set(m.id, this.clock);
     this.retryAt.delete(m.id);
+    this.sink.startMoment?.(m, forced, anchorId);
     this.tick();
   }
 
@@ -408,6 +420,7 @@ export class MomentRunner {
       this.retryAt.set(p.moment.id, this.clock + this.pacing.retrySec);
     }
     this.history.push({ id: p.moment.id, start: p.start, end: this.clock, reason, forced: p.forced, linesShown: p.linesShown });
+    this.sink.endMoment?.(p.moment, reason);
   }
 
   private updateLift(dt: number): void {
@@ -437,8 +450,8 @@ export interface MomentStartPose {
 
 /**
  * Where the ?moment= shortcut puts the dragon: the record's 'start' waypoint, heading for the waypoint after it, inside
- * the trigger's altitude band (70 % of an AGL ceiling; the start points are over water or low shore). Null when the
- * record has no 'start' waypoint.
+ * the trigger's altitude band (70 % of a ceiling; with a floor too, a fifth of the way up the band: 150–1500 m ASL →
+ * 420 m; the start points are over water or low shore). Null when the record has no 'start' waypoint.
  */
 export function momentStartPose(m: Moment): MomentStartPose | null {
   const wps = m.content.waypoints ?? [];
@@ -454,7 +467,9 @@ export function momentStartPose(m: Moment): MomentStartPose | null {
     // Compass heading: 0 = north (-z), 90 = east (+x).
     headingDeg = ((Math.atan2(b.x - a.x, -(b.z - a.z)) * 180) / Math.PI + 360) % 360;
   }
-  const ceiling = m.trigger.altitude?.find((b) => b.max !== undefined)?.max;
-  const y = ceiling !== undefined ? Math.max(8, Math.round(ceiling * 0.7)) : 60;
+  const band = m.trigger.altitude?.find((b) => b.max !== undefined);
+  const ceiling = band?.max;
+  const floor = band?.min;
+  const y = ceiling === undefined ? 60 : floor !== undefined ? Math.round(floor + 0.2 * (ceiling - floor)) : Math.max(8, Math.round(ceiling * 0.7));
   return { x: a.x, y, z: a.z, headingDeg, pitchDeg: -2, speed: 22 };
 }

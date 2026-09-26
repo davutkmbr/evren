@@ -49,7 +49,9 @@ log(`geo + ${footprints.fp.list.length} building footprints from ${footprints.fi
 log(JSON.stringify(plan.stats));
 if (plan.overlap) {
   const bad = Object.entries(plan.overlap.byStretch).filter(([, v]) => v.metres > 0 || v.towers > 0);
-  log(`wall-vs-building check: ${plan.overlap.metres} m, ${plan.overlap.count} overlaps${bad.length ? `: ${bad.map(([k, v]) => `${k} ${v.metres} m / ${v.buildings} buildings / ${v.towers} towers`).join('; ')}` : ''}`);
+  const bad2 = Object.entries(plan.overlap.byStretch).filter(([, v]) => v.metres > 0 || v.towers > 0 || v.roadMetres > 0);
+  log(`wall-vs-building/road check: ${plan.overlap.metres} m in buildings, ${plan.overlap.count} overlaps, ${plan.overlap.roadMetres} m on roads${bad2.length ? `: ${bad2.map(([k, v]) => `${k} ${v.metres} m / ${v.buildings} buildings / ${v.towers} towers / ${v.roadMetres} m road`).join('; ')}` : ''}`);
+  void bad;
 }
 
 writeFileSync(

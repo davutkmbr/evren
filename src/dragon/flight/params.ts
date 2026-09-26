@@ -573,10 +573,6 @@ export const GROUND = {
   /** Crouch before the leap (s): the dragon rears a little and raises its wings for the first big downstroke. */
   leapCrouch: 0.3,
   leapRear: 0.09,
-  /** Running take-off (the urge on the ground): gallop up to this speed (m/s) within runTime (s), then leap. */
-  runTakeoffSpeed: 12,
-  runTakeoffTime: 1.3,
-  runTakeoffAccel: 7,
   /**
    * Stance geometry shared with the rig: fore-aft distance (m) of the hind feet behind and of the fore feet (the
    * wing wrists) ahead of the centre of mass. A body pitched nose-up stands on its hind feet, nose-down on its fore
@@ -894,14 +890,6 @@ export const TRICKS = {
   diveCatchPath: -20 * (Math.PI / 180),
   diveCatchSpeed: 30,
   diveCatchTime: 0.6,
-  /* Urge "dehh" (V): strong beats and a surge. */
-  urgeDuration: 1.7,
-  urgeCooldown: 2.5,
-  urgeGain: 11,
-  urgeThrust: 2.3,
-  urgeStamina: 0.03,
-  /** The rider's gesture envelope (s). */
-  urgeGesture: 1.2,
   /** Seconds the rider cheers after a finished trick. */
   cheer: 1.3,
   /** Refused-trick hints repeat at most this often (s). */

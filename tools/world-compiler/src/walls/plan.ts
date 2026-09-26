@@ -287,6 +287,65 @@ function areaRun(a: WallArea, rings: readonly V2[][]): Run | null {
   return { id, area: true, closed: false, pts: c.pts, cum: lengths(c.pts), meta, anchors, thick: Math.min(8, Math.max(1.5, c.width)), cls: 'land', towers: [] };
 }
 
+/**
+ * Supplement traces (one vertex per ~125 m) cut across the coastal avenues built on fill in front of the sea walls.
+ * Every point within SNAP_REACH m of a major road running along the trace moves to the road's land side (inland of
+ * its kerb by the wall's half band plus the clearance); divided roads are cleared carriageway by carriageway. The
+ * building fit runs afterwards, and where there is no room the wall breaks there instead of standing in the road.
+ */
+const SNAP_REACH = 40;
+function snapRoadside(pts: V2[], fp: Footprints, site: Site, halfBand: number): { pts: V2[]; moved: number } {
+  const P = resample(pts, 4);
+  const cum = lengths(P);
+  let moved = 0;
+  const out = P.map((p, k): V2 => {
+    const t = tangent(P, cum, cum[k], 6);
+    let q: V2 = p;
+    for (let it = 0; it < 4; it++) {
+      let best: { ni: V2; move: number } | null = null;
+      for (const f of fp.near(q[0], q[1], SNAP_REACH + 5)) {
+        const r = f.road;
+        if (!r || !r.major || r.rail) {
+          continue;
+        }
+        const dx = r.b[0] - r.a[0];
+        const dz = r.b[1] - r.a[1];
+        const l = Math.hypot(dx, dz);
+        const d: V2 = [dx / l, dz / l];
+        if (Math.abs(d[0] * t[0] + d[1] * t[1]) < 0.7) {
+          continue;
+        }
+        const u = Math.min(l, Math.max(0, (q[0] - r.a[0]) * d[0] + (q[1] - r.a[1]) * d[1]));
+        const c: V2 = [r.a[0] + d[0] * u, r.a[1] + d[1] * u];
+        if (Math.hypot(q[0] - c[0], q[1] - c[1]) > SNAP_REACH) {
+          continue;
+        }
+        const nr: V2 = [-d[1], d[0]];
+        const sign = site.coast(c[0] + nr[0] * 25, c[1] + nr[1] * 25) >= site.coast(c[0] - nr[0] * 25, c[1] - nr[1] * 25) ? 1 : -1;
+        const ni: V2 = [nr[0] * sign, nr[1] * sign];
+        const off = (q[0] - c[0]) * ni[0] + (q[1] - c[1]) * ni[1];
+        const need = r.hw + CLEAR + halfBand + 0.5;
+        if (off < need && (!best || need - off > best.move)) {
+          best = { ni, move: need - off };
+        }
+      }
+      if (!best || best.move < 0.05) {
+        break;
+      }
+      q = [q[0] + best.ni[0] * best.move, q[1] + best.ni[1] * best.move];
+    }
+    const m = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (m > 60) {
+      return p;
+    }
+    if (m > 0.05 && k > 0) {
+      moved += cum[k] - cum[k - 1];
+    }
+    return q;
+  });
+  return { pts: dedupe(simplify(out, 0.3)), moved };
+}
+
 /** Joins open runs with the same tags that share an end point (continuous walls get mitred corners). */
 function mergeRuns(runs: Run[]): Run[] {
   const EPS = 0.6;
@@ -650,6 +709,12 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
 
     /* Buildings: shift / thin the wall around them, open it where one stands on the line (fit.ts). */
     let fit: Fit | null = null;
+    if (fp && r.meta.src && !r.closed) {
+      const sn = snapRoadside(r.pts, fp, site, thickness / 2 + spec.batter);
+      r.pts = sn.pts;
+      r.cum = lengths(r.pts);
+      add('roads.snappedMetres', sn.moved);
+    }
     if (fp) {
       fit = fitRun(r.pts, thickness, spec.batter, fp, skip, (f, why) => {
         if (!displaced.has(f.id)) {
@@ -685,7 +750,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
     add(`km.${r.cls}`, total / 1000);
 
     /* Build the run; pieces that would still stand in a building (bandHits) open the wall there and it is rebuilt. */
-    const extra: [number, number][] = [];
+    const extra: [number, number, boolean][] = [];
     for (let pass = 0; ; pass++) {
       const local: Record<string, number> = {};
       const addL = (k: string, v: number): void => {
@@ -713,8 +778,8 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
           }
         }
       }
-      for (const [s0, s1] of [...(fit?.blocked ?? []), ...extra]) {
-        iv.push({ s0, s1, kind: Opening.Building });
+      for (const [s0, s1, road] of [...(fit?.blocked ?? []), ...extra]) {
+        iv.push({ s0, s1, kind: road ? Opening.Road : Opening.Building });
         addL('buildings.breaks', 1);
         addL('buildings.breakMetres', s1 - s0);
       }
@@ -1027,7 +1092,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
       if (hits.length) {
         for (const h of hits) {
           const s = project(r.pts, r.cum, h[0], h[1]).s;
-          extra.push([s - 0.6, s + 0.6]);
+          extra.push([s - 0.6, s + 0.6, false]);
         }
         continue;
       }
@@ -1056,6 +1121,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
     overlap = wallOverlaps(pieces, fp, skip, (src) => stretchOf.get(src) ?? String(src));
     stats['check.overlapMetres'] = overlap.metres;
     stats['check.overlapCount'] = overlap.count;
+    stats['check.roadMetres'] = overlap.roadMetres;
   }
   for (const k of Object.keys(stats)) {
     stats[k] = Math.round(stats[k] * 100) / 100;

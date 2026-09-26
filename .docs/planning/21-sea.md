@@ -293,7 +293,7 @@ with no ground plane, so the rig walked its legs on its default standing plane u
   body rises onto the surface (float depth 0.6 → 0.05 m), the wings open (spread 0.85) and beat hard with the stroke
   amplitude limited to 0.7, each downstroke slapping the water with a splash at both wingtips; the hind legs paddle
   quickly (1.5 Hz); then the leap (`SWIM.leapUp` / `leapForward` on top of the run's speed: it leaves the water at
-  ~10 m/s). V (urge) still leaps at once. Not yet: a longer run in rough seas (strand 6).
+  ~10 m/s). (The instant V leap was removed with the urge on 26 Sep, see [20](20-movement.md).) Not yet: a longer run in rough seas (strand 6).
 - **Plunge / breach:** surfacing from `underwater` enters swimming through the same settle and blend; a breach leaves
   as before.
 - **Shore (wading):** swimming turns into `grounded` where the seabed is within the legs' reach
@@ -689,7 +689,6 @@ only as the far LOD and as a fallback on "low".
 | L low and slow over water | claw dip (touch-and-go on the water) |
 | Swimming: Ctrl | duck under |
 | Swimming: Space or L | water take-off run (wings slapping the water), then the leap |
-| Swimming: V | instant leap out of the water |
 
 ## Tooling and verification
 

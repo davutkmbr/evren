@@ -7,10 +7,12 @@
  * ambient gulls (no bird pops in) and hands them back at the end; extra gulls fly in from out of view and leave again.
  */
 import * as THREE from 'three';
-import type { EngineContext, VesselPose } from '../../../core/contracts';
-import { RenderLayers } from '../../../core/contracts';
-import { createBirdMaterial } from '../../../world/life/birds/bird-material';
-import type { MomentActor } from '../types';
+import type { EngineContext, VesselPose } from '../../core/contracts';
+import { RenderLayers } from '../../core/contracts';
+import { createBirdMaterial } from '../../world/life/birds/bird-material';
+import type { MomentActor } from '../actors';
+import type { MomentEndReason } from '../runtime';
+import type { Moment } from '../types';
 import { GullFlock, GullState, PieceState, type FerryFrame, type FlockEvent, type Point3 } from './flock';
 import { buildGullGeometry, buildSimitPieceGeometry } from './geometry';
 
@@ -44,7 +46,58 @@ function frameOf(p: VesselPose, out: FerryFrame): FerryFrame {
   return out;
 }
 
-export function createGullSimitActor(ctx: EngineContext, anchorId: number | undefined): MomentActor | null {
+/** One running scene: follows its ferry until it has wound down (`done`). */
+interface GullScene {
+  update(dt: number, momentPlaying: boolean, hurry: boolean): void;
+  readonly done: boolean;
+  dispose(): void;
+}
+
+/**
+ * The scene actor of 'moments/ferry-gull-flock' (./actors.ts): builds the scene at the ferry the moment started at,
+ * lets it linger after the lines while the dragon stays near, and removes it once it has wound down.
+ */
+export class GullSimitActor implements MomentActor {
+  private scene: GullScene | null = null;
+  private playing = false;
+  private hurry = false;
+
+  get active(): boolean {
+    return this.scene !== null;
+  }
+
+  start(_moment: Moment, ctx: EngineContext, _forced: boolean, anchorId?: number): void {
+    this.scene?.dispose();
+    this.scene = createGullScene(ctx, anchorId);
+    this.playing = true;
+    this.hurry = false;
+  }
+
+  end(reason: MomentEndReason): void {
+    this.playing = false;
+    // A race or the settings end it: wind down at once instead of lingering.
+    this.hurry = reason === 'race' || reason === 'disabled';
+  }
+
+  update(dt: number): void {
+    const scene = this.scene;
+    if (!scene) {
+      return;
+    }
+    scene.update(dt, this.playing, this.hurry);
+    if (scene.done) {
+      scene.dispose();
+      this.scene = null;
+    }
+  }
+
+  dispose(): void {
+    this.scene?.dispose();
+    this.scene = null;
+  }
+}
+
+function createGullScene(ctx: EngineContext, anchorId: number | undefined): GullScene | null {
   const life = ctx.services.tryGet('life');
   if (!life || anchorId === undefined) {
     return null;
@@ -160,7 +213,7 @@ export function createGullSimitActor(ctx: EngineContext, anchorId: number | unde
   function sounds(): void {
     const audio = ctx.services.tryGet('audio');
     flock.drainEvents(events);
-    if (!audio?.playAt) {
+    if (!audio?.momentCue) {
       return;
     }
     for (const ev of events) {
@@ -171,7 +224,7 @@ export function createGullSimitActor(ctx: EngineContext, anchorId: number | unde
       soundP.x = flock.px[ev.index];
       soundP.y = flock.py[ev.index];
       soundP.z = flock.pz[ev.index];
-      audio.playAt('gull', soundP, ev.kind === 'catch' ? 0.9 : 0.75);
+      audio.momentCue('gull-call', soundP, ev.kind === 'catch' ? 0.9 : 0.75);
     }
     if (clock - lastFlap >= GULL_ACTOR_TUNING.flapSpacing) {
       let best = -1;
@@ -189,13 +242,13 @@ export function createGullSimitActor(ctx: EngineContext, anchorId: number | unde
         soundP.x = flock.px[best];
         soundP.y = flock.py[best];
         soundP.z = flock.pz[best];
-        audio.playAt('bird-flap', soundP, Math.min(1, flock.flapAmp[best]));
+        audio.momentCue('gull-wingbeat', soundP, Math.min(1, flock.flapAmp[best]));
       }
     }
   }
 
   return {
-    update(dt: number, momentPlaying: boolean): void {
+    update(dt: number, momentPlaying: boolean, hurry: boolean): void {
       if (disposed || finished || !(dt > 0)) {
         return;
       }
@@ -219,7 +272,7 @@ export function createGullSimitActor(ctx: EngineContext, anchorId: number | unde
       }
       if (!playing && !flock.released) {
         const near = dragon ? Math.hypot(dragonP.x - ferry.x, dragonP.z - ferry.z) < GULL_ACTOR_TUNING.lingerRadius : false;
-        if (!alive || !near || pose.speed < 1 || clock > GULL_ACTOR_TUNING.maxDuration) {
+        if (hurry || !alive || !near || pose.speed < 1 || clock > GULL_ACTOR_TUNING.maxDuration) {
           flock.release(camP);
         }
       }
