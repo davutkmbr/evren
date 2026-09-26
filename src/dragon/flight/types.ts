@@ -18,12 +18,18 @@ export interface PilotCommand {
   flapPressed: boolean;
   landPressed: boolean;
   roarPressed: boolean;
-  /** Maneuver edges: A / D double tap (roll), S double tap (loop), Shift double tap (drop), V (the rider's "dehh"). */
+  /**
+   * Maneuver edges: A / D double tap (roll), S double tap (loop), Shift double tap (dart when fast, drop when slow),
+   * V (the rider's "dehh"), Space double tap (power stroke), Q / E double tap (side-slip).
+   */
   rollLeftPressed: boolean;
   rollRightPressed: boolean;
   loopPressed: boolean;
   dropPressed: boolean;
   urgePressed: boolean;
+  powerPressed: boolean;
+  slipLeftPressed: boolean;
+  slipRightPressed: boolean;
 }
 
 /** Assist-layer targets that replace stick input (autopilot, tests, landing approach). */
@@ -53,7 +59,48 @@ export interface SimWorld {
 }
 
 /** Maneuver ids announced to the game ('maneuver' event); 'hint' explains a refused trick. */
-export type ManeuverId = 'roll' | 'loop' | 'freefall' | 'catch' | 'urge' | 'takeoff' | 'land' | 'runout' | 'touchgo' | 'plunge' | 'breach' | 'hint';
+export type ManeuverId =
+  | 'roll'
+  | 'loop'
+  | 'freefall'
+  | 'catch'
+  | 'urge'
+  | 'takeoff'
+  | 'land'
+  | 'runout'
+  | 'touchgo'
+  | 'plunge'
+  | 'breach'
+  | 'power'
+  | 'dart'
+  | 'slip'
+  | 'skim'
+  | 'hint';
+
+/** Phase 20 stage B moves that report a clean or unclean end (flow hooks). */
+export type MoveId = 'power' | 'dart' | 'slip' | 'skim';
+
+/** A finished move (Maneuvers.log; headless checks and the future flow system). */
+export interface MoveRecord {
+  id: MoveId;
+  /** Sim time at the start (s) and length (s). */
+  start: number;
+  duration: number;
+  /** Airspeed at the start and at the end (m/s). */
+  entrySpeed: number;
+  exitSpeed: number;
+  /** Height at the end minus at the start (m). */
+  heightChange: number;
+  /** No contact, no stall, exit speed >= entry speed - the move's tolerance, not ended early. */
+  clean: boolean;
+  contact: boolean;
+  stalled: boolean;
+  /** Ended early (too low, landed, splashed down). */
+  forced: boolean;
+  /** Side-slip: lateral shift (m, along the slip) and heading change (rad). */
+  lateral: number;
+  headingChange: number;
+}
 
 /** One-shot sounds requested by the flight model (AudioService one-shots). */
 export type FlightSound = 'wing-snap' | 'whoosh';
@@ -92,6 +139,9 @@ export function createPilotCommand(): PilotCommand {
     loopPressed: false,
     dropPressed: false,
     urgePressed: false,
+    powerPressed: false,
+    slipLeftPressed: false,
+    slipRightPressed: false,
   };
 }
 
@@ -121,6 +171,9 @@ export function copyPilotCommand(from: PilotCommand, to: PilotCommand): PilotCom
   to.loopPressed = from.loopPressed;
   to.dropPressed = from.dropPressed;
   to.urgePressed = from.urgePressed;
+  to.powerPressed = from.powerPressed;
+  to.slipLeftPressed = from.slipLeftPressed;
+  to.slipRightPressed = from.slipRightPressed;
   return to;
 }
 
@@ -134,9 +187,21 @@ export const PILOT_EDGES = {
   loop: 'loopPressed',
   drop: 'dropPressed',
   urge: 'urgePressed',
+  power: 'powerPressed',
+  slipLeft: 'slipLeftPressed',
+  slipRight: 'slipRightPressed',
 } as const satisfies Record<string, keyof PilotCommand>;
 
 export type PilotEdge = keyof typeof PILOT_EDGES;
+
+/** A record of every edge name set to false (pending presses of the test hook and the headless runtime). */
+export function createEdgeRecord(): Record<PilotEdge, boolean> {
+  const out = {} as Record<PilotEdge, boolean>;
+  for (const name of Object.keys(PILOT_EDGES) as PilotEdge[]) {
+    out[name] = false;
+  }
+  return out;
+}
 
 /** ORs the edges of `from` into `into` (edges seen by any frame until a physics substep consumes them). */
 export function latchPilotEdges(from: PilotCommand, into: PilotCommand): void {
@@ -147,12 +212,7 @@ export function latchPilotEdges(from: PilotCommand, into: PilotCommand): void {
 
 /** Clears every edge-triggered field (after the first substep of a frame has seen them). */
 export function clearPilotEdges(cmd: PilotCommand): void {
-  cmd.flapPressed = false;
-  cmd.landPressed = false;
-  cmd.roarPressed = false;
-  cmd.rollLeftPressed = false;
-  cmd.rollRightPressed = false;
-  cmd.loopPressed = false;
-  cmd.dropPressed = false;
-  cmd.urgePressed = false;
+  for (const key of Object.values(PILOT_EDGES)) {
+    cmd[key] = false;
+  }
 }
