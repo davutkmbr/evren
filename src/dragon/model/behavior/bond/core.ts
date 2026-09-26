@@ -1,5 +1,5 @@
-import type { BondAudioCue, DragonMood } from '../../../../core/contracts';
-import { BehaviorScheduler, createFrame, resetFrame, type BehaviorContext, type BehaviorFrame } from './behaviors';
+import type { BondAudioCue, DragonMood, HardLandingPhase } from '../../../../core/contracts';
+import { BEHAVIORS, BehaviorScheduler, createFrame, resetFrame, type BehaviorContext, type BehaviorCue, type BehaviorDef, type BehaviorFrame } from './behaviors';
 import { AttentionController, GazeController, SafetyGate } from './gaze';
 import { MoodModel } from './mood';
 import { approach, bell, BOND, BondRng, clamp, createOutputs, envelope, smooth01, smoothstep, type BondInputs, type BondOutputs } from './types';
@@ -13,7 +13,30 @@ export const ENCOURAGE_CAPTIONS: Record<DragonMood, string> = {
   curious: 'Evren merakla sana baktı',
   playful: 'Evren oyuna hazır',
   excited: 'Evren coştu!',
+  embarrassed: 'Evren biraz mahcup ama seni duydu',
 };
+
+/** The head shake after a hard landing's get-up: never the same one twice in a row. */
+export type HardLandingReaction = 'grumble' | 'sneeze' | 'shake';
+export const HARD_LANDING_REACTIONS: readonly HardLandingReaction[] = ['grumble', 'sneeze', 'shake'];
+
+/** Cues of each head shake (normalised time), from the existing bond sounds. */
+const REACTION_CUES: Record<HardLandingReaction, readonly BehaviorCue[]> = {
+  grumble: [{ at: 0.5, sound: 'grumble', volume: 0.8 }],
+  sneeze: [
+    { at: 0.28, sound: 'sneeze', volume: 0.9 },
+    { at: 0.29, puff: 'smoke', strength: 0.7 },
+  ],
+  shake: [{ at: 0.66, sound: 'grumble', volume: 0.65 }],
+};
+
+function behaviorDef(id: string): BehaviorDef {
+  const def = BEHAVIORS.find((b) => b.id === id);
+  if (!def) {
+    throw new Error(`bond: no behaviour ${id}`);
+  }
+  return def;
+}
 
 interface Answer {
   mood: DragonMood;
@@ -49,6 +72,7 @@ const ANSWERS: Record<DragonMood, { duration: number; cues: AnswerCue[] }> = {
       { at: 0.55, sound: 'roar-short', volume: 0.9 },
     ],
   },
+  embarrassed: { duration: 1.6, cues: [{ at: 0.2, sound: 'huff', volume: 0.55 }] },
 };
 
 /**
@@ -89,6 +113,12 @@ export class BondCore {
   private patT = 99;
   private calm = 0;
   private tailCurl = 0;
+  private prevHard: HardLandingPhase | null = null;
+  private reaction: { variant: HardLandingReaction; sec: number; cue: number } | null = null;
+  private readonly reactionFrame: BehaviorFrame = createFrame();
+  /** The last hard landing head shake, and every one played (checks). */
+  lastReaction: HardLandingReaction | null = null;
+  readonly reactions: HardLandingReaction[] = [];
 
   constructor(seed = 0x5eed) {
     this.rng = new BondRng(seed);
@@ -155,6 +185,7 @@ export class BondCore {
     };
     this.behaviors.update(ctx, behaviorAllowed);
     const b = this.behaviors.frame;
+    this.updateReaction(ctx, dt);
     for (const cue of this.behaviors.cues) {
       if (cue.sound) {
         out.sounds.push({ cue: cue.sound, volume: cue.volume ?? 1 });
@@ -192,6 +223,7 @@ export class BondCore {
     this.calm = approach(this.calm, safety.critical ? 0 : 1, safety.critical ? 6 : 1, dt);
     const lv = this.mood.level * this.calm;
     const a = this.answerFrame;
+    mergeFrame(a, this.reactionFrame);
 
     // --- Combine ---
     const att = this.attention;
@@ -272,6 +304,65 @@ export class BondCore {
       this.mood.kick('excitement', 0.12);
       this.mood.kick('playfulness', 0.04);
     }
+    // Hard landing (phase 04): an "oof" and embarrassment at the impact, the head shake once it stands again.
+    const hard = inp.hardLanding;
+    if (hard !== this.prevHard) {
+      if (hard !== null && this.prevHard === null) {
+        this.mood.embarrass();
+        this.out.sounds.push({ cue: 'huff', volume: BOND.hardLanding.oofVolume });
+        this.reaction = null;
+      }
+      if (hard === 'shake') {
+        const options = HARD_LANDING_REACTIONS.filter((r) => r !== this.lastReaction);
+        const variant = this.rng.pick(options);
+        this.lastReaction = variant;
+        this.reactions.push(variant);
+        this.reaction = { variant, sec: 0, cue: 0 };
+      }
+      this.prevHard = hard;
+    }
+  }
+
+  /**
+   * The hard landing's head shake (not gated like the self-driven behaviours: it is the end of the hard landing):
+   * the shake-off's poses (a head shake, or the full wet-dog shake) and the sneeze's, with a grumble or a sneeze.
+   */
+  private updateReaction(ctx: BehaviorContext, dt: number): void {
+    const f = this.reactionFrame;
+    resetFrame(f);
+    const r = this.reaction;
+    if (!r) {
+      return;
+    }
+    r.sec += dt;
+    const duration = BOND.hardLanding.shakeTime;
+    const t = Math.min(1, r.sec / duration);
+    const cues = REACTION_CUES[r.variant];
+    while (r.cue < cues.length && cues[r.cue].at <= t) {
+      const c = cues[r.cue++];
+      if (c.sound) {
+        this.out.sounds.push({ cue: c.sound, volume: c.volume ?? 1 });
+      }
+      if (c.puff) {
+        this.out.puffs.push({ kind: c.puff, strength: c.strength ?? 1 });
+      }
+    }
+    if (r.variant === 'sneeze') {
+      // The sneeze first (its pose over the first half), then a quick head shake.
+      if (t < 0.55) {
+        behaviorDef('sneeze').sample('smoke', t / 0.55, r.sec, 1, ctx, f);
+      } else {
+        behaviorDef('shake-off').sample('head', (t - 0.55) / 0.45, r.sec, 1, ctx, f);
+      }
+    } else {
+      behaviorDef('shake-off').sample(r.variant === 'shake' ? 'full' : 'head', t, r.sec, 1, ctx, f);
+    }
+    if (r.variant === 'grumble') {
+      f.jaw = Math.max(f.jaw, 0.25 * Math.sin(Math.PI * clamp((t - 0.45) / 0.35, 0, 1)));
+    }
+    if (t >= 1) {
+      this.reaction = null;
+    }
   }
 
   private closestBird(inp: BondInputs): BehaviorContext['bird'] {
@@ -326,6 +417,13 @@ export class BondCore {
         f.bodyRoll = 0.1 * Math.sin(2 * Math.PI * 1.5 * t) * e;
         f.tailYaw = 0.3 * Math.sin(2 * Math.PI * 1.5 * t) * e;
         f.laugh = bell(t, 0.5, 0.3) * 0.6;
+        break;
+      case 'embarrassed':
+        // Looks away a little, lids lowered.
+        f.headRoll = -0.18 * e;
+        f.neckPitch = -0.12 * e;
+        f.neckYaw = 0.2 * e;
+        f.eyeLid = 0.4 * e;
         break;
       case 'excited': {
         // One joyful wing beat (visual, only while gliding; on the ground the wings shiver up) and a short roar.
@@ -414,4 +512,25 @@ export class BondCore {
       }
     }
   }
+}
+
+/** Adds a reaction frame onto another (offsets add, lids / jaw / wings take the larger). */
+function mergeFrame(into: BehaviorFrame, from: BehaviorFrame): void {
+  into.neckYaw += from.neckYaw;
+  into.neckPitch += from.neckPitch;
+  into.neckShake += from.neckShake;
+  into.headRoll += from.headRoll;
+  into.bodyRoll += from.bodyRoll;
+  into.tailYaw += from.tailYaw;
+  into.tailPitch += from.tailPitch;
+  into.jaw = Math.max(into.jaw, from.jaw);
+  into.eyeLid = Math.max(into.eyeLid, from.eyeLid);
+  into.laugh = Math.max(into.laugh, from.laugh);
+  into.plates = Math.max(into.plates, from.plates);
+  into.tailCurl = Math.max(into.tailCurl, from.tailCurl);
+  if (from.wingWeight > into.wingWeight) {
+    into.wingWeight = from.wingWeight;
+    into.wingSpread = from.wingSpread;
+  }
+  into.wingRaise = Math.max(into.wingRaise, from.wingRaise);
 }

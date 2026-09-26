@@ -31,7 +31,7 @@ export class SafetyGate {
     const g = BOND.gaze;
     const l = BOND.look;
     const airborne = AIRBORNE.has(inp.mode);
-    const critical = inp.racing || inp.perchBusy || inp.maneuvering || inp.firing || CRITICAL_MODES.has(inp.mode);
+    const critical = inp.racing || inp.perchBusy || inp.maneuvering || inp.firing || inp.hardLanding !== null || CRITICAL_MODES.has(inp.mode);
     if (inp.obstacleTime < g.obstacleBlock) {
       this.obstacleBlocked = true;
     } else if (inp.obstacleTime > g.obstacleRelease) {
@@ -66,7 +66,7 @@ interface Glance {
 }
 
 /** How often the dragon looks back on its own, by mood (multiplies the wait). */
-const GLANCE_WAIT: Record<DragonMood, number> = { content: 1, curious: 1.1, playful: 0.7, tired: 1.6, excited: 0.8 };
+const GLANCE_WAIT: Record<DragonMood, number> = { content: 1, curious: 1.1, playful: 0.7, tired: 1.6, excited: 0.8, embarrassed: 1.4 };
 
 /**
  * Looking back at the rider (DragonPose.gazeRider): while petted, when the rider's POV rests on the neck for

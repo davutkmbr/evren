@@ -228,10 +228,18 @@ export class PoseDriver {
       neckYaw += clamp(look.yaw, -1, 1) * 0.6 * look.weight;
       neckPitch += clamp(look.pitch, -0.8, 0.6) * 0.45 * look.weight;
     }
+    const hard = sim.hard;
+    const tumbling = hard.active && hard.stage === 'tumble';
+    if (tumbling) {
+      // Hard landing: the neck held straight through a roll, the head up off the ground in a plow or a belly skid (the
+      // sim models the head where this raise holds it).
+      neckPitch = hard.neckRaise;
+      neckYaw *= 0.2;
+    }
     pose.neckYaw = follow(pose.neckYaw, clamp(neckYaw, -0.9, 0.9), 4, dt);
     // The flare's neck bends further down (the rig adds an S-curve on top so the head stays level over the ground).
     const neckLow = 0.7 + (LANDING_POSE.neckLowFlare - 0.7) * (pose.landFlare ?? 0);
-    pose.neckPitch = follow(pose.neckPitch, clamp(neckPitch, -neckLow, 0.6), 4, dt);
+    pose.neckPitch = tumbling ? neckPitch : follow(pose.neckPitch, clamp(neckPitch, -neckLow, 0.6), 4, dt);
 
     // Tail: trails inside the turn, weathervanes into sideslip, lifts in pull-ups, drops as an airbrake.
     let tailYaw = clamp(-turnRate * 0.5 - sim.beta * 0.8, -0.6, 0.6);
@@ -293,6 +301,11 @@ export class PoseDriver {
     // it down to its kiss height instead (over the water it may touch).
     const tailLimit = skim > 0.01 ? this.tailKissLimit(sim) : -this.tailClearCurl(sim);
     tailPitch = Math.min(clamp(tailPitch, -0.5, Math.max(0.5, SKIM.tailMax * skim)), tailLimit);
+    if (tumbling) {
+      // The tail straight out behind through a roll, thrashing while the wings flail.
+      tailPitch = lerp(tailPitch, 0, 1 - hard.flail);
+      tailYaw += 0.35 * Math.sin(time * 9) * hard.flail;
+    }
     pose.tailYaw = follow(pose.tailYaw, clamp(tailYaw, -0.7, 0.7), 2.5, dt);
     pose.tailPitch = follow(pose.tailPitch, tailPitch, tailPitch < pose.tailPitch ? 6 : 2.5, dt);
 
@@ -319,6 +332,8 @@ export class PoseDriver {
       jaw = Math.max(jaw, 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(time * 5.5)));
     }
     jaw = Math.max(jaw, roar * (0.92 + 0.05 * Math.sin(time * 17)));
+    // A hard landing's impact: jaw open in surprise while the wings flail.
+    jaw = Math.max(jaw, tumbling ? 0.5 * hard.flail : 0);
     pose.jawOpen = follow(pose.jawOpen, clamp(jaw, 0, 1), 14, dt);
 
     // Rider: spring-damper driven by the specific force felt in the saddle, plus a speed tuck and turn lean.
@@ -537,6 +552,13 @@ export class PoseDriver {
     } else if (sim.mode === 'takeoff' || sim.leapCharge > 0 || sim.runTakeoff > 0) {
       left = right = -0.45;
       tuck = Math.max(tuck, 0.35);
+    }
+    if (sim.hard.active && sim.hard.hold > 0) {
+      // Hard landing: the rider holds on tight, low on the neck, both reins at the chest.
+      const hold = sim.hard.hold;
+      left = lerp(left, 1, hold);
+      right = lerp(right, 1, hold);
+      tuck = Math.max(tuck, hold);
     }
     this.reinLeft = follow(this.reinLeft, clamp(left, -1, 1), REIN_RATE, dt);
     this.reinRight = follow(this.reinRight, clamp(right, -1, 1), REIN_RATE, dt);

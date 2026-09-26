@@ -100,6 +100,12 @@ of a world `lookTarget`, glances are additive neck yaw / pitch offsets from body
   excitement (flow, speed over 42 m/s, tricks, discoveries; decays in ~22 s) and playfulness (fond, rested, a little
   excited; mornings and evenings). The mood is the best score (content is the resting state) with hysteresis: a
   challenger must lead by 0.12 for 4 s (1.5 s for excitement) and a mood holds at least 10 s.
+- **Hard landing** (phase 04): the impact makes it *embarrassed* at once (the embarrassment drive set to 1, decaying
+  with 5 s; the mood may go after 6 s, so it lasts ~10 s) with an "oof" (huff); the safety gate treats the whole hard
+  landing as critical (no gaze, no behaviours); once it stands again it plays a head shake that is not gated like the
+  behaviours: the shake-off's head shake with a grumble, the full wet-dog shake with a grumble, or the sneeze (smoke
+  puff) followed by a head shake — never the same one twice in a row (`BondCore.reactions`). Its V answer while
+  embarrassed is a small huff with the head turned away.
 - **Mood shows in pose and sound, no meters:** tired lowers the head and tail and weighs the lids; curious lifts the
   head with slow tilts; playful swings the tail; excited raises head and plates and widens the pupils; content keeps
   the plates a touch up. The pause menu shows one quiet line under the game's name ("Evren keyifli.").
