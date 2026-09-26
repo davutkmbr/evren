@@ -59,11 +59,14 @@ export function ringHeading(ring: readonly V2[]): number {
  * (land rings are counter-clockwise).
  */
 export function coastRuns(ctx: SiteContext, cx: number, cz: number, radius: number): V2[][] {
+  // Coastline vertices can lie hundreds of metres apart: resample every segment (COAST_STEP) before clipping to the
+  // circle, so a quay follows the shore across the whole radius.
+  const COAST_STEP = 6;
   const runs: V2[][] = [];
   const r2 = radius * radius;
   for (const line of ctx.coastlines) {
     let run: V2[] = [];
-    for (const p of line) {
+    const visit = (p: V2): void => {
       if ((p[0] - cx) ** 2 + (p[1] - cz) ** 2 <= r2) {
         run.push(p);
       } else if (run.length) {
@@ -71,6 +74,18 @@ export function coastRuns(ctx: SiteContext, cx: number, cz: number, radius: numb
           runs.push(run);
         }
         run = [];
+      }
+    };
+    for (let i = 0; i < line.length; i++) {
+      const a = line[i];
+      visit(a);
+      const b = line[i + 1];
+      if (!b) {
+        break;
+      }
+      const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / COAST_STEP);
+      for (let k = 1; k < n; k++) {
+        visit([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
       }
     }
     if (run.length > 1) {
