@@ -432,3 +432,117 @@ export const TRICKS = {
   /** Refused-trick hints repeat at most this often (s). */
   hintInterval: 6,
 } as const;
+
+/**
+ * Plunge dive, under-water movement and breach (phase 21 stage 3, underwater.ts). Angles rad, speeds m/s, depths and
+ * distances m (depths below the local wave surface), times s, forces as multiples of the dragon's weight.
+ */
+export const PLUNGE = {
+  /* Entry: a steep dive (flight path at least this steep) with folded wings (Shift dive or free fall). */
+  minPath: -35 * DEG,
+  /** Path tolerance at the moment of contact (the path may shallow a little on the last metres). */
+  contactSlack: 5 * DEG,
+  maxSpread: 0.5,
+  minSpeed: 16,
+  /**
+   * Seabed at least minDepth below the surface at the entry point and along `reach` m beyond it; up to steepDepth
+   * more at the entry point for steeper entries (from minPath to vertical: the 18 m body goes in head first).
+   */
+  minDepth: 6,
+  steepDepth: 5,
+  reach: 20,
+  reachSamples: 5,
+  /** Clear radius around the entry (and along the reach) from vessel hulls, piers and quay structures. */
+  hullMargin: 12,
+  /** Entry at least this far out from the coastline. */
+  shoreMargin: 30,
+  /**
+   * The plunge is armed (the dive floor lets the dragon into the water) when the entry is armTime + V / armSpeed s
+   * away or closer (beyond the dive floor's own look-ahead, so it never starts pulling out first).
+   */
+  armTime: 3.5,
+  armSpeed: 25,
+  /** Look-ahead refresh interval. */
+  lookInterval: 0.1,
+  /** Clearance the dive floor keeps over water that is fit to plunge into: none (land ahead still counts). */
+  floorWater: -1000,
+  /** Speed kept through the slam of the entry: entryKeepSlow at entrySlow m/s down to entryKeepFast at entryFast. */
+  entryKeepSlow: 0.9,
+  entryKeepFast: 0.66,
+  entrySlow: 20,
+  entryFast: 85,
+
+  /* Under water: a streamlined body (wings folded), slightly buoyant, with the water's added mass. */
+  /** Net upward acceleration when fully submerged (fraction of g). */
+  buoyancy: 0.14,
+  addedMass: 0.25,
+  /**
+   * Drag areas (m²) along the body with the wings folded (streamlined), along it with the wings half open as a brake
+   * (hands-off while fast: the plunge stops within a few metres), and across it (flanks, folded wings).
+   */
+  cdaAxial: 0.25,
+  cdaBrake: 2.4,
+  cdaLateral: 14,
+  /** The brake opens over this long once the hands-off delay has passed, and only above scullSpeed + 1 m/s. */
+  brakeRamp: 0.25,
+  /** Space: one strong wing-sweep stroke; peak force (× weight), power phase and stroke period. */
+  strokeForce: 3,
+  strokeTime: 0.45,
+  strokePeriod: 0.8,
+  strokeStamina: 0.008,
+  /** Gentle wing sculling toward this speed when the pilot gives no strokes (and the thrust gain per m/s). */
+  scullSpeed: 3.2,
+  scullGain: 1.2,
+  /** Pitch rate (rad/s) at rest, growing with speed through the water (1 + speed / pitchRateSpeed) up to maxPitchRate. */
+  pitchRate: 1.1,
+  pitchRateSpeed: 12,
+  maxPitchRate: 3,
+  yawRate: 0.8,
+  maxPitch: 70 * DEG,
+  /** Steepest nose-down attitude right after the entry (the body starts along the entry path). */
+  entryPitch: -85 * DEG,
+  /** Hands-off: after idleDelay the nose comes up to idlePitch (buoyancy and sculling bring the dragon back). */
+  idlePitch: 25 * DEG,
+  idleDelay: 0.15,
+  idlePitchRate: 0.9,
+  /** Surfacing on its own: after maxTime, at low air or over shoaling water; nose up to surfacePitch. */
+  maxTime: 9,
+  lowAir: 0.1,
+  shoalDepth: 3,
+  surfacePitch: 45 * DEG,
+  surfaceSpeed: 5,
+  /** Air (stamina) drained per second under water. */
+  airDrain: 0.02,
+  /** Surface current felt at depth: full at the surface, reduced by this fraction at currentDepth m and below. */
+  currentLoss: 0.3,
+  currentDepth: 15,
+  /** Seabed look-ahead (s along the velocity) and the clearance it keeps for the body spheres (m). */
+  seabedLook: 1.2,
+  seabedKeep: 2.5,
+  /** Bubbles reaching the surface above the head (fx splash strength and interval). */
+  bubbleInterval: 0.55,
+  bubbleStrength: 0.05,
+  /** A body pressed up under a hull for this long looks for the nearest way out (probes out to escapeReach). */
+  stuckTime: 0.4,
+  escapeReach: 64,
+  escapeForce: 0.35,
+
+  /** A slow rise surfaces into swimming once the centre is within this of the surface. */
+  surfaceBand: 1,
+
+  /* Breach: Space within breachDepth of the surface, or rising faster than breachRise through it. */
+  breachDepth: 2,
+  breachRise: 4.5,
+  /** Commit window: rising this fast within breachWindow m of the surface pre-opens the wings. */
+  breachWindow: 3,
+  /** Share of the underwater speed kept as flight speed, the least exit speed and its least upward part. */
+  retention: 0.6,
+  breachMinSpeed: 8,
+  breachMinUp: 7,
+  /** Push of the breaching stroke toward the surface (× weight), and the climb angle range at the exit. */
+  breachThrust: 1.6,
+  breachMinPath: 30 * DEG,
+  breachMaxPath: 75 * DEG,
+  /** For this long after the breach the water skim leaves the body alone (it is leaving the water, not skimming). */
+  exitGrace: 0.5,
+} as const;

@@ -180,7 +180,7 @@ function recordAt(records: readonly FrameRecord[], t: number): FrameRecord {
 async function renderScenario(s: Scenario, o: Options, view: View, base: string): Promise<string> {
   const t0 = performance.now();
   const rig = await buildRig();
-  const rt = new PoseRuntime(rig, GROUND_Y);
+  const rt = s.sea !== undefined ? new PoseRuntime(rig, -s.sea, true) : new PoseRuntime(rig, GROUND_Y);
   s.setup(rt);
   const records = rt.run({ seconds: s.seconds, renderFps: o.renderFps, script: s.script() });
   const tSim = performance.now() - t0;
@@ -238,7 +238,7 @@ async function renderScenario(s: Scenario, o: Options, view: View, base: string)
   );
   writeFileSync(
     `${base}.json`,
-    JSON.stringify({ scenario: s.name, description: s.description, view, windowStart: start, fps, renderFps: o.renderFps, groundY: GROUND_Y, feet, frames: sidecar }, null, 1),
+    JSON.stringify({ scenario: s.name, description: s.description, view, windowStart: start, fps, renderFps: o.renderFps, groundY: rt.groundY, feet, frames: sidecar }, null, 1),
   );
   console.log(`${s.name}: ${path} (sim ${tSim.toFixed(0)} ms, total ${(performance.now() - t0).toFixed(0)} ms)`);
   if (o.verify) {

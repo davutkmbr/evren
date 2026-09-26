@@ -13,6 +13,7 @@ import {
 } from './aero';
 import { integrateOrientation } from './body';
 import { enterGrounded, enterSwimming } from './locomotion';
+import { tryPlunge } from './underwater';
 import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
@@ -245,7 +246,8 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
  * relative to the moving water, planing lift along the surface normal); a flat sea at y = 0 without one.
  */
 function applyWaterSkim(sim: FlightSim, h: number): boolean {
-  if (!sim.overWater) {
+  // A breaching body is leaving the water, not skimming it (underwater.ts).
+  if (!sim.overWater || sim.dive.exitGrace > 0) {
     return false;
   }
   const p = sim.body.position;
@@ -256,6 +258,10 @@ function applyWaterSkim(sim: FlightSim, h: number): boolean {
     // Primed: the first contact of a skim always throws spray.
     sim.splashDistance = 1e3;
     return false;
+  }
+  // A steep folded dive into fit water plunges in instead of skimming (underwater.ts).
+  if (tryPlunge(sim)) {
+    return true;
   }
   sim.touchingWater = true;
   const water = sim.world.water;

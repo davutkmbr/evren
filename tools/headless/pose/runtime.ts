@@ -73,6 +73,14 @@ export function flatGeo(height: number): GeoQuery {
   return geo as unknown as GeoQuery;
 }
 
+/** Open sea everywhere: a flat seabed at `seabed` m (negative), the surface at y = 0 (no water service: flat calm). */
+export function seaGeo(seabed: number): GeoQuery {
+  const geo = flatGeo(seabed) as unknown as Record<string, unknown>;
+  geo.isWater = () => true;
+  geo.coastDistance = () => -5000;
+  return geo as unknown as GeoQuery;
+}
+
 /* ------------------------------------------------------------------ */
 /* Frame loop                                                           */
 /* ------------------------------------------------------------------ */
@@ -104,6 +112,9 @@ export interface FrameRecord {
   surfaceY: number;
   agl: number;
   footClearance: number;
+  /** Sea scenarios: the water surface and the seabed (the ground line is drawn at the seabed). */
+  waterY?: number;
+  seabedY?: number;
   pitchDeg: number;
   bankDeg: number;
   headingDeg: number;
@@ -144,9 +155,11 @@ export class PoseRuntime {
   constructor(
     readonly rig: DragonRigImpl,
     readonly groundY: number,
+    /** Open sea with the seabed at groundY (negative) instead of flat land. */
+    readonly sea = false,
   ) {
     const collision = new CollisionWorld();
-    const geo = flatGeo(groundY);
+    const geo = sea ? seaGeo(groundY) : flatGeo(groundY);
     collision.setGeo(geo);
     this.sim.world.collision = collision;
     this.sim.world.geo = geo;
@@ -329,6 +342,7 @@ export class PoseRuntime {
       surfaceY: r(sim.surfaceY),
       agl: r(sim.agl, 100),
       footClearance: r(sim.footClearance, 100),
+      ...(this.sea ? { waterY: 0, seabedY: this.groundY } : {}),
       pitchDeg: r(sim.pitch / DEG, 10),
       bankDeg: r(sim.bank / DEG, 10),
       headingDeg: r(yawToHeading(sim.axes.yaw()), 10),
