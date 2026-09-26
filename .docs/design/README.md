@@ -109,6 +109,9 @@ stamina, the next gate).
   the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
   prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
+  The pause menu's top bar carries one quiet line about the dragon's mood under the game's name (`.menu-mood`,
+  11.5 px, `--ink-3`, e.g. "Evren keyifli."): the only place the mood is ever written; in flight it shows only in the
+  dragon's pose and sound (phase 06).
 - **Full-screen overlays (map, result):** content directly on a scrim or the map, chrome in the corners: title top
   left, close top right, controls bottom right, scale/attribution bottom left, hints bottom centre.
 - **On-scene prompts (countdown, editor):** horizontally centred text (the countdown in the `title` zone, never over

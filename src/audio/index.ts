@@ -173,6 +173,9 @@ export function createAudioSystem(): System {
     momentCue(cue, position, vol, panFrom): void {
       engine?.momentCue(cue, position, vol, panFrom);
     },
+    bondCue(cue, vol): void {
+      engine?.bondCue(cue, vol ?? 1);
+    },
     setMomentBed(amount: number): void {
       engine?.setMomentBed(amount);
     },
