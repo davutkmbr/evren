@@ -578,8 +578,12 @@ first links were half size at low flow. Nothing on screen said when to act or wh
   bursts in 120 s) and their flow unchanged (worst mean 0.061), random gestures earn 14 / 35 m/s of bursts a minute at
   p50 / p90 against the chained racer's ~60; `race-balance`, `races-check`, `speed-feel-check`, `hud-zones-check`,
   `air-moves`, `movement`, `lowflight` pass.
-- **Not yet:** the window bar and the hint in the game (the feel test); a single context "flow key" was offered as a
-  next step (the guided practice course is stage D v4 below).
+- **Not yet:** the window bar and the hint in the game (the feel test). The guided practice course offered as a next
+  step is stage D v4 below.
+- **Declined: a single context "flow key"** (one key that picks and flies the move that would link now). Owner
+  decision 26 Sep: when the game goes online it would act like an aid players race against, so every player keeps
+  the same manual controls. The readability aids stay informative only (the window bar, the next-move hint, the
+  practice course): they show what to do, the player still flies every move.
 
 ### Stage D v4 as built: guided chain practice (owner request 26 Sep, awaiting the feel test)
 
