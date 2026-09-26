@@ -70,6 +70,10 @@ export interface ControlTargets {
   /** Wing fold/unfold and sweep rates (1/s) for snaps; 0 = the muscles' normal rates. */
   spreadRate: number;
   sweepRate: number;
+  /** Parasite drag multiplier (a streamlined dart), 1 = normal. */
+  dragScale: number;
+  /** Extra muscle force on the body (world frame, N): the side-slip's wing and tail flick. */
+  readonly push: THREE.Vector3;
 }
 
 export function createControlTargets(): ControlTargets {
@@ -86,6 +90,8 @@ export function createControlTargets(): ControlTargets {
     liftBoost: 0,
     spreadRate: 0,
     sweepRate: 0,
+    dragScale: 1,
+    push: new THREE.Vector3(),
   };
 }
 
@@ -200,6 +206,8 @@ export class FlightController {
     t.liftBoost = 0;
     t.spreadRate = 0;
     t.sweepRate = 0;
+    t.dragScale = 1;
+    t.push.set(0, 0, 0);
     if (sim.beat.downstrokeStarted && this.burst) {
       this.burstBeats++;
     }
@@ -363,6 +371,18 @@ export class FlightController {
         this.diveLatched = cmd.dive;
         // An armed, clear plunge lets the dive into the water (underwater.ts).
         floor = this.groundFloor(sim, PROXIMITY.pilotLand, sim.dive.clear ? PLUNGE.floorWater : PROXIMITY.pilotWater, 1.2 + V / 40);
+        if (!sim.overWater) {
+          // Pushed on low over land (a skim): below the wanted clearance the floor climbs by the height missing, and
+          // the push fades out as the path nears the floor, so the dragon settles onto it instead of overshooting.
+          const missing = PROXIMITY.pilotLand - sim.footClearance;
+          if (missing > 0) {
+            floor = Math.max(floor, Math.min(PROXIMITY.pilotLandClimb, missing * PROXIMITY.pilotLandGain));
+          }
+          if (pitchRate < 0) {
+            const near = smoothstep(PROXIMITY.pilotLand + 4, PROXIMITY.pilotLand + 1, sim.footClearance);
+            pitchRate *= lerp(1, smoothstep(floor, floor + PROXIMITY.pilotFloorSoften, sim.gamma), near);
+          }
+        }
         tuck = cmd.dive && floor < sim.gamma - 3 * DEG;
       } else if (cmd.dive) {
         if (!this.diveLatched) {
@@ -472,8 +492,9 @@ export class FlightController {
 
     // Legs come down when slow and near the ground.
     t.legsOut = V < 20 ? smoothstep(40, 8, sim.footClearance) : 0;
-    // The urge ("dehh"): strong beats and a surge, the path hold keeps it level.
+    // The urge ("dehh"): strong beats and a surge, the path hold keeps it level; the power stroke likewise.
     sim.maneuvers.applyUrge(sim, t, !tuck && !cmd.brake);
+    sim.maneuvers.applyPower(sim, t, !tuck && !cmd.brake);
   }
 
   /**

@@ -91,7 +91,7 @@ export function enterGrounded(sim: FlightSim): void {
   sim.attachment = 1;
   sim.leapCharge = 0;
   sim.runTakeoff = 0;
-  sim.maneuvers.cancel();
+  sim.maneuvers.cancel(sim);
   // The stance starts from the touchdown's pitch, height and sink (ground-moves.ts), then settles.
   enterStance(sim, false);
   sim.body.angularVelocity.set(0, 0, 0);
@@ -110,7 +110,7 @@ export function enterSwimming(sim: FlightSim): void {
   sim.attachment = 1;
   sim.leapCharge = 0;
   sim.runTakeoff = 0;
-  sim.maneuvers.cancel();
+  sim.maneuvers.cancel(sim);
   sim.setMode('swimming');
 }
 

@@ -21,6 +21,9 @@ export function readPilotInput(input: Input, out: PilotCommand): PilotCommand {
   out.loopPressed = input.wasDoubleTapped('pitchUp');
   out.dropPressed = input.wasDoubleTapped('dive');
   out.urgePressed = input.wasPressed('urge');
+  out.powerPressed = input.wasDoubleTapped('flap');
+  out.slipLeftPressed = input.wasDoubleTapped('yawLeft');
+  out.slipRightPressed = input.wasDoubleTapped('yawRight');
   return out;
 }
 
@@ -37,7 +40,10 @@ export function hasPilotInput(cmd: PilotCommand): boolean {
     cmd.rollRightPressed ||
     cmd.loopPressed ||
     cmd.dropPressed ||
-    cmd.urgePressed
+    cmd.urgePressed ||
+    cmd.powerPressed ||
+    cmd.slipLeftPressed ||
+    cmd.slipRightPressed
   );
 }
 
@@ -67,6 +73,7 @@ export class Autopilot {
     cmd.brake = false;
     cmd.landPressed = false;
     cmd.rollLeftPressed = cmd.rollRightPressed = cmd.loopPressed = cmd.dropPressed = cmd.urgePressed = false;
+    cmd.powerPressed = cmd.slipLeftPressed = cmd.slipRightPressed = false;
     if (sim.mode === 'grounded' || sim.mode === 'swimming' || sim.mode === 'underwater') {
       cmd.flapPressed = true;
       return;
