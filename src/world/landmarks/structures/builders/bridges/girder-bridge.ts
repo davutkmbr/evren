@@ -6,7 +6,8 @@
 import type { StructureBuild } from '../../build/context';
 import { BridgeFrame } from '../../build/bridge-frame';
 import type { SurfaceState } from '../../build/mesh-builder';
-import { buildDeck, type DeckSection } from './deck';
+import type { DeckJoint } from '../../types';
+import { buildDeck, buildDeckColliders, type DeckSection } from './deck';
 import { buildPiers, type PierOptions } from './piers';
 import { DeckProfile } from './profile';
 
@@ -36,6 +37,8 @@ export interface GirderBridgeGeometry {
   sEndB: number;
   s0: number;
   s1: number;
+  /** Joints of the deck's landed ends (deck.ts deckPoint()). */
+  joints: DeckJoint[];
 }
 
 export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, extras?: (g: GirderBridgeGeometry) => void): GirderBridgeGeometry {
@@ -43,7 +46,7 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
   if (anchors.length < 4) {
     throw new Error('girder bridge needs 4 anchors');
   }
-  const frame = BridgeFrame.fromPoints(anchors[0], anchors[1]);
+  const frame = BridgeFrame.fromAnchors(anchors);
   const sPierA = frame.sOf(anchors[0]);
   const sPierB = frame.sOf(anchors[1]);
   const sEndA = frame.sOf(anchors[2]);
@@ -60,6 +63,7 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
       maxApproach: spec.maxApproach,
       maxGrade: spec.maxGrade,
       depth: section.depth,
+      halfWidth: section.halfWidth,
       minEnd: spec.minEnd,
     },
     frame,
@@ -69,7 +73,7 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
   const grade = (s: number): number => profile.grade(s);
   const s0 = profile.startS;
   const s1 = profile.endS;
-  buildDeck(b, frame, section, {
+  const joints = buildDeck(b, frame, section, {
     s0,
     s1,
     height,
@@ -78,14 +82,7 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
     partLength: 200,
     led: spec.led ? { group: spec.led.group, u0: 0, u1: 1, strength: spec.led.strength } : undefined,
   });
-  // Deck colliders: top at the drawn road surface (segmentCollider adds half the rise of each piece on top, so the
-  // pieces stay short); taller or longer boxes left invisible kerbs on the deck and a step at each abutment.
-  for (let s = s0; s < s1 - 1; s += 10) {
-    const e = Math.min(s + 10, s1);
-    const pa = frame.point(s, 0, height(s) - section.depth / 2);
-    const pb = frame.point(e, 0, height(e) - section.depth / 2);
-    b.segmentCollider(pa, pb, section.halfWidth, section.depth / 2);
-  }
+  buildDeckColliders(b, frame, s0, s1, height, () => section);
   const piers: number[] = [];
   for (const [from, to] of [
     [sPierA, s0],
@@ -110,7 +107,7 @@ export function buildGirderBridge(b: StructureBuild, spec: GirderBridgeSpec, ext
   void mid;
   buildPiers(b, frame, section, height, spec.pierSurface, piers.filter((s) => s < 0), spec.pier);
   buildPiers(b, frame, section, height, spec.pierSurface, piers.filter((s) => s >= 0), spec.pier);
-  const geometry: GirderBridgeGeometry = { frame, profile, height, sPierA, sPierB, sEndA, sEndB, s0, s1 };
+  const geometry: GirderBridgeGeometry = { frame, profile, height, sPierA, sPierB, sEndA, sEndB, s0, s1, joints };
   extras?.(geometry);
   return geometry;
 }

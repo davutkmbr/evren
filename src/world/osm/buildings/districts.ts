@@ -78,6 +78,45 @@ const TOPHANE: Palette = [
   [0xe8c26f, 1],
 ];
 
+/** Bosphorus villages and the islands: painted timber and stucco, whites, ochres, ox-blood, sage and grey-blue. */
+const YALI: Palette = [
+  [0xefe9dc, 5],
+  [0xe8d3a6, 3],
+  [0xb5654f, 2],
+  [0xc9c2a2, 2],
+  [0xbfc8c9, 2],
+  [0xe2c8b0, 2],
+  [0xd9b56e, 1],
+  [0xa7b59a, 1],
+];
+
+/**
+ * Profiles of the streamed regions (regions.ts). Each disc stays at least 2.2 radii from the Galata slice's build
+ * rect (districtAt cuts weights there), so the slice's buildings draw exactly as before.
+ */
+const REGION_DISTRICTS: readonly DistrictProfile[] = [
+  // Asian side: Kadıköy is mostly 6-8 storey 1960-80s apartment blocks around an older, lower çarşı.
+  { name: 'Kadıköy çarşı', lat: 40.9905, lon: 29.0255, radius: 330, arch: { [Arch.Plain]: 0.5, [Arch.Modern]: 0.3, [Arch.Levantine]: 0.2 }, floors: [4, 6], shops: 0.85, pitched: 0.15, wear: 0.45, balconies: 0.7, palette: APARTMENT },
+  { name: 'Kadıköy (Osmanağa, Rasimpaşa, Caferağa)', lat: 40.9875, lon: 29.0305, radius: 900, arch: { [Arch.Plain]: 0.62, [Arch.Modern]: 0.33, [Arch.Levantine]: 0.05 }, floors: [5, 8], shops: 0.35, pitched: 0.12, wear: 0.35, balconies: 1.2, palette: APARTMENT },
+  { name: 'Moda', lat: 40.982, lon: 29.026, radius: 420, arch: { [Arch.Plain]: 0.6, [Arch.Levantine]: 0.2, [Arch.Modern]: 0.2 }, floors: [4, 7], shops: 0.3, pitched: 0.22, wear: 0.3, balconies: 1.1, palette: APARTMENT },
+  { name: 'Haydarpaşa', lat: 40.9967, lon: 29.0192, radius: 260, arch: { [Arch.Modern]: 0.55, [Arch.Plain]: 0.35, [Arch.Civic]: 0.1 }, floors: [2, 4], shops: 0.15, pitched: 0.3, wear: 0.55, balconies: 0.4, palette: HAN },
+  { name: 'Üsküdar', lat: 41.0255, lon: 29.015, radius: 650, arch: { [Arch.Plain]: 0.55, [Arch.Modern]: 0.25, [Arch.Wood]: 0.1, [Arch.Levantine]: 0.1 }, floors: [3, 6], shops: 0.55, pitched: 0.45, wear: 0.45, balconies: 1.0, palette: APARTMENT },
+  { name: 'Beşiktaş', lat: 41.043, lon: 29.006, radius: 550, arch: { [Arch.Plain]: 0.55, [Arch.Modern]: 0.35, [Arch.Levantine]: 0.1 }, floors: [5, 8], shops: 0.55, pitched: 0.2, wear: 0.4, balconies: 1.0, palette: APARTMENT },
+  // Bosphorus villages: two to four storey timber and stucco houses under pitched roofs.
+  { name: 'Ortaköy', lat: 41.0474, lon: 29.0262, radius: 380, arch: { [Arch.Plain]: 0.45, [Arch.Wood]: 0.25, [Arch.Levantine]: 0.2, [Arch.Modern]: 0.1 }, floors: [2, 5], shops: 0.6, pitched: 0.6, wear: 0.35, balconies: 0.8, palette: YALI },
+  { name: 'Arnavutköy / Bebek', lat: 41.072, lon: 29.0435, radius: 700, arch: { [Arch.Wood]: 0.35, [Arch.Plain]: 0.4, [Arch.Levantine]: 0.15, [Arch.Modern]: 0.1 }, floors: [2, 4], shops: 0.35, pitched: 0.7, wear: 0.3, balconies: 0.8, palette: YALI },
+  { name: 'Rumeli Hisarı / Emirgan', lat: 41.095, lon: 29.056, radius: 900, arch: { [Arch.Wood]: 0.35, [Arch.Plain]: 0.4, [Arch.Modern]: 0.15, [Arch.Levantine]: 0.1 }, floors: [2, 4], shops: 0.25, pitched: 0.7, wear: 0.3, balconies: 0.8, palette: YALI },
+  { name: 'Anadolu Hisarı / Kanlıca / Çengelköy', lat: 41.075, lon: 29.063, radius: 1100, arch: { [Arch.Wood]: 0.4, [Arch.Plain]: 0.4, [Arch.Modern]: 0.1, [Arch.Levantine]: 0.1 }, floors: [2, 4], shops: 0.25, pitched: 0.75, wear: 0.35, balconies: 0.8, palette: YALI },
+  { name: 'Kuzguncuk / Beylerbeyi', lat: 41.04, lon: 29.037, radius: 600, arch: { [Arch.Wood]: 0.35, [Arch.Plain]: 0.45, [Arch.Levantine]: 0.1, [Arch.Modern]: 0.1 }, floors: [2, 4], shops: 0.3, pitched: 0.7, wear: 0.35, balconies: 0.9, palette: YALI },
+  // Historic peninsula and the Golden Horn outside the slice.
+  { name: 'Sultanahmet / Cankurtaran', lat: 41.0045, lon: 28.9775, radius: 420, arch: { [Arch.Plain]: 0.45, [Arch.Wood]: 0.2, [Arch.Levantine]: 0.2, [Arch.Modern]: 0.15 }, floors: [3, 5], shops: 0.5, pitched: 0.5, wear: 0.4, balconies: 0.7, palette: PERA },
+  { name: 'Kumkapı / Aksaray', lat: 41.0033, lon: 28.9645, radius: 520, arch: { [Arch.Plain]: 0.6, [Arch.Modern]: 0.25, [Arch.Levantine]: 0.1, [Arch.Wood]: 0.05 }, floors: [4, 6], shops: 0.6, pitched: 0.25, wear: 0.55, balconies: 0.9, palette: TOPHANE },
+  { name: 'Balat / Fener', lat: 41.0303, lon: 28.9478, radius: 550, arch: { [Arch.Plain]: 0.45, [Arch.Levantine]: 0.25, [Arch.Wood]: 0.2, [Arch.Modern]: 0.1 }, floors: [3, 5], shops: 0.4, pitched: 0.5, wear: 0.6, balconies: 1.0, palette: PERA },
+  { name: 'Eyüp', lat: 41.0475, lon: 28.9337, radius: 700, arch: { [Arch.Plain]: 0.6, [Arch.Modern]: 0.25, [Arch.Wood]: 0.15 }, floors: [3, 6], shops: 0.4, pitched: 0.4, wear: 0.45, balconies: 1.0, palette: APARTMENT },
+  // Princes' Islands: timber mansions in gardens.
+  { name: 'Adalar', lat: 40.8765, lon: 29.115, radius: 1600, arch: { [Arch.Wood]: 0.6, [Arch.Levantine]: 0.2, [Arch.Plain]: 0.2 }, floors: [2, 3], shops: 0.2, pitched: 0.85, wear: 0.35, balconies: 0.7, palette: YALI },
+];
+
 export const DISTRICTS: readonly DistrictProfile[] = [
   { name: 'Eminönü / Tahtakale', lat: 41.0168, lon: 28.9695, radius: 420, arch: { [Arch.Han]: 0.45, [Arch.Plain]: 0.3, [Arch.Modern]: 0.15, [Arch.Levantine]: 0.1 }, floors: [3, 6], shops: 0.9, pitched: 0.18, wear: 0.65, balconies: 0.3, palette: HAN },
   { name: 'Sirkeci', lat: 41.0152, lon: 28.9765, radius: 300, arch: { [Arch.Levantine]: 0.4, [Arch.Han]: 0.3, [Arch.Plain]: 0.2, [Arch.Modern]: 0.1 }, floors: [4, 6], shops: 0.75, pitched: 0.2, wear: 0.5, balconies: 0.5, palette: HAN },
@@ -90,6 +129,7 @@ export const DISTRICTS: readonly DistrictProfile[] = [
   { name: 'Kasımpaşa / Şişhane', lat: 41.0305, lon: 28.9675, radius: 480, arch: { [Arch.Plain]: 0.6, [Arch.Modern]: 0.2, [Arch.Wood]: 0.1, [Arch.Levantine]: 0.1 }, floors: [3, 6], shops: 0.4, pitched: 0.5, wear: 0.55, balconies: 1.0, palette: TOPHANE },
   { name: 'Galataport / Salıpazarı', lat: 41.0262, lon: 28.9828, radius: 190, arch: { [Arch.Modern]: 0.7, [Arch.Han]: 0.3 }, floors: [2, 4], shops: 0.6, pitched: 0.1, wear: 0.15, balconies: 0.2, palette: HAN },
   { name: 'Gümüşsuyu / Taksim', lat: 41.0362, lon: 28.9868, radius: 380, arch: { [Arch.Modern]: 0.4, [Arch.Plain]: 0.42, [Arch.Levantine]: 0.18 }, floors: [6, 9], shops: 0.4, pitched: 0.2, wear: 0.3, balconies: 0.9, palette: APARTMENT },
+  ...REGION_DISTRICTS,
 ];
 
 const FALLBACK: DistrictProfile = { name: 'default', lat: 0, lon: 0, radius: 1, arch: { [Arch.Plain]: 0.6, [Arch.Levantine]: 0.2, [Arch.Modern]: 0.2 }, floors: [3, 6], shops: 0.4, pitched: 0.4, wear: 0.45, balconies: 1.0, palette: APARTMENT };

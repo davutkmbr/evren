@@ -84,10 +84,13 @@ function floatTextureData(geo: GeoQuery): Float32Array | null {
 export class GeoWindowCutter {
   private readonly coastData: Float32Array | null;
 
-  /** `exclude`: optional rectangle where no procedural buildings are generated (land use cut to Landmark). */
+  /**
+   * `exclude`: rectangles where no procedural buildings are generated (land use cut to Landmark), read at every cut:
+   * the caller may change the list (OSM regions streaming in and out, world/osm/regions.ts osmActiveExclusion()).
+   */
   constructor(
     private readonly geo: GeoQuery,
-    private readonly exclude: WorldBounds | null = null,
+    private readonly exclude: readonly WorldBounds[] = [],
   ) {
     this.coastData = floatTextureData(geo);
   }
@@ -106,8 +109,7 @@ export class GeoWindowCutter {
       const src = (luR0 + r) * lu.width + luC0;
       luData.set(lu.data.subarray(src, src + luW), r * luW);
     }
-    const ex = this.exclude;
-    if (ex) {
+    for (const ex of this.exclude) {
       for (let r = 0; r < luH; r++) {
         const z = lu.originZ + (luR0 + r) * lu.cellSize;
         if (z < ex.minZ || z > ex.maxZ) {

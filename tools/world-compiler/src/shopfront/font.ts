@@ -20,7 +20,8 @@ const m = STROKE / 2;
 const b = m;
 const t = 1 - m;
 const MID = 0.52;
-const TRACK = 0.13;
+/** Letter spacing (cap heights). */
+export const TRACK = 0.13;
 
 function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: number): Pt[] {
   const n = Math.max(3, Math.ceil(Math.abs(a1 - a0) / 24));
@@ -122,6 +123,9 @@ export function textWidth(text: string): number {
 
 /** True when every character has a glyph. */
 export const hasGlyphs = (text: string): boolean => [...text].every((c) => c in GLYPHS);
+
+/** Every character with a glyph (the module library authors one glyph module per character). */
+export const glyphChars = (): string[] => Object.keys(GLYPHS);
 
 export interface TextOptions {
   material: MaterialName;

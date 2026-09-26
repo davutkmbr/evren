@@ -10,7 +10,8 @@ import type { WorldBounds } from '../../../core/contracts';
 import type { OsmData } from '../data';
 import { MeshBuf } from '../shared/buffers';
 import { ringArea, segDist } from '../shared/geometry';
-import { PLATFORM_HEIGHT, streetTramTracks, tramPlatforms, type Path } from '../shared/street-field';
+import { clipPlatformRing, PLATFORM_HEIGHT, platformClearance, tramPlatforms, type Path } from '../shared/street-field';
+import { tracksNear } from '../shared/tram-tracks';
 import type { StreetSurface } from '../shared/street-surface';
 import { GROUND_LAYER_INDEX } from './layers';
 
@@ -142,6 +143,10 @@ export function buildSteps(m: MeshBuf, paths: readonly Path[], surface: StreetSu
     }
     const [xa, za] = at(pts, cum, s0);
     const [xb, zb] = at(pts, cum, s1);
+    // Past the build rect there is no OSM ground (heights clamp to the rect edge): the flight would float.
+    if (!surface.covers(xa, za) || !surface.covers(xb, zb)) {
+      continue;
+    }
     const ya = surface.heightAt(xa, za);
     const yb = surface.heightAt(xb, zb);
     const up = yb >= ya;
@@ -230,11 +235,18 @@ export function triangulate(ring: readonly number[]): number[] {
 
 export function buildPlatforms(m: MeshBuf, data: Pick<OsmData, 'areas' | 'rails'>, surface: StreetSurface): number {
   const layer = GROUND_LAYER_INDEX.sidewalk;
-  const tracks = streetTramTracks(data);
   const g = surface.ground;
   let count = 0;
-  for (const a of tramPlatforms(data)) {
-    const ring = a.ring;
+  // Only the raised part of the outline (street-field.ts platformClearance: off the carriageway and clear of the
+  // rails, where StreetSurface.heightAt raises it; OSM often draws the platform over the rails).
+  const rings = tramPlatforms(data).flatMap((a) => {
+    const tracks = tracksNear(surface.tramTracks, a.ring, 6);
+    return clipPlatformRing(a.ring, platformClearance((x, z) => surface.distance(x, z), tracks)).map((ring) => ({ ring, tracks }));
+  });
+  for (const { ring, tracks } of rings) {
+    if (Math.abs(ringArea(ring)) < 2) {
+      continue;
+    }
     const n = ring.length / 2;
     // The top follows the street slope PLATFORM_HEIGHT above the carriageway (StreetSurface.heightAt matches it).
     const topAt = (x: number, z: number): number => g.yAt(x, z) + PLATFORM_HEIGHT;

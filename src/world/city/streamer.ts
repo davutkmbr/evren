@@ -47,6 +47,10 @@ interface CityNode {
   distance: number;
   triangles: number;
   buildings: number;
+  /** Request generation: refresh() bumps it so results of requests cut with an older geo window are dropped. */
+  gen: number;
+  /** Re-requested by refresh() while its current mesh stays displayed (swapped when the new one arrives). */
+  refreshing: boolean;
 }
 
 export interface CityLodParams {
@@ -122,6 +126,12 @@ export class CityStreamer {
     this.frameShadow += Math.max(c.shadow, 0) / 3;
   };
   params: CityLodParams;
+
+  /**
+   * Debug (?keepGeometry=1, set by scripts/walk-test.mjs): keep the CPU copies of chunk geometry after upload so test
+   * tools can ray-test the rendered buildings. Off for players (the arrays are released after upload).
+   */
+  keepCpuGeometry = false;
 
   constructor(
     private readonly pool: CityWorkerPool,
@@ -226,6 +236,8 @@ export class CityStreamer {
         distance: dist,
         triangles: 0,
         buildings: 0,
+        gen: 0,
+        refreshing: false,
       };
       this.nodes.set(key, n);
     }
@@ -349,8 +361,9 @@ export class CityStreamer {
       }
       const win = this.cutter.cut(n.x0 - WINDOW_MARGIN, n.z0 - WINDOW_MARGIN, n.x0 + n.size + WINDOW_MARGIN, n.z0 + n.size + WINDOW_MARGIN);
       n.state = 'loading';
+      const gen = n.gen;
       this.pool.submit(route, { type: 'tile', level: n.level, ix: n.ix, iz: n.iz, densityScale: this.params.densityScale, win }, (res) => {
-        if (res.type !== 'tile' || this.nodes.get(n.key) !== n) {
+        if (res.type !== 'tile' || this.nodes.get(n.key) !== n || n.gen !== gen) {
           return;
         }
         this.lastJobMs = res.ms;
@@ -378,8 +391,15 @@ export class CityStreamer {
       if (!res || this.nodes.get(n.key) !== n) {
         continue;
       }
+      const old = n.refreshing ? n.mesh : null;
+      if (old) {
+        n.mesh = null;
+      }
       this.buildMesh(n, res);
       n.state = 'ready';
+      if (n.refreshing) {
+        this.swapRefreshed(n, old);
+      }
       count++;
       if (performance.now() - t0 > budgetMs) {
         break;
@@ -405,8 +425,11 @@ export class CityStreamer {
     const release = function (this: THREE.BufferAttribute): void {
       (this as unknown as { array: ArrayLike<number> | null }).array = null;
     };
+    const keep = this.keepCpuGeometry;
     const attr = (name: string, a: THREE.BufferAttribute): void => {
-      a.onUpload(release);
+      if (!keep) {
+        a.onUpload(release);
+      }
       g.setAttribute(name, a);
     };
     attr('position', new THREE.BufferAttribute(m.position, 3));
@@ -415,7 +438,9 @@ export class CityStreamer {
     attr('aColor', new THREE.BufferAttribute(m.color, 4, false));
     attr('aParams', new THREE.BufferAttribute(m.params, 4, false));
     const index = new THREE.BufferAttribute(m.index, 1);
-    index.onUpload(release);
+    if (!keep) {
+      index.onUpload(release);
+    }
     g.setIndex(index);
     const [sx, sy, sz, r] = res.sphere;
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(sx, sy, sz), r);
@@ -431,6 +456,47 @@ export class CityStreamer {
     mesh.onBeforeShadow = this.beforeShadow as unknown as THREE.Mesh['onBeforeShadow'];
     n.mesh = mesh;
     n.triangles = m.index.length / 3;
+  }
+
+  /**
+   * Regenerates every chunk overlapping `rect` with the cutter's current exclusion list (an OSM region started or
+   * stopped drawing there). Displayed chunks keep their mesh until the new one is uploaded, then swap in place.
+   */
+  refresh(rect: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+    for (const n of this.nodes.values()) {
+      if (n.x0 > rect.maxX || n.x0 + n.size < rect.minX || n.z0 > rect.maxZ || n.z0 + n.size < rect.minZ) {
+        continue;
+      }
+      n.gen++;
+      this.pendingResults.delete(n);
+      if (n.state === 'ready') {
+        n.refreshing = true;
+      }
+      n.state = 'queued';
+    }
+  }
+
+  /** Puts the freshly built mesh of a refreshed chunk in place of `old` (same fade state and lamps). */
+  private swapRefreshed(n: CityNode, old: THREE.Mesh | null): void {
+    n.refreshing = false;
+    if (old && old !== n.mesh) {
+      this.group.remove(old);
+      old.geometry.dispose();
+    }
+    if (!n.displayed) {
+      return;
+    }
+    if (n.mesh) {
+      n.mesh.material = n.fadeHandle ? n.fadeHandle.material : this.materials.opaque;
+      this.group.add(n.mesh);
+    } else if (n.fadeHandle) {
+      this.materials.releaseFade(n.fadeHandle);
+      n.fadeHandle = null;
+    }
+    this.removeLamps(n);
+    if (n.target > 0) {
+      this.addLamps(n);
+    }
   }
 
   private overlapsDisplayedStale(n: CityNode): boolean {
@@ -614,7 +680,9 @@ export class CityStreamer {
   pending(): number {
     let n = 0;
     for (const node of this.nodes.values()) {
-      if (node.wanted && (!node.displayed || node.fade < 1)) {
+      if (node.refreshing && node.wanted) {
+        n++;
+      } else if (node.wanted && (!node.displayed || node.fade < 1)) {
         n++;
       } else if (!node.wanted && node.displayed) {
         n++;

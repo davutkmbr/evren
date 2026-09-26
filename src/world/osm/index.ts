@@ -1,18 +1,24 @@
 /**
- * OSM vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane, Cihangir): real OpenStreetMap streets,
- * buildings, traffic and details, always part of the map; the city, vegetation and life systems keep their
- * procedural buildings, urban trees and road traffic out of the area (area.ts osmExclusionRect()).
+ * Real OpenStreetMap content at flight scale: streets, buildings, traffic and details of the OSM regions
+ * (regions.ts): the Galata slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane, Cihangir), always loaded, and the
+ * regions around every landing spot, streamed in and out by distance. The city, vegetation and life systems keep
+ * their procedural buildings, trees and road traffic out of the regions (regions.ts exclusion lists).
  *
- * This system loads the data (data.ts), builds the shared foundation once (geo windows + street raster in
+ * Per region this system loads the data (data.ts), builds the shared foundation once (geo windows + street raster in
  * shared/foundation.worker.ts, see types.ts OsmContext) and orchestrates the four layers; each layer builds its
- * geometry in its own module worker. Data © OpenStreetMap contributors (ODbL), fetched by scripts/data/fetch-osm.mjs.
+ * geometry in its own module worker. Regions build one at a time, nearest first. Data © OpenStreetMap contributors
+ * (ODbL), fetched by scripts/data/fetch-osm.mjs (Galata) and scripts/data/osm-regions.mjs (regions).
  */
 import * as THREE from 'three';
-import type { EngineContext, GeoQuery, System } from '../../core/contracts';
+import type { EngineContext, GeoQuery, StreetGroundService, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
-import { OSM_DATA_URL, osmAreaRect, osmExclusionRect } from './area';
+import type { QualityPreset } from '../../core/quality';
 import { loadOsmData, type OsmData } from './data';
+import { osmRegions, setOsmRegionActive, type OsmRegionDef } from './regions';
 import { buildWorkerBase } from './shared/foundation';
+import { clipWaysToLand } from './shared/land';
+import { groundLines, linesCrossing, type GroundLine, type GroundLineCrossing } from './shared/ground-lines';
+import { classifyStreets } from './shared/street-field';
 import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
@@ -28,57 +34,125 @@ const LAYER_LOADERS: readonly { name: string; load: () => Promise<OsmLayerFactor
   { name: 'details', load: () => import('./details').then((m) => m.createDetailsLayer) },
 ];
 
-/** Debug handle: window.__osm (context, data and layers once loaded). */
-export interface OsmDebug {
-  ctx: OsmContext | null;
-  data: OsmData | null;
-  layers: readonly OsmLayer[];
+let factoriesJob: Promise<(OsmLayerFactory | null)[]> | null = null;
+
+function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
+  return (factoriesJob ??= Promise.all(
+    LAYER_LOADERS.map((l) =>
+      l.load().catch((e: unknown) => {
+        console.error(`[osm] layer "${l.name}" failed to load, skipping it`, e);
+        return null;
+      }),
+    ),
+  ));
 }
 
-class OsmSystem implements System {
-  readonly name = 'osm';
-  readonly order = UpdateOrder.World;
-  private readonly root = new THREE.Group();
-  private readonly layers: OsmLayer[] = [];
-  private ctx: OsmContext | null = null;
-  private data: OsmData | null = null;
-  private loading = 0;
+/**
+ * Streaming distances (m from the camera to a region's rect, horizontal) at the "high" preset: a region loads inside
+ * LOAD_DISTANCE and unloads beyond UNLOAD_DISTANCE; at most MAX_LOADED streamed regions are kept (nearest win).
+ */
+const LOAD_DISTANCE = 2600;
+const UNLOAD_DISTANCE = 3400;
+const MAX_LOADED = 8;
+const DISTANCE_SCALE: Record<QualityPreset, number> = { low: 0.55, medium: 0.75, high: 1, ultra: 1.3 };
+/** Camera travel (m) between two streaming decisions. */
+const RESELECT_STEP = 50;
+
+type RegionState = 'loading' | 'ready' | 'failed';
+
+/** One loaded region: its data, foundation, context and layers. */
+class OsmRegion {
+  readonly group = new THREE.Group();
+  readonly layers: OsmLayer[];
+  ctx: OsmContext | null = null;
+  data: OsmData | null = null;
+  state: RegionState = 'loading';
+  /** The region's rect is in the active exclusion list (its buildings are drawn). */
+  active = false;
+  loadMs = 0;
   private cancel: (() => void) | null = null;
   private disposed = false;
+  private lines: GroundLine[] | null = null;
 
-  init(engine: EngineContext): void {
-    this.root.name = 'osm';
-    engine.scene.add(this.root);
-    this.loading = 1;
-    void engine.services
-      .when('geo')
-      .then((geo) => this.load(engine, geo))
-      .catch((e: unknown) => {
-        if (!this.disposed) {
-          console.error('[osm] failed to load', e);
-        }
-      })
-      .finally(() => {
-        this.loading = 0;
-      });
-    const system = this;
-    (window as unknown as { __osm: OsmDebug }).__osm = {
-      get ctx() {
-        return system.ctx;
-      },
-      get data() {
-        return system.data;
-      },
-      layers: this.layers,
-    };
+  constructor(
+    readonly def: OsmRegionDef,
+    parent: THREE.Object3D,
+    layers: OsmLayer[] = [],
+  ) {
+    this.layers = layers;
+    this.group.name = `osm-${def.id}`;
+    parent.add(this.group);
   }
 
+  async load(engine: EngineContext, geo: GeoQuery): Promise<void> {
+    const t0 = performance.now();
+    const data = await loadOsmData(this.def.url);
+    if (this.disposed) {
+      return;
+    }
+    // Vehicle ways never over water (sea tunnels, reclaimed ground the flight world does not have).
+    const clip = clipWaysToLand(data, (x, z) => geo.coastDistance(x, z));
+    const t1 = performance.now();
+    const job = buildWorkerBase(geo, data, this.def.rect, this.def.area);
+    this.cancel = job.cancel;
+    const { base, ms } = await job.promise;
+    this.cancel = null;
+    if (this.disposed) {
+      return;
+    }
+    base.fade = this.def.fade;
+    const ctx: OsmContext = {
+      engine,
+      geo,
+      area: base.area,
+      rect: base.rect,
+      fade: this.def.fade,
+      base,
+      surface: new StreetSurface(base),
+      footprints: new FootprintIndex(data.buildings),
+    };
+    this.ctx = ctx;
+    this.data = data;
+    const t2 = performance.now();
+    const factories = await layerFactories();
+    if (this.disposed) {
+      return;
+    }
+    factories.forEach((factory, i) => {
+      if (!factory) {
+        return;
+      }
+      try {
+        const layer = factory(ctx, data);
+        this.layers.push(layer);
+        this.group.add(layer.group);
+      } catch (e) {
+        console.error(`[osm:${this.def.id}] layer "${LAYER_LOADERS[i].name}" failed to build, skipping it`, e);
+      }
+    });
+    this.state = 'ready';
+    this.loadMs = Math.round(performance.now() - t0);
+    console.info(
+      `[osm:${this.def.id}] data ${Math.round(t1 - t0)} ms (${data.buildings.length} buildings, ${data.roads.length} roads, ${data.points.length} points), street raster ${base.street.w}x${base.street.h} in ${ms} ms (total ${Math.round(t2 - t1)} ms), ways over water: ${clip.clipped} clipped, ${clip.removed} removed (${clip.metres} m), layers started`,
+    );
+  }
+
+  /** Outstanding jobs of this region (loading, layer workers, uploads). */
   pending(): number {
-    let n = this.loading;
+    let n = this.state === 'loading' ? 1 : 0;
     for (const l of this.layers) {
       n += l.pending?.() ?? 0;
     }
     return n;
+  }
+
+  /** Buildings uploaded (or the buildings layer missing): the procedural city may step aside. */
+  buildingsDrawn(): boolean {
+    if (this.state !== 'ready') {
+      return false;
+    }
+    const buildings = this.layers.find((l) => l.group.name === 'osm-buildings');
+    return buildings ? (buildings.pending?.() ?? 0) === 0 : this.pending() === 0;
   }
 
   update(dt: number): void {
@@ -91,55 +165,9 @@ class OsmSystem implements System {
     }
   }
 
-  private async load(engine: EngineContext, geo: GeoQuery): Promise<void> {
-    const t0 = performance.now();
-    const data = await loadOsmData(OSM_DATA_URL);
-    if (this.disposed) {
-      return;
-    }
-    const t1 = performance.now();
-    const job = buildWorkerBase(geo, data, osmExclusionRect(), osmAreaRect());
-    this.cancel = job.cancel;
-    const { base, ms } = await job.promise;
-    this.cancel = null;
-    if (this.disposed) {
-      return;
-    }
-    const ctx: OsmContext = {
-      engine,
-      geo,
-      area: base.area,
-      rect: base.rect,
-      base,
-      surface: new StreetSurface(base),
-      footprints: new FootprintIndex(data.buildings),
-    };
-    this.ctx = ctx;
-    this.data = data;
-    const t2 = performance.now();
-    const factories = await Promise.all(
-      LAYER_LOADERS.map((l) =>
-        l.load().catch((e: unknown) => {
-          console.error(`[osm] layer "${l.name}" failed to load, skipping it`, e);
-          return null;
-        }),
-      ),
-    );
-    factories.forEach((factory, i) => {
-      if (!factory || this.disposed) {
-        return;
-      }
-      try {
-        const layer = factory(ctx, data);
-        this.layers.push(layer);
-        this.root.add(layer.group);
-      } catch (e) {
-        console.error(`[osm] layer "${LAYER_LOADERS[i].name}" failed to build, skipping it`, e);
-      }
-    });
-    console.info(
-      `[osm] data ${Math.round(t1 - t0)} ms (${data.buildings.length} buildings, ${data.roads.length} roads, ${data.points.length} points), street raster ${base.street.w}x${base.street.h} in ${ms} ms (total ${Math.round(t2 - t1)} ms), layers started`,
-    );
+  /** Tram tracks and lane lines of the drawn ground (streetGround.linesAcross), built on first use. */
+  groundLines(): GroundLine[] {
+    return (this.lines ??= groundLines(this.ctx!.surface.tramTracks, classifyStreets(this.data!.roads)));
   }
 
   dispose(): void {
@@ -149,6 +177,223 @@ class OsmSystem implements System {
       l.dispose();
     }
     this.layers.length = 0;
+    this.group.removeFromParent();
+    this.ctx = null;
+    this.data = null;
+  }
+}
+
+const inside = (r: { minX: number; maxX: number; minZ: number; maxZ: number }, x: number, z: number): boolean => x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
+
+function rectDistance(r: OsmRegionDef['rect'], x: number, z: number): number {
+  return Math.hypot(Math.max(r.minX - x, 0, x - r.maxX), Math.max(r.minZ - z, 0, z - r.maxZ));
+}
+
+/** Debug handle: window.__osm (the Galata slice's context, data and layers, plus the region streamer state). */
+export interface OsmDebug {
+  ctx: OsmContext | null;
+  data: OsmData | null;
+  layers: readonly OsmLayer[];
+  /** Every region with its state and distance (m) from the camera. */
+  regions(): { id: string; state: string; active: boolean; distance: number; pending: number; loadMs: number; buildings: number }[];
+  /** Context, data and layers of a loaded region. */
+  region(id: string): { ctx: OsmContext | null; data: OsmData | null; layers: readonly OsmLayer[] } | null;
+}
+
+class OsmSystem implements System {
+  readonly name = 'osm';
+  readonly order = UpdateOrder.World;
+  private readonly root = new THREE.Group();
+  /** Galata's layer list (a stable array for window.__osm.layers). */
+  private readonly galataLayers: OsmLayer[] = [];
+  private readonly loaded = new Map<string, OsmRegion>();
+  private engine: EngineContext | null = null;
+  private geo: GeoQuery | null = null;
+  private building: OsmRegion | null = null;
+  private waiting = 1;
+  private readonly lastCam = new THREE.Vector3(Infinity, 0, Infinity);
+  /** Streamed regions wanted at the last decision (for pending()). */
+  private wantedMissing = 0;
+  private disposed = false;
+
+  init(engine: EngineContext): void {
+    this.root.name = 'osm';
+    engine.scene.add(this.root);
+    this.engine = engine;
+    void engine.services
+      .when('geo')
+      .then((geo) => {
+        if (this.disposed) {
+          return;
+        }
+        this.geo = geo;
+        this.waiting = 0;
+        this.start(osmRegions()[0], this.galataLayers);
+      })
+      .catch((e: unknown) => console.error('[osm] failed to start', e));
+    const system = this;
+    const galata = (): OsmRegion | undefined => this.loaded.get('galata');
+    (window as unknown as { __osm: OsmDebug }).__osm = {
+      get ctx() {
+        return galata()?.ctx ?? null;
+      },
+      get data() {
+        return galata()?.data ?? null;
+      },
+      layers: this.galataLayers,
+      regions: () => {
+        const cam = system.engine?.camera.position ?? new THREE.Vector3();
+        return osmRegions().map((d) => {
+          const r = system.loaded.get(d.id);
+          return {
+            id: d.id,
+            state: r ? r.state : 'unloaded',
+            active: r?.active ?? false,
+            distance: Math.round(rectDistance(d.rect, cam.x, cam.z)),
+            pending: r?.pending() ?? 0,
+            loadMs: r?.loadMs ?? 0,
+            buildings: r?.data?.buildings.length ?? 0,
+          };
+        });
+      },
+      region: (id: string) => {
+        const r = system.loaded.get(id);
+        return r ? { ctx: r.ctx, data: r.data, layers: r.layers } : null;
+      },
+    };
+  }
+
+  pending(): number {
+    let n = this.waiting + this.wantedMissing;
+    for (const r of this.loaded.values()) {
+      n += r.pending();
+    }
+    return n;
+  }
+
+  update(dt: number): void {
+    const engine = this.engine;
+    if (!engine || !this.geo) {
+      return;
+    }
+    const cam = engine.camera.position;
+    if (this.building && this.building.state !== 'loading' && this.building.pending() === 0) {
+      this.building = null;
+    }
+    if (Math.hypot(cam.x - this.lastCam.x, cam.z - this.lastCam.z) > RESELECT_STEP || !this.building) {
+      this.select(cam.x, cam.z, engine.quality.settings.preset);
+    }
+    for (const r of this.loaded.values()) {
+      if (!r.active && r.buildingsDrawn()) {
+        r.active = true;
+        setOsmRegionActive(r.def, true);
+      }
+      r.update(dt);
+    }
+  }
+
+  /** Loads the nearest wanted region (one build at a time) and unloads regions that fell far behind. */
+  private select(x: number, z: number, preset: QualityPreset): void {
+    this.lastCam.set(x, 0, z);
+    const scale = DISTANCE_SCALE[preset] ?? 1;
+    const wanted = osmRegions()
+      .filter((d) => !d.fixed)
+      .map((d) => ({ d, dist: rectDistance(d.rect, x, z) }))
+      .filter((w) => w.dist < LOAD_DISTANCE * scale)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, MAX_LOADED);
+    const keep = new Set(wanted.map((w) => w.d.id));
+    for (const [id, r] of this.loaded) {
+      if (r.def.fixed || keep.has(id)) {
+        continue;
+      }
+      const dist = rectDistance(r.def.rect, x, z);
+      const over = this.loaded.size - 1 > MAX_LOADED;
+      if (dist > UNLOAD_DISTANCE * scale || over) {
+        this.stop(r);
+      }
+    }
+    const missing = wanted.filter((w) => !this.loaded.has(w.d.id));
+    this.wantedMissing = missing.length;
+    if (!this.building && missing.length) {
+      this.start(missing[0].d);
+      this.wantedMissing--;
+    }
+  }
+
+  private start(def: OsmRegionDef, layers?: OsmLayer[]): void {
+    const engine = this.engine!;
+    const region = new OsmRegion(def, this.root, layers);
+    this.loaded.set(def.id, region);
+    this.building = region;
+    if (def.fixed) {
+      region.active = true;
+    }
+    region
+      .load(engine, this.geo!)
+      .then(() => {
+        if (region.ctx && !engine.services.tryGet('streetGround')) {
+          engine.services.provide('streetGround', this.streetGround());
+        }
+      })
+      .catch((e: unknown) => {
+        region.state = 'failed';
+        if (!this.disposed) {
+          console.error(`[osm:${def.id}] failed to load`, e);
+        }
+      });
+  }
+
+  private stop(r: OsmRegion): void {
+    if (this.building === r) {
+      this.building = null;
+    }
+    if (r.active) {
+      r.active = false;
+      setOsmRegionActive(r.def, false);
+    }
+    r.dispose();
+    this.loaded.delete(r.def.id);
+  }
+
+  /** The drawn street ground of every loaded region, for other modules (bridge decks landing on the streets). */
+  private streetGround(): StreetGroundService {
+    const at = (x: number, z: number): OsmRegion | null => {
+      for (const r of this.loaded.values()) {
+        if (r.ctx && inside(r.def.rect, x, z) && r.ctx.surface.covers(x, z)) {
+          return r;
+        }
+      }
+      return null;
+    };
+    return {
+      covers: (x, z) => at(x, z) !== null,
+      heightAt: (x, z) => {
+        const r = at(x, z) ?? this.loaded.get('galata');
+        return r?.ctx ? r.ctx.surface.heightAt(x, z) : (this.geo?.heightAt(x, z) ?? 0);
+      },
+      linesAcross: (ax, az, bx, bz, reach) => {
+        const out: GroundLineCrossing[] = [];
+        const box = { minX: Math.min(ax, bx) - reach, maxX: Math.max(ax, bx) + reach, minZ: Math.min(az, bz) - reach, maxZ: Math.max(az, bz) + reach };
+        for (const r of this.loaded.values()) {
+          const q = r.def.rect;
+          if (r.ctx && r.data && box.minX < q.maxX && box.maxX > q.minX && box.minZ < q.maxZ && box.maxZ > q.minZ) {
+            out.push(...linesCrossing(r.groundLines(), ax, az, bx, bz, reach));
+          }
+        }
+        return out.sort((a, b) => a.t - b.t);
+      },
+    };
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    if (this.engine?.services.tryGet('streetGround')) {
+      this.engine.services.withdraw('streetGround');
+    }
+    for (const r of [...this.loaded.values()]) {
+      this.stop(r);
+    }
     this.root.removeFromParent();
   }
 }

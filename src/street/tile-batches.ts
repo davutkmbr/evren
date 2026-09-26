@@ -13,8 +13,26 @@ const INITIAL_VERTICES = 65536;
 const INITIAL_INDICES = 196608;
 /** Space reserved per geometry relative to its size, so a later tile's geometry often fits a freed range. */
 const SLACK = 1.25;
-/** A new batch is sized for this many tiles like its first one. */
-const PRESIZE_TILES = 12;
+/**
+ * Batches are made of fixed-size pages (BatchedMeshes) that never grow: growing a BatchedMesh reallocates and
+ * re-uploads its whole buffers (up to ~230 MB in one frame when several batches grew at once, a 100-150 ms frame).
+ * A material page holds about PAGE_TILES tiles like its first primitive; a full page gets a sibling page.
+ */
+const PAGE_TILES = 3;
+/**
+ * New pages enter the scene within this many megabytes of buffers per frame: a page's first draw uploads its whole
+ * buffers, so dozens of pages appearing together (the layer switching on) would upload ~100 MB in one frame.
+ */
+const PAGE_UPLOAD_MB_PER_FRAME = 4;
+/** Time (ms) an empty page other than a batch's first is kept for later tiles before it is freed. */
+const EMPTY_PAGE_KEEP_MS = 60000;
+/**
+ * Shadow proxy pages (every caster primitive of its shadow side): vertices and indices. A page's first draw uploads
+ * its buffers whole, and its index ring once per slot: at 1M vertices / 3M indices (19 MB) each of those was a frame
+ * of 10-25 ms; half that keeps them under the frame budget for a few more shadow draw calls.
+ */
+const PROXY_PAGE_VERTICES = 1 << 19;
+const PROXY_PAGE_INDICES = 3 << 19;
 
 /** One mesh of a loaded tile. */
 export interface TilePart {
@@ -193,6 +211,15 @@ class CanonicalJob {
         this.nor[i * 3 + 1] = nr.array[o + 1];
         this.nor[i * 3 + 2] = nr.array[o + 2];
       }
+    } else if (nr && nr.array instanceof Int8Array && nr.scale !== 1) {
+      // Octahedral normals (web profile) arrive decoded as unit int8 vectors: widen without renormalizing.
+      const k = 32767 / 127;
+      for (let i = from; i < to; i++) {
+        const o = i * nr.stride + nr.offset;
+        this.nor[i * 3] = Math.max(-32767, Math.round(nr.array[o] * k));
+        this.nor[i * 3 + 1] = Math.max(-32767, Math.round(nr.array[o + 1] * k));
+        this.nor[i * 3 + 2] = Math.max(-32767, Math.round(nr.array[o + 2] * k));
+      }
     } else {
       for (let i = from; i < to; i++) {
         if (nr) {
@@ -279,6 +306,18 @@ function mapsUseUv1(m: THREE.Material): boolean {
   return false;
 }
 
+/** Whether a visible instance's bounding sphere is in the frustum (tile pages hold a handful of instances). */
+export function anyInFrustum(instances: readonly ({ sphere: THREE.Sphere; visible: boolean } | undefined)[], frustum: THREE.Frustum, ids?: readonly number[]): boolean {
+  const n = ids ? ids.length : instances.length;
+  for (let k = 0; k < n; k++) {
+    const inst = instances[ids ? ids[k] : k];
+    if (inst?.visible && frustum.intersectsSphere(inst.sphere)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** The parts of three's BatchedMesh the draw list is written into (r186). */
 interface BatchedInternals {
   _multiDrawStarts: Int32Array;
@@ -288,6 +327,93 @@ interface BatchedInternals {
   _indirectTexture: THREE.DataTexture;
   _geometryInfo: GeometryInfo[];
   _visibilityChanged: boolean;
+  _nextVertexStart: number;
+  _nextIndexStart: number;
+}
+
+/**
+ * Buffers that are created with only their filled part uploaded: array -> the element count in use (from its start).
+ * A batch's buffers are sized for its whole capacity (a page, a prop batch after growing), and three creates a GL
+ * buffer with the whole array (gl.bufferData(array)): a new page's first draw sent 20-36 MB of mostly zeros through
+ * the command buffer in one frame, and each index ring slot 6-12 MB more. See installLazyBufferUploads.
+ */
+const lazyArrays = new WeakMap<ArrayBufferView, () => number>();
+
+/**
+ * Registers a BatchedMesh's current buffers (vertex attributes and index, the index ring's slots share the index
+ * array) for lazy creation: only the ranges up to the batch's next free vertex / index are uploaded when three creates
+ * their GL buffers. Call again after its geometry was reallocated (setGeometrySize).
+ */
+export function lazyUpload(mesh: THREE.BatchedMesh, paced = false): void {
+  const m = mesh as unknown as BatchedInternals;
+  const g = mesh.geometry;
+  for (const name in g.attributes) {
+    const a = g.attributes[name] as THREE.BufferAttribute;
+    if (!lazyArrays.has(a.array)) {
+      const size = a.itemSize;
+      const array = a.array;
+      lazyArrays.set(array, paced ? () => releasedEnd.get(array) ?? 0 : () => m._nextVertexStart * size);
+      a.onUpload(clearRangesOnUpload);
+    }
+  }
+  if (g.index && !lazyArrays.has(g.index.array)) {
+    const array = g.index.array;
+    lazyArrays.set(array, paced ? () => releasedEnd.get(array) ?? 0 : () => m._nextIndexStart);
+    g.index.onUpload(clearRangesOnUpload);
+  }
+}
+
+/**
+ * Batches whose writes are all paced (tile pages): the end of the part of each array released for upload so far. A
+ * buffer created lazily holds that part only; the rest reaches it through the paced ranges, so a page whose first
+ * tile part is 15 MB no longer uploads it whole with its first draw.
+ */
+const releasedEnd = new WeakMap<ArrayLike<number>, number>();
+
+function noteReleased(array: ArrayLike<number>, end: number): void {
+  releasedEnd.set(array, Math.max(releasedEnd.get(array) ?? 0, end));
+}
+
+/**
+ * Upload callback of lazily created buffers: three keeps the update ranges written before a buffer's creation (the
+ * creation uploads the data they cover) and would upload them again with the next change.
+ */
+function clearRangesOnUpload(this: THREE.BufferAttribute): void {
+  this.clearUpdateRanges();
+}
+
+/** Whether an array is one of the batches' buffers (debug: attributing uploads in tests). */
+export const ownsBufferArray = (array: unknown): boolean => !!array && typeof array === 'object' && lazyArrays.has(array as ArrayBufferView);
+
+const lazyInstalled = new WeakSet<WebGL2RenderingContext>();
+let lazyInstalledAny = false;
+
+/**
+ * Makes gl.bufferData with a registered array (lazyUpload) allocate the buffer at full size (zeroed by WebGL) and
+ * upload only its filled part. Installed once per context by the host (street/index.ts) before any batch is drawn;
+ * without it batches upload whole arrays as before.
+ */
+export function installLazyBufferUploads(gl: WebGL2RenderingContext): void {
+  if (lazyInstalled.has(gl)) {
+    return;
+  }
+  lazyInstalled.add(gl);
+  lazyInstalledAny = true;
+  const bufferData = gl.bufferData;
+  // The size-only and sub-data calls go through the context's current methods (a profiler may wrap them).
+  gl.bufferData = function (this: WebGL2RenderingContext, target: GLenum, src: unknown, usage: GLenum, ...rest: unknown[]): void {
+    const used = src && typeof src === 'object' ? lazyArrays.get(src as ArrayBufferView) : undefined;
+    const array = src as THREE.TypedArray;
+    if (!used || rest.length) {
+      (bufferData as (...a: unknown[]) => void).call(gl, target, src, usage, ...rest);
+      return;
+    }
+    gl.bufferData(target, array.byteLength, usage);
+    const n = Math.min(array.length, used());
+    if (n > 0) {
+      gl.bufferSubData(target, 0, array, 0, n);
+    }
+  } as typeof gl.bufferData;
 }
 
 interface GeometryInfo {
@@ -303,12 +429,184 @@ interface GeometryInfo {
   boundingSphere: THREE.Sphere | null;
 }
 
+/** GL index buffers per batch that take turns (see IndexRing). */
+const RING_SLOTS = 4;
+/** Ranges a ring slot queues before the closest ones are joined. */
+const MAX_PENDING_RANGES = 32;
+
+/** Adds [start, start + count) to a list of disjoint ranges sorted by start, merging what it touches. */
+function addRange(list: [number, number][], start: number, count: number): void {
+  let end = start + count;
+  let i = 0;
+  while (i < list.length && list[i][0] + list[i][1] < start) {
+    i++;
+  }
+  let j = i;
+  while (j < list.length && list[j][0] <= end) {
+    start = Math.min(start, list[j][0]);
+    end = Math.max(end, list[j][0] + list[j][1]);
+    j++;
+  }
+  list.splice(i, j - i, [start, end - start]);
+  if (list.length > MAX_PENDING_RANGES) {
+    let best = 0;
+    for (let k = 1; k + 1 < list.length; k++) {
+      if (list[k + 1][0] - (list[k][0] + list[k][1]) < list[best + 1][0] - (list[best][0] + list[best][1])) {
+        best = k;
+      }
+    }
+    const a = list[best];
+    const b = list[best + 1];
+    list.splice(best, 2, [a[0], b[0] + b[1] - a[0]]);
+  }
+}
+
+/**
+ * Index buffer ring of a BatchedMesh. On ANGLE/Metal, writing into an element array buffer that the GPU may still be
+ * reading (bufferSubData into the index buffer drawn last frame) stalls the GPU process until the GPU is done: every
+ * tile part added to a shared batch cost a 35-50 ms frame (vertex buffers do not stall). So the batch keeps RING_SLOTS
+ * index attributes over one CPU array: before the first index write after a draw, the geometry switches to the slot
+ * drawn longest ago (at least RING_SLOTS - 1 draws back) and uploads only the ranges written since that slot was last
+ * current. The other slots' GL buffers are released by the WebGL context when their attributes are collected.
+ */
+export class IndexRing {
+  private slots: THREE.BufferAttribute[] = [];
+  /** Per slot: index ranges written since the slot was last current ('all' = re-upload everything). */
+  private pending: ([number, number][] | 'all')[] = [];
+  private current = 0;
+  /** The current slot was drawn (so it may be in flight). */
+  drawn = false;
+
+  constructor(private readonly mesh: THREE.BatchedMesh) {
+    this.reset();
+  }
+
+  /** Rebuilds the ring over the geometry's (new) index, e.g. after setGeometrySize. */
+  reset(): void {
+    const index = this.mesh.geometry.index!;
+    this.slots = [index];
+    this.pending = [[]];
+    for (let k = 1; k < RING_SLOTS; k++) {
+      const slot = new THREE.BufferAttribute(index.array, 1);
+      // Created from the whole current data (lazily, see lazyUpload): the ranges queued before are in it.
+      slot.onUpload(clearRangesOnUpload);
+      this.slots.push(slot);
+      this.pending.push('all');
+    }
+    this.current = 0;
+    this.drawn = false;
+  }
+
+  /** Call before writing index data: moves to a slot the GPU is done with once the current one has been drawn. */
+  beginWrite(): void {
+    if (!this.drawn) {
+      return;
+    }
+    this.current = (this.current + 1) % RING_SLOTS;
+    const slot = this.slots[this.current];
+    const pending = this.pending[this.current];
+    slot.clearUpdateRanges();
+    if (pending === 'all') {
+      // An explicit range, not just needsUpdate: three uploads everything only while no range is set, and the writes
+      // that follow in this frame add ranges (which then made it upload those alone and left the slot stale). Only the
+      // filled part: nothing is drawn beyond the batch's next free index.
+      slot.addUpdateRange(0, Math.max(1, (this.mesh as unknown as BatchedInternals)._nextIndexStart));
+      slot.needsUpdate = true;
+    } else if (pending.length) {
+      for (const [start, count] of pending) {
+        slot.addUpdateRange(start, count);
+      }
+      slot.needsUpdate = true;
+    }
+    this.pending[this.current] = [];
+    this.mesh.geometry.setIndex(slot);
+    this.drawn = false;
+  }
+
+  /**
+   * Records a written index range: uploaded with the current slot, queued for the others. Queued ranges are merged
+   * with the ones they touch (a tile's parts land back to back in a page); past MAX_PENDING_RANGES the two closest
+   * are joined. Letting a slot fall back to a full re-upload made every tile added to a 12 MB shadow proxy page
+   * re-upload the whole index three times over the next frames.
+   */
+  touch(start: number, count: number): void {
+    const slot = this.slots[this.current];
+    slot.addUpdateRange(start, count);
+    slot.needsUpdate = true;
+    for (let k = 0; k < RING_SLOTS; k++) {
+      const p = this.pending[k];
+      if (k !== this.current && p !== 'all') {
+        addRange(p, start, count);
+      }
+    }
+  }
+
+  /** After a write the ring could not track range by range (e.g. BatchedMesh.optimize on the current slot). */
+  touchAll(): void {
+    for (let k = 0; k < RING_SLOTS; k++) {
+      if (k !== this.current) {
+        this.pending[k] = 'all';
+      }
+    }
+  }
+}
+
+const rings = new WeakMap<THREE.BatchedMesh, IndexRing>();
+
+/** Rebuilds a batch's index ring after BatchedMesh.setGeometrySize (a new index buffer). */
+export function resetIndexRing(mesh: THREE.BatchedMesh): void {
+  rings.get(mesh)?.reset();
+}
+
+/** The index ring of a batch (created on its first index write, when the geometry exists). */
+export function indexRingOf(mesh: THREE.BatchedMesh): IndexRing {
+  let ring = rings.get(mesh);
+  if (!ring) {
+    ring = new IndexRing(mesh);
+    rings.set(mesh, ring);
+    mesh.userData.indexRing = ring;
+  }
+  return ring;
+}
+
+/**
+ * Buffer bytes of paced geometry writes (fastSetGeometryAt with `paced`) released for upload per frame, at least one
+ * chunk. A tile's interior primitive is up to 500k vertices (15 MB of attributes and 6 MB of index): written in one
+ * frame, its bufferSubData calls took 20-50 ms. Large ranges are split into PACE_CHUNK_BYTES pieces. An index range
+ * reaches every slot of its ring (up to four uploads), so a frame's share stays small: 6 MB still let frames with
+ * 12-13 MB of the layer's uploads through.
+ */
+const PACE_BYTES_PER_FRAME = 3e6;
+const PACE_CHUNK_BYTES = 1e6;
+const paceQueue: { seq: number; start: number; count: number; bytes: number; apply: (start: number, count: number) => void }[] = [];
+/** Sequence numbers of the last queued and the last released paced write. */
+const paceSeq = { queued: 0, released: 0 };
+
+function paceUpload(start: number, count: number, bytesPerElement: number, apply: (start: number, count: number) => void): void {
+  const step = Math.max(1, Math.floor(PACE_CHUNK_BYTES / bytesPerElement));
+  for (let s = start; s < start + count; s += step) {
+    const n = Math.min(step, start + count - s);
+    paceQueue.push({ seq: ++paceSeq.queued, start: s, count: n, bytes: n * bytesPerElement, apply });
+  }
+}
+
+/** Releases paced writes for upload within the per-frame budget (TileBatches.work calls it once per frame). */
+function releasePacedUploads(): void {
+  let bytes = 0;
+  while (paceQueue.length && (bytes === 0 || bytes + paceQueue[0].bytes <= PACE_BYTES_PER_FRAME)) {
+    const u = paceQueue.shift()!;
+    bytes += u.bytes;
+    u.apply(u.start, u.count);
+    paceSeq.released = u.seq;
+  }
+}
+
 /**
  * BatchedMesh.setGeometryAt with typed-array copies: three's version copies indices and zero-fills the reserved rest
  * one component call at a time, which takes tens of milliseconds for a tile's 200k-vertex interior primitive. Needs the
  * geometry in the batch's exact layout (same attributes and array types) and an index.
  */
-export function fastSetGeometryAt(mesh: THREE.BatchedMesh, geometryId: number, geometry: THREE.BufferGeometry): number {
+export function fastSetGeometryAt(mesh: THREE.BatchedMesh, geometryId: number, geometry: THREE.BufferGeometry, paced = false): number {
   const info = (mesh as unknown as BatchedInternals)._geometryInfo[geometryId];
   const dstGeometry = mesh.geometry;
   const srcIndex = geometry.index!;
@@ -323,9 +621,19 @@ export function fastSetGeometryAt(mesh: THREE.BatchedMesh, geometryId: number, g
     const n = dst.itemSize;
     dst.array.set(src.array.subarray(0, vertexCount * n), v0 * n);
     dst.array.fill(0, (v0 + vertexCount) * n, (v0 + info.reservedVertexCount) * n);
-    dst.addUpdateRange(v0 * n, info.reservedVertexCount * n);
-    dst.needsUpdate = true;
+    if (paced) {
+      paceUpload(v0 * n, info.reservedVertexCount * n, dst.array.BYTES_PER_ELEMENT, (start, count) => {
+        noteReleased(dst.array, start + count);
+        dst.addUpdateRange(start, count);
+        dst.needsUpdate = true;
+      });
+    } else {
+      dst.addUpdateRange(v0 * n, info.reservedVertexCount * n);
+      dst.needsUpdate = true;
+    }
   }
+  const ring = indexRingOf(mesh);
+  ring.beginWrite();
   const dstIndex = dstGeometry.index!;
   const di = dstIndex.array;
   const si = srcIndex.array;
@@ -334,8 +642,16 @@ export function fastSetGeometryAt(mesh: THREE.BatchedMesh, geometryId: number, g
     di[i0 + k] = si[k] + v0;
   }
   di.fill(v0, i0 + srcIndex.count, i0 + info.reservedIndexCount);
-  dstIndex.addUpdateRange(i0, info.reservedIndexCount);
-  dstIndex.needsUpdate = true;
+  if (paced) {
+    // After the vertex ranges (the queue is in order): an index range never reaches the GPU before its vertices.
+    paceUpload(i0, info.reservedIndexCount, di.BYTES_PER_ELEMENT, (start, count) => {
+      noteReleased(di, start + count);
+      ring.beginWrite();
+      ring.touch(start, count);
+    });
+  } else {
+    ring.touch(i0, info.reservedIndexCount);
+  }
   info.vertexCount = vertexCount;
   info.indexCount = srcIndex.count;
   info.start = i0;
@@ -375,41 +691,38 @@ class Batch {
   private readonly free: { geometryId: number; vertices: number; indices: number }[] = [];
   private live = 0;
   private boundsDirty = false;
-  private maxVertices: number;
-  private maxIndices: number;
-  /** Largest geometry added so far (growth reserves room for PRESIZE_TILES of them). */
-  private largest = { vertices: 0, indices: 0 };
   private readonly drawLists: DrawListCache = new Map();
+  /** Drawn at least once (its buffers are uploaded); until then it is never culled. */
+  warm = false;
+  /** Time (performance.now) since which the page is empty, 0 while it holds geometry (see PagedBatch.refresh). */
+  emptySince = 0;
 
   constructor(
     name: string,
     material: THREE.Material,
-    /** Size hint: the first geometry's vertex and index counts. */
-    first: { vertices: number; indices: number },
+    /** Fixed capacity (vertices, indices). */
+    capacity: { vertices: number; indices: number },
     /** Shadow proxy: small instances skip the wide cascades. */
     private readonly proxy = false,
   ) {
-    this.maxVertices = Math.max(INITIAL_VERTICES, Math.ceil(first.vertices * SLACK * PRESIZE_TILES));
-    this.maxIndices = Math.max(INITIAL_INDICES, Math.ceil(first.indices * SLACK * PRESIZE_TILES));
-    this.mesh = new THREE.BatchedMesh(64, this.maxVertices, this.maxIndices, material);
+    this.mesh = new THREE.BatchedMesh(64, capacity.vertices, capacity.indices, material);
     this.internals = this.mesh as unknown as BatchedInternals;
     this.mesh.name = name;
     this.mesh.matrixAutoUpdate = false;
     // Culled as a whole by its bounding sphere (kept current in refreshBounds), then per tile.
-    this.mesh.frustumCulled = true;
     this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(), -1);
+    // Not culled until its first draw: a page enters the scene before any of its tiles is shown, and that first
+    // (empty) draw uploads its buffers then, spread over frames (see PAGE_UPLOAD_MB_PER_FRAME).
+    // Past that, drawn only when one of its shown tiles is in the frustum: an empty draw still costs its state setup.
+    this.mesh.intersectsFrustum = (frustum: THREE.Frustum | THREE.FrustumArray): boolean => !this.warm || anyInFrustum(this.instances, frustum as THREE.Frustum);
     this.mesh.onBeforeRender = (_r, _s, camera, geometry, material) => this.cull(camera, geometry, material);
     this.mesh.onBeforeShadow = (_r, _o, _c, shadowCamera, geometry, depthMaterial) => this.cull(shadowCamera, geometry, depthMaterial);
-    this.mesh.setGeometryAt = (geometryId: number, geometry: THREE.BufferGeometry) => fastSetGeometryAt(this.mesh, geometryId, geometry);
+    // Paced: a tile's parts reach the GPU over a few frames (the tile shows once they have, see TileBatches.ready).
+    this.mesh.setGeometryAt = (geometryId: number, geometry: THREE.BufferGeometry) => fastSetGeometryAt(this.mesh, geometryId, geometry, true);
   }
 
-  /** Adds a geometry and one instance of it (hidden until setVisible). */
-  add(geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, slot: number | null, small = false): { geometryId: number; instanceId: number } {
-    const mesh = this.mesh;
-    const v = geometry.attributes.position.count;
-    const i = geometry.index!.count;
-    this.largest.vertices = Math.max(this.largest.vertices, v);
-    this.largest.indices = Math.max(this.largest.indices, i);
+  /** A free range of removed geometry that fits, else -1. */
+  private freeFit(v: number, i: number): number {
     let best = -1;
     for (let k = 0; k < this.free.length; k++) {
       const f = this.free[k];
@@ -417,35 +730,46 @@ class Batch {
         best = k;
       }
     }
+    return best;
+  }
+
+  /** Whether a geometry of this size fits without compacting the page (in a freed range or the unused tail). */
+  fitsInPlace(v: number, i: number): boolean {
+    return this.freeFit(v, i) >= 0 || (Math.ceil(v * SLACK) <= this.mesh.unusedVertexCount && Math.ceil(i * SLACK) <= this.mesh.unusedIndexCount);
+  }
+
+  /**
+   * Adds a geometry that fits (see fitsInPlace; else the page is compacted first) and one instance of it (hidden
+   * until setVisible).
+   */
+  add(geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, slot: number | null, small = false): { geometryId: number; instanceId: number } {
+    const mesh = this.mesh;
+    const v = geometry.attributes.position.count;
+    const i = geometry.index!.count;
+    const best = this.freeFit(v, i);
     let geometryId: number;
     if (best >= 0) {
       geometryId = this.free.splice(best, 1)[0].geometryId;
       mesh.setGeometryAt(geometryId, geometry);
     } else {
-      const rv = Math.ceil(v * SLACK);
-      const ri = Math.ceil(i * SLACK);
+      let rv = Math.ceil(v * SLACK);
+      let ri = Math.ceil(i * SLACK);
       if (rv > mesh.unusedVertexCount || ri > mesh.unusedIndexCount) {
-        const freeV = this.free.reduce((n, f) => n + f.vertices, 0);
-        const freeI = this.free.reduce((n, f) => n + f.indices, 0);
-        if (rv <= mesh.unusedVertexCount + freeV && ri <= mesh.unusedIndexCount + freeI) {
-          batchCounters.compactions++;
-          for (const f of this.free) {
-            mesh.deleteGeometry(f.geometryId);
-          }
-          this.free.length = 0;
-          mesh.optimize();
+        // Compact the page (moves ranges within its buffers; the index goes through the ring).
+        batchCounters.compactions++;
+        for (const f of this.free) {
+          mesh.deleteGeometry(f.geometryId);
         }
-        if (rv > mesh.unusedVertexCount || ri > mesh.unusedIndexCount) {
-          const usedV = this.maxVertices - mesh.unusedVertexCount;
-          const usedI = this.maxIndices - mesh.unusedIndexCount;
-          // Growing copies and re-uploads the whole batch: make room for many more tiles like the largest so far.
-          this.maxVertices = Math.max(this.maxVertices * 2, Math.ceil((usedV + rv) * 1.5), Math.ceil(this.largest.vertices * SLACK * PRESIZE_TILES));
-          this.maxIndices = Math.max(this.maxIndices * 2, Math.ceil((usedI + ri) * 1.5), Math.ceil(this.largest.indices * SLACK * PRESIZE_TILES));
-          mesh.setGeometrySize(this.maxVertices, this.maxIndices);
-          batchCounters.growths++;
-        }
+        this.free.length = 0;
+        const ring = indexRingOf(mesh);
+        ring.beginWrite();
+        mesh.optimize();
+        ring.touchAll();
       }
+      rv = Math.min(rv, mesh.unusedVertexCount);
+      ri = Math.min(ri, mesh.unusedIndexCount);
       geometryId = mesh.addGeometry(geometry, rv, ri);
+      lazyUpload(mesh, true);
     }
     if (this.live >= mesh.maxInstanceCount) {
       mesh.setInstanceCount(mesh.maxInstanceCount * 2);
@@ -499,10 +823,79 @@ class Batch {
   }
 
   private cull(camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material): void {
+    this.warm = true;
     const o = camera as THREE.OrthographicCamera;
     const skipSmall = this.proxy && o.isOrthographicCamera && (o.right - o.left) / o.zoom > FAR_CASCADE_WIDTH;
     const cascade = o.isOrthographicCamera ? (this.mesh.userData.shadowFrustum as THREE.Frustum | undefined) : undefined;
     writeDrawList(this.mesh, camera, geometry, material, this.instances, !this.proxy, this.drawLists, undefined, skipSmall, cascade);
+  }
+}
+
+/**
+ * One batch as a list of fixed-size pages (see PAGE_TILES): a geometry goes into the first page it fits, a new page is
+ * made when none does, and pages left empty (beyond the first) are dropped.
+ */
+class PagedBatch {
+  readonly pages: Batch[] = [];
+
+  constructor(
+    private readonly name: string,
+    private readonly material: THREE.Material,
+    private readonly capacity: { vertices: number; indices: number },
+    private readonly proxy: boolean,
+    /** Sets up a new page (flags, layers) and puts it in the scene. */
+    private readonly onPage: (page: Batch, first: boolean) => void,
+  ) {}
+
+  add(geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, slot: number | null, small = false): PlacedGeometry {
+    const v = geometry.attributes.position.count;
+    const i = geometry.index!.count;
+    // A page with room as it is, else a new page: compacting one moves its ranges and re-uploads all its live data
+    // (20-30 MB of vertex and ring index copies, 20-50 ms frames), while a new page uploads only what it holds (lazy
+    // buffers). Pages left empty are freed (see refresh), so fragmentation does not accumulate.
+    let page = this.pages.find((p) => p.fitsInPlace(v, i));
+    if (!page) {
+      // A merge group mixes small and large primitives: size new pages for PAGE_TILES of the largest seen so far.
+      this.capacity.vertices = Math.max(this.capacity.vertices, Math.ceil(v * SLACK * PAGE_TILES));
+      this.capacity.indices = Math.max(this.capacity.indices, Math.ceil(i * SLACK * PAGE_TILES));
+      const capacity = { ...this.capacity };
+      page = new Batch(`${this.name}#${this.pages.length}`, this.material, capacity, this.proxy);
+      this.pages.push(page);
+      batchCounters.pages++;
+      this.onPage(page, this.pages.length === 1);
+    }
+    return { batch: page, ...page.add(geometry, matrix, slot, small) };
+  }
+
+  /**
+   * Bounds of every page; pages other than the first that stayed empty for EMPTY_PAGE_KEEP_MS are removed from the
+   * scene and freed (flying on, the next tiles usually fill them again: a new page costs its first upload).
+   */
+  refresh(): void {
+    const now = performance.now();
+    for (let k = this.pages.length - 1; k >= 0; k--) {
+      const page = this.pages[k];
+      if (!page.empty || !page.mesh.parent) {
+        page.emptySince = 0;
+      } else if (!page.emptySince) {
+        page.emptySince = now;
+      }
+      if (k > 0 && page.emptySince && now - page.emptySince > EMPTY_PAGE_KEEP_MS) {
+        page.mesh.removeFromParent();
+        page.mesh.dispose();
+        this.pages.splice(k, 1);
+      } else {
+        page.refreshBounds();
+      }
+    }
+  }
+
+  dispose(): void {
+    for (const p of this.pages) {
+      p.mesh.removeFromParent();
+      p.mesh.dispose();
+    }
+    this.pages.length = 0;
   }
 }
 
@@ -534,6 +927,9 @@ export function writeDrawList(
   objectFrustum?: THREE.Frustum,
 ): void {
   const m = mesh as unknown as BatchedInternals;
+  if (mesh.geometry.index) {
+    indexRingOf(mesh).drawn = true;
+  }
   _projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _frustum.setFromProjectionMatrix(_projView, camera.coordinateSystem, (camera as { reversedDepth?: boolean }).reversedDepth);
   _camPos.setFromMatrixPosition(camera.matrixWorld);
@@ -594,8 +990,93 @@ export function resetDrawLists(cache: DrawListCache): void {
 
 const _slotColor = new THREE.Color();
 
+/** Textures handed to an initTexture hook (by the streamers' queues or a page's admission): uploaded once. */
+const uploadedTextures = new WeakSet<THREE.Texture>();
+
+/** Whether the texture's image is decoded (it can be uploaded). */
+export function textureReady(t: THREE.Texture): boolean {
+  const image = t.image as { width?: number; complete?: boolean } | undefined;
+  return !!image && (image.width ?? 0) > 0 && image.complete !== false;
+}
+
+/** GPU bytes of a texture's upload (RGBA8, with mipmaps). */
+export function textureBytes(t: THREE.Texture): number {
+  const image = t.image as { width?: number; height?: number } | undefined;
+  return (image?.width ?? 0) * (image?.height ?? 0) * 4 * (t.generateMipmaps ? 4 / 3 : 1);
+}
+
+/**
+ * Texture bytes (with mipmaps) uploaded ahead of their first use per frame, shared by every streamer and batch set
+ * (reset by TileBatches.work, which the owner calls once per frame): at least one texture per frame, else up to
+ * `bytes`. The GPU side is the limit, not the call: four to eight 1024^2 textures in one frame (the streamers' and the
+ * page admissions' own budgets added up) made 10-15 ms of upload calls and 50 ms frames at prefetch.
+ */
+export const textureBudget = {
+  bytes: 6e6,
+  used: 0,
+  fits(bytes: number): boolean {
+    return this.used === 0 || this.used + bytes <= this.bytes;
+  },
+};
+
+/** Uploads a decoded texture through `init` once (counted in textureBudget); returns whether this call uploaded it. */
+export function uploadTexture(t: THREE.Texture, init: (t: THREE.Texture) => void): boolean {
+  if (uploadedTextures.has(t) || !textureReady(t)) {
+    return false;
+  }
+  uploadedTextures.add(t);
+  textureBudget.used += Math.max(1, textureBytes(t));
+  init(t);
+  return true;
+}
+
+/** Decoded textures of a material not uploaded yet. */
+export function pendingTextures(m: THREE.Material): THREE.Texture[] {
+  const out: THREE.Texture[] = [];
+  for (const v of Object.values(m)) {
+    const t = v as THREE.Texture | null;
+    if (t?.isTexture && !uploadedTextures.has(t) && textureReady(t) && !out.includes(t)) {
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/**
+ * Uploads a material's pending textures one by one while they fit the frame's budget; returns whether none is left
+ * (the object using the material may join the scene).
+ */
+export function uploadWithinBudget(m: THREE.Material, init: (t: THREE.Texture) => void): boolean {
+  for (const t of pendingTextures(m)) {
+    if (!textureBudget.fits(textureBytes(t))) {
+      return false;
+    }
+    uploadTexture(t, init);
+  }
+  return true;
+}
+
+/** Whether the texture went through uploadTexture. */
+export function textureUploaded(t: THREE.Texture): boolean {
+  return uploadedTextures.has(t);
+}
+
+/** Bytes a batch's first draw uploads: the filled part of its buffers when they are lazy (lazyUpload), else all. */
+function firstUploadBytes(mesh: THREE.BatchedMesh): number {
+  const g = mesh.geometry;
+  const part = (a: THREE.BufferAttribute): number => {
+    const used = lazyInstalledAny ? lazyArrays.get(a.array) : undefined;
+    return used ? Math.min(a.array.length, used()) * a.array.BYTES_PER_ELEMENT : a.array.byteLength;
+  };
+  let bytes = g.index ? part(g.index) : 0;
+  for (const name in g.attributes) {
+    bytes += part(g.attributes[name] as THREE.BufferAttribute);
+  }
+  return bytes;
+}
+
 /** Buffer events of all batches (debug stats). */
-export const batchCounters = { growths: 0, compactions: 0, listUploads: 0 };
+export const batchCounters = { pages: 0, compactions: 0, listUploads: 0 };
 
 /** Whether a caster's shadow can come from a position-only proxy (no cut-outs). */
 export function castsThroughProxy(m: THREE.Material): boolean {
@@ -620,9 +1101,10 @@ export function proxyMaterial(side: THREE.Side): THREE.MeshBasicMaterial {
 /**
  * Makes a mesh a shadow proxy: drawn only by orthographic shadow cameras (their side planes are parallel), culled by
  * the main and reflection cameras (perspective). With `far` set, only cascades wider (true) or narrower (false) than
- * FAR_CASCADE_WIDTH draw it. The mesh must be frustum culled (it may have an infinite bounding sphere).
+ * FAR_CASCADE_WIDTH draw it. The mesh must be frustum culled (it may have an infinite bounding sphere). While `warm`
+ * returns false it is drawn by every cascade whatever its bounds (its first, empty draw uploads its buffers).
  */
-export function shadowOnly(mesh: THREE.Object3D, far: boolean | null): void {
+export function shadowOnly(mesh: THREE.Object3D, far: boolean | null, warm?: () => boolean): void {
   mesh.frustumCulled = true;
   mesh.castShadow = true;
   const intersects = mesh.intersectsFrustum.bind(mesh);
@@ -636,7 +1118,7 @@ export function shadowOnly(mesh: THREE.Object3D, far: boolean | null): void {
     }
     // The cascade's own frustum (with its caster size and receiver range tests) culls the instances too.
     mesh.userData.shadowFrustum = frustum;
-    return !!intersects(frustum);
+    return (warm !== undefined && !warm()) || !!intersects(frustum);
   };
 }
 
@@ -769,6 +1251,8 @@ export interface TileBatchEntry {
   job: CanonicalJob | null;
   shown: boolean;
   proxiesShown: boolean;
+  /** Last paced write of its parts (see paceUpload): the tile is ready once it was released for upload. */
+  uploadSeq: number;
 }
 
 /**
@@ -781,16 +1265,21 @@ export interface TileBatchEntry {
  */
 export class TileBatches {
   readonly group = new THREE.Group();
-  readonly fade = new FadeTable();
+  /** Fade table of the tiles' slots: the owner's (disposed with the batches) unless one is shared across streamers. */
+  readonly fade: FadeTable;
+  private readonly ownsFade: boolean;
   /** Batch per material; materials that merge (see mergeKey) share one. */
-  private readonly batches = new Map<THREE.Material, { batch: Batch; layout: Layout }>();
-  private readonly merged = new Map<string, { batch: Batch; layout: Layout }>();
+  private readonly batches = new Map<THREE.Material, { batch: PagedBatch; layout: Layout }>();
+  private readonly merged = new Map<string, { batch: PagedBatch; layout: Layout }>();
   private readonly mergedMaterials: THREE.Material[] = [];
-  private readonly proxies = new Map<string, Batch>();
+  private readonly proxies = new Map<string, PagedBatch>();
   private readonly proxyMaterials = new Map<THREE.Side, THREE.Material>();
   private readonly patched = new WeakSet<THREE.Material>();
   private readonly tiles = new Map<string, TileBatchEntry>();
+  /** Pages not in the scene yet (compiling, or waiting in uploadQueue). Tiles are shown once there are none. */
   private readonly pendingBatches: THREE.BatchedMesh[] = [];
+  /** Compiled pages that enter the scene within the per-frame upload budget. */
+  private readonly uploadQueue: THREE.BatchedMesh[] = [];
 
   constructor(
     private shadows: boolean,
@@ -803,7 +1292,16 @@ export class TileBatches {
     private readonly detailLayer = 0,
     /** Merge emissive materials too (see mergeKey). */
     private readonly mergeEmissive = false,
+    /** A fade table shared with other streamers (one slot space, e.g. for one host hole mask over several areas). */
+    fade?: FadeTable,
+    /**
+     * Uploads a texture (e.g. `(t) => renderer.initTexture(t)`): a page's textures are uploaded within the page upload
+     * budget before it joins the scene, instead of all at once by its first draw.
+     */
+    private readonly initTexture?: (texture: THREE.Texture) => void,
   ) {
+    this.fade = fade ?? new FadeTable();
+    this.ownsFade = !fade;
     this.group.name = 'tiles';
     this.group.matrixAutoUpdate = false;
   }
@@ -815,7 +1313,7 @@ export class TileBatches {
   addTile(key: string, parts: TilePart[], slot: number): void {
     this.removeTile(key);
     const queue = parts.filter((p) => p.geometry.attributes.position?.count > 0);
-    this.tiles.set(key, { slot, placed: [], proxies: [], queue, job: null, shown: false, proxiesShown: false });
+    this.tiles.set(key, { slot, placed: [], proxies: [], queue, job: null, shown: false, proxiesShown: false, uploadSeq: 0 });
   }
 
   removeTile(key: string): void {
@@ -829,10 +1327,23 @@ export class TileBatches {
     this.tiles.delete(key);
   }
 
-  /** Whether all parts of the tile are in the batches. */
+  /**
+   * Whether all parts of the tile are in the batches and every page it uses is in the scene. Only the tile's own pages
+   * count: a page another tile is waiting for must never hide (or hold back) this one.
+   */
   isComplete(key: string): boolean {
     const e = this.tiles.get(key);
-    return !!e && e.queue.length === 0 && !e.job && this.pendingBatches.length === 0;
+    return !!e && TileBatches.ready(e);
+  }
+
+  /** Whether the tile is drawn (see setShown). */
+  isShown(key: string): boolean {
+    return this.tiles.get(key)?.shown ?? false;
+  }
+
+  private static ready(e: TileBatchEntry): boolean {
+    const on = (p: PlacedGeometry): boolean => !!p.batch.mesh.parent;
+    return e.queue.length === 0 && !e.job && e.uploadSeq <= paceSeq.released && e.placed.every(on) && e.proxies.every(on);
   }
 
   /**
@@ -844,7 +1355,8 @@ export class TileBatches {
     if (!e) {
       return;
     }
-    const show = fade > 0 && e.queue.length === 0 && !e.job && this.pendingBatches.length === 0;
+    // Once shown a tile stays drawn until its fade reaches 0 (its pages never leave the scene while it uses them).
+    const show = fade > 0 && (e.shown || TileBatches.ready(e));
     if (show !== e.shown) {
       e.shown = show;
       for (const p of e.placed) {
@@ -863,6 +1375,10 @@ export class TileBatches {
   /** Copies queued parts into the batches until `budgetMs` is spent (at least one part per call). */
   work(budgetMs: number): void {
     const t0 = performance.now();
+    // A new frame's texture upload budget (see textureBudget), and this frame's share of paced geometry uploads.
+    textureBudget.used = 0;
+    releasePacedUploads();
+    this.admitPages();
     for (const entry of this.tiles.values()) {
       while (entry.queue.length || entry.job) {
         if (!entry.job) {
@@ -881,7 +1397,7 @@ export class TileBatches {
         const part = job.part;
         const { batch } = this.batchOf(part);
         const { geometry, matrix } = job.finish();
-        entry.placed.push({ batch, ...batch.add(geometry, matrix, entry.slot) });
+        entry.placed.push(batch.add(geometry, matrix, entry.slot));
         const m = part.material;
         if (m.userData.castShadow === true && castsThroughProxy(m)) {
           // Its shadow comes from the proxy batch of its shadow side (positions and index only).
@@ -889,10 +1405,11 @@ export class TileBatches {
           shadow.setAttribute('position', geometry.attributes.position);
           shadow.setIndex(geometry.index);
           shadow.boundingSphere = geometry.boundingSphere;
-          const proxy = this.proxyBatch(shadowSideOf(m), shadow);
+          const proxy = this.proxyBatch(shadowSideOf(m));
           const small = m.userData.surface !== undefined && !LARGE_CASTER_SURFACES.has(m.userData.surface as string);
-          entry.proxies.push({ batch: proxy, ...proxy.add(shadow, matrix, null, small) });
+          entry.proxies.push(proxy.add(shadow, matrix, null, small));
         }
+        entry.uploadSeq = paceSeq.queued;
         if (performance.now() - t0 > budgetMs) {
           this.refresh();
           return;
@@ -914,15 +1431,26 @@ export class TileBatches {
   setShadows(on: boolean): void {
     this.shadows = on;
     for (const { batch } of new Set(this.batches.values())) {
-      batch.mesh.receiveShadow = on;
+      for (const page of batch.pages) {
+        page.mesh.receiveShadow = on;
+      }
     }
     for (const p of this.proxies.values()) {
-      p.mesh.castShadow = on;
+      for (const page of p.pages) {
+        page.mesh.castShadow = on;
+      }
     }
   }
 
   batchCount(): number {
-    return new Set(this.batches.values()).size + this.proxies.size;
+    let n = 0;
+    for (const { batch } of new Set(this.batches.values())) {
+      n += batch.pages.length;
+    }
+    for (const p of this.proxies.values()) {
+      n += p.pages.length;
+    }
+    return n;
   }
 
   dispose(): void {
@@ -930,33 +1458,35 @@ export class TileBatches {
       this.removeTile(key);
     }
     for (const { batch } of new Set(this.batches.values())) {
-      batch.mesh.dispose();
+      batch.dispose();
     }
     for (const m of this.mergedMaterials) {
       m.dispose();
     }
     for (const p of this.proxies.values()) {
-      p.mesh.dispose();
+      p.dispose();
     }
     for (const m of this.proxyMaterials.values()) {
       m.dispose();
     }
     this.batches.clear();
     this.proxies.clear();
-    this.fade.dispose();
+    if (this.ownsFade) {
+      this.fade.dispose();
+    }
   }
 
   /** Updates the batches' bounding spheres after tiles were added, removed, shown or hidden. */
   refresh(): void {
     for (const { batch } of new Set(this.batches.values())) {
-      batch.refreshBounds();
+      batch.refresh();
     }
     for (const p of this.proxies.values()) {
-      p.refreshBounds();
+      p.refresh();
     }
   }
 
-  private batchOf(part: TilePart): { batch: Batch; layout: Layout } {
+  private batchOf(part: TilePart): { batch: PagedBatch; layout: Layout } {
     const material = part.material;
     let b = this.batches.get(material);
     if (b) {
@@ -976,21 +1506,30 @@ export class TileBatches {
         addFadePatch(host, this.fade.texture);
       }
       const layout: Layout = { color: (host as THREE.MeshStandardMaterial).vertexColors === true, uv1: mapsUseUv1(host), baked: !!key, emissive };
-      const first = { vertices: part.geometry.attributes.position.count, indices: part.geometry.index?.count ?? part.geometry.attributes.position.count };
-      const batch = new Batch(`tiles:${host.name}`, host, first);
-      if (this.detailLayerOf(material)) {
-        batch.mesh.layers.set(this.detailLayer);
-      }
-      batch.mesh.receiveShadow = this.shadows;
+      const v = part.geometry.attributes.position.count;
+      const i = part.geometry.index?.count ?? v;
+      const capacity = { vertices: Math.max(INITIAL_VERTICES, Math.ceil(v * SLACK * PAGE_TILES)), indices: Math.max(INITIAL_INDICES, Math.ceil(i * SLACK * PAGE_TILES)) };
+      const detail = this.detailLayerOf(material);
       // Casters with cut-outs keep casting from their own batch (the proxies have no alpha).
-      batch.mesh.castShadow = this.shadows && material.userData.castShadow === true && !TileBatches.proxyable(material);
+      const casts = material.userData.castShadow === true && !TileBatches.proxyable(material);
+      const batch = new PagedBatch(`tiles:${host.name}`, host, capacity, false, (page, first) => {
+        if (detail) {
+          page.mesh.layers.set(this.detailLayer);
+        }
+        page.mesh.receiveShadow = this.shadows;
+        page.mesh.castShadow = this.shadows && casts;
+        // Later pages share the first page's program (same material and attribute layout).
+        if (first) {
+          this.join(page.mesh);
+        } else {
+          this.pendingBatches.push(page.mesh);
+          this.uploadQueue.push(page.mesh);
+        }
+      });
       b = { batch, layout };
       if (key) {
         this.merged.set(key, b);
       }
-      this.join(batch.mesh);
-    } else {
-      b.batch.mesh.name += `+${material.name}`;
     }
     this.batches.set(material, b);
     return b;
@@ -1002,25 +1541,44 @@ export class TileBatches {
 
   /** Adds a new batch to the scene, after its program is compiled when a compile hook is given. */
   private join(mesh: THREE.BatchedMesh): void {
+    this.pendingBatches.push(mesh);
     if (!this.compile) {
-      this.group.add(mesh);
+      this.uploadQueue.push(mesh);
       return;
     }
-    this.pendingBatches.push(mesh);
     // The program depends on the batch's attributes and batching colour: compile once the first tile part is in.
     queueMicrotask(() => {
       void this.compile!(mesh)
         .catch(() => undefined)
-        .then(() => {
-          this.group.add(mesh);
-          this.pendingBatches.splice(this.pendingBatches.indexOf(mesh), 1);
-        });
+        .then(() => this.uploadQueue.push(mesh));
     });
+  }
+
+  /**
+   * Moves compiled pages into the scene within the per-frame upload budget (at least one page), their material's
+   * textures not uploaded yet included.
+   */
+  private admitPages(): void {
+    let mb = 0;
+    while (this.uploadQueue.length) {
+      const mesh = this.uploadQueue[0];
+      const bytes = firstUploadBytes(mesh);
+      if (mb > 0 && mb + bytes / 1e6 > PAGE_UPLOAD_MB_PER_FRAME) {
+        break;
+      }
+      if (this.initTexture && !uploadWithinBudget(mesh.material as THREE.Material, this.initTexture)) {
+        break;
+      }
+      mb += bytes / 1e6;
+      this.uploadQueue.shift();
+      this.group.add(mesh);
+      this.pendingBatches.splice(this.pendingBatches.indexOf(mesh), 1);
+    }
   }
 
   private static proxyable = castsThroughProxy;
 
-  private proxyBatch(side: THREE.Side, first: THREE.BufferGeometry): Batch {
+  private proxyBatch(side: THREE.Side): PagedBatch {
     const key = String(side);
     let b = this.proxies.get(key);
     if (!b) {
@@ -1029,12 +1587,14 @@ export class TileBatches {
         material = proxyMaterial(side);
         this.proxyMaterials.set(side, material);
       }
-      b = new Batch(`tiles:shadow:${key}`, material, { vertices: first.attributes.position.count * 2, indices: first.index!.count * 2 }, true);
-      shadowOnly(b.mesh, null);
-      b.mesh.castShadow = this.shadows;
-      b.mesh.receiveShadow = false;
+      b = new PagedBatch(`tiles:shadow:${key}`, material, { vertices: PROXY_PAGE_VERTICES, indices: PROXY_PAGE_INDICES }, true, (page) => {
+        shadowOnly(page.mesh, null, () => page.warm);
+        page.mesh.castShadow = this.shadows;
+        page.mesh.receiveShadow = false;
+        this.pendingBatches.push(page.mesh);
+        this.uploadQueue.push(page.mesh);
+      });
       this.proxies.set(key, b);
-      this.group.add(b.mesh);
     }
     return b;
   }

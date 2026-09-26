@@ -6,7 +6,7 @@
  * - manhole covers (ManholeCover003, foundry mark removed: conditions.json) on carriageways and pedestrian lanes;
  * - gully grates in the gutters of kerbed streets;
  * - yellow tactile pads on every dropped kerb, following the kerb line;
- * - grooved rails of the T3 tram embedded in the street;
+ * - grooved rails of the street tram tracks, on a granite sett inlay for the standard-gauge lines (T1, T5);
  * - on the arrival square a white guide line of pavers (bus stop to the piers and the crossing) and manholes;
  * - wet films (BLEND, COLOR_0 alpha falling to 0 at the rim): puddles in the square, wet paving in front of fish
  *   stalls and round gully grates.
@@ -15,6 +15,7 @@
  */
 import { BoxGrid, segDist } from '../../../../src/world/osm/shared/geometry';
 import type { Street } from '../../../../src/world/osm/shared/street-field';
+import { tramInlayHalf } from '../../../../src/world/osm/shared/tram-tracks';
 import { LOD0, LOD1, type Vec2, type Vec3 } from '../mesh';
 import type { MaterialName } from '../materials';
 import type { CompileStep, TileContext } from '../registry';
@@ -25,8 +26,16 @@ import { wearPlan } from './wear';
 /** Lift (m) of paint and ironwork above the ground. */
 const PAINT_LIFT = 0.008;
 const IRON_LIFT = 0.012;
+/** Lift (m) of the tram track inlay: well under the rails (0.006) and the paint. */
+const INLAY_LIFT = 0.003;
+/** Width (m) of the inlay strips across the track. */
+const INLAY_STRIP = 0.5;
 /** RoadLines004: the paint covers u 0.277-0.736 of the texture. */
 const LINE004_U: [number, number] = [0.277, 0.736];
+/** Spacing (m) of the paintability samples along a lane / edge stripe's long edges. */
+const EDGE_STEP = 0.5;
+/** Half width (m) of a zebra bar across the crossing. */
+const BAR_HALF = 0.25;
 /** RoadLines010 columns (u) of the dashed and solid lines; one texture repeat along v spans LINE010_REPEAT metres. */
 const LINE010_DASHED = 0.25;
 const LINE010_SOLID = 0.974;
@@ -125,6 +134,17 @@ interface Junctions {
 }
 
 /** Junction discs (a ref shared by 2+ carriageways): no lane paint inside them (as the flight slice's decals.ts). */
+/** junctions() of an area's streets, built once (every tile asks). */
+const junctionCache = new WeakMap<StreetContext, Junctions>();
+function junctionsOf(sc: StreetContext, roads: readonly { refs?: number[] }[]): Junctions {
+  let j = junctionCache.get(sc);
+  if (!j) {
+    j = junctions(sc.streets, roads);
+    junctionCache.set(sc, j);
+  }
+  return j;
+}
+
 function junctions(streets: readonly Street[], roads: readonly { refs?: number[] }[]): Junctions {
   const refHw = new Map<number, number>();
   const refCount = new Map<number, number>();
@@ -194,19 +214,35 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   const tactile = newStrip();
   const rails = newStrip();
   const grooves = newStrip();
+  const inlay = newStrip();
+  const edging = newStrip();
   const gullies: [number, number][] = [];
-  const nearCrossing = (x: number, z: number, r: number): boolean => sc.crossings.some((c) => segDist(x, z, c.ax, c.az, c.bx, c.bz) < r + c.width / 2);
+  // Only what can reach this tile is looked at (the area has thousands of crossings and streets); the culls below
+  // are conservative, so the tile's output is the same as looking at everything.
+  const b = t.bounds;
+  /** Distance from the box of a segment to the tile (<= the segment's own distance). */
+  const boxDist = (ax: number, az: number, bx: number, bz: number): number =>
+    Math.hypot(Math.max(0, b.minX - Math.max(ax, bx), Math.min(ax, bx) - b.maxX), Math.max(0, b.minZ - Math.max(az, bz), Math.min(az, bz) - b.maxZ));
+  // nearCrossing is asked for points within a few metres of the tile (NEAR_QUERY covers the edge-line offsets).
+  const NEAR_QUERY = 40;
+  const nearCrossings = sc.crossings.filter((c) => boxDist(c.ax, c.az, c.bx, c.bz) <= NEAR_QUERY + 1.5 + c.width / 2);
+  const nearCrossing = (x: number, z: number, r: number): boolean => nearCrossings.some((c) => segDist(x, z, c.ax, c.az, c.bx, c.bz) < r + c.width / 2);
 
   /* Zebras: bars 0.5 m wide (along the crossing) and `width` long (along the traffic), 1 m apart, 0.4 m off the kerbs.
      Rule paint.zebraBar: each bar is clipped (from its middle outwards) to where both of its long edges lie on
-     paintable carriageway; a bar left shorter than 1 m is dropped. */
+     paintable carriageway; a bar left shorter than 1 m is dropped. Rule paint.zebraTrack: the paint stops at a tram
+     track bed (placement.ts onTrackBed; the T1 crossings leave the granite bed bare): a bar touching it is cut into
+     the pieces beside it, pieces shorter than 1 m are dropped. */
   for (const c of sc.crossings) {
+    // Bars lie within the crossing's segment widened by half its width and a bar: none reaches a tile farther away.
+    if (boxDist(c.ax, c.az, c.bx, c.bz) > c.width / 2 + BAR_HALF + 2) {
+      continue;
+    }
     const len = Math.hypot(c.bx - c.ax, c.bz - c.az);
     const cx = (c.bx - c.ax) / len;
     const cz = (c.bz - c.az) / len;
     const bars = Math.max(2, Math.floor((len - 0.8 + 0.5) / 1.0));
     const start = (len - (bars - 1) * 1.0) / 2;
-    const quadW = 0.5 / (LINE004_U[1] - LINE004_U[0]);
     const half = c.width / 2;
     let own = false;
     for (let i = 0; i < bars; i++) {
@@ -214,7 +250,7 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       const mx = c.ax + cx * f;
       const mz = c.az + cz * f;
       const mine = inTile(t, mx, mz);
-      const onRoad = (g: number): boolean => [-0.25, 0.25].every((o) => rules.paintable(mx + c.tx * g + cx * o, mz + c.tz * g + cz * o, 0.05, false));
+      const onRoad = (g: number): boolean => [-BAR_HALF, BAR_HALF].every((o) => rules.paintable(mx + c.tx * g + cx * o, mz + c.tz * g + cz * o, 0.05, false));
       let lo = 0;
       let hi = 0;
       if (onRoad(0)) {
@@ -234,9 +270,37 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       if (mine) {
         log.note('paint.zebraBar', hi - lo < c.width - 0.15 ? 'shortened' : 'kept');
       }
-      own ||= mine;
+      // Pieces of [lo, hi] clear of the tram bed (both long edges, 0.1 m samples).
+      const bed = (g: number): boolean => [-BAR_HALF, BAR_HALF].some((o) => rules.onTrackBed(mx + c.tx * g + cx * o, mz + c.tz * g + cz * o));
+      const pieces: [number, number][] = [];
+      let cut = false;
+      let from: number | null = null;
+      const n = Math.round((hi - lo) / 0.1);
+      for (let k = 0; k <= n; k++) {
+        const g = lo + ((hi - lo) * k) / n;
+        const free = !bed(g);
+        cut ||= !free;
+        if (free && from === null) {
+          from = g;
+        }
+        if ((!free || k === n) && from !== null) {
+          const to = free ? g : g - (hi - lo) / n;
+          if (to - from >= 1) {
+            pieces.push([from, to]);
+          }
+          from = null;
+        }
+      }
+      if (cut && mine) {
+        log.note('paint.zebraTrack', pieces.length ? 'shortened' : 'dropped');
+      }
+      own ||= mine && pieces.length > 0;
       const vOff = hash(i * 3.1 + c.ax) * 0.6;
-      drapedRect(t, paint, a.heights.carriage, mx + c.tx * lo, mz + c.tz * lo, mx + c.tx * hi, mz + c.tz * hi, quadW / 2, [0, 1], [vOff + (lo + half) / 5, vOff + (hi + half) / 5], PAINT_LIFT, 2);
+      // The quad is the checked bar itself (0.5 m, the painted band LINE004_U of the image), not the image's full
+      // width: its transparent margins would reach over the kerb where the bar ends near it.
+      for (const [p0, p1] of pieces) {
+        drapedRect(t, paint, a.heights.carriage, mx + c.tx * p0, mz + c.tz * p0, mx + c.tx * p1, mz + c.tz * p1, BAR_HALF, LINE004_U, [vOff + (p0 + half) / 5, vOff + (p1 + half) / 5], PAINT_LIFT, 2);
+      }
     }
     if (own) {
       stats.zebras++;
@@ -244,7 +308,7 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   }
 
   /* Lane and edge lines on main roads. */
-  const junc = junctions(sc.streets, a.data.roads);
+  const junc = junctionsOf(sc, a.data.roads);
   for (const st of sc.streets) {
     if (!MAIN.test(st.kind) || st.pedestrian || st.hw < 2.5) {
       continue;
@@ -318,14 +382,16 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
           const z1 = az + tz * f1 + rz * o1;
           const mx = (x0 + x1) / 2;
           const mz = (z0 + z1) / 2;
-          // Rule paint.laneLine / paint.edgeLine: every corner of the 0.3 m stripe on paintable carriageway (off kerbs,
-          // gutters, pedestrian paving, parking and tram tracks), on a carriageway that runs the stripe's way.
-          const corners: [number, number][] = [
-            [x0 - rx * 0.15, z0 - rz * 0.15],
-            [x0 + rx * 0.15, z0 + rz * 0.15],
-            [x1 - rx * 0.15, z1 - rz * 0.15],
-            [x1 + rx * 0.15, z1 + rz * 0.15],
-          ];
+          // Rule paint.laneLine / paint.edgeLine: both long edges and the centre line of the 0.3 m stripe (corners and
+          // every EDGE_STEP m between them, so a kerb curving in mid-stripe or a kerbed raster texel inside it counts) on paintable carriageway (off kerbs, gutters,
+          // pedestrian paving, parking and tram tracks), on a carriageway that runs the stripe's way.
+          const corners: [number, number][] = [];
+          const ns = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / EDGE_STEP));
+          for (let q = 0; q <= ns; q++) {
+            const ex = x0 + ((x1 - x0) * q) / ns;
+            const ez = z0 + ((z1 - z0) * q) / ns;
+            corners.push([ex - rx * 0.15, ez - rz * 0.15], [ex, ez], [ex + rx * 0.15, ez + rz * 0.15]);
+          }
           if (!junc.outside(mx, mz) || nearCrossing(mx, mz, 1.5)) {
             continue;
           }
@@ -366,11 +432,12 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
         const x = ax + tx * f - tz * o;
         const z = az + tz * f + tx * o;
         // Rule manhole: never on (or within 0.7 m of) a tram rail.
-        const clearOfRails = sc.tramDist(x, z) >= TRAM_GAUGE_HALF + 0.7;
-        if (inTile(t, x, z) && s.distance(x, z) < -0.6 && junc.outside(x, z) && !nearCrossing(x, z, 1.2)) {
+        const here = inTile(t, x, z) && s.distance(x, z) < -0.6 && junc.outside(x, z) && !nearCrossing(x, z, 1.2);
+        const clearOfRails = here && sc.tramDist(x, z) >= TRAM_GAUGE_HALF + 0.7;
+        if (here) {
           log.note('manhole', clearOfRails ? 'kept' : 'dropped');
         }
-        if (clearOfRails && inTile(t, x, z) && s.distance(x, z) < -0.6 && junc.outside(x, z) && !nearCrossing(x, z, 1.2)) {
+        if (clearOfRails) {
           const r = 0.4;
           const ang = hash(next * 7.7) * Math.PI * 2;
           const ca = Math.cos(ang) * r;
@@ -392,6 +459,11 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       }
       while (st.kerbed && !st.pedestrian && nextGully < along + len) {
         const f = nextGully - along;
+        // The grate lies at most hw + 4 m from the axis point: none from farther away reaches this tile.
+        if (boxDist(ax + tx * f, az + tz * f, ax + tx * f, az + tz * f) > st.hw + 4.5) {
+          nextGully += 18 + hash(nextGully + st.road) * 14;
+          continue;
+        }
         const side = hash(nextGully * 0.7 + st.road) < 0.5 ? -1 : 1;
         // Find the kerb line along the normal (the raster width may differ from the tagged one).
         const nx = -tz * side;
@@ -495,8 +567,43 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
     stats.tactile++;
   }
 
+  /* Track inlay of the standard-gauge lines (T1, T5), as the runtime slice draws it (streets/decals.ts): granite
+     setts between and beside the rails (tram-tracks.ts tramInlayHalf) with a lighter granite edging course. */
+  for (const tr of sc.tram) {
+    const hw = tramInlayHalf(tr.gauge);
+    if (hw <= 0) {
+      continue;
+    }
+    let along = 0;
+    for (let k = 2; k < tr.pts.length; k += 2) {
+      const ax = tr.pts[k - 2];
+      const az = tr.pts[k - 1];
+      const bx = tr.pts[k];
+      const bz = tr.pts[k + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-3) {
+        continue;
+      }
+      // Setts 1.4x the world-metre paving scale (smaller than the street cobbles), continuous along the track; strips
+      // INLAY_STRIP m wide across, so the inlay follows the ground between the rails and stays under them.
+      const rx = -(bz - az) / len;
+      const rz = (bx - ax) / len;
+      const n = Math.ceil((hw * 2) / INLAY_STRIP);
+      const w = (hw * 2) / n;
+      for (let q = 0; q < n; q++) {
+        const o = -hw + w * (q + 0.5);
+        drapedRect(t, inlay, y, ax + rx * o, az + rz * o, bx + rx * o, bz + rz * o, w / 2, [q * w * 1.4, (q + 1) * w * 1.4], [along * 1.4, (along + len) * 1.4], INLAY_LIFT, 1);
+      }
+      for (const side of [-1, 1]) {
+        const o = side * (hw - 0.1);
+        drapedRect(t, edging, y, ax + rx * o, az + rz * o, bx + rx * o, bz + rz * o, 0.1, [0, 0.2], [along / 2, (along + len) / 2], INLAY_LIFT + 0.001, 1);
+      }
+      along += len;
+    }
+  }
+
   /* Embedded tram rails: steel heads with the flangeway groove on their inner side. */
-  // The corrected tracks (common.ts: on the carriageway where OSM draws them on the pavement).
+  // The corrected tracks (shared/tram-tracks.ts: kerb-lane tracks moved onto the carriageway, median tracks on the OSM line).
   for (const tr of sc.tram) {
     const g = tr.gauge / 2;
     for (let k = 2; k < tr.pts.length; k += 2) {
@@ -518,8 +625,9 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
       }
       if (inTile(t, (ax + bx) / 2, (az + bz) / 2)) {
         stats.railM += len;
-        // Rule rail.track: rails lie at carriageway level: on the carriageway (the corrected tracks are moved there
-        // when OSM draws them within 5 m of it) or in the flush track bed where they leave it (common.ts trackBed).
+        // Rule rail.track: rails lie at carriageway level: on the carriageway (kerb-lane tracks are moved there when
+        // OSM draws them on its pavement) or in the flush track bed (median and own right-of-way tracks, part of the
+        // raster's carriageway, or where moved rails still leave it: common.ts trackBed).
         // A segment whose rails still stand on raised ground is flagged.
         const raised = [-1, 1].some((side) => {
           const px = (ax + bx) / 2 + rx * side * (g + 0.035);
@@ -634,6 +742,8 @@ export function buildMarkings(t: TileContext, sc: StreetContext): MarkingStats {
   flush(t, 'st_iron', iron, LOD0);
   flush(t, 'st_groove', slots, LOD0);
   flush(t, 'st_tactile', tactile, LOD0);
+  flush(t, 'st_kup', inlay, LOD0 | LOD1);
+  flush(t, 'st_kerb', edging, LOD0);
   flush(t, 'st_rail', rails, LOD0 | LOD1);
   flush(t, 'st_groove', grooves, LOD0);
   return stats;

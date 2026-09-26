@@ -13,7 +13,8 @@ import { stations } from '../../build/bridge-frame';
 import type { MeshBuilder } from '../../build/mesh-builder';
 import { Emit, linearHex, LightMode, Surf } from '../../build/surfaces';
 import { Color, mat, Pal, withEmit } from '../palette';
-import type { DeckSection } from './deck';
+import { jointBreaks } from '../../build/deck-joint';
+import { deckPoint, type DeckSection } from './deck';
 import { buildGirderBridge, type GirderBridgeGeometry } from './girder-bridge';
 
 const flatDeck = (hw: number, depth: number, inset = 0.6): DeckSection['girder'] => [
@@ -29,27 +30,32 @@ const flatDeck = (hw: number, depth: number, inset = 0.6): DeckSection['girder']
 /* Galata                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Lateral offset (m) of each T1 track centre on the Galata deck (OSM track positions). */
+const GALATA_TRACK = 2.3;
+
 const GALATA_SECTION: DeckSection = {
   girder: flatDeck(21, 1.25, 0.3),
   girderLow: flatDeck(21, 1.25, 0.3),
   girderMat: mat(0x6f7a7c, Surf.Steel, 0.55, 0, 12),
+  // Matches the OSM ways it joins (fit-bridge-anchors.mjs centres the deck on them): T1 tracks 4.6 m apart, two
+  // 11.4 m carriageways of 3 lanes centred 9.3 m off the axis, 6 m walkways.
   strips: [
-    { x0: -3.7, x1: 3.7, kind: 'rail', surface: mat(0x77746d, Surf.Rail, 0.85, 0, 3.4) },
-    { x0: 3.7, x1: 11.4, kind: 'road', lanes: 2, medianHalf: 3.3 },
-    { x0: -11.4, x1: -3.7, kind: 'road', lanes: 2, medianHalf: 3.3 },
-    { x0: 11.4, x1: 21, kind: 'walk', raise: 0.18, surface: mat(0x9b958a, Surf.Paving, 0.8, 0, 0.6) },
-    { x0: -21, x1: -11.4, kind: 'walk', raise: 0.18, surface: mat(0x9b958a, Surf.Paving, 0.8, 0, 0.6) },
+    { x0: -3.6, x1: 3.6, kind: 'rail', surface: mat(0x77746d, Surf.Rail, 0.85, 0, GALATA_TRACK * 2) },
+    { x0: 3.6, x1: 15, kind: 'road', lanes: 3, medianHalf: 3.25 },
+    { x0: -15, x1: -3.6, kind: 'road', lanes: 3, medianHalf: 3.25 },
+    { x0: 15, x1: 21, kind: 'walk', raise: 0.18, surface: mat(0x9b958a, Surf.Paving, 0.8, 0, 0.6) },
+    { x0: -21, x1: -15, kind: 'walk', raise: 0.18, surface: mat(0x9b958a, Surf.Paving, 0.8, 0, 0.6) },
   ],
   barriers: [
-    { x: 3.85, kind: 'steel' },
-    { x: -3.85, kind: 'steel' },
+    { x: 3.72, kind: 'steel' },
+    { x: -3.72, kind: 'steel' },
   ],
   railings: [
     { x: 20.85, height: 1.1, raise: 0.18 },
     { x: -20.85, height: 1.1, raise: 0.18 },
   ],
-  lamps: { lines: [{ x: 11.8, arm: -1 }, { x: -11.8, arm: 1 }], spacing: 26, phase: 13, height: 8, arm: 1.2, kelvin: 3000, intensity: 34, pool: 1.1 },
-  traffic: { lanes: [5.6, 9.2].flatMap((x) => [{ x, dir: 1 as const }, { x: -x, dir: -1 as const }]), spacing: 26, speed: 9 },
+  lamps: { lines: [{ x: 15.4, arm: -1 }, { x: -15.4, arm: 1 }], spacing: 26, phase: 13, height: 8, arm: 1.2, kelvin: 3000, intensity: 34, pool: 1.1 },
+  traffic: { lanes: [5.7, 9.3, 13].flatMap((x) => [{ x, dir: 1 as const }, { x: -x, dir: -1 as const }]), spacing: 26, speed: 9 },
   depth: 1.25,
   halfWidth: 21,
 };
@@ -182,7 +188,7 @@ export function buildGalataBridge(b: StructureBuild): void {
       hMid: 5.6,
       crestRadius: 1e7,
       minEnd: 2.6,
-      maxApproach: 0,
+      maxApproach: 80,
       maxGrade: 0.03,
       pierSpacing: 42,
       pierSurface: Pal.concreteDark,
@@ -284,7 +290,9 @@ function galataExtras(b: StructureBuild, g: GirderBridgeGeometry): void {
     },
     { lods: 1, cullDistance: 1500 },
   );
-  // tram catenary: centre poles with twin brackets, contact wires over both tracks
+  // tram catenary: centre poles with twin brackets, contact wires over both tracks (following the deck's tracks where
+  // a landed end moves them onto the street's, deck.ts deckPoint())
+  const at = (s: number, x: number, dy: number): THREE.Vector3 => deckPoint(frame, g.joints, height, s, x, dy);
   const poleColor = linearHex(0x4f5558);
   const st: number[] = [];
   for (let s = endLo + 10; s < endHi - 10; s += 34) {
@@ -297,7 +305,7 @@ function galataExtras(b: StructureBuild, g: GirderBridgeGeometry): void {
       }
       mb.surface(mat(0x4f5558, Surf.Steel, 0.5, 0.5, 0));
       for (const s of st) {
-        const p = frame.point(s, 0, height(s));
+        const p = at(s, 0, 0);
         mb.cylinder(p.x, p.y, p.z, 0.14, 0.1, 7.2, 8, true, false);
       }
     },
@@ -305,11 +313,11 @@ function galataExtras(b: StructureBuild, g: GirderBridgeGeometry): void {
   );
   for (const s of st) {
     for (const side of [-1, 1]) {
-      b.wires.add(frame.point(s, 0, height(s) + 6.9), frame.point(s, side * 2.3, height(s) + 6.6), 0.04, poleColor, { fade: [600, 1200] });
+      b.wires.add(at(s, 0, 6.9), at(s, side * (GALATA_TRACK + 0.6), 6.6), 0.04, poleColor, { fade: [600, 1200] });
     }
   }
   for (const side of [-1, 1]) {
-    const wire = stations(endLo + 10, endHi - 10, 17).map((s) => frame.point(s, side * 1.7, height(s) + 6.1));
+    const wire = stations(endLo + 10, endHi - 10, 17, jointBreaks(g.joints)).map((s) => at(s, side * GALATA_TRACK, 6.1));
     b.wires.polyline(wire, 0.012, Color.catenary, { fade: [500, 900] });
   }
 }

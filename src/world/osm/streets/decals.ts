@@ -6,8 +6,10 @@
  */
 import type { OsmData } from '../data';
 import { MeshBuf } from '../shared/buffers';
+import { laneLines } from '../shared/ground-lines';
 import { BoxGrid, hash, segDist } from '../shared/geometry';
-import { streetTramTracks, Surf, type Street } from '../shared/street-field';
+import { Surf, type Street } from '../shared/street-field';
+import { TRAM_PAINT_CLEAR, trackBedClearanceIndex, trackDistanceIndex, tramInlayHalf } from '../shared/tram-tracks';
 import type { StreetSurface } from '../shared/street-surface';
 import type { Marks } from './furniture';
 import { GROUND_LAYER_INDEX } from './layers';
@@ -34,8 +36,15 @@ const worn = (c: Rgb, seed: number): Rgb => {
   return [c[0] * f, c[1] * f, c[2] * f];
 };
 
+/** Half length (along the traffic) and half width (m) of a zebra stripe. */
+const ZEBRA_HL = 1.6;
+const ZEBRA_HW = 0.25;
+
 /** Flat disc draped on the ground (manhole covers): rim ring and dark lid. */
 function disc(out: Decal, surface: StreetSurface, x: number, z: number, r: number, lift: number): void {
+  if (!surface.covers(x, z)) {
+    return;
+  }
   const n = 12;
   const y = surface.heightAt(x, z) + lift;
   const c = out.vertex(x, y, z, 0, 1, 0, ...IRON);
@@ -86,7 +95,7 @@ function ribbon(out: Decal, surface: StreetSurface, pts: readonly number[], offs
       const x = ax + tx * f + rx * offset;
       const z = az + tz * f + rz * offset;
       const on = !dash || (dist + f) % (dash[0] + dash[1]) < dash[0];
-      const kept = !keep || keep(x, z);
+      const kept = surface.covers(x, z) && (!keep || keep(x, z));
       const lx = x - rx * halfWidth;
       const lz = z - rz * halfWidth;
       const qx = x + rx * halfWidth;
@@ -109,6 +118,7 @@ function ribbon(out: Decal, surface: StreetSurface, pts: readonly number[], offs
 function bed(out: MeshBuf, surface: StreetSurface, pts: readonly number[], offset: number, halfWidth: number, lift: number, col: Rgb, layer: number): void {
   let prevL = -1;
   let prevR = -1;
+  let prevKeep = false;
   for (let k = 2; k < pts.length; k += 2) {
     const ax = pts[k - 2];
     const az = pts[k - 1];
@@ -130,12 +140,14 @@ function bed(out: MeshBuf, surface: StreetSurface, pts: readonly number[], offse
       // UVs 1.4x world metres: bed setts smaller than the street cobbles.
       const l = out.vertex(lx, surface.heightAt(lx, lz) + lift, lz, 0, 1, 0, ...col, lx * 1.4, lz * 1.4, layer);
       const r = out.vertex(qx, surface.heightAt(qx, qz) + lift, qz, 0, 1, 0, ...col, qx * 1.4, qz * 1.4, layer);
-      if (prevL >= 0) {
+      const kept = surface.covers(x, z);
+      if (prevL >= 0 && kept && prevKeep) {
         out.tri(prevL, prevR, l);
         out.tri(prevR, r, l);
       }
       prevL = l;
       prevR = r;
+      prevKeep = kept;
     }
   }
 }
@@ -156,9 +168,7 @@ export function crossingPoints(data: Pick<OsmData, 'points'>): number[] {
   return out;
 }
 
-const LANE_KINDS = /^(trunk|primary|secondary|tertiary)/;
-
-export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'points' | 'rails' | 'roads'>, surface: StreetSurface, marks: Marks): { paint: Decal; rails: Decal; inlay: MeshBuf; crossings: number; manholes: number } {
+export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'points' | 'rails' | 'roads'>, surface: StreetSurface, marks: Marks): { paint: Decal; rails: Decal; inlay: MeshBuf; crossings: number; zebraTrack: number; manholes: number } {
   const paint = decalMesh();
   const rails = decalMesh();
 
@@ -205,31 +215,14 @@ export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'poi
     return true;
   };
 
-  // Lane lines on asphalt main roads.
+  // Lane lines on asphalt main roads (shared/ground-lines.ts: bridge decks continue them), TRAM_PAINT_CLEAR m clear
+  // of the tram tracks and off the flush track bed (the compiler's placement rule `paintable`).
+  const tramDist = trackDistanceIndex(surface.tramTracks, TRAM_PAINT_CLEAR);
+  const laneKeep = (x: number, z: number): boolean => outOfJunctions(x, z) && tramDist(x, z) >= TRAM_PAINT_CLEAR && !surface.trackBedAt(x, z);
   for (const s of streets) {
-    if (s.surf !== Surf.Asphalt || s.hw < 2.9 || !LANE_KINDS.test(s.kind)) {
-      continue;
-    }
-    const lanes = s.lanes || Math.max(s.oneway ? 1 : 2, Math.round((s.hw * 2) / 3.3));
     const PAINT = worn(WHITE, s.road);
-    if (!s.oneway) {
-      if (s.hw >= 5.5) {
-        ribbon(paint, surface, s.pts, -0.12, 0.06, 0.02, PAINT, undefined, outOfJunctions);
-        ribbon(paint, surface, s.pts, 0.12, 0.06, 0.02, PAINT, undefined, outOfJunctions);
-      } else {
-        ribbon(paint, surface, s.pts, 0, 0.07, 0.02, PAINT, [3, 5], outOfJunctions);
-      }
-      const perDir = Math.max(1, Math.floor(lanes / 2));
-      const lw = s.hw / perDir;
-      for (let l = 1; l < perDir; l++) {
-        ribbon(paint, surface, s.pts, l * lw, 0.06, 0.02, PAINT, [3, 6], outOfJunctions);
-        ribbon(paint, surface, s.pts, -l * lw, 0.06, 0.02, PAINT, [3, 6], outOfJunctions);
-      }
-    } else if (lanes >= 2) {
-      const lw = (s.hw * 2) / lanes;
-      for (let l = 1; l < lanes; l++) {
-        ribbon(paint, surface, s.pts, -s.hw + l * lw, 0.06, 0.02, PAINT, [3, 6], outOfJunctions);
-      }
+    for (const l of laneLines(s)) {
+      ribbon(paint, surface, s.pts, l.offset, l.halfWidth, 0.02, PAINT, l.dash, laneKeep);
     }
   }
 
@@ -246,6 +239,11 @@ export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'poi
     }
   });
   let crossings = 0;
+  // Crossing paint stops at a tram track bed (the T1 crossings leave the granite bed bare; the compiler's placement
+  // rule paint.zebraTrack): a stripe touching the bed (sett inlay / rail reach, or the flush track bed) is left out.
+  let zebraTrack = 0;
+  const bedClear = trackBedClearanceIndex(surface.tramTracks, 1);
+  const onBed = (x: number, z: number): boolean => bedClear(x, z) < ZEBRA_HW || surface.trackBedAt(x, z);
   const points = crossingPoints(data);
   for (let c = 0; c < points.length; c += 2) {
     const px = points[c];
@@ -274,11 +272,25 @@ export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'poi
     const stripes = Math.max(2, Math.floor((hw * 2 - 0.6) / 1.0));
     const zebra = worn(WHITE, c * 0.77 + 3);
     const start = -((stripes - 1) * 1.0) / 2;
+    let drawn = 0;
     for (let i = 0; i < stripes; i++) {
       const o = start + i;
-      patch(paint, surface, cx - tz * o, cz + tx * o, tx, tz, 1.6, 0.25, 0.025, zebra);
+      const sx = cx - tz * o;
+      const sz = cz + tx * o;
+      let bed = false;
+      for (let f = -ZEBRA_HL; f <= ZEBRA_HL + 1e-6 && !bed; f += ZEBRA_HL / 4) {
+        bed = onBed(sx + tx * f, sz + tz * f);
+      }
+      if (bed) {
+        zebraTrack++;
+        continue;
+      }
+      patch(paint, surface, sx, sz, tx, tz, ZEBRA_HL, ZEBRA_HW, 0.025, zebra);
+      drawn++;
     }
-    crossings++;
+    if (drawn) {
+      crossings++;
+    }
   }
 
   // Stop lines at signals.
@@ -352,23 +364,23 @@ export function buildDecals(streets: readonly Street[], data: Pick<OsmData, 'poi
   // Track beds of the standard-gauge lines (T1, T5): granite setts between and beside the rails with a lighter
   // edging course; the metre-gauge İstiklal tram runs in the street's own granite slabs.
   const inlay = new MeshBuf({ position: 3, normal: 3, color: 3, aUvM: 2, aLayer: 1 });
-  for (const t of streetTramTracks(data)) {
-    if (t.gauge < 1.2) {
+  for (const t of surface.tramTracks) {
+    const hw = tramInlayHalf(t.gauge);
+    if (hw <= 0) {
       continue;
     }
-    const hw = t.gauge / 2 + 0.95;
     bed(inlay, surface, t.pts, 0, hw, 0.012, BED, GROUND_LAYER_INDEX.cobble);
     bed(inlay, surface, t.pts, hw - 0.1, 0.1, 0.014, BED_EDGE, GROUND_LAYER_INDEX.granite);
     bed(inlay, surface, t.pts, -hw + 0.1, 0.1, 0.014, BED_EDGE, GROUND_LAYER_INDEX.granite);
   }
 
   // Grooved tram rails: steel head with the flangeway groove on its inner side.
-  for (const t of streetTramTracks(data)) {
+  for (const t of surface.tramTracks) {
     const g = t.gauge / 2;
     ribbon(rails, surface, t.pts, g + 0.035, 0.035, 0.022, RAIL);
     ribbon(rails, surface, t.pts, -g - 0.035, 0.035, 0.022, RAIL);
     ribbon(paint, surface, t.pts, g - 0.02, 0.02, 0.02, GROOVE);
     ribbon(paint, surface, t.pts, -g + 0.02, 0.02, 0.02, GROOVE);
   }
-  return { paint, rails, inlay, crossings, manholes };
+  return { paint, rails, inlay, crossings, zebraTrack, manholes };
 }

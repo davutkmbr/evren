@@ -522,6 +522,24 @@ export interface RoadSurfaceService {
   readonly decks: readonly { id: string; points: { x: number; y: number; z: number }[]; width: number }[];
 }
 
+/**
+ * The drawn street ground of the OSM slice (carriageways, raised kerbs and sidewalks, tram platforms, quays), exactly
+ * as the ground mesh is built. Provided by world/osm as 'streetGround' once its street raster is ready; structures
+ * use it to land bridge decks on the street they join.
+ */
+export interface StreetGroundService {
+  /** Whether (x, z) lies on the OSM ground. */
+  covers(x: number, z: number): boolean;
+  /** Height (m) of the drawn ground at (x, z) (bridge decks excluded). */
+  heightAt(x: number, z: number): number;
+  /**
+   * Tram track centrelines and painted lane lines of the drawn ground crossing the segment a-b, as distances (m) from
+   * a along it; a line stopping up to `reach` m short of the segment is extended along its last segment. Decks landing
+   * on the street continue these lines.
+   */
+  linesAcross?(ax: number, az: number, bx: number, bz: number, reach: number): { t: number; kind: 'track' | 'lane' }[];
+}
+
 /* ------------------------------------------------------------------ */
 /* Weather (owned by render/weather) — service key: 'weather'           */
 /* ------------------------------------------------------------------ */
@@ -647,6 +665,7 @@ export interface Services {
   fx: FxService;
   audio: AudioService;
   roadSurface: RoadSurfaceService;
+  streetGround: StreetGroundService;
   weather: WeatherService;
   perches: PerchService;
   hotbar: HotbarService;

@@ -18,6 +18,19 @@ downloaded as JPG (albedo = Diffuse, normal = OpenGL normal `nor_gl`, rough = Ro
 | `granite/` | [large_grey_tiles](https://polyhaven.com/a/large_grey_tiles) | 1k | 3 m | CC0 1.0 |
 | `yard/` | [concrete_floor_worn_001](https://polyhaven.com/a/concrete_floor_worn_001) | 1k | 3 m | CC0 1.0 |
 
+## City-wall kit textures
+
+CC0 1.0 sets for the city-wall kit (`src/world/landmarks/walls`), approved 2026-09-26
+(`.docs/assets/candidates/wall-scans.md`, `tools/assets/approved.json`). Cached in `assets-src/texture/<id>/` by
+`scripts/data/fetch-assets.mjs`, resized to 1024 px by `scripts/data/prep-wall-textures.mjs`.
+
+| Folder | Source | Author | Maps | Repeat size | Licence |
+| --- | --- | --- | --- | --- | --- |
+| `wall_stone/` | [Bricks 102](https://ambientcg.com/view?id=Bricks102) (ambientCG) | Lennart Demes | albedo, normal, rough | 4.8 × 2.4 m (kit) | CC0 1.0 |
+| `wall_brick/` | [castle_brick_broken_06](https://polyhaven.com/a/castle_brick_broken_06) (Poly Haven) | Rob Tuytel | albedo, normal, rough | 2.5 m | CC0 1.0 |
+| `wall_core/` | [Rocks 025](https://ambientcg.com/view?id=Rocks025) (ambientCG) | Lennart Demes | albedo, normal, rough | 1.9 m | CC0 1.0 |
+| `wall_ivy/` | [Leaf Set 029](https://ambientcg.com/view?id=LeafSet029) (ambientCG) | Lennart Demes | albedo, opacity (3 × 3 leaf atlas) | 0.25 m per atlas | CC0 1.0 |
+
 <!-- GENERATED:street-assets (tools/world-compiler/src/street/licences.ts) -->
 
 ## Street layer textures and decals

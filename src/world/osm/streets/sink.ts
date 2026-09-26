@@ -1,24 +1,65 @@
 /** Worker-side collectors for instanced street props and a simple "keep things apart" spatial check. */
+import { type StandGround, StandLog, type StandRule, standFault } from '../../placement/stand';
 import { FloatBuf } from '../shared/buffers';
 import { BoxGrid } from '../shared/geometry';
 import { PROP_KINDS, type PropKind } from './kinds';
+
+/**
+ * Stand rule of each street prop kind (src/world/placement/stand.ts): masts, lanterns and signal poles stand on land,
+ * outside buildings and off the carriageway; wall brackets hang on façades; bollards, platform furniture and
+ * catenary masts may stand in the roadway (entry bollards, platforms and centre poles are placed there on purpose),
+ * and wall brackets may overhang a kerbless lane.
+ */
+export const STREET_PROP_RULES: Record<PropKind, StandRule> = {
+  lampArm: { offRoad: true },
+  lampArmLow: { offRoad: true },
+  lampDouble: { offRoad: true },
+  lampLantern: { offRoad: true },
+  lampWall: { building: false },
+  signal: { offRoad: true },
+  bollard: {},
+  tramCanopy: {},
+  ticketGate: {},
+  catenaryCentre: {},
+  catenarySide: {},
+};
 
 /** INSTANCE_STRIDE records per prop kind plus a light type per instance (kinds.ts Light). */
 export class PropSink {
   readonly records = {} as Record<PropKind, FloatBuf>;
   readonly lights = {} as Record<PropKind, FloatBuf>;
+  /** Outcome of every add() and fits() per kind (build stats). */
+  readonly log = new StandLog();
 
-  constructor() {
+  /** `ground`: every instance must stand on it (STREET_PROP_RULES); absent, instances are taken as placed. */
+  constructor(private readonly ground?: StandGround) {
     for (const k of PROP_KINDS) {
       this.records[k] = new FloatBuf(256);
       this.lights[k] = new FloatBuf(64);
     }
   }
 
-  /** Adds an instance; `yaw` turns local +X towards the prop's front. */
-  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, scaleY = 1, light = 0, tint: [number, number, number] = [1, 1, 1]): void {
+  /** Whether `kind` may stand at (x, z) (base `y` when given); a refusal is counted as dropped. */
+  fits(kind: PropKind, x: number, z: number, y?: number): boolean {
+    if (!this.ground) {
+      return true;
+    }
+    const fault = standFault(this.ground, x, z, STREET_PROP_RULES[kind], y);
+    if (fault) {
+      this.log.note(kind, fault);
+    }
+    return fault === null;
+  }
+
+  /** Adds an instance unless it may not stand there (fits()); `yaw` turns local +X towards the prop's front. */
+  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, scaleY = 1, light = 0, tint: [number, number, number] = [1, 1, 1]): boolean {
+    if (!this.fits(kind, x, z, y)) {
+      return false;
+    }
+    this.log.note(kind, 'kept');
     this.records[kind].push(x, y, z, yaw, scale, scaleY, tint[0], tint[1], tint[2]);
     this.lights[kind].push(light);
+    return true;
   }
 
   count(kind: PropKind): number {

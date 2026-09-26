@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /** City generation worker: holds static world data, answers tile (geometry) and collider requests. */
 import type { CityWorkerRequest, CityWorkerResult } from '../protocol';
-import { buildColliders, buildTile } from './tile';
+import { buildColliders, buildTile, forgetCells } from './tile';
 import { WorldData } from './world-data';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -24,6 +24,10 @@ self.onmessage = (ev: MessageEvent<CityWorkerRequest>) => {
   const msg = ev.data;
   if (msg.type === 'init') {
     world = new WorldData(msg);
+    return;
+  }
+  if (msg.type === 'forget') {
+    forgetCells(msg);
     return;
   }
   if (!world) {
