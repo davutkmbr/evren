@@ -54,6 +54,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
      Dolmabahçe garden walls (castle_wall) as walls; mapped land-wall gate openings are 11+ m (breaches, no gate
      pieces); street lamps / OSM trees are not kept out of the walls. Compiled street areas need a recompile to drop
      wall-owned buildings.
+   - Roads (owner report: supplement walls stood in the Kennedy Cd median): carriageways (with their width + 0.5 m),
+     rail / tram beds and the medians of divided major roads (< 35 m) are now obstacles like buildings (`buildings.ts`
+     road quads, `fit.ts`); supplement (OHM) traces are snapped to the land side of major roads within 40 m before
+     the fit (`plan.ts snapRoadside`, 7.2 km moved); where there is no room the wall breaks (Road opening, crumbled).
+     Check now reports `check.roadMetres` = 0 (all stretches, OSM ones too). Placed 18.9 km (was 19.9; Golden Horn
+     fragments 1.3 km, Marmara 5.5 km). Before / after: `.shots/walls/debug/kennedy-*`.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
 
 ## Next, in order (agreed with the owner)

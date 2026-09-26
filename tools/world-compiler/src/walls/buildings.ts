@@ -1,11 +1,12 @@
 /**
- * Building footprints the walls must respect: every OSM building the game draws (the Galata slice and the OSM
- * regions, public/data/osm) and every building the street compiler draws (data/osm/<area>.json), de-duplicated by
- * OSM id. The procedural city keeps out of the walls through the land-use corridors (plan.ts `corridors`).
+ * Footprints the walls must respect: every OSM building the game draws (the Galata slice and the OSM regions,
+ * public/data/osm) and every building the street compiler draws (data/osm/<area>.json), de-duplicated by OSM id, plus
+ * the carriageways and rail / tram beds of the same files as quads over their full width (a wall never stands on a
+ * road). The procedural city keeps out of the walls through the land-use corridors (plan.ts `corridors`).
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { OsmBuilding } from '../../../../src/world/osm/data';
+import type { OsmBuilding, OsmRail, OsmRoad } from '../../../../src/world/osm/data';
 import { flat, inRing, ringArea, type V2 } from './poly';
 
 export interface Footprint {
@@ -17,6 +18,8 @@ export interface Footprint {
   levels?: number;
   height?: number;
   historic?: string;
+  /** Road / rail quads: the centre segment, half width, major road (primary and above), one-way carriageway. */
+  road?: { a: V2; b: V2; hw: number; major: boolean; oneway: boolean; rail: boolean };
   minX: number;
   minZ: number;
   maxX: number;
@@ -24,6 +27,11 @@ export interface Footprint {
 }
 
 const CELL = 50;
+/** highway=* values that are carriageways (vehicles); footways, paths, steps and squares are not obstacles. */
+const CARRIAGEWAY = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link', 'unclassified', 'residential', 'living_street', 'service', 'road', 'busway']);
+/** Major roads: the coastal avenues the supplement traces are snapped off, and the dual carriageways whose medians are closed. */
+export const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link']);
+const RAILS = new Set(['rail', 'tram', 'light_rail', 'narrow_gauge', 'subway']);
 
 export class Footprints {
   readonly list: Footprint[] = [];
@@ -34,6 +42,11 @@ export class Footprints {
     if (ring.length < 3) {
       return;
     }
+    this.addRing({ id: b.id, part: !!b.part, ring, area: Math.abs(ringArea(ring)), kind: b.kind, levels: b.levels, height: b.height, historic: b.historic });
+  }
+
+  addRing(f: Omit<Footprint, 'minX' | 'minZ' | 'maxX' | 'maxZ'>): void {
+    const ring = f.ring;
     let minX = Infinity;
     let minZ = Infinity;
     let maxX = -Infinity;
@@ -44,7 +57,7 @@ export class Footprints {
       maxX = Math.max(maxX, x);
       maxZ = Math.max(maxZ, z);
     }
-    const k = this.list.push({ id: b.id, part: !!b.part, ring, area: Math.abs(ringArea(ring)), kind: b.kind, levels: b.levels, height: b.height, historic: b.historic, minX, minZ, maxX, maxZ }) - 1;
+    const k = this.list.push({ ...f, minX, minZ, maxX, maxZ }) - 1;
     for (let j = Math.floor(minZ / CELL); j <= Math.floor(maxZ / CELL); j++) {
       for (let i = Math.floor(minX / CELL); i <= Math.floor(maxX / CELL); i++) {
         const key = i * 100003 + j;
@@ -91,12 +104,46 @@ export function loadFootprints(root: string): { fp: Footprints; files: number } 
   const street = join(root, 'data/osm');
   // Street-profile area files (compiler input); walls.json is ours, *-scratch files are someone's work in progress.
   files.push(...readdirSync(street).filter((f) => f.endsWith('.json') && f !== 'walls.json' && !f.includes('scratch')).map((f) => join(street, f)));
+  let roadId = -1e12;
+  const road = (pts: readonly number[], hw: number, meta: { major: boolean; oneway: boolean; rail: boolean }, kind: string): void => {
+    for (let i = 2; i + 1 < pts.length; i += 2) {
+      const a: V2 = [pts[i - 2], pts[i - 1]];
+      const b: V2 = [pts[i], pts[i + 1]];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l < 0.05) {
+        continue;
+      }
+      const d: V2 = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+      const n: V2 = [-d[1], d[0]];
+      const e = hw * 0.5;
+      const P = (p: V2, u: number, v: number): V2 => [p[0] + d[0] * u + n[0] * v, p[1] + d[1] * u + n[1] * v];
+      fp.addRing({ id: roadId--, part: false, ring: [P(a, -e, -hw), P(b, e, -hw), P(b, e, hw), P(a, -e, hw)], area: (l + 2 * e) * 2 * hw, kind, road: { a, b, hw, ...meta } });
+    }
+  };
   for (const f of files) {
-    let data: { buildings?: OsmBuilding[] };
+    let data: { buildings?: OsmBuilding[]; roads?: OsmRoad[]; rails?: OsmRail[] };
     try {
-      data = JSON.parse(readFileSync(f, 'utf8')) as { buildings?: OsmBuilding[] };
+      data = JSON.parse(readFileSync(f, 'utf8')) as { buildings?: OsmBuilding[]; roads?: OsmRoad[]; rails?: OsmRail[] };
     } catch {
       continue;
+    }
+    for (const r of data.roads ?? []) {
+      const key = `r${r.id}:${r.pts.length}:${r.pts[0]},${r.pts[1]}`;
+      if (!CARRIAGEWAY.has(r.kind) || r.tunnel || r.bridge || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      // Carriageway plus kerb / verge margin.
+      road(r.pts, r.width / 2 + 0.5, { major: MAJOR.has(r.kind), oneway: !!r.oneway, rail: false }, `highway=${r.kind}`);
+    }
+    for (const r of data.rails ?? []) {
+      const key = `t${r.id}:${r.pts.length}:${r.pts[0]},${r.pts[1]}`;
+      if (!RAILS.has(r.kind) || r.tunnel || r.bridge || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      // Track bed: gauge plus ballast / sleeper margin.
+      road(r.pts, r.gauge / 2 + 1.5, { major: false, oneway: false, rail: true }, `railway=${r.kind}`);
     }
     for (const b of data.buildings ?? []) {
       // Multipolygon buildings come as one record per outer ring under the same id.
