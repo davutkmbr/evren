@@ -4,7 +4,6 @@ import { interactive, keyText, prompt } from '../components';
 import { el } from '../dom';
 import { formatClock } from '../format';
 import type { MapRaster } from '../map/map-raster';
-import { perchTeleportView } from '../perch-teleport';
 import { PlaceMap } from './place-map';
 import { buildPlaces, fold, REGIONS, type Place, type PlaceKind, type PlaceRegion } from './places';
 
@@ -12,8 +11,8 @@ export interface TeleportPanelOptions {
   raster: MapRaster;
   /** Işınlan: fly to the place's view (sets its time of day, if any). */
   onTeleport(view: ViewPreset): void;
-  /** Oraya kon ve izle: a spot just behind and above the perch, facing its view (the player lands with L). */
-  onPerch(view: ViewPreset): void;
+  /** Oraya kon ve izle: the dragon sits down on the perch in the viewing mode (src/ui/perch-view.ts). */
+  onPerch(perch: PerchPoint): void;
   onOpenMap(): void;
 }
 
@@ -312,11 +311,11 @@ export class TeleportPanel {
     }
   }
 
-  /** ~30 m behind and above the grip point, facing the perch's view; the landing itself is up to the player (L). */
+  /** Straight into the viewing mode on the perch (the UI places the dragon on it). */
   private perch(): void {
     const place = this.current();
     if (place?.perch) {
-      this.options.onPerch(perchTeleportView(place.perch));
+      this.options.onPerch(place.perch);
     }
   }
 }

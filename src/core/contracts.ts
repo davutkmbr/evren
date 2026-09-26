@@ -347,6 +347,36 @@ export interface DragonState {
   requestRoar?(): boolean;
   /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
   fireBurst?(seconds: number): void;
+  /** Perching on viewpoints (phase 03, dragon/flight/perch.ts); absent in sandboxes without perches. */
+  readonly perch?: DragonPerchState;
+}
+
+/**
+ * Perch phases: `free` (normal flight), `approach` (the guided approach flying to the perch, abortable), `perched`
+ * (sitting on the perch: the viewing mode), `leaving` (the drop take-off off the perch until clear of it).
+ */
+export type PerchPhase = 'free' | 'approach' | 'perched' | 'leaving';
+
+/** Why a perch landing was refused (the UI words it). */
+export type PerchRefusal = 'blocked' | 'unavailable';
+
+export interface DragonPerchState {
+  readonly phase: PerchPhase;
+  /** Seconds since the phase started (simulation time). */
+  readonly phaseTime: number;
+  /** Perch being approached, sat on or just left; null while free. */
+  readonly point: PerchPoint | null;
+  /** Perch in reach for a landing right now (the "[L] Kon" prompt), null when none or not free. */
+  readonly offer: PerchPoint | null;
+  /** Counts refused L presses (the UI shows a polite refusal when it changes) and the reason of the last one. */
+  readonly refusals: number;
+  readonly lastRefusal: PerchRefusal | null;
+  /** Counts aborted approaches (player input during the approach). */
+  readonly aborts: number;
+  /** Sits the dragon directly on a perch in the viewing mode (map / menu teleport). False when unknown. */
+  perchAt(id: string): boolean;
+  /** Leaves the perch with the drop take-off (same as Space / L while perched). False when not perched. */
+  leave(): boolean;
 }
 
 export interface DragonPose {
@@ -473,6 +503,11 @@ export interface CameraRigState {
   readonly fovDeg: number;
   /** Caption of the current cinematic shot (cinematic mode only). */
   readonly shotLabel?: string;
+  /**
+   * The viewing camera while perched (phase 03; C cycles it): the cinematic mode's slow orbit or still framing, the
+   * rider's eyes, or another camera.
+   */
+  readonly perchCamera?: 'orbit' | 'fixed' | 'rider' | 'other';
   /**
    * Switch to the free camera and place it exactly (hard cut). Used by photo mode and screenshot tooling.
    * Angles in degrees: heading 0 = north (clockwise), pitch + up.
@@ -861,6 +896,11 @@ export interface GameEvents {
   'loading-progress': { label: string; progress: number };
   'loading-done': Record<string, never>;
   'toast': { text: string; kind?: 'info' | 'warn' };
+  /**
+   * Perching (phase 03): the dragon sat down on a viewpoint (`first` = never perched there before, the discovery) or
+   * left it. Emitted by the UI's perch viewing layer, which owns the visited set.
+   */
+  perch: { id: string; state: 'perched' | 'left'; first: boolean };
   /**
    * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, urge, takeoff, land...; the rider
    * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.

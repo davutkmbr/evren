@@ -23,6 +23,8 @@ export const HUD_PRIORITY = {
   discovery: 70,
   areaTitle: 60,
   maneuver: 50,
+  /** Perching (phase 03): the "[L] Kon" prompt, the approach and viewing-mode hint lines. */
+  perch: 45,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,
   /** Start-of-game key hints and the compass landmark label. */

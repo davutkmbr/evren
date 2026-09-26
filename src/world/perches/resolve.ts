@@ -105,7 +105,7 @@ function kizTerrace(geo: GeoQuery, u: number, v: number): Grip {
  * Mirrors buildImperial (mosques/gen/styles/imperial.ts) for the main dome: drum base, springing and crown, the
  * whole plan shifted along the qibla axis to centre prayer hall + courtyard, then leadDome's 'raised' profile.
  */
-function mosqueDome(geo: GeoQuery, id: string, offset: number, headingDeg: number): Grip {
+function mosqueDome(geo: GeoQuery, id: string, offset: number, headingDeg: number, side = 0): Grip {
   const def = landmark(geo, id);
   const spec = LANDMARK_SPECS[id];
   if (!spec || spec.style !== 'imperial') {
@@ -129,8 +129,8 @@ function mosqueDome(geo: GeoQuery, id: string, offset: number, headingDeg: numbe
   const yaw = -def.headingDeg * DEG;
   const cx = def.x + shift * Math.sin(yaw);
   const cz = def.z + shift * Math.cos(yaw);
-  // 'raised' profile: r = R cos(phi) (1 - 0.05 sin^6 phi), y = spring + rise sin(phi); solve r = offset
-  const d = Math.min(Math.max(offset, 0), R * 0.9);
+  // 'raised' profile: r = R cos(phi) (1 - 0.05 sin^6 phi), y = spring + rise sin(phi); solve r = distance from the crown
+  const d = Math.min(Math.hypot(Math.max(offset, 0), side), R * 0.9);
   let lo = 0;
   let hi = Math.PI / 2;
   for (let i = 0; i < 40; i++) {
@@ -143,8 +143,9 @@ function mosqueDome(geo: GeoQuery, id: string, offset: number, headingDeg: numbe
     }
   }
   const y = def.y + spring + rise * Math.sin((lo + hi) / 2);
+  // Along the heading by `offset`, to its right by `side` (right of the heading is (cos h, sin h)).
   const h = headingDeg * DEG;
-  return { x: cx + Math.sin(h) * d, y, z: cz - Math.cos(h) * d };
+  return { x: cx + Math.sin(h) * offset + Math.cos(h) * side, y, z: cz - Math.cos(h) * offset + Math.sin(h) * side };
 }
 
 /**
@@ -206,7 +207,7 @@ function resolveGrip(geo: GeoQuery, p: PerchPlacement, headingDeg: number): Grip
     case 'kiz-terrace':
       return kizTerrace(geo, p.u, p.v);
     case 'mosque-dome':
-      return mosqueDome(geo, p.landmarkId, p.offset, headingDeg);
+      return mosqueDome(geo, p.landmarkId, p.offset, headingDeg, p.side ?? 0);
     case 'fortress-tower':
       return fortressTower(geo, p.tower);
     case 'skyscraper-roof':

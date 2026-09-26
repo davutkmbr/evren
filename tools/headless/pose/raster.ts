@@ -20,6 +20,8 @@ const enum Part {
   Rider = 5,
   RiderFar = 6,
   Tack = 7,
+  /** Scene geometry drawn around the dragon (perch sheets: the structure it stands on). */
+  Scene = 8,
 }
 
 type RGB = readonly [number, number, number];
@@ -32,7 +34,18 @@ const PALETTE: readonly RGB[] = [
   [168, 72, 44],
   [214, 132, 100],
   [96, 72, 50],
+  [196, 188, 172],
 ];
+
+/**
+ * Optional world geometry drawn with the dragon (z-buffered, flat-shaded stone): triangle soups of 9 floats per
+ * triangle. With a scene the ground plane is not drawn and nothing is flagged red (the check tools measure
+ * penetration themselves); `groundLine` still draws a thin line at the surface height for reference.
+ */
+export interface SceneOverlay {
+  tris: readonly Float32Array[];
+  groundLine?: boolean;
+}
 const BACKGROUND: RGB = [240, 236, 227];
 const GROUND_FILL: RGB = [219, 209, 188];
 const GROUND_LINE: RGB = [120, 104, 78];
@@ -257,7 +270,7 @@ export interface Cell {
  * Renders one frame: ground (a line with world-fixed ticks in side/front view, a world-fixed grid seen from above),
  * then the model with a z-buffer at `ss`× supersampling, outlines at part and depth edges, box-filtered down.
  */
-export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32Array[], rec: FrameRecord, cam: Camera, width: number, height: number, ss: number): Cell {
+export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32Array[], rec: FrameRecord, cam: Camera, width: number, height: number, ss: number, scene?: SceneOverlay): Cell {
   const W = width * ss;
   const H = height * ss;
   const depth = new Float32Array(W * H).fill(Infinity);
@@ -272,6 +285,10 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
   const cx = W / 2;
   const cy = H / 2;
   let lowest = Infinity;
+  const shade = scene ? new Float32Array(W * H) : null;
+  if (scene && shade) {
+    rasterScene(scene, cam, W, H, depth, part, shade);
+  }
 
   for (let mi = 0; mi < meshes.length; mi++) {
     const m = meshes[mi];
@@ -343,7 +360,7 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
             depth[k] = z;
             part[k] = pc;
             const yk = w0 * ya + w1 * yb + w2 * yc;
-            below[k] = yk < -0.05 ? 1 : 0;
+            below[k] = !scene && yk < -0.05 ? 1 : 0;
             wet[k] = waterY !== undefined && yk + groundY < waterY ? 1 : 0;
           }
         }
@@ -370,7 +387,11 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
       // World point on the view plane through the centre for this pixel.
       const a = (px + 0.5 - cx) / scale;
       const b = (cy - (py + 0.5)) / scale;
-      if (edgeOn) {
+      if (scene) {
+        if (scene.groundLine && edgeOn && Math.abs(py + 0.5 - gy) < 0.75 * ss) {
+          c = GROUND_TICK;
+        }
+      } else if (edgeOn) {
         if (py + 0.5 > wy && py + 0.5 <= gy) {
           c = py + 0.5 < wy + 1.5 * ss ? WATER_LINE : WATER_FILL;
         }
@@ -413,6 +434,11 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
       const k = py * W + px;
       const p = part[k];
       if (p === Part.None) {
+        continue;
+      }
+      if (p === Part.Scene && shade) {
+        const f = shade[k];
+        put(k, [PALETTE[p][0] * f, PALETTE[p][1] * f, PALETTE[p][2] * f]);
         continue;
       }
       let edge = false;
@@ -465,4 +491,97 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
 
 function view3(dir: THREE.Vector3): boolean {
   return Math.abs(dir.y) < 0.99;
+}
+
+/** Rasterises the scene triangles into the z-buffer (part Scene, a Lambert shade from a fixed light over the camera). */
+function rasterScene(scene: SceneOverlay, cam: Camera, W: number, H: number, depth: Float32Array, part: Uint8Array, shade: Float32Array): void {
+  const { right, up, dir, center, scale } = cam;
+  const cx = W / 2;
+  const cy = H / 2;
+  // Light from above, slightly from the camera side.
+  const lx = -dir.x * 0.4 + up.x * 0.3;
+  const ly = 0.85;
+  const lz = -dir.z * 0.4 + up.z * 0.3;
+  const ll = Math.hypot(lx, ly, lz);
+  const reach = Math.max(W, H) / scale;
+  for (const t of scene.tris) {
+    for (let i = 0; i < t.length; i += 9) {
+      const ax = t[i] - center.x;
+      const ay = t[i + 1] - center.y;
+      const az = t[i + 2] - center.z;
+      if (Math.abs(ax) > reach * 2 || Math.abs(ay) > reach * 2 || Math.abs(az) > reach * 2) {
+        continue;
+      }
+      const bx = t[i + 3] - center.x;
+      const by = t[i + 4] - center.y;
+      const bz = t[i + 5] - center.z;
+      const qx = t[i + 6] - center.x;
+      const qy = t[i + 7] - center.y;
+      const qz = t[i + 8] - center.z;
+      const sax = cx + (ax * right.x + ay * right.y + az * right.z) * scale;
+      const say = cy - (ax * up.x + ay * up.y + az * up.z) * scale;
+      const sbx = cx + (bx * right.x + by * right.y + bz * right.z) * scale;
+      const sby = cy - (bx * up.x + by * up.y + bz * up.z) * scale;
+      const sqx = cx + (qx * right.x + qy * right.y + qz * right.z) * scale;
+      const sqy = cy - (qx * up.x + qy * up.y + qz * up.z) * scale;
+      const area = (sbx - sax) * (sqy - say) - (sby - say) * (sqx - sax);
+      if (Math.abs(area) < 1e-9) {
+        continue;
+      }
+      let x0 = Math.floor(Math.min(sax, sbx, sqx));
+      let x1 = Math.ceil(Math.max(sax, sbx, sqx));
+      let y0 = Math.floor(Math.min(say, sby, sqy));
+      let y1 = Math.ceil(Math.max(say, sby, sqy));
+      if (x1 < 0 || y1 < 0 || x0 >= W || y0 >= H) {
+        continue;
+      }
+      x0 = Math.max(x0, 0);
+      y0 = Math.max(y0, 0);
+      x1 = Math.min(x1, W - 1);
+      y1 = Math.min(y1, H - 1);
+      // Face normal (either winding) and its Lambert term.
+      const ux = bx - ax;
+      const uy = by - ay;
+      const uz = bz - az;
+      const vx = qx - ax;
+      const vy = qy - ay;
+      const vz = qz - az;
+      let nx = uy * vz - uz * vy;
+      let ny = uz * vx - ux * vz;
+      let nz = ux * vy - uy * vx;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      if (nx * dir.x + ny * dir.y + nz * dir.z > 0) {
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
+      const f = 0.55 + 0.45 * Math.max(0, (nx * lx + ny * ly + nz * lz) / ll);
+      const za = ax * dir.x + ay * dir.y + az * dir.z;
+      const zb = bx * dir.x + by * dir.y + bz * dir.z;
+      const zc = qx * dir.x + qy * dir.y + qz * dir.z;
+      const inv = 1 / area;
+      for (let py = y0; py <= y1; py++) {
+        const fy = py + 0.5;
+        for (let px = x0; px <= x1; px++) {
+          const fx = px + 0.5;
+          const w0 = ((sbx - fx) * (sqy - fy) - (sby - fy) * (sqx - fx)) * inv;
+          const w1 = ((sqx - fx) * (say - fy) - (sqy - fy) * (sax - fx)) * inv;
+          const w2 = 1 - w0 - w1;
+          if (w0 < 0 || w1 < 0 || w2 < 0) {
+            continue;
+          }
+          const z = w0 * za + w1 * zb + w2 * zc;
+          const k = py * W + px;
+          if (z < depth[k]) {
+            depth[k] = z;
+            part[k] = Part.Scene;
+            shade[k] = f;
+          }
+        }
+      }
+    }
+  }
 }

@@ -270,6 +270,8 @@ export class PoseDriver {
     pose.riderLeanPitch = clamp(pose.riderLeanPitch + this.leanPitchVel * h, -0.6, 0.5);
     pose.riderLeanRoll = clamp(pose.riderLeanRoll + this.leanRollVel * h, -0.5, 0.5);
     this.updateRiderCues(sim, dt, cmd);
+    // Perched on a viewpoint: the calm perched pose over everything above (perch.ts).
+    sim.perch.applyPose(pose, dt);
     return pose;
   }
 
