@@ -16,7 +16,7 @@ import { enterRunOut } from './ground-moves';
 import { enterGrounded, enterSwimming } from './locomotion';
 import { skimKiss, updateSkim } from './skim';
 import { tryPlunge } from './underwater';
-import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, SKIM, TRICKS, WATER_DENSITY, WING } from './params';
+import { BODY, ENVELOPE, FLAP, GRAVITY, LANDING_STYLE, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, SKIM, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { maxAmplitudeForClearance } from './wingtip';
@@ -339,7 +339,11 @@ function checkTouchdown(sim: FlightSim, h: number): void {
   // The feet meet the ground: footDepth() uses the stance geometry the rig stands with. A settling landing touches
   // down within a foot of the ground (the wing-beat bob would otherwise keep it hanging); the stance's settle takes
   // the rest without a jump.
-  const touch = sim.mode === 'landing' && sim.body.velocity.y < 0.6 ? 0.3 : 0.02;
+  // Only a gentle sink at a walking pace counts early: sinking faster (the wing-beat bob) or still moving on, the feet
+  // wait for the next downstroke or the ground itself.
+  const vel = sim.body.velocity;
+  const gentle = vel.y < 0.6 && vel.y > -LANDING_STYLE.touchSink && Math.hypot(vel.x, vel.z) < LANDING_STYLE.touchSpeed;
+  const touch = sim.mode === 'landing' && gentle ? LANDING_STYLE.touchReach : 0.02;
   // Settling onto a slope, the hips can meet the rising ground behind before the feet below the centre of mass do:
   // the body resting on the ground counts as the touchdown too.
   const bodyDown = sim.mode === 'landing' && sim.impact.touched && sim.impact.surface === 'ground' && sim.body.velocity.y < 0.6 && Math.hypot(sim.body.velocity.x, sim.body.velocity.z) < 4.5;
@@ -352,9 +356,16 @@ function checkTouchdown(sim: FlightSim, h: number): void {
   if (v.y < -9) {
     return;
   }
+  sim.controller.landingStyle.touchdown(-v.y, horizontal);
   if (horizontal < RUNOUT.minSpeed) {
     sim.emit({ type: 'landed', point: new THREE.Vector3(b.position.x, sim.surfaceY, b.position.z), speed: Math.max(-v.y, 0), water: false });
+    const landing = sim.mode === 'landing';
+    const sink = v.y;
     enterGrounded(sim);
+    if (landing) {
+      // The wings unload onto the legs: they flex a little deeper than the sink alone would take them.
+      sim.moves.settleVy = Math.min(sim.moves.settleVy, Math.min(sink, 0) - LANDING_STYLE.absorbExtra);
+    }
     return;
   }
   if (horizontal <= RUNOUT.maxSpeed && v.y > -RUNOUT.maxSink) {

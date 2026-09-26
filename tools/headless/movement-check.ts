@@ -5,6 +5,7 @@
  *   npx tsx tools/headless/movement-check.ts            # table of numbers, exits 1 when one fails
  *   npx tsx tools/headless/movement-check.ts --json f   # also write the numbers to f
  *   npx tsx tools/headless/movement-check.ts --swim     # only the swimming section
+ *   npx tsx tools/headless/movement-check.ts --landing  # only the landing sections (touchdowns, run-out, landing v2)
  *
  * Everything is measured from the per-frame records (60 fps render frames, 120 Hz physics), so the same check runs
  * against older code for before / after numbers:
@@ -13,6 +14,9 @@
  *   - touchdowns (slow landing, fast landing, run-out): largest per-frame height and pitch change, foot penetration,
  *     wings and tail never below the ground;
  *   - run-out: stop distance without and with the brake against the distance the RUNOUT parameters predict;
+ *   - landing v2 (slow landings and run-outs, each variant): contact sink and ground speed, the flare's pitch, the
+ *     approach pitch not held constant, backstrokes before the contact, hind feet first, wings and tail above the
+ *     ground from L on, no velocity jump; the variant picker never repeating one where another applies;
  *   - touch-and-go: ground speed kept through the fly-out (>= 70 %);
  *   - leaps (standing, running, tired, off an edge): crouch and push-off durations, no velocity jump > 3 m/s in one
  *     frame, first full downstroke within 0.15 s of lift-off, legs tucked only after the second stroke;
@@ -28,7 +32,7 @@ import { writeFileSync } from 'node:fs';
 import * as THREE from 'three';
 import * as params from '../../src/dragon/flight/params';
 import { footStats, trackFeet, type FootTrack } from './pose/contacts';
-import { lowestParts as lowestPartsOf, type LowestParts } from './pose/parts';
+import { lowestParts as lowestPartsOf, partVertices, type LowestParts } from './pose/parts';
 import { collectMeshes, skinVertex, type MeshData } from './pose/raster';
 import { buildRig, PoseRuntime, type FrameRecord, type FrameScript, type Terrain } from './pose/runtime';
 import { fly, GROUND_Y, landThen, scenarioByName } from './pose/scenarios';
@@ -229,6 +233,9 @@ function predictedStop(v0: number, brake: boolean): number {
   return Math.log((a + k * v0 * v0) / (a + k * ve * ve)) / (2 * k) + ve / 2.4;
 }
 
+/** Distance (m) of the drop ahead in the runout-edge scenario (the landing v2 approach and flare cover ~100 m). */
+const RUNOUT_EDGE = 125;
+
 async function runOut(): Promise<void> {
   console.log('\nRun-out (L at 30 m/s, 8 m over flat ground)');
   for (const brake of [false, true]) {
@@ -287,9 +294,193 @@ async function runOut(): Promise<void> {
   const off = firstIndex(edge.records, (r, k) => k > 0 && edge.records[k - 1].mode === 'grounded' && r.mode === 'takeoff');
   const atEdge = off >= 0 ? edge.records[off] : null;
   const edgeDistance = atEdge ? -atEdge.position[2] : NaN;
-  console.log(`  run-out towards an edge at 100 m: ${atEdge ? `leapt at ${f2(horizontal(atEdge))} m/s, ${f2(100 - edgeDistance)} m before the edge` : 'no leap'}`);
-  note('runoutEdge.leapt', atEdge !== null && edgeDistance < 100);
-  check(atEdge !== null && edgeDistance < 100 && atEdge.velocity[1] > 1, 'run-out towards an edge: leaps on its own before the edge');
+  console.log(`  run-out towards an edge at ${RUNOUT_EDGE} m: ${atEdge ? `leapt at ${f2(horizontal(atEdge))} m/s, ${f2(RUNOUT_EDGE - edgeDistance)} m before the edge` : 'no leap'}`);
+  note('runoutEdge.leapt', atEdge !== null && edgeDistance < RUNOUT_EDGE);
+  check(atEdge !== null && edgeDistance < RUNOUT_EDGE && atEdge.velocity[1] > 1, 'run-out towards an edge: leaps on its own before the edge');
+}
+
+/* ------------------------------------------------------------------ */
+/* 3b. Landing v2: approach, flare, contact                             */
+/* ------------------------------------------------------------------ */
+
+const SLOW_LANDINGS = ['land', 'land-drop', 'land-shallow', 'land-tired'];
+const RUN_LANDINGS = ['fastland', 'runout', 'runout-glide', 'runout-swoop'];
+
+interface LandingStyleView {
+  previous?: { variant: string | null; backstrokes: number; sink: number; speed: number };
+  pick?(sim: unknown, runOut: boolean, clearance: number): string;
+  last?: string | null;
+}
+
+function landingStyleOf(run: Run): LandingStyleView | null {
+  return (run.rt.sim.controller as unknown as { landingStyle?: LandingStyleView }).landingStyle ?? null;
+}
+
+/** Lowest hind foot, wrist (fore foot), wing and tail height above the ground in one record (m). */
+function contactOrder(run: Run, k: number): { hind: number; fore: number; wing: number; tail: number } {
+  const parts = partVertices(run);
+  const r = run.records[k];
+  const p = new Float32Array(3);
+  const out = { hind: Infinity, fore: Infinity, wing: Infinity, tail: Infinity };
+  const height = (m: MeshData, i: number): number => {
+    skinVertex(m, i, r, p, 0);
+    return p[1] - run.ground(p[0], p[2]);
+  };
+  for (const [m, i] of parts.feet) {
+    const bone = run.boneNames[m.dominant[i]] ?? '';
+    const h = height(m, i);
+    if (bone.startsWith('foot')) {
+      out.hind = Math.min(out.hind, h);
+    } else {
+      out.fore = Math.min(out.fore, h);
+    }
+  }
+  for (const [m, i] of parts.wing) {
+    out.wing = Math.min(out.wing, height(m, i));
+  }
+  for (const [m, i] of parts.tail) {
+    out.tail = Math.min(out.tail, height(m, i));
+  }
+  return out;
+}
+
+function stats(values: number[]): { mean: number; std: number; min: number; max: number } {
+  const n = Math.max(values.length, 1);
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const std = Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  return { mean, std, min: Math.min(...values), max: Math.max(...values) };
+}
+
+async function landings(): Promise<void> {
+  console.log('\nLanding v2 (L to 2 s after the touchdown; slow: land*, run-out: fastland, runout*)');
+  const variants: string[] = [];
+  for (const name of [...SLOW_LANDINGS, ...RUN_LANDINGS]) {
+    if (!scenarioByName(name)) {
+      console.log(`  ${name.padEnd(13)} n/a (no such scenario)`);
+      continue;
+    }
+    const run = await scenario(name);
+    const recs = run.records;
+    const slow = SLOW_LANDINGS.includes(name);
+    const land = firstIndex(recs, (r) => r.mode === 'landing');
+    const td = firstIndex(recs, (r) => r.mode === 'grounded', Math.max(land, 0));
+    if (land < 0 || td < 1) {
+      check(false, `${name}: lands`);
+      continue;
+    }
+    const style = landingStyleOf(run)?.previous;
+    const last = recs[td - 1];
+    // Contact: exact at the contact substep from the landing style when there is one, else the last airborne frame.
+    const sink = style ? style.sink : -last.velocity[1];
+    const speed = style ? style.speed : horizontal(last);
+    const variant = style?.variant ?? 'n/a';
+    variants.push(variant);
+    // The flare: from the last approach frame pitched below 12° before the touchdown.
+    let flare = td - 1;
+    while (flare > land && recs[flare - 1].pitchDeg >= 12) {
+      flare--;
+    }
+    let flarePitch = -Infinity;
+    for (let k = flare; k < td; k++) {
+      flarePitch = Math.max(flarePitch, recs[k].pitchDeg);
+    }
+    // The approach: its pitch must not be held constant (an aeroplane on a glide slope).
+    const approach = recs.slice(land, flare).map((r) => r.pitchDeg);
+    const ap = stats(approach.length > 0 ? approach : [0]);
+    // Backstrokes: downstrokes (the beat phase wrapping, a real amplitude) in the flare while the ground speed still
+    // brakes (slow: above 3 m/s).
+    let backstrokes = 0;
+    for (let k = Math.max(flare, 1); k < td && !(style && !slow); k++) {
+      const wrapped = recs[k].pose.flapPhase < recs[k - 1].pose.flapPhase - 1;
+      if (wrapped && recs[k].pose.flapAmplitude > 0.3 && (!slow || horizontal(recs[k]) > 3)) {
+        backstrokes++;
+      }
+    }
+    if (style && !slow) {
+      // The run-out flare starts before the body pitches through 12°: the landing style counts its downstrokes.
+      backstrokes = style.backstrokes;
+    }
+    // Velocity continuity from the positions (the body's own velocity is reset on a touchdown by design).
+    let jump = 0;
+    const k1 = Math.min(recs.length - 1, td + 2 * FPS);
+    for (let k = land + 2; k <= k1; k++) {
+      const a = recs[k].position;
+      const b = recs[k - 1].position;
+      const c = recs[k - 2].position;
+      jump = Math.max(jump, Math.hypot(a[0] - 2 * b[0] + c[0], a[1] - 2 * b[1] + c[1], a[2] - 2 * b[2] + c[2]) * FPS);
+    }
+    // First contact: the first frame from the flare on in which any part comes within 10 cm of the ground.
+    let contact = contactOrder(run, td);
+    for (let k = flare; k <= Math.min(recs.length - 1, td + FPS / 2); k++) {
+      const c = contactOrder(run, k);
+      if (Math.min(c.hind, c.fore, c.wing, c.tail) < 0.1) {
+        contact = c;
+        break;
+      }
+    }
+    const feetFirst = contact.hind <= contact.fore && contact.hind <= contact.wing && contact.hind <= contact.tail;
+    const low = lowestParts(run, recs[land].time, recs[k1].time, 2);
+    const dust = run.rt.sim.eventCounts.dust ?? 0;
+    const time = recs[td].time - recs[land].time;
+    console.log(
+      `  ${name.padEnd(13)} ${variant.padEnd(7)} ${f2(time)} s from L: contact sink ${f2(sink)} m/s, speed ${f2(speed)} m/s; flare pitch max ${flarePitch.toFixed(0)}°, approach pitch ${ap.min.toFixed(0)}..${ap.max.toFixed(0)}° (sd ${f2(ap.std)}°); backstrokes ${backstrokes}; first contact heights hind ${f2(contact.hind)} fore ${f2(contact.fore)} wing ${f2(contact.wing)} tail ${f2(contact.tail)} m; lowest wing ${f2(low.wing)} tail ${f2(low.tail)} m; largest per-frame velocity change ${f2(jump)} m/s; dust ${dust}`,
+    );
+    note(`landing.${name}.variant`, variant);
+    note(`landing.${name}.time`, time);
+    note(`landing.${name}.sink`, sink);
+    note(`landing.${name}.speed`, speed);
+    note(`landing.${name}.flarePitch`, flarePitch);
+    note(`landing.${name}.approachPitchSd`, ap.std);
+    note(`landing.${name}.approachPitchRange`, ap.max - ap.min);
+    note(`landing.${name}.backstrokes`, backstrokes);
+    note(`landing.${name}.jump`, jump);
+    note(`landing.${name}.wing`, low.wing);
+    note(`landing.${name}.tail`, low.tail);
+    if (slow) {
+      check(sink <= 1.5, `${name}: touchdown sink <= 1.5 m/s (${f2(sink)})`);
+      check(speed <= 3, `${name}: ground speed at contact <= 3 m/s (${f2(speed)})`);
+      check(flarePitch >= 40, `${name}: the flare pitches back >= 40° (${flarePitch.toFixed(0)}°)`);
+      check(backstrokes >= 2, `${name}: >= 2 backstrokes before the contact (${backstrokes})`);
+      check(ap.std >= 3 && ap.max - ap.min >= 10, `${name}: approach pitch not held constant (sd ${f2(ap.std)}° >= 3, range ${(ap.max - ap.min).toFixed(0)}° >= 10)`);
+    } else {
+      check(speed >= RUNOUT.minSpeed && speed <= RUNOUT.maxSpeed, `${name}: runs out (contact ${f2(speed)} m/s within ${RUNOUT.minSpeed}-${RUNOUT.maxSpeed})`);
+      check(backstrokes >= 1 && flarePitch >= 10, `${name}: a short flare with a backstroke before the contact (${backstrokes}, pitch ${flarePitch.toFixed(0)}°)`);
+    }
+    check(feetFirst, `${name}: hind feet first (hind ${f2(contact.hind)} <= fore ${f2(contact.fore)}, below wing and tail)`);
+    check(low.wing > -0.02 && low.tail > -0.02, `${name}: wings and tail never below the ground from L on (wing ${f2(low.wing)}${low.wing <= -0.02 ? ` at ${f2(low.frameWing - recs[td].time)} s from contact` : ''}, tail ${f2(low.tail)} m)`);
+    check(jump <= 1.5, `${name}: no velocity jump (largest per-frame change ${f2(jump)} m/s <= 1.5)`);
+  }
+  // Variants: the scenarios above differ, and the picker never repeats one where another applies.
+  const slowSeen = new Set(variants.slice(0, SLOW_LANDINGS.length));
+  console.log(`  variants of the landings above: ${variants.join(', ')}`);
+  if (variants.every((v) => v === 'n/a')) {
+    check(false, 'landing variants (no landing style)');
+    return;
+  }
+  check(slowSeen.size >= 3, `slow landings show >= 3 variants (${[...slowSeen].join(', ')})`);
+  const rig = await buildRig();
+  const rt = new PoseRuntime(rig, GROUND_Y);
+  rt.teleport(0, GROUND_Y + 35, 0, 0, 20);
+  const style = rt.sim.controller.landingStyle;
+  const sequence = (runOut: boolean, clearance: number, stamina: number): string[] => {
+    rt.sim.stamina = stamina;
+    const out: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const v = style.pick(rt.sim, runOut, clearance);
+      style.last = v;
+      out.push(v);
+    }
+    return out;
+  };
+  for (const [label, seq] of [
+    ['slow, 35 m', sequence(false, 35, 1)],
+    ['slow, tired', sequence(false, 35, 0.2)],
+    ['run-out', sequence(true, 8, 1)],
+  ] as const) {
+    const repeats = seq.some((v, i) => i > 0 && seq[i - 1] === v);
+    console.log(`  ${label}: ${seq.join(', ')}`);
+    check(!repeats && new Set(seq).size >= 2, `${label}: landing variants alternate, never the same twice in a row`);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -857,14 +1048,21 @@ async function swimming(): Promise<void> {
 async function main(): Promise<void> {
   const t0 = Date.now();
   // --swim: only the swimming section.
-  if (!process.argv.includes('--swim')) {
+  if (process.argv.includes('--landing')) {
+    await touchdowns();
+    await runOut();
+    await landings();
+  } else if (!process.argv.includes('--swim')) {
     await gaits();
     await touchdowns();
     await runOut();
+    await landings();
     await leaps();
     await hoverBank();
   }
-  await swimming();
+  if (!process.argv.includes('--landing')) {
+    await swimming();
+  }
   console.log(`\n${failures.length === 0 ? 'ALL PASS' : `${failures.length} FAILED`} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   const jsonAt = process.argv.indexOf('--json');
   if (jsonAt >= 0 && process.argv[jsonAt + 1]) {
