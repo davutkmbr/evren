@@ -129,7 +129,7 @@ export class Flocks {
     }
     for (const v of vessels) {
       if (v.model.kind === 'vapur' || v.model.kind === 'tour' || (v.model.kind === 'fishing' && this.rng() < 0.4)) {
-        base('ferry', v.state.x, v.state.z, 0, v.model.kind === 'vapur' ? 12 : 7, 5, 22, 30, v);
+        base('ferry', v.x, v.z, 0, v.model.kind === 'vapur' ? 12 : 7, 5, 22, 30, v);
       }
     }
     for (const [id, w] of PIGEON_MOSQUES) {
@@ -146,8 +146,8 @@ export class Flocks {
       f.birds.push(i);
       const a = this.rng() * Math.PI * 2;
       const r = f.radius * (0.3 + 0.7 * this.rng());
-      const ax = f.vessel ? f.vessel.state.x : f.x;
-      const az = f.vessel ? f.vessel.state.z : f.z;
+      const ax = f.vessel ? f.vessel.x : f.x;
+      const az = f.vessel ? f.vessel.z : f.z;
       this.px[i] = ax + Math.cos(a) * r;
       this.pz[i] = az + Math.sin(a) * r;
       this.py[i] = f.ground + f.minH + (f.maxH - f.minH) * this.rng();
@@ -180,8 +180,8 @@ export class Flocks {
     const t = this.time;
     for (const f of this.flocks) {
       if (f.vessel) {
-        f.x = f.vessel.state.x;
-        f.z = f.vessel.state.z;
+        f.x = f.vessel.x;
+        f.z = f.vessel.z;
       }
       const dc = Math.hypot(f.x - cam.x, f.z - cam.z);
       const want = dc < ACTIVE_RADIUS && (!f.vessel || f.vessel.state.speed > 0.5 || f.birds.length > 0);
@@ -232,10 +232,10 @@ export class Flocks {
       f.lz = f.z + Math.sin(f.lAngle) * r;
       f.ly = f.ground + f.minH + (f.maxH - f.minH) * (0.5 + 0.5 * Math.sin(t * 0.21 + f.seed * 6)) + f.panic * 25;
     }
-    const vesselVx = f.vessel ? -Math.sin(f.vessel.state.yaw) * f.vessel.state.speed : 0;
-    const vesselVz = f.vessel ? -Math.cos(f.vessel.state.yaw) * f.vessel.state.speed : 0;
-    const followX = f.vessel ? f.vessel.state.x + Math.sin(f.vessel.state.yaw) * f.vessel.model.length * 0.55 : f.x;
-    const followZ = f.vessel ? f.vessel.state.z + Math.cos(f.vessel.state.yaw) * f.vessel.model.length * 0.55 : f.z;
+    const vesselVx = f.vessel ? -Math.sin(f.vessel.yaw) * f.vessel.state.speed : 0;
+    const vesselVz = f.vessel ? -Math.cos(f.vessel.yaw) * f.vessel.state.speed : 0;
+    const followX = f.vessel ? f.vessel.x + Math.sin(f.vessel.yaw) * f.vessel.model.length * 0.55 : f.x;
+    const followZ = f.vessel ? f.vessel.z + Math.cos(f.vessel.yaw) * f.vessel.model.length * 0.55 : f.z;
     const cruise = pigeon ? 13 : 9;
     const maxAcc = pigeon ? 14 : 7;
     for (let k = 0; k < birds.length; k++) {

@@ -5,6 +5,7 @@ import { clearance, segmentClear } from '../util/water-nav';
 import { Track, type TrackSample } from './nav/track';
 import type { KeepOut } from './nav/keep-out';
 import type { VesselModel } from './model-types';
+import type { RigidHull } from './physics/rigid-hull';
 
 export type VesselMode = 'underway' | 'anchored' | 'moored';
 
@@ -510,7 +511,7 @@ export const enum Priority {
 /** A vessel in the simulation: model + behaviour + motion state + render handles. */
 export class Vessel {
   readonly state: VesselState = { x: 0, z: 0, yaw: 0, speed: 0, yawRate: 0, mode: 'underway', astern: false, cap: Infinity, shoo: false, escapeX: 0, escapeZ: 0, sidestep: 0, sidestepHold: 0, backOff: false, reversing: false, backBlocked: false };
-  /** Vertical offset of the design waterline (ballast ships ride high). */
+  /** Ballast ships ride this much above their design waterline (m): the floating body is built lighter by it. */
   lift = 0;
   readonly phase: number;
   readonly matrix = new THREE.Matrix4();
@@ -522,9 +523,18 @@ export class Vessel {
   /** Base index into the nav-light pool. */
   lightBase = -1;
   handle: unknown = null;
+  /**
+   * Render pose of the floating body (phase 21 stage 7b): horizontal position and heading (may lag or drift a little
+   * from the navigation reference in `state`), heave of the design waterline (ballast lift included), roll, pitch.
+   */
+  x = 0;
+  z = 0;
+  yaw = 0;
   roll = 0;
   pitch = 0;
   heave = 0;
+  /** The rigid body (set up by the fleet's physics). */
+  body: RigidHull | null = null;
   priority: Priority = Priority.Small;
 
   constructor(
