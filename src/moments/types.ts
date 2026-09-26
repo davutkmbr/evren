@@ -13,6 +13,9 @@ import type { FlightMode, WeatherPreset } from '../core/contracts';
 /** 'draft' until every referenced model, animation and sound exists and is approved; only 'ready' moments play. */
 export type MomentStatus = 'draft' | 'ready';
 
+/** Player-facing groups; each can be switched off in the settings (see prefs.ts). */
+export type MomentCategory = 'legend' | 'city-life' | 'poem';
+
 export interface LatLon {
   lat: number;
   lon: number;
@@ -184,6 +187,7 @@ export interface Moment {
   id: string;
   /** Short Turkish name (used on the discovery list). */
   title: string;
+  category: MomentCategory;
   status: MomentStatus;
   /** Item number in the phase 19 backlog. */
   backlog: number;

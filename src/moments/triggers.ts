@@ -7,6 +7,7 @@
  */
 import type { FlightMode, WeatherPreset } from '../core/contracts';
 import { latLonToLocal } from '../core/geo-coords';
+import { momentAllowed, type MomentPrefs } from './prefs';
 import type { DateRange, LatLon, Moment, MomentTrigger, MonthDay, Season, TimeWindow } from './types';
 
 export interface XZ {
@@ -45,6 +46,8 @@ export interface MomentContext {
 export interface EvaluateOptions {
   /** Also consider 'draft' moments (tests, debug overlays). Default false: only 'ready' moments play. */
   includeDrafts?: boolean;
+  /** The player's settings; moments of a switched-off category (or all, when disabled) never play. */
+  prefs?: MomentPrefs;
 }
 
 export interface EligibleMoment {
@@ -56,6 +59,7 @@ export interface EligibleMoment {
 /** Why a moment is not eligible, or null when it is. Stable strings, handy in tests and debug overlays. */
 export type RejectReason =
   | 'status'
+  | 'disabled'
   | 'place'
   | 'surface'
   | 'altitude'
@@ -206,6 +210,7 @@ function inBand(v: number, min: number | undefined, max: number | undefined): bo
 export function rejectReason(moment: Moment, ctx: MomentContext, opts: EvaluateOptions = {}): RejectReason | null {
   const t = moment.trigger;
   if (moment.status !== 'ready' && !opts.includeDrafts) return 'status';
+  if (opts.prefs && !momentAllowed(opts.prefs, moment.category)) return 'disabled';
 
   const last = ctx.session.lastFired.get(moment.id);
   if (last !== undefined) {
