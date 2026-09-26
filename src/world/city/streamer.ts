@@ -452,6 +452,9 @@ export class CityStreamer {
     mesh.updateMatrix();
     mesh.castShadow = n.level === 0 || (n.level === 1 && n.distance < this.params.shadowDistance);
     mesh.receiveShadow = true;
+    // Opt-in for the cascaded shadow's height cull (render/sky/cascaded-shadow.ts): the tile sphere reaches ~350 m
+    // up, the buildings rarely 60 m, so cascades whose receivers all lie above the roofs can skip the chunk.
+    mesh.userData.shadowTop = res.top;
     mesh.onBeforeRender = this.beforeRender as unknown as THREE.Mesh['onBeforeRender'];
     mesh.onBeforeShadow = this.beforeShadow as unknown as THREE.Mesh['onBeforeShadow'];
     n.mesh = mesh;

@@ -126,6 +126,8 @@ export class SkyEnvironment {
       return;
     }
     this.cubeSize = size;
+    // An amortised update captured into the old cube would filter the new, empty one on the next step().
+    this.stage = 'idle';
     this.cubeTarget.dispose();
     this.cubeTarget = this.createCubeTarget(size);
     this.cubeCamera = new THREE.CubeCamera(0.1, 10, this.cubeTarget);

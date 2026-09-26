@@ -81,3 +81,90 @@ terrain, water, city, vegetation, mosques, structures, heritage, life, ui.
 
 - Usage limits: 14 review + 14 fix agents are expensive. If needed, split into two sessions (Phase B first, then the Phase A leftovers).
 - The performance work spans modules; a single performance agent touches all of them, so it runs last and never in parallel with module agents.
+
+## Status
+
+### Headless pass 2026-09-26 (sky, clouds, terrain, city, vegetation, mosques, structures, heritage, geo, render)
+
+Done without a GPU (Node / tsx only); water, life, fx, dragon / flight, moments, audio and activities are handled by
+other agents and are not covered here. Review reports: `.docs/reviews/phase-b-{sky,clouds,terrain,city,vegetation,
+mosques,structures,heritage,geo,render}.md`. Budget tool: `npx tsx tools/headless/scene-budget.ts` (see below).
+
+**1. Review and fix** — terrain, city, vegetation, mosques, structures, heritage: reviewed, bugs fixed (done); water,
+life, ui: not in this pass.
+
+**2. Open items from Phase A**
+
+| item | status |
+|---|---|
+| sky: atmosphere globals loaded late | done: `core/uniforms` completes the registration synchronously in the cycle case (the microtask fallback left them missing for all synchronous code); asserted by `scene-budget.ts` |
+| sky: teal atmosphere below sea level | done in code (ray origin clamped to y >= 0, LUT altitude >= 1 m); needs GPU check |
+| clouds: dashed coastlines through gaps, speckled twilight band | needs GPU |
+| post: thin geometry under 2x MSAA | done in code (phone-wire AA ribbons in `structures/render/wires.ts`); needs GPU check |
+| dragon, fx, audio, flight, water | not in this pass |
+
+**4. Contract and core fixes** (the parts owned by these modules)
+
+| item | status |
+|---|---|
+| default 1x1 texture for every SHARED_GLSL sampler | done (verified) |
+| `EnvironmentState.humidity` | done: provided by the sky (poyraz ~0.6, lodos ~0.85, dawn, fog / rain) |
+| HdrPass order ranges documented | done (contract) |
+| `GeoQuery.waterNameAt` | done (verified) |
+| `LandmarkDef.extent` | open: filling it broke `races-check`, which treats extent as a solid cylinder; semantics need the contract owner |
+| other core items (standHeight, withdraw, raycast out, stats, pointer lock, presets) | not in this pass |
+
+**5. Performance**
+
+| item | status |
+|---|---|
+| LOD distances / impostors | partly done: neighbourhood mosque LOD2 ends with the city (10.6 km), far-band mosque reflections off, impostor chunk 64 -> 16; city far tiles, L0 shadows and L1 reflections: proposals in `phase-b-city.md` (need GPU judgement) |
+| shadow caster culling | done: cascades skip casters below their lowest receiver; city chunks publish their real top (`userData.shadowTop`) |
+| reflection NoReflection use | checked: trees, lamps, mosque LOD0 are NoReflection; the wire depth pass must stay in the mirror (coverage) |
+| GPU profiling table (EXT_disjoint_timer_query) | needs GPU |
+| 60 fps with dynamic resolution >= 0.9 | needs GPU |
+
+Fixed bugs outside the plan list: city street lights dropped when the lamp pool was full (it grows now), structures
+wire / light GPU buffers leaked on every rebuild, heritage duplicated sites after a partial worker failure, geo worker
+errors between two awaits were lost (possible hang), a black environment after a cube-size change mid-update, and
+per-frame allocations in the mosque LOD pass, city colliders and weather.
+
+### Scene budget (headless)
+
+`npx tsx tools/headless/scene-budget.ts [--only=city,terrain] [--views=karakoy] [--json=path]` builds the real geo,
+terrain selection, city streamer + tile builder, vegetation placement + species, mosque / structure / heritage
+generators and the sky classes in Node, and reports per module and probe camera the triangles and draw calls of the
+main, shadow (4 cascades, estimated per view-distance slice) and planar-reflection passes, the module's per-frame CPU
+time, program counts and texture / geometry memory. Targets ("high", the probed modules' share of a ~5 M triangle /
+~220 draw frame): all passes <= 4 M triangles, main <= 2.5 M, <= 160 draws, <= 3 ms CPU.
+
+Totals of the probed modules, before -> after this pass:
+
+| view | main tris | shadow tris | reflection tris | all passes | draws | CPU |
+|---|---|---|---|---|---|---|
+| Karaköy 150 m | 2.04M -> 1.98M | 377k -> 329k | 1.29M -> 1.21M | 3.70M -> 3.52M | 137 -> 135 | 0.49 ms |
+| Bosphorus (Bebek) 120 m | 954k -> 922k | 153k -> 149k | 597k -> 584k | 1.70M -> 1.65M | 141 | 0.25 ms |
+| Kadıköy 140 m | 2.33M -> 2.25M | 808k -> 698k | 1.55M -> 1.41M | 4.69M -> **4.36M (over)** | 157 -> 154 | 0.16 ms |
+| overview 2600 m | 1.53M -> 1.48M | 15k -> 14k | 675k -> 601k | 2.23M -> 2.10M | 101 | 0.07 ms |
+
+Biggest offender: the city (2.4-3.1M of the 3.5-4.4M at the city views; far L2 tiles alone ~1M main triangles),
+then terrain (~0.85M, same patch list in main and reflection), mosques (0.2M after the fix), structures (0.15M).
+Headless the OSM regions are inactive, so the procedural city is also counted inside the OSM slice.
+
+### Owner GPU checklist
+
+1. Dive below the sea at `?view=kizkulesi` with the POV and chase cameras: no teal atmosphere, surface line clean.
+2. Clouds at `?view=yuksek` and `?view=camlica`, day and `t=19.2`: dashed coastline lines through gaps, speckled
+   horizon band.
+3. `?view=koprusu` at 500 m from the Bosphorus bridge: hangers read as continuous faint lines (phone-wire AA).
+4. Shadow height cull: fly at 100-200 m over Beyoğlu / Kadıköy at `t=10` and `t=17.5`; no shadows missing on the
+   dragon, rooftops or streets near the camera; then land on a roof and check building shadows around it.
+5. Night at `?view=galata&t=21.5` and `?q=ultra`: every street chunk lit (`__city.stats().lamps`), no dark squares.
+6. Neighbourhood mosques from Karaköy / Kadıköy: no visible pop at ~10.6 km, no missing reflection close to the shore.
+7. Far forests: impostor thinning looks unchanged after the chunk change (no seams, no flicker while streaming).
+8. GPU timing per system (EXT_disjoint_timer_query, `?postprof=scene`, `?cloudprof=1`, `?terrainProf=1`) at the four
+   probe views and `?view=spawn`, `galata`, `koprusu`, `gece&t=21.5`; confirm 60 fps with dynamic resolution >= 0.9.
+9. Terrain sea-floor overdraw under the water surface (early-z vs. water draw order).
+10. MSAA x2 at DPR 1.5 vs. DPR 1.25 + CAS on "high" (cost and look).
+11. Decide on the city proposals in `phase-b-city.md` (far-tile cost, L0 shadow sub-ranges, L1 reflection classes)
+    and on `LandmarkDef.extent` semantics.
