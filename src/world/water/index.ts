@@ -94,6 +94,9 @@ export function createWaterSystem(): System {
   const origin = new THREE.Vector2();
   const tmpWind = new THREE.Vector3();
   let quality: WaterQuality = waterQualityFor('high', 'planar');
+  /** `?wrefl=sky`: sky-only reflections whatever the preset (A/B against the planar mirror). */
+  let forceSky = false;
+  const reflectionsOf = (settings: QualitySettings): 'sky' | 'planar' => (forceSky ? 'sky' : settings.waterReflections);
   let uniforms: WaterUniforms | null = null;
   let material: THREE.ShaderMaterial | null = null;
   let mesh: THREE.Mesh | null = null;
@@ -130,7 +133,7 @@ export function createWaterSystem(): System {
   }
 
   function applyQuality(settings: QualitySettings): void {
-    const next = waterQualityFor(settings.preset, settings.waterReflections);
+    const next = waterQualityFor(settings.preset, reflectionsOf(settings));
     anisotropy = settings.anisotropy;
     for (const tex of owned) {
       if (tex.anisotropy !== anisotropy && tex.minFilter === THREE.LinearMipmapLinearFilter) {
@@ -192,7 +195,8 @@ export function createWaterSystem(): System {
       anisotropy = ctx.quality.settings.anisotropy;
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
-      quality = waterQualityFor(ctx.quality.settings.preset, ctx.quality.settings.waterReflections);
+      forceSky = ctx.debug.params.get('wrefl') === 'sky';
+      quality = waterQualityFor(ctx.quality.settings.preset, reflectionsOf(ctx.quality.settings));
       const b = geo.bounds;
       reflection = new PlanarReflection(anisotropy, quality.reflectionSamples);
       uniforms = createWaterUniforms(
