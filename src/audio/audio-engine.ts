@@ -14,6 +14,8 @@ import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
 import { playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
+import { playGull } from './sfx/ambient';
+import { playBirdFlap } from './sfx/bird-flap';
 import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
@@ -260,6 +262,9 @@ const FLAP_DUCK_DB = 3;
 const FLAP_DUCK_RIDER_DB = 2.5;
 const DRAGON_MOUTH: PlaceOptions = { refDistance: 30, reverb: 0.2, size: 8, backCutoffFactor: 0.28, delayAbove: 120 };
 const WORLD_POINT: PlaceOptions = { refDistance: 30, reverb: 0.18, size: 12, delayAbove: 80 };
+/** A calling gull and a gull's wing beats (src/moments): small point sources. */
+const GULL_POINT: PlaceOptions = { refDistance: 16, reverb: 0.14, size: 2, delayAbove: 80 };
+const GULL_WING_POINT: PlaceOptions = { refDistance: 5, reverb: 0.08, size: 1.5, delayAbove: 80 };
 /** The water under the dragon (downwash patch, wake) and the steam cloud: broad sources on the surface. */
 const SEA_SURFACE: PlaceOptions = { refDistance: 28, reverb: 0.15, size: 24, delayAbove: 120 };
 const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delayAbove: 120 };
@@ -269,7 +274,7 @@ const PADDLE_POINT: PlaceOptions = { refDistance: 26, reverb: 0.15, size: 6, del
 /** A stork (2 m wingspan) as a sound source: small, heard only up close. */
 const STORK_POINT: PlaceOptions = { refDistance: 8, reverb: 0.12, size: 2, delayAbove: 80 };
 /** Shortest gap (s) between two moment cues of the same kind. */
-const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5 };
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5 };
 /** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
 const PADDLE_OFFSET = 4;
 /** Seconds between two snorts while swimming (random within). */
@@ -345,7 +350,7 @@ export class AudioEngine {
   private readonly paddlePos: Vec3 = { x: 0, y: 0, z: 0 };
   private lastPaddle = -1e9;
   private momentBedLevel = 0;
-  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9 };
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -625,7 +630,7 @@ export class AudioEngine {
       return;
     }
     this.lastCue[cue] = now;
-    const pl = placeSource(this.frame.listener, position, STORK_POINT, this.place);
+    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : STORK_POINT, this.place);
     const vol = clamp(finiteOr(volume, 1), 0, 1.5);
     switch (cue) {
       case 'stork-clatter':
@@ -639,6 +644,15 @@ export class AudioEngine {
       case 'stork-pass':
         pl.gain *= MIX.storkPass;
         playStorkPass(this.sfx, now, vol, pl, panFrom);
+        break;
+      case 'gull-call':
+        // On the ambience bus with the other gulls, so it follows the coastal mix; silent until the recordings load.
+        this.samples?.request('coast');
+        pl.gain *= Math.min(1, vol);
+        playGull(this.amb, now, pl);
+        break;
+      case 'gull-wingbeat':
+        playBirdFlap(this.amb, now, Math.min(1, vol), pl);
         break;
     }
   }

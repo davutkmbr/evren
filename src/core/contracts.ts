@@ -595,8 +595,11 @@ export interface AudioService {
   setMomentBed?(amount: number): void;
 }
 
-/** Positional sound cues of moment creatures (synthesised, src/audio/sfx/storks.ts). */
-export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass';
+/**
+ * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
+ * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit).
+ */
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).
@@ -778,6 +781,54 @@ export interface WaterService {
    * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
    */
   readonly dynamic?: WaterDynamics;
+  /**
+   * Foam and spray (phase 21 stage 7c): hull foam sources, splashes, and the spray sources fx turns into particles.
+   * Optional: simple stand-ins leave it out.
+   */
+  readonly foam?: WaterFoam;
+}
+
+/** One spray source of the frame (phase 21 stage 7c), read by fx from `water.foam.sprays`. */
+export interface WaterSpraySource {
+  /** Spindrift torn off a breaking crest by the wind, a bow throwing spray in chop, a propeller's rooster tail. */
+  kind: 'spindrift' | 'bow' | 'prop';
+  /** Where the spray leaves the water (m). */
+  x: number;
+  y: number;
+  z: number;
+  /** Velocity of the source (the hull's, or the wind at the crest for spindrift; m/s). */
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Horizontal unit direction the spray is thrown toward (outward from the bow, astern, downwind). */
+  dirX: number;
+  dirZ: number;
+  /** 0..1 strength (particle rate and speed) and a size scale (m: the crest length, the beam). */
+  strength: number;
+  size: number;
+}
+
+/**
+ * Foam of the sea (phase 21 stage 7c), owned by the water module and reached through `water.foam`: an advected foam
+ * field around the camera fed by breaking crests (from the wind-wave spectrum), breaking wake crests, surf, hulls, the
+ * dragon and splashes; plus the frame's spray sources.
+ */
+export interface WaterFoam {
+  /**
+   * A moving hull (call every frame while it moves): centre, unit forward axis of the hull, speed through the water
+   * (m/s), waterline length, beam and draft (m), thrust as a share of the maximum (0..1), planing (0..1) and the bow's
+   * vertical speed (m/s, heave + pitch; slamming throws bow spray).
+   */
+  hull(source: number, x: number, z: number, forwardX: number, forwardZ: number, speed: number, length: number, beam: number, draft: number, thrust: number, planing: number, bowHeave: number): void;
+  /** A splash at (x, z) (fx strength units: ~0.05 a stroke, ~1 a skim contact, ~3 a plunge). */
+  splash(x: number, z: number, strength: number): void;
+  /** Spray sources of this frame (the first `sprayCount`). */
+  readonly sprays: readonly WaterSpraySource[];
+  readonly sprayCount: number;
+  /** The foam field's square window: centre and half side (m); halfExtent 0 while the field is off ("low"). */
+  readonly window: { readonly x: number; readonly z: number; readonly halfExtent: number };
+  /** Whitecap coverage of the open sea at the current wind (0..1, Monahan). */
+  readonly coverage: number;
 }
 
 /** The dynamic part of the water at one point (wave particles only). */
@@ -919,6 +970,47 @@ export interface HudZonesService {
   hasContext?(name: string): boolean;
 }
 
+/**
+ * Pose of one vessel of the living world (world/life), for systems that anchor to moving boats (src/moments: gulls
+ * behind a ferry). Model space: -Z is the bow, +Z the stern; `yaw` is Object3D.rotation.y.
+ */
+export interface VesselPose {
+  id: number;
+  /** Design kind ('vapur', 'ferry', 'seabus', 'tour', ...). */
+  kind: string;
+  x: number;
+  z: number;
+  yaw: number;
+  /** Height of the design waterline (m). */
+  heave: number;
+  /** Speed through the water (m/s), negative while going astern. */
+  speed: number;
+  /** Underway on its route (not anchored, moored or alongside a pier). */
+  underway: boolean;
+  length: number;
+  beam: number;
+  draft: number;
+  /** Highest point above the waterline (m). */
+  airDraft: number;
+}
+
+/**
+ * The living world's vessels and flocks for other systems. Provided by world/life as 'life' once its fleet exists.
+ */
+export interface LifeService {
+  /** Poses of the vessels of these kinds, written into `out` (entries reused, length set). */
+  vessels(kinds: readonly string[], out: VesselPose[]): VesselPose[];
+  /** Current pose of vessel `id` into `out`, or null when it no longer exists (fleet rebuilt). */
+  vessel(id: number, out: VesselPose): VesselPose | null;
+  /**
+   * Hands over the ambient gulls trailing vessel `id` (their positions and velocities, flat x,y,z,vx,vy,vz) and keeps
+   * that flock dormant until `returnGulls`. Returns the number of birds written.
+   */
+  borrowGulls?(id: number, out: Float32Array): number;
+  /** Gives the vessel's ambient flock back, continuing from `count` bird states (flat as in borrowGulls). */
+  returnGulls?(id: number, states: Float32Array, count: number): void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -938,6 +1030,7 @@ export interface Services {
   underwater: UnderwaterView;
   lowFlight: LowFlightView;
   hudZones: HudZonesService;
+  life: LifeService;
 }
 
 /* ------------------------------------------------------------------ */
