@@ -1,4 +1,5 @@
 import { CONTROL_HELP, type ControlGroup } from '../../core/input';
+import { keyCap, setKeyCapState } from '../components';
 import { el } from '../dom';
 
 /** Group order and titles (the hover block right after flight: it is how the brake key is used). */
@@ -80,11 +81,12 @@ function parseKeys(keys: string): ParsedKeys {
   return { parts, ids };
 }
 
+/** The binding's key caps, laid out like keyCombo (separators between caps) plus the "×2" double-tap mark. */
 function keycaps(parsed: ParsedKeys): HTMLElement {
   return el(
     'span',
-    'kc',
-    parsed.parts.map((p) => (p.sep ? el('span', 'kc-sep', p.text, { title: p.title }) : el('kbd', undefined, p.text))),
+    'ui-keycombo kc',
+    parsed.parts.map((p) => (p.sep ? el('span', 'ui-keysep', p.text, { title: p.title }) : keyCap(p.text))),
   );
 }
 
@@ -138,7 +140,7 @@ export class ControlsView {
       }),
       { 'aria-label': 'Kontrol grupları' },
     );
-    nav.append(el('p', 'menu-cats-foot', ['Oyun sırasında ', el('kbd', undefined, 'H'), ' ile bu listeyi açabilirsin.']));
+    nav.append(el('p', 'menu-cats-foot', ['Oyun sırasında ', keyCap('H', 'quiet', { size: 's' }), ' ile bu listeyi açabilirsin.']));
 
     const keyboard = el(
       'div',
@@ -148,7 +150,8 @@ export class ControlsView {
           'div',
           'ctl-kb-row',
           row.keys.map(([id, width, label]) => {
-            const key = el('span', 'ctl-key', label ?? id);
+            const key = keyCap(label ?? id, 'ink', { size: 'l', state: 'dim' });
+            key.classList.add('ctl-key');
             if (width) {
               key.style.setProperty('--w', String(width));
             }
@@ -232,9 +235,16 @@ export class ControlsView {
   private light(hot: readonly string[]): void {
     const strong = new Set(hot);
     for (const [id, nodes] of this.keyNodes) {
+      const hot = strong.has(id);
+      const lit = this.groupKeys.has(id) && !hot;
       for (const node of nodes) {
-        node.classList.toggle('is-on', this.groupKeys.has(id) && !strong.has(id));
-        node.classList.toggle('is-hot', strong.has(id));
+        if (node.classList.contains('ui-keycap')) {
+          setKeyCapState(node, hot ? 'hot' : lit ? 'lit' : 'dim');
+        } else {
+          // the mouse drawing's buttons
+          node.classList.toggle('is-on', lit);
+          node.classList.toggle('is-hot', hot);
+        }
       }
     }
   }

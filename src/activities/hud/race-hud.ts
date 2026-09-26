@@ -1,72 +1,80 @@
 /**
- * Race HUD (DOM overlay appended to ctx.uiRoot): the big centred countdown, the top-centre race panel (clock, gate
- * n/total, course name, ghost gap, warning line), the split chip shown at each gate, the finish card and the
- * next-gate marker. Built once; per-frame calls only write text/transforms that changed. The activity system calls
- * update() only while something is on screen, so an idle race HUD costs nothing.
+ * Race HUD (race UI v2, DOM overlay appended to ctx.uiRoot). Plain text over the scene with text shadows, no boxes:
+ *
+ * - Start screen (countdown): the course name, gate / speed ring counts and the medal targets at the top, a huge
+ *   centred 3 / 2 / 1 and a gold "Başla!", a subline, and the ghost line with [Y] iptal above the HUD cluster.
+ * - Running: the big clock under the compass, "Kapı n/total", the split delta at each gate (blue faster, amber
+ *   slower), the ghost gap, one warning line, a brief teal "+10 m/s" when a speed ring pushes, and the next-gate
+ *   marker (distance under the gate, or a gold arrow on the screen edge).
+ * - The result screen (finish-screen.ts).
+ *
+ * Built once; per-frame calls only write text / transforms that changed. The activity system calls update() only while
+ * something is on screen, so an idle race HUD costs nothing.
  */
-import type { Medal, MedalTimes } from '../courses';
-import { MEDAL_ORDER } from '../courses';
-import { MEDAL_NAME, RACE_TEXT, deltaTone, formatGateDistance, formatRaceTime, formatSplitDelta, formatTargetTime } from '../text';
+import { keyHint, medalDot } from '../../ui/components';
+import { MEDAL_ORDER, type MedalTimes } from '../courses';
+import { RACE_TEXT, deltaTone, formatGateDistance, formatRaceTime, formatSplitDelta, formatTargetTime, ghostGapText } from '../text';
 import { Text, Transform, h, show, toggle } from './dom';
-import './race-hud.css';
+import { FinishScreen, type FinishHandlers, type FinishInfo } from './finish-screen';
+import './races.css';
 
-/** Seconds the split chip stays up after a gate. */
+export type { FinishInfo } from './finish-screen';
+
+/** Seconds the split delta stays up after a gate. */
 const SPLIT_SECONDS = 2.5;
 /** Seconds a warning line stays up after its last report. */
 const WARN_SECONDS = 2.5;
-/** Seconds "BAŞLA!" stays up. */
-const GO_SECONDS = 0.9;
-/** Seconds the finish card stays open. */
-const FINISH_SECONDS = 8;
-/** Seconds the panel lingers after an abort (showing the reason). */
+/** Seconds "Başla!" stays up. */
+const GO_SECONDS = 1;
+/** Seconds the speed ring callout stays up. */
+const BOOST_SECONDS = 1.2;
+/** Seconds the result screen stays open without input (held while the pointer is over it). */
+const FINISH_SECONDS = 30;
+/** Seconds the readout lingers after an abort (showing the reason). */
 const ABORT_SECONDS = 2.5;
 /** Edge inset (px) for the off-screen gate arrow. */
 const EDGE_MARGIN = 54;
 
-export interface FinishInfo {
-  courseName: string;
-  time: number;
-  /** Medal this run earned. */
-  medal: Medal | null;
+export interface RaceIntro {
+  name: string;
+  gates: number;
+  rings: number;
   medals: MedalTimes;
-  newRecord: boolean;
-  /** Best time before this run (undefined on a first finish). */
-  previousBest?: number;
-  splits: readonly number[];
-  /** Splits of the record this run was compared against (undefined without one). */
-  referenceSplits?: readonly number[];
+  /** Best time of the ghost raced against (undefined: no ghost). */
+  ghostBest?: number;
 }
 
 export class RaceHud {
-  readonly root = h('div', 'ejd race-ui');
+  readonly root = h('div', 'ejd race-ui race-hud');
 
-  // Countdown.
-  private readonly countdown = h('div', 'race-count');
-  private countdownLeft = 0;
+  // Start screen.
+  private readonly intro = h('div', 'race-intro');
+  private readonly introName = new Text(h('span', 'race-intro-name'));
+  private readonly introInfo = h('span', 'race-intro-info ejd-num');
+  private readonly introFoot = h('div', 'race-intro-foot');
+  private readonly count = h('div', 'race-count');
+  private countLeft = 0;
+  private introOn = false;
 
-  // Panel.
-  private readonly panel = h('div', 'race-panel ejd-glass');
-  private readonly name = new Text(h('span', 'race-panel-name ejd-caps'));
-  private readonly clock = new Text(h('span', 'race-panel-time ejd-num'));
-  private readonly gateNum = new Text(h('span', 'race-panel-gate-val ejd-num'));
-  private readonly ghostRow = h('div', 'race-panel-ghost ejd-num');
-  private readonly ghost = new Text(this.ghostRow);
-  private readonly warnRow = h('div', 'race-panel-warn');
+  // Running readout.
+  private readonly readout = h('div', 'race-readout');
+  private readonly clock = new Text(h('span', 'race-clock ejd-num'));
+  private readonly gateNum = new Text(h('span', 'race-gate ejd-num'));
+  private readonly split = h('span', 'race-split ejd-num');
+  private readonly splitText = new Text(this.split);
+  private readonly ghostRow = h('span', 'race-ghost ejd-num');
+  private readonly ghostText = new Text(h('span'));
+  private readonly warnRow = h('span', 'race-warn');
   private readonly warnText = new Text(this.warnRow);
+  private readonly boostNode = h('span', 'race-boost ejd-num');
+  private splitLeft = 0;
   private warnLeft = 0;
-  private panelOn = false;
+  private boostLeft = 0;
+  private readoutOn = false;
   private abortLeft = 0;
 
-  // Split chip.
-  private readonly split = h('div', 'race-split ejd-glass ejd-num');
-  private readonly splitLabel = new Text(h('span', 'race-split-label'));
-  private readonly splitTime = new Text(h('span', 'race-split-time'));
-  private readonly splitDelta = h('span', 'race-split-delta');
-  private readonly splitDeltaText = new Text(this.splitDelta);
-  private splitLeft = 0;
-
-  // Finish card.
-  private readonly card = h('div', 'race-card ejd-glass');
+  // Result screen.
+  private readonly finish: FinishScreen;
   private finishLeft = 0;
 
   // Next-gate marker.
@@ -81,28 +89,28 @@ export class RaceHud {
 
   private visible = true;
 
-  constructor(parent: HTMLElement) {
+  constructor(parent: HTMLElement, handlers: FinishHandlers) {
     this.root.setAttribute('lang', 'tr');
-    const gateBox = h('span', 'race-panel-gate', [h('span', 'race-panel-gate-cap ejd-caps', RACE_TEXT.hud.gate), this.gateNum.node]);
-    const head = h('div', 'race-panel-head', [this.name.node, h('span', 'race-panel-hint', [h('kbd', undefined, 'Y'), ` ${RACE_TEXT.hud.cancelHint}`])]);
-    const main = h('div', 'race-panel-main', [this.clock.node, gateBox]);
-    this.panel.append(head, main, this.ghostRow, this.warnRow);
-    this.split.append(this.splitLabel.node, this.splitTime.node, this.splitDelta);
+    this.intro.append(this.introName.node, this.introInfo);
+    this.ghostRow.append(h('i', 'race-ghost-dot'), this.ghostText.node);
+    this.readout.append(this.clock.node, h('span', 'race-line', [this.gateNum.node, this.split, this.ghostRow]), this.warnRow);
+    this.arrow.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 4l10 8-10 8z"/></svg>';
     this.marker.append(this.arrow, this.distNode);
-    this.root.append(this.marker, this.countdown, h('div', 'race-top', [this.panel, this.split]), this.card);
-    for (const n of [this.countdown, this.panel, this.split, this.card, this.marker, this.ghostRow, this.warnRow]) {
+    this.root.append(this.marker, this.intro, this.count, this.introFoot, this.readout, this.boostNode);
+    this.finish = new FinishScreen(this.root, handlers);
+    for (const n of [this.intro, this.count, this.introFoot, this.readout, this.boostNode, this.marker, this.split, this.ghostRow, this.warnRow]) {
       n.hidden = true;
     }
     parent.append(this.root);
   }
 
-  /** Anything that needs update() this frame (timers, panel, card, marker). */
+  /** Anything that needs update() this frame (timers, readout, result screen, marker). */
   get busy(): boolean {
-    return this.panelOn || this.countdownLeft > 0 || this.splitLeft > 0 || this.finishLeft > 0 || this.abortLeft > 0 || this.markerOn;
+    return this.readoutOn || this.introOn || this.countLeft > 0 || this.finishLeft > 0 || this.abortLeft > 0 || this.boostLeft > 0 || this.markerOn;
   }
 
   get finishOpen(): boolean {
-    return this.finishLeft > 0;
+    return this.finish.open;
   }
 
   /** Hides the whole overlay (HUD hidden, menu open, photo mode) without losing state. */
@@ -117,166 +125,145 @@ export class RaceHud {
     return this.visible;
   }
 
-  /* ---------------- countdown ---------------- */
+  /* ---------------- start screen ---------------- */
 
-  /** 3, 2, 1 or 'go' ("BAŞLA!"). A new node per tick restarts the pop animation. */
-  showCountdown(value: number | 'go'): void {
-    const go = value === 'go';
-    const node = h('span', `race-count-val${go ? ' is-go' : ''}`, go ? RACE_TEXT.countdownGo : String(value));
-    this.countdown.replaceChildren(node);
-    show(this.countdown, true);
-    this.countdownLeft = go ? GO_SECONDS : 1.2;
-  }
-
-  /* ---------------- panel ---------------- */
-
-  /** Shows the race panel for a new run (called at the countdown). */
-  begin(courseName: string, total: number): void {
-    this.name.set(courseName);
-    this.gateNum.set(`0/${total}`);
+  /** Shows the start screen for a new run (called at the countdown). */
+  begin(info: RaceIntro): void {
+    const t = RACE_TEXT.countdown;
+    this.introName.set(info.name);
+    this.introInfo.replaceChildren(
+      h('span', undefined, t.counts(info.gates, info.rings)),
+      ...MEDAL_ORDER.map((m) => h('span', 'race-intro-target', [medalDot(m, 's').root, formatTargetTime(info.medals[m])])),
+    );
+    this.introFoot.replaceChildren(
+      ...(info.ghostBest !== undefined ? [h('span', 'race-intro-ghost', [h('i', 'race-ghost-dot is-glow'), t.ghost(formatRaceTime(info.ghostBest))])] : []),
+      keyHint('Y', t.cancel, 'quiet').root,
+    );
     this.clock.set(formatRaceTime(0));
-    this.ghost.set('');
-    show(this.ghostRow, false);
-    this.warnLeft = 0;
-    show(this.warnRow, false);
+    this.gateNum.set(RACE_TEXT.hud.gate(0, info.gates));
+    this.setGhostGap(null);
     this.splitLeft = 0;
     show(this.split, false);
+    this.warnLeft = 0;
+    show(this.warnRow, false);
+    this.boostLeft = 0;
+    show(this.boostNode, false);
     this.abortLeft = 0;
     this.closeFinish();
-    this.panelOn = true;
-    show(this.panel, true);
+    this.readoutOn = false;
+    show(this.readout, false);
+    this.introOn = true;
+    show(this.intro, true);
+    show(this.introFoot, true);
   }
 
-  /** Per running frame: clock and gate count (next = gates passed). */
+  /** 3, 2, 1 or 'go' ("Başla!"). A new node per tick restarts the pop animation. */
+  showCountdown(value: number | 'go'): void {
+    const t = RACE_TEXT.countdown;
+    const go = value === 'go';
+    this.count.replaceChildren(h('span', `race-count-val${go ? ' is-go' : ''}`, go ? t.go : String(value)), h('span', 'race-count-sub', go ? t.goSub : t.sub));
+    show(this.count, true);
+    this.countLeft = go ? GO_SECONDS : 1.2;
+    if (go) {
+      this.introOn = false;
+      show(this.intro, false);
+      show(this.introFoot, false);
+      this.readoutOn = true;
+      show(this.readout, true);
+    }
+  }
+
+  /* ---------------- running ---------------- */
+
+  /** Per running frame: clock and gate count (passed gates). */
   setRunning(elapsed: number, passed: number, total: number): void {
     this.clock.set(formatRaceTime(elapsed));
-    this.gateNum.set(`${passed}/${total}`);
+    this.gateNum.set(RACE_TEXT.hud.gate(passed, total));
   }
 
-  /** Live gap to the ghost (null hides the row). */
+  /** Live gap to the ghost (null hides it). */
   setGhostGap(gap: number | null): void {
     if (gap === null || !Number.isFinite(gap)) {
       show(this.ghostRow, false);
       return;
     }
     show(this.ghostRow, true);
-    this.ghost.set(RACE_TEXT.hud.ghost(formatSplitDelta(gap, 1)));
-    const tone = deltaTone(gap, 1);
-    toggle(this.ghostRow, 'is-faster', tone === 'faster');
-    toggle(this.ghostRow, 'is-slower', tone === 'slower');
+    this.ghostText.set(ghostGapText(gap));
   }
 
-  /** Warning line in the panel (missed gate, wrong way, straying, landing); repeated calls keep it up. */
+  /** The warning line (missed gate, wrong way, straying, landing); repeated calls keep it up. */
   warn(text: string): void {
     this.warnText.set(text);
     show(this.warnRow, true);
     this.warnLeft = WARN_SECONDS;
   }
 
-  /** Split chip at a gate: split time and the delta against the record's split (undefined on a first run). */
-  gate(gateNumber: number, split: number, delta?: number): void {
-    this.splitLabel.set(RACE_TEXT.hud.split(gateNumber));
-    this.splitTime.set(formatRaceTime(split));
+  /** At a gate: the delta against the record's split (blue faster, amber slower), or the split time on a first run. */
+  gate(split: number, delta?: number): void {
     if (delta === undefined) {
-      show(this.splitDelta, false);
+      this.splitText.set(formatRaceTime(split));
+      toggle(this.split, 'is-faster', false);
+      toggle(this.split, 'is-slower', false);
     } else {
-      show(this.splitDelta, true);
-      this.splitDeltaText.set(formatSplitDelta(delta));
+      this.splitText.set(formatSplitDelta(delta));
       const tone = deltaTone(delta);
-      toggle(this.splitDelta, 'is-faster', tone === 'faster');
-      toggle(this.splitDelta, 'is-slower', tone === 'slower');
+      toggle(this.split, 'is-faster', tone === 'faster');
+      toggle(this.split, 'is-slower', tone === 'slower');
     }
     show(this.split, true);
-    toggle(this.split, 'is-pop', false);
-    // Restart the entry animation without a layout read: swap the node's animation name via the class on the next frame.
-    requestAnimationFrame(() => toggle(this.split, 'is-pop', true));
     this.splitLeft = SPLIT_SECONDS;
   }
 
-  /** Race aborted: the reason in the warning line, then the panel fades out. */
+  /** A speed ring pushed the dragon: the brief teal callout. */
+  boost(dv: number): void {
+    // A new node restarts the fade animation.
+    const node = h('span', 'race-boost-val', RACE_TEXT.hud.boost(dv));
+    this.boostNode.replaceChildren(node);
+    show(this.boostNode, true);
+    this.boostLeft = BOOST_SECONDS;
+  }
+
+  /** Race aborted: the reason in the warning line, then the readout fades out. */
   abort(reason: string): void {
+    this.introOn = false;
+    show(this.intro, false);
+    show(this.introFoot, false);
+    this.countLeft = 0;
+    show(this.count, false);
+    this.readoutOn = true;
+    show(this.readout, true);
     this.warn(reason);
     this.warnLeft = ABORT_SECONDS;
     this.abortLeft = ABORT_SECONDS;
-    this.countdownLeft = 0;
-    show(this.countdown, false);
     this.setMarker(null);
   }
 
-  /** Hides the panel and the split chip (finish, reset). */
+  /** Hides the readout and the start screen (finish, reset). */
   end(): void {
-    this.panelOn = false;
+    this.readoutOn = false;
+    this.introOn = false;
     this.abortLeft = 0;
-    show(this.panel, false);
+    show(this.readout, false);
+    show(this.intro, false);
+    show(this.introFoot, false);
     this.splitLeft = 0;
     show(this.split, false);
+    this.boostLeft = 0;
+    show(this.boostNode, false);
     this.setMarker(null);
   }
 
-  /* ---------------- finish card ---------------- */
+  /* ---------------- result screen ---------------- */
 
   showFinish(info: FinishInfo): void {
     this.end();
-    const card = this.card;
-    card.replaceChildren();
-    const t = RACE_TEXT.finishCard;
-    card.append(h('div', 'race-card-head ejd-caps', `${t.title} · ${info.courseName}`));
-    card.append(h('div', 'race-card-time ejd-num', formatRaceTime(info.time)));
-
-    const badges = h('div', 'race-card-badges');
-    badges.append(
-      info.medal
-        ? h('span', `race-medal is-${info.medal}`, [h('i', 'race-medal-dot'), MEDAL_NAME[info.medal]])
-        : h('span', 'race-medal is-none', t.noMedal),
-    );
-    if (info.newRecord && info.previousBest !== undefined) {
-      badges.append(h('span', 'race-card-record', t.newRecord));
-    } else if (info.previousBest === undefined) {
-      badges.append(h('span', 'race-card-first', t.firstRecord));
-    }
-    card.append(badges);
-
-    if (info.previousBest !== undefined) {
-      const delta = info.time - info.previousBest;
-      const tone = deltaTone(delta);
-      card.append(
-        h('div', 'race-card-best ejd-num', [
-          h('span', 'race-card-best-cap', info.newRecord ? t.previousBest : t.best),
-          h('span', 'race-card-best-val', formatRaceTime(info.previousBest)),
-          h('span', `race-card-delta is-${tone}`, formatSplitDelta(delta)),
-        ]),
-      );
-    }
-
-    const targets = h('div', 'race-card-targets ejd-num');
-    for (const m of MEDAL_ORDER) {
-      const got = info.medal !== null && MEDAL_ORDER.indexOf(info.medal) <= MEDAL_ORDER.indexOf(m);
-      targets.append(h('span', `race-target is-${m}${got ? ' is-got' : ''}`, [h('i', 'race-medal-dot'), formatTargetTime(info.medals[m])]));
-    }
-    card.append(h('div', 'race-card-sec ejd-caps', t.targets), targets);
-
-    const splits = h('div', 'race-card-splits ejd-num');
-    info.splits.forEach((s, i) => {
-      const ref = info.referenceSplits?.[i];
-      const cell = h('span', 'race-card-split', [h('b', undefined, String(i + 1)), formatRaceTime(s)]);
-      if (ref !== undefined) {
-        const d = s - ref;
-        cell.append(h('em', `is-${deltaTone(d)}`, formatSplitDelta(d)));
-      }
-      splits.append(cell);
-    });
-    card.append(h('div', 'race-card-sec ejd-caps', t.splits), splits);
-    card.append(h('div', 'race-card-foot', [h('kbd', undefined, 'Y'), h('kbd', undefined, 'Esc'), ` ${t.close}`]));
-
-    show(card, true);
-    toggle(card, 'is-in', false);
-    requestAnimationFrame(() => toggle(card, 'is-in', true));
+    this.finish.show(info);
     this.finishLeft = FINISH_SECONDS;
   }
 
   closeFinish(): void {
     this.finishLeft = 0;
-    show(this.card, false);
+    this.finish.hide();
   }
 
   /* ---------------- next-gate marker ---------------- */
@@ -321,9 +308,9 @@ export class RaceHud {
     const x = m.width / 2 + dx * k;
     const y = m.height / 2 + dy * k;
     this.markerPos.set(`translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`);
-    this.arrowRot.set(`rotate(${((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(1)}deg)`);
+    this.arrowRot.set(`translate(-50%, -50%) rotate(${((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(1)}deg)`);
     // Label on the inner side of the arrow.
-    this.distPos.set(`translate(calc(-50% - ${(dx * 34).toFixed(1)}px), calc(-50% - ${(dy * 30).toFixed(1)}px))`);
+    this.distPos.set(`translate(calc(-50% - ${(dx * 44).toFixed(1)}px), calc(-50% - ${(dy * 30).toFixed(1)}px))`);
   }
 
   /* ---------------- timers ---------------- */
@@ -333,10 +320,10 @@ export class RaceHud {
     if (dt <= 0) {
       return;
     }
-    if (this.countdownLeft > 0) {
-      this.countdownLeft -= dt;
-      if (this.countdownLeft <= 0) {
-        show(this.countdown, false);
+    if (this.countLeft > 0) {
+      this.countLeft -= dt;
+      if (this.countLeft <= 0) {
+        show(this.count, false);
       }
     }
     if (this.splitLeft > 0) {
@@ -351,13 +338,19 @@ export class RaceHud {
         show(this.warnRow, false);
       }
     }
+    if (this.boostLeft > 0) {
+      this.boostLeft -= dt;
+      if (this.boostLeft <= 0) {
+        show(this.boostNode, false);
+      }
+    }
     if (this.abortLeft > 0) {
       this.abortLeft -= dt;
       if (this.abortLeft <= 0) {
         this.end();
       }
     }
-    if (this.finishLeft > 0) {
+    if (this.finishLeft > 0 && !this.finish.hovered) {
       this.finishLeft -= dt;
       if (this.finishLeft <= 0) {
         this.closeFinish();
@@ -367,8 +360,8 @@ export class RaceHud {
 
   /** Everything off (race cancelled with no message, dispose). */
   reset(): void {
-    this.countdownLeft = 0;
-    show(this.countdown, false);
+    this.countLeft = 0;
+    show(this.count, false);
     this.end();
     this.closeFinish();
   }

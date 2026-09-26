@@ -14,10 +14,13 @@ export interface Prompt {
 /**
  * An action prompt the way games show them: the key first, then the verb. No pill and no fill: the key cap carries
  * the emphasis (gold for the main action), the label stays text. Every action button in menus and overlays uses it.
+ * An action without a key of its own (pointer only, e.g. "Oraya kon ve izle") passes `key` '' and shows the verb alone.
  */
 export function prompt(label: string, key: string, variant: PromptVariant = 'secondary', onPress?: () => void): Prompt {
   const text = el('span', 'ui-prompt-label', label);
-  const root = el('button', `ui-prompt ui-prompt-${variant}`, [keyCap(key, TONE[variant]), text], { type: 'button' });
+  const root = el('button', key ? `ui-prompt ui-prompt-${variant}` : `ui-prompt ui-prompt-${variant} ui-prompt-keyless`, [key ? keyCap(key, TONE[variant]) : null, text], {
+    type: 'button',
+  });
   if (onPress) {
     root.addEventListener('click', (e) => {
       e.stopPropagation();

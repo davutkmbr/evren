@@ -1,5 +1,5 @@
 /** Player-facing (Turkish) texts and time formatting for activities. */
-import type { Medal } from './courses';
+import { medalFor, type Medal, type MedalTimes } from './courses';
 import type { AbortReason } from './race';
 
 const MINUS = '−';
@@ -73,6 +73,55 @@ export function formatCourseLength(meters: number): string {
 
 export const MEDAL_NAME: Readonly<Record<Medal, string>> = { gold: 'Altın', silver: 'Gümüş', bronze: 'Bronz' };
 
+/** Seconds with one decimal and a comma: 16.4 → "16,4". */
+function tenths(seconds: number): string {
+  const q = Math.max(0, Math.round(seconds * 10));
+  return `${Math.floor(q / 10)},${q % 10}`;
+}
+
+/**
+ * What the next medal needs after a finish in `time` (result screen): the gap to the next better target, rounded UP to
+ * tenths (the least improvement that earns it); for gold the target itself; without a medal the bronze target.
+ */
+export function nextMedalText(time: number, medals: MedalTimes): string {
+  const medal = medalFor(time, medals);
+  if (medal === 'gold') {
+    return `Hedef ${formatTargetTime(medals.gold)} · en iyi derece`;
+  }
+  if (medal === null) {
+    return `Bronz için ${formatTargetTime(medals.bronze)}`;
+  }
+  const next: Medal = medal === 'silver' ? 'gold' : 'silver';
+  const need = Math.ceil((time - medals[next]) * 10 - 1e-6) / 10;
+  return `${MEDAL_NAME[next]} için ${tenths(Math.max(0.1, need))} s daha hızlı`;
+}
+
+/** Live gap to the ghost (s, negative = ahead of it): "Hayalet 2,1 s geride", "Hayalet 1,4 s önde", "Hayalet yanında". */
+export function ghostGapText(gap: number): string {
+  const tone = deltaTone(gap, 1);
+  if (tone === 'even') {
+    return 'Hayalet yanında';
+  }
+  return `Hayalet ${tenths(Math.abs(gap))} s ${tone === 'faster' ? 'geride' : 'önde'}`;
+}
+
+/** Placement problems that make a gate or speed ring invalid (custom-courses PlacementProblem minus 'bounds'). */
+export type SkipReason = 'terrain' | 'structure';
+
+/**
+ * Save dialog warning for the invalid gates and speed rings that saving will skip, with the reason when they share
+ * one: "1 geçersiz kapı atlanacak (yere değiyor)." Empty when nothing is skipped.
+ */
+export function skippedWarning(gates: readonly SkipReason[], rings: readonly SkipReason[]): string {
+  if (gates.length === 0 && rings.length === 0) {
+    return '';
+  }
+  const parts = [gates.length > 0 ? `${gates.length} geçersiz kapı` : '', rings.length > 0 ? `${rings.length} geçersiz hız halkası` : ''].filter(Boolean);
+  const reasons = new Set([...gates, ...rings]);
+  const why = reasons.size === 1 ? ` (${RACE_TEXT.editor.problem[[...reasons][0]]})` : '';
+  return `${parts.join(', ')} atlanacak${why}.`;
+}
+
 export const RACE_TEXT = {
   aborted: {
     stray: 'Yarış iptal: parkurdan çok uzaklaştın',
@@ -89,71 +138,96 @@ export const RACE_TEXT = {
   unknownCourse: (id: string) => `Bilinmeyen parkur: ${id}`,
   /** Start toast (the only toast a race shows). */
   started: (name: string) => `Halka yarışı · ${name}`,
-  countdownGo: 'BAŞLA!',
+  countdown: {
+    go: 'Başla!',
+    sub: 'İlk kapıya doğru uç',
+    goSub: 'Kapıdan geç, süre akıyor',
+    counts: (gates: number, rings: number) => (rings > 0 ? `${gates} kapı · ${rings} hız halkası` : `${gates} kapı`),
+    ghost: (best: string) => `Hayalet: rekorun ${best}`,
+    cancel: 'iptal',
+  },
   hud: {
-    gate: 'Kapı',
-    time: 'Süre',
-    split: (i: number) => `Kapı ${i}`,
-    ghost: (gap: string) => `Hayalet: ${gap} s`,
+    gate: (passed: number, total: number) => `Kapı ${passed}/${total}`,
     missed: (expected: number) => `Kapı ${expected} kaçırıldı · geri dön`,
     wrongWay: 'Ters yön · kapıdan öbür yönde geç',
     stray: 'Parkurdan uzaklaşıyorsun',
     landing: 'Yere indin · havalan, yoksa yarış biter',
-    cancelHint: 'iptal',
+    boost: (dv: number) => `+${dv} m/s`,
   },
-  finishCard: {
-    title: 'Parkur tamamlandı',
-    newRecord: 'YENİ REKOR!',
+  finish: {
+    done: (name: string) => `${name} tamamlandı`,
+    newRecord: 'Yeni rekor',
     firstRecord: 'İlk derece',
-    best: 'Rekor',
-    previousBest: 'Önceki rekor',
     noMedal: 'Madalya yok',
-    targets: 'Hedefler',
-    splits: 'Ara dereceler',
-    close: 'kapat',
+    medal: (m: Medal) => `${MEDAL_NAME[m]} madalya`,
+    previousBest: 'Önceki rekor',
+    delta: 'Fark',
+    rings: 'Hız halkası',
+    retry: 'Tekrar',
+    courses: 'Parkurlar',
+    close: 'Uçmaya devam',
+    chartTitle: 'Kapı kapı fark',
+    chartSub: 'Önceki rekora göre, o kapıya kadar kazanılan veya kaybedilen saniye',
+    chartLabel: 'Kapı kapı fark: önceki rekora göre kazanılan veya kaybedilen saniye',
+    faster: 'Daha hızlı',
+    slower: 'Daha yavaş',
+    firstRunNote: 'İlk derecen bu. Bir sonraki koşuda kapı kapı farkı burada göreceksin.',
+    noSplitsNote: 'Önceki rekorun ara dereceleri bu parkurla eşleşmiyor, kapı kapı fark gösterilemiyor.',
+    tipSplit: (split: string) => `Ara derece ${split}`,
+    tipDelta: (delta: string) => `Rekora göre ${delta} s`,
+    gate: (n: number) => `Kapı ${n}`,
+    finishGate: (name: string) => `${name} (bitiş)`,
   },
   picker: {
-    title: 'Halka yarışı',
-    subtitle: 'Parkur seç',
-    best: 'Rekor',
-    noBest: 'Henüz derece yok',
-    gates: (n: number) => `${n} kapı`,
-    start: 'başlat',
-    choose: 'seç',
-    close: 'kapat',
-    newCourse: '+ Yeni parkur',
-    newCourseDesc: 'Parkur editörü: uç, halkaları istediğin yere koy, kaydet ve yarış.',
+    title: 'Halka yarışları',
+    counts: (courses: number, medals: number) => `${courses} parkur · ${medals} madalya`,
+    close: 'Kapat',
+    list: 'Parkurlar',
+    newCourse: 'Yeni parkur',
     customTag: 'Senin parkurun',
-    customDesc: (rings: number) => (rings > 0 ? `Kendi parkurun · ${rings} hız halkası` : 'Kendi parkurun'),
-    edit: 'düzenle',
-    remove: 'sil',
-    removeConfirm: 'silmek için tekrar',
-    copyCode: 'kodu kopyala',
-    importCode: 'kod yapıştır',
-    importPlaceholder: 'Parkur kodunu yapıştır, Enter',
+    customDesc: (rings: number) => (rings > 0 ? `Senin parkurun · ${rings} hız halkası` : 'Senin parkurun'),
+    rowSub: (custom: boolean, length: string, gates: number) => `${custom ? 'Senin parkurun · ' : ''}${length} · ${gates} kapı`,
+    edit: 'Düzenle',
+    copyCode: 'Kodu kopyala',
+    remove: 'Sil',
+    removeConfirm: 'Silmek için tekrar bas',
+    length: 'Uzunluk',
+    gatesRings: 'Kapı · hız halkası',
+    best: 'Rekorun',
+    runs: 'Koşu',
+    start: 'Yarışa başla',
+    ghost: 'Hayalet',
+    ghostNone: 'yok',
+    note: 'Başlangıca ışınlanır, 3 sn geri sayım',
+    mapLabel: (name: string) => `${name} parkur haritası`,
+    legendGate: 'Kapı',
+    legendRing: 'Hız halkası',
+    legendStart: 'Başlangıç',
+    importCode: 'Paylaşılan parkur kodu',
+    importPlaceholder: 'EVR1.… yapıştır, Enter',
     importHint: 'Enter içe aktar · Esc vazgeç',
   },
   editor: {
-    title: 'Parkur editörü',
-    subtitle: (name: string | undefined) => (name ? `Düzenleniyor: ${name}` : 'Yeni parkur'),
-    count: (gates: number, rings: number) => `${gates} kapı · ${rings} hız halkası`,
-    invalidCount: (n: number) => `${n} geçersiz (kırmızı, kaydederken atlanır)`,
-    kindGate: 'Kapı',
-    kindRing: 'Hız halkası',
+    title: (name: string | undefined) => `Parkur editörü · ${name ?? 'Yeni parkur'}`,
+    placing: (size: string) => `Kapı · ${size}`,
+    placingRing: 'Hız halkası',
+    counts: (gates: number, rings: number, length: string) => `${gates} kapı · ${rings} hız halkası · ${length}`,
     size: { small: 'küçük', medium: 'orta', large: 'büyük' } as const,
     keys: {
-      place: 'halka koy',
-      undo: 'sonuncuyu sil',
-      kind: 'kapı ↔ hız halkası',
-      size: 'kapı boyutu',
-      save: 'kaydet',
-      exit: 'çık',
+      place: 'Buraya koy',
+      kind: 'Kapı ↔ hız halkası',
+      size: 'Kapı boyutu',
+      undo: 'Sonuncuyu sil',
+      save: 'Kaydet',
+      exit: 'Çık',
     },
-    placing: (kind: string, size: string) => `Yerleştirilen: ${kind} (${size})`,
-    placingRing: 'Yerleştirilen: hız halkası',
-    minGates: (min: number) => `En az ${min} kapı gerekli`,
+    problem: { terrain: 'yere değiyor', structure: 'yapının içinde' } as const,
+    invalidCount: (n: number) => `${n} geçersiz halka · kaydederken atlanır`,
+    minGates: (min: number) => `En az ${min} geçerli kapı gerekli`,
+    saveTitle: 'Parkuru kaydet',
     namePrompt: 'Parkurun adı',
-    nameHint: 'Enter kaydet · Esc vazgeç',
+    cancel: 'Vazgeç',
+    save: 'Kaydet',
   },
   editorToast: {
     started: 'Parkur editörü · uç ve B ile halka koy',

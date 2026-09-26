@@ -106,25 +106,6 @@
   letter-spacing: -0.016em;
 }
 
-.help-close {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 32px;
-  padding: 0 6px 0 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-  border: 1px solid var(--line);
-  transition: color 140ms, border-color 140ms;
-}
-
-.help-close:hover {
-  color: var(--ink);
-  border-color: var(--line-2);
-}
-
 .ejd.is-help .hud-dcard,
 .ejd.is-help .hud-hints {
   opacity: 0;

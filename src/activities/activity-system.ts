@@ -5,10 +5,13 @@
  * window.__evrenRaces.start('bogaz') (dev server, sandboxes and ?race= pages). A start teleports the dragon onto the
  * course's lead-in line, runs a 3 s countdown and then times the run gate by gate.
  *
- * Feedback: the race HUD (hud/race-hud.ts: countdown, clock panel, split deltas against the record, warnings, finish
- * card with medal), a marker pointing at the next gate, and the ghost of the best run (hud/ghost-orb.ts) with the live
- * gap to it. A toast only announces the start. Emits 'activity' events (started at GO, every checkpoint, finished,
- * aborted); records (best time, splits, best medal, ghost path) persist per course in localStorage.
+ * Feedback (race UI v2): the race HUD (hud/race-hud.ts: start screen with countdown, clock, split deltas against the
+ * record, warnings, speed ring callout, and the result screen hud/finish-screen.ts with medal and the per-gate delta
+ * chart), a marker pointing at the next gate, and the ghost of the best run (hud/ghost-orb.ts) with the live gap to
+ * it; the ghost can be switched off in the picker (remembered per player, race-prefs.ts). A toast only announces the
+ * start. The result screen: Enter races the same course again, Y opens the picker, Esc closes it.
+ * Emits 'activity' events (started at GO, every checkpoint, finished, aborted); records (best time, splits, best
+ * medal, ghost path, run count) persist per course in localStorage.
  *
  * Speed rings (races only): flying through one pushes the dragon forward (speed-boost.ts: +10 m/s over 1.5 s, capped
  * under the dive envelope) with a whoosh and a short camera shake. DragonState.velocity is flight telemetry (copied
@@ -17,7 +20,7 @@
  * until then it is applied once at the ring through the 'teleport' event with the boosted speed (same position,
  * heading and pitch; the flight resets roll and the camera re-snaps).
  *
- * Course editor (picker → "+ Yeni parkur" or E on a custom course): fly around, B places a gate (or a speed ring) at
+ * Course editor (picker → Yeni parkur [N] or E on a custom course): fly around, B places a gate (or a speed ring) at
  * the dragon with its flight direction, Backspace removes the last one, K switches gate / speed ring, J cycles the gate
  * size, Enter saves under a name, Y leaves. Custom courses (custom-courses.ts) appear in the picker with records,
  * medals and ghosts like the built-in ones, and travel as share codes (K copies, I pastes).
@@ -50,16 +53,19 @@ import { GhostOrb } from './hud/ghost-orb';
 import { RaceHud } from './hud/race-hud';
 import { RingPass } from './ring-pass';
 import { RaceSession, courseProgress, type AbortReason, type RaceEvent } from './race';
-import { GhostRecorder, clearRecords, decodeGhost, getRecord, loadRecords, submitRun } from './records';
+import { loadGhostEnabled, saveGhostEnabled } from './race-prefs';
+import { GhostRecorder, clearRecords, decodeGhost, getRecord, loadRecords, recordRuns, submitRun } from './records';
 import { BoostEnvelope, boostDeltaV } from './speed-boost';
 import { SpeedRingMesh } from './speed-ring-mesh';
-import { RACE_TEXT, formatRaceTime } from './text';
+import { RACE_TEXT, formatRaceTime, skippedWarning, type SkipReason } from './text';
 
 /** Seconds the rings stay visible (in the finish colour) after the finish. */
 const FINISH_LINGER = 5;
 /** A jump larger than this in one frame (m) is a teleport, not flight. */
 const TELEPORT_JUMP = 400;
 const RACE_KEY = 'KeyY';
+/** Keys of the result screen (see finishKey). */
+const FINISH_KEYS: ReadonlySet<string> = new Set(['Enter', 'NumpadEnter', 'Escape', RACE_KEY]);
 /** Camera shake of a speed ring (m of offset amplitude; a roar is 0.12). */
 const BOOST_SHAKE = 0.2;
 /** Seconds a second Y press confirms leaving the editor with unsaved changes. */
@@ -237,7 +243,7 @@ export function createActivitySystem(): System {
     session = new RaceSession(course, { bestSplits: referenceSplits });
     recorder = new GhostRecorder();
     ghostTrack = null;
-    if (rec?.ghost) {
+    if (rec?.ghost && loadGhostEnabled()) {
       const samples = decodeGhost(rec.ghost);
       const track = new GhostTrack(samples, splitsMatch ? { course, splits: rec.splits, finishTime: rec.best } : { finishTime: rec.best });
       ghostTrack = track.valid ? track : null;
@@ -253,7 +259,13 @@ export function createActivitySystem(): System {
     ownTeleport = false;
     lastPos.valid = false;
     session.resetTrail();
-    hud?.begin(course.def.name, course.gates.length);
+    hud?.begin({
+      name: course.def.name,
+      gates: course.gates.length,
+      rings: course.speedRings.length,
+      medals: course.def.medals,
+      ghostBest: ghostTrack ? rec?.best : undefined,
+    });
     toast(RACE_TEXT.started(course.def.name));
     handle(session.start());
     return true;
@@ -293,7 +305,7 @@ export function createActivitySystem(): System {
         case 'gate': {
           rings.setNext(e.index + 1, false);
           if (e.index < s.total - 1) {
-            hud?.gate(e.index + 1, e.split, e.bestSplit !== undefined ? e.split - e.bestSplit : undefined);
+            hud?.gate(e.split, e.bestSplit !== undefined ? e.split - e.bestSplit : undefined);
             audio('ui-click', 0.5);
             emitActivity('checkpoint', `${name} · ${RACE_TEXT.label.running(e.index + 2, s.total)}`);
           }
@@ -319,6 +331,9 @@ export function createActivitySystem(): System {
             previousBest: result.previousBest,
             splits: e.splits,
             referenceSplits,
+            gates: course.gates,
+            ringsUsed: s.boostsUsed.filter(Boolean).length,
+            ringsTotal: course.speedRings.length,
           });
           const improved = (result.newRecord && result.previousBest !== undefined) || result.newMedal;
           audio('discover', improved ? 1 : 0.7);
@@ -350,6 +365,10 @@ export function createActivitySystem(): System {
     const d = dragon;
     if (!d || !ctx || !BOOST_MODES.has(d.mode)) {
       return;
+    }
+    const push = boostDeltaV(d.airspeed);
+    if (push >= 0.5) {
+      hud?.boost(Math.round(push));
     }
     audio('whoosh', 0.9);
     // Next frame: a teleport re-snaps the camera this frame, which clears any shake added before it.
@@ -462,9 +481,11 @@ export function createActivitySystem(): System {
       sourceName: editor.sourceName,
       gates: editor.gates.length,
       rings: editor.rings.length,
-      invalid: editor.gates.length - editor.validGates,
+      invalid: editor.gates.filter((g) => !!g.problem).length + editor.rings.filter((r) => !!r.problem).length,
+      validGates: editor.validGates,
       kind: editor.kind,
       size: editor.size,
+      lengthM: editor.length,
     });
   }
 
@@ -500,8 +521,11 @@ export function createActivitySystem(): System {
       return;
     }
     const fallback = editor.sourceName ?? `Parkurum ${loadCustomCourses().length + 1}`;
+    const reasons = (list: ReadonlyArray<{ problem: string | null }>): SkipReason[] =>
+      list.flatMap((v) => (v.problem === 'terrain' || v.problem === 'structure' ? [v.problem] : []));
     editorPanel.askName(
       fallback,
+      skippedWarning(reasons(editor.gates), reasons(editor.rings)),
       (name) => finishSave(name.trim() ? name : fallback),
       () => undefined,
     );
@@ -559,6 +583,10 @@ export function createActivitySystem(): System {
     return sx < -40 || sx > viewW + 40 || sy < -40 || sy > viewH + 40 ? null : { x: sx, y: sy };
   }
 
+  function problemText(problem: string | null): string | undefined {
+    return problem === 'terrain' || problem === 'structure' ? RACE_TEXT.editor.problem[problem] : undefined;
+  }
+
   function updateEditorLabels(c: EngineContext): void {
     if (!editorPanel) {
       return;
@@ -572,13 +600,13 @@ export function createActivitySystem(): System {
     editor.gates.forEach((g, i) => {
       const s = project(c, g.x, g.y + g.r + 6, g.z);
       if (s) {
-        items.push({ x: s.x, y: s.y, text: String(i + 1), ring: false, invalid: !!g.problem });
+        items.push({ x: s.x, y: s.y, text: String(i + 1), ring: false, reason: problemText(g.problem) });
       }
     });
     editor.rings.forEach((r, i) => {
       const s = project(c, r.x, r.y + 18, r.z);
       if (s) {
-        items.push({ x: s.x, y: s.y, text: `H${i + 1}`, ring: true, invalid: !!r.problem });
+        items.push({ x: s.x, y: s.y, text: `H${i + 1}`, ring: true, reason: problemText(r.problem) });
       }
     });
     editorPanel.setLabels(items);
@@ -586,37 +614,40 @@ export function createActivitySystem(): System {
 
   /* ---------------- picker ---------------- */
 
+  function pickerEntry(c: CompiledCourse): PickerEntry {
+    const rec = getRecord(c.def.id);
+    return {
+      id: c.def.id,
+      name: c.def.name,
+      description: c.def.description,
+      lengthM: c.length,
+      gates: c.gates.length,
+      rings: c.speedRings.length,
+      best: rec?.best,
+      medal: rec?.medal ?? null,
+      medals: c.def.medals,
+      runs: recordRuns(rec),
+      custom: !!c.def.custom,
+      hasGhost: !!rec?.ghost,
+      route: { gates: c.gates.map((g) => ({ x: g.x, y: g.z })), rings: c.speedRings.map((r) => ({ x: r.x, y: r.z })) },
+    };
+  }
+
   function pickerEntries(): PickerEntry[] {
-    const entries: PickerEntry[] = COURSES.map((def) => {
-      const c = getCourse(def.id)!;
-      const rec = getRecord(def.id);
-      return {
-        id: def.id,
-        name: def.name,
-        description: def.description,
-        lengthM: c.length,
-        gates: c.gates.length,
-        best: rec?.best,
-        medal: rec?.medal ?? null,
-        medals: def.medals,
-      };
-    });
-    for (const custom of loadCustomCourses()) {
-      const c = compileCustomCourse(custom, customDescription(custom));
-      const rec = getRecord(custom.id);
-      entries.push({
-        id: custom.id,
-        name: custom.name,
-        description: c.def.description,
-        lengthM: c.length,
-        gates: c.gates.length,
-        best: rec?.best,
-        medal: rec?.medal ?? null,
-        medals: c.def.medals,
-        custom: true,
-      });
+    return [
+      ...COURSES.map((def) => pickerEntry(getCourse(def.id)!)),
+      ...loadCustomCourses().map((custom) => pickerEntry(compileCustomCourse(custom, customDescription(custom)))),
+    ];
+  }
+
+  /** Gives the picker's route map its land / water background once the world is loaded. */
+  let pickerWater = false;
+  function ensurePickerWater(): void {
+    const geo = pickerWater ? null : ctx?.services.tryGet('geo');
+    if (geo && picker) {
+      pickerWater = true;
+      picker.setWater((x, z, cell) => Math.max(0, Math.min(1, 0.5 - geo.coastDistance(x, z) / cell)));
     }
-    return entries;
   }
 
   function openPicker(selectId?: string): void {
@@ -627,7 +658,8 @@ export function createActivitySystem(): System {
     if (picker.isOpen) {
       picker.close();
     }
-    picker.open(pickerEntries(), selectId ?? lastCourseId ?? undefined);
+    ensurePickerWater();
+    picker.open(pickerEntries(), selectId ?? lastCourseId ?? undefined, loadGhostEnabled());
     pickerRoot.hidden = false;
     audio('ui-click', 0.5);
   }
@@ -705,6 +737,19 @@ export function createActivitySystem(): System {
     e.stopImmediatePropagation();
   };
 
+  /** Result screen: Enter races the same course again, Y opens the picker on it, Esc closes the screen. */
+  function finishKey(code: string): void {
+    if (code === 'Escape') {
+      hud?.closeFinish();
+      audio('ui-click', 0.4);
+    } else if (code === RACE_KEY) {
+      openPicker();
+    } else if (lastCourseId) {
+      audio('ui-click', 0.7);
+      start(lastCourseId);
+    }
+  }
+
   /** Editor keys (only while the editor is open and nothing else owns the screen). */
   function editorKey(e: KeyboardEvent): boolean {
     const k = EDITOR_KEYS;
@@ -780,9 +825,9 @@ export function createActivitySystem(): System {
       }
       return;
     }
-    if (hud?.finishOpen && hud.shown && (e.code === RACE_KEY || e.code === 'Escape')) {
+    if (hud?.finishOpen && hud.shown && !uiBlocked() && FINISH_KEYS.has(e.code)) {
       if (!e.repeat) {
-        hud.closeFinish();
+        finishKey(e.code);
       }
       swallow(e);
       return;
@@ -947,7 +992,11 @@ export function createActivitySystem(): System {
         pendingUrlCourse = raceParam;
       }
 
-      hud = new RaceHud(c.uiRoot);
+      hud = new RaceHud(c.uiRoot, {
+        onRetry: () => finishKey('Enter'),
+        onCourses: () => finishKey(RACE_KEY),
+        onClose: () => finishKey('Escape'),
+      });
       pickerRoot = document.createElement('div');
       pickerRoot.className = 'ejd race-ui race-ui-picker';
       pickerRoot.setAttribute('lang', 'tr');
@@ -974,6 +1023,10 @@ export function createActivitySystem(): System {
         onCopy: (id) => copyCode(id),
         onImport: (code) => importCode(code),
         onTyping: (on) => setTyping(on),
+        onGhost: (on) => {
+          saveGhostEnabled(on);
+          audio('ui-click', 0.4);
+        },
       });
       editorRoot = document.createElement('div');
       editorRoot.className = 'ejd race-ui race-ui-editor';

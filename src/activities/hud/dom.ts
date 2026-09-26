@@ -52,6 +52,16 @@ export function toggle(node: Element, name: string, on: boolean): void {
   }
 }
 
+/**
+ * Makes a clickable node never take keyboard focus (a focused button would be "clicked" again by Space, the flap key,
+ * and a click must not blur an open text field).
+ */
+export function noFocus<T extends HTMLElement>(node: T): T {
+  node.tabIndex = -1;
+  node.addEventListener('mousedown', (e) => e.preventDefault());
+  return node;
+}
+
 /** Sets the hidden attribute only when the state changes. */
 export function show(node: HTMLElement, visible: boolean): void {
   if (node.hidden === visible) {

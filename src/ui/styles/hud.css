@@ -353,18 +353,14 @@
   }
 }
 
-.hb-key {
+.ejd .hb-slot .hb-key {
   position: absolute;
-  left: 6px;
-  top: 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: rgba(246, 241, 231, 0.7);
-}
-
-.hb-slot.is-empty .hb-key {
-  color: rgba(246, 241, 231, 0.4);
+  left: 5px;
+  top: 5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 10px;
 }
 
 .hb-icon {
@@ -397,7 +393,10 @@
 }
 
 .hb-caption {
-  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
@@ -612,19 +611,18 @@
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
-.ejd-hud .hint-item kbd {
+/* Key caps over the bright scene get a darker body so they read on sky and water. */
+.ejd .hint-item .ui-keycap-ink,
+.ejd .hint-exit .ui-keycap-ink,
+.ejd .hb-caption .ui-keycap-ink,
+.ejd .toast-text .ui-keycap-ink {
   background: rgba(10, 12, 16, 0.4);
-  border-color: rgba(246, 241, 231, 0.22);
+  border-color: rgba(246, 241, 231, 0.3);
   text-shadow: none;
 }
 
-.hint-label {
-  margin-left: 4px;
-}
-
-.hint-plus {
-  color: rgba(246, 241, 231, 0.55);
-  font-size: 11px;
+.hint-item .ui-keyhint {
+  gap: 8px;
 }
 
 /* Hover controls: a small caption, the key rows and the way out. */
