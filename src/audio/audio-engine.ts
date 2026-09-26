@@ -7,7 +7,7 @@ import { createMasterBus, type MasterBus } from './master-bus';
 import { playIgnition } from './sfx/fire';
 import { playFlap } from './sfx/flap';
 import { playBubbles } from './sfx/bubbles';
-import { playLand, playSplash, playStep } from './sfx/impacts';
+import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
@@ -137,10 +137,17 @@ export function createAudioFrame(): AudioFrame {
  * Per-sound mix trims (linear), balanced against the POV cruise wind with the offline analysis in sandbox/audio.ts
  * (pre-dynamics loudness). The absolute level into the master dynamics is set by master-bus INPUT_TRIM_DB.
  */
+/** Splashes below this strength are light touches and play as a soft spray (playSpray). */
+const SPRAY_MAX = 0.5;
+/** Shortest gap between two sprays (s): a skim's spray events come several per second. */
+const SPRAY_SPACING = 0.22;
+
 export const MIX = {
   flap: 1.1,
   roar: 0.5,
   splash: 1.5,
+  /** Light water touches (playSpray). */
+  spray: 0.55,
   land: 1.55,
   ignition: 0.9,
   fire: 0.72,
@@ -273,6 +280,7 @@ export class AudioEngine {
   private readonly water: SfxEnv;
   private underwaterLevel = 0;
   private lastBubbles = -1e9;
+  private lastSpray = -1e9;
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
   private readonly lastPlayed: Record<SoundName, number> = {
@@ -559,10 +567,16 @@ export class AudioEngine {
 
   splashAt(position: Vec3, strength: number): void {
     const now = this.now;
-    // Wading steps are small and frequent; only big splashes need the long merge window.
-    if (strength < 0.5 && now - this.lastPlayed.splash > 0.12) {
-      this.lastPlayed.splash = now;
-      this.splashNow(position, strength, now);
+    // Light touches (skim spray, wingtip and tail kisses, swimming strokes) are frequent: a soft spray, spaced and
+    // thinned out, never the full splash (a fast series of those sounded like slaps on concrete).
+    if (strength < SPRAY_MAX) {
+      if (now - this.lastSpray < SPRAY_SPACING || this.stats.active > this.maxVoices) {
+        return;
+      }
+      this.lastSpray = now;
+      const pl = placeSource(this.frame.listener, position, WORLD_POINT, this.place);
+      pl.gain *= MIX.spray;
+      playSpray(this.sfx, now, strength, pl);
     } else if (this.ready('splash', now)) {
       this.splashNow(position, strength, now);
     }

@@ -80,6 +80,52 @@ export function playSplash(env: SfxEnv, when: number, strength: number, place: P
 }
 
 /**
+ * A light touch of water (a wingtip or the tail kissing the surface, a skim's spray, a swimming stroke): a soft,
+ * short hiss of spray with a few high droplets. No slap, no plunge, no low boom, so a rapid series of them reads
+ * as spray rather than blows on a hard surface. Each one is varied in length, colour and pan.
+ */
+export function playSpray(env: SfxEnv, when: number, strength: number, place: Placement): number {
+  const s = clamp(strength, 0.03, 0.5) / 0.5;
+  const rng = env.rng;
+  const v = new Voice(env, place, when, 0.8);
+  const { noise } = env;
+  const t = v.t;
+
+  const dur = 0.18 + 0.25 * s + rng() * 0.12;
+  const hiss = v.noise(noise.white);
+  const hp = v.filter('highpass', 1300 + rng() * 900, 0.5);
+  const lp = v.filter('lowpass', 5200 + 2600 * s + rng() * 1500, 0.6);
+  const grain = v.gain(0.6);
+  const grainSrc = v.noise(noise.buffet, 0, 5 + rng() * 4);
+  const grainDepth = v.gain(0.4);
+  grainSrc.connect(grainDepth).connect(grain.gain);
+  const env1 = v.gain(0);
+  env1.gain.setValueAtTime(0, t);
+  env1.gain.linearRampToValueAtTime(0.28 * (0.35 + 0.65 * s), t + 0.025 + rng() * 0.02);
+  env1.gain.setTargetAtTime(0, t + 0.05, dur / 3.5);
+  hiss.connect(hp).connect(lp).connect(grain).connect(env1);
+  v.toInput(env1, (rng() * 2 - 1) * 0.5);
+
+  const drops = Math.round(2 + 5 * s);
+  for (let i = 0; i < drops; i++) {
+    const start = 0.02 + rng() * dur * 0.8;
+    const f = 1400 + Math.pow(rng(), 1.3) * 2800;
+    const d = 0.01 + rng() * 0.02;
+    const o = v.osc('sine', f, start, 0, d + 0.02);
+    o.frequency.setValueAtTime(f, t + start);
+    o.frequency.exponentialRampToValueAtTime(f * (1.3 + rng() * 0.4), t + start + d);
+    const g = v.gain(0);
+    percEnv(g.gain, t + start, (0.02 + rng() * 0.03) * (0.4 + 0.6 * s), 0.001, d);
+    o.connect(g);
+    v.toInput(g, (rng() * 2 - 1) * 0.8);
+  }
+
+  const duration = dur + 0.3;
+  v.end(duration);
+  return duration;
+}
+
+/**
  * Heavy landing: body impact (pink "whump" whose low-pass closes as the mass settles + a low sine drop felt more
  * than heard), claws/scales scraping, gravel debris.
  */
