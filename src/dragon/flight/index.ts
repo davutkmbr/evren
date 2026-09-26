@@ -18,6 +18,8 @@ import type { PilotCommand, SimEvent } from './types';
 import { clearOverrides, clearPilotEdges, copyPilotCommand, createPilotCommand, latchPilotEdges, PILOT_EDGES } from './types';
 
 const DEFAULT_SPAWN_SPEED = 40;
+/** Seconds between roars. */
+const ROAR_COOLDOWN = 2.6;
 
 export function createFlightSystem(): System {
   const sim = new FlightSim();
@@ -39,6 +41,18 @@ export function createFlightSystem(): System {
     flapEffort: 0,
     firing: false,
     touchingWater: false,
+    roarCooldown: 0,
+    addVelocity(dx, dy, dz) {
+      sim.body.velocity.x += dx;
+      sim.body.velocity.y += dy;
+      sim.body.velocity.z += dz;
+    },
+    requestRoar() {
+      return ctxRef ? roar(ctxRef) : false;
+    },
+    fireBurst(seconds) {
+      fireBurstLeft = Math.max(fireBurstLeft, seconds);
+    },
   };
 
   const previous = new BodyState();
@@ -57,6 +71,8 @@ export function createFlightSystem(): System {
   let ctxRef: EngineContext | null = null;
   let wasFiring = false;
   let roarCooldown = 0;
+  /** Seconds of fire requested from outside (hotbar), OR-ed into the fire key. */
+  let fireBurstLeft = 0;
   let splashThisFrame = false;
   /** Any substep of this frame had the belly/feet in the water while flying (continuous skim). */
   let touchedWater = false;
@@ -86,6 +102,18 @@ export function createFlightSystem(): System {
     sim.configureRig(length, clamp(stand, 1.2, 6));
   }
 
+  /** Roars when allowed (cooldown, not while breathing fire). Shared by the R key and DragonState.requestRoar. */
+  function roar(ctx: EngineContext): boolean {
+    if (roarCooldown > 0 || sim.firing || ctx.time.paused) {
+      return false;
+    }
+    roarCooldown = ROAR_COOLDOWN;
+    poseDriver.roar();
+    ctx.services.tryGet('audio')?.play('roar');
+    ctx.services.tryGet('cameraRig')?.shake(0.12);
+    return true;
+  }
+
   function gatherCommand(ctx: EngineContext): PilotCommand {
     if (testControl.command) {
       copyPilotCommand(testControl.command, frameCmd);
@@ -101,6 +129,9 @@ export function createFlightSystem(): System {
       } else if (ctx.debug.autopilot) {
         autopilot.reset();
       }
+    }
+    if (fireBurstLeft > 0) {
+      frameCmd.fire = true;
     }
     for (const [name, key] of Object.entries(PILOT_EDGES) as Array<[keyof typeof PILOT_EDGES, (typeof PILOT_EDGES)[keyof typeof PILOT_EDGES]]>) {
       frameCmd[key] ||= testControl.pressed[name];
@@ -189,6 +220,7 @@ export function createFlightSystem(): System {
     state.stamina = sim.stamina;
     state.flapEffort = sim.beat.effort;
     state.firing = sim.firing;
+    state.roarCooldown = roarCooldown / ROAR_COOLDOWN;
     state.touchingWater = splashThisFrame || (touchedWater && sim.airspeed > 4);
   }
 
@@ -253,14 +285,10 @@ export function createFlightSystem(): System {
         latchPilotEdges(cmd, latch);
 
         roarCooldown = Math.max(0, roarCooldown - dt);
+        fireBurstLeft = Math.max(0, fireBurstLeft - dt);
         if (latch.roarPressed) {
           latch.roarPressed = false;
-          if (roarCooldown <= 0 && !sim.firing) {
-            roarCooldown = 2.6;
-            poseDriver.roar();
-            ctx.services.tryGet('audio')?.play('roar');
-            ctx.services.tryGet('cameraRig')?.shake(0.12);
-          }
+          roar(ctx);
         }
 
         accumulator += dt;

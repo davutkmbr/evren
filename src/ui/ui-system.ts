@@ -94,7 +94,7 @@ export class UiSystem implements System {
     this.tracker = new DiscoveryTracker(ctx);
     this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints, this.hoverHints, this.shotCaption);
     ctx.services.provide('hotbar', this.hud.hotbar);
-    this.abilities = new DragonAbilities(this.hud.hotbar, (text) => this.toasts.push(text, 'info', 'hotbar'));
+    this.abilities = new DragonAbilities(this.hud.hotbar, () => ctx.services.tryGet('dragon'));
     this.statusToasts = new StatusToasts(this.toasts);
     this.fullMap = new FullMap(this.raster, {
       onTeleport: (target) => this.teleport(target),
@@ -201,7 +201,7 @@ export class UiSystem implements System {
     this.fillSnapshot(ctx);
     this.handleInput(ctx);
     this.updateContextHints(ctx);
-    this.abilities.update(dt, ctx);
+    this.abilities.update();
     this.statusToasts.update(ctx, this.modal === 'none' && !this.photo);
 
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
