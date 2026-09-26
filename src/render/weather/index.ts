@@ -61,7 +61,7 @@ export function createWeatherSystem(): System {
   const drift = new THREE.Vector2();
   // Fog banks on the sea (phase 21 stage 6): poyraz mornings and fog weather; off (zero cost) otherwise.
   const seaFog = new SeaFogModel();
-  const seaFogIn: SeaFogInputs = { fog: 0, rain: 0, hours: 12, lodos: 0, u10: 5, humidity: 0.65 };
+  const seaFogIn: SeaFogInputs = { fog: 0, rain: 0, hours: 12, lodos: 0, u10: 5, humidity: 0.65, day: 1 };
   const seaDrift = new THREE.Vector2();
 
   function matchPreset(): WeatherPreset | 'custom' {
@@ -221,6 +221,7 @@ export function createWeatherSystem(): System {
       seaFogIn.lodos = sea ? sea.lodos : 0;
       seaFogIn.u10 = sea ? sea.windSpeed : Math.hypot(wind.x, wind.z) * 0.78;
       seaFogIn.humidity = env?.humidity ?? 0.65;
+      seaFogIn.day = ctx.time.dayOfYear;
       seaFog.update(dt, seaFogIn);
     },
 
