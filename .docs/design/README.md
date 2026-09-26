@@ -76,7 +76,8 @@ stamina, the next gate).
 ## 3. Layout
 
 - **HUD (flight):** compass as a bare tape top centre; bottom centre cluster: speed (left), stamina wings + hotbar
-  (centre; the flow line, a 2 px line under the wings, appears only while there is flow), altitude (right); minimap
+  (centre; the flow line, a 2 px line under the wings, appears only while there is flow, with the chain length as a
+  small gold "×3" at its right end while a chain is alive and a 34 px bar under it draining through the chain window), altitude (right); minimap
   bottom right (132 px circle). Everything transient is placed by the zones below.
 - **HUD zones (`src/ui/zones`):** the HUD composes itself. Every transient message (area title, race intro /
   countdown / warnings / callouts, discovery card, maneuver and shot captions, hover and start hints, the race's
@@ -91,24 +92,35 @@ stamina, the next gate).
   | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while racing the race readout (gutter + 72 px) replaces it |
   | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; a perch's name and info; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
   | `center` | between title and lowerCenter (≥ 25 % of the height) | reserved for the aim and the ring: no text except small labels next to world markers (gate distance) |
-  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
+  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys; the contextual move hints), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
   | `bottom` | gutter + 10 px, 146 px tall | the static cluster (not a zone item) |
   | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card (also a moment's closing card, "Yeni an") / one toast at a time |
 
   Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
-  race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > moment
+  race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > the chain practice's step line (47) > moment
   subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
   after it (35, joinable; while the moment plays the prompt rides quietly under its subtitle line) >
-  start-of-game hints and the compass label (30) > toasts (10); ties go to the newer message (a toast replaces the
+  start-of-game hints and the compass label (30) > contextual move hints (20, `src/ui/tutorial`) > toasts (10); ties go to the newer message (a toast replaces the
   current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
   (dropped after 8 s), the compass landmark label (the next gate is the target) and moment lines and cards (no moment
   starts during a race). Start hints and "[Y] iptal" are items of the same hint line and never share it; only hints
-  marked `joinable` ride along on a higher line. While perched on a viewpoint (the viewing mode, phase 03) the compass,
+  marked `joinable` ride along on a higher line. **Contextual move hints** (the tutorial, `src/ui/tutorial`): one
+  key-first hint at a time ("[Space ×2] Güç vuruşu", keyless for automatic moves: "Suya yakın uç: sıyırma") at the
+  lowest hint-line priority, requested only when the line, the title and the corner have been free for 3 s, never
+  during a race, a landing approach, perching, a menu or photo mode, at most one new hint per 60 s of play and none in
+  the first 45 s; displaced by any other message it does not come back; a move performed cleanly never shows its hint
+  again (Ayarlar → Oyun → İpuçları switches them off, "İpuçlarını sıfırla" starts over). While perched on a viewpoint (the viewing mode, phase 03) the compass,
   the bottom cluster and the minimap fade out: only the zones remain (the perch title, the viewing hint line, toasts).
 - **Small sheets (a moment's sources):** the same sheet look at ≈760 px wide, one column that scrolls, a top bar with
   the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
-  prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
+  prompt; content in two columns (list left, detail right). Scales down under 1440 × 820. A tab whose content is a
+  gallery (Albüm) uses one column instead: the thumb grid with a header line and a key/option footer, and one item
+  large with its caption and the key-first actions underneath; Esc steps back out of the detail before it closes the
+  menu (`MenuPanel.back`).
+  The pause menu's top bar carries one quiet line about the dragon's mood under the game's name (`.menu-mood`,
+  11.5 px, `--ink-3`, e.g. "Evren keyifli."): the only place the mood is ever written; in flight it shows only in the
+  dragon's pose and sound (phase 06).
 - **Full-screen overlays (map, result):** content directly on a scrim or the map, chrome in the corners: title top
   left, close top right, controls bottom right, scale/attribution bottom left, hints bottom centre.
 - **On-scene prompts (countdown, editor):** horizontally centred text (the countdown in the `title` zone, never over
@@ -120,7 +132,7 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 
 | Component | API | What it is |
 |---|---|---|
-| Key cap | `keyCap(label, tone, { size, state })`, `keyCombo('Ctrl + W / S', tone, { size })`, `setKeyCapState(cap, state)` | a raised key; tones `gold` (main action), `ink`, `quiet`, `warn`; sizes `s` (inline, small slots), `m`, `l` (keyboard drawing, `--key` × `--w`); states `dim` / `lit` / `hot` for caps that light up |
+| Key cap | `keyCap(label, tone, { size, state })`, `keyCombo('Ctrl + W / S', tone, { size })` (a trailing "×2" is a double-tap mark), `setKeyCapState(cap, state)` | a raised key; tones `gold` (main action), `ink`, `quiet`, `warn`; sizes `s` (inline, small slots), `m`, `l` (keyboard drawing, `--key` × `--w`); states `dim` / `lit` / `hot` for caps that light up |
 | Key text | `keyText('Konmak için [L]')` | a sentence whose `[X]` parts become small key caps (toasts, hint sentences) |
 | Key hint | `keyHint(keys, label, tone)` | a key and what it does as plain text, not a button (key strips, HUD and loading hints) |
 | Prompt | `prompt(label, key, variant, onPress)`, `.setDisabled(on, reason)` | key + verb, the only action button; variants `primary` (gold key), `secondary`, `danger`; key `''` for a pointer-only action (verb alone) |
@@ -131,6 +143,7 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 | Medal dot / disc | `medalDot(medal, size)`, `medalDisc(medal)` | a small dot in a medal's colour (ring when none); the big result-screen disc with a star |
 | Pill | `pill(text, tone)` | a short status tag ("Yeni rekor"), `gold` or `quiet` |
 | Legend | `legend(items, className)` | colour keys for a chart or map: swatch (`dot`, `ring`, `square`) + label |
+| Thumb grid | `thumbGrid({ label, onSelect, onOpen }).set(items)`, `.select(i)`, `.handleKey(e)` | image thumbnails in 16:9 cells, as many columns as fit (the album); selection is a gold bar under the cell, an optional small gold corner dot marks a badge; arrow keys move in 2D, Enter / Space open |
 | List row | `listRow(content, onPick, onHover, { focusable })` | a selectable list entry: name, quieter second line, value and marker; selection is a gold bar on the left edge; `focusable` puts it in the tab order (Enter / Space pick it) |
 | Text field | `textField(label, { key, placeholder, maxLength, size })` | a labelled single-line input with an optional focus key and a message line |
 | Segmented control | `segmented(label, options, current, onChange)` | one of a few options as equal segments; a radio group driven by ArrowLeft / ArrowRight |

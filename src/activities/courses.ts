@@ -8,7 +8,7 @@
  */
 import { latLonToLocal } from '../core/geo-coords';
 
-export type CourseId = 'bogaz' | 'halic' | 'adalar';
+export type CourseId = 'bogaz' | 'halic' | 'adalar' | 'antrenman';
 
 /** Custom (player-built) course ids start with this prefix (see custom-courses.ts). */
 export const CUSTOM_ID_PREFIX = 'c-';
@@ -53,6 +53,8 @@ export interface CourseDef {
   speedRings?: readonly SpeedRingDef[];
   /** True for player-built courses. */
   custom?: boolean;
+  /** True for the guided chain practice (lesson.ts): no clock on screen, no medals, no records. */
+  lesson?: boolean;
   /**
    * Medal target times (s, whole seconds). Defaults come from defaultMedalTimes(); built-in courses are tuned by
    * tools/headless/race-balance.ts (plain run: silver, chained run: gold), within 10 % of the defaults.
@@ -71,11 +73,11 @@ export interface MedalTimes {
 
 /**
  * Average speeds (m/s) the default medal targets ask for, over the timed distance (course + rest of the lead-in).
- * Phase 20 stage D (flow), retuned 26 Sep 2026 (no speed button any more): bronze and silver are within reach of
- * clean flying without moves (a scripted plain racer averages ~39.5–41.5 m/s); gold asks for flow, i.e. chained moves
- * and the world used well (~43–45 m/s). See tools/headless/race-balance.ts.
+ * Phase 20 stage D v2 (flow and chain bursts, no speed button): bronze is within reach of clean flying without moves (a
+ * scripted plain racer averages ~40–42 m/s); silver asks for some chaining; gold for sustained flow, i.e. chained moves
+ * on every leg and the world used well (~47–54 m/s). See tools/headless/race-balance.ts.
  */
-export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 42, silver: 38, bronze: 32 };
+export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 49, silver: 41, bronze: 36 };
 
 /** Medals from best to worst. */
 export const MEDAL_ORDER: readonly Medal[] = ['gold', 'silver', 'bronze'];
@@ -138,7 +140,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'bogaz',
     name: 'Boğaz turu',
     description: 'Kız Kulesi’nden 15 Temmuz Şehitler Köprüsü’nün altından Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
-    medals: { gold: 262, silver: 287, bronze: 341 },
+    medals: { gold: 238, silver: 268, bronze: 309 },
     gates: [
       { lat: 41.0135, lon: 28.9996, alt: 70, radius: 32, label: 'Başlangıç' },
       { lat: 41.0216, lon: 28.9998, alt: 60, radius: 30, label: 'Kız Kulesi' },
@@ -164,7 +166,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'halic',
     name: 'Haliç kıvrımı',
     description: 'Karaköy’den köprülerin üstünden Haliç’in kıvrımını izleyerek Eyüp’e.',
-    medals: { gold: 121, silver: 139, bronze: 165 },
+    medals: { gold: 101, silver: 123, bronze: 142 },
     gates: [
       { lat: 41.0202, lon: 28.9807, alt: 55, radius: 26, label: 'Başlangıç' },
       { lat: 41.022, lon: 28.97, alt: 95, radius: 24, label: 'Galata Köprüsü' },
@@ -183,7 +185,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'adalar',
     name: 'Adalar turu',
     description: 'Kınalıada ile Burgaz arasından Heybeli’nin güneyinden dolaşıp Büyükada’nın çevresinden güney ucuna.',
-    medals: { gold: 361, silver: 399, bronze: 473 },
+    medals: { gold: 298, silver: 368, bronze: 425 },
     gates: [
       { lat: 40.8919, lon: 29.0569, alt: 55, radius: 32, label: 'Başlangıç' },
       { lat: 40.8802, lon: 29.0498, alt: 55, radius: 30, label: 'Burgazada' },
@@ -206,8 +208,40 @@ export const COURSES: readonly CourseDef[] = [
   },
 ];
 
+/**
+ * The guided chain practice (lesson.ts, "Zincir antrenmanı"): a loop over open water south of Kadıköy, long legs with
+ * gentle turns, a speed ring on every other leg from the third on (the ring step finds one ahead whenever it comes) and
+ * ring-free legs over open sea in between for the skim. Not in COURSES: the race balance and the map's race lines leave it out; courseDef()
+ * and the picker include it. Its medals are the default paces (never shown).
+ */
+export const LESSON_COURSE: CourseDef = {
+  id: 'antrenman',
+  name: 'Zincir antrenmanı',
+  description: 'Açık denizde adım adım zincir: hareket, pencere, farklı hareket, hız halkası ve sıyırma. Süre tutulmaz.',
+  lesson: true,
+  medals: { gold: 239, silver: 286, bronze: 325 },
+  gates: [
+    { lat: 40.965, lon: 29.01, alt: 55, radius: 34, label: 'Başlangıç' },
+    { lat: 40.955, lon: 29.0, alt: 55, radius: 32 },
+    { lat: 40.945, lon: 28.992, alt: 55, radius: 32 },
+    { lat: 40.935, lon: 28.99, alt: 55, radius: 32 },
+    { lat: 40.925, lon: 28.995, alt: 55, radius: 32 },
+    { lat: 40.918, lon: 29.008, alt: 55, radius: 32 },
+    { lat: 40.922, lon: 29.022, alt: 55, radius: 32 },
+    { lat: 40.932, lon: 29.028, alt: 55, radius: 32 },
+    { lat: 40.942, lon: 29.024, alt: 55, radius: 32 },
+    { lat: 40.95, lon: 29.015, alt: 55, radius: 34, label: 'Bitiş' },
+  ],
+  speedRings: [
+    { leg: 2, t: 0.5 },
+    { leg: 4, t: 0.5 },
+    { leg: 6, t: 0.5 },
+    { leg: 8, t: 0.5 },
+  ],
+};
+
 export function courseDef(id: string): CourseDef | undefined {
-  return COURSES.find((c) => c.id === id);
+  return id === LESSON_COURSE.id ? LESSON_COURSE : COURSES.find((c) => c.id === id);
 }
 
 function normalize(x: number, y: number, z: number): [number, number, number] {

@@ -126,6 +126,9 @@ const POV_HEAD_RAISE = 0.22;
  */
 const GAZE_YAW = [0.02, 0.04, 0.08, 0.16, 0.27, 0.38, 0.46, 0.5, 0.5];
 const GAZE_PITCH = [0.03, 0.08, 0.1, 0.06, 0.03, 0.02, 0.02, 0.02, 0.02];
+/** Petting: share of the neck's flight / look yaw taken out, and the neck pitch band kept (rad). */
+const PET_NECK_HOLD = 0.75;
+const PET_NECK_PITCH = { min: -0.02, max: 0.5 };
 /** Extra curl and lift while being petted (the head leans in closer). */
 const GAZE_PET_YAW = [0, 0, 0.02, 0.03, 0.03, 0.03, 0.03, 0.02, 0.02];
 /** The head turns this far outward from pointing straight at the rider, so its near eye (they sit on the sides) meets his. */
@@ -226,6 +229,9 @@ const _thumbTarget = new THREE.Vector3();
 const _air = new THREE.Vector3();
 const FAN_MID = (FINGERS[0].angle + FINGERS[FINGERS.length - 1].angle) * 0.5;
 const _gazeHead = new THREE.Vector3();
+const _bondAxis = new THREE.Vector3();
+/** Share of the bond's head shake per upper neck bone (the head takes 0.25 more). */
+const BOND_SHAKE = [0.2, 0.25, 0.3];
 const _gazeDir = new THREE.Vector3();
 const _gazeUp = new THREE.Vector3();
 const _gazeAxis = new THREE.Vector3();
@@ -364,6 +370,11 @@ export class DragonAnimator {
     this.rider = new RiderAnimator(skel, this.rigRoot);
   }
 
+  /** Petting contact of the last update (see RiderAnimator.petContact). */
+  get petContact(): Readonly<{ active: boolean; error: number; gap: number }> {
+    return this.rider.petContact;
+  }
+
   /** Surface points of the petting stroke on the neck (see RiderAnimator.setPetTrack). */
   setPetTrack(anchors: SurfaceAnchor[]): void {
     this.rider.setPetTrack(anchors);
@@ -448,7 +459,9 @@ export class DragonAnimator {
     const gaitPitch = walk * gallop * 0.05 * Math.sin(wp - 2.2);
     const spineFlex = walk * gallop * 0.09 * Math.sin(wp - 1.2);
     this.root.position.set(this.rootRest.x + walkSway * 0.6, this.rootRest.y + heave + walkBob + SWIM_RIG.bob * swimLift + swimBreath, this.rootRest.z);
-    setEuler(this.root, bodyPitch + gaitPitch + SWIM_RIG.surgePitch * swimLift, walkSway * 0.8 + swimRoot, walk * 0.03 * Math.sin(wp) * (1 - gallop) + swimRoll, 'YXZ');
+    // Bond (phase 06): a visual body roll (happy rock, shake-off) on top; the flight body never rolls for it.
+    const bondRoll = THREE.MathUtils.clamp(pose.bodyRoll ?? 0, -0.45, 0.45);
+    setEuler(this.root, bodyPitch + gaitPitch + SWIM_RIG.surgePitch * swimLift, walkSway * 0.8 + swimRoot, walk * 0.03 * Math.sin(wp) * (1 - gallop) + swimRoll + bondRoll, 'YXZ');
     setEuler(this.chest, -bodyPitch * 0.4 + grounded * 0.05 - spineFlex * 0.5, -walkSway * 0.9 - swimRoot * SWIM_RIG.chestCounter + swimCurve * 0.5, 0, 'YXZ');
     setEuler(this.lumbar, -bodyPitch * 0.3 + spineFlex, -walkSway * 0.5 + SWIM_RIG.lumbarYaw * swSt * Math.sin(swPh - 0.4) - swimCurve, 0, 'YXZ');
     setEuler(this.pelvis, -0.02 * grounded - spineFlex * 0.5, walkSway * 0.6 + SWIM_RIG.pelvisYaw * swSt * Math.sin(swPh - 0.9) - swimCurve, 0, 'YXZ');
@@ -463,8 +476,8 @@ export class DragonAnimator {
       this.neckYaw.reset(neckYawTarget);
       this.neckPitch.reset(neckPitchTarget);
     }
-    const ny = this.neckYaw.value;
-    const np = this.neckPitch.value;
+    const nyRaw = this.neckYaw.value;
+    const npRaw = this.neckPitch.value;
     const groundNeck = grounded * 0.12;
     const walkNod = walk * 0.03 * Math.sin(wp * 2 + 0.5);
     // Looking back at the rider: blends the whole neck from the flight posture into the gaze curve.
@@ -476,6 +489,10 @@ export class DragonAnimator {
     }
     const side = this.gazeSide;
     const pet = this.rider.cues.pet;
+    // Petted, the dragon holds its neck steady and leans into the hand: the flight / look turn is damped and the pitch
+    // kept in a band the rider's arm reaches (the palm stays on the skin, bond-check).
+    const ny = nyRaw * (1 - PET_NECK_HOLD * pet);
+    const np = npRaw + (THREE.MathUtils.clamp(npRaw, PET_NECK_PITCH.min, PET_NECK_PITCH.max) - npRaw) * pet;
     const petSway = 0.035 * pet * Math.sin(this.time * 0.9);
     // The first-person neck posture gives way to the gaze, and to petting (the rider reaches down to the neck).
     const povKeep = 1 - Math.max(g, pet);
@@ -505,6 +522,7 @@ export class DragonAnimator {
     if (g > 0.001) {
       this.aimHeadAtRider(g, side, pet);
     }
+    this.applyBondHead(pose);
     setEuler(this.jaw, -this.smoothJaw * 0.62, 0, 0, 'YXZ');
 
     // --- Tail with lagging springs ---
@@ -614,8 +632,11 @@ export class DragonAnimator {
       const droop = grounded * (i < 4 ? -0.03 : 0.012);
       // Contentment while petted: the tail tip curls up and to one side, slowly swaying.
       const tip = THREE.MathUtils.smoothstep(k, 0.45, 1);
-      const curlYaw = pet * tip * (0.2 * side + 0.07 * Math.sin(this.time * 0.55 - i * 0.35));
-      const curlPitch = -pet * tip * 0.1;
+      // The bond's slow curl (petting, dozing) winds the tip further round.
+      const curl = Math.max(pet, THREE.MathUtils.clamp(pose.tailCurl ?? 0, 0, 1));
+      const bondCurl = THREE.MathUtils.clamp(pose.tailCurl ?? 0, 0, 1) * tip * tip;
+      const curlYaw = curl * tip * (0.2 * side + 0.07 * Math.sin(this.time * 0.55 - i * 0.35)) + bondCurl * 0.12 * side;
+      const curlPitch = -curl * tip * 0.1 - bondCurl * 0.08;
       const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc + curlYaw;
       const tp = basePitch + inertialPitch + wave + droop + curlPitch + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
       let yaw: number;
@@ -999,6 +1020,25 @@ export class DragonAnimator {
     setEuler(bones.foot, SWIM_RIG.foot + SWIM_RIG.footFeather * recover, 0, 0, 'YXZ');
     for (let i = 0; i < 4; i++) {
       blendFrom(bones.list[i], _stash[4 + i], w);
+    }
+  }
+
+  /**
+   * Bond cues past the neck springs: the fast head shake (upper neck and head yaw, so a 4 Hz shake is not smoothed
+   * away) and the head tilt (roll about the snout axis, + = crown to the dragon's left).
+   */
+  private applyBondHead(pose: Readonly<DragonPose>): void {
+    const shake = THREE.MathUtils.clamp(pose.neckShake ?? 0, -0.6, 0.6);
+    if (Math.abs(shake) > 1e-4) {
+      for (let k = 0; k < BOND_SHAKE.length; k++) {
+        const bone = this.neck[NECK_BONES - BOND_SHAKE.length + k];
+        bone.quaternion.multiply(_q.setFromAxisAngle(_bondAxis.set(0, 1, 0), shake * BOND_SHAKE[k]));
+      }
+      this.head.quaternion.multiply(_q.setFromAxisAngle(_bondAxis.set(0, 1, 0), shake * 0.25));
+    }
+    const roll = THREE.MathUtils.clamp(pose.headRoll ?? 0, -0.6, 0.6);
+    if (Math.abs(roll) > 1e-4) {
+      this.head.quaternion.multiply(_q.setFromAxisAngle(_bondAxis.copy(HEAD_FWD).normalize(), -roll));
     }
   }
 

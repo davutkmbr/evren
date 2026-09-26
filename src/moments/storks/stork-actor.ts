@@ -151,7 +151,7 @@ export class StorkFlockActor implements MomentActor {
     }
   }
 
-  end(reason: 'complete' | 'conditions' | 'race' | 'disabled'): void {
+  end(reason: 'complete' | 'race' | 'disabled'): void {
     this.playing = false;
     if (reason === 'race' || reason === 'disabled') {
       this.fadeRate = 1 / LIFE.quickFadeSeconds;
@@ -201,6 +201,8 @@ export class StorkFlockActor implements MomentActor {
     if (geo && this.centreTimer <= 0 && sim.kettleCount > 0) {
       this.centreTimer = LIFE.centreEvery;
       this.recentre(sim, geo, env?.sunDirection ?? this.defaultSun, ctx.time.elapsed);
+      // The dragon glances at the kettle now and then (phase 06 attention; it filters by range and cooldown).
+      ctx.events.emit('dragon-attention', { x: sim.coreX, y: (sim.baseY + sim.topY) / 2, z: sim.coreZ, kind: 'stork', strength: 0.8 });
     }
     const dragon = ctx.services.tryGet('dragon');
     let probe: DragonProbe | null = null;

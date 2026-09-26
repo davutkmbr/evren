@@ -29,10 +29,15 @@ export interface WindParams {
   ambientWind: number;
   /** 0..1 skimming low over water (spray hiss from the wake / wingtip vortices on the surface). */
   skim: number;
+  /**
+   * 0..1 perceived-speed surge (phase 20: race speeds and chain bursts, scaled by the race / flow context): the airflow
+   * gets louder, faster and brighter on top of what the airspeed alone gives.
+   */
+  surge: number;
 }
 
 export function defaultWindParams(): WindParams {
-  return { airspeed: 0, aoa: 0, sideslip: 0, turnRate: 0, rollRate: 0, diving: 0, stall: 0, pov: 0, exposure: 0.6, ambientWind: 4, skim: 0 };
+  return { airspeed: 0, aoa: 0, sideslip: 0, turnRate: 0, rollRate: 0, diving: 0, stall: 0, pov: 0, exposure: 0.6, ambientWind: 4, skim: 0, surge: 0 };
 }
 
 const AUDIBLE = 2e-4;
@@ -45,6 +50,9 @@ const RUMBLE_HP_HZ = 42;
 /** Peak playback-rate deviation of the hiss / body noise loops (gust-driven read-position wander). */
 const HISS_DRIFT = 0.018;
 const BODY_DRIFT = 0.009;
+/** Perceived-speed surge at full: airflow level × (1 + SURGE_GAIN), loop playback rate × (1 + SURGE_RATE). */
+const SURGE_GAIN = 0.33;
+const SURGE_RATE = 0.08;
 /** Layer gains are calibrated at a 40 m/s cruise, where the base airflow level is this. */
 const CRUISE_LOUD = 0.356;
 /**
@@ -394,7 +402,9 @@ export class WindVoice {
     // Airflow level relative to a 40 m/s cruise. Aerodynamic noise physically grows ~v^6 (+22 dB from cruise to a
     // 95 m/s dive); the mix follows it up to cruise speed and then compresses it to ~+8 dB so dives stay exciting
     // without burying everything else (and without driving the master dynamics).
-    const rel = speedLevel(v);
+    const surge = clamp01(finiteOr(p.surge, 0));
+    // The surge lifts the airflow by up to ~+2.5 dB and its pitch by up to ~8 % (a burst is heard as the air rushing).
+    const rel = speedLevel(v) * (1 + SURGE_GAIN * surge);
     const loud = CRUISE_LOUD * rel * exposure;
     const aoaN = clamp01(Math.abs(p.aoa) / 0.4);
     const slipN = clamp01(Math.abs(p.sideslip) / 0.35);
@@ -413,8 +423,8 @@ export class WindVoice {
     this.buffetRate.set(0.45 + 1.25 * sN + 0.6 * p.stall, now);
     this.buffetDepth.set(rumble * (0.5 + 0.3 * aoaN + 0.15 * pov) * (rec ? EARS_BUFFET : 1), now);
     const sR = Math.min(sN, 1.3);
-    this.rushRate.set(0.9 + 0.26 * sR, now);
-    this.earsRate.set(0.85 + 0.35 * sR, now);
+    this.rushRate.set((0.9 + 0.26 * sR) * (1 + SURGE_RATE * surge), now);
+    this.earsRate.set((0.85 + 0.35 * sR) * (1 + SURGE_RATE * surge), now);
 
     const center = rec ? RUSH_CUT_MIN + RUSH_CUT_SPAN * Math.pow(sR, 1.1) + 600 * aoaN : 170 + 1150 * Math.pow(sN, 1.2) + 280 * aoaN;
     this.bodyFreqL.set(center * 0.94, now);
@@ -429,7 +439,7 @@ export class WindVoice {
     this.panL.set(-width, now);
     this.panR.set(width, now);
 
-    const hissCut = 2000 + 2400 * Math.min(sN, 1.3);
+    const hissCut = (2000 + 2400 * Math.min(sN, 1.3)) * (1 + 0.25 * surge);
     this.hissCutL.set(hissCut, now);
     this.hissCutR.set(hissCut * 1.08, now);
     const hiss = 0.045 * Math.pow(rel, 1.3) * exposure * (0.55 + 0.45 * pov) * (1 + 0.3 * p.diving) * (rec ? HISS_RECORDED : 1);

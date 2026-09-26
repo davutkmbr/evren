@@ -97,8 +97,17 @@ type Entry = { keys: string; action: string; parsed: ParsedKeys };
 const entriesOf = (group: ControlGroup): Entry[] =>
   CONTROL_HELP.filter((e) => e.group === group).map((e) => ({ keys: e.keys, action: e.action, parsed: parseKeys(e.keys) }));
 
-const bindRow = (entry: Entry): HTMLElement =>
-  el('div', 'ctl-row', [keycaps(entry.parsed), el('span', 'ctl-action', entry.action)]);
+/** Title of the gold dot on a move the player has not tried yet (the tutorial hints' progress). */
+const UNTRIED = 'Henüz denemedin';
+
+const bindRow = (entry: Entry, untried = false): HTMLElement =>
+  el('div', untried ? 'ctl-row is-untried' : 'ctl-row', [
+    keycaps(entry.parsed),
+    el('span', 'ctl-action', [entry.action, ...(untried ? [el('i', 'ctl-untried', undefined, { title: UNTRIED, 'aria-label': UNTRIED, role: 'img' })] : [])]),
+  ]);
+
+/** Is this row's move not yet tried? (src/ui/tutorial; rows without a catalogued move: false) */
+export type UntriedQuery = (group: ControlGroup, keys: string) => boolean;
 
 /**
  * Kontroller: the groups on the left, a keyboard (and mouse) drawing with the selected group's keys lit, and the
@@ -113,14 +122,18 @@ export class ControlsView {
   private readonly rows: HTMLElement | null = null;
   private group: ControlGroup = 'flight';
   private groupKeys = new Set<string>();
+  private readonly untried: UntriedQuery | undefined;
+  private readonly note: HTMLElement | null = null;
 
-  constructor(opts: { compact?: boolean } = {}) {
+  /** `untried`: marks the moves not yet tried with a gold dot (full view only). */
+  constructor(opts: { compact?: boolean; untried?: UntriedQuery } = {}) {
+    this.untried = opts.untried;
     if (opts.compact) {
       this.root = el(
         'div',
         'ctl-compact',
         GROUPS.map((g) =>
-          el('section', 'ctl-group', [el('h3', 'menu-heading', g.title), el('div', 'ctl-list', entriesOf(g.id).map(bindRow))]),
+          el('section', 'ctl-group', [el('h3', 'menu-heading', g.title), el('div', 'ctl-list', entriesOf(g.id).map((e) => bindRow(e)))]),
         ),
       );
       return;
@@ -178,13 +191,20 @@ export class ControlsView {
 
     this.title = el('h2', 'menu-heading ctl-title');
     this.rows = el('div', 'ctl-binds');
+    this.note = el('p', 'ctl-untried-note', [el('i', 'ctl-untried', undefined, { 'aria-hidden': 'true' }), 'Henüz denemediğin hareket']);
+    this.note.hidden = true;
     this.rows.addEventListener('pointerleave', () => this.light([]));
 
     this.root = el('div', 'menu-split menu-controls', [
       nav,
-      el('div', 'menu-pane ctl-pane', [el('div', 'ctl-visual', [keyboard, mouse]), el('div', undefined, [this.title, this.rows])]),
+      el('div', 'menu-pane ctl-pane', [el('div', 'ctl-visual', [keyboard, mouse]), el('div', undefined, [this.title, this.rows, this.note])]),
     ]);
     this.show('flight');
+  }
+
+  /** Re-reads which moves are tried (the tab opened). */
+  refresh(): void {
+    this.show(this.group);
   }
 
   /** ArrowUp / ArrowDown step through the groups. */
@@ -222,9 +242,12 @@ export class ControlsView {
     const entries = entriesOf(group);
     this.title.textContent = GROUPS.find((g) => g.id === group)?.title ?? '';
     this.groupKeys = new Set(entries.flatMap((e) => e.parsed.ids));
+    let untried = 0;
     this.rows.replaceChildren(
       ...entries.map((entry) => {
-        const row = bindRow(entry);
+        const mark = !!this.untried?.(group, entry.keys);
+        untried += mark ? 1 : 0;
+        const row = bindRow(entry, mark);
         row.addEventListener('pointerenter', () => {
           this.light(entry.parsed.ids);
           row.classList.add('is-hot');
@@ -233,6 +256,9 @@ export class ControlsView {
         return row;
       }),
     );
+    if (this.note) {
+      this.note.hidden = untried === 0;
+    }
     this.light([]);
   }
 

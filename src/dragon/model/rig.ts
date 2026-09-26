@@ -199,6 +199,11 @@ export class DragonRigImpl implements DragonRig {
     this.animator.setGazeSide(side, immediate);
   }
 
+  /** Petting contact of the last applyPose (headless checks): wrist reach error and palm gap to the skin (m). */
+  get petContact(): Readonly<{ active: boolean; error: number; gap: number }> {
+    return this.animator.petContact;
+  }
+
   /** Debug (screenshots): freeze the petting stroke phase (rad); null = animate. */
   setDebugStrokePhase(stroke: number | null): void {
     this.animator.setDebugStrokePhase(stroke);
@@ -244,6 +249,10 @@ export class DragonRigImpl implements DragonRig {
     this.mouth.position.copy(this.mouthRest).sub(this.jawHinge).multiplyScalar(MOUTH_DEPTH).applyQuaternion(_jawHalf).add(this.jawHinge);
     const o = this.animator.outputs;
     this.bodyUniforms.uBreath.value = o.breath;
+    const pose = this.pose;
+    this.bodyUniforms.uEyeLid.value = THREE.MathUtils.clamp(pose.eyeLid ?? 0, 0, 1);
+    this.bodyUniforms.uPupil.value = THREE.MathUtils.clamp(pose.pupil ?? 0.3, 0, 1);
+    this.bodyUniforms.uPlates.value = THREE.MathUtils.clamp(pose.neckPlates ?? 0, 0, 1);
     this.membraneUniforms.uBillow.value.set(o.billowLeft, o.billowRight);
     this.membraneUniforms.uFlutter.value = o.flutter;
     this.membraneUniforms.uFlutterFreq.value = o.flutterFreq;

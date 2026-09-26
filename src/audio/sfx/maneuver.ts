@@ -82,3 +82,38 @@ export function playWhoosh(env: SfxEnv, when: number, strength: number, place: P
   v.end(dur + 0.1);
   return dur;
 }
+
+/**
+ * A chain burst (phase 20): the air rushing past as the dragon surges forward. Shorter and brighter than the pass-by
+ * whoosh, centred (the push is straight ahead): a fast rise of band-passed pink noise whose centre sweeps up with the
+ * push, a low body thump under it, and a slower tail. Returns the duration in seconds.
+ */
+export function playBurstRush(env: SfxEnv, when: number, strength: number, place: Placement): number {
+  const s = clamp(strength, 0.2, 1.5);
+  const v = new Voice(env, place, when, 1);
+  const t = v.t;
+  const dur = 0.55 + 0.35 * s;
+  const src = v.noise(env.noise.pink);
+  const bp = v.filter('bandpass', 500, 0.9);
+  expPoints(bp.frequency, t, [
+    [0, 420],
+    [dur * 0.3, 1400 + 900 * s],
+    [dur, 600],
+  ]);
+  const e = v.gain(0);
+  e.gain.setValueAtTime(0, t);
+  e.gain.linearRampToValueAtTime(0.85 * s, t + dur * 0.22);
+  e.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(bp).connect(e);
+  v.toInput(e);
+  const thump = v.osc('sine', 72, 0, 0, 0.3);
+  thump.frequency.setValueAtTime(95, t);
+  thump.frequency.exponentialRampToValueAtTime(52, t + 0.25);
+  const tg = v.gain(0);
+  percEnv(tg.gain, t, 0.35 * s, 0.012, 0.22);
+  thump.connect(tg);
+  v.toInput(tg);
+  v.end(dur + 0.1);
+  return dur;
+}
+

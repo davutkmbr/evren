@@ -130,7 +130,9 @@ export type SimEvent =
   | { type: 'maneuver'; id: ManeuverId; label: string; ended?: boolean; clean?: boolean }
   | { type: 'sound'; name: FlightSound; volume: number }
   /** Camera jolt (CameraRigState.shake amount). */
-  | { type: 'shake'; amount: number };
+  | { type: 'shake'; amount: number }
+  /** A chain link landed (flow/burst.ts): its number in the chain, the speed burst it gives (m/s) and why. */
+  | { type: 'chain'; link: number; dv: number; source: 'motion' | 'ring' | 'gate' };
 
 export function createPilotCommand(): PilotCommand {
   return {

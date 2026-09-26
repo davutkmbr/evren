@@ -1,7 +1,8 @@
 /**
  * Weather system (service 'weather'): fog, rain and thunderstorms as player settings, plus the distance softening of
- * the look. Drives the weather HdrPass (aerial blur, ground fog, lightning flash), rain streaks and lightning bolts;
- * the sky (haze), clouds (coverage) and audio (rain bed, thunder) read `current`.
+ * the look. Drives the weather HdrPass (aerial blur, ground fog, the sea fog banks of poyraz mornings, lightning
+ * flash), rain streaks and lightning bolts; the sky (haze), clouds (coverage), the sea (storm wind, rain rings) and
+ * audio (rain bed, thunder) read `current`.
  */
 import * as THREE from 'three';
 import type { EngineContext, System, WeatherPreset, WeatherService, WeatherSettings } from '../../core/contracts';
@@ -10,6 +11,7 @@ import { globalUniforms } from '../../core/uniforms';
 import { Lightning } from './lightning';
 import { DEFAULT_FAR_BLUR, WEATHER_LABELS, WEATHER_ORDER, WEATHER_PRESETS } from './presets';
 import { RainStreaks } from './rain';
+import { SEA_FOG, SeaFogModel, type SeaFogInputs } from './sea-fog';
 import { WeatherPass } from './weather-pass';
 
 const STORAGE_KEY = 'ejderha.weather.v1';
@@ -57,6 +59,10 @@ export function createWeatherSystem(): System {
   const thunderOut: number[] = [];
   const tmpColor = new THREE.Color();
   const drift = new THREE.Vector2();
+  // Fog banks on the sea (phase 21 stage 6): poyraz mornings and fog weather; off (zero cost) otherwise.
+  const seaFog = new SeaFogModel();
+  const seaFogIn: SeaFogInputs = { fog: 0, rain: 0, hours: 12, lodos: 0, u10: 5, humidity: 0.65, day: 1 };
+  const seaDrift = new THREE.Vector2();
 
   function matchPreset(): WeatherPreset | 'custom' {
     for (const name of WEATHER_ORDER) {
@@ -157,6 +163,10 @@ export function createWeatherSystem(): System {
       }
       applyUrl(ctx.debug.params);
       Object.assign(current, settings);
+      const forcedSeaFog = ctx.debug.params.get('seafog');
+      if (forcedSeaFog !== null && Number.isFinite(Number(forcedSeaFog))) {
+        seaFog.forced = Number(forcedSeaFog);
+      }
       ctx.pipeline.addHdrPass(pass);
       ctx.services.provide('weather', service);
       if (import.meta.env.DEV || ctx.sandbox || ctx.debug.params.has('weatherdebug')) {
@@ -166,6 +176,7 @@ export function createWeatherSystem(): System {
           pass,
           rain,
           lightning,
+          seaFog,
         };
       }
     },
@@ -199,6 +210,19 @@ export function createWeatherSystem(): System {
       const wind = globalUniforms.uWind.value as THREE.Vector3;
       drift.x -= wind.x * 0.6 * dt;
       drift.y -= wind.z * 0.6 * dt;
+      seaDrift.x -= wind.x * SEA_FOG.drift * dt;
+      seaDrift.y -= wind.z * SEA_FOG.drift * dt;
+
+      const sea = ctx.services.tryGet('water')?.seaState;
+      const env = ctx.services.tryGet('env');
+      seaFogIn.fog = current.fog;
+      seaFogIn.rain = current.rain;
+      seaFogIn.hours = ctx.time.timeOfDay;
+      seaFogIn.lodos = sea ? sea.lodos : 0;
+      seaFogIn.u10 = sea ? sea.windSpeed : Math.hypot(wind.x, wind.z) * 0.78;
+      seaFogIn.humidity = env?.humidity ?? 0.65;
+      seaFogIn.day = ctx.time.dayOfYear;
+      seaFog.update(dt, seaFogIn);
     },
 
     preRender(ctx) {
@@ -231,6 +255,11 @@ export function createWeatherSystem(): System {
       p.fogLight.lerp(tmpColor.setRGB(grey, grey, grey), 0.5);
       p.fogSun.copy(sun).multiplyScalar(0.22 * (1 - 0.8 * rainLevel));
       p.fogDrift.copy(drift);
+      p.seaFogDensity = seaFog.density;
+      p.seaFogHeight = seaFog.height;
+      p.seaFogPatches = SEA_FOG.patches;
+      p.seaFogDistance = SEA_FOG.maxDistance;
+      p.seaFogDrift.copy(seaDrift);
 
       const flash = lightning.flash * (0.5 + 0.5 * night);
       p.flashSky.copy(FLASH_COLOR).multiplyScalar((2.2 * flash) / exposure);
