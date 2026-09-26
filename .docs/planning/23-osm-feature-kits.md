@@ -24,6 +24,14 @@ refetch. Every prop goes through the shared stand rule; per-slice budgets. Count
 | `landuse=cemetery`, `amenity=grave_yard` | rows of Ottoman headstones |
 | `amenity=marketplace` | rows of tinted stalls with produce |
 | `emergency=fire_hydrant`, `amenity=recycling/waste_disposal`, `amenity=bicycle_parking`, `leisure=fitness_station`, `barrier=hedge`, `railway=subway_entrance`, `amenity=taxi` | hydrant, recycling bins, bike rack, outdoor gym, hedge segments, metro entrance, taksi durağı |
+| `man_made=mast` / `man_made=tower` (on the ground) | GSM mast / lattice tower |
+| `tourism=hotel` | lit blade sign on the facade |
+| `natural=beach` | sunbed pairs under straw umbrellas, facing the water |
+| `amenity=shelter`, `leisure=picnic_table`, `amenity=clock`, `tourism=information`, `advertising=billboard` | kameriye, picnic table, street clock, info board, billboard |
+
+Kits without a twin in the compiled street tiles (`props/stamp.ts` `THROUGH_HOLE`) are drawn through the street
+layer's hole, so they stand in the landing spots too; shopfront kits (awnings, pharmacy / hotel signs, ATMs, market
+stalls) are cut there, the compiled façades carry their own.
 
 Flight-scale land use (highway verges and interchanges seen from the air, outside the OSM regions) is the phase 24
 map work (OSM land use stamped into the geo build, [24](24-far-osm-layer.md) S2).
