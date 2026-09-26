@@ -47,6 +47,7 @@ uniform vec3 uRrs[5];
 uniform vec3 uAtten[5];
 uniform vec3 uFloorAlbedo[5];
 uniform float uRoughness[5];
+uniform float uCamUnder;              // 1 while the camera is under the water (underwater service)
 
 varying vec3 vWorld;
 varying vec4 vLagr;
@@ -256,8 +257,9 @@ void main() {
   vec3 atten = rw.x * uAtten[0] + rw.y * uAtten[1] + rw.z * uAtten[2] + rw.w * uAtten[3] + lake * uAtten[4];
   vec3 floorAlbedo = rw.x * uFloorAlbedo[0] + rw.y * uFloorAlbedo[1] + rw.z * uFloorAlbedo[2] + rw.w * uFloorAlbedo[3] + lake * uFloorAlbedo[4];
 
-  if (!gl_FrontFacing && uCamPos.y < 0.6) {
-    // Underside: Snell's window (refracted sky) inside ~48.6 deg, total internal reflection outside.
+  if (!gl_FrontFacing && (uCamPos.y < 0.6 || uCamUnder > 0.5)) {
+    // Underside: Snell's window (refracted sky) inside ~48.6 deg, total internal reflection outside. At night the
+    // window's rim (refracted rays close to the horizon) carries a faint, wave-shimmering glow of the city lights.
     float cosI = clamp(-dot(V, N), 0.0, 1.0);
     float Fu = fresnelDielectric(cosI, 1.0 / WATER_ETA);
     vec3 tDir = refract(-V, -N, WATER_ETA);
@@ -267,6 +269,9 @@ void main() {
       tDir = normalize(tDir);
       sky = skyRadiance(vec3(tDir.x, max(tDir.y, 0.003), tDir.z));
       sky += keyE * pow(max(dot(tDir, L), 0.0), 900.0) * 300.0;
+      float rim = pow(1.0 - clamp(tDir.y, 0.0, 1.0), 3.0);
+      float shimmer = 0.5 + clamp(0.5 + 8.0 * (N.x - N.z), 0.0, 1.0);
+      sky += vec3(1.0, 0.68, 0.38) * (0.004 * uNight * (0.25 + 2.0 * rim) * shimmer);
     }
     vec3 under = sky * (1.0 - Fu) + scatterUp * Fu;
     gl_FragColor = vec4(badFloat3(under) > 0.0 ? vec3(0.0) : min(under, vec3(6e4)), 1.0);

@@ -5,7 +5,7 @@ import { FxaaPass, SmaaPass, smaaAvailable, type AntialiasPass } from './antiali
 import { BloomChain } from './bloom';
 import { DynamicResolution, type DynamicResolutionInput, type DynamicResolutionStats } from './dynamic-resolution';
 import { AutoExposure } from './exposure';
-import { CompositePass, type CompositeFrame } from './composite-pass';
+import { CompositePass, UNDERWATER_LOOK, type CompositeFrame } from './composite-pass';
 import { FullscreenRenderer } from './fullscreen';
 import { GpuTimer } from './gpu-timer';
 import { createGradingState, updateGrading } from './grading';
@@ -380,7 +380,7 @@ export class PostPipeline implements RenderPipeline {
     f.width = this.internalWidth;
     f.height = this.internalHeight;
     f.bloomEnabled = bloomOn;
-    f.exposure = this.exposureCtl.exposure;
+    f.exposure = this.exposureCtl.exposure * Math.pow(2, UNDERWATER_LOOK.exposureEv * this.composite.underwater);
     f.flareIntensity = this.flare.intensity;
     f.speedEffect = this.overrides.speed ?? this.speedEffect;
     f.time = globalUniforms.uTime.value as number;
@@ -508,9 +508,11 @@ export class PostPipeline implements RenderPipeline {
     this.exposureCtl.nightFactor = THREE.MathUtils.clamp(night, 0, 1);
 
     const camera = ctx.camera;
-    const geo = ctx.services.tryGet('geo');
+    const view = ctx.services.tryGet('underwater') ?? null;
+    const geo = view ? undefined : ctx.services.tryGet('geo');
     const overWater = !geo || camera.position.y >= 0 || geo.isWater(camera.position.x, camera.position.z);
-    this.composite.updateUnderwater(camera, sunDir, sunColor, ambient, overWater);
+    this.composite.preset = ctx.quality.settings.preset;
+    this.composite.updateUnderwater(camera, sunDir, sunColor, ambient, view, overWater);
     this.flare.update(camera, sunDir, sunColor, night);
     this.flare.intensity *= 1 - this.composite.underwater;
   }
