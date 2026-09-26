@@ -71,6 +71,7 @@ export function leadDome(b: MeshBuilder, o: DomeOptions): void {
   }
   const sheets = Math.max(8, Math.round((Math.PI * 2 * r) / (o.sheetWidth ?? 0.95)));
   const seg = segCount(r, o.lod, frac);
+  domeCollider(b, o.y, r, rise, shape);
   b.with({ mat: Mat.Lead, light: Light.Dome, lightBase: b.worldY(0, o.y, 0), ao: 1 }, () => {
     if (shape === 'pumpkin' && o.lod === 0) {
       pumpkin(b, prof, o.lobes ?? 16, seg);
@@ -87,6 +88,33 @@ export function leadDome(b: MeshBuilder, o: DomeOptions): void {
   });
   if (o.alem && o.alem > 0 && frac > 0.99) {
     b.at(0, o.y + rise - 0.1, 0, 0, () => alem(b, o.alem!, o.lod));
+  }
+}
+
+/**
+ * Collider of a dome springing at y: a sphere through the crown for hemispherical / raised / pumpkin shells, a low
+ * cylinder for shallow caps (their large sphere would bulge out below the springing), a cylinder plus a sphere for
+ * onion domes. Semi-domes get the full shape too: its back half lies inside the dome base they lean against.
+ */
+function domeCollider(b: MeshBuilder, y: number, r: number, rise: number, shape: DomeShape): void {
+  if (r < 0.6) {
+    return;
+  }
+  if (shape === 'shallow' || rise < r * 0.8) {
+    // a flat cap: stacked cylinders following the spherical cap (a sphere through it would bulge out below the rim)
+    const R = (r * r + rise * rise) / (2 * rise);
+    const cy = y + rise - R;
+    const tiers = Math.min(10, Math.max(2, Math.ceil(rise / 1.2)));
+    for (let k = 0; k < tiers; k++) {
+      const y0 = y + (rise * k) / tiers;
+      const rr = Math.sqrt(Math.max(R * R - (y0 - cy) ** 2, 0));
+      b.colCylinder(0, k === 0 ? y - 0.3 : y0, 0, Math.min(rr, r), rise / tiers + (k === 0 ? 0.3 : 0));
+    }
+  } else if (shape === 'onion') {
+    b.colCylinder(0, y - 0.2, 0, r, rise * 0.45);
+    b.colSphere(0, y + rise * 0.45, 0, Math.min(r, rise * 0.5));
+  } else {
+    b.colSphere(0, y + rise - r, 0, r);
   }
 }
 
@@ -188,6 +216,7 @@ export function windowDrum(b: MeshBuilder, o: DrumOptions): void {
   const sill = o.sill ?? Math.min(0.6, h * 0.12);
   const archRise = winW * 0.62;
   const winH = Math.max(0.3, h - sill - archRise - Math.max(0.25, h * 0.09));
+  b.colCylinder(0, o.y0, 0, o.r + (o.buttress ?? 0) * 0.5, h);
   b.with({ light: Light.Facade, lightBase: b.worldY(0, o.y0, 0) - 2 }, () => {
     if (o.lod === 2) {
       const n2 = Math.min(n, 16);
@@ -324,6 +353,7 @@ export interface TurretOptions {
 export function turret(b: MeshBuilder, o: TurretOptions): void {
   const n = o.sides ?? 8;
   b.at(o.x, 0, o.z, 0, () => {
+    b.colCylinder(0, o.y0, 0, o.r, o.y1 - o.y0 + Math.max(0.25, o.r * 0.22) * 0.5);
     b.with({ light: Light.Facade, lightBase: b.worldY(0, o.y0, 0) - 3 }, () => {
       if (o.windows && o.lod === 0) {
         const step = (Math.PI * 2) / n;

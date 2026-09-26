@@ -1,4 +1,4 @@
-import { Light, Mat, type GeomData, type LightId, type MatId, type RGB, type V3 } from './types';
+import { Light, Mat, type GeomData, type LightId, type LocalCollider, type MatId, type RGB, type V3 } from './types';
 
 /** Surface state captured into every emitted vertex. */
 export interface SurfaceState {
@@ -117,6 +117,53 @@ export class MeshBuilder {
 
   scale(k: number): void {
     this.mulRot(k, 0, 0, 0, k, 0, 0, 0, k);
+  }
+
+  /* ------------------------------ colliders ------------------------------ */
+
+  /**
+   * Colliders registered by the parts that emit geometry (domes, drums, arcades, walls), in building space. Parts
+   * register the same colliders at every LOD, so the set does not depend on which level was built first.
+   */
+  readonly colliders: LocalCollider[] = [];
+
+  /** Building-space point of a local point. */
+  worldPoint(x: number, y: number, z: number): V3 {
+    const m = this.m;
+    return [m[0] * x + m[1] * y + m[2] * z + m[3], m[4] * x + m[5] * y + m[6] * z + m[7], m[8] * x + m[9] * y + m[10] * z + m[11]];
+  }
+
+  /** Uniform scale of the current transform. */
+  private worldScale(): number {
+    const m = this.m;
+    return Math.hypot(m[0], m[4], m[8]);
+  }
+
+  /** Local axis-aligned box [x0..x1] x [y0..y1] x [z0..z1] as a building-space collider (the frame only yaws). */
+  colBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, open = false): void {
+    const k = this.worldScale();
+    const [cx, cy, cz] = this.worldPoint((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    const m = this.m;
+    // rotateY(a) maps local +X to (cos a, -sin a) in x/z, the Object3D.rotation.y convention of box colliders
+    const yaw = Math.atan2(-m[8], m[0]);
+    const c: LocalCollider = { kind: 'box', cx, cy, cz, hx: (Math.abs(x1 - x0) / 2) * k, hy: (Math.abs(y1 - y0) / 2) * k, hz: (Math.abs(z1 - z0) / 2) * k, yaw };
+    if (open) {
+      c.open = true;
+    }
+    this.colliders.push(c);
+  }
+
+  /** Vertical cylinder standing at local (x, y, z). */
+  colCylinder(x: number, y: number, z: number, r: number, h: number): void {
+    const k = this.worldScale();
+    const [wx, wy, wz] = this.worldPoint(x, y, z);
+    this.colliders.push({ kind: 'cylinder', x: wx, y: wy, z: wz, r: r * k, h: h * k });
+  }
+
+  colSphere(x: number, y: number, z: number, r: number): void {
+    const k = this.worldScale();
+    const [wx, wy, wz] = this.worldPoint(x, y, z);
+    this.colliders.push({ kind: 'sphere', x: wx, y: wy, z: wz, r: r * k });
   }
 
   /** Building-space y of a local point (for light bases). */

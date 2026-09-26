@@ -46,6 +46,11 @@ function buttressTower(b: MeshBuilder, xi: number, xo: number, zc: number, w: nu
   const topAt = (x: number): number => yHigh + ((yLow - yHigh) * (x - xi)) / L;
   const win = (len: number, top: number): Opening[] =>
     lod === 2 ? [] : rowOpenings(len, { count: Math.max(1, Math.floor(len / 5.5)), sill: top - 8.5, h: 2.6, w: 1.3, arch: 'round', back: 'glass', glazing: 'clear', depth: 0.8 }, 1.5);
+  // the sloping top as four steps, each as high as its inner end
+  for (let k = 0; k < 4; k++) {
+    const x0 = xi + (L * k) / 4;
+    b.colBox(x0, 0, zc - w / 2, x0 + L / 4, topAt(x0), zc + w / 2);
+  }
   b.at(xi, 0, zc + w / 2, 0, () => wallPanel(b, L, -2, (x) => topAt(xi + x), win(L, yLow), { lod, seed: 11 }));
   b.at(xo, 0, zc - w / 2, Math.PI, () => wallPanel(b, L, -2, (x) => topAt(xo - x), win(L, yLow), { lod, seed: 12 }));
   b.at(xo, 0, zc + w / 2, Math.PI / 2, () => wallPanel(b, w, -2, yLow, win(w, yLow), { lod, seed: 13 }));
@@ -116,7 +121,6 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   flatRoof(b, CORE.x0, CORE.z0, -BAY - 1.5, CORE.z1, AISLE_H + 0.02, 2.2);
   flatRoof(b, BAY + 1.5, CORE.z0, CORE.x1, CORE.z1, AISLE_H + 0.02, 2.2);
   flatRoof(b, -BAY - 1.5, CORE.z0, BAY + 1.5, CORE.z1, AISLE_H + 0.02);
-  cols.push({ kind: 'box', cx: 0, cy: AISLE_H / 2, cz: (CORE.z0 + CORE.z1) / 2 + shift, hx: cw / 2, hy: AISLE_H / 2 + 1, hz: cd / 2, yaw: 0 });
 
   // North/south tympana under the great arches, with their arch rings.
   const springY = DOME_BASE - BAY;
@@ -136,6 +140,9 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
     wallPanelRing(b, plat, DOME_BASE - 2.4, DOME_BASE + 0.3, lod);
   });
   flatRoof(b, -plat, -plat, plat, plat, DOME_BASE + 0.32);
+  // core between the great arches: the tympana stand at +-BAY, the arch rings reach 1.8 m beyond them
+  b.colBox(-BAY - 1, AISLE_H - 1, -plat, BAY + 1, DOME_BASE - 2.4, plat);
+  b.colBox(-plat, DOME_BASE - 2.4, -plat, plat, DOME_BASE + 0.32, plat);
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       pierTurret(b, sx * (BAY + 1.2), sz * (BAY + 1.2), 5.2, AISLE_H - 1, DOME_BASE + 3.2, lod);
@@ -147,16 +154,12 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
         buttressTower(b, BAY + 3.8, CORE.x1 + 5, sz * (BAY + 2.4), 8.2, 29, 36.5, lod);
       }
     });
-    for (const sz of [-1, 1]) {
-      cols.push({ kind: 'box', cx: sx * ((BAY + 3.8 + CORE.x1 + 5) / 2), cy: 16, cz: sz * (BAY + 2.4) + shift, hx: (CORE.x1 + 5 - BAY - 3.8) / 2, hy: 17, hz: 4.1, yaw: 0 });
-    }
   }
 
   // East and west semi-domes (same span as the dome, crowns at the dome base) with two exedrae each; the apse east.
   for (const sz of [-1, 1]) {
     const yaw = sz > 0 ? 0 : Math.PI;
     semiDome(b, { x: 0, z: sz * BAY, yaw, r: R * 0.95, y0: 24.2, band: 1.6, windows: 5, lod, arch: 1.5, archDepth: 2.2 });
-    cols.push({ kind: 'sphere', x: 0, y: 25.8, z: sz * (BAY + 5) + shift, r: R * 0.92 });
     for (const sgn of [-1, 1]) {
       const a = yaw + sgn * 0.98;
       semiDome(b, { x: Math.sin(a) * R * 0.74, z: sz * BAY + Math.cos(a) * R * 0.74, yaw: a, r: 6.4, y0: 19.2, band: 1.8, windows: 3, lod });
@@ -165,6 +168,7 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   b.at(0, 0, CORE.z0 + 1, Math.PI, () => {
     const ar = 7.4;
     const walls = 3;
+    b.colCylinder(0, 0.3, 0, ar, 20.8);
     for (let i = 0; i < walls; i++) {
       const a0 = -Math.PI / 2 + (i * Math.PI) / walls;
       const side = 2 * ar * Math.sin(Math.PI / (walls * 2));
@@ -188,9 +192,6 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   // Drum with 40 windows between 40 buttresses, shallow ribbed dome.
   windowDrum(b, { r: R * 1.03, y0: DOME_BASE, y1: DRUM_TOP, windows: 40, lod, buttress: 1.15, winFrac: 0.52, cornice: 0.45, arch: 'round', glazing: 'clear' });
   leadDome(b, { r: R, y: DRUM_TOP, rise: CROWN - DRUM_TOP, lod, shape: 'shallow', ribs: 40, alem: 4.4, sheetWidth: (Math.PI * 2 * R) / 40 });
-  cols.push({ kind: 'cylinder', x: 0, y: DOME_BASE - 6, z: shift, r: R + 0.8, h: DRUM_TOP - DOME_BASE + 6 });
-  const sphereR = (R * R + (CROWN - DRUM_TOP) ** 2) / (2 * (CROWN - DRUM_TOP));
-  cols.push({ kind: 'sphere', x: 0, y: CROWN - sphereR, z: shift, r: sphereR });
 
   // Inner (taller) and outer narthex to the west.
   const n0 = CORE.z1;
@@ -200,7 +201,6 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   flatRoof(b, -30, n0, 30, n1, 17.02, 2.6);
   b.at(0, 0, (n1 + n2) / 2, 0, () => boxFacades(b, 58, n2 - n1, 0.3, 10.5, lod, (side, len) => (side === 'back' ? [] : galleryFacade(len, 10.5, 5))));
   flatRoof(b, -29, n1, 29, n2, 10.52, 1.4);
-  cols.push({ kind: 'box', cx: 0, cy: 8.5, cz: (n0 + n2) / 2 + shift, hx: 30, hy: 8.5, hz: (n2 - n0) / 2, yaw: 0 });
 
   // Ottoman tombs to the south-west, ablution fountain by the south entrance.
   b.with({ mat: Mat.Stone, color: OTTOMAN_STONE }, () => {
@@ -211,7 +211,7 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
     ];
     for (const t of tombs) {
       turbe(b, t.x, t.z, t.r, t.h, lod);
-      cols.push({ kind: 'cylinder', x: t.x, y: 0, z: t.z + shift, r: t.r, h: t.h + t.r });
+      cols.push({ kind: 'cylinder', x: t.x, y: 0, z: t.z + shift, r: t.r, h: t.h + 0.3 });
     }
     b.at(44, 0, -22, 0, () => sadirvan(b, 3, 8, lod));
   });
@@ -231,7 +231,8 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
     }
   });
   b.pop();
-  return { colliders: cols, radius: 82, height: top };
+  // parts registered theirs in the shifted frame already
+  return { colliders: [...cols, ...b.colliders], radius: 82, height: top };
 }
 
 /** Four plain walls around the square dome base (the pendentive block seen above the tympana). */
