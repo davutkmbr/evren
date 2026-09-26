@@ -7,13 +7,17 @@
  *     -> fade-in gain -> fade-out gain -> player output
  *   stingers (intro, go, finish) -> stinger gain -> fade-out gain;  outro -> player output
  *   player output (level x volume x duck) -> master bus `music` (underwater muffle) -> master dynamics
+ *   sprinkle phrase (one-shot) -> voice gain (edge fades x phrase gain) -> player output
+ *   moment piece (one-shot) -> voice gain -> moment output (level x volume x menu duck only) -> master bus `music`
  *
  * Every stem of a deck is started with the same `when` on the AudioContext clock and loops over the same grid length,
  * so the stems stay sample-locked forever. Decoding happens only when the director asks for a set; at most
- * `maxCachedSets` decoded sets are kept (sets in use are never evicted).
+ * `maxCachedSets` decoded sets are kept (sets in use are never evicted). Phrases (sprinkles and moment pieces) are
+ * one-shot voices with their own small decode cache; the moment output skips the moment duck that hushes the stems.
  */
-import { checkDecodedLengths, loopSeconds, MUSIC_BASE, pickSource, stemsOf, STINGER_KINDS, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
+import { checkDecodedLengths, loopSeconds, MUSIC_BASE, phraseGain, pickSource, stemsOf, STINGER_KINDS, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
 import type { DirectorCommand } from './director';
+import type { SprinkleCommand } from './sprinkle';
 import type { StemMix } from './rules';
 
 export interface MusicBuffers {
@@ -23,6 +27,17 @@ export interface MusicBuffers {
 
 /** Loads a set's audio; the default fetches and decodes the manifest's files, the dev test sets render them. */
 export type SetLoader = (set: MusicSetDef, ctx: BaseAudioContext) => Promise<MusicBuffers>;
+/** Loads a phrase's audio (the dev test phrases render it). */
+export type PhraseLoader = (phrase: MusicPhraseDef, ctx: BaseAudioContext) => Promise<AudioBuffer>;
+
+/** Which output a one-shot voice plays into: the ducked music output, or the moment output. */
+export type VoiceBus = 'main' | 'moment';
+
+interface Voice {
+  src: AudioBufferSourceNode;
+  gain: GainNode;
+  stopAt: number;
+}
 
 /**
  * Music level into the master dynamics: stems mastered to about -16 LUFS (full mix, see the owner guide) sit near
@@ -54,16 +69,21 @@ const canPlayType = (mime: string): boolean => {
   }
 };
 
+async function fetchAudio(src: readonly string[], ctx: BaseAudioContext): Promise<AudioBuffer> {
+  const file = pickSource(src, canPlayType) ?? src[0];
+  const res = await fetch(`${import.meta.env.BASE_URL}${MUSIC_BASE}${file}`);
+  if (!res.ok) {
+    throw new Error(`${file}: HTTP ${res.status}`);
+  }
+  return ctx.decodeAudioData(await res.arrayBuffer());
+}
+
+/** Default phrase loader: fetch + decode the first playable format. */
+export const fetchPhraseLoader: PhraseLoader = (phrase, ctx) => fetchAudio(phrase.src, ctx);
+
 /** Default loader: fetch + decode each stem (first playable format), in parallel. */
 export const fetchSetLoader: SetLoader = async (set, ctx) => {
-  const load = async (src: readonly string[]): Promise<AudioBuffer> => {
-    const file = pickSource(src, canPlayType) ?? src[0];
-    const res = await fetch(`${import.meta.env.BASE_URL}${MUSIC_BASE}${file}`);
-    if (!res.ok) {
-      throw new Error(`${file}: HTTP ${res.status}`);
-    }
-    return ctx.decodeAudioData(await res.arrayBuffer());
-  };
+  const load = (src: readonly string[]): Promise<AudioBuffer> => fetchAudio(src, ctx);
   const out: MusicBuffers = { stems: {}, stingers: {} };
   await Promise.all([
     ...stemsOf(set).map(async (r) => {
@@ -78,6 +98,8 @@ export const fetchSetLoader: SetLoader = async (set, ctx) => {
 
 export class MusicPlayer {
   readonly output: GainNode;
+  /** Moment pieces: volume and the menu duck, not the moment duck of the stems. */
+  readonly momentOutput: GainNode;
   private readonly cache = new Map<string, MusicBuffers>();
   private readonly loading = new Map<string, Promise<void>>();
   private readonly failed = new Set<string>();
@@ -85,6 +107,15 @@ export class MusicPlayer {
   private readonly decks = new Map<number, Deck>();
   private volume = 0.8;
   private duck = 0;
+  private momentDuck = 0;
+  private readonly phraseCache = new Map<string, AudioBuffer>();
+  private readonly phraseLoading = new Map<string, Promise<void>>();
+  private readonly phraseFailed = new Set<string>();
+  private readonly phraseLru: string[] = [];
+  private readonly voices = new Map<string, Voice>();
+  /** Loader per phrase id (dev test phrases); others fetch their files. */
+  readonly phraseLoaders = new Map<string, PhraseLoader>();
+  readonly maxCachedPhrases = 6;
   private level = MUSIC_LEVEL;
   private paused: { at: number; offsets: Map<number, number> } | null = null;
   /** Loader per set id (dev test sets); others use `defaultLoader`. */
@@ -99,6 +130,9 @@ export class MusicPlayer {
     this.output = ctx.createGain();
     this.output.gain.value = 0;
     this.output.connect(destination);
+    this.momentOutput = ctx.createGain();
+    this.momentOutput.gain.value = 0;
+    this.momentOutput.connect(destination);
     this.applyOutput(0);
   }
 
@@ -150,6 +184,126 @@ export class MusicPlayer {
       .finally(() => this.loading.delete(set.id));
     this.loading.set(set.id, p);
     return p;
+  }
+
+  isPhraseReady(id: string): boolean {
+    return this.phraseCache.has(id);
+  }
+
+  hasPhraseFailed(id: string): boolean {
+    return this.phraseFailed.has(id);
+  }
+
+  loadPhrase(phrase: MusicPhraseDef): Promise<void> {
+    if (this.phraseCache.has(phrase.id)) {
+      return Promise.resolve();
+    }
+    const inflight = this.phraseLoading.get(phrase.id);
+    if (inflight) {
+      return inflight;
+    }
+    const loader = this.phraseLoaders.get(phrase.id) ?? fetchPhraseLoader;
+    const p = loader(phrase, this.ctx)
+      .then((buf) => {
+        if (Math.abs(buf.duration - phrase.durationSec) > 0.25) {
+          console.warn(`[music] phrase ${phrase.id}: decoded ${buf.duration.toFixed(2)} s, manifest says ${phrase.durationSec} s`);
+        }
+        this.phraseCache.set(phrase.id, buf);
+        this.phraseLru.push(phrase.id);
+        const playing = new Set([...this.voices.values()].map((v) => v.src.buffer));
+        for (let i = 0; this.phraseCache.size > this.maxCachedPhrases && i < this.phraseLru.length; ) {
+          const id = this.phraseLru[i];
+          if (playing.has(this.phraseCache.get(id) ?? null)) {
+            i++;
+            continue;
+          }
+          this.phraseCache.delete(id);
+          this.phraseLru.splice(i, 1);
+        }
+      })
+      .catch((err: unknown) => {
+        this.phraseFailed.add(phrase.id);
+        console.warn(`[music] could not load phrase ${phrase.id}`, err);
+      })
+      .finally(() => this.phraseLoading.delete(phrase.id));
+    this.phraseLoading.set(phrase.id, p);
+    return p;
+  }
+
+  /**
+   * Executes a sprinkle / moment-music command. `owner` keeps the two directors' voice numbers apart; `bus` picks the
+   * output.
+   */
+  executeOneShot(owner: string, cmd: SprinkleCommand, phrases: readonly MusicPhraseDef[], bus: VoiceBus): void {
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    switch (cmd.type) {
+      case 'load': {
+        const phrase = phrases.find((x) => x.id === cmd.phraseId);
+        if (phrase) {
+          void this.loadPhrase(phrase);
+        }
+        break;
+      }
+      case 'play': {
+        const phrase = phrases.find((x) => x.id === cmd.phraseId);
+        const buf = this.phraseCache.get(cmd.phraseId);
+        if (!phrase || !buf || this.paused) {
+          break;
+        }
+        const t0 = Math.max(cmd.at, now);
+        const t1 = t0 + Math.min(cmd.duration, buf.duration);
+        const level = phraseGain(phrase);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, now);
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(level, t0 + Math.max(0.02, cmd.fadeIn));
+        g.gain.setValueAtTime(level, Math.max(t0 + cmd.fadeIn, t1 - cmd.fadeOut));
+        g.gain.linearRampToValueAtTime(0, t1);
+        g.connect(bus === 'moment' ? this.momentOutput : this.output);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(g);
+        src.start(t0);
+        src.stop(t1 + 0.05);
+        const key = `${owner}:${cmd.voice}`;
+        src.onended = () => {
+          g.disconnect();
+          if (this.voices.get(key)?.src === src) {
+            this.voices.delete(key);
+          }
+        };
+        this.voices.set(key, { src, gain: g, stopAt: t1 + 0.05 });
+        break;
+      }
+      case 'stop': {
+        const v = this.voices.get(`${owner}:${cmd.voice}`);
+        if (!v) {
+          break;
+        }
+        const t0 = Math.max(cmd.at, now);
+        const t1 = t0 + Math.max(0.05, cmd.fade);
+        if (t1 >= v.stopAt) {
+          break;
+        }
+        v.gain.gain.cancelScheduledValues(now);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, now);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, t0);
+        v.gain.gain.linearRampToValueAtTime(0, t1);
+        try {
+          v.src.stop(t1 + 0.05);
+        } catch {
+          /* already stopped */
+        }
+        v.stopAt = t1 + 0.05;
+        break;
+      }
+    }
+  }
+
+  /** Voices sounding now (debug). */
+  get liveVoices(): number {
+    return this.voices.size;
   }
 
   private touch(id: string): void {
@@ -308,8 +462,11 @@ export class MusicPlayer {
     return Math.max(0, mix) * (set.stems[role]?.gain ?? 1) * (set.gain ?? 1);
   }
 
-  /** Applies the smoothed adaptive mix to every live deck and releases finished decks. */
-  update(mix: StemMix, duck: number): void {
+  /**
+   * Applies the smoothed adaptive mix to every live deck and releases finished decks. `momentDuck` is the duck of the
+   * moment output (the menu duck, without the moment duck that hushes the stems under a moment piece).
+   */
+  update(mix: StemMix, duck: number, momentDuck = duck): void {
     const now = this.ctx.currentTime;
     for (const [id, d] of this.decks) {
       if (now > d.stopAt + 0.2) {
@@ -329,8 +486,9 @@ export class MusicPlayer {
         }
       }
     }
-    if (Math.abs(duck - this.duck) > 0.002) {
+    if (Math.abs(duck - this.duck) > 0.002 || Math.abs(momentDuck - this.momentDuck) > 0.002) {
       this.duck = duck;
+      this.momentDuck = momentDuck;
       this.applyOutput(0.06);
     }
   }
@@ -341,11 +499,25 @@ export class MusicPlayer {
   }
 
   private applyOutput(tau: number): void {
-    const g = this.paused ? 0 : this.level * this.volume * this.volume * (1 - this.duck);
-    if (tau <= 0) {
-      this.output.gain.value = g;
-    } else {
-      this.output.gain.setTargetAtTime(g, this.ctx.currentTime, tau);
+    const base = this.paused ? 0 : this.level * this.volume * this.volume;
+    const set = (node: GainNode, g: number): void => {
+      if (tau <= 0) {
+        node.gain.value = g;
+      } else {
+        node.gain.setTargetAtTime(g, this.ctx.currentTime, tau);
+      }
+    };
+    set(this.output, base * (1 - this.duck));
+    set(this.momentOutput, base * (1 - this.momentDuck));
+  }
+
+  /** Fades every one-shot voice of `owner` out (style switched, test phrases loaded). */
+  stopVoices(owner: string, fade = 1): void {
+    const now = this.ctx.currentTime;
+    for (const key of [...this.voices.keys()]) {
+      if (key.startsWith(`${owner}:`)) {
+        this.executeOneShot(owner, { type: 'stop', voice: Number(key.slice(owner.length + 1)), at: now, fade }, [], 'main');
+      }
     }
   }
 
@@ -446,6 +618,17 @@ export class MusicPlayer {
     }
     this.decks.clear();
     this.cache.clear();
+    for (const v of this.voices.values()) {
+      try {
+        v.src.stop();
+      } catch {
+        /* already stopped */
+      }
+      v.gain.disconnect();
+    }
+    this.voices.clear();
+    this.phraseCache.clear();
     this.output.disconnect();
+    this.momentOutput.disconnect();
   }
 }
