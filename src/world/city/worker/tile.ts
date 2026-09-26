@@ -72,14 +72,16 @@ function osmRecords(block: DecodedBuildings, x0: number, z0: number, size: numbe
       continue;
     }
     for (let k = t.first; k < t.first + t.count; k++) {
+      // Centroid of the outline (the record's first ring).
+      const r0 = block.ringStart[k];
       let cx = 0;
       let cz = 0;
-      for (let v = block.start[k]; v < block.start[k + 1]; v++) {
+      for (let v = block.start[r0]; v < block.start[r0 + 1]; v++) {
         cx += block.xy[v * 2];
         cz += block.xy[v * 2 + 1];
       }
-      cx /= block.nv[k];
-      cz /= block.nv[k];
+      cx /= block.nv[r0];
+      cz /= block.nv[r0];
       const ci = Math.floor((cx + WORLD_HALF) / BASE_CELL);
       const cj = Math.floor((cz + WORLD_HALF) / BASE_CELL);
       if (ci < 0 || cj < 0 || ci >= CELLS || cj >= CELLS || mask[cj * CELLS + ci] !== 1) {

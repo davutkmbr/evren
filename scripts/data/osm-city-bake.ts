@@ -428,6 +428,7 @@ log(`mask: ${relaxed.reduce((s, v) => s + v, 0)} OSM cells; ${kept.length} solid
 // 6. Building records.
 interface Out {
   ring: number[];
+  holes: number[][];
   cx: number;
   cz: number;
   wallH: number;
@@ -456,6 +457,7 @@ const outs: Out[] = kept.map((r) => {
   const fade = total >= 30 ? FadeClass.Skyline : total >= 18 || r.area >= 700 || usage === Usage.Industrial ? FadeClass.Large : total >= 12 ? FadeClass.Mid : FadeClass.Small;
   return {
     ring: r.s.ring,
+    holes: r.s.holes,
     cx: r.cx,
     cz: r.cz,
     wallH: Math.min(65535, Math.round(wallH * 10)),
@@ -504,21 +506,31 @@ for (const [key, list] of byBlock) {
   const [bi, bj] = key.split('_').map(Number);
   const ox = -BAKE_HALF + (bi + 0.5) * BAKE_BLOCK;
   const oz = -BAKE_HALF + (bj + 0.5) * BAKE_BLOCK;
-  const rows = list.map((o) => {
-    let ring: number[] | null = o.ring;
-    // At most 255 vertices (nv is a byte): simplify the rare long outlines until they fit.
-    for (let tol = 0.25; ring && ring.length / 2 > 255; tol *= 2) {
-      ring = simplifyRing(o.ring, tol);
+  // At most 255 vertices per ring (nv is a byte): simplify the rare long rings until they fit.
+  const fit = (r: number[], hole: boolean): number[] | null => {
+    let out: number[] | null = r;
+    const src = hole ? reverse(r) : r;
+    for (let tol = 0.25; out && out.length / 2 > 255; tol *= 2) {
+      const sr = simplifyRing(src, tol);
+      out = sr && hole ? reverse(sr) : sr;
     }
-    if (ring !== o.ring) {
+    if (out !== r) {
       longRings++;
     }
-    return { o, ring: ring ?? o.ring.slice(0, 255 * 2), ti: Math.floor((o.cx + BAKE_HALF) / TILE0), tj: Math.floor((o.cz + BAKE_HALF) / TILE0) };
+    return out;
+  };
+  const rows = list.map((o) => {
+    const ring = fit(o.ring, false) ?? o.ring.slice(0, 255 * 2);
+    // Courtyards (clockwise), at most 254 per building.
+    const holes = o.holes.map((h) => fit(h, true)).filter((h): h is number[] => !!h && h.length >= 6).slice(0, 254);
+    return { o, ring, holes, ti: Math.floor((o.cx + BAKE_HALF) / TILE0), tj: Math.floor((o.cz + BAKE_HALF) / TILE0) };
   });
   rows.sort((a, b) => a.tj - b.tj || a.ti - b.ti || a.o.id - b.o.id);
   const n = rows.length;
-  const verts = rows.reduce((s, r) => s + r.ring.length / 2, 0);
-  const nv = new Uint8Array(n);
+  const verts = rows.reduce((s, r) => s + r.ring.length / 2 + r.holes.reduce((t, h) => t + h.length / 2, 0), 0);
+  const ringTotal = rows.reduce((s, r) => s + 1 + r.holes.length, 0);
+  const rings = new Uint8Array(n);
+  const nv = new Uint8Array(ringTotal);
   const xy = new Int16Array(verts * 2);
   const u8 = (): Uint8Array => new Uint8Array(n);
   const [rise, roof, arch, floors, floorH, flags] = [u8(), u8(), u8(), u8(), u8(), u8()];
@@ -526,6 +538,7 @@ for (const [key, list] of byBlock) {
   const id = new Int32Array(n);
   const tiles: BuildingFileHeader['tiles'] = [];
   let v = 0;
+  let ri = 0;
   let prevId = 0;
   rows.forEach((r, k) => {
     const last = tiles[tiles.length - 1];
@@ -533,16 +546,19 @@ for (const [key, list] of byBlock) {
       tiles.push({ i: r.ti, j: r.tj, first: k, count: 0 });
     }
     tiles[tiles.length - 1].count++;
-    nv[k] = r.ring.length / 2;
+    rings[k] = 1 + r.holes.length;
     let px = 0;
     let pz = 0;
-    for (let q = 0; q < r.ring.length; q += 2) {
-      const x = Math.round((r.ring[q] - ox) / XY_UNIT);
-      const z = Math.round((r.ring[q + 1] - oz) / XY_UNIT);
-      xy[v++] = x - px;
-      xy[v++] = z - pz;
-      px = x;
-      pz = z;
+    for (const ring of [r.ring, ...r.holes]) {
+      nv[ri++] = ring.length / 2;
+      for (let q = 0; q < ring.length; q += 2) {
+        const x = Math.round((ring[q] - ox) / XY_UNIT);
+        const z = Math.round((ring[q + 1] - oz) / XY_UNIT);
+        xy[v++] = x - px;
+        xy[v++] = z - pz;
+        px = x;
+        pz = z;
+      }
     }
     const o = r.o;
     wallH[k] = o.wallH;
@@ -564,7 +580,7 @@ for (const [key, list] of byBlock) {
   });
   const header: Omit<BuildingFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, block: [bi, bj], origin: [ox, oz], count: n, vertices: verts, tiles };
   const bytes = gzipSync(
-    packContainer<BuildingFileHeader>(header, { nv, xy: shuffle16(xy), wallH: shuffle16(wallH), minH: shuffle16(minH), rise, roof, arch, floors, floorH, flags, tint: shuffle16(tint), roofTint: shuffle16(roofTint), id }),
+    packContainer<BuildingFileHeader>(header, { rings, nv, xy: shuffle16(xy), wallH: shuffle16(wallH), minH: shuffle16(minH), rise, roof, arch, floors, floorH, flags, tint: shuffle16(tint), roofTint: shuffle16(roofTint), id }),
     { level: 9 },
   );
   const file = `blocks/${key}.bin.gz`;

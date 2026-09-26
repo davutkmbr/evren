@@ -406,14 +406,15 @@ console.log('6. Far layer: the city bake draws what the regions draw');
     for (const f of index.files) {
       const d = decodeBuildings(gunzipSync(readFileSync(resolve(bakeDir, f.file))));
       for (let k = 0; k < d.header.count; k++) {
+        const r0 = d.ringStart[k];
         let x = 0;
         let z = 0;
-        for (let v = d.start[k]; v < d.start[k + 1]; v++) {
+        for (let v = d.start[r0]; v < d.start[r0 + 1]; v++) {
           x += d.xy[v * 2];
           z += d.xy[v * 2 + 1];
         }
         const list = baked.get(d.id[k]) ?? [];
-        list.push({ cx: x / d.nv[k], cz: z / d.nv[k], wallH: d.wallH[k], minH: d.minH[k], used: false });
+        list.push({ cx: x / d.nv[r0], cz: z / d.nv[r0], wallH: d.wallH[k], minH: d.minH[k], used: false });
         baked.set(d.id[k], list);
       }
     }
