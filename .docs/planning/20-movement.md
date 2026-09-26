@@ -2,7 +2,7 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: stage A built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
+Status: stages A and B built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -143,13 +143,74 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   air by default (the hover holds 0°); in the game the bank into a real crosswind is intended.
 - **Not yet:** the `CONTROL_HELP` rows for the run-out (UI, later), the skim over water (phase 21 / the water work).
 
+### Stage B as built (awaiting the owner's feel test)
+
+- **Code:** power stroke, dart and side-slip in `src/dragon/flight/maneuvers.ts` (the power stroke runs on top of the
+  normal law like the urge; dart and side-slip are tricks with their own control laws, `TrickKind` `'dart'` /
+  `'slip'`), the skim in `src/dragon/flight/skim.ts` (called from `airborne.ts` before the aerodynamics), pose and
+  rider cues in `pose.ts`, gestures in `src/core/gestures.ts` (`DoubleTapRecognizer`, used by `core/input.ts`), new
+  pilot edges `powerPressed`, `slipLeftPressed`, `slipRightPressed` (`types.ts`, `pilot.ts`). Tunables: `POWER_STROKE`,
+  `DART`, `SLIP`, `SKIM` in `params.ts` (plus `PROXIMITY.pilotLandGain` / `pilotLandClimb` / `pilotFloorSoften`).
+- **Flow hooks:** every move announces its start on the `maneuver` event (captions "Güç vuruşu", "Ok gibi", "Kayış",
+  "Sıyırma") and marks its end with `ended: true` and `clean` (no contact, no stall, exit speed ≥ entry −
+  `cleanTolerance`, not cut short); the finished moves are also kept in `Maneuvers.log` (`MoveRecord`: entry / exit
+  speed, height change, lateral shift, heading change). Refusals use the existing hint style ("Güç vuruşu için ejderha
+  yorgun", "Ok gibi atılmak için yer yok / düz uç", "Kayış için yer yok / hızlan", "Ejderha yorgun").
+- **Güç vuruşu (Space ×2):** two deep, full-amplitude downstrokes: the first tap's downstroke still under way counts
+  as the first (deepened), otherwise the next starts at once; flap force × `thrust` (2.6) faded out as the surge
+  reaches entry + `gain` (5 m/s); the path hold keeps it level. Costs 0.07 stamina up front, refused below 0.12 or
+  while tired. Sounds: a whoosh. Pose: full strokes reaching forward, neck stretched forward and down, the tail pumping
+  with the strokes, the rider's hands pumping with each downstroke.
+- **Dart (Shift ×2 above 30 m/s, flight path within ±25°):** wings half folded (spread 0.5, sweep 0.8) and the body
+  streamlined (parasite drag × 0.6) for 1 s, a push-over onto a −15° path (shallower below 12 m of clearance, level
+  below 4 m), then the wings open on their own over 0.35 s with a soft wing snap. A / D steer with up to 30° of bank.
+  Physics decides the gain: the drag area drops to ~0.4–0.5 of plain gliding, so a 1 s shallow dive at 34 m/s ends
+  ~+0.9 m/s over its entry and ~+2.8 m/s over plain gliding for ~7 m of height. Pose: neck and tail in line (an
+  arrow), rider flat on the neck.
+- **Kayış (Q / E ×2):** a sideways shift of 1.1 body lengths (the rig's 18.5 m nose to tail, 20 m) over 1.7 s with the
+  heading held: a sine-shaped lateral acceleration profile (out, then back to zero lateral speed) made of the lift of a
+  quick bank into the slip and out of it (35°, leading by 0.15 s) and a muscle push for the rest (the outer wing's
+  asymmetric downstroke and the tail flick, capped at 4 g), with feedback on the offset. Costs 0.04 stamina. Refused
+  without room: horizontal rays along the slip from four points along the track (body, feet and raised-wing height)
+  must reach the shift + half the span + 4 m without a hit, and at the destination the ground or a roof must stay 3 m
+  below the feet and nothing lower than 6 m above; also refused below 16 m/s or tired. Sounds: a wing snap and a
+  whoosh. Pose: the wing twist flicks into the slip and back, the tail sweeps out opposite, the head looks where the
+  body goes, the slip-side rein comes back.
+- **Sıyırma (automatic):** foot clearance below 6 m (full from 3 m) over water or flat open ground (no structure below,
+  the surface ahead level within 1.5 m), at 20 m/s or more (full from 24), bank under 12°, wings spread, no trick
+  running. On top of the physical ground effect it cuts the induced drag by up to 45 % and the parasite drag by 10 %
+  (drag area × 0.83 of the plain ground effect at 3.2 m). The tail is lowered until it kisses the surface (0.45 m over
+  land, touching the water), the wingtips at the bottom of the stroke and the tail tip throw a thin line of spray
+  (the water skim's `splash` events) or dust over land. The stroke amplitude keeps a 0.6 m wider wingtip margin while
+  skimming (the membrane's trailing edge early in the upstroke reaches lower than the fitted stroke bottom). The water
+  skim of `airborne.ts` (feet and belly in the water) stays the contact that follows when the dragon goes too low. A
+  skim held 0.5 s is announced (caption at most every 8 s) and its end reported like the other moves.
+- **Assist clearance:** pushing W low over land used to overshoot the 1.5 m pilot floor (the feet reached the ground
+  and the wingtips went through it); below the floor's clearance it now also climbs by the height missing
+  (0.12 rad/m, up to 0.15 rad), and within 4 m of it the stick's push fades out over the last 6° of path above the
+  floor. Descents from higher up are unchanged.
+- **Gesture collisions:** see `core/gestures.ts`. One 300 ms window for every double tap; the first tap always acts as
+  a plain press (one Space beat, a short Shift fold, a rudder blip) and the move the second tap starts takes over.
+  Space ×2 is ignored while diving with Shift held, braking, hovering, taking off or under water (so Space
+  still catches a free fall or a steep dive, and still strokes and breaches under water; on a landing approach the
+  first tap goes around and the second strokes). Shift ×2 is the dart only
+  above 30 m/s from about level flight; slower, or already diving steeply, it stays the free fall. Shift held on after
+  the dart's second tap is ignored until released (the wings reopen as planned), like after a catch. The dart's
+  shallow path never arms a plunge. Q / E held after the double tap keep the rudder once the slip ends. A / D ×2 and
+  S ×2 are unchanged.
+- **Checks:** `tools/headless/air-moves-check.ts` (gesture unit tests, collisions in the flight model, per-move
+  envelopes and refusals, skim drag and clearance on the rig mesh); the mesh part measurements moved to
+  `tools/headless/pose/parts.ts`. Pose scenarios `power`, `dart`, `slip`, `skim`, `skim-water`.
+- **Not yet:** audio beyond the existing whoosh / wing-snap / splash cues; the flow system that consumes the clean
+  flags (stage D).
+
 ## Controls summary (additions)
 
 | Gesture | Move |
 |---|---|
 | Fast touchdown | run-out; Ctrl/X stop, Space fly out |
 | Space ×2 | güç vuruşu |
-| Shift ×2 (fast) | dart |
+| Shift ×2 (fast; slow: free fall as before) | dart |
 | S ×2 while banked | wingover (level: loop, unchanged) |
 | A/D at the top of a loop · A/D ×2 in a steep dive | Immelmann · Split-S |
 | Q/E ×2 | kayış |

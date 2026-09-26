@@ -6,7 +6,7 @@ import { DEG, PHYSICS_DT } from './params';
 import type { FlightSim } from './sim';
 import type { AssistOverrides, PilotCommand, PilotEdge, SimEvent, SimOptions } from './types';
 import { wingtipClearance } from './wingtip';
-import { clearOverrides, clearPilotEdges, createPilotCommand, PILOT_EDGES } from './types';
+import { clearOverrides, clearPilotEdges, createEdgeRecord, createPilotCommand, PILOT_EDGES } from './types';
 
 export interface FlightSnapshot {
   time: number;
@@ -100,7 +100,7 @@ export function snapshot(sim: FlightSim): FlightSnapshot {
 export interface TestControl {
   command: PilotCommand | null;
   readonly overrides: AssistOverrides;
-  /** One-frame presses (edges), e.g. 'rollRight' = a D double tap, 'drop' = a Shift double tap, 'urge' = V. */
+  /** One-frame presses (edges), e.g. 'rollRight' = a D double tap, 'drop' = a Shift double tap, 'urge' = V, 'power' = a Space double tap, 'slipLeft' = a Q double tap. */
   pressed: Record<PilotEdge, boolean>;
 }
 
@@ -108,7 +108,7 @@ export function createTestControl(): TestControl {
   return {
     command: null,
     overrides: { bankTarget: null, pathTarget: null, airspeedTarget: null },
-    pressed: { flap: false, land: false, roar: false, rollLeft: false, rollRight: false, loop: false, drop: false, urge: false },
+    pressed: createEdgeRecord(),
   };
 }
 
