@@ -4,6 +4,7 @@
  * rect edge), coast from the geo window, ground = the visible OSM ground (StreetSurface.heightAt).
  */
 import type { StandGround } from '../../placement/stand';
+import { inWallBody } from '../../landmarks/walls/data/bodies';
 import type { FootprintIndex } from './footprints';
 import { Zone, type StreetSurface } from './street-surface';
 
@@ -23,6 +24,7 @@ export function osmStandGround(surface: StreetSurface, footprints?: FootprintInd
     coast: (x, z) => surface.geo.coast(x, z),
     ground: (x, z) => surface.heightAt(x, z),
     inBuilding: footprints ? (x, z) => footprints.inside(x, z) : undefined,
+    inStructure: (x, z) => inWallBody(x, z),
     // Clearly on a vehicular carriageway (the lane lanterns of kerbless streets stand on its edge band).
     onCarriageway: (x, z) => surface.distance(x, z) < -CARRIAGEWAY_EDGE && surface.zone(x, z) === Zone.Carriageway,
   };
