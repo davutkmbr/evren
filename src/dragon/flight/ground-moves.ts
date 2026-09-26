@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, createRng, lerp, smoothstep } from '../../core/math/noise';
-import { enterSwimming } from './locomotion';
+import { enterSwimming, floatsHere } from './locomotion';
 import { MANEUVER_LABELS } from './maneuvers';
 import { FLAP, GAIT, GRAVITY, GROUND, LEAP, RUNOUT } from './params';
 import type { FlightSim } from './sim';
@@ -488,7 +488,11 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const nx = p.x + fx * sim.groundSpeed * h;
   const nz = p.z + fz * sim.groundSpeed * h;
   // Next ground under the standing body: a deck or an overhang above the dragon's back is not a step.
-  const nextSurface = collision ? collision.columnAt(nx, nz, sim.surfaceY + sim.standHeight + sim.contacts.bellyDepth, _column).floor : sim.surfaceY;
+  let nextSurface = collision ? collision.columnAt(nx, nz, sim.surfaceY + sim.standHeight + sim.contacts.bellyDepth, _column).floor : sim.surfaceY;
+  if (collision && sim.overWater && nextSurface < 0.05 && collision.terrainHeight(nx, nz) < -0.4) {
+    // Wading: the next step is on the seabed too, not on the water surface.
+    nextSurface = collision.terrainHeight(nx, nz);
+  }
   if (!pushing && nextSurface - sim.surfaceY > GROUND.maxStep) {
     sim.groundSpeed *= 0.2;
     if (collision && sim.contacts.onWall) {
@@ -510,7 +514,7 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
     sim.setMode('takeoff');
     return;
   }
-  if (!pushing && sim.surfaceIsWater() && sim.terrainY < -1.2) {
+  if (!pushing && sim.surfaceIsWater() && floatsHere(sim)) {
     m.leap = null;
     m.runOut = false;
     sim.leapCharge = 0;
