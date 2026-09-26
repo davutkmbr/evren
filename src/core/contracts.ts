@@ -667,9 +667,11 @@ export interface AudioService {
 
 /**
  * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
- * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit).
+ * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit),
+ * and 'ferry-horn', a soft vapur whistle at a ferry (the synthesised ambience horn, src/audio/sfx/ambient.ts; the
+ * ferry escort plays it on arrival, src/activities/escort).
  */
-export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat';
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat' | 'ferry-horn';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).
@@ -1071,6 +1073,25 @@ export interface VesselPose {
 }
 
 /**
+ * Where a scheduled ferry is on its line (world/life FerryService), for the ferry escort (src/activities/escort).
+ * While alongside (`phase` 'dwell') `from` is the pier it lies at and `to` the next one; otherwise the leg it runs.
+ */
+export interface FerryLegInfo {
+  /** Line id (fleet-data SERVICE_LINES, e.g. 'eminonu-kadikoy'). */
+  line: string;
+  /** Pier ids (data/places PIERS) and their display names ("Kadıköy İskelesi"). */
+  from: string;
+  to: string;
+  fromName: string;
+  toName: string;
+  /** 'dwell' alongside, 'undock' backing out, 'pause' before going ahead, 'route' running to `to`. */
+  phase: 'dwell' | 'undock' | 'pause' | 'route';
+  /** Where the ferry will lie alongside at `to` (world x, z). */
+  dockX: number;
+  dockZ: number;
+}
+
+/**
  * The living world's vessels and flocks for other systems. Provided by world/life as 'life' once its fleet exists.
  */
 export interface LifeService {
@@ -1090,6 +1111,8 @@ export interface LifeService {
    * as the result, or -1 when none (the dragon's attention, phase 06).
    */
   nearestBird?(x: number, y: number, z: number, maxDistance: number, out: THREE.Vector3): number;
+  /** The line and leg of scheduled ferry `id` into `out`, or null when it is not a scheduled ferry (or gone). */
+  ferryLeg?(id: number, out: FerryLegInfo): FerryLegInfo | null;
 }
 
 /* ------------------------------------------------------------------ */

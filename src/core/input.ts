@@ -12,7 +12,8 @@
  *   fire    F / LMB      gamepad X          (fire breath)
  *   look    RMB held, or always in POV (mouse look)
  * Buttons (pressed this frame):
- *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U, source I (a moment's sources)
+ *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U, source I (a moment's sources),
+ *   escort Z (escort a ferry beside the dragon / stop escorting, src/activities/escort)
  * Rider and maneuvers:
  *   pet G held / D-pad down, stand T, weather N, encourage V / D-pad up (the rider pats the neck and calls to the
  *   dragon: a bond interaction with no effect on speed or physics)
@@ -49,6 +50,7 @@ export type ButtonName =
   | 'encourage'
   | 'weather'
   | 'source'
+  | 'escort'
   | 'rollLeft'
   | 'rollRight'
   | 'pitchUp'
@@ -65,7 +67,7 @@ export type ButtonName =
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'encourage', ...HOTBAR_BUTTONS]);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'escort', 'encourage', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -91,6 +93,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyV: 'encourage',
   KeyN: 'weather',
   KeyI: 'source',
+  KeyZ: 'escort',
   KeyA: 'rollLeft',
   ArrowLeft: 'rollLeft',
   KeyD: 'rollRight',
@@ -178,6 +181,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'K / J', action: 'Parkur editöründe: kapı ↔ hız halkası / kapı boyutu', group: 'game' },
   { keys: 'Enter', action: 'Parkur editöründe: kaydet', group: 'game' },
   { keys: 'I', action: 'Bir an sırasında ve biraz sonrasında: kaynağa bak (şiirin, hikâyenin aslı)', group: 'game' },
+  { keys: 'Z', action: 'Seferdeki bir vapurun yanında aynı yöne uçarken: vapura eşlik et (eşlikte: eşliği bırak)', group: 'game' },
   { keys: 'M', action: 'Harita', group: 'game' },
   { keys: 'U', action: 'Arayüzü gizle', group: 'game' },
   { keys: 'H', action: 'Yardım', group: 'game' },
