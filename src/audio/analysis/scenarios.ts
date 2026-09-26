@@ -212,8 +212,8 @@ const rainSeaCase = (): RenderCase => ({
 });
 
 /**
- * Phase 21 stage 5 v2: swimming, from the chase camera. Floating (0-3 s), swimming at 2.6 m/s (3-6.5 s), the fast
- * swim at 4.5 m/s (6.5-10 s): the water bed around the body, each wing's stroke at the rig's rhythm (left catch at
+ * Phase 21 stage 5 v2: swimming, from the chase camera. Floating (0-3 s), swimming at 5 m/s (3-6.5 s), the fast
+ * swim at 8.5 m/s (6.5-10 s): the water bed around the body, each wing's stroke at the rig's rhythm (left catch at
  * phase 0, right at pi, as strong as the stroke, as long as its power stroke), the breathing and the snorts. First-pass
  * window, to be balanced by ear on the owner's machine.
  */
@@ -231,9 +231,9 @@ function swimCase(): RenderCase {
       if (t <= prev || t < 0.02) {
         phase = 0;
       }
-      const speed = t < 3 ? 0 : t < 6.5 ? 2.6 : 4.5;
+      const speed = t < 3 ? 0 : t < 6.5 ? 5 : 8.5;
       const stroke = t < 3 ? 0.22 : t < 6.5 ? 0.7 : 1;
-      const freq = t < 3 ? 0.2 : t < 6.5 ? 0.59 : 1.05;
+      const freq = t < 3 ? 0.2 : t < 6.5 ? 0.55 : 0.83;
       f.dragon.airspeed = speed;
       f.dragon.groundSpeed = speed;
       f.dragon.grounded = true;
@@ -248,7 +248,7 @@ function swimCase(): RenderCase {
       ];
       for (const [at, side] of catches) {
         if (Math.floor((phase - at) / (2 * Math.PI)) !== Math.floor((next - at) / (2 * Math.PI))) {
-          e.swimStroke(stroke, side, 0.42 / freq);
+          e.swimStroke(stroke, side, 0.45 / freq);
         }
       }
       phase = next;
