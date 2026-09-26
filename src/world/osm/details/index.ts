@@ -29,26 +29,13 @@ import { TREE_SPECIES } from './trees/species';
 import { GalataDeck, placeAnglers, standerArray } from './waterfront/bridge';
 import { createFlags } from './waterfront/flags';
 import { createPigeons } from './waterfront/pigeons';
-import { isModelled, landmarkClaims } from '../../landmarks/claims';
+import { landmarkClaims } from '../../landmarks/claims';
+import { mosquePads } from './mosque-pads';
 import { perchClearings } from '../../perches/clearings';
 
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
 const DECK_TIMEOUT = 40;
-
-/** Landmark mosques (grown by 10 m like the reserved pads) and neighbourhood mosque sites: x, z, radius triples. */
-function mosquePads(geo: GeoQuery): number[] {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind === 'mosque' && isModelled(l)) {
-      out.push(l.x, l.z, l.radius + 10);
-    }
-  }
-  for (const m of geo.smallMosqueSites) {
-    out.push(m.x, m.z, m.radius);
-  }
-  return out;
-}
 
 /** Trees shape the city from the air (always drawn) but cast shadows only within this distance (m, "high"). */
 const TREE_SHADOW_RADIUS = 450;
