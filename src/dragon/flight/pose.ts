@@ -13,6 +13,28 @@ const ARM_RATE = 5;
 /** A Space tap pumps the reins forward for this long (s). */
 const PUMP_TIME = 0.45;
 const ROAR_CHEER = 1.5;
+/**
+ * The rider's reaction to flow (phase 20 stage D): low on the neck into the speed while flow runs high and through a
+ * chain burst's surge, a fist pumped at chain link RIDER_FLOW.cheerLink and every second link after it, and a short
+ * laugh on a "Kusursuz" moment. Pure body language: no sound, no HUD.
+ */
+export const RIDER_FLOW = {
+  /**
+   * Flow from which the rider starts to crouch, the crouch at flow 1 while a chain is open and outside one (under the
+   * 0.2 at which standing and petting give way, rider-behavior.ts, so both stay available in calm high-flow gliding),
+   * and the extra crouch at a burst's peak surge.
+   */
+  tuckFrom: 0.7,
+  tuck: 0.4,
+  calmTuck: 0.15,
+  surgeTuck: 0.3,
+  /** First chain link that earns a cheer (then every second one), and the least time between two flow cheers (s). */
+  cheerLink: 3,
+  cheerGap: 2.5,
+  /** Length of a flow cheer and of a moment's laugh (s). */
+  cheerTime: 1.3,
+  laughTime: 1.1,
+} as const;
 
 const _omegaWorld = new THREE.Vector3();
 const _accelBody = new THREE.Vector3();
@@ -34,6 +56,11 @@ export interface LookTarget {
   yaw: number;
   pitch: number;
   weight: number;
+}
+
+/** A short gesture's rise and fall over `length` seconds (0..1), `t` seconds in. */
+function envelope(t: number, length: number): number {
+  return smoothstep(0, 0.2, t) * (1 - smoothstep(length * 0.65, length, t));
 }
 
 function follow(current: number, target: number, rate: number, dt: number): number {
@@ -83,6 +110,7 @@ export class PoseDriver {
     riderTuck: 0,
     riderPoint: 0,
     riderCheer: 0,
+    riderLaugh: 0,
   };
 
   private roarAge = 99;
@@ -95,6 +123,11 @@ export class PoseDriver {
   private tuck = 0;
   private point = 0;
   private cheer = 0;
+  /** Flow reactions: time since the last flow cheer and moment laugh (s), and the flow counters seen last frame. */
+  private flowCheerAge = 99;
+  private laughAge = 99;
+  private seenLinks = 0;
+  private seenMoments = 0;
   /* Swimming idle look-around: seconds to the next head turn, the current turn target (rad), a deterministic seed. */
   private lookTimer = 4;
   private lookYaw = 0;
@@ -441,6 +474,12 @@ export class PoseDriver {
     left += both;
     right += both;
     let tuck = airborne ? smoothstep(45, 85, sim.airspeed) * 0.45 : 0;
+    if (airborne) {
+      // High flow: down into the speed, and lower still through a chain burst's surge.
+      const chaining = sim.flow.burst.open(sim.time);
+      const flowTuck = (chaining ? RIDER_FLOW.tuck : RIDER_FLOW.calmTuck) * smoothstep(RIDER_FLOW.tuckFrom, 1, sim.flow.value);
+      tuck = Math.max(tuck, flowTuck + RIDER_FLOW.surgeTuck * 0.5 * sim.flow.burst.rate);
+    }
 
     // Under water the rider lies flat on the neck and holds on, like in a fall.
     const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6) || sim.mode === 'underwater';
@@ -518,7 +557,37 @@ export class PoseDriver {
     this.point = follow(this.point, sim.firing || cmd?.fire ? 1 : 0, ARM_RATE, dt);
     pose.riderPoint = this.point;
     const roarCheer = this.roarAge < ROAR_CHEER ? smoothstep(0, 0.2, this.roarAge) * (1 - smoothstep(ROAR_CHEER * 0.65, ROAR_CHEER, this.roarAge)) : 0;
-    this.cheer = follow(this.cheer, Math.max(roarCheer, m.cheer), ARM_RATE * 1.6, dt);
+    const flowCheer = this.flowReaction(sim, dt, airborne && !falling);
+    this.cheer = follow(this.cheer, Math.max(roarCheer, m.cheer, flowCheer), ARM_RATE * 1.6, dt);
     pose.riderCheer = this.cheer;
+    pose.riderLaugh = this.laughAge < RIDER_FLOW.laughTime ? envelope(this.laughAge, RIDER_FLOW.laughTime) : 0;
+  }
+
+  /**
+   * Chain links and "Kusursuz" moments since the last frame start the rider's cheer and laugh (only in free air, not
+   * while falling or under water); returns this frame's flow cheer (0..1).
+   */
+  private flowReaction(sim: FlightSim, dt: number, free: boolean): number {
+    const burst = sim.flow.burst;
+    const links = burst.totalLinks;
+    const moments = sim.flow.moments;
+    this.flowCheerAge += dt;
+    this.laughAge += dt;
+    if (links < this.seenLinks || moments < this.seenMoments) {
+      // The flow system was reset (a new race, a respawn).
+      this.flowCheerAge = this.laughAge = 99;
+    } else if (free) {
+      const n = burst.links;
+      const cheerLink = links > this.seenLinks && n >= RIDER_FLOW.cheerLink && (n - RIDER_FLOW.cheerLink) % 2 === 0;
+      if (cheerLink && this.flowCheerAge > RIDER_FLOW.cheerGap) {
+        this.flowCheerAge = 0;
+      }
+      if (moments > this.seenMoments) {
+        this.laughAge = 0;
+      }
+    }
+    this.seenLinks = links;
+    this.seenMoments = moments;
+    return this.flowCheerAge < RIDER_FLOW.cheerTime ? envelope(this.flowCheerAge, RIDER_FLOW.cheerTime) : 0;
   }
 }
