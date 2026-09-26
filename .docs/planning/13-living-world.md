@@ -66,8 +66,9 @@ pod simulation, instance fill, model) run unchanged in the headless check; `dolp
   follow-up: offer the pods as an optional moment anchor or actor ("Boğaz'da yunuslar") once the rework lands.
 - **Sound**: the owner wants real recordings only. `dolphinCue('whistle' | 'breath' | 'splash')` in the audio engine
   plays the `dolphin/*` sprites of the audio manifest (a partial sample group: each approved file works on its own);
-  until then only the leap splash sounds (the generic water splash). Shortlist pending approval:
-  `.docs/assets/candidates/dolphin-sounds.md`.
+  until then only the leap splash sounds (the generic water splash). The shortlist was rejected by the owner on 26 Sep
+  (noisy recordings; whistles unpleasant): no whistles or clicks, the splash stays the only dolphin sound
+  (`.docs/assets/candidates/dolphin-sounds.md`).
 - **Debug**: `?dolphins=near` keeps a pod near the dragon (a new one 5 s after the last left), `?dolphins=often`
   spawns 12× as often, `?dolphins=off` disables them; `window.__dolphins.near()` in dev.
 - **Check**: `npx tsx tools/headless/dolphins-check.ts` (spawn rates and sites on the real geography with the real
