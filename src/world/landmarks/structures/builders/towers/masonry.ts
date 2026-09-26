@@ -88,7 +88,8 @@ export function polygonMaps(ring: ReadonlyArray<readonly [number, number]>): Wal
   });
 }
 
-export type OpeningShape = 'rect' | 'arch' | 'pointed' | 'segmental';
+/** 'round' = oculus of diameter w (its sill is the bottom of the circle, h is ignored). */
+export type OpeningShape = 'rect' | 'arch' | 'pointed' | 'segmental' | 'round';
 
 export interface Opening {
   /** Centre along the face. */
@@ -132,6 +133,9 @@ export function shade(s: SurfaceState, k: number): SurfaceState {
 
 function spring(o: Opening): number {
   const hw = o.w / 2;
+  if (o.shape === 'round') {
+    return o.sill + hw;
+  }
   if (o.shape === 'rect') {
     return o.sill + o.h;
   }
@@ -149,7 +153,7 @@ function topAt(o: Opening, s: number): number {
   if (o.shape === 'rect') {
     return y1;
   }
-  if (o.shape === 'arch') {
+  if (o.shape === 'arch' || o.shape === 'round') {
     return y1 + Math.sqrt(Math.max(hw * hw - x * x, 0));
   }
   const rise = o.sill + o.h - y1;
@@ -161,6 +165,21 @@ function topAt(o: Opening, s: number): number {
   const R = (hw * hw + rise * rise) / (2 * hw);
   const dx = x + R - hw;
   return y1 + Math.sqrt(Math.max(R * R - dx * dx, 0));
+}
+
+/** Apex height. */
+function headOf(o: Opening): number {
+  return o.shape === 'round' ? o.sill + o.w : o.sill + o.h;
+}
+
+/** Lower edge of the opening above coordinate s (the sill, or the lower half of an oculus). */
+function bottomAt(o: Opening, s: number): number {
+  if (o.shape !== 'round') {
+    return o.sill;
+  }
+  const hw = o.w / 2;
+  const x = Math.min(Math.abs(s - o.s), hw);
+  return o.sill + hw - Math.sqrt(Math.max(hw * hw - x * x, 0));
 }
 
 function archXs(o: Opening, seg: number): number[] {
@@ -177,6 +196,16 @@ function archXs(o: Opening, seg: number): number[] {
 /** Outline (s, y) counter-clockwise seen from the front: sill right -> up -> head -> down left. */
 function outline(o: Opening, seg: number, grow = 0): Array<[number, number]> {
   const hw = o.w / 2 + grow;
+  if (o.shape === 'round') {
+    // full circle from the left point, down through the bottom, up over the top
+    const cy = o.sill + o.w / 2;
+    const ring: Array<[number, number]> = [];
+    for (let k = 0; k < seg * 2; k++) {
+      const a = Math.PI + (k * Math.PI) / seg;
+      ring.push([o.s + hw * Math.cos(a), cy + hw * Math.sin(a)]);
+    }
+    return ring;
+  }
   const g: Opening = { ...o, w: hw * 2, sill: o.sill - grow, h: o.h + grow * 2 };
   const pts: Array<[number, number]> = [
     [o.s - hw, g.sill],
@@ -232,11 +261,11 @@ export function piercedWall(mb: MeshBuilder, map: WallMap, y0: number, y1: numbe
     const xa = xs[i];
     const xb = xs[i + 1];
     const xm = (xa + xb) / 2;
-    const cover = openings.filter((o) => xm > o.s - o.w / 2 && xm < o.s + o.w / 2 && o.sill < y1 && o.sill + o.h > y0).sort((p, q) => p.sill - q.sill);
+    const cover = openings.filter((o) => xm > o.s - o.w / 2 && xm < o.s + o.w / 2 && o.sill < y1 && headOf(o) > y0).sort((p, q) => p.sill - q.sill);
     let ba = y0;
     let bb = y0;
     for (const o of cover) {
-      strip(xa, xb, ba, bb, Math.max(ba, o.sill), Math.max(bb, o.sill));
+      strip(xa, xb, ba, bb, Math.max(ba, bottomAt(o, xa)), Math.max(bb, bottomAt(o, xb)));
       ba = Math.min(y1, topAt(o, xa));
       bb = Math.min(y1, topAt(o, xb));
     }
@@ -252,7 +281,7 @@ function opening(mb: MeshBuilder, map: WallMap, o: Opening, opt: WallOptions, se
   const trim = opt.trim ?? opt.wall;
   const pts = outline(o, seg);
   const n = pts.length;
-  const cy = (o.sill + spring(o)) / 2;
+  const cy = o.shape === 'round' ? spring(o) : (o.sill + spring(o)) / 2;
   // reveals: each outline edge extruded into the wall, normal toward the opening axis
   mb.surface(reveal);
   for (let i = 0; i < n; i++) {
@@ -290,8 +319,8 @@ function opening(mb: MeshBuilder, map: WallMap, o: Opening, opt: WallOptions, se
     const outer = outline(o, seg, f);
     const proud = -0.07;
     const nrm = map.normal(o.s, new THREE.Vector3());
-    // every edge but the sill (pts[0] -> pts[1])
-    for (let i = 1; i < n; i++) {
+    // every edge but the sill (pts[0] -> pts[1]); an oculus is framed all round
+    for (let i = o.shape === 'round' ? 0 : 1; i < n; i++) {
       const j = (i + 1) % n;
       const a = pts[i];
       const b = pts[j];
@@ -318,7 +347,7 @@ function opening(mb: MeshBuilder, map: WallMap, o: Opening, opt: WallOptions, se
       mb.surface(trim);
     }
     if (o.keystone && o.shape !== 'rect') {
-      const top = o.sill + o.h;
+      const top = headOf(o);
       block(mb, map, o.s - f * 0.55, o.s + f * 0.55, top - 0.05, top + f * 1.1, -0.07, -0.16);
     }
   }
