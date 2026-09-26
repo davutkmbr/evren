@@ -377,8 +377,17 @@ manoeuvring) takes part without registering anything.
     the gates, darts on the descents, strokes in the urges' gaps and takes the gates on the inside): Boğaz 227.3 →
     212.6 s (−6.5 %), Haliç 104.9 → 98.1 s (−6.5 %), Adalar 318.3 → 291.7 s (−8.4 %); mean flow plain 0.03–0.11,
     chained 0.89–0.92. The plain run earns silver, the chained run gold on every course.
-- **Not yet:** a sound for the moments (they reuse the caption only), the rider's reaction to high flow, tuning in the
-  game (feel test). The balance numbers move with any flight-model change: rerun `race-balance.ts` after one.
+- **Moment sounds** (added 26 Sep after stage D v4, owner request): each "Kusursuz" moment also plays a short airy
+  figure in D major above the chain-link tones, one shape per harmony term, so the player learns what was perfect:
+  *ritim* two quick bells on the beat (A5, D6), *enerji* a soft rising glide D5 → A5 with a bell on top, *geçiş* F♯5
+  and A5 together resolving to D6, *çizgi* an open fifth D5 + A5 with a breath of air (`playFlowMoment` in
+  `audio/sfx/ui.ts`). Flow emits a sim `moment` event with the kind; the game gets `flow-moment`; the engine plays it
+  on the UI bus (`MIX.moment` 0.25, ×0.7 in calm free flight, at most one a second). Offline case `flow-moments`
+  (`audio/analysis/scenarios.ts`): −27.6 LUFS momentary (target −31..−25; the discovery chime −21.7, the cruise wind
+  bed ~−28), the four figures within 2 dB of each other; case `chain-links` (the burst rush and the rising link tone):
+  −27.2 LUFS (target −28..−18).
+- **Not yet:** the rider's reaction to high flow, tuning in the game (feel test). The balance numbers move with any
+  flight-model change: rerun `race-balance.ts` after one.
 
 ### Urge removed (owner decision 26 Sep)
 

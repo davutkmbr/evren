@@ -10,7 +10,7 @@ import { playBubbles } from './sfx/bubbles';
 import { playPaddle, playSnort } from './sfx/swim';
 import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
-import { playChainCue, playDiscover, playUiClick } from './sfx/ui';
+import { playChainCue, playDiscover, playFlowMoment, playUiClick, type FlowMomentKind } from './sfx/ui';
 import { playChirp, playGrumble, playHuff, playPurr, playPurrDeep, playShortRoar, playSnap, playSneeze, playTrill, playYawn } from './sfx/bond';
 import { playBurstRush, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
@@ -177,6 +177,8 @@ export const MIX = {
   /** Chain bursts (phase 20): the forward rush of a burst and the chain-link tone (quiet: it plays often in a race). */
   burst: 0.75,
   chain: 0.32,
+  /** A "Kusursuz" moment's figure (flow): a little above the chain tone, well under the discovery chime. */
+  moment: 0.25,
   purr: 1.1,
   /** Nostril bubbles under water: quiet, they repeat every half second. */
   bubbles: 0.45,
@@ -221,6 +223,8 @@ const COOLDOWN: Record<SoundName, number> = {
   purr: 1.2,
 };
 
+/** Two "Kusursuz" moments closer than this (s) make one sound (flow spaces them ≥ 3 s anyway). */
+const MOMENT_COOLDOWN = 1;
 /** Two chain links closer than this (s) make one sound. */
 const CHAIN_COOLDOWN = 0.25;
 
@@ -357,6 +361,7 @@ export class AudioEngine {
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
   private lastChainAt = -1e9;
+  private lastMomentAt = -1e9;
   private readonly lastPlayed: Record<SoundName, number> = {
     roar: -1e9,
     flap: -1e9,
@@ -603,6 +608,19 @@ export class AudioEngine {
       playBurstRush(this.sfx, now, clamp(dv / 12, 0.3, 1.2), pl);
     }
     playChainCue(this.ui, now, MIX.chain * (0.55 + 0.45 * k), link);
+  }
+
+  /**
+   * A "Kusursuz" moment (flow): a short airy figure, one shape per harmony term (sfx/ui.ts playFlowMoment); a little
+   * quieter in calm free flight (`context`: full in a race and at high flow).
+   */
+  flowMoment(kind: FlowMomentKind, context: number): void {
+    const now = this.now;
+    if (now - this.lastMomentAt < MOMENT_COOLDOWN) {
+      return;
+    }
+    this.lastMomentAt = now;
+    playFlowMoment(this.ui, now, MIX.moment * (0.7 + 0.3 * clamp(context, 0, 1)), kind);
   }
 
   play(name: SoundName, volume = 1): void {
