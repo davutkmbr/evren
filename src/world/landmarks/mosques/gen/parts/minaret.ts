@@ -123,13 +123,13 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
       const capSeg = lod === 0 ? 20 : lod === 1 ? 8 : 6;
       b.lathe([pr * 1.1, L.capY, capR, L.capY], { seg: capSeg });
       if (style === 'baroque') {
-        b.lathe([capR, L.capY, capR * 1.02, L.capY + 0.3, capR * 0.82, L.capY + (m.h - L.capY) * 0.25, capR * 0.3, L.capY + (m.h - L.capY) * 0.8, 0.02, m.h], {
+        b.lathe(capProfile(m, L, capR), {
           seg: capSeg,
           uvMode: 'sheets',
           sheets: 16,
         });
       } else {
-        b.lathe([capR, L.capY, capR * 1.02, L.capY + 0.25, capR * 0.9, L.capY + 0.6, 0.02, m.h], {
+        b.lathe(capProfile(m, L, capR), {
           seg: capSeg,
           uvMode: 'sheets',
           sheets: 16,
@@ -142,12 +142,25 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
 
   const cols: LocalCollider[] = [
     { kind: 'box', cx: m.x, cy: y0 + L.baseH / 2, cz: m.z, hx: L.baseW / 2, hy: L.baseH / 2 + 0.3, hz: L.baseW / 2, yaw: 0 },
-    // shaft and petek up to the cap, then the lower, wider part of the lead cone (the spire above is too thin to
-    // perch on and a full-height cylinder stood in the air around it)
+    // shaft and petek up to the cap (one full-height cylinder used to stand in the air around the cap)
     { kind: 'cylinder', x: m.x, y: y0 + L.baseH, z: m.z, r: r * 1.15, h: L.capY - L.baseH },
-    { kind: 'cylinder', x: m.x, y: y0 + L.capY, z: m.z, r: capRadius(m, L), h: (m.h - L.capY) * 0.35 },
-    { kind: 'cylinder', x: m.x, y: y0 + L.capY + (m.h - L.capY) * 0.35, z: m.z, r: capRadius(m, L) * 0.62, h: (m.h - L.capY) * 0.3 },
   ];
+  // the lead cap up to its tip as stacked cylinders following its profile, then the alem's bulbs
+  const prof = capProfile(m, L, capRadius(m, L));
+  const tiers = Math.max(3, Math.ceil((m.h - L.capY) / 1.0));
+  for (let k = 0; k < tiers; k++) {
+    const ya = L.capY + ((m.h - L.capY) * k) / tiers;
+    const yb = L.capY + ((m.h - L.capY) * (k + 1)) / tiers;
+    // widest point of the profile inside the tier (the eave bulges out a little above its base)
+    let r = Math.max(profileRadius(prof, ya), profileRadius(prof, yb));
+    for (let i = 0; i < prof.length; i += 2) {
+      if (prof[i + 1] >= ya && prof[i + 1] <= yb) {
+        r = Math.max(r, prof[i]);
+      }
+    }
+    cols.push({ kind: 'cylinder', x: m.x, y: y0 + ya, z: m.z, r: Math.max(r, 0.15), h: yb - ya });
+  }
+  cols.push({ kind: 'cylinder', x: m.x, y: y0 + m.h - 0.15, z: m.z, r: L.alemH * 0.1, h: L.alemH * 0.62 });
   for (const f of L.floors) {
     cols.push({ kind: 'cylinder', x: m.x, y: y0 + f - L.corbelH, z: m.z, r: r + L.ext + 0.2, h: L.corbelH + 1.3 });
   }
@@ -246,7 +259,25 @@ function muqarnasTier(b: MeshBuilder, ra: number, rb: number, y0: number, y1: nu
 /** Radius of the lead cap's eave (mirrors the per-balcony shaft taper in minaret()). */
 function capRadius(m: MinaretSpec, L: Layout): number {
   const taper = (m.style ?? 'classic') === 'baroque' ? 0.97 : 0.955;
-  return L.r * Math.pow(taper, L.floors.length) * 0.93 * 1.18 * 1.02;
+  return L.r * Math.pow(taper, L.floors.length) * 0.93 * 1.18;
+}
+
+/** Lathe profile [r, y, ...] of the lead cap (conical, or the baroque bell-and-spire). */
+function capProfile(m: MinaretSpec, L: Layout, capR: number): number[] {
+  if ((m.style ?? 'classic') === 'baroque') {
+    return [capR, L.capY, capR * 1.02, L.capY + 0.3, capR * 0.82, L.capY + (m.h - L.capY) * 0.25, capR * 0.3, L.capY + (m.h - L.capY) * 0.8, 0.02, m.h];
+  }
+  return [capR, L.capY, capR * 1.02, L.capY + 0.25, capR * 0.9, L.capY + 0.6, 0.02, m.h];
+}
+
+/** Radius of a [r, y, ...] profile at height y (linear between points). */
+function profileRadius(prof: readonly number[], y: number): number {
+  for (let i = 0; i < prof.length - 2; i += 2) {
+    if (y >= prof[i + 1] && y <= prof[i + 3]) {
+      return prof[i] + ((prof[i + 2] - prof[i]) * (y - prof[i + 1])) / Math.max(prof[i + 3] - prof[i + 1], 1e-6);
+    }
+  }
+  return y < prof[1] ? prof[0] : prof[prof.length - 2];
 }
 
 /** Height of the minaret's top (including the alem) for bounds. */
