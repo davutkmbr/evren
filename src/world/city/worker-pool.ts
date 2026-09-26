@@ -1,5 +1,5 @@
 /** A small pool of city generation workers with sticky routing (same region -> same worker -> warm layout cache). */
-import type { CityInitMessage, CityWorkerResult, ColliderRequestMsg, TileRequestMsg } from './protocol';
+import type { CityInitMessage, CityWorkerResult, ColliderRequestMsg, ForgetMsg, TileRequestMsg } from './protocol';
 import { windowTransfer } from './geo-window';
 
 type Callback = (res: CityWorkerResult) => void;
@@ -25,6 +25,13 @@ export class CityWorkerPool {
   }
 
   init(msg: CityInitMessage): void {
+    for (const w of this.workers) {
+      w.postMessage(msg);
+    }
+  }
+
+  /** Sends `msg` to every worker (after the jobs already posted to it). */
+  broadcast(msg: ForgetMsg): void {
     for (const w of this.workers) {
       w.postMessage(msg);
     }

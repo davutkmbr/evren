@@ -57,12 +57,13 @@ export class GeoWindowCutter {
   private readonly coastData: Float32Array | null;
 
   /**
-   * `exclude`: optional rectangle (the OSM slice) kept free of procedural urban/street trees (land use cut to
-   * Industrial, which plants nothing); parks, forests and cemeteries keep theirs unless OSM_OWNS_PARK_TREES.
+   * `exclude`: rectangles (the drawn OSM regions, read at every request) kept free of procedural urban/street trees
+   * (land use cut to Industrial, which plants nothing); parks, forests and cemeteries keep theirs unless
+   * OSM_OWNS_PARK_TREES.
    */
   constructor(
     private readonly geo: GeoQuery,
-    private readonly exclude: WorldBounds | null = null,
+    private readonly exclude: readonly WorldBounds[] = [],
   ) {
     let coast: Float32Array | null = null;
     try {
@@ -82,8 +83,7 @@ export class GeoWindowCutter {
     const x1 = x0 + size;
     const z1 = z0 + size;
     const landUse = cutWindow(geo.landUseGrid, geo.landUseGrid.data, x0, z0, x1, z1, 30);
-    const ex = this.exclude;
-    if (ex) {
+    for (const ex of this.exclude) {
       for (let r = 0; r < landUse.h; r++) {
         const z = landUse.z0 + r * landUse.cell;
         for (let c = 0; c < landUse.w && z >= ex.minZ && z <= ex.maxZ; c++) {
