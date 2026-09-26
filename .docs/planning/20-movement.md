@@ -2,7 +2,7 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: stages A and B built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
+Status: stages A, B and C built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -204,6 +204,64 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
 - **Not yet:** audio beyond the existing whoosh / wing-snap / splash cues; the flow system that consumes the clean
   flags (stage D).
 
+### Stage C as built (awaiting the owner's feel test)
+
+- **Code:** the three reversals are tricks in `src/dragon/flight/maneuvers.ts` (`TrickKind` `'wingover'`,
+  `'immelmann'`, `'splits'`) with their own control laws; gesture resolvers and `AxisPress` in `src/core/gestures.ts`;
+  pose and rider cues in `pose.ts` (`Maneuvers.reversalCue`). Tunables: `WINGOVER`, `IMMELMANN`, `SPLIT_S` and
+  `REVERSAL_POSE` in `params.ts`. No new pilot edges: S ×2 and A / D ×2 are resolved by the flight state, the
+  Immelmann reads the held roll axis.
+- **Flow hooks:** captions "Kanat üstü dönüş", "Immelmann", "Split-S"; each end is marked on the `maneuver` event with
+  `ended: true` and `clean`, and logged in `Maneuvers.log` (`MoveRecord` now also carries the track's `headingChange`
+  and `energyRatio` = specific energy ½V² + g·Δh at the end over the entry's, height measured from the entry, for every
+  move). Clean = no contact, no stall, not cut short, upright, the track within ±15° of the reverse heading, and the
+  move's trade: the wingover keeps ≥ 90 % of the entry energy, the Immelmann ends higher (keeping ≥ 75 %), the Split-S
+  ends lower and faster. Refusals: "Kanat üstü dönüş için hızlan / düz uç / yüksel / yer yok", "Ejderha yorgun",
+  "Immelmann için yer yok", "Split-S için hızlan / yüksel".
+- **Kanat üstü dönüş (wingover, S ×2 while banked more than 45°; up to 45° it stays the loop):** a climbing turn
+  toward the low wing, a pivot over the high wing at low speed (the bank passes 90° to ~120° and the nose slices
+  through the horizon), a dive out rolling level on the reverse heading. The flight path follows a plan over the
+  heading turned (p = heading / 180°): γ = 50° · f(p) on the climb and 45° · f(p) in the dive, f = sin(2πp) eased in
+  and out; each substep the lift vector is solved for it (vertical part: the path's curvature plus gravity, floored at
+  −0.3 g over the top and −0.45 g in the dive; horizontal part: from tan(entry bank) to 1.15 g, 0.7 g in the dive,
+  0.6 g as it rolls out) and the dragon rolls about the flight path to point it; the climb keeps at least 34° of bank
+  (a climbing turn, not a straight pull-up); the pull out of the dive is capped at 2.2 g (it runs a little deeper and
+  comes out faster). Wing beats: 0.9 effort on the climb, 0.6 in the dive, full while slow over the top. The dragon's
+  drag is high (L/D ≈ 6.5: a glide loses ~10 % of its energy per second at 36 m/s), so the beats are what keeps the
+  energy; they cost stamina like any beat (plus 0.03 up front). Entry: ≥ 24 m/s, path within ±30°, clearance ≥ 25 m,
+  45 m of headroom, and room along the turn (rays along an inner and an outer arc of the planned radius V² / (1.15 g)
+  with the wingtip margin, columns below at ≥ 25 m and overhead above the climb). Near the ground the dive out gets
+  shallower. Ends at 95 % of the turn; the normal law rolls the last degrees out.
+- **Immelmann (A / D pressed during the top of a loop, loop angle 99°–194°):** the loop pulls on until the path is level
+  on its back, then a half roll about the flight path toward the key's side (3.6 rad/s, wings at 0.8 spread) brings it
+  out upright on the reverse heading, a loop's height above the entry. A fresh press on the roll axis (past 0.5 after
+  a release below 0.2) or an A / D double tap counts; earlier in the loop A / D do nothing, as before. Refused under a
+  ceiling lower than half the span plus the margin ("Immelmann için yer yok"); the loop's own entry checks apply.
+- **Split-S (A / D ×2 in a dive steeper than 30°):** decided: only from a steep dive (W or Shift first). From level
+  flight and shallower dives A / D ×2 stays the barrel roll, so the roll never changes meaning in level flight. A half
+  roll onto the back about the flight path (4.2 rad/s, wings half folded, the dive goes on straight), then a pull
+  through the bottom of a half loop in the entry's vertical plane (4 g, 0.35 s onset, wings open part way at dive
+  speed like the catch) to level flight on the reverse heading. The caption comes with the pull (a wing snap and a
+  camera jolt). A point-mass prediction (half roll + pull through, drag included) gives the height it needs; it is
+  refused when the lowest point would come closer than 18 m to the surface (now, along the track and below the
+  farthest point and the end of the pull), and pulls up to 4.8 g if the bottom gets close anyway. From a 40° dive at
+  36 m/s it takes ~150 m (the dragon's drag keeps the speed gain to ~+14 m/s). The key still held when the half roll
+  ends keeps spinning instead: the diving barrel roll finishes the revolution (and more while held), so the spinning
+  dive stays. Shift held from the dive is ignored after it until released (the wings stay open).
+- **Pose:** the wingover twists the wings into the pivot, raises and turns the head into the turn, sweeps the tail out
+  opposite (a rudder), the rider leans into it with the inside rein back; the loop, the Immelmann's pull and the
+  Split-S's pull hold the neck raised into the pull (instead of the horizon-seeking neck that would crane it back
+  past the vertical) with the tail trailing in line; the half rolls twist the wings, turn the head toward the roll,
+  sweep the tail opposite, the rider pulls the rein on the roll side and leans with it. Sounds: whoosh at the start,
+  wing snap at the Immelmann's roll and the Split-S's pull.
+- **Checks:** `tools/headless/air-moves-check.ts` section 7 (energy table: wingover 28 / 32 / 38 m/s exits
+  6–7° off the reverse heading with ×1.08–1.18 of the entry energy, ~13–16 m lower and ~+5–6 m/s faster, slow
+  (24–27 m/s) and past knife-edge over the top; Immelmann +46–60 m, ≤ 3° off; Split-S −150 to −200 m, +13–15 m/s,
+  < 1° off; refusals; collisions; the spinning dive), gesture resolvers and the axis press in section 1. Pose
+  scenarios `wingover`, `immelmann`, `splits`.
+- **Not yet:** a wingover entry faster than ~43 m/s keeps less than 90 % of its energy (unclean, still flies); the
+  flow system that consumes the clean flags (stage D).
+
 ## Controls summary (additions)
 
 | Gesture | Move |
@@ -212,7 +270,7 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
 | Space ×2 | güç vuruşu |
 | Shift ×2 (fast; slow: free fall as before) | dart |
 | S ×2 while banked | wingover (level: loop, unchanged) |
-| A/D at the top of a loop · A/D ×2 in a steep dive | Immelmann · Split-S |
+| A/D at the top of a loop · A/D ×2 in a dive steeper than 30° | Immelmann · Split-S |
 | Q/E ×2 | kayış |
 | low and fast | sıyırma (automatic) |
 
