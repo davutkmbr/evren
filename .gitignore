@@ -11,6 +11,9 @@ public/world/
 # Licensed assets that must not be redistributed (MetaHuman, Mixamo)
 private-assets/
 
+# OpenStreetMap source extract and its local index (node scripts/data/osm-extract.mjs all); see data/osm/LICENSE.md
+data/osm-src/
+
 # Raw approved external assets (node scripts/data/fetch-assets.mjs); the street compiler ships optimised copies
 assets-src/
 
