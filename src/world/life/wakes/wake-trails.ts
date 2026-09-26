@@ -3,6 +3,8 @@ import { RenderLayers } from '../../../core/contracts';
 import { WAKE_FRAGMENT, WAKE_VERTEX } from './wake-shaders';
 
 const SAMPLES = 40;
+/** Inside the foam field the ribbon fades out between these shares of the window's half side (Chebyshev distance). */
+const WAKE_NEAR_FADE = [0.78, 0.96] as const;
 /** Lateral subdivisions of each ribbon (keeps the (distance, offset) mapping close to bilinear on trapezoids). */
 const COLUMNS = 8;
 
@@ -30,6 +32,7 @@ export class WakeTrails {
   private readonly trails: Trail[] = [];
   private readonly material: THREE.ShaderMaterial;
   private readonly timeU = { value: 0 };
+  private readonly nearFadeU = { value: new THREE.Vector4(0, 0, 0, 0) };
 
   constructor(readonly capacity: number) {
     const w = SAMPLES + 2;
@@ -70,7 +73,7 @@ export class WakeTrails {
       name: 'life-wake',
       vertexShader: WAKE_VERTEX,
       fragmentShader: WAKE_FRAGMENT,
-      uniforms: { uTrail: { value: this.tex }, uLifeTime: this.timeU },
+      uniforms: { uTrail: { value: this.tex }, uLifeTime: this.timeU, uNearFade: this.nearFadeU },
       transparent: true,
       depthWrite: false,
       depthTest: true,
@@ -153,6 +156,19 @@ export class WakeTrails {
     this.data[prm + 2] = t.head;
     this.data[prm + 3] = t.count;
     this.data[prm + 4] = t.planing;
+  }
+
+  /**
+   * The water's foam field window (centre, half side; 0 = no field): inside it the simulated foam and the wave particles
+   * draw the wake (phase 21 stage 7c), so the ribbons fade out there and stay as the far level of detail.
+   */
+  setNearFade(x: number, z: number, halfExtent: number): void {
+    const v = this.nearFadeU.value;
+    if (halfExtent > 0 && Number.isFinite(x + z + halfExtent)) {
+      v.set(x, z, halfExtent * WAKE_NEAR_FADE[0], halfExtent * WAKE_NEAR_FADE[1]);
+    } else {
+      v.set(0, 0, 0, 0);
+    }
   }
 
   /** Keeps the time stamp of a stationary trail's head fresh (no new samples). */

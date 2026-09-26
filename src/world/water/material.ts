@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { REGION_OPTICS, type WaterOptics } from './config';
+import type { FoamFieldUniforms } from './foam/foam-gpu';
 import type { DisturbanceUniforms } from './lowflight/disturbance-gpu';
 import type { WaveSplatUniforms } from './particles/splat-gpu';
 import type { SeaStateUniforms } from './sea-state';
 import { WATER_FRAGMENT_GLSL } from './shaders/water-fragment.glsl';
 import { WATER_VERTEX_GLSL } from './shaders/water-vertex.glsl';
 
-export interface WaterUniforms extends SeaStateUniforms, DisturbanceUniforms, WaveSplatUniforms {
+export interface WaterUniforms extends SeaStateUniforms, DisturbanceUniforms, WaveSplatUniforms, FoamFieldUniforms {
   uOrigin: { value: THREE.Vector2 };
   uGridCenter: { value: THREE.Vector2 };
   uWorldRect: { value: THREE.Vector4 };
@@ -46,9 +47,11 @@ function vec3List(pick: (o: WaterOptics) => readonly [number, number, number]): 
   return OPTICS_ORDER.map((o) => new THREE.Vector3(...pick(o)));
 }
 
-export function createWaterUniforms(sea: SeaStateUniforms, textures: WaterTextureSet, worldRect: THREE.Vector4, disturbance: DisturbanceUniforms, splat: WaveSplatUniforms): WaterUniforms {
+export function createWaterUniforms(sea: SeaStateUniforms, textures: WaterTextureSet, worldRect: THREE.Vector4, disturbance: DisturbanceUniforms, splat: WaveSplatUniforms, foam: FoamFieldUniforms): WaterUniforms {
   return {
     ...sea,
+    // The foam field's uniform objects (updated by the foam controller).
+    ...foam,
     // The disturbance field's uniform objects are shared with the low-flight controller, which updates them.
     ...disturbance,
     // Likewise the wave particle splat window's (updated by the splat pass).
