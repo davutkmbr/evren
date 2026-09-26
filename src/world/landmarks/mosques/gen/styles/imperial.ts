@@ -3,8 +3,8 @@ import { arcade, courtyard } from '../parts/arcade';
 import { corniceProfile, flatRoof, polyPath, rectPath } from '../parts/details';
 import { leadDome, semiDome, turret, windowDrum } from '../parts/dome';
 import { minaret, minaretTop, type MinaretSpec } from '../parts/minaret';
-import { rowOpenings, wallPanel, type Opening, type RowSpec } from '../parts/wall';
-import { Light, Mat, type LocalCollider, type LodLevel, type RGB } from '../types';
+import { archRise, rowOpenings, wallPanel, type Opening, type RowSpec } from '../parts/wall';
+import { colliderReach, Light, Mat, shiftColliderZ, type LocalCollider, type LodLevel, type RGB } from '../types';
 
 export type SemiLayout = 'none' | 'axial' | 'all' | 'three';
 
@@ -62,6 +62,8 @@ export interface ImperialSpec {
   hallArches?: number;
   /** Fenestration: classical rows or tall baroque/empire windows. */
   windowStyle?: 'classic' | 'baroque';
+  /** External buttresses on the side and qibla walls (default true; baroque halls have none). */
+  buttresses?: boolean;
   /** Corner pilasters / buttress piers on the hall (m projection). */
   pilasters?: number;
   cornice?: number;
@@ -178,14 +180,142 @@ export function boxFacades(
   lod: LodLevel,
   openingsFor: (side: 'front' | 'back' | 'left' | 'right', len: number) => Opening[],
 ): void {
-  const sides: { side: 'front' | 'back' | 'left' | 'right'; x: number; z: number; yaw: number; len: number }[] = [
+  const sides = facadeFrames(w, d);
+  b.colBox(-w / 2, y0, -d / 2, w / 2, h + 0.1, d / 2);
+  sides.forEach((s, i) => {
+    b.at(s.x, 0, s.z, s.yaw, () => {
+      const ops = openingsFor(s.side, s.len);
+      wallPanel(b, s.len, y0, h, ops, { lod, seed: 101 + i * 31 });
+      if (lod < 2) {
+        facadeRelief(b, s.len, y0, h, ops, lod);
+      }
+    });
+  });
+}
+
+export type FacadeSide = 'front' | 'back' | 'left' | 'right';
+
+/** Local frames of the four facades of a w x d rectangle: wall panels run along +X from (x, z), facing out (+Z). */
+export function facadeFrames(w: number, d: number): { side: FacadeSide; x: number; z: number; yaw: number; len: number }[] {
+  return [
     { side: 'front', x: -w / 2, z: d / 2, yaw: 0, len: w },
     { side: 'right', x: w / 2, z: d / 2, yaw: Math.PI / 2, len: d },
     { side: 'back', x: w / 2, z: -d / 2, yaw: Math.PI, len: w },
     { side: 'left', x: -w / 2, z: -d / 2, yaw: -Math.PI / 2, len: d },
   ];
-  sides.forEach((s, i) => {
-    b.at(s.x, 0, s.z, s.yaw, () => wallPanel(b, s.len, y0, h, openingsFor(s.side, s.len), { lod, seed: 101 + i * 31 }));
+}
+
+export interface ButtressSpec {
+  /** Centre along the wall panel (local x). */
+  x: number;
+  width: number;
+  depth: number;
+  y0: number;
+  top: number;
+}
+
+/**
+ * External buttress (payanda) against a wall panel in local XY (facing +Z): a pier with a sloped weathering set-off
+ * halfway up where it steps back, and a sloped stone cap that dies into the wall under the cornice.
+ */
+export function wallButtress(b: MeshBuilder, s: ButtressSpec, lod: LodLevel): void {
+  const x0 = s.x - s.width / 2;
+  const x1 = s.x + s.width / 2;
+  const D = s.depth;
+  const D2 = D * 0.62;
+  const mid = s.y0 + (s.top - s.y0) * 0.55;
+  const slope = D2 * 0.9;
+  // follows the steps: full pier, set-back upper pier, half-depth block under the sloped cap
+  b.colBox(x0, s.y0, 0, x1, mid, D);
+  b.colBox(x0, mid, 0, x1, s.top - slope * 0.5, D2);
+  b.colBox(x0, s.top - slope * 0.5, 0, x1, s.top, D2 * 0.5);
+  if (lod === 2) {
+    b.box(x0, s.y0, 0, x1, s.top - slope, D, 'bn');
+    return;
+  }
+  b.with({ ao: 0.92 }, () => {
+    // lower pier, set-off slope, upper pier, cap slope
+    b.box(x0, s.y0, 0, x1, mid, D, 'bnt');
+    const setoff = (D - D2) * 0.9;
+    b.with({ mat: Mat.Smooth }, () => {
+      b.quad([x0, mid, D], [x1, mid, D], [x1, mid + setoff, D2], [x0, mid + setoff, D2]);
+      b.poly([
+        [x1, mid, D],
+        [x1, mid, D2],
+        [x1, mid + setoff, D2],
+      ]);
+      b.poly([
+        [x0, mid, D2],
+        [x0, mid, D],
+        [x0, mid + setoff, D2],
+      ]);
+    });
+    b.box(x0, mid, 0, x1, s.top - slope, D2, 'bnt');
+    b.with({ mat: Mat.Smooth }, () => {
+      const yc = s.top - slope;
+      b.quad([x0, yc, D2], [x1, yc, D2], [x1, s.top, 0], [x0, s.top, 0]);
+      b.poly([
+        [x1, yc, D2],
+        [x1, yc, 0],
+        [x1, s.top, 0],
+      ]);
+      b.poly([
+        [x0, yc, 0],
+        [x0, yc, D2],
+        [x0, s.top, 0],
+      ]);
+      if (lod === 0) {
+        // plinth block at the foot
+        b.box(x0 - 0.12, s.y0, 0, x1 + 0.12, s.y0 + 0.9, D + 0.12, 'bn');
+      }
+    });
+  });
+}
+
+/**
+ * Masonry relief on a wall panel in local XY (facing +Z): a moulded plinth, string courses in the clear bands
+ * between window rows and shallow pilaster strips between the window bays, so a facade reads as built in courses
+ * and bays instead of one flat sheet.
+ */
+export function facadeRelief(b: MeshBuilder, len: number, y0: number, h: number, ops: readonly Opening[], lod: LodLevel): void {
+  if (h - y0 < 4 || len < 4) {
+    return;
+  }
+  const clearOf = (o: Opening): [number, number, number, number] => {
+    const f = (o.frame ?? 0) + 0.12;
+    return [o.x0 - f, o.x1 + f, o.y0 - f, o.y1 + archRise(o) + f];
+  };
+  const boxes = ops.map(clearOf);
+  const plinthTop = Math.min(y0 + 0.95, Math.min(h, ...boxes.map((q) => q[2])) - 0.05);
+  b.with({ ao: 0.9 }, () => {
+    if (plinthTop > y0 + 0.3) {
+      b.box(-0.2, y0, 0, len + 0.2, plinthTop - 0.12, 0.2, 'bn');
+      // chamfered weathering on top of the plinth
+      b.quad([-0.2, plinthTop - 0.12, 0.2], [len + 0.2, plinthTop - 0.12, 0.2], [len + 0.2, plinthTop, 0.02], [-0.2, plinthTop, 0.02]);
+    }
+    // string courses: horizontal bands no opening crosses
+    const tops = [...new Set(boxes.map((q) => Math.round(q[3] * 10) / 10))].sort((p, q) => p - q);
+    for (const t of tops) {
+      const next = boxes.filter((q) => q[2] > t - 0.01).reduce((m, q) => Math.min(m, q[2]), h - 0.8);
+      const y = (t + next) / 2;
+      if (next - t < 0.5 || y > h - 1.2 || boxes.some((q) => y + 0.14 > q[2] && y - 0.14 < q[3])) {
+        continue;
+      }
+      b.with({ mat: Mat.Smooth }, () => b.box(-0.14, y - 0.14, 0, len + 0.14, y + 0.14, 0.16, 'n'));
+    }
+    if (lod > 0) {
+      return;
+    }
+    // pilaster strips midway between neighbouring bays (never over an opening or its frame)
+    const centres = [...new Set(ops.filter((o) => o.back !== 'door').map((o) => Math.round(((o.x0 + o.x1) / 2) * 20) / 20))].sort((p, q) => p - q);
+    const pw = 0.38;
+    for (let i = 0; i < centres.length - 1; i++) {
+      const x = (centres[i] + centres[i + 1]) / 2;
+      if (boxes.some((q) => x + pw > q[0] && x - pw < q[1])) {
+        continue;
+      }
+      b.with({ mat: Mat.Smooth }, () => b.box(x - pw, plinthTop, 0, x + pw, h - 0.35, 0.24, 'bn'));
+    }
   });
 }
 
@@ -241,12 +371,27 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
 
   // Galleries along the long sides (built first; the walls behind still get windows).
-  if (s.galleries) {
-    const gl = hall.d * 0.86;
-    const gd = Math.min(5.5, hall.w * 0.09);
+  // Buttresses on gallery sides pass through the arcade at the column nearest each dome-square pier (that column is
+  // left out) and stand proud of the gallery front, as at Süleymaniye.
+  const gallery = s.galleries ? { gl: hall.d * 0.86, gd: Math.min(5.5, hall.w * 0.09), bays: Math.max(3, Math.round((hall.d * 0.86) / 5.2)) } : null;
+  const galleryPiers: number[] = [];
+  if (gallery && s.buttresses !== false && s.windowStyle !== 'baroque') {
+    const bw = gallery.gl / gallery.bays;
+    for (const zt of [-bayHalf, bayHalf]) {
+      const i = Math.round((zt + gallery.gl / 2) / bw);
+      if (i > 0 && i < gallery.bays) {
+        galleryPiers.push(-gallery.gl / 2 + i * bw);
+      }
+    }
+  }
+  if (gallery) {
+    const { gl, gd, bays } = gallery;
+    const bw = gl / bays;
     for (const side of [-1, 1]) {
+      // arcade local x runs toward -z on the +x side and toward +z on the -x side
+      const skip = galleryPiers.map((z) => Math.round((side > 0 ? gl / 2 - z : z + gl / 2) / bw));
       b.at(side * (hall.w / 2 + gd), 0, side > 0 ? gl / 2 : -gl / 2, side > 0 ? Math.PI / 2 : -Math.PI / 2, () =>
-        arcade(b, { len: gl, bays: Math.max(3, Math.round(gl / 5.2)), depth: gd, colH: hall.h * 0.32, roofH: hall.h * 0.47, lod, domes: false }),
+        arcade(b, { len: gl, bays, depth: gd, colH: hall.h * 0.32, roofH: hall.h * 0.47, lod, domes: false, skipColumns: skip }),
       );
     }
   }
@@ -260,8 +405,26 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     rows = [{ count: 99, sill: 1.3, h: Math.max(1.5, archY - 2.4 - w / 2), w, arch: 'round', back: 'glass', glazing: 'clear', depth: 0.6, frame: lod === 0 ? 0.24 : 0 }];
   }
   const portalW = Math.min(baroque ? 4.5 : 7, hall.w * 0.16);
+  // External buttresses on the side and qibla walls, in line with the piers of the dome square; the windows give
+  // way to them.
+  const butW = Math.min(3, Math.max(1.6, R * 0.14));
+  const butD = Math.min(3, Math.max(1.4, hall.h * 0.11));
+  const gallerySide = (side: FacadeSide): boolean => !!gallery && (side === 'left' || side === 'right');
+  const butAt = (side: FacadeSide, len: number): number[] => {
+    if (s.buttresses === false || side === 'front' || baroque) {
+      return [];
+    }
+    if (gallerySide(side)) {
+      // wall-local x: the right wall runs from z = d/2 toward -z, the left one from z = -d/2 toward +z
+      return galleryPiers.map((z) => (side === 'right' ? len / 2 - z : z + len / 2));
+    }
+    return [len / 2 - bayHalf, len / 2 + bayHalf].filter((x) => x > butW + 1.5 && x < len - butW - 1.5);
+  };
   boxFacades(b, hall.w, hall.d, 0.3, hall.h, lod, (side, len) => {
-    const ops = facadeOpenings(len, rows, baroque ? Math.max(4.2, len / 4) : 5.4, baroque ? 2.8 : 2.2);
+    const clear = butAt(side, len);
+    const ops = facadeOpenings(len, rows, baroque ? Math.max(4.2, len / 4) : 5.4, baroque ? 2.8 : 2.2).filter((o) =>
+      clear.every((x) => o.x1 + (o.frame ?? 0) + 0.3 < x - butW / 2 || o.x0 - (o.frame ?? 0) - 0.3 > x + butW / 2),
+    );
     if (archY !== undefined) {
       ops.push(...(baroque ? baroqueArchOpenings(len, archY, hall.h - 0.6) : tympanumOpenings(len, archY, hall.h - 0.6, 'stained')));
     }
@@ -283,6 +446,12 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
       b.at(x, 0, z, yaw, () => (baroque ? reliefArch(b, len, archY, hall.h - 0.4, 0.85, 0.2) : reliefArch(b, len, archY, hall.h - 0.4)));
     }
   }
+  for (const f of facadeFrames(hall.w, hall.d)) {
+    for (const x of butAt(f.side, f.len)) {
+      const depth = gallerySide(f.side) ? gallery!.gd + 0.9 : butD;
+      b.at(f.x, 0, f.z, f.yaw, () => wallButtress(b, { x, width: butW, depth, y0: 0.3, top: hall.h - 0.5 }, lod));
+    }
+  }
   if (s.pilasters && s.pilasters > 0) {
     const pw = s.pilasters;
     for (const sx of [-1, 1]) {
@@ -295,7 +464,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
   cornice(b, hall.w + (s.pilasters ?? 0) * 0.8, hall.d + (s.pilasters ?? 0) * 0.8, hall.h, s.cornice ?? Math.max(0.45, hall.h * 0.03), lod);
   flatRoof(b, -hall.w / 2, -hall.d / 2, hall.w / 2, hall.d / 2, hall.h + 0.02);
-  cols.push({ kind: 'box', cx: 0, cy: hall.h / 2, cz: 0, hx: hall.w / 2, hy: hall.h / 2, hz: hall.d / 2, yaw: 0 });
 
   // Cubic dome base with tympana (when not every side carries a semi-dome).
   const semiSides: { x: number; z: number; yaw: number }[] = [];
@@ -322,6 +490,20 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     for (const side of blockSides) {
       const len = bw * 2;
       if (covered.has(side.key)) {
+        // The face above a semi-dome: a wall pierced by a round arch that fits the semi-dome where it passes
+        // through this plane, so the dome base roof rests on masonry instead of floating over the arch ring.
+        const off = bw - bayHalf;
+        const rho = Math.sqrt(Math.max(Rs * Rs - off * off, 1)) + 0.05;
+        b.at(side.x, 0, side.z, side.yaw, () =>
+          wallPanel(
+            b,
+            len,
+            hall.h - 0.2,
+            drumBase,
+            [{ x0: len / 2 - rho, x1: len / 2 + rho, y0: hall.h - 0.2, y1: semiSpring, arch: 'round', depth: off, back: 'open' }],
+            { lod, seed: 9 },
+          ),
+        );
         continue;
       }
       b.at(side.x, 0, side.z, side.yaw, () => {
@@ -343,7 +525,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   const semiWin = s.semiWindows ?? Math.max(5, Math.round(Rs * 0.9));
   for (const q of semiSides) {
     semiDome(b, { x: q.x, z: q.z, yaw: q.yaw, r: Rs, y0: semiBase, band: semiBand, windows: semiWin, lod, arch: archT, archDepth: archT * 1.3 });
-    cols.push({ kind: 'sphere', x: q.x + Math.sin(q.yaw) * Rs * 0.3, y: semiSpring, z: q.z + Math.cos(q.yaw) * Rs * 0.3, r: Rs * 0.95 });
     if (s.exedrae) {
       for (const sgn of [-1, 1]) {
         const a = q.yaw + sgn * 0.95;
@@ -396,7 +577,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         turret(b, { x: sx * tp, z: sz * tp, r: tr, y0: hall.h - 0.2, y1: drumBase + Math.max(2.2, R * 0.18), lod, windows: true, alem: tr * 1.2 });
-        cols.push({ kind: 'cylinder', x: sx * tp, y: hall.h, z: sz * tp, r: tr, h: drumBase + R * 0.3 - hall.h });
       }
     }
   }
@@ -413,8 +593,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     winFrac: 0.44,
   });
   leadDome(b, { r: R, y: domeSpring, rise, lod, shape: 'raised', alem: s.dome.alem ?? Math.max(2.5, R * 0.26) });
-  cols.push({ kind: 'sphere', x: 0, y: domeSpring + rise - R, z: 0, r: R });
-  cols.push({ kind: 'cylinder', x: 0, y: drumBase, z: 0, r: R * 1.05, h: domeSpring - drumBase });
 
   // Tabhane wings.
   if (s.wings) {
@@ -433,7 +611,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
           b.at(0, 0, z, 0, () => leadDome(b, { r: dr, y: wh + 0.3, lod, shape: 'raised', alem: lod === 0 ? dr * 0.3 : 0, ring: false }));
         }
       });
-      cols.push({ kind: 'box', cx, cy: wh / 2, cz: wz, hx: wg.w / 2, hy: wh / 2, hz: wg.d / 2, yaw: 0 });
     }
   }
 
@@ -441,14 +618,12 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   if (s.court) {
     const c = s.court;
     courtyard(b, { w: c.w, d: c.d, z0: hall.d / 2, nx: c.nx, nz: c.nz, h: c.h, lod, fountain: c.fountain, porticoH: c.porticoH });
-    cols.push({ kind: 'box', cx: 0, cy: c.h / 2, cz: hall.d / 2 + c.d / 2, hx: c.w / 2, hy: c.h / 2 + 1, hz: c.d / 2, yaw: 0 });
   } else if (s.portico) {
     const p = s.portico;
     const len = Math.min(hall.w, p.bays * 5.6);
     b.at(-len / 2, 0, hall.d / 2 + p.depth, 0, () =>
       arcade(b, { len, bays: p.bays, depth: p.depth, colH: p.h * 0.64, roofH: p.h, lod, pitched: p.pitched, domeScale: 1.1 }),
     );
-    cols.push({ kind: 'box', cx: 0, cy: p.h / 2, cz: hall.d / 2 + p.depth / 2, hx: len / 2, hy: p.h / 2, hz: p.depth / 2, yaw: 0, open: true });
   }
 
   // Annex blocks.
@@ -467,7 +642,6 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
         }
       }
     });
-    cols.push({ kind: 'box', cx: a.x, cy: a.h / 2, cz: a.z, hx: a.w / 2, hy: a.h / 2, hz: a.d / 2, yaw: 0 });
   }
 
   // Türbes (octagonal domed tombs).
@@ -495,7 +669,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
       });
       leadDome(b, { r: t.r * 0.9, y: t.h + 0.2, lod, shape: 'raised', alem: t.r * 0.25 });
     });
-    cols.push({ kind: 'cylinder', x: t.x, y: 0, z: t.z, r: t.r, h: t.h + t.r });
+    cols.push({ kind: 'cylinder', x: t.x, y: 0, z: t.z, r: t.r, h: t.h + 0.3 });
   }
 
   // Precinct wall.
@@ -506,6 +680,15 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     b.with({ light: Light.Facade, lightBase: -1 }, () => {
       b.sweep(path, [0, -4, 0, p.h, -0.25, p.h + 0.35, -0.9, p.h + 0.35, -0.9, -4]);
     });
+    const x0 = -p.w / 2;
+    const x1 = p.w / 2;
+    const z0 = pz - p.d / 2;
+    const z1 = pz + p.d / 2;
+    // the wall stands inside its outline (profile offsets 0 .. -0.9)
+    b.colBox(x0, 0, z0, x1, p.h + 0.35, z0 + 0.9);
+    b.colBox(x0, 0, z1 - 0.9, x1, p.h + 0.35, z1);
+    b.colBox(x0, 0, z0 + 0.9, x0 + 0.9, p.h + 0.35, z1 - 0.9);
+    b.colBox(x1 - 0.9, 0, z0 + 0.9, x1, p.h + 0.35, z1 - 0.9);
   }
 
   // Minarets.
@@ -516,17 +699,8 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
   b.pop();
 
-  let radius = 0;
-  for (const c of cols) {
-    const x = c.kind === 'box' ? c.cx : c.x;
-    const z = (c.kind === 'box' ? c.cz : c.z) + shift;
-    const ext = c.kind === 'box' ? Math.hypot(c.hx, c.hz) : c.r;
-    radius = Math.max(radius, Math.hypot(x, z) + ext);
-    if (c.kind === 'box') {
-      c.cz += shift;
-    } else {
-      c.z += shift;
-    }
-  }
-  return { colliders: cols, radius, height: top };
+  // parts registered theirs in building space already (inside the shifted frame)
+  const all = [...cols.map((c) => shiftColliderZ(c, shift)), ...b.colliders];
+  const radius = all.reduce((m, c) => Math.max(m, colliderReach(c)), 0);
+  return { colliders: all, radius, height: top };
 }
