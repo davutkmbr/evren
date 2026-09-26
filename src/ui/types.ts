@@ -19,6 +19,12 @@ export interface FlightSnapshot {
   flow: number;
   /** Links in the current chain (flow's chain bursts; 0 without a chain or a dragon). */
   chain: number;
+  /** 0..1 of the chain window left after a clean move end, -1 when none runs. */
+  chainWindow: number;
+  /** Moves that would link now (maneuver ids), for the next-move hint. */
+  chainNext: readonly string[];
+  /** A race is running. */
+  racing: boolean;
   mode: FlightMode;
 }
 
@@ -37,6 +43,9 @@ export function createSnapshot(): FlightSnapshot {
     stamina: 1,
     flow: 0,
     chain: 0,
+    chainWindow: -1,
+    chainNext: [],
+    racing: false,
     mode: 'flying',
   };
 }

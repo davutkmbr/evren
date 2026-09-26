@@ -362,6 +362,10 @@ export interface DragonState {
   chain?: number;
   /** 0..1: the running chain burst's push right now (smooth envelope, 0 without a burst). */
   burst?: number;
+  /** 0..1: the chain window left after a clean move end (a different move started now links); -1 when none runs. */
+  chainWindow?: number;
+  /** Everyday race moves that would link if started now (maneuver ids: 'dart', 'power', 'roll', 'slip'). */
+  chainNext?: readonly string[];
   /** A race is running (speed effects at full strength, full-size chain bursts). */
   racing?: boolean;
   /** The activity system marks a race as running (true) or over (false). */
