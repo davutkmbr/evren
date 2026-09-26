@@ -9,6 +9,7 @@ import { CompassTape } from './compass-tape';
 import { AltitudeReadout, SpeedReadout } from './flight-readout';
 import { Hotbar } from './hotbar';
 import { ManeuverCaption } from './maneuver-caption';
+import { FlowLine } from './flow-line';
 import { StaminaWings } from './stamina-wings';
 
 const TEXT_INTERVAL_S = 1 / 12;
@@ -18,7 +19,7 @@ const COMPASS_LABEL_ID = 'compass.landmark';
 /**
  * In-flight HUD, composed by screen zones (src/ui/zones): compass tape and its second line (top), area title (title),
  * the shared hint line, hover hints and captions (lowerCenter), the static bottom-centre cluster (speed · stamina
- * wings + hotbar · altitude), the minimap (bottom right) and the discovery card (corner). Every transient piece asks
+ * wings, the flow line under them + hotbar · altitude), the minimap (bottom right) and the discovery card (corner). Every transient piece asks
  * the zone director for its zone; nothing positions itself. Readouts are plain text with a soft shadow.
  */
 export class Hud {
@@ -28,6 +29,7 @@ export class Hud {
   readonly speed = new SpeedReadout();
   readonly altitude = new AltitudeReadout();
   readonly stamina = new StaminaWings();
+  readonly flow = new FlowLine();
   readonly hotbar = new Hotbar();
   readonly maneuver: ManeuverCaption;
   private readonly hintLine: HintLineView;
@@ -51,7 +53,7 @@ export class Hud {
       this.area.root,
       el('div', 'hud-cluster', [
         this.speed.root,
-        el('div', 'hud-cluster-mid', [this.stamina.root, this.hotbar.root]),
+        el('div', 'hud-cluster-mid', [this.stamina.root, this.flow.root, this.hotbar.root]),
         this.altitude.root,
       ]),
       this.minimap.root,
@@ -73,6 +75,7 @@ export class Hud {
     this.compass.update(s, realDt);
     this.minimap.update(s, realDt);
     this.stamina.update(s.stamina, realDt);
+    this.flow.update(s.flow, realDt);
     this.hotbar.render();
     this.area.update(s, realDt, this.zones);
     this.textTimer -= realDt;
