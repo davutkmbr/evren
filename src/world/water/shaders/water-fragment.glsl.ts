@@ -17,6 +17,7 @@ const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
  * - whitecaps (Gerstner crest compression x wind), shore break/lapping foam, current slicks
  * - underside with Snell's window when the camera is below the surface
  * - the disturbance field under a low-flying dragon (phase 21 stage 2): ripple slopes, ruffled darker patches, foam
+ * - wave particles (phase 21 stage 7a): hull wakes, the dragon's waves and splash rings from the splat window
  */
 export const WATER_FRAGMENT_GLSL = /* glsl */ `
 #include <common>
@@ -130,7 +131,7 @@ void main() {
   float lake = lakeWeight(region);
   vec4 rw = region;
   float fetch = fetchExposure(flow);
-  vec3 groups = waveGroupWeights(region, flow, coast);
+  vec4 groups = waveGroupWeights(region, flow, coast);
   vec2 U = flow.xy;
   float flowMag = length(U);
 
@@ -190,7 +191,7 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
     float wa = dir.z * amp.x * g;
     float fade = 1.0 - smoothstep(0.08, 0.3, fp / dir.w);
     lostVar += 0.5 * wa * wa * (1.0 - fade * fade);
-    float breakingWave = amp.w < 1.5 ? wa * wa : 0.0;
+    float breakingWave = abs(amp.w - 2.0) > 0.5 ? wa * wa : 0.0;
     capTotal += breakingWave;
     capResolved += breakingWave * fade;
     if (fade <= 0.0) continue;
@@ -247,6 +248,14 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   float distFade = 1.0 - smoothstep(1.0, 4.0, fp / max(uDistRect.w, 1e-3));
   slope += distSlope * distFade;
   lostVar += dot(distSlope, distSlope) * (1.0 - distFade * distFade) * 0.5 + 0.02 * distRough;
+
+  // Wave particles (hull wakes, the dragon, splashes); finer than the pixel footprint they turn into roughness.
+  if (uWaveParams.x > 0.5) {
+    vec2 wpSlope = waveParticlesAt(P.xz - uOrigin).gb * (1.0 - smoothstep(0.0, 25.0, coast));
+    float wpFade = 1.0 - smoothstep(2.0, 6.0, fp / uWaveRect.w);
+    slope += wpSlope * wpFade;
+    lostVar += dot(wpSlope, wpSlope) * (1.0 - wpFade * wpFade) * 0.5;
+  }
 
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
   float sigma2 = lostVar + uSeaParams.y * r2 + 0.0003;
@@ -366,7 +375,7 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   body *= (1.0 - fresnel) / 0.98;
 
   // Light transmitted through thin wave crests toward a low sun (teal glow on the lee side of crests).
-  float crest = clamp(vLagr.z * 3.0, 0.0, 1.0) * groups.x;
+  float crest = clamp(vLagr.z * 3.0, 0.0, 1.0) * max(groups.x, groups.w);
   float backLit = pow(clamp(dot(-V, L), 0.0, 1.0), 4.0) * (1.0 - clamp(L.y * 2.5, 0.0, 1.0));
   body += keyE * rrs * (crest * backLit * 14.0);
 
