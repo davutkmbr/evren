@@ -736,6 +736,44 @@ export interface UnderwaterView {
 }
 
 /**
+ * The sea reacting to the dragon flying low over it (phase 21 stage 2), provided by the water module as `lowFlight`.
+ * Computed once per frame after flight and camera (UpdateOrder.World) from DragonState, the rig anchors and the water
+ * service; fx (sprays, vortex curls, steam) and audio (downwash, skim tearing, steam hiss) read it, the water surface
+ * draws its disturbance texture. Every value is 0 and `active` is false while the dragon is not low over water.
+ */
+export interface LowFlightView {
+  /** Some low-flight effect is running (false: consumers skip all of their low-flight work). */
+  readonly active: boolean;
+  /** Height of the body's centre above the local wave surface (m); Infinity when not over water. */
+  readonly height: number;
+  /** 0..1 wing downwash on the water (hovering or flying slowly within ~1.5 wingspans). */
+  readonly downwash: number;
+  /** 0..1 gust of the latest downstroke hitting the water, decaying over ~0.4 s. */
+  readonly downwashPulse: number;
+  /** 0..1 spray whipped up at the edge of the downwash ring (a strong hover close to the water). */
+  readonly edgeSpray: number;
+  /** 0..1 skim wake: fast and very low or touching the water. */
+  readonly wake: number;
+  /** 0..1 wingtip vortex curls on the water (low and fast). Per tip: `tipVortex`. */
+  readonly vortex: number;
+  readonly tipVortex: readonly [number, number];
+  /** 0..1 fire breath boiling the sea at `steamPoint`. */
+  readonly steam: number;
+  readonly steamPoint: THREE.Vector3;
+  /** The water surface under the body (x, wave height, z). */
+  readonly surfacePoint: THREE.Vector3;
+  /** Horizontal unit direction of travel. */
+  readonly heading: THREE.Vector3;
+  /** Horizontal speed (m/s). */
+  readonly speed: number;
+  /** Wingtips (left, right) and tail tip: height above the local water (m) and the water point under them. */
+  readonly tipHeight: readonly [number, number];
+  readonly tipPoint: readonly [THREE.Vector3, THREE.Vector3];
+  readonly tailHeight: number;
+  readonly tailPoint: THREE.Vector3;
+}
+
+/**
  * HUD screen zones (src/ui/zones): every transient HUD message asks for a zone with a priority and a duration; the
  * director shows the highest priority per zone, defers the others (dropping them once they waited too long) and fades
  * between them. Provided by the UI as `hudZones`. The `center` band is reserved for the aim / ring area and the
@@ -792,6 +830,7 @@ export interface Services {
   hotbar: HotbarService;
   water: WaterService;
   underwater: UnderwaterView;
+  lowFlight: LowFlightView;
   hudZones: HudZonesService;
 }
 

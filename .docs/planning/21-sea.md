@@ -2,9 +2,11 @@
 
 Milestone: B · Chill loop · Effort: L · Depends on: 20 (movement; shares skim, breach and flow), water module, fx
 
-Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test; stage 4 built (the camera follows the dragon under
-water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU review. Stages 1–2 can start
-in parallel with phase 20 stage B.
+Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 2 built (the sea reacts to low
+flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound), awaiting the owner's GPU review; stage 3
+built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test; stage 4 built (the camera
+follows the dragon under water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU
+review.
 
 ## Goal
 
@@ -19,7 +21,8 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
   at a fixed depth with a synthetic bob, paddling, splashes; depth is clamped at −2.5 m (no diving). Ground effect
   lift exists below ~60 m.
 - **Rendering** (`src/world/water/`): Gerstner waves plus detail bands on the GPU, sea regimes (poyraz / lodos, swell)
-  computed per frame on the CPU (`sea-state.ts`), planar reflection. Nothing reacts to the dragon except fx splashes.
+  computed per frame on the CPU (`sea-state.ts`), planar reflection. Since stage 2 a disturbance field under a
+  low-flying dragon (downwash, skim wake, vortices, steam) adds ripples, roughness and foam.
 - **Life** (`src/world/life/`): ferries, boats and ships with Kelvin wakes (`wakes/`), gulls.
 - **Mismatch:** the dragon floats and skims on a flat plane while the rendered surface moves with waves up to a few
   metres in lodos.
@@ -52,6 +55,80 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
 | **Sound** | A rushing water layer that grows with low speed over the sea, spray hits, the downwash roar | audio |
 
 Ground-effect lift keeps working and becomes the physical basis of **sıyırma** (phase 20).
+
+### Stage 2 as built (GPU review needed)
+
+Downwash, skim wake, wingtip vortex curls, fire steam and their sound. Claw dip and the reactions (gulls, fish, crews)
+are not part of it; they stay open in the table above.
+
+- **One model for pictures, sprays and sound** (`src/world/water/lowflight/low-flight.ts`, service `lowFlight` in
+  `contracts.ts`, owned by the water system, updated after flight and camera): from DragonState (mode, velocity,
+  airspeed, `flapEffort`, `firing`, `touchingWater`), the rig's wingtip and mouth anchors and the water service it works
+  out per frame, against the **local wave height**: `downwash` (hover-like modes or slow flight below ~24 m/s, fading in
+  from 1.5 wingspans up to full at 0.3), `downwashPulse` + a gust ring per downstroke (the flight 'flap' events),
+  `edgeSpray` (a strong hover close to the water), `wake` (the skim: `touchingWater`, or the belly within ~2.5 m of the
+  waves at > 8 m/s; fast attack, 0.35 s release), `tipVortex` / `vortex` (wingtips within 0.45 wingspans of the water at
+  > 18 m/s), tail and wingtip heights over the waves, and `steam` (the fire jet ray-marched against the waves over the
+  fire's 40 m reach; mouth under the surface boils at the mouth). The flight side is only read; the skim physics stays
+  theirs.
+- **Disturbance field on the water** (`disturbance-window.ts`, `disturbance-gpu.ts`, `shaders.glsl.ts`): a square window
+  (medium 128² × 0.8 m, high 192² × 0.6 m, ultra 256² × 0.5 m; off on low) that follows the dragon in whole texels,
+  trailing up to 30 % of its extent behind a fast dragon so more wake stays in view. One half-float RGBA ping-pong pass
+  per fixed 60 Hz step: r/g = a damped wave equation (ripples at 4 m/s, sponge edges), b = roughness (decays, spreads a
+  little), a = foam (decays). The model writes stamps (disks, rings, swept capsules, up to 16 a frame): each downstroke
+  pushes a dent that the wave equation turns into an expanding ripple ring, and its gust ring races out (11 m/s, slowing)
+  as a dark roughened annulus; the downwash keeps a ruffled patch under the wings; the skim leaves a furrow (depression +
+  foam + roughness; the moving trough radiates a narrow V at asin(4 / v)) and a wider roughened strip; wingtip vortices
+  leave roughened streaks, a tip or the tail touching the water a foam line; the fire leaves a boiling foamy patch.
+  Swept stamps are normalised by their overlap, so the amount per pass does not depend on speed or frame rate; frames
+  without a step due run an apply-only pass (no time passes), so ripples keep their speed at any frame rate.
+- **Water shader** (`water-fragment.glsl.ts`): inside one uniform branch (skipped while the field is off) 5 taps of the
+  field: the ripple gradient is added to the surface slope (faded into roughness where finer than a pixel), roughness
+  amplifies the detail bands (up to 3.4×) and widens the GGX lobe, ruffled patches reflect up to 22 % less sky (the
+  darker "cat's paw" look), foam is broken up by the foam texture.
+- **Sprays** (`src/fx/emitters/surface-emitter.ts`, `fire-emitter.ts`): over the sea the service drives the existing
+  downwash mist, droplets, ring and foam; new: spray whipped up at the downwash ring's edge (drops, spray sheets, mist
+  thrown outward and swirled), wingtip vortex curls (faint mist on a helix around each trailing vortex, outboard side
+  rising, top rolling in, plus fine drops), a rooster tail where the tail tip kisses the water, wingtip kisses at the
+  real wave height. Every water emission (splashes included) now spawns on and dies at the local wave surface instead
+  of y = 0. Fire on the sea: a steady steam cloud at the service's steam point plus hissing spurts (tight, fast-rising
+  puffs every 0.1–0.35 s); it keeps steaming for ~1 s after the breath stops.
+- **Sound** (`src/audio/voices/sea.ts`, `audio-engine.ts`, `audio/index.ts`): a new voice, synthesised, on the sfx bus
+  (so it is muffled under water with everything else): downwash buffeting (brown noise AM'd by the buffet signal),
+  a thump + spray patter per downstroke over the water (scheduled once per beat, ~0.08 s after the flap sound), skim
+  tearing (band noise 0.9–2.4 kHz rising with speed, fast AM) and the furrow rush; steam hiss (high-passed white noise
+  sputtered by the crackle buffer) with a low boil, placed at the steam point. The wind voice's airy skim hiss now also
+  follows the wake (a wave-relative contact the agl misses in a swell). Offline analysis cases `sea-downwash`,
+  `sea-skim`, `sea-steam` (first-pass loudness windows, to be balanced by ear).
+- **Off switches:** above ~70 m over the sea, over land, under water, swimming or without a dragon the model costs one
+  isWater query and every value is 0 (sprays and sound skip their work: `active` false, the voice's sources are
+  stopped); the field stops simulating and the water branch is skipped 7 s after the last stamp; "low" has no field
+  (sprays and sound still work); particle counts scale with the quality's particle budget as before.
+- **Performance** (estimates, no GPU here): simulation 192² × 1–3 passes ≈ 0.02–0.04 ms; water shader ≈ 0.05–0.1 ms
+  while the window covers much of the screen (5 bilinear taps in the window only); extra particles within the existing
+  budgets (a full hover adds ~350 drops/s and ~100 volumetric sprays/s, the pass adapts its resolution under heavy
+  overdraw) ≈ 0.1–0.2 ms. Total ≈ 0.2–0.35 ms on "high", 0 when not low over water. CPU: ≤ 6 wave queries a frame
+  while low, well under 0.05 ms.
+- **Checks:** `tools/headless/lowflight-check.ts` (real FlightSim, real sea, real fx emitters on counting pools): hover
+  low / high, a slow low pass, a fast skim then 80 m up, fire at the water / high / over land, hover and fast passes
+  over land; activation, ranges, NaNs, zero activity when high or over land; window scrolling, clears, culling, queue
+  limit, the fixed-step clock at 24 / 60 / 144 fps, lifetime, quality off; structural GLSL checks. The new GLSL (and the
+  whole water fragment) also parses with @shaderfrog/glsl-parser (run from a scratch directory, not a dependency).
+
+**What the owner should look at (GPU):**
+
+1. Hover 5–15 m over calm water (Marmara off Kadıköy, `?wu10=4`): a darker ruffled patch under the wings, a ripple ring
+   and a dark gust ring racing out with every downstroke, spray whipped up at the ring's edge. Tunables:
+   `DISTURBANCE_STAMPS.downwashRough`, `gustRough`, `downstrokeDepth`, `LOW_FLIGHT.gustSpeed`.
+2. Slow low pass (15–20 m/s, 8 m): a lighter ruffled track, no edge spray.
+3. Skim fast and low: a foam furrow and a narrow V of ripples behind, lasting a few seconds; spray from the wingtips
+   and tail where they touch; faint curling spray from the wingtips in a fast low pass. Tunables: `furrow*`,
+   `vortexRough`, `DISTURBANCE_SIM.waveSpeed` (V angle), `foamDecay`.
+4. The window edge: no visible square (the field fades out over the outer 10 % and ripples are absorbed at the edges).
+5. Fire at the water from a hover: a steam cloud and hissing spurts on the waves, a boiling foamy patch, the hiss.
+6. Sound: downwash buffet and gust thumps over water only, skim tearing, steam hiss; nothing when high.
+7. Lodos (`?wu10=16`): sprays and steam sit on the waves (no spray spawned inside a crest), the field rides the swell.
+8. Cost with `?stats=1` on "high" while hovering / skimming (budget ≤ 0.5 ms); "low" shows sprays but no field.
 
 ## Strand 3 — Plunge dive and breach
 
@@ -279,7 +356,7 @@ only as the far LOD and as a fallback on "low".
 | Stage | Content | Done when |
 |---|---|---|
 | 1 | Water service with the CPU wave evaluator; dragon floats and skims on real waves; current | Parity test passes; swim/skim checks pass |
-| 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound | Owner GPU review OK; budget met |
+| 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound (built) | Owner GPU review OK; budget met |
 | 3 | Plunge, under-water movement, breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
 | 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company | Checks and sheets approved; feel test OK |
