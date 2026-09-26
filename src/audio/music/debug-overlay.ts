@@ -1,6 +1,8 @@
 /**
  * `?music=debug` overlay (developer tool, English): current set, bar / beat, each stem's level (target → smoothed),
- * the active state rule and modifiers, the director's phase and next event. Updated a few times a second.
+ * the active state rule and modifiers, the director's phase and next event; in sparse style the sprinkle state (next
+ * phrase in N s, the last phrase, the hold or busy reason, the context tags); the moment piece. Updated a few times a
+ * second.
  */
 import { STEM_ROLES } from './manifest';
 import type { MusicSnapshot } from './index';
@@ -52,6 +54,17 @@ export class MusicDebugOverlay {
     lines.push(`cond   ${s.conditions.join(' ') || '—'}`);
     lines.push(`sets   ${s.sets.join(', ') || 'none (manifest empty — try ?music=test)'}`);
     lines.push(`note   ${s.note}`);
+    const sp = s.sprinkle;
+    lines.push(`style  ${s.style} (${s.styleSource})`);
+    if (s.style === 'sparse') {
+      const next = sp.phase === 'playing' ? `playing ${sp.current}` : sp.nextIn !== null ? `next in ${sp.nextIn.toFixed(0)} s${sp.next ? ` (${sp.next})` : ''}` : '—';
+      lines.push(`sprnk  ${next}  last ${sp.last ?? '—'}  played ${sp.played}`);
+      lines.push(`hold   ${sp.hold ?? (sp.busy ? `busy: ${sp.busy}` : '—')}  ${sp.note}`);
+      lines.push(`ctx    ${sp.tags.join(' ') || '—'}`);
+      lines.push(`phrs   ${sp.phrases.join(', ') || 'none (manifest has no phrases — try ?music=test)'}`);
+    }
+    const m = s.moment;
+    lines.push(`moment ${m.current ? `playing ${m.current}` : m.pending ? `loading ${m.pending}` : '—'}  last ${m.last ?? '—'}  ${m.note}`);
     this.body.textContent = lines.join('\n');
   }
 

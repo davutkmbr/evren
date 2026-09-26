@@ -196,8 +196,14 @@ export function createAudioSystem(): System {
     get adaptiveMusic(): boolean {
       return music.adaptiveMusic;
     },
-    setMomentMusic(active: boolean, musicId?: string): void {
-      music.setMomentMusic(active, musicId);
+    setMusicStyle(style: 'sparse' | 'continuous'): void {
+      music.setMusicStyle(style);
+    },
+    get musicStyle(): 'sparse' | 'continuous' {
+      return music.musicStyle;
+    },
+    setMomentMusic(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void {
+      music.setMomentMusic(active, musicId, info);
     },
   };
 
