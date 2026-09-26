@@ -10,16 +10,20 @@
  * - leisure=playground: a swing, a slide tower and a climbing frame inside the area.
  * - green areas: shrubs (dense on scrub, loose clumps on lawns and in parks), field stones on grass, flower clumps on
  *   flower beds; never on paths, carriageways or against walls.
- * - shopfronts: an awning over the facade of cafés, restaurants and shops, the lit sign of every pharmacy.
+ * - shopfronts: an awning over the facade of cafés, restaurants and shops, the lit sign of every pharmacy, wall ATMs.
+ * - amenity=fountain: a marble çeşme against the wall it stands at, else a round basin (fountain areas: at their centre).
+ * - tourism=artwork / historic=memorial: a statue on its plinth; tourism=viewpoint: a coin telescope.
+ * - landuse=cemetery: rows of Ottoman headstones along the area's axis; amenity=marketplace: rows of stalls.
+ * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges.
  */
-import type { OsmArea, OsmData, OsmPoint } from '../../data';
+import type { OsmArea, OsmData, OsmLine, OsmPoint } from '../../data';
 import { hash, pointInRing } from '../../shared/geometry';
 import { Zone } from '../../shared/street-surface';
 import { CoverChannel } from '../cover/cover';
 import type { Placer } from './placement';
 
 /** Per-slice budgets (instances). */
-const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500 } as const;
+const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500, tombstone: 2000, marketStall: 150 } as const;
 
 /** Brand colours by name (lower case, Turkish folded); anything else takes a neutral palette colour. */
 const BRANDS: [RegExp, [number, number, number]][] = [
@@ -367,10 +371,172 @@ function placeFronts(pl: Placer, points: readonly OsmPoint[]): void {
   });
 }
 
-export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
+/* ------------------------------------------------------------------ fountains, monuments, street kit */
+
+/** The centre of an area's oriented box (areas) or the point itself. */
+function sitesOf(data: Pick<OsmData, 'points' | 'areas'>, kinds: readonly string[]): { x: number; z: number; area: OsmArea | null; seed: number }[] {
+  const out: { x: number; z: number; area: OsmArea | null; seed: number }[] = [];
+  data.points.forEach((p, i) => {
+    if (kinds.includes(p.kind)) {
+      out.push({ x: p.x, z: p.z, area: null, seed: i });
+    }
+  });
+  data.areas.forEach((a, i) => {
+    if (kinds.includes(a.kind)) {
+      const b = orientedBox(a.ring);
+      out.push({ x: b.cx, z: b.cz, area: a, seed: 5000 + i });
+    }
+  });
+  return out;
+}
+
+function placeFountains(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
+  for (const s of sitesOf(data, ['amenity=fountain'])) {
+    if (!pl.inArea(s.x, s.z)) {
+      continue;
+    }
+    // A point fountain within 2.5 m of a wall is a çeşme on that wall; everything else a free-standing basin.
+    if (!s.area && pl.wall(s.x, s.z) < 2.5) {
+      const f = facadeSpot(pl, s.x, s.z);
+      if (f && pl.clearance(f.x, f.z) > 1.5) {
+        pl.prop('cesme', f.x, f.z, f.yaw);
+      }
+      continue;
+    }
+    const spot = pl.near(s.x, s.z, 6, 3, 3);
+    if (spot && (!s.area || inArea(s.area, spot[0], spot[1]))) {
+      pl.prop('fountainBasin', spot[0], spot[1], hash(s.seed) * Math.PI, s.area ? 1.3 : 1);
+    }
+  }
+}
+
+/** One prop near every site of the given kinds: free spot within `radius`, facing the street. */
+function placeAt(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>, kinds: readonly string[], kind: Parameters<Placer['prop']>[0], radius: number, wall: number, room: number, scale = () => 1): void {
+  for (const s of sitesOf(data, kinds)) {
+    if (!pl.inArea(s.x, s.z)) {
+      continue;
+    }
+    const spot = pl.near(s.x, s.z, radius, wall, room);
+    if (spot && (!s.area || inArea(s.area, spot[0], spot[1]))) {
+      pl.prop(kind, spot[0], spot[1], pl.faceStreet(spot[0], spot[1], hash(s.seed * 1.1) * Math.PI * 2), scale());
+    }
+  }
+}
+
+function placeAtms(pl: Placer, points: readonly OsmPoint[]): void {
+  points.forEach((p) => {
+    if (p.kind !== 'amenity=atm' || !pl.inArea(p.x, p.z)) {
+      return;
+    }
+    const f = facadeSpot(pl, p.x, p.z);
+    if (f && pl.clearance(f.x, f.z) > 1.2) {
+      pl.prop('atm', f.x, f.z, f.yaw);
+    }
+  });
+}
+
+/** Rows of `kind` across an area along its long axis: `step` along the rows, `row` between them, `share` filled. */
+function fillRows(pl: Placer, a: OsmArea, seed: number, kind: 'tombstone' | 'marketStall', step: number, row: number, share: number, budget: { left: number }, tint?: (h: number) => [number, number, number]): void {
+  const b = orientedBox(a.ring);
+  const sx = -b.az;
+  const sz = b.ax;
+  const yaw = Math.atan2(sx, sz);
+  for (let v = -b.wid / 2 + row / 2; v <= b.wid / 2 - row / 2; v += row) {
+    for (let u = -b.len / 2 + step / 2; u <= b.len / 2 - step / 2; u += step) {
+      if (budget.left <= 0) {
+        return;
+      }
+      const h = hash(seed * 0.13 + u * 3.7 + v * 11.3);
+      if (h > share) {
+        continue;
+      }
+      const jit = kind === 'tombstone' ? (hash(h * 91) - 0.5) * 0.5 : 0;
+      const x = b.cx + b.ax * (u + jit) + sx * v;
+      const z = b.cz + b.az * (u + jit) + sz * v;
+      if (!pl.inArea(x, z, 2) || !inArea(a, x, z) || pl.wall(x, z) < 1 || pl.channel(x, z, CoverChannel.Path) >= -0.5 || pl.ctx.surface.zone(x, z) === Zone.Carriageway) {
+        continue;
+      }
+      const tilt = kind === 'tombstone' ? (hash(h * 7) - 0.5) * 0.35 : 0;
+      if (pl.props.add(kind, x, pl.y(x, z), z, yaw + tilt, kind === 'tombstone' ? 0.8 + hash(h * 13) * 0.5 : 1, tint?.(h))) {
+        budget.left--;
+      }
+    }
+  }
+}
+
+function placeCemeteries(pl: Placer, areas: readonly OsmArea[]): void {
+  const budget = { left: BUDGET.tombstone };
+  areas.forEach((a, i) => {
+    if (a.kind === 'landuse=cemetery' || a.kind === 'amenity=grave_yard') {
+      fillRows(pl, a, i, 'tombstone', 1.5, 2.4, 0.55, budget, (h) => {
+        const k = 0.72 + 0.2 * hash(h * 5);
+        return [k, k * 0.97, k * 0.9];
+      });
+    }
+  });
+}
+
+function placeMarkets(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
+  const budget = { left: BUDGET.marketStall };
+  data.areas.forEach((a, i) => {
+    if (a.kind === 'amenity=marketplace') {
+      fillRows(pl, a, i, 'marketStall', 3.4, 4.2, 0.85, budget, (h) => pick(AWNING_TINTS, h));
+    }
+  });
+  data.points.forEach((p, i) => {
+    if (p.kind !== 'amenity=marketplace' || !pl.inArea(p.x, p.z)) {
+      return;
+    }
+    const yaw = pl.faceStreet(p.x, p.z, hash(i) * Math.PI);
+    for (let k = -2; k <= 2 && budget.left > 0; k++) {
+      const [x, z] = at(p.x, p.z, yaw, k * 3.4, 0);
+      if (pl.free(x, z, 1.5, 2)) {
+        pl.prop('marketStall', x, z, yaw, 1, pick(AWNING_TINTS, hash(i * 3 + k)));
+        budget.left--;
+      }
+    }
+  });
+}
+
+function placeHedges(pl: Placer, lines: readonly OsmLine[]): void {
+  for (const l of lines) {
+    if (l.kind !== 'barrier=hedge') {
+      continue;
+    }
+    for (let i = 0; i + 3 < l.pts.length; i += 2) {
+      const ax = l.pts[i];
+      const az = l.pts[i + 1];
+      const dx = l.pts[i + 2] - ax;
+      const dz = l.pts[i + 3] - az;
+      const len = Math.hypot(dx, dz);
+      // The hedge segment's x axis along the line: (cos yaw, -sin yaw) = (dx, dz) / len.
+      const yaw = Math.atan2(-dz, dx);
+      for (let s = 1; s < len; s += 2) {
+        const x = ax + (dx * s) / len;
+        const z = az + (dz * s) / len;
+        if (pl.inArea(x, z, 2) && pl.ctx.surface.zone(x, z) !== Zone.Carriageway) {
+          pl.props.add('hedge', x, pl.y(x, z), z, yaw, 1, undefined, l.height ? l.height / 1.1 : 1);
+        }
+      }
+    }
+  }
+}
+
+export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas' | 'lines'>): void {
   placeFuel(pl, data.points);
   placePitches(pl, data.areas);
   placePlaygrounds(pl, data);
+  placeFountains(pl, data);
+  placeAt(pl, data, ['tourism=artwork', 'historic=memorial', 'historic=monument'], 'statue', 5, 2, 3);
+  placeAt(pl, data, ['tourism=viewpoint'], 'telescope', 4, 1, 1.5);
+  placeAt(pl, data, ['emergency=fire_hydrant'], 'hydrant', 2, 0.3, 0.8);
+  placeAt(pl, data, ['amenity=recycling', 'amenity=waste_disposal'], 'recycling', 4, 0.5, 2.5);
+  placeAt(pl, data, ['amenity=bicycle_parking'], 'bikeRack', 4, 0.5, 2.5);
+  placeAt(pl, data, ['leisure=fitness_station'], 'fitness', 6, 2, 3);
+  placeMarkets(pl, data);
   placeFronts(pl, data.points);
+  placeAtms(pl, data.points);
+  placeCemeteries(pl, data.areas);
+  placeHedges(pl, data.lines);
   placeGreen(pl, data.areas);
 }
