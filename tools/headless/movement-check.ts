@@ -26,7 +26,7 @@ import * as THREE from 'three';
 import * as params from '../../src/dragon/flight/params';
 import { footStats, trackFeet, type FootTrack } from './pose/contacts';
 import { lowestParts as lowestPartsOf, type LowestParts } from './pose/parts';
-import { collectMeshes, type MeshData } from './pose/raster';
+import { collectMeshes, skinVertex, type MeshData } from './pose/raster';
 import { buildRig, PoseRuntime, type FrameRecord, type FrameScript, type Terrain } from './pose/runtime';
 import { fly, GROUND_Y, landThen, scenarioByName } from './pose/scenarios';
 
