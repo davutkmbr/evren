@@ -67,9 +67,12 @@ export interface Proportions {
   shin: number;
 }
 
+/** Scale experiment: riders larger than life relative to the dragon (1 = true scale). */
+export const RIDER_SIZE = { scale: 1 };
+
 export function proportions(a: RiderAppearance): Proportions {
   const shape = a.shape;
-  const height = THREE.MathUtils.lerp(1.64, 1.78, shape) + (a.height - 0.5) * 0.16;
+  const height = (THREE.MathUtils.lerp(1.64, 1.78, shape) + (a.height - 0.5) * 0.16) * RIDER_SIZE.scale;
   const s = height / 1.78;
   return {
     height,
@@ -158,7 +161,7 @@ export function buildRiderLayout(a: RiderAppearance): RiderSkeletonLayout {
   };
 
   // --- Spine: slight forward lean, the neck carries the head forward a little.
-  const hips = v(0, SEAT_Y + 0.1 * s, SEAT_Z);
+  const hips = v(0, SEAT_Y + 0.1 * s, SEAT_Z + 0.1 * (RIDER_SIZE.scale - 1));
   const seg = (from: THREE.Vector3, len: number, leanDeg: number): THREE.Vector3 =>
     from.clone().add(v(0, Math.cos(deg(leanDeg)), -Math.sin(deg(leanDeg))).multiplyScalar(len));
   const spine = seg(hips, 0.105 * s, 2);

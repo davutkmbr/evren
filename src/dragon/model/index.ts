@@ -6,6 +6,7 @@ import { RiderBehavior } from './behavior/rider-behavior';
 import { BondBehavior } from './behavior/bond/bond-behavior';
 import { DragonRigImpl } from './rig';
 import { DEFAULT_APPEARANCE, sanitizeAppearance } from './rider/appearance';
+import { RIDER_SIZE } from './rider/skeleton';
 
 /** Work-in-progress rider rebuild: `?rider=new` (optionally `&look=<JSON appearance fields>`). */
 function newRiderFlag(): ReturnType<typeof sanitizeAppearance> | undefined {
@@ -16,6 +17,7 @@ function newRiderFlag(): ReturnType<typeof sanitizeAppearance> | undefined {
   if (q.get('rider') !== 'new') {
     return undefined;
   }
+  RIDER_SIZE.scale = Number(q.get('riderScale') ?? 1) || 1;
   let look: unknown = {};
   try {
     look = JSON.parse(q.get('look') ?? '{}');
