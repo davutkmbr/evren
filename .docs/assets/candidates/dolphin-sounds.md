@@ -1,6 +1,11 @@
-# Dolphin sound candidates (pending approval)
+# Dolphin sound candidates (rejected)
 
-Status: **shortlist only, awaiting the owner's approval.** No recording was added to `assets-src/`, `private-assets/`
+**Owner decision (26 Sep): all rejected.** The recordings are too noisy to use, and the whistles (the dolphins' own
+underwater communication) are unpleasant to hear. The dolphins stay without calls; above water they are heard only
+through the existing water splash on leaps. Do not add whistles or clicks. A clean breath "pff" may be revisited later
+only from a clean studio-quality source.
+
+Former status: **shortlist only, awaiting the owner's approval.** No recording was added to `assets-src/`, `private-assets/`
 or `public/`, and nothing references them in code. The game already has the slots they drop into (see
 [Integration notes](#integration-notes)); until then the dolphins are silent except for the existing generic water
 splash on a leap. Checked live on 2026-09-26.
