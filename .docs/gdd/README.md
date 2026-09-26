@@ -67,6 +67,11 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
   power stroke). No combo tables: any move, and unnamed hand-flown manoeuvring, takes part; repeating one pattern
   wears out, wasting energy never builds flow. Shown as a thin line under the stamina wings, "Kusursuz …" captions
   when a harmony peaks — the skill ceiling for races.
+- Phase 04 **hard landing**: meeting the ground too fast (legs out sinking ≥ 8 m/s; belly first at ≥ 6 m/s, or a
+  glancing belly hit at ≥ 3 m/s while ≥ 24 m/s over the ground) tumbles the dragon along it — a plow into a roll over
+  the shoulder, a sideways log roll or a belly skid, never the same twice in a row — then it gets up, shakes its head
+  and grumbles or sneezes, briefly embarrassed. No penalty: control is back grounded in 3.3–3.7 s; in a race it only
+  costs its time. Normal landings (slow, running, perch, water) never trigger it.
 - Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
   dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
 
@@ -77,13 +82,13 @@ control or costs speed.
   neck for 3 s, after a trick, and now and then while gliding, perched or resting — only when nothing asks for its eyes
   (not low, not fast, not near an obstacle ahead, not in a trick, race or landing). It blinks, gives a slow blink on
   eye contact, its pupils follow the light and its mood, and in cold or humid air its breath steams from the nostrils.
-  It glances at the landmark when a discovery card opens (the rider points), at a passing vapur, gulls and a stork
-  kettle, and at anything that calls for attention (`dragon-attention` event, e.g. a future ferry horn).
+  It glances at the landmark when a discovery card opens (the rider points), at a passing vapur, gulls, a stork
+  kettle and dolphins surfacing, and at anything that calls for attention (`dragon-attention` event, e.g. a future ferry horn).
 - **Petting (G held, POV and chase):** the rider's palm strokes the neck (IK on the skin, ±3 cm); the dragon purrs
   deeper the fonder it is, half closes its eyes, leans into the hand, raises its neck plates and slowly curls its tail
   tip; a light rumble on gamepads.
 - **Mood:** content, curious, playful, tired or excited, from flight time, stamina, the hour, petting, discoveries and
-  flow, with hysteresis and decay. It shows only in pose and sound (and one quiet line in the pause menu); no meters.
+  flow, with hysteresis and decay; briefly embarrassed after a hard landing. It shows only in pose and sound (and one quiet line in the pause menu); no meters.
 - **Self-driven behaviours** (rare, about one a minute, never in a race, landing or tight moment, each in variants that
   never repeat back to back): looking around, snapping at a gull, a yawn (sometimes with a small flame), a sneeze with
   smoke, a happy rock, stretching the wings after a long flight, shaking off water after a swim, a head shake, dozing,
@@ -98,6 +103,13 @@ control or costs speed.
 - Landmarks: hand-modelled mosques, bridges, towers, palaces and fortresses at real size.
 - Street layer: compiled street tiles for walkable districts (Eminönü, Kadıköy), streamed in below 80 m.
 - Sky, clouds, weather presets (clear, haze, fog, rain, storm), day–night cycle; seasons planned.
+- Natural phenomena (phase 13): the stork migration (a moment, 5.5) and **dolphins in the Bosphorus**
+  (`src/world/life/dolphins/`): now and then a pod of 3–8 common (sometimes bottlenose) dolphins surfaces within view
+  on open water away from the shore, the lanes and the ferry routes — more often in the morning and on calm seas, never
+  in a storm. They porpoise, roll with the dorsal fin showing and now and then leap with a splash; the dragon glances
+  at them, a low pass alongside makes them ride beside it with more leaps, a plunge nearby scatters them for a few
+  seconds. The first close sighting shows a quiet "Yunuslar!" toast. Their sounds are real recordings pending the
+  owner's approval (`.docs/assets/candidates/dolphin-sounds.md`). `?dolphins=near` keeps a pod near the dragon.
 
 ### 5.3 Viewpoints (perches) — phase 03
 14 viewpoints (bridge towers, Galata cap, Süleymaniye dome, Kız Kulesi, Rumeli Hisarı, the Sapphire roof, hills). Built
@@ -132,14 +144,14 @@ control or costs speed.
 
 ### 5.4b Ferry escort ("Vapur eşliği") — phase 13 (`src/activities/escort/`)
 A chill activity: no timer, no fail state, no medals. Flying beside a vapur or city ferry in service (within 120 m,
-heading its way, not in a race) offers "[Z] Vapura eşlik et" on the hint line. While escorting, one quiet line under
+heading its way, not in a race) offers "[L] Vapura eşlik et" on the hint line. While escorting, one quiet line under
 the compass reads "Sıradaki iskele: Kadıköy · 1,4 km" with a small closeness line (a gold dot that slides toward the
 end as the dragon falls behind); the ferry's gull flock (the gull-and-simit moment's flock, shared) circles the stern
 and the dragon glances at the ferry now and then. Beyond 200 m a gentle "Vapurdan uzaklaşıyorsun" note appears; after
 30 s away the escort ends quietly. When the ferry comes alongside, a soft horn sounds at the ferry and a small card
 appears in the corner ("Vapur eşliği · Eminönü → Kadıköy", the time, a warm line, "Eşlik edilen hatlar 3/24"); each
 directed leg of the vapur and city ferry lines (24) is recorded locally. Staying along, the escort continues with the
-next leg when the ferry leaves; Z stops it any time. Moments keep playing; a race ends it; pause and photo mode freeze
+next leg when the ferry leaves; L stops it while drifting away; landing ends it. Moments keep playing; a race ends it; pause and photo mode freeze
 it. `?escort=1` puts the dragon beside a ferry mid-crossing (`?escort=start` also starts the escort).
 
 ### 5.5 Moments — phase 19 (`src/moments/`)
@@ -185,7 +197,8 @@ bridge tower) inside the view frustum; occlusion is not tested. The data (radii,
 Planned: bond level with the dragon (the mood system of 5.1.1 is built; the level is not), unlocks (saddles, armour, dragon variants — phase 12).
 
 ### 5.8 Audio and music
-Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Adaptive music (phase 07, system built,
+Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Dolphin whistles, breaths and splashes
+have their slots wired (recorded only, no synthesis) and wait for approved recordings. Adaptive music (phase 07, system built,
 pieces pending the owner's approval): each piece is a set of equal-length stems (piano, strings, light motion, an
 Istanbul colour instrument, pads) that a small rules table fades with the flight — sparse on the ground and perched,
 fuller cruising, a pulse when fast or diving, the colour low over the water, a swell in thermals, softer at night —
@@ -201,12 +214,12 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 
 | Group | Keys |
 |---|---|
-| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
+| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing; beside a ferry while "[L] Vapura eşlik et" shows: escort it) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off (running: the running leap); in a run-out Ctrl/X skid to a stop, Space touch-and-go |
 | Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up, V encourage (pat and call) |
 | Camera and world | right mouse look, C camera, O photo mode (Enter takes a photo for the album), [ ] time of day, N weather |
-| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), Z escort the ferry alongside (stop escorting), M map, U hide HUD, H help, Esc/P pause |
+| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
 
 ## 7. Interface
 

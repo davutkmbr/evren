@@ -2,8 +2,8 @@
 import { formatGateDistance } from '../text';
 import type { EscortEndReason } from './escort';
 
-/** The key that offers, starts and stops an escort (input button 'escort'). */
-export const ESCORT_KEY = 'Z';
+/** The key that starts and stops an escort: L (land), claimed by the escort while its prompt or note shows. */
+export const ESCORT_KEY = 'L';
 
 /** "Kadıköy İskelesi" → "Kadıköy". */
 export function shortPierName(name: string): string {
