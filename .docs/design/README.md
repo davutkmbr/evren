@@ -97,7 +97,7 @@ stamina, the next gate).
   | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card (also a moment's closing card, "Yeni an") / one toast at a time |
 
   Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
-  race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > moment
+  race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > the chain practice's step line (47) > moment
   subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
   after it (35, joinable; while the moment plays the prompt rides quietly under its subtitle line) >
   start-of-game hints and the compass label (30) > contextual move hints (20, `src/ui/tutorial`) > toasts (10); ties go to the newer message (a toast replaces the

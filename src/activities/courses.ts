@@ -8,7 +8,7 @@
  */
 import { latLonToLocal } from '../core/geo-coords';
 
-export type CourseId = 'bogaz' | 'halic' | 'adalar';
+export type CourseId = 'bogaz' | 'halic' | 'adalar' | 'antrenman';
 
 /** Custom (player-built) course ids start with this prefix (see custom-courses.ts). */
 export const CUSTOM_ID_PREFIX = 'c-';
@@ -53,6 +53,8 @@ export interface CourseDef {
   speedRings?: readonly SpeedRingDef[];
   /** True for player-built courses. */
   custom?: boolean;
+  /** True for the guided chain practice (lesson.ts): no clock on screen, no medals, no records. */
+  lesson?: boolean;
   /**
    * Medal target times (s, whole seconds). Defaults come from defaultMedalTimes(); built-in courses are tuned by
    * tools/headless/race-balance.ts (plain run: silver, chained run: gold), within 10 % of the defaults.
@@ -206,8 +208,40 @@ export const COURSES: readonly CourseDef[] = [
   },
 ];
 
+/**
+ * The guided chain practice (lesson.ts, "Zincir antrenmanı"): a loop over open water south of Kadıköy, long legs with
+ * gentle turns, a speed ring on every other leg from the third on (the ring step finds one ahead whenever it comes) and
+ * ring-free legs over open sea in between for the skim. Not in COURSES: the race balance and the map's race lines leave it out; courseDef()
+ * and the picker include it. Its medals are the default paces (never shown).
+ */
+export const LESSON_COURSE: CourseDef = {
+  id: 'antrenman',
+  name: 'Zincir antrenmanı',
+  description: 'Açık denizde adım adım zincir: hareket, pencere, farklı hareket, hız halkası ve sıyırma. Süre tutulmaz.',
+  lesson: true,
+  medals: { gold: 239, silver: 286, bronze: 325 },
+  gates: [
+    { lat: 40.965, lon: 29.01, alt: 55, radius: 34, label: 'Başlangıç' },
+    { lat: 40.955, lon: 29.0, alt: 55, radius: 32 },
+    { lat: 40.945, lon: 28.992, alt: 55, radius: 32 },
+    { lat: 40.935, lon: 28.99, alt: 55, radius: 32 },
+    { lat: 40.925, lon: 28.995, alt: 55, radius: 32 },
+    { lat: 40.918, lon: 29.008, alt: 55, radius: 32 },
+    { lat: 40.922, lon: 29.022, alt: 55, radius: 32 },
+    { lat: 40.932, lon: 29.028, alt: 55, radius: 32 },
+    { lat: 40.942, lon: 29.024, alt: 55, radius: 32 },
+    { lat: 40.95, lon: 29.015, alt: 55, radius: 34, label: 'Bitiş' },
+  ],
+  speedRings: [
+    { leg: 2, t: 0.5 },
+    { leg: 4, t: 0.5 },
+    { leg: 6, t: 0.5 },
+    { leg: 8, t: 0.5 },
+  ],
+};
+
 export function courseDef(id: string): CourseDef | undefined {
-  return COURSES.find((c) => c.id === id);
+  return id === LESSON_COURSE.id ? LESSON_COURSE : COURSES.find((c) => c.id === id);
 }
 
 function normalize(x: number, y: number, z: number): [number, number, number] {

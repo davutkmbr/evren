@@ -40,7 +40,10 @@ import {
   timedDistance,
   type CompiledCourse,
   type Gate,
+  LESSON_COURSE,
+  courseDef,
 } from '../../src/activities/courses';
+import { LESSON_STEPS, LessonRunner } from '../../src/activities/lesson';
 import {
   CUSTOM_LIMIT,
   GATE_SIZES,
@@ -1347,7 +1350,8 @@ const t1 = Date.now();
 const bridges = buildBridgeColliders(geo);
 console.log(`Bridge structures built in ${((Date.now() - t1) / 1000).toFixed(1)} s: ${[...bridges].map(([id, c]) => `${id} (${c.length})`).join(', ')}`);
 const env: Env = { geo, volumes, bridges };
-const compiled = COURSES.map(compileCourse);
+// The guided chain practice's course is validated like the races (clearance, spacing, turns, speed rings).
+const compiled = [...COURSES, LESSON_COURSE].map(compileCourse);
 let underGates = 0;
 for (const c of compiled) {
   underGates += checkCourse(env, c).underGates;
@@ -1368,6 +1372,7 @@ for (const c of compiled) {
 }
 customCourseTests(env);
 uiV2Tests(compiled[0]);
+lessonTests();
 
 console.log('\nCourse            gates   length   est. @35 m/s');
 for (const c of compiled) {
@@ -1375,3 +1380,46 @@ for (const c of compiled) {
 }
 console.log(failures === 0 ? '\nAll race checks passed.' : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);
+
+/* ------------------------------------------------------------------ */
+/* Guided chain practice (lesson.ts)                                   */
+/* ------------------------------------------------------------------ */
+
+function lessonTests(): void {
+  console.log('\nGuided chain practice');
+  const r = new LessonRunner();
+  const total = r.steps.length;
+  // Wrong actions do not advance; the right ones do, in order.
+  const script: Array<[string, () => unknown, boolean]> = [
+    ['power stroke first', () => r.move('power'), false],
+    ['dart', () => r.move('dart'), true],
+    ['link 1', () => r.link(1, 'motion'), true],
+    ['link 1 again', () => r.link(1, 'motion'), false],
+    ['link 2', () => r.link(2, 'motion'), true],
+    ['link 3', () => r.link(3, 'motion'), true],
+    ['a move link at the ring step', () => r.link(4, 'motion'), false],
+    ['ring link', () => r.link(1, 'ring'), true],
+    ['dart at the skim step', () => r.move('dart'), false],
+    ['skim', () => r.move('skim'), true],
+    ['link 3 at the last step', () => r.link(3, 'motion'), false],
+    ['link 4', () => r.link(4, 'motion'), true],
+  ];
+  const wrong = script.filter(([, act, want]) => !!act() !== want).map(([label]) => label);
+  if (wrong.length || !r.done || r.index !== total || r.step !== null) {
+    fail(`lesson steps: unexpected results for ${wrong.join(', ') || '(none)'} (index ${r.index}/${total})`);
+  } else {
+    ok(`lesson: ${total} steps in order, ${script.filter(([, , w]) => !w).length} wrong actions ignored`);
+  }
+  const every = LESSON_STEPS.every((st) => st.text.length > 0 && st.text.length <= 70 && st.hints.length > 0 && st.done.length > 0 && st.done.length <= 40);
+  if (!every) {
+    fail('every lesson step needs an instruction (≤ 70 characters), keys and a short praise (≤ 40)');
+  } else {
+    ok('lesson texts: an instruction, keys and a short praise per step');
+  }
+  const lessonCourse = compileCourse(LESSON_COURSE);
+  if (!LESSON_COURSE.lesson || COURSES.some((c) => c.id === LESSON_COURSE.id) || courseDef(LESSON_COURSE.id) !== LESSON_COURSE || lessonCourse.speedRings.length < 4) {
+    fail('the lesson course is marked, kept out of COURSES, found by courseDef and has a speed ring on every other leg');
+  } else {
+    ok(`lesson course: ${lessonCourse.gates.length} gates, ${lessonCourse.speedRings.length} speed rings, ${(lessonCourse.length / 1000).toFixed(1)} km, out of the race list`);
+  }
+}

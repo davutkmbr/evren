@@ -175,6 +175,16 @@
   animation: race-boost 1200ms var(--ease-out) both;
 }
 
+/* Guided chain practice: a step's praise (title zone), gold like the stamina wings. */
+.race-praise-val {
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--accent, #e8b872);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  animation: race-boost 2000ms var(--ease-out) both;
+}
+
 @keyframes race-boost {
   0% { opacity: 0; transform: translateY(6px); }
   20% { opacity: 1; transform: translateY(0); }
@@ -730,6 +740,7 @@
 @media (prefers-reduced-motion: reduce) {
   .race-count-val,
   .race-boost-val,
+  .race-praise-val,
   .race-sheet,
   .race-intro,
   .race-split,
