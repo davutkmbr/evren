@@ -20,3 +20,6 @@
   [CC0 1.0](https://www.openhistoricalmap.org/copyright) ("Map data courtesy of the OpenHistoricalMap project, in the
   public domain unless otherwise noted"). Those lines carry `"src": "ohm-walls-constantinople"`; approved 2026-09-26
   (`tools/assets/approved.json`, `.docs/assets/candidates/sea-walls-data.md`).
+- The far OSM layer bake (`public/data/osm/city/`, `src/world/city/osm/mask.json`; phase 24, `npm run bake:city`) is a
+  derived database of the same extract (OSM data as of 2026-09-25T01:52:55Z) and is released under the same ODbL 1.0,
+  © OpenStreetMap contributors. The attribution line in the game covers it.

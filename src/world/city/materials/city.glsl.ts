@@ -5,6 +5,7 @@
  * Detail fades to analytic averages when a window/tile is smaller than a few pixels (no shimmer at distance).
  */
 import { Face, KIND_MASK, Kind, WinType } from '../protocol';
+import { NIGHT_LIGHTS_GLSL } from '../../../render/shaders/night-lights.glsl';
 
 const d = (n: number): string => n.toFixed(1);
 
@@ -114,26 +115,7 @@ float cityTerrain(vec2 xz) {
   return textureLod(uCityHeight, uv, 0.0).r;
 }
 
-/* Linear-RGB colour of a warm..cool interior light, t = 0 (2400 K) .. 1 (5000 K). */
-vec3 cityKelvin(float t) {
-  vec3 c2400 = vec3(1.0, 0.33, 0.06);
-  vec3 c3000 = vec3(1.0, 0.47, 0.16);
-  vec3 c4000 = vec3(1.0, 0.64, 0.37);
-  vec3 c5000 = vec3(1.0, 0.77, 0.62);
-  return t < 0.33 ? mix(c2400, c3000, t / 0.33) : t < 0.66 ? mix(c3000, c4000, (t - 0.33) / 0.33) : mix(c4000, c5000, (t - 0.66) / 0.34);
-}
-
-/* Fraction of lit rooms by local hour: residential evening peak ~21h, morning bump ~6.7h; offices 8-20h. */
-float cityOccupancy(float hour, int usage) {
-  float dh = abs(hour - 21.0); dh = min(dh, 24.0 - dh);
-  float dm = abs(hour - 6.7); dm = min(dm, 24.0 - dm);
-  float res = 0.07 + 0.47 * exp(-dh * dh / 9.7) + 0.14 * exp(-dm * dm / 1.3);
-  float dOff = abs(hour - 14.0); dOff = min(dOff, 24.0 - dOff);
-  float off = 0.1 + 0.62 * smoothstep(7.5, 5.0, dOff);
-  return usage == 1 ? off : usage == 3 ? off * 0.5 : res;
-}
-
-float cityLightsOn() { return smoothstep(0.06, 0.5, uNight); }
+${NIGHT_LIGHTS_GLSL}
 
 /* Fraction of the pixel footprint [x - w/2, x + w/2] covered by the interval [a, b] (1D box filter). */
 float cityCover(float x, float w, float a, float b) {
@@ -459,7 +441,7 @@ void cityWall(inout CitySurf s, int kind, vec3 N, vec3 T, float u, float v, floa
   float tW = hash13(vec3(col, fi, seed + 29.0));
   vec3 sharpEmis = cityKelvin(shopBay ? 0.65 : (tW < 0.7 ? tW * 0.6 : 0.5 + tW * 0.5)) * (shopBay ? 7.0 : 4.5 + 6.0 * hw1) * onW * cover;
   float farLit = cityFarLit(vec2(col, fi), footprint, seed, occ);
-  vec3 cellEmis = cityKelvin(0.28) * 6.0 * winFrac * farLit * (1.0 - colBlank);
+  vec3 cellEmis = cityFarWindowLight(winFrac, farLit) * (1.0 - colBlank);
   if (shop && v < gfh && v > 0.0) cellEmis = cityKelvin(0.6) * 7.0 * 0.5;
   vec3 farEmis = mix(sharpEmis, cellEmis, cellMix) * lightsOn;
   s.albedo = mix(farAlb, alb, detail);

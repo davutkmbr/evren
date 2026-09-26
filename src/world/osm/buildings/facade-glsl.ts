@@ -11,6 +11,7 @@
  * and damp at the foot, streaks under sills and cornices, flaking paint, soot on stone.
  */
 import { Arch, ARCHETYPES, Flag, Head, Kind, LAYOUT_GLSL } from './archetypes';
+import { NIGHT_LIGHTS_GLSL } from '../../../render/shaders/night-lights.glsl';
 
 const f = (v: number): string => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
@@ -39,6 +40,7 @@ vFW = (modelMatrix * vec4(transformed, 1.0)).xyz;
 `;
 
 export const FACADE_FRAGMENT_PARS = /* glsl */ `
+${NIGHT_LIGHTS_GLSL}
 uniform highp sampler2DArray uFacAlb;
 uniform highp sampler2DArray uFacNrm;
 uniform float uLayerNorm[5];
@@ -261,9 +263,10 @@ float fAO = 1.0;
   float wear = vFac.w;
   float u = vFUv.x;
   float v = vFUv.y;
-  float lightsOn = smoothstep(0.06, 0.5, uNight);
-  float hour = uTimeOfDay < 12.0 ? uTimeOfDay + 24.0 : uTimeOfDay;
-  float occupancy = mix(0.5, 0.08, smoothstep(23.0, 26.5, hour));
+  // The city's night (render/shaders/night-lights.glsl.ts): lit rooms by hour, homes and offices.
+  float lightsOn = cityLightsOn();
+  float occupancy = cityOccupancy(uTimeOfDay, 0);
+  float officeOcc = cityOccupancy(uTimeOfDay, 1);
   bool horiz = abs(wn.y) > 0.5;
   vec3 tint = diffuseColor.rgb;
 
@@ -616,7 +619,7 @@ float fAO = 1.0;
           vec4 room = fRoom(g, d, bw * 0.5, FH, 4.2 + 1.5 * hWin, hWin2);
           // Occupancy: whole flats (1-3 bays) share the switch and the dimmer; offices mostly dark at night. On busy
           // commercial streets the lower upper floors hold cafés, bars and hotels that stay lit.
-          float onP = office > 0.5 ? 0.12 : occupancy;
+          float onP = office > 0.5 ? officeOcc : occupancy;
           onP = max(onP, busy * street * (k < 1.5 ? 0.62 : 0.3));
           float litRoom = step(hA, onP) * step(0.18, hWin);
           float flatH = fract(hA * 13.7 + seed * 5.1);
@@ -718,11 +721,10 @@ float fAO = 1.0;
     if (farMix > 0.001) {
       float wf = clamp((2.0 * halfW) * (headH - bottom) / (bw * FH), 0.05, 0.6);
       float hCell = hash13(vec3(floor(cu / (1.0 + floor(fract(seed * 3.9) * 2.5))), row, seed * 31.0));
-      float cellLit = step(hCell, max(office > 0.5 ? 0.12 : occupancy, busy * street * (k < 1.5 ? 0.62 : 0.3)));
-      float cellH = fract(hCell * 13.7 + seed * 5.1);
-      vec3 cellCol = cellH < 0.45 ? vec3(1.0, 0.56, 0.26) : cellH < 0.7 ? vec3(1.0, 0.72, 0.46) : vec3(0.84, 0.9, 1.0);
+      // Far cells light like the city's (and the far OSM layer's) facades, so a building keeps its night at a handover.
+      float cellLit = step(hCell, office > 0.5 ? officeOcc : occupancy);
       vec3 farC = mix(base, vec3(0.045, 0.05, 0.055), wf * 0.85);
-      vec3 farE = cellCol * mix(0.35, 2.2, cellH * cellH) * wf * cellLit * lightsOn;
+      vec3 farE = cityFarWindowLight(wf, cellLit) * lightsOn;
       c = mix(c, farC, farMix);
       fEmis = mix(fEmis, farE, farMix);
       fShadow *= 1.0 - farMix;
