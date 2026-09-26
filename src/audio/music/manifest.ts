@@ -25,8 +25,12 @@ export type StingerKind = (typeof STINGER_KINDS)[number];
 /**
  * Licences a set may carry: `original` = made or commissioned by the owner with commercial rights (e.g. a paid Suno
  * plan); the CC licences need the attribution text shown in the credits (CC0 does not, but the credit is kept).
+ * `public-domain`: a historic recording free in the US and in Turkey (the 78 rpm archive, .docs/assets/archive-78rpm.md).
+ * `public-domain-tr`: free in Turkey but still protected in the US; such pieces never ship from public/ and live only in
+ * the private manifest (private-assets/audio/moments/, .docs/assets/private-assets.md). Both need `sourceUrl` and the
+ * full `attribution` (performer, label, year, archive).
  */
-export const MUSIC_LICENCES = ['original', 'CC0-1.0', 'CC-BY-4.0', 'CC-BY-3.0'] as const;
+export const MUSIC_LICENCES = ['original', 'CC0-1.0', 'CC-BY-4.0', 'CC-BY-3.0', 'public-domain', 'public-domain-tr'] as const;
 export type MusicLicence = (typeof MUSIC_LICENCES)[number];
 
 /** Known mood / situation tags (free-form tags are allowed too; these are the ones the default rules use). */
@@ -108,6 +112,17 @@ export const MOMENT_MUSIC_TAGS = ['poem', 'legend', 'city-life', 'history', 'nos
  * and tail), played now and then over the world sound in sprinkle mode ("Müzik tarzı: Seyrek"). Role `moment`: one
  * emotional piece (40–120 s) played once under a moment.
  */
+/** The two versions of a restored historic recording: the default is chosen per piece (`MusicPhraseDef.variant`). */
+export const PHRASE_VARIANTS = ['denoised', 'raw'] as const;
+export type PhraseVariant = (typeof PHRASE_VARIANTS)[number];
+
+/** One alternative version of a phrase's file (same cut, other processing). */
+export interface PhraseVariantDef {
+  src: SourceList;
+  /** Measured integrated loudness of this version (LUFS). */
+  lufs?: number;
+}
+
 export interface MusicPhraseDef {
   /** Stable id (lower-case, digits, dashes); files in public/audio/music/phrases/<id>.* (moment pieces: moments/<id>.*). */
   id: string;
@@ -137,6 +152,13 @@ export interface MusicPhraseDef {
   credit: MusicCredit;
   /** ISO date (YYYY-MM-DD) the owner approved the phrase. */
   approvedOn: string;
+  /**
+   * Restored historic recordings: which version `src` / `lufs` hold (the default, chosen from the restoration metrics),
+   * and every version by name. `?music=raw` or `?music=denoised` plays the other one for A/B listening
+   * (applyPhraseVariant).
+   */
+  variant?: PhraseVariant;
+  variants?: Partial<Record<PhraseVariant, PhraseVariantDef>>;
 }
 
 export interface MusicManifest {
@@ -176,6 +198,46 @@ export function phraseGain(p: Pick<MusicPhraseDef, 'gain' | 'lufs'>): number {
 /** Base URL of the music files (Vite serves public/ at the root). */
 export const MUSIC_BASE = 'audio/music/';
 
+/**
+ * The private manifest (US-risky historic recordings, gitignored in private-assets/audio/moments/): served and built
+ * under `audio/music/private/` by vite.config.ts when the folder exists; its `src` paths start with `private/`.
+ */
+export const PRIVATE_MANIFEST = 'private/manifest.json';
+export const PRIVATE_PREFIX = 'private/';
+
+/**
+ * The phrase with the requested version in `src` / `lufs` (and `variant`); unchanged when it has no such version.
+ * Pure: used by the game for `?music=raw|denoised` and by the checks.
+ */
+export function applyPhraseVariant(p: MusicPhraseDef, want: PhraseVariant | null): MusicPhraseDef {
+  const v = want ? p.variants?.[want] : undefined;
+  if (!want || !v || p.variant === want) {
+    return p;
+  }
+  return { ...p, src: v.src, lufs: v.lufs ?? p.lufs, variant: want };
+}
+
+/**
+ * Merges the private manifest's phrases into the public one (a private phrase never replaces a public id). Every
+ * private phrase must point into `private/`: a US-risky file must never be looked up in public/.
+ */
+export function mergePrivatePhrases(pub: MusicManifest, priv: MusicManifest): { manifest: MusicManifest; skipped: string[] } {
+  const ids = new Set([...pub.sets.map((s) => s.id), ...(pub.phrases ?? []).map((p) => p.id)]);
+  const skipped: string[] = [];
+  const add: MusicPhraseDef[] = [];
+  for (const p of priv.phrases ?? []) {
+    if (ids.has(p.id)) {
+      skipped.push(`${p.id}: id already used by the public manifest`);
+    } else if (!p.src.every((s) => s.startsWith(PRIVATE_PREFIX)) || !Object.values(p.variants ?? {}).every((v) => v.src.every((s) => s.startsWith(PRIVATE_PREFIX)))) {
+      skipped.push(`${p.id}: private phrases must live under ${PRIVATE_PREFIX}`);
+    } else {
+      ids.add(p.id);
+      add.push(p);
+    }
+  }
+  return { manifest: { ...pub, phrases: [...(pub.phrases ?? []), ...add] }, skipped };
+}
+
 /** Seconds per bar and per loop. */
 export function barSeconds(set: Pick<MusicSetDef, 'bpm' | 'beatsPerBar'>): number {
   return (60 / set.bpm) * set.beatsPerBar;
@@ -195,7 +257,14 @@ export function stemsOf(set: MusicSetDef): StemRole[] {
 /** Credit line for the credits screen and the source panel (Turkish, player-facing). */
 export function creditLine(set: Pick<MusicSetDef, 'credit'>): string {
   const c = set.credit;
-  const licence = c.licence === 'original' ? 'Seventeen Skies için özgün' : c.licence.replace(/-/g, ' ');
+  const licence =
+    c.licence === 'original'
+      ? 'Seventeen Skies için özgün'
+      : c.licence === 'public-domain'
+        ? 'kamu malı'
+        : c.licence === 'public-domain-tr'
+          ? 'Türkiye’de kamu malı'
+          : c.licence.replace(/-/g, ' ');
   return c.attribution ? `${c.attribution} (${licence})` : `“${c.title}”, ${c.author} (${licence})`;
 }
 
@@ -222,6 +291,11 @@ export interface ValidateOptions {
   exists?: (path: string) => boolean;
   /** Tolerance (s) for durations against the grid and against each other. Default 0.02 s (about a video frame). */
   toleranceSec?: number;
+  /**
+   * The public manifest (public/audio/music/manifest.json): US-risky recordings (`public-domain-tr`) and files under
+   * `private/` are errors there; they belong in the private manifest only.
+   */
+  publicManifest?: boolean;
 }
 
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -235,7 +309,7 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim().len
 type IssueFn = (path: string, message: string) => void;
 
 /** Credit, licence and approval rules shared by sets and phrases (paths relative to the entry). */
-function validateCredit(s: Record<string, unknown>, err: IssueFn): void {
+function validateCredit(s: Record<string, unknown>, err: IssueFn, opts: ValidateOptions = {}): void {
   if (!isStr(s.approvedOn) || !DATE_RE.test(s.approvedOn)) {
     err('.approvedOn', 'approvedOn (YYYY-MM-DD) is required: every music asset is approved by the owner first');
   }
@@ -254,11 +328,14 @@ function validateCredit(s: Record<string, unknown>, err: IssueFn): void {
     err('.credit.licence', `licence must be one of ${MUSIC_LICENCES.join(', ')}`);
   } else {
     if (c.licence !== 'original' && !isStr(c.sourceUrl)) {
-      err('.credit.sourceUrl', 'sourceUrl is required for CC licences');
+      err('.credit.sourceUrl', 'sourceUrl is required for CC and public-domain licences');
     }
-    if (c.licence.startsWith('CC-BY') && !isStr(c.attribution)) {
-      err('.credit.attribution', 'attribution text is required for CC-BY');
+    if ((c.licence.startsWith('CC-BY') || c.licence.startsWith('public-domain')) && !isStr(c.attribution)) {
+      err('.credit.attribution', 'attribution text is required for CC-BY and historic public-domain recordings');
     }
+  }
+  if (opts.publicManifest && c.licence === 'public-domain-tr') {
+    err('.credit.licence', 'public-domain-tr (US-risky) recordings must not ship from public/: use the private manifest');
   }
   if (c.sourceUrl !== undefined && (!isStr(c.sourceUrl) || !/^https:\/\//.test(c.sourceUrl))) {
     err('.credit.sourceUrl', 'sourceUrl must be an https URL');
@@ -274,6 +351,8 @@ function validateSources(path: string, src: unknown, err: IssueFn, opts: Validat
   for (const p of src as string[]) {
     if (p.startsWith('/') || p.includes('..') || /^[a-z]+:/i.test(p)) {
       err(path, `"${p}" must be a relative path inside public/audio/music/`);
+    } else if (opts.publicManifest && p.startsWith(PRIVATE_PREFIX)) {
+      err(path, `"${p}" is a private file: list it in the private manifest, not in public/audio/music/manifest.json`);
     } else if (!AUDIO_EXT_RE.test(p)) {
       err(path, `"${p}" is not an audio file (opus, ogg, m4a, mp3...)`);
     } else if (opts.exists && !opts.exists(p)) {
@@ -291,6 +370,45 @@ function validateTags(tags: unknown, err: IssueFn, warn: IssueFn, known: readonl
   for (const t of tags as string[]) {
     if (!known.includes(t)) {
       warn('.tags', `unknown tag "${t}" (the default rules ignore it)`);
+    }
+  }
+}
+
+/** `variant` / `variants` of a restored recording: the named default exists and matches `src`; files like `src`. */
+function validateVariants(p: Record<string, unknown>, err: IssueFn, opts: ValidateOptions): void {
+  if (p.variants === undefined) {
+    if (p.variant !== undefined) {
+      err('.variant', 'variant needs variants');
+    }
+    return;
+  }
+  if (!isObj(p.variants) || Object.keys(p.variants).length === 0) {
+    err('.variants', 'variants must be an object keyed by version (denoised, raw)');
+    return;
+  }
+  for (const [name, v] of Object.entries(p.variants)) {
+    const at = `.variants.${name}`;
+    if (!(PHRASE_VARIANTS as readonly string[]).includes(name)) {
+      err(at, `unknown variant "${name}" (${PHRASE_VARIANTS.join(', ')})`);
+      continue;
+    }
+    if (!isObj(v)) {
+      err(at, 'variant must be an object {src, lufs?}');
+      continue;
+    }
+    validateSources(`${at}.src`, v.src, err, opts);
+    if (v.lufs !== undefined && (!isNum(v.lufs) || v.lufs < -40 || v.lufs > -6)) {
+      err(`${at}.lufs`, 'lufs (measured integrated loudness) must be in -40..-6');
+    }
+  }
+  if (!isStr(p.variant) || !(PHRASE_VARIANTS as readonly string[]).includes(p.variant)) {
+    err('.variant', `variant (the default version: ${PHRASE_VARIANTS.join(', ')}) is required with variants`);
+  } else {
+    const def = (p.variants as Record<string, unknown>)[p.variant];
+    if (!isObj(def)) {
+      err('.variant', `the default variant "${p.variant}" is not listed in variants`);
+    } else if (JSON.stringify(def.src) !== JSON.stringify(p.src)) {
+      err('.variant', `src must be the default variant's files (${p.variant})`);
     }
   }
 }
@@ -358,7 +476,8 @@ function validatePhrases(raw: Record<string, unknown>, errors: ManifestIssue[], 
     if (p.lufs !== undefined && (!isNum(p.lufs) || p.lufs < -40 || p.lufs > -6)) {
       err('.lufs', 'lufs (measured integrated loudness) must be in -40..-6');
     }
-    validateCredit(p, err);
+    validateCredit(p, err, opts);
+    validateVariants(p, err, opts);
     if (errors.length === before) {
       good.push(p as unknown as MusicPhraseDef);
     }
@@ -428,7 +547,7 @@ export function validateManifest(raw: unknown, opts: ValidateOptions = {}): Mani
         err(`.${g}`, 'gain must be in 0..2');
       }
     }
-    validateCredit(s, err);
+    validateCredit(s, err, opts);
     // Grid length.
     const gridOk = isNum(s.bpm) && isNum(s.beatsPerBar) && isNum(s.bars);
     const loop = gridOk ? loopSeconds(s as unknown as MusicSetDef) : NaN;
