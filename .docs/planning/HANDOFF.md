@@ -1,0 +1,53 @@
+# Handoff — state on 2026-09-26 evening
+
+Written so another session can continue if this one stops. Everything finished is committed and pushed (main,
+last known commit 4f78c6e plus later merges of the cloud branch `claude/confident-bohr-wh5qqg`, which the owner merges
+as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime), never a coordinate patch.
+
+## Done today (committed)
+
+- Street layer (compiled close-range tiles) on by default at 28 landing spots (`?street=0` off); hitch work; web
+  profile (WebP, gzip, shared textures) — `src/street`, `src/world/street`, `tools/world-compiler`.
+- 26 landing spots compiled (`tools/world-compiler/districts/landing-spots.json`); compiled output `public/world/` is
+  gitignored (not on GitHub; publishing it is an open question).
+- Placement stand rule, tram tracks/beds, bridge joints fitted to OSM, city/mosque colliders, walk test for any area.
+- Parallel + per-stage cached world compiler (`--jobs`, `--check`, `--cache`); Fatih-size compile ~13.6 min under
+  load, est. 6.5–10 min idle.
+- OSM regions: real-OSM flight-scale surroundings (46 regions, 1.2 km around each spot) — `src/world/osm/regions.*`,
+  `scripts/data/osm-regions.mjs`, `public/data/osm/regions`; `?osmregions=0` A/B switch.
+- Local OSM backend: Geofabrik Turkey extract in gitignored `data/osm-src/` (`node scripts/data/osm-extract.mjs
+  download|index`); all fetch scripts default to `--source local` (minutes instead of hours on Overpass).
+- City walls kit (5 quality passes, approved CC0 textures), wall data with the approved OHM supplement; plan
+  `.docs/planning/22-city-walls.md`. Plan `.docs/planning/23-osm-feature-kits.md`.
+
+## In progress when this was written (uncommitted, in the working tree)
+
+1. **Façade modules referenced by id** (tiles keep wall shells + slot lists; modules assembled off-thread at load):
+   `tools/world-compiler/src/{modules/*,facade/*,shopfront/*,format.ts,web.ts,cli.ts}`, `src/street/modules/*`,
+   `src/street/format.ts`. Goal: new façade variants need no recompile; MB per landing should drop. Check `git diff`,
+   typecheck, finish windows+shutters end to end first, then the rest; before/after shots in `.shots/modules/`.
+2. **Compiler speed round 2** (finished, uncommitted because it shares `cli.ts` with item 1): `src/parallel/share.ts`,
+   `src/quantize.ts`, `foundation.ts`, `compress.ts`, `parallel/pool.ts`, `stage-cache.ts`, `street/markings.ts`,
+   `street/common.ts`, `street/ground.ts`, `mesh.ts`, `lib/areas.mjs`, README. Commit together with item 1 once
+   `npm run typecheck && npm run typecheck:world` pass; `--check` must stay byte-identical.
+3. **City walls placement** (just started): offline bake `compile:walls` separate from `cli.ts`, runtime streaming
+   system in `src/world/landmarks/walls/system/`, follow `.docs/planning/22-city-walls.md` steps 1–9.
+- Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
+
+## Next, in order (agreed with the owner)
+
+1. Recompile all 28 spots once items 1–2 land (`npm run compile:world -- --area <id> --landmarks none --web`).
+2. Fatih as one OSM region + compiled tiles (data from the local extract, not Overpass).
+3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
+   +4–7 ms near Kadıköy — over budget; lower `MAX_LOADED`, drop base raster copy, merge far regions).
+4. OSM feature kits first batch (pitches, pools, bus stops, fuel stations) — extend the fetch to keep those tags.
+5. Small open items: bridge joints re-refined when later regions load (`structure-system.ts`); Haydarpaşa port and
+   Hazine Kapısı as landmarks; generic "no vehicles on water" rule in life traffic; street layer test rerun on a quiet
+   machine (`node scripts/street-layer-test.mjs`); sea flicker (not reproduced — needs the owner's view/time/weather).
+
+## Working notes
+
+- Machine gets overloaded with >3 agents (load 40–90); screenshots go through one GPU queue (`scripts/snap.mjs`).
+- Before bulk fan-out, pick the tool that fits the scale (local extract, parallel compiler).
+- Commit per area; verify HEAD in an isolated `git worktree` typecheck before pushing; when merging the cloud branch,
+  stash only overlapping dirty files and pop afterwards.
