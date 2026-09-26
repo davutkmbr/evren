@@ -20,6 +20,8 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   urge: 'Dehh!',
   takeoff: 'Kalkış',
   land: 'İniş',
+  runout: 'Koşarak iniş',
+  touchgo: 'Dokun-kalk',
 };
 
 /** Largest angle of attack the tricks ask for (a margin below the stall). */

@@ -180,7 +180,7 @@ function recordAt(records: readonly FrameRecord[], t: number): FrameRecord {
 async function renderScenario(s: Scenario, o: Options, view: View, base: string): Promise<string> {
   const t0 = performance.now();
   const rig = await buildRig();
-  const rt = new PoseRuntime(rig, GROUND_Y);
+  const rt = new PoseRuntime(rig, GROUND_Y, s.terrain, s.wind ?? null);
   s.setup(rt);
   const records = rt.run({ seconds: s.seconds, renderFps: o.renderFps, script: s.script() });
   const tSim = performance.now() - t0;

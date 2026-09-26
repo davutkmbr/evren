@@ -2,7 +2,7 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: planned (agreed with the owner on 26 September 2026). Stage A starts after the pose-strip tool lands.
+Status: stage A built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -112,6 +112,36 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
 | B | Güç vuruşu, dart, kayış, sıyırma | Move checks pass; sheets approved; feel test OK |
 | C | Wingover, Immelmann / Split-S | Energy checks pass; feel test OK |
 | D | Flow, timing bonuses, HUD line, captions; race tuning | Chained runs 6–10 % faster than plain; medal targets retuned; feel test OK |
+
+### Stage A as built (awaiting the owner's feel test)
+
+- **Code:** `src/dragon/flight/ground-moves.ts` (stance, gaits, run-out, leaps; a sub-state of `grounded`, no new
+  `FlightMode`), the run-out approach in `FlightController.runOutApproachLaw`, touchdown routing in
+  `airborne.ts checkTouchdown`, pose cues in `pose.ts`, the rig's ground plane / gait / raised-wing IK in
+  `animator.ts`. Tunables: `GROUND` (stance geometry, settle), `GAIT`, `RUNOUT`, `LEAP` in `params.ts`.
+- **Gaits:** stride frequency from a speed table; the rig plants each foot for the sweep its legs reach, so a planted
+  foot moves back exactly as fast as the body goes forward. Walk (lateral sequence) → trot → gallop (hind pair, fore
+  pair, suspension phases) with a bounding body and spine flex.
+- **Touchdown:** the stance starts from the landing's pitch, height and sink and settles on springs (hind feet
+  first, the body pitching down onto the wrists as the wings fold); the wing beat finishes at the top of the stroke
+  instead of sweeping through the ground; the tail curls up by the geometry it needs near the ground.
+- **Run-out:** L fast and low over land flies a shallow approach (≤ 10°) with the airbrake scheduling the speed down,
+  a round-out, and floats while still faster than `RUNOUT.maxSpeed`. Touchdowns between 8 and 22 m/s run out:
+  bipedal strides with the wings half open while fast, then the wrists come down; Ctrl/X skids (wings as air brakes,
+  claws dig), A/D steer and lean, Space or a fresh W at ≥ 8 m/s flies out (two strides with the wings rising, then
+  the push). An edge, water or an obstacle ahead makes it leap on its own; slow, it brakes instead.
+- **Leaps:** crouch (chest low, hands and fingers raised high and back, tail down), a push-off that ramps the
+  velocity through the legs (wrists lift a beat after the hind feet), the first full downstroke at lift-off with a
+  forward-reaching stroke, legs tucked after two strokes (tired: three). Variants: vertical and bound (standing,
+  alternating), running, drop (edge ahead), tired; the most specific applies, never the same twice in a row.
+- **Checks:** `tools/headless/movement-check.ts` (gait slip and lift, touchdown continuity, wings / tail / feet
+  above the ground, run-out stop distances against the `RUNOUT` model, touch-and-go retention, push-off, first
+  stroke, leg tuck, variant rotation, hover bank); pose scenarios `trot`, `runout`, `touchgo`, `runout-edge`,
+  `leap`, `leap-run`, `leap-drop`, `leap-tired`.
+- **Bank drift:** without an environment the wind model falls back to a 4.5 m/s default wind with gusts, so the
+  headless hover held a crosswind by banking up to the near-ground limit (17°). The pose runtime now flies in still
+  air by default (the hover holds 0°); in the game the bank into a real crosswind is intended.
+- **Not yet:** the `CONTROL_HELP` rows for the run-out (UI, later), the skim over water (phase 21 / the water work).
 
 ## Controls summary (additions)
 

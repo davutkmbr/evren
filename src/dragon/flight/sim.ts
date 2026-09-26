@@ -7,9 +7,10 @@ import { stepAirborne } from './airborne';
 import { BodyAxes, BodyState } from './body';
 import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
+import { GroundMoves } from './ground-moves';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
 import { MANEUVER_LABELS, Maneuvers } from './maneuvers';
-import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, HOVER, INERTIA, MASS, PROXIMITY, STAMINA } from './params';
+import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, GROUND, HOVER, INERTIA, LEAP, MASS, PROXIMITY, STAMINA } from './params';
 import type { AssistOverrides, PilotCommand, SimEvent, SimOptions, SimWorld } from './types';
 import { createOverrides } from './types';
 import { WingBeat } from './wingbeat';
@@ -30,6 +31,8 @@ export class FlightSim {
   readonly controller = new FlightController();
   readonly targets = createControlTargets();
   readonly maneuvers = new Maneuvers();
+  /** Ground stance, run-out landing and leaping take-off state (ground-moves.ts). */
+  readonly moves = new GroundMoves();
   readonly wing: WingShape = createWingShape();
   readonly overrides: AssistOverrides = createOverrides();
   readonly options: SimOptions = { autoFlap: true, stallProtection: true, turbulence: true, thermals: true, wind: true };
@@ -165,9 +168,15 @@ export class FlightSim {
     this.contacts.configure(length, standHeight);
   }
 
-  /** Effort cap from fatigue. */
+  /** Effort cap from fatigue (a tired leap still gets its first strokes). */
   effortCap(): number {
-    return this.tired ? STAMINA.tiredEffortCap : 1;
+    if (!this.tired) {
+      return 1;
+    }
+    if (this.mode === 'takeoff' && this.moves.takeoffVariant === 'tired' && this.modeTime < LEAP.tiredBoostTime) {
+      return LEAP.tiredEffort;
+    }
+    return STAMINA.tiredEffortCap;
   }
 
   setMode(mode: FlightMode): void {
@@ -219,6 +228,7 @@ export class FlightSim {
     this.maneuvers.reset();
     this.leapCharge = 0;
     this.runTakeoff = 0;
+    this.moves.reset();
     this.aheadTimer = 0;
     this.resetFarLookahead();
     this.splashDistance = 0;
@@ -268,11 +278,15 @@ export class FlightSim {
     this.footClearance = this.agl - this.footDepth();
   }
 
-  /** Depth of the lowest point below the center of mass: belly, or hind feet (lower when pitched up). */
+  /**
+   * Depth of the lowest point below the center of mass: belly, or the feet (the hind feet, lower when pitched up;
+   * the same stance geometry the rig stands with).
+   */
   footDepth(): number {
     const legs = this.legsOut;
-    const hindDrop = Math.max(0, Math.sin(this.pitch)) * this.contacts.offsets[1].z * legs;
-    return this.contacts.bellyDepth + (this.standHeight - this.contacts.bellyDepth) * legs + hindDrop;
+    const s = Math.sin(this.pitch);
+    const feet = this.standHeight * Math.cos(this.pitch) + (s > 0 ? GROUND.hindFootZ * s : 0);
+    return this.contacts.bellyDepth + (feet - this.contacts.bellyDepth) * legs;
   }
 
   updateInertia(): void {
@@ -312,6 +326,7 @@ export class FlightSim {
     this.axes.update(this.body.quaternion);
     this.sampleSurface();
     this.maneuvers.tick(h);
+    this.moves.sinceLiftOff += h;
 
     if (this.mode === 'grounded') {
       stepGrounded(this, cmd, h);

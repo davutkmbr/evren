@@ -54,6 +54,8 @@ const _end = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 const _acc = new THREE.Vector3();
 const _invQ = new THREE.Quaternion();
+const _gn = new THREE.Vector3();
+const _gp = new THREE.Vector3();
 const _euler = new THREE.Euler();
 const _stash: THREE.Quaternion[] = Array.from({ length: 16 }, () => new THREE.Quaternion());
 const _blend = new THREE.Quaternion();
@@ -62,8 +64,43 @@ const NECK_WEIGHTS = [0.15, 0.14, 0.12, 0.11, 0.1, 0.09, 0.09, 0.09, 0.11];
 /** Height of the wrist joint above the ground in the quadrupedal stance (the knuckle pad rests on the ground). */
 const WRIST_CLEARANCE = 0.13;
 /** Hind foot stance: ball-of-foot joint height and rig-space toe pitch that put pads and claw tips on the ground. */
-const BALL_CLEARANCE = 0.06;
+const BALL_CLEARANCE = 0.08;
 const FOOT_STANCE_PITCH = 0.33;
+/**
+ * Gait geometry. The feet are planted on the ground plane (DragonPose.groundY / groundNx / groundNz) and swept
+ * back through the stance by min(sweep max, stride × MAX_DUTY): with the stride the flight model reports, a planted
+ * foot moves back exactly as fast as the body moves forward (no foot skate). Centres are the stance mid-points
+ * (rig z); the hind sweep is what the legs reach at the standing height.
+ */
+const HIND_Z = 1.85;
+const HIND_X = 0.76;
+const HIND_SWEEP = 1.75;
+const FORE_Z = -2.55;
+const FORE_X = 1.5;
+const FORE_SWEEP = 2.0;
+const MAX_DUTY = 0.68;
+/** Stride used without DragonPose.stride (m per cycle). */
+const DEFAULT_STRIDE = 2.6;
+/** Swing lift (m) at a walk and extra at a gallop. */
+const HIND_LIFT = 0.3;
+const FORE_LIFT = 0.34;
+const GALLOP_LIFT = 0.16;
+/** Legs hanging clear of the ground sit this much lower than standing (they meet the ground first, then give). */
+const HANG_EXTRA = 0.08;
+/** Hanging legs reach forward for a touchdown / trail back after a push-off (m). */
+const REACH_FORWARD = 0.6;
+const REACH_BACK = 0.75;
+/** Hind feet braced forward in a braking skid (m). */
+const SKID_BRACE = 0.7;
+/** Footfall phase offsets (fraction of a cycle) of LH, RH, LF, RF for a walk, a trot and a gallop. */
+const FOOTFALL_WALK = [0, 0.5, 0.25, 0.75];
+const FOOTFALL_TROT = [0, 0.5, 0.5, 1.0];
+const FOOTFALL_GALLOP = [0, 0.12, 0.55, 0.67];
+/** Wrist of a raised wing lifting off the ground, relative to the shoulder (rig, right side). */
+const RAISED_WRIST = [2.2, 2.6, 0.9];
+/** Tail pitch limits (total curl, rad): up to lift it clear of the ground, down to droop. */
+const TAIL_UP_LIMIT = 1.6;
+const TAIL_DOWN_LIMIT = 1.0;
 /**
  * First-person posture: with the rider looking over its head, the dragon flies with its neck stretched forward and
  * slightly down like a goose (lower neck pitched down, upper neck raised back towards level), so the skull sits
@@ -272,7 +309,8 @@ export class DragonAnimator {
     this.time += dt;
     this.povBlend += (this.povTarget - this.povBlend) * (dt > 0 ? damp(4, dt) : 1);
     const k = dt > 0 ? damp(10, dt) : 1;
-    this.smoothSpread += (pose.wingSpread - this.smoothSpread) * (dt > 0 ? damp(7, dt) : 1);
+    // Opening follows quicker than folding (a leap snaps the wings open into its first downstroke).
+    this.smoothSpread += (pose.wingSpread - this.smoothSpread) * (dt > 0 ? damp(pose.wingSpread > this.smoothSpread ? 14 : 7, dt) : 1);
     this.smoothTuck += (pose.legsTuck - this.smoothTuck) * (dt > 0 ? damp(4, dt) : 1);
     this.smoothSweep += (pose.wingSweep - this.smoothSweep) * k;
     this.smoothAmp += (pose.flapAmplitude - this.smoothAmp) * k;
@@ -286,6 +324,7 @@ export class DragonAnimator {
     smoothed.walkAmount = this.smoothWalk;
 
     this.updateFlightState(state, dt);
+    this.readGround(pose, state);
     const psi = strokePhase(pose.flapPhase);
     const amp = THREE.MathUtils.clamp(this.smoothAmp, 0, 1.5) * this.smoothSpread;
     const grounded = 1 - THREE.MathUtils.clamp(this.smoothTuck, 0, 1);
@@ -295,13 +334,19 @@ export class DragonAnimator {
     const heave = -0.13 * amp * Math.cos(psi - 0.35);
     const bodyPitch = 0.025 * amp * Math.sin(psi - 0.2);
     const wp = pose.walkPhase;
-    const walkSway = walk * 0.05 * Math.sin(wp);
-    const walkBob = walk * 0.05 * Math.cos(wp * 2);
+    // Gaits: a walk sways and bobs twice per cycle; a gallop bounds once per cycle (up in the suspension after the
+    // hind push, nose down onto the fore feet) with the spine flexing.
+    const gallop = THREE.MathUtils.clamp(this.gait - 1, 0, 1);
+    const trot = THREE.MathUtils.clamp(this.gait, 0, 1) * (1 - gallop);
+    const walkSway = walk * 0.05 * Math.sin(wp) * (1 - 0.6 * trot - 0.8 * gallop);
+    const walkBob = walk * ((0.05 + 0.03 * trot) * Math.cos(wp * 2) * (1 - gallop) + 0.1 * gallop * Math.cos(wp - 2.2));
+    const gaitPitch = walk * gallop * 0.05 * Math.sin(wp - 2.2);
+    const spineFlex = walk * gallop * 0.09 * Math.sin(wp - 1.2);
     this.root.position.set(this.rootRest.x + walkSway * 0.6, this.rootRest.y + heave + walkBob, this.rootRest.z);
-    setEuler(this.root, bodyPitch, walkSway * 0.8, walk * 0.03 * Math.sin(wp), 'YXZ');
-    setEuler(this.chest, -bodyPitch * 0.4 + grounded * 0.05, -walkSway * 0.9, 0, 'YXZ');
-    setEuler(this.lumbar, -bodyPitch * 0.3, -walkSway * 0.5, 0, 'YXZ');
-    setEuler(this.pelvis, -0.02 * grounded, walkSway * 0.6, 0, 'YXZ');
+    setEuler(this.root, bodyPitch + gaitPitch, walkSway * 0.8, walk * 0.03 * Math.sin(wp) * (1 - gallop), 'YXZ');
+    setEuler(this.chest, -bodyPitch * 0.4 + grounded * 0.05 - spineFlex * 0.5, -walkSway * 0.9, 0, 'YXZ');
+    setEuler(this.lumbar, -bodyPitch * 0.3 + spineFlex, -walkSway * 0.5, 0, 'YXZ');
+    setEuler(this.pelvis, -0.02 * grounded - spineFlex * 0.5, walkSway * 0.6, 0, 'YXZ');
 
     // --- Neck & head ---
     const neckYawTarget = THREE.MathUtils.clamp(pose.neckYaw, -1.3, 1.3);
@@ -365,7 +410,7 @@ export class DragonAnimator {
     const fold = 1 - THREE.MathUtils.clamp(this.smoothSpread, 0, 1);
     if (fold > 0.001) {
       for (const side of SIDES) {
-        this.applyWingFold(side, fold, grounded, walk, wp);
+        this.applyWingFold(side, fold, grounded * Math.max(this.foreGround, this.wingRaise), walk, wp);
       }
     }
 
@@ -444,7 +489,9 @@ export class DragonAnimator {
     for (let i = 0; i < n; i++) {
       const k = i / (n - 1);
       const baseYaw = THREE.MathUtils.clamp(pose.tailYaw, -1.4, 1.4) / n;
-      const basePitch = THREE.MathUtils.clamp(pose.tailPitch, -1.0, 1.0) / n;
+      // Lifting (negative pitch) is carried more by the root, so the tail rises as a whole rather than curling.
+      const tailPitch = THREE.MathUtils.clamp(pose.tailPitch, -TAIL_UP_LIMIT, TAIL_DOWN_LIMIT);
+      const basePitch = tailPitch < 0 ? (tailPitch * (1.5 - k)) / (n * (1.5 - 0.5)) : tailPitch / n;
       const inertialYaw = -yawRate * 0.045 * (0.3 + k);
       const inertialPitch = pitchRate * 0.035 * (0.3 + k) - _acc.y * 0.0012 * k;
       const wave = amp * 0.05 * Math.sin(psi - 1.3 - i * 0.32) * (0.4 + k);
@@ -526,12 +573,19 @@ export class DragonAnimator {
       _stash[4].copy(bones.humerus.quaternion);
       _stash[5].copy(bones.forearm.quaternion);
       _stash[6].copy(bones.hand.quaternion);
-      // Ground stance: IK the wrist onto the ground (lateral-sequence walk: LH, LF, RH, RF), elbow folded back
-      // and up beside the flank.
-      const phase = wp + (side === 'L' ? Math.PI * 0.5 : Math.PI * 1.5);
-      this.footCycle(phase, 1.5);
-      const ground = -STANDING_ROOT_HEIGHT + WRIST_CLEARANCE;
-      _target.set(1.5 * sgn, ground + this.footLift * walk, -2.55 + this.footOffset * walk);
+      // Ground stance: IK the wrist onto the ground plane (footfall of the gait), elbow folded back and up beside
+      // the flank.
+      const fore = this.sweepFor(FORE_SWEEP);
+      const lift = FORE_LIFT + GALLOP_LIFT * THREE.MathUtils.clamp(this.gait - 1, 0, 1);
+      this.footCycle(wp + Math.PI * 2 * this.footfall[side === 'L' ? 2 : 3], fore.sweep, fore.duty, lift);
+      const fz = FORE_Z + this.footOffset * walk;
+      _target.set(FORE_X * sgn, this.planeY(FORE_X * sgn, fz) + WRIST_CLEARANCE + this.footLift * walk, fz);
+      // Raised wings leaving the ground (the push-off): the wrist rises up and out beside the shoulder, so the arm
+      // lifts straight into the opening wing instead of sagging through a folded pose.
+      const rise = this.wingRaise * (1 - this.foreGround);
+      if (rise > 0.001) {
+        _target.lerp(_dir2.copy(shoulder).add(_dir.set(RAISED_WRIST[0] * sgn, RAISED_WRIST[1], RAISED_WRIST[2])), rise);
+      }
       _pole.copy(shoulder).add(_dir.set(0.5 * sgn, 0.75, 1.8));
       solveTwoBone(shoulder, _target, rest.l1, rest.l2, _pole, _mid, _end);
       _up.set(sgn, 0.15, 0.1);
@@ -539,16 +593,26 @@ export class DragonAnimator {
       aimBoneUp(bones.forearm, _qa, rest.fore, _restUp, _dir.subVectors(_end, _mid), _up, _qb);
       // Z-fold: the hand and first phalanges run back up along the forearm, the outer phalanges fold down and
       // back along the flank (bat / pterosaur quadrupedal stance), so no finger bundle sticks up like a sail.
+      // Raised (the crouch before a leap): hand and fingers stand high and back, half spread, ready to open.
+      const raise = this.wingRaise;
       _dir.subVectors(_mid, _end).normalize().add(_dir2.set(0.06 * sgn, -0.05, 0.3)).normalize();
+      if (raise > 0.001) {
+        _dir2.set(0.5 * sgn, 1, 0.4).normalize();
+        _dir.lerp(_dir2, raise).normalize();
+      }
       aimBoneUp(bones.hand, _qb, rest.hand, _restUp, _dir, _up, _qc);
       for (let f = 0; f < FINGERS.length; f++) {
-        _euler.set(0, (FINGERS[f].angle - FAN_MID) * sgn * 0.97, 0, 'YZX');
+        _euler.set(0, (FINGERS[f].angle - FAN_MID) * sgn * 0.97 * (1 - 0.55 * raise), 0, 'YZX');
         _q2.copy(_qc).multiply(_q3.setFromEuler(_euler));
         _dir2.set((0.1 + 0.015 * f) * sgn, 0.06 - 0.03 * f, 1).normalize();
         aimBone(bones.fingerB[f], _q2, this.fingerRestB[side][f], _dir2);
+        if (raise > 0.001) {
+          // Outer phalanges carry on from the first ones instead of folding down.
+          bones.fingerB[f].quaternion.slerp(_qa.identity(), raise * 0.85);
+        }
       }
-      // Thumb points forward, its claw resting on the ground ahead of the wrist.
-      aimBone(bones.thumb, _qc, this.thumbRest[side], _thumbTarget.set(0.3 * sgn, 0.12, -1));
+      // Thumb points forward along the ground, its claw resting on it ahead of the wrist.
+      aimBone(bones.thumb, _qc, this.thumbRest[side], _thumbTarget.set(0.3 * sgn, 0.12 + this.planeNz / this.planeNy, -1));
       blendFrom(bones.humerus, _stash[4], grounded);
       blendFrom(bones.forearm, _stash[5], grounded);
       blendFrom(bones.hand, _stash[6], grounded);
@@ -562,9 +626,10 @@ export class DragonAnimator {
     blendFrom(bones.forearm, _stash[1], e);
     blendFrom(bones.hand, _stash[2], e);
     blendFrom(bones.thumb, _stash[3], e);
-    // Fingers close like a fan.
+    // Fingers close like a fan (half open while raised).
+    const fan = 0.97 * (1 - 0.55 * this.wingRaise * grounded);
     for (let f = 0; f < FINGERS.length; f++) {
-      setEuler(bones.fingerA[f], 0, (FINGERS[f].angle - FAN_MID) * sgn * 0.97, 0, 'YZX');
+      setEuler(bones.fingerA[f], 0, (FINGERS[f].angle - FAN_MID) * sgn * fan, 0, 'YZX');
       blendFrom(bones.fingerA[f], _stash[8 + f], e);
       blendFrom(bones.fingerB[f], _stash[12 + f], e);
     }
@@ -572,21 +637,94 @@ export class DragonAnimator {
 
   private footOffset = 0;
   private footLift = 0;
+  /** 0 in the stance, rising to 1 mid-swing (toe curl). */
+  private footSwing = 0;
+  /* Ground plane in the rig frame (n · p = -planeD) and gait of the current frame. */
+  private planeNx = 0;
+  private planeNy = 1;
+  private planeNz = 0;
+  private planeD = STANDING_ROOT_HEIGHT;
+  private gait = 0;
+  private stride = DEFAULT_STRIDE;
+  private readonly footfall = [0, 0.5, 0.25, 0.75];
+  private foreGround = 0;
+  private wingRaise = 0;
+  private heelLift = 0;
+  private legReach = 0;
+  private skid = 0;
 
-  /** Foot trajectory for a phase: sets footOffset (m, + = backward) and footLift (m). */
-  private footCycle(phase: number, stride: number): void {
+  /** Height (rig y) of the ground plane at rig (x, z). */
+  private planeY(x: number, z: number): number {
+    return (-this.planeD - this.planeNx * x - this.planeNz * z) / this.planeNy;
+  }
+
+  /**
+   * Reads the ground plane and the gait from the pose (defaults: standing plane, walk). The plane comes in world
+   * terms and is turned into the rig frame with the rendered transform (the physics state may be a substep ahead).
+   */
+  private readGround(pose: Readonly<DragonPose>, state: DragonState | undefined): void {
+    const groundY = pose.groundY;
+    if (state && groundY !== undefined && Number.isFinite(groundY)) {
+      const wx = THREE.MathUtils.clamp(pose.groundNx ?? 0, -0.9, 0.9);
+      const wz = THREE.MathUtils.clamp(pose.groundNz ?? 0, -0.9, 0.9);
+      _invQ.copy(state.quaternion).invert();
+      _gn.set(wx, Math.sqrt(Math.max(0.05, 1 - wx * wx - wz * wz)), wz).applyQuaternion(_invQ);
+      // A point of the plane (the ground straight below the origin) in the rig frame.
+      _gp.set(0, groundY - state.position.y, 0).applyQuaternion(_invQ);
+      if (_gn.y < 0.2) {
+        _gn.set(0, 1, 0);
+      }
+      this.planeNx = _gn.x;
+      this.planeNy = _gn.y;
+      this.planeNz = _gn.z;
+      this.planeD = -_gn.dot(_gp);
+    } else {
+      this.planeNx = 0;
+      this.planeNy = 1;
+      this.planeNz = 0;
+      this.planeD = STANDING_ROOT_HEIGHT;
+    }
+    this.gait = THREE.MathUtils.clamp(pose.gait ?? 0, 0, 2);
+    this.stride = Math.max(0, pose.stride ?? DEFAULT_STRIDE);
+    const g = this.gait;
+    for (let i = 0; i < 4; i++) {
+      this.footfall[i] = g <= 1 ? THREE.MathUtils.lerp(FOOTFALL_WALK[i], FOOTFALL_TROT[i], g) : THREE.MathUtils.lerp(FOOTFALL_TROT[i], FOOTFALL_GALLOP[i], g - 1);
+    }
+    this.foreGround = THREE.MathUtils.clamp(pose.foreGround ?? 1, 0, 1);
+    this.wingRaise = THREE.MathUtils.clamp(pose.wingRaise ?? 0, 0, 1);
+    this.heelLift = THREE.MathUtils.clamp(pose.heelLift ?? 0, 0, 1);
+    this.legReach = THREE.MathUtils.clamp(pose.legReach ?? 0, -1, 1);
+    this.skid = THREE.MathUtils.clamp(pose.skid ?? 0, 0, 1);
+  }
+
+  /**
+   * Foot trajectory for a phase (rad): sets footOffset (m, + = backward), footLift (m) and footSwing. The stance
+   * sweeps back by `sweep` in the `duty` share of the cycle; the swing brings the foot forward, lifted by `lift`.
+   */
+  private footCycle(phase: number, sweep: number, duty: number, lift: number): void {
     const TWO_PI = Math.PI * 2;
     const p = (((phase % TWO_PI) + TWO_PI) % TWO_PI) / TWO_PI;
-    const stance = 0.64;
-    if (p < stance) {
-      this.footOffset = (p / stance - 0.5) * stride;
+    if (p < duty) {
+      this.footOffset = (p / duty - 0.5) * sweep;
       this.footLift = 0;
+      this.footSwing = 0;
       return;
     }
-    const t = (p - stance) / (1 - stance);
+    const t = (p - duty) / (1 - duty);
     const s = t * t * (3 - 2 * t);
-    this.footOffset = (0.5 - s) * stride;
-    this.footLift = Math.sin(t * Math.PI) * 0.28;
+    this.footOffset = (0.5 - s) * sweep;
+    this.footSwing = Math.sin(t * Math.PI);
+    this.footLift = this.footSwing * lift;
+  }
+
+  /** Stance sweep (m) and duty factor for a leg whose longest planted sweep is `maxSweep`. */
+  private sweepFor(maxSweep: number): { sweep: number; duty: number } {
+    const stride = this.stride;
+    if (stride < 1e-3) {
+      return { sweep: 0, duty: MAX_DUTY };
+    }
+    const sweep = Math.min(maxSweep, stride * MAX_DUTY);
+    return { sweep, duty: sweep / stride };
   }
 
   private applyLeg(side: Side, grounded: number, walk: number, wp: number, amp: number, psi: number): void {
@@ -605,15 +743,28 @@ export class DragonAnimator {
     for (let i = 0; i < 4; i++) {
       _stash[4 + i].copy(bones.list[i].quaternion);
     }
-    const phase = wp + (side === 'L' ? 0 : Math.PI);
-    this.footCycle(phase, 1.7);
-    const offset = this.footOffset;
-    const lift = this.footLift;
-    const ground = -STANDING_ROOT_HEIGHT;
+    const hind = this.sweepFor(HIND_SWEEP);
+    const liftHeight = HIND_LIFT + GALLOP_LIFT * THREE.MathUtils.clamp(this.gait - 1, 0, 1);
+    this.footCycle(wp + Math.PI * 2 * this.footfall[side === 'L' ? 0 : 1], hind.sweep, hind.duty, liftHeight);
+    // Braking skid: both feet braced forward, planted (the claws dig and slide).
+    const skid = this.skid;
+    const gaitW = walk * (1 - skid);
+    const lift = this.footLift * gaitW;
+    const x = HIND_X * sgn;
+    const zStance = HIND_Z + this.footOffset * gaitW - SKID_BRACE * skid;
+    const groundY = this.planeY(x, zStance) + BALL_CLEARANCE;
+    // Clear of the ground (flight with the legs down, the leap after the push) the legs hang a little lower than
+    // standing, reaching forward for a touchdown or trailing back after a push-off.
+    const hangY = -STANDING_ROOT_HEIGHT + BALL_CLEARANCE - HANG_EXTRA;
+    const air = THREE.MathUtils.smoothstep(hangY - groundY, 0, 0.6);
+    const reach = this.legReach > 0 ? -REACH_FORWARD * this.legReach : -REACH_BACK * this.legReach;
     rigTransform(this.pelvis, this.rigRoot, _p, _q);
     _hip.copy(bones.thigh.position).applyQuaternion(_q).add(_p);
-    _ball.set(0.76 * sgn, ground + BALL_CLEARANCE + lift * walk, 2.02 + offset * walk);
-    _ankle.copy(_ball).add(_dir.set(0.0, 0.46, 0.22).normalize().multiplyScalar(rest.metaLen));
+    _ball.set(x, Math.max(groundY + lift, hangY), zStance + reach * air);
+    // Push-off: the heel rises (the metatarsal stands up) and the toes push; a hanging foot points its toes.
+    const heel = this.heelLift;
+    _dir.set(0, 0.46 + 0.5 * heel, 0.22 - 0.12 * heel).normalize();
+    _ankle.copy(_ball).addScaledVector(_dir, rest.metaLen);
     _pole.copy(_hip).add(_dir.set(0.15 * sgn, -0.3, -1.0));
     solveTwoBone(_hip, _ankle, rest.l1, rest.l2, _pole, _knee, _end);
     aimBone(bones.thigh, _q, rest.thigh, _dir.subVectors(_knee, _hip));
@@ -622,8 +773,10 @@ export class DragonAnimator {
     _q2.multiply(bones.shin.quaternion);
     aimBone(bones.meta, _q2, rest.meta, _dir.subVectors(_ball, _end));
     _q2.multiply(bones.meta.quaternion);
-    // Foot: toes flat on the ground (rest toes point forward-down), lifted foot pitches toes down.
-    _euler.set(FOOT_STANCE_PITCH - lift * walk * 1.2, 0, 0, 'YXZ');
+    // Foot: toes flat on the ground plane (rest toes point forward-down); in the swing the toes curl up so the claws
+    // clear the ground; hanging feet point their toes a little.
+    const planePitch = Math.atan2(this.planeNz, this.planeNy);
+    _euler.set(FOOT_STANCE_PITCH + planePitch * (1 - air) + 0.45 * this.footSwing * gaitW - 0.35 * air, 0, 0, 'YXZ');
     _q3.setFromEuler(_euler);
     bones.foot.quaternion.copy(_q2).invert().multiply(_q3);
     const e = grounded * grounded * (3 - 2 * grounded);

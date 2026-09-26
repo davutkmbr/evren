@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, MASS, PROXIMITY, WING } from './params';
+import { takeoffLegs } from './ground-moves';
+import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, LEAP, MASS, PROXIMITY, RUNOUT, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { copyPilotCommand, createPilotCommand } from './types';
@@ -103,6 +104,8 @@ export class FlightController {
   private hoverIntegral = 0;
   flare = false;
   hoverDescent = false;
+  /** Landing: the shallow approach that touches down running (null until the landing has chosen). */
+  runOutApproach: boolean | null = null;
   /** Upset recovery (after collisions / departures): nose down, wings level, then resume. */
   upset = false;
   private diveLatched = false;
@@ -170,6 +173,7 @@ export class FlightController {
     if (mode === 'landing') {
       this.flare = false;
       this.hoverDescent = false;
+      this.runOutApproach = null;
     }
     if (mode === 'hovering' || mode === 'landing' || mode === 'takeoff') {
       this.resetHover();
@@ -629,9 +633,21 @@ export class FlightController {
     t.hover = clamp((15 - V) / 8, 0, 0.9);
     t.spread = 1;
     t.sweep = 0;
-    // Retract from wherever the legs are (a hover carries them half out).
-    t.legsOut = Math.min(sim.legsOut, 1 - k);
-    const pitchTarget = 18 * DEG - 10 * DEG * clamp(V / 14, 0, 1) - cmd.pitch * 10 * DEG;
+    // After a leap the legs stay down through the first strokes, which reach forward (full amplitude with the tips
+    // clear of the ground); otherwise they retract from wherever they are (a hover carries them half out).
+    const leapLegs = takeoffLegs(sim);
+    t.legsOut = leapLegs ?? Math.min(sim.legsOut, 1 - k);
+    if (leapLegs !== null && sim.moves.tuckTime < 0) {
+      t.sweep = LEAP.strokeSweep;
+    }
+    let pitchTarget = 18 * DEG - 10 * DEG * clamp(V / 14, 0, 1) - cmd.pitch * 10 * DEG;
+    if (sim.moves.takeoffVariant === 'drop' && sim.modeTime < LEAP.dropTime) {
+      // Off an edge: dive to gain speed while the wings snap open, beating once they are.
+      pitchTarget = LEAP.dropDive;
+      t.effort = sim.modeTime < 0.25 ? 0.3 : 1;
+      t.spreadRate = 5;
+      t.sweep = 0;
+    }
     const bankTarget = this.limitBankNearSurface(sim, clamp(cmd.roll, -1, 1) * 0.45, PROXIMITY.minAmplitudeCruise);
     _invQ.copy(sim.body.quaternion).invert();
     _feedForward.set(0, -cmd.roll * 0.35 - cmd.yaw * 0.3, 0).applyQuaternion(_invQ);
@@ -655,6 +671,18 @@ export class FlightController {
     const V = sim.airspeed;
     const v = sim.body.velocity;
     const groundSpeed = Math.hypot(v.x, v.z);
+    if (this.runOutApproach === null) {
+      const water = sim.overWater || sim.aheadWater.some((w) => w);
+      this.runOutApproach = !water && !this.flare && !this.hoverDescent && groundSpeed >= RUNOUT.approachMinSpeed && clearance <= RUNOUT.approachMaxHeight;
+    }
+    if (this.runOutApproach && sim.overWater) {
+      // Water under the approach after all: the braked approach and flare (the sea has its own landing).
+      this.runOutApproach = false;
+    }
+    if (this.runOutApproach) {
+      this.runOutApproachLaw(sim, cmd, h, t, clearance, groundSpeed);
+      return;
+    }
     if (!this.hoverDescent) {
       const flareHeight = clamp(LANDING.flareBase + LANDING.flarePerSink * Math.max(0, -v.y) + LANDING.flarePerSpeed * groundSpeed, LANDING.flareMin, LANDING.flareMax);
       if (this.flare || clearance < flareHeight || V < LANDING.flareSpeed) {
@@ -735,6 +763,36 @@ export class FlightController {
     t.brake = Math.max(t.brake, smoothstep(4, 12, groundSpeed));
     t.sweep = -0.55 - 0.45 * Math.max(1 - smoothstep(2, 7, below), smoothstep(5, 12, groundSpeed));
     t.legsOut = 1;
+  }
+
+  /**
+   * Run-out approach: a shallow glide (at most RUNOUT.approachPath) with the airbrake holding a speed schedule that
+   * falls to RUNOUT.touchdownSpeed, a round-out over the last metres (sink touchdownSink + roundOutGain × clearance)
+   * and the legs reaching down. Still too fast close to the ground, it floats at floatHeight until the brake has
+   * taken the speed out, so the feet never meet the ground faster than RUNOUT.maxSpeed.
+   */
+  private runOutApproachLaw(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets, clearance: number, groundSpeed: number): void {
+    const V = Math.max(sim.airspeed, 5);
+    const speedTarget = RUNOUT.touchdownSpeed + Math.max(clearance, 0) * RUNOUT.approachSpeedPerMetre;
+    let sink = Math.min(V * Math.sin(RUNOUT.approachPath), RUNOUT.touchdownSink + RUNOUT.roundOutGain * Math.max(clearance, 0));
+    if (groundSpeed > RUNOUT.maxSpeed - 3) {
+      sink = Math.min(sink, Math.max(0, clearance - RUNOUT.floatHeight) * 0.8);
+    }
+    const ov = sim.overrides;
+    const savedPath = ov.pathTarget;
+    const savedSpeed = ov.airspeedTarget;
+    ov.pathTarget = -Math.asin(clamp(sink / V, 0, Math.sin(RUNOUT.approachPath)));
+    ov.airspeedTarget = null;
+    this.normalLaw(sim, cmd, h, t, speedTarget);
+    ov.pathTarget = savedPath;
+    ov.airspeedTarget = savedSpeed;
+    t.brake = clamp((V - speedTarget) / 4, 0, 1);
+    if (t.brake > 0.05) {
+      t.effort = 0;
+      t.spread = 1;
+      t.sweep = -0.45 * t.brake;
+    }
+    t.legsOut = clearance < 30 ? 1 : 0.35;
   }
 
   /**
