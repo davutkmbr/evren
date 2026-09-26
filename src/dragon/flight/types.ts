@@ -53,7 +53,7 @@ export interface SimWorld {
 }
 
 /** Maneuver ids announced to the game ('maneuver' event); 'hint' explains a refused trick. */
-export type ManeuverId = 'roll' | 'loop' | 'freefall' | 'catch' | 'urge' | 'takeoff' | 'land' | 'hint';
+export type ManeuverId = 'roll' | 'loop' | 'freefall' | 'catch' | 'urge' | 'takeoff' | 'land' | 'plunge' | 'breach' | 'hint';
 
 /** One-shot sounds requested by the flight model (AudioService one-shots). */
 export type FlightSound = 'wing-snap' | 'whoosh';
@@ -66,7 +66,11 @@ export type SimEvent =
   | { type: 'landed'; point: THREE.Vector3; speed: number; water: boolean }
   /** Counted only (mode changes are read from the state). */
   | { type: 'mode' }
-  | { type: 'maneuver'; id: ManeuverId; label: string }
+  /**
+   * A maneuver started (announced to the game with its caption). Flow hooks (phase 20): `ended` marks the end of a
+   * move instead (not announced), `clean` says whether it went cleanly (no contact, no forced exit).
+   */
+  | { type: 'maneuver'; id: ManeuverId; label: string; ended?: boolean; clean?: boolean }
   | { type: 'sound'; name: FlightSound; volume: number }
   /** Camera jolt (CameraRigState.shake amount). */
   | { type: 'shake'; amount: number };

@@ -2,7 +2,7 @@
 
 Milestone: B · Chill loop · Effort: L · Depends on: 20 (movement; shares skim, breach and flow), water module, fx
 
-Status: planned (requested by the owner on 26 September 2026). Stages 1–2 can start in parallel with phase 20
+Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test. Stages 1–2 can start in parallel with phase 20
 stage B; stage 4 (underwater rendering) needs GPU review by the owner.
 
 ## Goal
@@ -66,6 +66,31 @@ Ground-effect lift keeps working and becomes the physical basis of **sıyırma**
 - **Safety:** a plunge is refused (with the existing hint) or turns into a hard skim over shallow water (bathymetry
   from geo: the seabed height), near ships, piers and the shore. The dragon never gets stuck: after a time limit or
   at low air it surfaces on its own.
+
+### Stage 3 as built
+
+- Code: `src/dragon/flight/underwater.ts` (plunge look-ahead, entry, the `underwater` flight mode, breach), tunables in
+  the `PLUNGE` block of `params.ts`; hooks in the dive floor (`controller.ts`: an armed, clear plunge removes the
+  water clearance), the free fall's automatic catch (`maneuvers.ts`: waits while plunging) and the water skim
+  (`airborne.ts`: a steep folded contact plunges; the skim leaves a breaching body alone for `PLUNGE.exitGrace`).
+- Fit water: seabed ≥ 6 m down at the entry and along the next 20 m, up to 5 m more at the entry for steeper entries
+  (the 18 m body goes in head first); no hull, pier or quay within 12 m; the coastline ≥ 30 m away. Refusals hint
+  ("Burası dalış için çok sığ", "Gemiye çok yakın, dalış yok", "İskeleye / Kıyıya / Yapıya çok yakın, dalış yok").
+- Under water: streamlined drag with the wings folded, a half-open wing brake when hands-off and fast (plunge depth
+  5–13 m from 22–80 m/s and −38° to −88°), buoyancy + sculling bring it up in 5–9 s; Space strokes (~14 m/s peaks);
+  surfacing on its own after 9 s or at low air; soft pushes out of the seabed and structures, an escape toward open
+  water from under a hull. Bubbles are small splashes where they reach the surface (true underwater bubbles: stage 4).
+- Breach keeps 60 % of the underwater speed (at least 8 m/s, climbing at least 7 m/s) into the take-off climb.
+- Vessel hulls: `src/world/life/vessels/hull-colliders.ts` registers one underwater box per vessel within 900 m of the
+  dragon (tag `vessel`, top just below the surface) and re-places it every frame (`CollisionWorld.move`).
+- Camera (until stage 4): the chase camera holds its pivot at the surface line above the dragon (1 m under it) and
+  stops following the underwater pitch and acceleration, so it follows the dragon's track just above the water with a
+  level horizon instead of diving after it or swinging with every pitch change under water.
+- Flow hooks: 'maneuver' events 'plunge' ("Dalış") and 'breach' ("Fırlama", with `clean`); the plunge's end is a
+  flight-internal event with `ended` and `clean` (no seabed / hull contact, not surfaced by force). The game-level
+  `GameEvents['maneuver']` carries id and label only; flow in phase 20 needs an optional `clean?: boolean` there (or
+  to live in the flight module, which already has it).
+- Checks: `tools/headless/plunge-check.ts`; pose strips `plunge`, `underwater`, `breach`.
 
 ## Strand 4 — Seeing under water (GPU review needed)
 
@@ -199,5 +224,5 @@ only as the far LOD and as a fallback on "low".
 - Underwater rendering is GPU-heavy and cannot be judged headless: keep it behind stage 4 and owner review.
 - Physical vessels change traffic behaviour (slower turns, drift): the navigation controller must be retuned so ferries
   still dock on time; the old kinematic path stays available as a fallback per vessel class.
-- Collisions with ships and piers under water: the collision world has their hulls only above water; add simple
-  underwater hull boxes for vessels before stage 3 ships.
+- Collisions with ships and piers under water: vessels had no colliders at all; stage 3 added underwater hull boxes
+  (above the water ships still have none: a skimming dragon passes through their upper works).

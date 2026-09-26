@@ -116,7 +116,7 @@ export class PoseDriver {
       neckYaw += 0.06 * Math.sin(time * 0.37) * (1 - sim.walkAmount);
     } else if (sim.mode === 'landing' || sim.mode === 'hovering') {
       neckPitch = -0.18 - sim.pitch * 0.55;
-    } else if (sim.mode === 'diving') {
+    } else if (sim.mode === 'diving' || sim.mode === 'underwater') {
       neckPitch = -sim.pitch * 0.15 - 0.05;
     } else {
       neckPitch = -sim.pitch * 0.38 + 0.05;
@@ -135,6 +135,10 @@ export class PoseDriver {
     if (onSurface) {
       tailYaw += 0.16 * Math.sin(sim.walkPhase + 0.9) * sim.walkAmount + 0.07 * Math.sin(time * 0.6);
       tailPitch = sim.mode === 'swimming' ? -0.08 : 0.06 + 0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount;
+    } else if (sim.mode === 'underwater') {
+      // Streamlined, with a slow side-to-side sweep of the tail.
+      tailYaw += 0.18 * Math.sin(time * 2.4);
+      tailPitch = 0.03 * Math.sin(time * 2.4 + 1.1);
     } else {
       const nearGround = 1 - smoothstep(4, 14, sim.footClearance);
       tailPitch =
@@ -213,7 +217,8 @@ export class PoseDriver {
     right += both;
     let tuck = airborne ? smoothstep(45, 85, sim.airspeed) * 0.45 : 0;
 
-    const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6);
+    // Under water the rider lies flat on the neck and holds on, like in a fall.
+    const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6) || sim.mode === 'underwater';
     if (falling) {
       // Folded wings: flat on the neck, reins given all the way.
       left = right = -1;

@@ -310,7 +310,7 @@ export interface GeoQuery {
 /* Dragon (model: dragon/model → 'rig', physics: dragon/flight → 'dragon') */
 /* ------------------------------------------------------------------ */
 
-export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming';
+export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming' | 'underwater';
 
 export interface DragonState {
   /** Root transform driven by physics. The rig root is parented under it. Origin = center of mass. */

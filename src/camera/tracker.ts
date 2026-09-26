@@ -198,7 +198,7 @@ export class DragonTracker {
       this.loadFactor = _tmp.length() / GRAVITY;
 
       // Falling with next to nothing holding the dragon up: the stomach-drop cues (camera lag, FOV, flutter).
-      const airborne = this.mode !== 'grounded' && this.mode !== 'swimming';
+      const airborne = this.mode !== 'grounded' && this.mode !== 'swimming' && this.mode !== 'underwater';
       const falling = airborne && this.velocity.y < -2;
       const weightless = falling ? smoothstep(0.6, 0.2, this.loadFactor) : 0;
       this.weightless += (weightless - this.weightless) * expAlpha(weightless > this.weightless ? 8 : 3, dt);

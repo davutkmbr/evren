@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, MASS, PROXIMITY, WING } from './params';
+import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, MASS, PLUNGE, PROXIMITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { copyPilotCommand, createPilotCommand } from './types';
@@ -357,14 +357,15 @@ export class FlightController {
         }
         this.holdPath(protect ? Math.min(sim.gamma, this.gammaMax) : sim.gamma);
         this.diveLatched = cmd.dive;
-        floor = this.groundFloor(sim, PROXIMITY.pilotLand, PROXIMITY.pilotWater, 1.2 + V / 40);
+        // An armed, clear plunge lets the dive into the water (underwater.ts).
+        floor = this.groundFloor(sim, PROXIMITY.pilotLand, sim.dive.clear ? PLUNGE.floorWater : PROXIMITY.pilotWater, 1.2 + V / 40);
         tuck = cmd.dive && floor < sim.gamma - 3 * DEG;
       } else if (cmd.dive) {
         if (!this.diveLatched) {
           this.diveLatched = true;
           this.gammaHold = Math.min(sim.gamma, ENVELOPE.divePath);
         }
-        floor = this.groundFloor(sim, PROXIMITY.diveLand, PROXIMITY.diveWater, 2 + V / 25);
+        floor = this.groundFloor(sim, PROXIMITY.diveLand, sim.dive.clear ? PLUNGE.floorWater : PROXIMITY.diveWater, 2 + V / 25);
         pitchRate = clamp(1.6 * (Math.max(this.gammaHold, floor) - sim.gamma), -0.7, 0.6) * cosBank;
         tuck = floor < this.gammaHold + 2 * DEG;
       } else {
