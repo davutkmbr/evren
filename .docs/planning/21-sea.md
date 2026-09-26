@@ -7,7 +7,7 @@ flight), awaiting the owner's GPU review; stage 3 built (plunge, under water, br
 and the feel test; stage 4 built (underwater camera, look and audio), awaiting the owner's GPU review; stage 5 swimming
 part built, awaiting the pose-sheet approval and the feel test; stage 7b built (vessels as floating rigid bodies),
 awaiting the owner's look in game; stage 7a built (wind-wave spectrum, wave particles), awaiting the owner's GPU
-review.
+review; stage 7c built (foam and spray from the water's state), awaiting the owner's GPU review.
 
 ## Goal
 
@@ -30,8 +30,10 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
 - **Vessel motion** (stage 7b): every vessel is a floating rigid body on the real waves (`vessels/physics/`).
 - **Wave field** (stage 7a): the Gerstner amplitudes come from a fetch-limited JONSWAP spectrum of the wind; hulls,
   the dragon and splashes emit wave particles that the water service adds to every query and the surface draws from a
-  splat window, so the Kelvin wakes are real water other hulls and the dragon float on. The ribbon wakes
-  (`wakes/wake-trails.ts`) remain as the foam line until 7c.
+  splat window, so the Kelvin wakes are real water other hulls and the dragon float on.
+- **Foam and spray** (stage 7c): an advected foam field around the camera fed by whitecaps from the spectrum,
+  breaking wake crests, surf, hulls, the dragon and splashes; spray (spindrift, bow spray, rooster tails) from the
+  same physics. The ribbon wakes (`wakes/wake-trails.ts`) remain only as the far level of detail and on "low".
 
 ## Strand 1 — One sea for physics and pictures
 
@@ -489,7 +491,8 @@ sides (short fetch). Golden Horn peaks shorter than the lattice's 2.2 m are carr
   ping-pong simulation at 0.5–0.8 m around the dragon); the splat reuses its whole-texel placement idea.
 - **Quality tiers:** pool 384 / 1536 / 3072 / 4096, emission within 0 / 700 / 1000 / 1300 m of the camera and 250–300 m
   of the dragon; "low" has no splat (the spectrum only on screen) and CPU particles only near the dragon.
-- The ribbon wakes (`wakes/wake-trails.ts`) stay for now as the foam line and the far LOD; 7c replaces them.
+- The ribbon wakes (`wakes/wake-trails.ts`) stayed as the foam line and the far LOD; since 7c they only draw outside
+  the foam field window (and on "low").
 
 **Cost** (Node timings; browser similar, plain JS, no allocations per frame; GPU estimated):
 - CPU: ~60–90 ns per particle and update plus the grid; a ship makes 300–900 particles. Real high-preset fleet on the
@@ -655,6 +658,146 @@ wave particles from hulls (built in 7a, which replaced the analytic wake push).
 - **Spray** particles are emitted from the same breaking events (bow slamming into a wave, the dragon's plunge),
   their amount from the local energy, not from fixed timers.
 
+### Stage 7c as built (GPU review needed)
+
+**Code:** `src/world/water/foam/` (`config.ts` tunables and quality tiers, `whitecaps.ts` the breaking model,
+`foam-window.ts` bookkeeping, `foam-sources.ts` the `water.foam` service, `params.ts` per-step numbers,
+`shaders.glsl.ts` sim / stamp / water GLSL, `foam-gpu.ts` the passes, `index.ts` the controller); the water fragment
+(`shaders/water-fragment.glsl.ts`), `wave-query.ts` (`lagrangianAt`), vessel physics (`emitWaves` feeds the foam),
+the ribbon wakes (fade inside the field), `src/fx/emitters/sea-spray-emitter.ts`; contracts `WaterFoam` /
+`WaterSpraySource` (`water.foam`).
+
+**Whitecaps from the spectrum** (`whitecaps.ts`):
+- *Where:* on the most compressed crests. The horizontal Jacobian J of the Gerstner displacement comes from the very
+  slot table the shaders and the CPU evaluator read. 1 − J is to first order a sum of the slots' q·sin(phase) (q =
+  Q k A × group weight) with spread σ = √(Σq²/2); its tail is that of a sum of N = (Σq²)²/Σq⁴ sinusoids (much thinner
+  than a normal tail, ending at √(2N) σ). A point is a crest candidate while J < 1 − z_N σ, z_N the exact 5 % quantile
+  of such a sum (tabulated for N = 1..16 by convolving arcsine densities): the steepest 5 % of the local surface,
+  whether it has two chop slots (Golden Horn) or a dozen (open sea). A fixed J threshold was tried first: it either
+  missed sheltered water entirely or, near the thin tail's end, made it break everywhere.
+- *How many:* a crest breaks with probability P = activeShare × W(U10) × dev / crestShare, decided per breaking cell
+  (5 m along × 9 m across the wind, riding downwind at the local phase speed, re-rolled every 2.5 s with a per-cell
+  phase; an integer hash identical in JS and GLSL), so crest segments break together and keep breaking as they travel.
+  W = 3.84e-6 U10^3.41 (Monahan & O'Muircheartaigh 1980); dev = (ω_open / ω_local)^1.09 is the wave-development factor
+  of Zhao & Toba's (2001) breaking Reynolds number (a young short-fetch sea breaks less at the same wind), ω the
+  energy-weighted mean frequency of the slots. `activeShare` = 0.05 is the only calibrated number: the actively breaking
+  share of the coverage, the foam left behind (decaying over 5 s) makes up the rest.
+- Nothing breaks below U10 3.5 m/s. The same model runs in the field's sim (slots shorter than 2–3 texels faded out),
+  in the water fragment for the "low" tier and the sea beyond the field (crests on screen with the whole coverage W,
+  plus a statistical brightening W × dev where the waves are filtered out), and on the CPU for spindrift.
+
+**The foam field** (`foam-window.ts`, `foam-gpu.ts`, `FOAM_SIM_FRAG`): a half-float RGBA ping-pong window around the
+camera that shares the splat window's size and texel (medium 256² × 1.5 m, high 512² × 1 m, ultra 768² × 0.8 m; off
+on low), placed in whole texels, stepped at a fixed 20 Hz (at most 3 steps a frame); the window only moves on step
+frames (the water samples the field's own rectangle). Channels: r fresh / whitecap foam (e-folding 5 s), g wake foam
+(30 s), b bubbles under fresh foam (1.6 s), a slick (70 s). One pass per step:
+1. semi-Lagrangian advection along the surface current + the Stokes drift Σ A²ωk D of the local slots + a wind drift of
+   3 % U10 (bilinear between texel centres, zero outside, the scroll folded in); 2. decay; 3. sources filling toward 1:
+   breaking crests (above; a 6 % share goes to the long-lived channel as streaks), breaking wave-particle crests (the
+   splat's slope above 0.3: bow-wave and wake crests, crossing wakes; 35 % into the wake channel), surf (crests of the
+   ambient waves plus wave particles arriving within 28 m of the geo coast distance, scaled by the local Hs);
+   4. nothing over land.
+Then the frame's stamps are drawn with MAX blending (a stamp holds the field at least at its levels, so continuous
+sources never depend on the frame rate).
+
+**Stamped sources** (`foam-sources.ts`, recorded during the frame, turned into stamps in the water's preRender so the
+systems' update order never matters):
+- *Hulls* (vessel physics, every non-kinematic hull moving > 0.8 m/s within 1.5 km): stern turbulence at the transom
+  (radius 0.55 B), the propeller wash along the last max(1.2 L, 25 m) of the hull's own track (a history of stern
+  positions, so it bends with turns and restarts when a double-ender swaps ends), 0.35 B wide growing by 5 % of the
+  distance, level (0.55 + 0.45 × thrust share) × speed factor, with bubbles and slick; the bow roll along both sides of
+  the forefoot (level (Fr / 0.35)², width 0.12 B + 0.06 U); planing craft add foam along the aft chines. Beyond the
+  stamped stretch the wake channel's decay keeps the centreline white (below).
+- *The dragon:* the skim furrow swept from frame to frame (2.4 m at full wake), spray falling back at the downwash
+  ring's edge (a ring at 0.45 wingspans), the fire's boiling patch, the swimming body's wash and the wing strokes where
+  a wingtip is under water (read from the rig); splash events (plunge, breach, skim contacts) a disk of radius
+  1.2 + 2.2 × strength m. The stage 2 disturbance field keeps its fine, short-lived foam on top.
+
+**Rendering** (water fragment): the field's slick channel damps the detail bands (−45 % roughness: the glassy track);
+its coverage (r + g) shapes a lace pattern from the baked procedural foam texture (bubble web where fresh, streaks
+stretched along the drift direction as it ages) that thins out as the foam decays, fresh breaking water solid white,
+only the coverage beyond ~2 m per pixel; bubbles add a bright aquamarine patch under fresh foam; inside the field the
+shader's own caps and the analytic shore breakers step back (the lap line stays). Seen from below the field darkens
+Snell's window (−82 % of the refracted sky under full cover). Debug view `?wdebug=foam` (r / g / b channels, shader
+caps in magenta).
+
+**Ribbon wakes:** inside the foam field window they fade out (0.78–0.96 of the half side, Chebyshev distance): the
+field and the wave particles draw the near wake; the ribbons stay as the far level of detail and as the whole wake on
+"low".
+
+**Spray** (`water.foam.sprays` → `SeaSprayEmitter`, existing particle pools, budget scale + pool throttle, ≤ 360
+particles a frame): spindrift from U10 12 (full at 16): 48 candidate points per 1/60 s around the camera (radius 180 m,
+ahead of it) tested with the same whitecap criterion as the visible foam; each breaking crest found throws fine drops
+and a mist streak downwind (the number found per second follows the coverage); bow spray from hulls faster than 6 m/s
+(full at 13) scaled by the local chop (Hs) and bow slamming (heave + pitch rate), both sides; rooster tails of planing
+craft from 7 m/s. Hulls beyond 600 m throw none.
+
+**Whitecap coverage vs U10** (foam-check section 2: the CPU port of the sim on the real sea, mean coverage r + g of a
+192² × 1 m window over 140 s after a 20 s spin-up; Marmara in a lodos, the others in a poyraz):
+
+| Place | U10 3 | U10 4 | U10 6 | U10 8 | U10 10 | U10 12 | U10 14 | U10 16 |
+|---|---|---|---|---|---|---|---|---|
+| Monahan W | 0.000 % | 0.043 % | 0.173 % | 0.461 % | 0.987 % | 1.84 % | 3.11 % | 4.90 % |
+| Black Sea (poyraz) | 0.000 % | 0.051 % | 0.178 % | 0.549 % | 1.01 % | 1.81 % | 3.49 % | 5.28 % |
+| Marmara (lodos) | 0.000 % | 0.033 % | 0.172 % | 0.495 % | 1.05 % | 2.03 % | 3.02 % | 5.15 % |
+| Bosphorus (poyraz) | 0.000 % | 0.015 % | 0.047 % | 0.119 % | 0.259 % | 0.440 % | 0.769 % | 1.25 % |
+| Golden Horn (poyraz) | 0.000 % | 0.023 % | 0.079 % | 0.156 % | 0.260 % | 0.540 % | 0.980 % | 1.49 % |
+
+Open sea within 0.72–1.19× of Monahan for U10 4..16 (0.93–1.19× from 6); the Bosphorus gets ~0.25× and the Golden
+Horn ~0.3× of the open sea (wave development), all growing with the wind; none below U10 3.5.
+
+**Wake foam behind a ferry** (41.7 × 9.6 × 2 m at 7 m/s, thrust 60 %, flat calm, high tier): centreline coverage 1.00
+at the stern, 0.80 at 50 m, 0.55 at 100 m, 0.32 at 200 m, 0.20 at 300 m; e-folding length 195 m (U × wake life = 210 m), foamy (≥ 0.25) for 250 m;
+turning at 0.04 rad/s the foam lies on the arc behind the stern (0.65), not on the straight tangent (0.14).
+
+**Cost** (Node timings for the CPU; the GPU estimated, no GPU here):
+- CPU: whitecap model ~1 µs a frame; window + sources with 12 hulls in view + spindrift sampling ~0.08 ms a frame.
+- GPU on "high": a sim step is 512² fragments of ~26 slots + 4 texel fetches + a splat lookup (≈ 540 ALU): ≈ 0.035 ms,
+  on one frame in three at 60 fps (≈ 0.012 ms averaged); stamps < 0.01 ms; water shading ≈ 70 ALU + 2 fetches per
+  pixel ≈ 0.015 ms at 1600 × 900. Total ≈ 0.04–0.06 ms on a step frame (budget 0.3 ms). "Low": only the shader caps
+  (a few ALU more in the existing Gerstner loop).
+
+**Tunables:** `WHITECAPS` (activeShare, crestShare, edge, devExp / devMin, cell size and time), `FOAM_SIM` (channel
+lifetimes, fill rates, wind drift, particle breaking slope, surf band / crest, slot fade), `HULL_FOAM` (bow roll, stern
+radius, wash width / spread / levels, planing chines), `DRAGON_FOAM`, `SPRAY` and `foamQualityFor` in
+`foam/config.ts`; `SEA_SPRAY` (particle counts) in `sea-spray-emitter.ts`; `WAKE_NEAR_FADE` in `wake-trails.ts`.
+
+**Checks:** `tools/headless/foam-check.ts` (`--quick`): the crest table against a Monte Carlo of sums of sinusoids
+(within 0.4 points for N = 1..13) and the crest share of the real open sea (0.5–1.5× of 5 %); the port's Gerstner sums
+equal `WaveQuery.lagrangianAt` (< 1e-5); the breaking cells break at the given probability; coverage vs U10 (open sea
+within 0.5–2× of Monahan for U10 6..16, growing with the wind, fewer in the Bosphorus and the Golden Horn, none at
+U10 3, many at 14 vs few at 6); the ferry's decay length within 30 % of U × wake life and foamy for 200–600 m, the wash
+following a turn; a patch drifting with a uniform current (36.0 m of 36 m), the real Bosphorus current (direction
+within 10°) and the open sea's wind + Stokes drift (within 20 %); no channel sum or maximum grows without sources;
+whole-texel scrolling keeps the field in place exactly, big jumps and quality changes clear, the fixed-step clock gives
+200 steps in 10 s at 24 / 60 / 144 fps, stamp culling and the queue limit; the ferry's wake at dt 1/24, 1/60, 1/144 and
+jittered within 0.1 %; NaN inputs ignored; the skim furrow, splashes and wing strokes; spindrift only in strong wind,
+bow spray and rooster tails from fast boats only; CPU timings, the GPU estimate and the tiers; shader structure. The
+sim, stamp, water and wake shaders parse with @shaderfrog/glsl-parser (run from a scratch directory, not a
+dependency). The waves, water (full and `--quick`), vessels, lowflight, underwater, plunge and races checks pass.
+
+**What the owner should look at (GPU):**
+
+1. Wind: poyraz at `?wu10=6`, `10`, `14`, `16` over the Black Sea mouth and the open Marmara (lodos): a few
+   whitecaps at 6, many at 14+, each a crest segment breaking for a moment and leaving a lacy patch that streaks
+   downwind and fades within ~5–10 s; the Bosphorus with fewer, the Golden Horn with fewest. Tunables:
+   `WHITECAPS.activeShare`, `cellAlong` / `cellAcross` / `cellTime`, `FOAM_SIM.capLife`, `capToWake`.
+2. A vapur or ferry passing (`?wu10=3`), camera low behind it: a white turbulent centreline from the stern that stays
+   foamy for a few hundred metres, widening and breaking into streaks, a glassy slick track, the bow roll along the
+   forefoot, foam on the first steep wake crests; the wake bends with the turns. Tunables: `HULL_FOAM.wash*`,
+   `FOAM_SIM.wakeLife`, `particleBreak`.
+3. The field window's edge (~250 m on high): the ribbon wake takes over without a gap or a double wake; no visible
+   square (the field fades out over its outer 8 %).
+4. The dragon: a skim leaves a foam furrow that lasts tens of seconds; plunge / breach leave foam disks; swimming
+   strokes churn foam at the wingtips; a hover's downwash leaves a foam ring.
+5. Surf: exposed beaches and quays in a lodos (`?wu10=14`): crests breaking into foam along the shore that drifts off.
+6. Spray: spindrift blowing off crests at `?wu10=15`–`16`; bow spray from fast boats in chop; rooster tails of
+   planing motorboats.
+7. From below (plunge in a lodos): foam patches as dark blotches in the Snell window.
+8. `?wdebug=foam` shows the channels; `__water.foam` (window, sources.stats, model); cost with `?stats=1` on "high"
+   (budget ≤ 0.3 ms for the foam passes and shading).
+9. "Low": no field; whitecaps on the crests from the spectrum, the ribbon wakes' foam line as before, no errors.
+
 ### 7d. Level of detail and budgets
 | Range | Wave field | Vessels | Foam |
 |---|---|---|---|
@@ -712,7 +855,7 @@ only as the far LOD and as a fallback on "low".
 | 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
 | 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes (built) | Wake-angle and energy checks pass; budgets met; owner GPU review |
 | 7b | Vessels as floating rigid bodies with LOD; propulsion/rudder forces; moorings | Period, stability and interaction checks pass; CPU ≤ 1 ms |
-| 7c | Foam and spray from breaking, propellers and impacts; advected foam texture | Owner GPU review; ≤ 0.3 ms |
+| 7c | Foam and spray from breaking, propellers and impacts; advected foam texture (built) | Owner GPU review; ≤ 0.3 ms |
 
 ## Risks
 
