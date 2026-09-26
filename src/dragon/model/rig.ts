@@ -78,6 +78,8 @@ function makeSkinned(geometry: THREE.BufferGeometry, material: THREE.Material, s
 }
 
 /** The procedural dragon + rider: skinned meshes sharing one skeleton, animated procedurally from DragonPose. */
+const _airflowWorld = new THREE.Vector3();
+
 export class DragonRigImpl implements DragonRig {
   readonly root = new THREE.Group();
   readonly riderHead = new THREE.Object3D();
@@ -109,6 +111,7 @@ export class DragonRigImpl implements DragonRig {
   character?: RiderCharacter;
   /** The Blender-pipeline rider while / after it loads. */
   humanLoading?: Promise<HumanRider>;
+  human?: HumanRider;
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
@@ -177,7 +180,8 @@ export class DragonRigImpl implements DragonRig {
 
     if (opts.humanRider) {
       this.humanLoading = loadHumanRider(opts.humanRider, this.skel.bone('chest'), LANDMARKS.chest).then((h) => {
-        console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes`);
+        console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes, ${h.wind.chains.length} wind chains`);
+        this.human = h;
         return h;
       });
     }
@@ -286,6 +290,10 @@ export class DragonRigImpl implements DragonRig {
     }
     this.riderUniforms.uAirspeed.value = o.airspeed;
     this.riderUniforms.uAirflow.value.copy(o.airflow);
+    if (this.human) {
+      _airflowWorld.copy(o.airflow).transformDirection(this.root.matrixWorld);
+      this.human.wind.update(dt, o.airspeed, _airflowWorld);
+    }
     if (this.character) {
       this.character.uniforms.uAirspeed.value = o.airspeed;
       this.character.uniforms.uAirflow.value.copy(o.airflow);

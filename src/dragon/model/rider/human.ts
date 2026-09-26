@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
+import { WindBones } from './wind-bones';
 
 /** Where the hips joint sits on the saddle (rig space). */
 export const SEAT_HIPS = new THREE.Vector3(0, 1.2, -2.52);
@@ -17,6 +18,8 @@ export interface HumanRider {
   bones: Map<string, THREE.Bone>;
   mixer: THREE.AnimationMixer;
   clips: Map<string, THREE.AnimationClip>;
+  /** Skirt panels and sash ends in the wind. */
+  wind: WindBones;
 }
 
 export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchorRest: THREE.Vector3): Promise<HumanRider> {
@@ -63,7 +66,7 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   const turned = hipsPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   root.position.copy(SEAT_HIPS).sub(turned).sub(anchorRest);
   anchor.add(root);
-  const rider = { root, meshes, bones, mixer, clips };
+  const rider = { root, meshes, bones, mixer, clips, wind: new WindBones(bones) };
   applyGarmentMaterials(rider);
   return rider;
 }
@@ -81,7 +84,7 @@ const SETS: Record<string, ClothSet> = {
   linen: { base: 'rough_linen', size: 0.27, ao: true },
   leather: { base: 'brown_leather', size: 0.4, ao: true },
   satin: { base: 'crepe_satin', size: 0.27, ao: true },
-  mail: { base: 'chainmail002', size: 0.12, ao: false, opacity: true },
+  mail: { base: 'chainmail002', size: 0.2, ao: false, opacity: true },
   steel: { base: 'metal038', size: 0.35, ao: false },
 };
 

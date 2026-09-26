@@ -10,7 +10,7 @@ import math
 import bpy
 from mathutils import Vector
 
-from garments import BODY, add_primitive, apply_all, bake_ao, bone_weights, cloth_settle, edge_rings, grow, material, pin_group, piping, region, skin, smooth_shade
+from garments import BODY, add_chain, add_primitive, chain_weights, apply_all, bake_ao, bone_weights, cloth_settle, edge_rings, grow, material, pin_group, piping, region, skin, smooth_shade
 
 COL = {
     "primary": (0.24, 0.035, 0.03),
@@ -141,8 +141,8 @@ def build(rig, body, colliders):
         z = z_top + (z_hem - z_top) * t
         c, ex, ey = body_extent(trunk, z)
         cen0 = cen0 or c
-        rx = max(rx, ex + 0.035 + 0.05 * t)
-        ry = max(ry, ey + 0.035 + 0.03 * t)
+        rx = max(rx, ex + 0.05 + 0.05 * t)  # clear of the şalvar underneath
+        ry = max(ry, ey + 0.05 + 0.03 * t)
         rings.append([Vector((cen0.x + math.cos(2 * math.pi * k / seg) * rx, cen0.y + math.sin(2 * math.pi * k / seg) * ry, z)) for k in range(seg)])
     slit_z = hips_z - 0.06
 
@@ -174,17 +174,34 @@ def build(rig, body, colliders):
     parts.append(skirt)
     garments.append(skirt)
 
+    # Wind chains, one per panel (front left / right, back left / right), from the upper thigh to the hem. The front
+    # ones hang from the thighs (the panels lie on them when seated), the back ones from the hips.
+    chain_t0 = 0.15
+    skirt_chains = {}
+    for key, deg in (("FL", 300), ("FR", 240), ("BL", 45), ("BR", 135)):
+        k = int(round(deg / 360 * seg)) % seg
+        pts = [rings[int(round((chain_t0 + (1 - chain_t0) * i / 3) * rows))][k] for i in range(4)]
+        side = "Left" if key.endswith("L") else "Right"
+        parent = f"mixamorig:{side}UpLeg" if key.startswith("F") else "mixamorig:Hips"
+        skirt_chains[key] = add_chain(rig, f"wind_Skirt{key}", pts, parent)
+
     def skirt_weights(co):
-        # The waist rides with the hips; lower down the front panels follow the thighs (they lie on them when seated),
-        # the back panels mostly stay with the hips and hang over the saddle.
+        # The waist rides with the hips; lower down each panel follows its chain: the front chains ride on the thighs,
+        # the back ones stay with the hips and hang over the saddle.
         rel = co - cen0
         h = math.hypot(rel.x, rel.y) or 1.0
         front = max(0.0, -rel.y / h)
-        back = max(0.0, rel.y / h)
         t = (z_top - co.z) / (z_top - z_hem)
-        leg = smoothstep(0.05, 0.75, t) * min(1.0, max(0.0, 0.35 + 0.65 * front - 0.25 * back))
-        side = "Left" if rel.x > 0 else "Right"
-        return {"Hips": 1.0 - leg, side + "UpLeg": leg}
+        is_front = rel.y < 0
+        if is_front:
+            c = smoothstep(0.05, 0.75, t) * min(1.0, 0.35 + 0.65 * front)
+        else:
+            c = smoothstep(0.05, 0.75, t) * 0.85
+        key = ("F" if is_front else "B") + ("L" if rel.x > 0 else "R")
+        ws = {"Hips": 1.0 - c}
+        for bone, w in chain_weights(skirt_chains[key], (t - chain_t0) / (1 - chain_t0)).items():
+            ws[bone] = c * w
+        return ws
     weights[skirt] = skirt_weights
     for pp in pipe(skirt, 0.006):
         parts.append(pp)
@@ -315,7 +332,25 @@ def build(rig, body, colliders):
         smooth_shade(tail)
         mat(tail, "accent")
         parts.append(tail)
-        weights[tail] = lambda co: {"Hips": 1.0}
+        # A wind chain down the hanging end, through the centre of its settled shape.
+        mw_t = tail.matrix_world
+        tp = [mw_t @ v.co for v in tail.data.vertices]
+        z_hi, z_lo = max(p.z for p in tp), min(p.z for p in tp)
+        pts = []
+        for i in range(4):
+            z = z_hi + (z_lo - z_hi) * i / 3
+            near = [p for p in tp if abs(p.z - z) < (z_hi - z_lo) / 8] or tp
+            pts.append(sum(near, Vector()) / len(near))
+        names = add_chain(rig, f"wind_Sash{n}", pts, "mixamorig:Hips")
+
+        def tail_weights(co, names=names, z_hi=z_hi, z_lo=z_lo):
+            u = (z_hi - co.z) / max(z_hi - z_lo, 1e-6)
+            c = smoothstep(0.0, 0.25, u)
+            ws = {"Hips": 1.0 - c}
+            for bone, w in chain_weights(names, u).items():
+                ws[bone] = c * w
+            return ws
+        weights[tail] = tail_weights
 
     # --- Mirror plate (ayna) on the chest: a slightly domed steel disc with a gilt rim.
     cc, cex, cey = body_extent(trunk, j["Spine2"].z + 0.05)
@@ -430,23 +465,28 @@ def build(rig, body, colliders):
         mat(f, "feather", 0.9)
         parts.append(f)
 
-    # Mail curtain (aventail): hangs from the rim round the sides and the back of the head, draped by cloth simulation
-    # onto the neck and the tops of the shoulders, a leather binding along the hem.
-    aseg, arow, alen = 44, 16, 0.2
+    # Mail curtain (aventail): hangs from the rim behind the ears and round the back, a dagged hem (points, as on
+    # Ottoman aventails), draped by a stiff cloth simulation onto the neck and the tops of the shoulders.
+    aseg, arow, alen = 48, 16, 0.17
+    dag = 4  # columns per point
+
+    def dag_len(k):
+        f = abs((k % dag) / dag * 2 - 1)  # 1 at a point, 0 between two
+        return alen * (0.78 + 0.42 * f)
     arings = []
     for r in range(arow + 1):
         t = r / arow
-        fl = 1.0 + 0.15 * t
         ring = []
         for k in range(aseg + 1):
             # From behind the right ear (-X) round the back (+Y) to behind the left ear (+X).
-            a_ = math.radians(165) - math.radians(150) * k / aseg  # behind the ears: the cheek plates guard the sides
-            ring.append(Vector((cx + math.cos(a_) * (half_w + 0.016) * fl, cy + math.sin(a_) * (half_d + 0.014) * fl, brow + 0.006 - alen * t)))
+            a_ = math.radians(165) - math.radians(150) * k / aseg
+            fl = 1.0 + 0.3 * t
+            ring.append(Vector((cx + math.cos(a_) * (half_w + 0.016) * fl, cy + math.sin(a_) * (half_d + 0.014) * fl, brow + 0.006 - dag_len(k) * t)))
         arings.append(ring)
     av = lathe("aventail", [r_[:-1] for r_ in arings], aseg, keep_face=lambda i, k: k < aseg - 1)
     # lathe() closes the ring; the open arc drops the wrap-around face (k == aseg - 1).
     pin_group(av, "pin", lambda co: 1.0 if co.z > brow - 0.004 else 0.0)
-    cloth_settle(av, colliders, pin_group="pin", frames=30, mass=0.6, stiffness=3)
+    cloth_settle(av, colliders, pin_group="pin", frames=30, mass=0.6, stiffness=14)
     sd = av.modifiers.new("subd", "SUBSURF")
     sd.levels = 1
     so = av.modifiers.new("thick", "SOLIDIFY")
