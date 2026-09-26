@@ -41,6 +41,8 @@ export class ChainHint {
       maxWait: 1,
       hints: kinds.map((k) => MOVE_HINTS[k]),
       joinable: true,
+      // The guided chain practice shows its own keys.
+      deferIn: ['lesson'],
     });
   }
 

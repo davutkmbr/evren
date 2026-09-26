@@ -578,8 +578,42 @@ first links were half size at low flow. Nothing on screen said when to act or wh
   bursts in 120 s) and their flow unchanged (worst mean 0.061), random gestures earn 14 / 35 m/s of bursts a minute at
   p50 / p90 against the chained racer's ~60; `race-balance`, `races-check`, `speed-feel-check`, `hud-zones-check`,
   `air-moves`, `movement`, `lowflight` pass.
-- **Not yet:** the window bar and the hint in the game (the feel test); a guided practice course and a single
-  context "flow key" were offered as next steps.
+- **Not yet:** the window bar and the hint in the game (the feel test); a single context "flow key" was offered as a
+  next step (the guided practice course is stage D v4 below).
+
+### Stage D v4 as built: guided chain practice (owner request 26 Sep, awaiting the feel test)
+
+After v3 the owner asked for the guided practice course offered there. "Zincir antrenmanı" is a course over open sea
+south of Kadıköy (`LESSON_COURSE` in `activities/courses.ts`: 10 gates, 11.1 km, speed rings on legs 2, 4, 6 and 8,
+ring-free legs between them for the skim). It runs as a race (gates, rings, the countdown, full-strength bursts and
+speed effects) but keeps no time, medal, record or ghost. Instead of the clock the readout shows "Adım 2/7", and the
+shared hint line carries the current step's instruction and keys (`HUD_PRIORITY.lesson` 47: only maneuver captions
+briefly cover it). A step moves on only when the player has done it; each one ends with a short gold praise in the
+title zone and a chime.
+
+| # | Instruction (hint line) | Keys | Done when |
+|---|---|---|---|
+| 1 | Hızlanınca ok gibi atıl | Shift ×2 | a dart starts |
+| 2 | Sayacın altındaki çubuk boşalmadan farklı bir hareket yap | Space ×2 | any chain link |
+| 3 | Zinciri sürdür: üçüncü, farklı bir hareket | A / D ×2 | a chain of 2 |
+| 4 | Aynı hareket saymaz. Farklı hareketlerle 3 halka kur | Shift, Space, A / D ×2 | a chain of 3 |
+| 5 | Zincir açıkken turkuaz hız halkasından geç | Shift ×2 | a link from a speed ring |
+| 6 | Suya alçal ve yüzeyi sıyırarak uç | W | a skim starts |
+| 7 | Serbest: 4 halkalık zincir kur | Shift, Space, A / D, Q / E ×2 | a chain of 4 |
+
+- **Code:** `activities/lesson.ts` (`LESSON_STEPS`, `LessonRunner`: pure, fed the flight's `maneuver` and `chain-link`
+  events while the race runs; moves during the countdown do not count); the activity system shows the steps
+  (`RaceHud.lessonStep`, `lessonPraise`), skips the result screen and the records at the finish (a closing line,
+  "Antrenman tamamlandı" or "Antrenman bitti · 5/7 adım"), and sets the zones' `lesson` context so the race
+  next-move hint (`ui/hud/chain-hint.ts`) steps aside. The picker lists it after the races as "Antrenman · 11,1 km ·
+  7 adım" without the medal ladder and the ghost switch, started with "Antrenmana başla".
+- **Checks:** `races-check.ts` validates the course like the races (clearance, spacing, turns, 2–4 speed rings) and
+  drives the runner with a script (7 steps in order, 5 wrong actions ignored, the texts' lengths, the course kept out of
+  `COURSES`). `race-balance.ts` flies the course with the chained racer and feeds a runner from the real sim's events:
+  7/7 steps in 2 of 3 seeds (steps 1–3 within 8–20 s; the third seed reaches step 5 before the finish). Rule: the best
+  seed completes every step.
+- **Not yet:** the lesson in the game (the feel test): whether the instructions read well and the pace suits a first
+  try; it is not captured on screen here (the full game is too heavy for the container's software renderer).
 
 ### Landing v2 as built (owner feedback 26 Sep, awaiting the feel test)
 

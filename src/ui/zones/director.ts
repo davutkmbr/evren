@@ -23,6 +23,8 @@ export const HUD_PRIORITY = {
   discovery: 70,
   areaTitle: 60,
   maneuver: 50,
+  /** The guided chain practice's instruction line (src/activities/lesson.ts): yields to maneuver captions only. */
+  lesson: 47,
   /** A moment's subtitle line (src/moments): yields to maneuver captions, outranks flight and start hints. */
   momentLine: 45,
   /** Perching (phase 03): the "[L] Kon" prompt, the approach and viewing-mode hint lines. */
