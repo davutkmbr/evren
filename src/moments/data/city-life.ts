@@ -62,34 +62,41 @@ export const gullSimit: Moment = {
   id: 'ferry-gull-simit',
   title: 'Martı ve Simit',
   category: 'city-life',
-  status: 'draft',
+  status: 'ready',
   backlog: 4,
   trigger: {
-    place: { label: 'Near any ferry (moving anchor)', anchor: 'ferry', radius: 60 },
-    surface: 'air',
-    altitude: [{ ref: 'agl', max: 40 }],
-    timeOfDay: { from: 7, to: 21 },
+    // 'ferry': the vapurs and city ferries in service (underway on their line), supplied by src/moments/anchors.ts.
+    place: { label: 'Near a ferry in service (moving anchor)', anchor: 'ferry', radius: 250 },
+    surface: 'any',
+    altitude: [{ ref: 'agl', max: 60 }],
+    // Low and slow near the boat: flying, gliding, hovering or perched on it; not diving, swimming or under water.
+    flightModes: ['flying', 'gliding', 'hovering', 'stalling', 'landing', 'takeoff', 'grounded'],
+    timeOfDay: { from: 7, to: 20 },
     weather: ['clear', 'haze', 'fog'],
     repeat: { kind: 'repeatable', cooldownSec: 600 },
   },
   content: {
-    actorId: 'moments/ferry-passenger-and-gull',
-    animationIds: ['moments/passenger-raise-simit', 'moments/gull-snatch', 'moments/passenger-shrug'],
+    // Procedural (src/moments/actors/gull-simit): the ferry's gull flock and the tossed simit pieces; no passengers.
+    actorId: 'moments/ferry-gull-flock',
     soundId: 'moments/gull-call',
     subtitles: [
-      { at: 0, duration: 3.5, text: 'Vapurda biri simidini havaya kaldırdı. Büyük hata.' },
-      { at: 4, duration: 3, text: 'Martı hiç düşünmedi. Simit artık onun.' },
-      { at: 7.5, duration: 3, speaker: 'Martı', text: 'Çay da var mıydı?' },
+      { at: 0, duration: 4, text: 'Vapurun arkasında biri simidini bölüp martılara atıyor.' },
+      { at: 4.5, duration: 4, text: 'Martılar rüzgârda asılı duruyor, parçayı havada kapıyorlar.' },
+      { at: 9, duration: 3, speaker: 'Martı', text: 'Yanında çay da var mı?' },
     ],
-    camera: { kind: 'look-at', note: 'Stern of the ferry, passenger holding a simit, gull diving in from the wake.' },
+    camera: { kind: 'look-at', note: 'Stern of the ferry: gulls hanging in the slipstream, simit pieces tossed from the rail.' },
     card: {
       title: 'Martı ve Simit',
-      text: "İstanbul vapurlarının değişmeyen sahnesi: simit parçaları ve onları havada kapan martılar. Martılar bu işte hiç ıskalamaz.",
+      text:
+        'İstanbul vapurlarının değişmeyen sahnesi: arkadan simit atan yolcular, dümen suyunda asılı duran martılar. ' +
+        'Parçayı çoğu zaman havada kaparlar; kaçanı da denizden toplarlar.',
     },
   },
   provenance: [original('subtitles'), original('card')],
-  needs: ['model', 'animation', 'sound', 'runtime-anchor'],
-  notes: "Needs the ferries' positions as the 'ferry' anchor (living world, phase 13). The dragon may snatch the simit too (future gameplay).",
+  needs: [],
+  notes:
+    "Anchored to the ferries in service ('ferry' anchor: vapur and double-ender kinds underway). The flock takes over " +
+    "the ferry's ambient gulls and hands them back afterwards. The dragon may snatch a simit too (future gameplay).",
 };
 
 export const anglers: Moment = {

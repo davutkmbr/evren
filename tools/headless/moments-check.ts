@@ -8,6 +8,8 @@
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
 import { ALL_MOMENTS } from '../../src/moments/data';
+import { MOMENT_ACTORS } from '../../src/moments/actors';
+import { RUNTIME_ANCHORS } from '../../src/moments/anchors';
 import { defaultMomentPrefs } from '../../src/moments/prefs';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
 import {
@@ -121,8 +123,14 @@ function validateRecord(m: Moment): void {
   } else {
     expect(t.repeat.kind === 'once-per-session', w, 'bad repeat kind');
   }
-  if (p.anchor !== undefined) {
-    expect(m.needs.includes('runtime-anchor'), w, `anchor '${p.anchor}' needs 'runtime-anchor' in needs`);
+  if (p.anchor !== undefined && !RUNTIME_ANCHORS.has(p.anchor)) {
+    expect(m.needs.includes('runtime-anchor'), w, `anchor '${p.anchor}' is not supplied at runtime: needs 'runtime-anchor' in needs`);
+  }
+  if (p.anchor !== undefined && RUNTIME_ANCHORS.has(p.anchor)) {
+    expect(!m.needs.includes('runtime-anchor'), w, `anchor '${p.anchor}' is supplied at runtime (src/moments/anchors.ts): drop 'runtime-anchor'`);
+  }
+  if (m.content.actorId && m.status === 'ready') {
+    expect(!!MOMENT_ACTORS[m.content.actorId], w, `ready with actor '${m.content.actorId}' that is not registered in src/moments/actors`);
   }
 
   // Content: subtitles.

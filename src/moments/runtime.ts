@@ -15,7 +15,7 @@
  * - A moment cut short before half of its lines were shown is not spent: it may try again after `retrySec`.
  */
 import { momentAllowed, type MomentPrefs } from './prefs';
-import { eligibleMoments, rejectReason, type MomentContext, type MomentSession, type RejectReason } from './triggers';
+import { eligibleMoments, nearestAnchor, rejectReason, type MomentContext, type MomentSession, type RejectReason } from './triggers';
 import type { Moment, MomentNeed, MomentTrigger, SubtitleLine } from './types';
 import type { FlightMode } from '../core/contracts';
 import { latLonToLocal } from '../core/geo-coords';
@@ -49,6 +49,8 @@ export const HOLD = {
   shore: 60,
   /** A glide may include some flapping: these modes also keep a 'gliding' moment going. */
   glideModes: ['gliding', 'flying'] as readonly FlightMode[],
+  /** Meters added to the radius around a moving anchor (a ferry pulls away while the dragon watches). */
+  anchorRadius: 100,
 };
 
 /* ------------------------------------------------------------------ */
@@ -111,8 +113,9 @@ function relaxed(m: Moment): Moment {
   if (flightModes?.includes('gliding')) {
     flightModes = [...new Set([...flightModes, ...HOLD.glideModes])];
   }
+  const place = t.place.anchor !== undefined && t.place.radius !== undefined ? { ...t.place, radius: t.place.radius + HOLD.anchorRadius } : t.place;
   const trigger: MomentTrigger = {
-    place: t.place,
+    place,
     surface: t.surface,
     altitude: t.altitude?.map((b) => ({ ref: b.ref, min: widen(b.min, -HOLD.altitude), max: widen(b.max, HOLD.altitude) })),
     flightModes,
@@ -176,6 +179,8 @@ interface Playing {
   lost: number;
   start: number;
   prevFired: number | undefined;
+  /** Id of the moving anchor the moment started at (the nearest one), when its place has an anchor. */
+  anchorId: number | undefined;
 }
 
 export class MomentRunner {
@@ -196,6 +201,7 @@ export class MomentRunner {
   private dwell = 0;
   private playing: Playing | null = null;
   private pendingForce: Moment | null = null;
+  private pendingAnchor: number | undefined = undefined;
   private lift = 0;
 
   constructor(
@@ -238,6 +244,11 @@ export class MomentRunner {
     return this.playing?.line ?? -1;
   }
 
+  /** Id of the moving anchor (e.g. the ferry) the playing moment belongs to, or undefined. */
+  get currentAnchor(): number | undefined {
+    return this.playing?.anchorId;
+  }
+
   get ambienceLift(): number {
     return this.lift;
   }
@@ -246,12 +257,13 @@ export class MomentRunner {
    * Plays `id` on the next update whatever the conditions, pacing and settings (the ?moment= shortcut); still waits
    * while a race runs and still pauses with the game. Returns false for an unknown or unplayable id.
    */
-  force(id: string): boolean {
+  force(id: string, anchorId?: number): boolean {
     const m = this.playable.find((x) => x.id === id);
     if (!m) {
       return false;
     }
     this.pendingForce = m;
+    this.pendingAnchor = anchorId;
     return true;
   }
 
@@ -274,7 +286,7 @@ export class MomentRunner {
       if (!frame.racing) {
         const m = this.pendingForce;
         this.pendingForce = null;
-        this.start(m, true);
+        this.start(m, true, this.pendingAnchor ?? (frame.context ? nearestAnchor(m, frame.context)?.id : undefined));
       }
       return;
     }
@@ -302,11 +314,11 @@ export class MomentRunner {
     }
     this.dwell += dt;
     if (this.dwell >= this.pacing.dwellSec - 1e-9) {
-      this.start(top, false);
+      this.start(top, false, nearestAnchor(top, ctx)?.id);
     }
   }
 
-  private start(m: Moment, forced: boolean): void {
+  private start(m: Moment, forced: boolean, anchorId?: number): void {
     this.candidate = null;
     this.dwell = 0;
     this.playing = {
@@ -319,6 +331,7 @@ export class MomentRunner {
       lost: 0,
       start: this.clock,
       prevFired: this.lastFired.get(m.id),
+      anchorId,
     };
     this.lastFired.set(m.id, this.clock);
     this.retryAt.delete(m.id);
