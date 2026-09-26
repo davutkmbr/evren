@@ -38,10 +38,13 @@ export function setKeyCapState(cap: HTMLElement, state: KeyCapState | null): voi
   }
 }
 
-/** Key caps for "A / B" (alternatives) and "Ctrl + W" (held together). */
+/** Key caps for "A / B" (alternatives), "Ctrl + W" (held together) and a trailing "×2" (double tap). */
 export function keyCombo(keys: string, tone: KeyCapTone = 'ink', options: KeyCapOptions = {}): HTMLElement {
   const nodes: Array<Node | string> = [];
-  keys.split('+').forEach((combo, c) => {
+  // A trailing "×2" is a double tap: a separator mark after the caps, not part of the last cap ("Q / E ×2").
+  const double = /\s*×2$/.exec(keys);
+  const caps = double ? keys.slice(0, double.index) : keys;
+  caps.split('+').forEach((combo, c) => {
     if (c > 0) {
       nodes.push(el('span', 'ui-keysep', '+'));
     }
@@ -55,5 +58,8 @@ export function keyCombo(keys: string, tone: KeyCapTone = 'ink', options: KeyCap
         nodes.push(keyCap(part, tone, options));
       });
   });
+  if (double) {
+    nodes.push(el('span', 'ui-keysep', '×2', { title: 'Çift dokun' }));
+  }
   return el('span', options.size === 's' ? 'ui-keycombo ui-keycombo-s' : 'ui-keycombo', nodes);
 }

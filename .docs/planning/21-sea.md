@@ -172,8 +172,8 @@ are not part of it; they stay open in the table above.
   the dragon under water, see "Stage 4 as built").
 - Flow hooks: 'maneuver' events 'plunge' ("Dalış") and 'breach' ("Fırlama", with `clean`); the plunge's end is a
   flight-internal event with `ended` and `clean` (no seabed / hull contact, not surfaced by force). The game-level
-  `GameEvents['maneuver']` carries id and label only; flow in phase 20 needs an optional `clean?: boolean` there (or
-  to live in the flight module, which already has it).
+  `GameEvents['maneuver']` carries id, label and the breach's `clean`; move ends reach the game as `maneuver-end`
+  `{ id, clean }` (read by the tutorial hints, [20](20-movement.md) "Discoverability").
 - Checks: `tools/headless/plunge-check.ts`; pose strips `plunge`, `underwater`, `breach`.
 
 ## Strand 4 — Seeing under water (GPU review needed)
