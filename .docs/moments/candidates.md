@@ -5,7 +5,55 @@ Research for the "Anlar" system (phase 19, `.docs/planning/19-moments.md`), 26 S
 plays as timed Turkish subtitles (4–8 lines, about 4 s each) while the player glides or perches at a matching place,
 then shows a closing card. Kanun/ud music is planned; a makam is suggested for each.
 
-Nothing here is approved or wired into the game. This file is the shortlist the owner picks from.
+This file was the shortlist. The owner delegated the choice; ten candidates were chosen on 26 September 2026 and built
+as records (see "Chosen and built" below). The rest stay here as ideas.
+
+## Chosen and built (26 September 2026)
+
+Chosen for variety of place, mood, genre and time, and for a low rights risk. Records: `src/moments/data/literature.ts`
+(backlog item 16 in `.docs/planning/19-moments.md`), sources in `src/moments/data/sources.ts`. All are subtitle-only;
+the moment music picks a piece by category and `musicMood`. Each opens with `?moment=<id>`.
+
+| # | Record id | Plays? | Place and trigger as built | Text status |
+|---|---|---|---|---|
+| 1 | `nedim-bu-sehr-i-sitanbul` | yes | 250–600 m ASL within 900 m of Sarayburnu, 07–11 h, clear or haze | Two couplets; Vikikaynak, liseedebiyat.com and yedinota.com give the same words (transliteration differs) |
+| 5 | `sinan-turbe-kitabesi` | **no, pending** | Within 200 m of the tomb (any surface, ≤ 90 m AGL and ≤ 170 m ASL), 16:30–20:30, clear or haze | Lines 1–4 have one source (every online copy goes back to one transcription); the TDV quotes the date line differently |
+| 7 | `katibim-uskudar-yagmur` | yes | ≤ 80 m AGL within 450 m of Üsküdar square, rain | Traditional; Vikikaynak text, same words in the TSM listing |
+| 8 | `ati-alan-uskudari-gecti` | yes | Diving (the fallback) over the strait mouth between Sarayburnu and Üsküdar, ≤ 250 m AGL, 06–21 h, not in a storm | Our retelling (MIT) |
+| 9 | `karagoz-sehzadebasi` | yes | ≤ 60 m AGL within 250 m of Şehzadebaşı Caddesi, 20–24 h | Traditional opening and closing formulas (liseedebiyat.com, Türk Maarif Ansiklopedisi) plus our dialogue |
+| 10 | `fikret-yagmur-asiyan` | yes | Within 300 m of Aşiyan (any surface, ≤ 80 m AGL), rain | First seven lines; turk-siiri.com and Milliyet give the same text, two more sites the same words |
+| 12 | `hasim-bir-gunun-sonunda-arzu` | **no, pending** | Göksu fallback: gliding ≤ 35 m AGL over the Bosphorus off the Göksu mouth, 17–20:30 h, clear or haze | Versions disagree (the first print has a line the later text lacks) |
+| 16 | `huseyin-rahmi-kuyrukluyildiz` | yes | 150–900 m ASL within 1.3 km of Heybeliada, 22–04 h, clear | Four lines of dialogue; the TDK and Remzi editions give the same words; opening and closing lines ours |
+| 20 | `prokopios-gokten-asili-kubbe` | yes | Gliding or flying 150–450 m ASL within 300 m of the dome, 10–16 h, clear or haze | Our translation (MIT) from Dewing's English of *Buildings* I.1.27–46 (LacusCurtius) |
+| 21 | `de-amicis-sis-kalkinca` | yes | ≤ 90 m AGL over the Marmara within 1.6 km south of Sarayburnu, 05–11 h, sea fog ≥ 0.2 (a foggy morning or fog weather) | Our translation (MIT) of sentences confirmed on experiences.it and a second site |
+
+Notes on the build:
+
+- **#12 place.** Küçükçekmece Lake lies at the west edge of the map (28.72–28.77° E): the flight turns the dragon back
+  beyond 28.752° E, and the lake is not water in the game's geography. The Göksu stream is too narrow to be water, so
+  the record uses the Bosphorus in front of the Göksu mouth, under Anadolu Hisarı.
+- **#21 trigger.** Foggy mornings (`src/render/weather/sea-fog.ts`) usually come with the `clear` or `haze` preset,
+  so the record format got a `seaFog` condition (the sea fog amount, read from the weather service).
+- **#8** uses the diving fallback; a real speed or crossing-time condition is still future work.
+- **Category.** All of them except #8 (a folk tale: `legend`) are in the `poem` category, whose player-facing name is
+  now "Şiir ve edebiyat" / "Edebiyat".
+
+**What the owner must check for the two pending records** (they play once the wording is confirmed, `pending` is
+cleared and `text-approval` removed from `needs`):
+
+- **#5 Sinan:** read lines 1–4 ("Ey iden bir iki gün dünyâ sarayında mekân" … "Yapdı bir câmi' verir Firdevs-i âlâdan
+  nişân") and the date line against the stone or a critical reading (the Karadeniz Sosyal Bilimler Dergisi article
+  "Mimar Sinan Türbesi Üzerine Bir Değerlendirme", or Sâî, *Tezkiretü'l-Bünyân*, Koç 2004). Open points: "Geçdi" or
+  "Göçdü"; "mi'mârân-ı Sinân" (Dünya Bülteni transcription) or "mi'mârân Sinân" (TDV, fits the metre); the spellings
+  "olub", "Yapdı".
+- **#12 Haşim:** choose the version and read it against İnci Enginün, *Ahmet Haşim – Bütün Şiirleri* (Dergâh) or the
+  1921 printing. The record uses the first print (Dergâh 1/1, 15 Nisan 1337/1921) as transcribed on Epigraf. Open
+  points: whether line 7 "Üstümde semâ bir kavs-ı mutalsam!" belongs in the last stanza; line 2 "ilân." or "i'lân,";
+  line 3 "bu akşam" or "her akşam"; line 4 "eyler?" or "eyler?.."; line 5 comma after "Akşam".
+
+**Not chosen:** #13 and #18 (US copyright risk); #6, #11 and #17 (need snow); #14 (needs the moon phase); #3 and #4
+(religious sensitivity); the rest overlap with the chosen ones (#2 with #1, #15 and #23 with #16 and #20, #19, #22,
+#24 and #25 with #21).
 
 ## Rules used
 
@@ -631,7 +679,12 @@ islands 2 (16, 18) · Marmara and outskirts 2 (12, 22).
 | Busbecq, *Turkish Letters* | The famous tulip passage is not set in Istanbul; the Latin on the city was not verified. | Rejected for now. |
 | Still in copyright in Turkey (2026) | Yahya Kemal (d. 1958), Ahmet Hamdi Tanpınar (d. 1962, *Beş Şehir*), Nazım Hikmet (d. 1963), Abdülhak Şinasi Hisar (d. 1963, *Boğaziçi Mehtapları*), Refik Halit Karay (d. 1965), Reşat Nuri Güntekin (d. 1956, PD 2027), Cahit Sıtkı Tarancı (d. 1956, PD 2027), Ercüment Ekrem Talu (d. 1956, PD 2027), Faruk Nafiz Çamlıbel (d. 1973), Orhan Pamuk; Le Corbusier, *Voyage d'Orient* (d. 1965). Also every existing Turkish translation of the foreign travellers above. | Excluded. Yahya Kemal and the 1956 group could be revisited when they fall into the public domain. |
 
-## What the owner needs to decide
+## What the owner needed to decide (original list)
+
+Item 1 is settled (see "Chosen and built" at the top); items 2, 4 and 5 were settled by not choosing those candidates
+(#20 is built with the neutral "yapı"); item 3 still applies to #20 and #21 (a Turkish proofread is welcome, they play
+already as our MIT text); item 6 was redone for the chosen ones: on 26 September 2026 the source pages (Vikikaynak,
+TDK, LacusCurtius and others) could be opened from the container, and each record's provenance says what was read.
 
 1. **Pick the candidates** to turn into records (all 25 fit the subtitle-only pattern that plays today, except where a
    missing trigger feature is noted).

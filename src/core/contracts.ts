@@ -733,6 +733,11 @@ export interface WeatherService {
   readonly preset: WeatherPreset | 'custom';
   /** Lightning flash brightness this frame (0..1, fast decay). */
   readonly flash: number;
+  /**
+   * Smoothed amount 0..1 of the fog layer lying on the sea this frame (foggy mornings and fog weather,
+   * src/render/weather/sea-fog.ts); 0 while the layer is off. Optional so test doubles may leave it out.
+   */
+  readonly seaFog?: number;
   setPreset(preset: WeatherPreset): void;
   set(settings: Partial<WeatherSettings>): void;
   /** Cycles clear → haze → fog → rain → storm. */
