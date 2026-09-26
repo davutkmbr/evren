@@ -62,7 +62,7 @@ export interface ImperialSpec {
   hallArches?: number;
   /** Fenestration: classical rows or tall baroque/empire windows. */
   windowStyle?: 'classic' | 'baroque';
-  /** External buttresses on the side and qibla walls (default true; baroque halls and gallery sides have none). */
+  /** External buttresses on the side and qibla walls (default true; baroque halls have none). */
   buttresses?: boolean;
   /** Corner pilasters / buttress piers on the hall (m projection). */
   pilasters?: number;
@@ -224,8 +224,11 @@ export function wallButtress(b: MeshBuilder, s: ButtressSpec, lod: LodLevel): vo
   const D = s.depth;
   const D2 = D * 0.62;
   const mid = s.y0 + (s.top - s.y0) * 0.55;
-  const slope = D * 0.9;
-  b.colBox(x0, s.y0, 0, x1, s.top, D);
+  const slope = D2 * 0.9;
+  // follows the steps: full pier, set-back upper pier, half-depth block under the sloped cap
+  b.colBox(x0, s.y0, 0, x1, mid, D);
+  b.colBox(x0, mid, 0, x1, s.top - slope * 0.5, D2);
+  b.colBox(x0, s.top - slope * 0.5, 0, x1, s.top, D2 * 0.5);
   if (lod === 2) {
     b.box(x0, s.y0, 0, x1, s.top - slope, D, 'bn');
     return;
@@ -368,12 +371,27 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
 
   // Galleries along the long sides (built first; the walls behind still get windows).
-  if (s.galleries) {
-    const gl = hall.d * 0.86;
-    const gd = Math.min(5.5, hall.w * 0.09);
+  // Buttresses on gallery sides pass through the arcade at the column nearest each dome-square pier (that column is
+  // left out) and stand proud of the gallery front, as at Süleymaniye.
+  const gallery = s.galleries ? { gl: hall.d * 0.86, gd: Math.min(5.5, hall.w * 0.09), bays: Math.max(3, Math.round((hall.d * 0.86) / 5.2)) } : null;
+  const galleryPiers: number[] = [];
+  if (gallery && s.buttresses !== false && s.windowStyle !== 'baroque') {
+    const bw = gallery.gl / gallery.bays;
+    for (const zt of [-bayHalf, bayHalf]) {
+      const i = Math.round((zt + gallery.gl / 2) / bw);
+      if (i > 0 && i < gallery.bays) {
+        galleryPiers.push(-gallery.gl / 2 + i * bw);
+      }
+    }
+  }
+  if (gallery) {
+    const { gl, gd, bays } = gallery;
+    const bw = gl / bays;
     for (const side of [-1, 1]) {
+      // arcade local x runs toward -z on the +x side and toward +z on the -x side
+      const skip = galleryPiers.map((z) => Math.round((side > 0 ? gl / 2 - z : z + gl / 2) / bw));
       b.at(side * (hall.w / 2 + gd), 0, side > 0 ? gl / 2 : -gl / 2, side > 0 ? Math.PI / 2 : -Math.PI / 2, () =>
-        arcade(b, { len: gl, bays: Math.max(3, Math.round(gl / 5.2)), depth: gd, colH: hall.h * 0.32, roofH: hall.h * 0.47, lod, domes: false }),
+        arcade(b, { len: gl, bays, depth: gd, colH: hall.h * 0.32, roofH: hall.h * 0.47, lod, domes: false, skipColumns: skip }),
       );
     }
   }
@@ -388,12 +406,17 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
   const portalW = Math.min(baroque ? 4.5 : 7, hall.w * 0.16);
   // External buttresses on the side and qibla walls, in line with the piers of the dome square; the windows give
-  // way to them. Sides with exterior galleries keep their arcades instead.
+  // way to them.
   const butW = Math.min(3, Math.max(1.6, R * 0.14));
   const butD = Math.min(3, Math.max(1.4, hall.h * 0.11));
+  const gallerySide = (side: FacadeSide): boolean => !!gallery && (side === 'left' || side === 'right');
   const butAt = (side: FacadeSide, len: number): number[] => {
-    if (s.buttresses === false || side === 'front' || (s.galleries && (side === 'left' || side === 'right')) || baroque) {
+    if (s.buttresses === false || side === 'front' || baroque) {
       return [];
+    }
+    if (gallerySide(side)) {
+      // wall-local x: the right wall runs from z = d/2 toward -z, the left one from z = -d/2 toward +z
+      return galleryPiers.map((z) => (side === 'right' ? len / 2 - z : z + len / 2));
     }
     return [len / 2 - bayHalf, len / 2 + bayHalf].filter((x) => x > butW + 1.5 && x < len - butW - 1.5);
   };
@@ -425,7 +448,8 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
   for (const f of facadeFrames(hall.w, hall.d)) {
     for (const x of butAt(f.side, f.len)) {
-      b.at(f.x, 0, f.z, f.yaw, () => wallButtress(b, { x, width: butW, depth: butD, y0: 0.3, top: hall.h - 0.5 }, lod));
+      const depth = gallerySide(f.side) ? gallery!.gd + 0.9 : butD;
+      b.at(f.x, 0, f.z, f.yaw, () => wallButtress(b, { x, width: butW, depth, y0: 0.3, top: hall.h - 0.5 }, lod));
     }
   }
   if (s.pilasters && s.pilasters > 0) {

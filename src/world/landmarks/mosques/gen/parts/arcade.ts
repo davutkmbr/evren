@@ -21,6 +21,8 @@ export interface ArcadeOptions {
   /** Skip the column at x = 0 / x = len (shared corners). */
   skipFirstColumn?: boolean;
   skipLastColumn?: boolean;
+  /** Column indices (0..bays) left out, e.g. where a buttress passes through the arcade. */
+  skipColumns?: readonly number[];
   /** Arch thickness (m). */
   arch?: number;
   /** Floor platform height. */
@@ -42,7 +44,7 @@ export function arcade(b: MeshBuilder, o: ArcadeOptions): void {
   b.colBox(0, 0, -o.depth, o.len, floor, 0.35);
   b.colBox(0, o.colH, -o.depth, o.len, o.roofH + (o.pitched ? o.depth * 0.25 : 0.1), 0.35, true);
   for (let i = 0; i <= o.bays; i++) {
-    if ((i === 0 && o.skipFirstColumn) || (i === o.bays && o.skipLastColumn)) {
+    if ((i === 0 && o.skipFirstColumn) || (i === o.bays && o.skipLastColumn) || o.skipColumns?.includes(i)) {
       continue;
     }
     b.colCylinder((i * o.len) / o.bays, floor, -t0 / 2, colR0 * 1.4, o.colH - floor);
@@ -61,7 +63,7 @@ export function arcade(b: MeshBuilder, o: ArcadeOptions): void {
   // Columns.
   const colSeg = o.lod === 0 ? 12 : 6;
   for (let i = 0; i <= o.bays; i++) {
-    if ((i === 0 && o.skipFirstColumn) || (i === o.bays && o.skipLastColumn)) {
+    if ((i === 0 && o.skipFirstColumn) || (i === o.bays && o.skipLastColumn) || o.skipColumns?.includes(i)) {
       continue;
     }
     const x = i * bw;
