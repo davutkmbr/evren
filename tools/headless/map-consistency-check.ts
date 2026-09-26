@@ -34,7 +34,7 @@ import { gunzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import type { WorldBounds } from '../../src/core/contracts';
 import { latLonToLocal } from '../../src/core/geo-coords';
-import { type CityBakeIndex, decodeBuildings, LandClass } from '../../src/world/city/osm/format';
+import { type CityBakeIndex, type DecodedBuildings, decodeBuildings, LandClass } from '../../src/world/city/osm/format';
 import { buildLandmarkDefs } from '../../src/world/geo/prepare';
 import { buildBuildings, collectSolids, planSolid } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
@@ -58,6 +58,14 @@ import { openLandmarkPassages } from '../../src/world/osm/shared/landmark-passag
 import { isOsmCell } from '../../src/world/city/osm/mask';
 import { LandUse } from '../../src/core/contracts';
 import { pointInRing } from '../../src/world/osm/shared/geometry';
+import { computeStructureVolumes } from './structure-volumes';
+import { CapMode, lowStructureOutlines, nearStructure, prismHitsStructure, STRUCTURE_CLEARANCE, STRUCTURE_REACH, STRUCTURE_STRIDE, type StructureVolumeFile } from '../../src/world/landmarks/structure-volumes';
+import { visibleGround } from '../../src/world/landmarks/visible-ground';
+import { STRUCTURE_CAP_TOLERANCE } from '../../src/world/geo/build/height';
+import { buildInitMessage, GeoWindowCutter } from '../../src/world/city/geo-window';
+import { blockKeyOf } from '../../src/world/city/worker/osm-blocks';
+import { buildColliders } from '../../src/world/city/worker/tile';
+import { WorldData } from '../../src/world/city/worker/world-data';
 
 const args = process.argv.slice(2);
 const ONLY = args.includes('--area') ? args[args.indexOf('--area') + 1] : null;
@@ -242,7 +250,7 @@ interface FlightBuild {
    * Wall and bottom height (dm) and centroid of every drawn solid, from the layer's own plan (buildings/build.ts
    * planSolid). Listed, not keyed by id: the parts of one building share its id.
    */
-  heights: { id: number; wallH: number; minH: number; cx: number; cz: number }[];
+  heights: { id: number; wallH: number; minH: number; cx: number; cz: number; ring: number[]; top: number }[];
 }
 const flightBuilds = new Map<string, FlightBuild>();
 /** Runs the flight-scale buildings worker (buildings.worker.ts) for one region, synchronously. */
@@ -270,7 +278,7 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
   const out = buildBuildings({ buildings, pois: new Float32Array(), claims: layerClaims, extra: infill.parcels }, surface, base.rect);
   const heights: FlightBuild['heights'] = [];
   for (const sol of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, base.rect)) {
-    const { plan, wallH } = planSolid(sol);
+    const { plan, wallH, rise } = planSolid(sol);
     const n = sol.ring.length / 2;
     let cx = 0;
     let cz = 0;
@@ -280,7 +288,7 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
     }
     // Half-open ownership, as the bake takes it (a centroid on a shared region edge counts once).
     if (inRect(base.rect, cx, cz)) {
-      heights.push({ id: sol.b.id, wallH: Math.round(wallH * 10), minH: Math.round(plan.minH * 10), cx, cz });
+      heights.push({ id: sol.b.id, wallH: Math.round(wallH * 10), minH: Math.round(plan.minH * 10), cx, cz, ring: sol.ring, top: wallH + rise });
     }
   }
   const res = { drawn: new Set(Array.from(out.drawnIds)), parcels: infill.parcels, heights };
@@ -624,6 +632,229 @@ console.log('7. Real parks and woods in the land use (geo/build/osm-land.ts)');
     }
     check(samples > 0 && hits / samples >= 0.95, `${polys} OSM parks, woods and cemeteries over 2 ha: ${((hits / Math.max(1, samples)) * 100).toFixed(1)} % of ${samples} samples green in the land use (>= 95 %)`, lines);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+console.log('8. Bridges stand clear: no layer draws through a modelled structure (landmarks/structure-volumes.ts)');
+{
+  // (a) The baked volumes match the builders as they are now.
+  const fresh = computeStructureVolumes(geo);
+  const baked = readJson<StructureVolumeFile>(resolve(ROOT, 'src/world/landmarks/data/structure-volumes.json'));
+  const stale: string[] = [];
+  for (const f of fresh.structures) {
+    const b = baked.structures.find((x) => x.id === f.id);
+    if (!b || b.boxes.length !== f.boxes.length || f.boxes.some((v, k) => Math.abs(v - b.boxes[k]) > 0.05)) {
+      stale.push(`${f.id}: ${b ? `${b.boxes.length / STRUCTURE_STRIDE} baked boxes differ from the ${f.boxes.length / STRUCTURE_STRIDE} built now` : 'missing'}`);
+    }
+  }
+  for (const b of baked.structures) {
+    if (!fresh.structures.some((f) => f.id === b.id)) {
+      stale.push(`${b.id}: baked but no longer a structure without a ground pad`);
+    }
+  }
+  check(stale.length === 0, `${fresh.structures.length} bridges: baked volumes up to date (npm run bake:structures)`, stale);
+
+  // The tests below use the volumes built now, so a stale file cannot hide a conflict.
+  const boxes = Float32Array.from(fresh.structures.flatMap((f) => f.boxes));
+  const owner = (ring: ArrayLike<number>, y0: number, y1: number): string => fresh.structures.find((f) => prismHitsStructure(ring, y0, y1, f.boxes))?.id ?? '?';
+  const bbox = (ring: ArrayLike<number>): [number, number, number, number] => {
+    let x0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let z1 = -Infinity;
+    for (let i = 0; i < ring.length; i += 2) {
+      x0 = Math.min(x0, ring[i]);
+      x1 = Math.max(x1, ring[i]);
+      z0 = Math.min(z0, ring[i + 1]);
+      z1 = Math.max(z1, ring[i + 1]);
+    }
+    return [x0, z0, x1, z1];
+  };
+  const near = (ring: ArrayLike<number>): boolean => nearStructure(...bbox(ring), STRUCTURE_CLEARANCE, boxes);
+  const nearRect = (r: WorldBounds): boolean => nearStructure(r.minX, r.minZ, r.maxX, r.maxZ, 50, boxes);
+
+  // (b) The flight-scale OSM layer (every region near a bridge, its drawn solids with their planned heights).
+  const flight: string[] = [];
+  let flightNear = 0;
+  for (const r of regions.filter((q) => existsSync(regionFile(q)) && nearRect(q.rect))) {
+    for (const h of flightBuild(r).heights) {
+      if (!near(h.ring)) {
+        continue;
+      }
+      flightNear++;
+      if (prismHitsStructure(h.ring, h.minH / 10, h.top, boxes)) {
+        flight.push(`${r.id}: ${h.id} at ${h.cx.toFixed(0)}, ${h.cz.toFixed(0)} (${(h.minH / 10).toFixed(0)}-${h.top.toFixed(0)} m) enters ${owner(h.ring, h.minH / 10, h.top)}`);
+      }
+    }
+  }
+  check(flight.length === 0, `flight-scale OSM layer: ${flightNear} buildings next to a bridge, none inside one`, flight);
+
+  // (c) The far OSM bake (what the city workers draw in the OSM cells).
+  const far: string[] = [];
+  let farNear = 0;
+  const bakeDir = resolve(ROOT, 'public/data/osm/city');
+  const index = readJson<CityBakeIndex>(resolve(bakeDir, 'index.json'));
+  for (const f of index.files) {
+    const b0 = { minX: -24000 + f.block[0] * index.block, minZ: -24000 + f.block[1] * index.block };
+    if (!nearRect({ minX: b0.minX, minZ: b0.minZ, maxX: b0.minX + index.block, maxZ: b0.minZ + index.block })) {
+      continue;
+    }
+    const d = decodeBuildings(gunzipSync(readFileSync(resolve(bakeDir, f.file))));
+    for (let k = 0; k < d.header.count; k++) {
+      const r0 = d.ringStart[k];
+      const ring = d.xy.subarray(d.start[r0] * 2, d.start[r0 + 1] * 2);
+      if (!near(ring)) {
+        continue;
+      }
+      farNear++;
+      const y0 = d.minH[k] / 10;
+      const y1 = d.wallH[k] / 10 + d.rise[k] / 10;
+      if (prismHitsStructure(ring, y0, y1, boxes)) {
+        const [x0, z0] = bbox(ring);
+        far.push(`bake ${f.file}: ${d.id[k]} near ${x0.toFixed(0)}, ${z0.toFixed(0)} (${y0.toFixed(0)}-${y1.toFixed(0)} m) enters ${owner(ring, y0, y1)}`);
+      }
+    }
+  }
+  check(far.length === 0, `far OSM bake: ${farNear} buildings next to a bridge, none inside one (stale bake: npm run bake:city)`, far);
+
+  // (d) The street tiles' rule (makeSolids + landmarkOf with the compiler's claims, as compiled with --landmarks none).
+  const street: string[] = [];
+  let streetNear = 0;
+  setLandmarkClaims(compilerClaims);
+  for (const a of areas.filter((q) => nearRect(q.rect))) {
+    useDistrict(a.id);
+    const buildings = streetData.get(a.id)!.buildings.filter((b) => !wallOwned.has(b.id));
+    const byId = new Map(buildings.map((b) => [b.id, b]));
+    for (const sol of makeSolids(buildings, flatHeights)) {
+      if (!inRect(a.rect, sol.cx, sol.cz) || !near(sol.ring)) {
+        continue;
+      }
+      streetNear++;
+      const b = byId.get(sol.rec.osmId)!;
+      if (landmarkOf(b)) {
+        continue;
+      }
+      const y1 = sol.rec.height ?? 0;
+      if (prismHitsStructure(sol.ring, 0, Math.max(y1, 3), boxes)) {
+        street.push(`${a.id}: ${sol.rec.id} (${sol.rec.kind}) at ${sol.cx.toFixed(0)}, ${sol.cz.toFixed(0)} compiled into ${owner(sol.ring, 0, Math.max(y1, 3))}`);
+      }
+    }
+  }
+  setLandmarkClaims(null);
+  check(street.length === 0, `street tiles' rule: ${streetNear} buildings next to a bridge, none compiled into one`, street);
+
+  // (e) The procedural city and the far OSM layer as the city workers build them: collider boxes (shaped like the
+  // drawn buildings) of every 500 m tile a bridge reaches, tested with their height above the ground under them.
+  const blocks = index.files.map((f) => `${f.block[0]}_${f.block[1]}`);
+  const cityWorld = new WorldData(buildInitMessage(geo, { base: '', blocks }));
+  const cutter = new GeoWindowCutter(geo, []);
+  const decoded = new Map<string, DecodedBuildings | null>();
+  const city: string[] = [];
+  let cityNear = 0;
+  const T = 500;
+  const tiles = new Set<string>();
+  for (let o = 0; o < boxes.length; o += STRUCTURE_STRIDE) {
+    const e = Math.hypot(boxes[o + 2], boxes[o + 3]) + 10;
+    for (let iz = Math.floor((boxes[o + 1] - e + 24000) / T); iz <= Math.floor((boxes[o + 1] + e + 24000) / T); iz++) {
+      for (let ix = Math.floor((boxes[o] - e + 24000) / T); ix <= Math.floor((boxes[o] + e + 24000) / T); ix++) {
+        tiles.add(`${ix}_${iz}`);
+      }
+    }
+  }
+  let job = 1;
+  for (const t of tiles) {
+    const [ix, iz] = t.split('_').map(Number);
+    const x0 = -24000 + ix * T;
+    const z0 = -24000 + iz * T;
+    const key = blockKeyOf(x0 + 1, z0 + 1);
+    if (!decoded.has(key)) {
+      decoded.set(key, blocks.includes(key) ? decodeBuildings(new Uint8Array(gunzipSync(readFileSync(resolve(bakeDir, `blocks/${key}.bin.gz`))))) : null);
+    }
+    const win = cutter.cut(x0 - 130, z0 - 130, x0 + T + 130, z0 + T + 130);
+    const res = buildColliders({ type: 'colliders', id: job++, ix, iz, size: T, densityScale: 1, win, exclude: [] }, cityWorld, decoded.get(key)!);
+    const cb = res.boxes;
+    for (let k = 0; k < cb.length; k += 7) {
+      // City collider boxes: cx, cy, cz, hx, hy, hz, yaw.
+      const [cx, cy, cz, hx, hy, hz, yaw] = [cb[k], cb[k + 1], cb[k + 2], cb[k + 3], cb[k + 4], cb[k + 5], cb[k + 6]];
+      const c = Math.cos(yaw);
+      const sn = Math.sin(yaw);
+      const ring: number[] = [];
+      for (const [lx, lz] of [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]]) {
+        ring.push(cx + lx * c + lz * sn, cz - lx * sn + lz * c);
+      }
+      if (!near(ring)) {
+        continue;
+      }
+      cityNear++;
+      const g = geo.heightAt(cx, cz);
+      const y0 = cy - hy - g;
+      const y1 = cy + hy - g;
+      if (prismHitsStructure(ring, Math.max(0, y0), y1, boxes)) {
+        city.push(`city tile ${t}: building at ${cx.toFixed(0)}, ${cz.toFixed(0)} (${y0.toFixed(0)}-${y1.toFixed(0)} m above ground) enters ${owner(ring, Math.max(0, y0), y1)}`);
+      }
+    }
+  }
+  check(city.length === 0, `procedural city and far OSM layer (city workers): ${cityNear} buildings next to a bridge in ${tiles.size} tiles, none inside one`, city);
+
+  // (f) Land use under the low parts (towers, piers, anchorages, decks near the ground): no procedural building or
+  // tree may be planted there (geo/prepare.ts reserves them; the city and the vegetation plant nothing on Landmark).
+  const PLANTED = new Set([LandUse.Urban, LandUse.HistoricUrban, LandUse.Highrise, LandUse.Industrial, LandUse.Suburban, LandUse.Park, LandUse.Forest]);
+  const planted: string[] = [];
+  let samplesLU = 0;
+  for (const ring of lowStructureOutlines(STRUCTURE_REACH, 0, boxes)) {
+    const [x0, z0, x1, z1] = bbox(ring);
+    for (let z = z0 + 2; z < z1; z += 6) {
+      for (let x = x0 + 2; x < x1; x += 6) {
+        if (!pointInRing(ring, x, z)) {
+          continue;
+        }
+        samplesLU++;
+        const u = geo.landUseAt(x, z);
+        if (PLANTED.has(u)) {
+          planted.push(`${x.toFixed(0)}, ${z.toFixed(0)}: land use ${LandUse[u]} under ${owner(ring, 0, STRUCTURE_REACH)}`);
+        }
+      }
+    }
+  }
+  check(planted.length === 0, `land use under the bridges' low parts: ${samplesLU} samples, none open to procedural buildings or trees`, planted);
+
+  // (g) Terrain: no ground above a deck piece's road surface inside its footprint (soil on the road). Towers, piers
+  // and anchorages stand in the ground by design (CapMode.None). Near a deck's end (CapMode.DeckEnd) the approach
+  // runs into the hillside and the cap leaves the axis alone: its outer corners may meet up to DECK_END_TOLERANCE.
+  const DECK_END_TOLERANCE = 2.5;
+  const ground = visibleGround(geo);
+  const buried: string[] = [];
+  for (const f of fresh.structures) {
+    const b = f.boxes;
+    let worst = 0;
+    let at = '';
+    let count = 0;
+    for (let o = 0; o < b.length; o += STRUCTURE_STRIDE) {
+      if (b[o + 8] === CapMode.None) {
+        continue;
+      }
+      const cs = Math.cos(b[o + 4]);
+      const sn = Math.sin(b[o + 4]);
+      for (const [u, v] of [[-0.9, -0.9], [0, -0.9], [0.9, -0.9], [-0.9, 0], [0, 0], [0.9, 0], [-0.9, 0.9], [0, 0.9], [0.9, 0.9]]) {
+        const lx = u * b[o + 2];
+        const lz = v * b[o + 3];
+        const x = b[o] + lx * cs + lz * sn;
+        const z = b[o + 1] - lx * sn + lz * cs;
+        const d = ground(x, z) - b[o + 7];
+        if (d > (b[o + 8] === CapMode.DeckEnd ? DECK_END_TOLERANCE : STRUCTURE_CAP_TOLERANCE)) {
+          count++;
+          if (d > worst) {
+            worst = d;
+            at = `${x.toFixed(0)}, ${z.toFixed(0)}`;
+          }
+        }
+      }
+    }
+    if (count) {
+      buried.push(`${f.id}: ground above the road at ${count} samples, up to ${worst.toFixed(1)} m (at ${at})`);
+    }
+  }
+  check(buried.length === 0, `terrain: no ground more than ${STRUCTURE_CAP_TOLERANCE} m above the road of the ${fresh.structures.length} bridges (${DECK_END_TOLERANCE} m at the ends)`, buried);
 }
 
 console.log(failures.length ? `\n${failures.length} check(s) failed` : '\nall checks passed');

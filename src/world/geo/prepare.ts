@@ -13,6 +13,7 @@ import { SPOT_HEIGHTS } from './data/spot-heights';
 import { osmCoverageMask } from '../city/osm/mask';
 import { osmStaticExclusion } from '../osm/regions';
 import WALL_CORRIDORS from '../landmarks/walls/data/corridors.json';
+import { lowStructureOutlines, STRUCTURE_REACH, STRUCTURE_STRIDE, STRUCTURE_VERGE, structureBoxes } from '../landmarks/structure-volumes';
 import type { BuildInput, FlatRing } from './types';
 
 /** Flat lat/lon pairs -> flat local x/z pairs. */
@@ -212,6 +213,12 @@ export function prepareBuildInput(): PreparedInput {
     }
   }
 
+  // Bridges (landmarks/structure-volumes.ts): their towers, piers, anchorages and the deck pieces that run within
+  // STRUCTURE_REACH of the ground are no place for procedural buildings or trees.
+  for (const ring of lowStructureOutlines(STRUCTURE_REACH, STRUCTURE_VERGE)) {
+    reservedPolygons.push(Float64Array.from(ring));
+  }
+
   // The placed city walls (npm run compile:walls): procedural buildings keep a few metres off both faces.
   for (const c of (WALL_CORRIDORS as { lines: number[][] }).lines) {
     reservedLines.push({ pts: Float64Array.from(c.slice(1)), halfWidth: c[0] });
@@ -257,6 +264,8 @@ export function prepareBuildInput(): PreparedInput {
     reservedDiscs,
     reservedLines,
     reservedPolygons,
+    structureCaps: Float32Array.from(structureBoxes()),
+    structureStride: STRUCTURE_STRIDE,
     roads: ROADS.map((r) => ({ pts: projectRing(r.ll), halfWidth: Math.max(6, r.width / 2 + 3), overWater: r.kind === 'bridge', highway: r.kind === 'highway' ? r.name : undefined })),
     breakwaters: BREAKWATERS.map((b) => ({ pts: projectRing(b.ll), halfWidth: b.width / 2 + 12 })),
     districts: DISTRICTS.map((d) => ({

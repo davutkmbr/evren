@@ -9,10 +9,13 @@
  * - A building on the ground claim of a landmark the game models itself (landmarks/claims.ts: mostly (PAD_COVER_MAX)
  *   inside a pad, or touching a line landmark's body such as the aqueduct) is left to that model. The street tiles
  *   flag it as a landmark (no geometry), so the game's model shows there at every distance.
+ * - A building that would enter a bridge (landmarks/structure-volumes.ts: its towers, piers, anchorages or a deck
+ *   that runs within its roof height) is left out (onStructure), wherever it stands; a house under a high deck stays.
  * - Nothing is dropped for the coarse geo shoreline. That grid misses reclaimed quays by up to about 90 m, and the
  *   street tiles keep every mapped building on the quays and piers.
  */
 import { ringTouchesLineBody, type LandmarkClaims } from '../../landmarks/claim-shapes';
+import { nearStructure, prismHitsStructure } from '../../landmarks/structure-volumes';
 
 /** building=* values that are not solid buildings. */
 export const NON_SOLID_KINDS: ReadonlySet<string> = new Set(['ruins', 'collapsed', 'bridge', 'construction', 'no']);
@@ -66,4 +69,30 @@ export function onLandmarkClaim(claims: LandmarkClaims, ring: readonly number[])
     }
   }
   return claims.lines.length > 0 && ringTouchesLineBody(claims.lines, ring);
+}
+
+/** Whether the ring's bounds come near a structure volume of the claims (a cheap test before planning heights). */
+export function nearClaimedStructure(claims: LandmarkClaims, ring: readonly number[]): boolean {
+  if (!claims.structures?.length) {
+    return false;
+  }
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < ring.length; i += 2) {
+    minX = Math.min(minX, ring[i]);
+    maxX = Math.max(maxX, ring[i]);
+    minZ = Math.min(minZ, ring[i + 1]);
+    maxZ = Math.max(maxZ, ring[i + 1]);
+  }
+  return nearStructure(minX, minZ, maxX, maxZ, undefined, claims.structures);
+}
+
+/**
+ * True when a building standing from `y0` to `y1` m above its ground on `ring` would enter a structure of the claims
+ * (a bridge's tower, pier, anchorage or deck): it is left to the structure.
+ */
+export function onStructure(claims: LandmarkClaims, ring: readonly number[], y0: number, y1: number): boolean {
+  return !!claims.structures?.length && prismHitsStructure(ring, y0, y1, claims.structures);
 }
