@@ -27,6 +27,7 @@ refetch. Every prop goes through the shared stand rule; per-slice budgets. Count
 | `man_made=mast` / `man_made=tower` (on the ground) | GSM mast / lattice tower |
 | `tourism=hotel` | lit blade sign on the facade |
 | `natural=beach` | sunbed pairs under straw umbrellas, facing the water |
+| `leisure=swimming_pool` | water in a stone coping fitted to the outline's box (a disc for free-form pools); indoor and rooftop pools left to the buildings. Needs a region re-fetch: the shipped regions predate the tag |
 | `amenity=shelter`, `leisure=picnic_table`, `amenity=clock`, `tourism=information`, `advertising=billboard` | kameriye, picnic table, street clock, info board, billboard |
 
 Kits without a twin in the compiled street tiles (`props/stamp.ts` `THROUGH_HOLE`) are drawn through the street

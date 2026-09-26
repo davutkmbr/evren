@@ -56,6 +56,9 @@ export type PropKind =
   | 'hotelSign'
   | 'sunbed'
   | 'beachUmbrella'
+  | 'poolWater'
+  | 'poolRound'
+  | 'poolEdge'
   | 'picnicTable'
   | 'kameriye'
   | 'streetClock'
@@ -599,6 +602,24 @@ function sunbed(): THREE.BufferGeometry {
 }
 
 /** Straw beach umbrella (şemsiye) on a wooden pole. */
+const POOL_WATER = 0x3aa6c8;
+const POOL_COPING = 0xe6e1d6;
+
+/** Swimming pool water: a unit square (scaled to the pool) just above the ground, tiled bottom showing through. */
+function poolWater(): THREE.BufferGeometry {
+  return merge([part(box(1, 0.04, 1, 0, 0.1, 0), POOL_WATER)]);
+}
+
+/** Round / free-form pool: a unit-diameter water disc on its coping disc (scaled to the pool's box). */
+function poolRound(): THREE.BufferGeometry {
+  return merge([part(cyl(0.53, 0.53, 0.16, 0, 0.08, 0, 20), POOL_COPING), part(cyl(0.5, 0.5, 0.04, 0, 0.16, 0, 20), POOL_WATER)]);
+}
+
+/** Pool coping: a stone kerb of unit length along x (scaled along x to the side it runs along). */
+function poolEdge(): THREE.BufferGeometry {
+  return merge([part(box(1, 0.2, 0.45, 0, 0.1, 0), POOL_COPING)]);
+}
+
 function beachUmbrella(): THREE.BufferGeometry {
   return merge([part(cyl(0.04, 0.05, 2.5, 0, 1.25, 0, 5), 0x7b5433), part(new THREE.ConeGeometry(1.4, 0.7, 10).translate(0, 2.55, 0), 0xc9a86a)]);
 }
@@ -693,6 +714,9 @@ export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
     hotelSign: hotelSign(),
     sunbed: sunbed(),
     beachUmbrella: beachUmbrella(),
+    poolWater: poolWater(),
+    poolRound: poolRound(),
+    poolEdge: poolEdge(),
     picnicTable: picnicTable(),
     kameriye: kameriye(),
     streetClock: streetClock(),
