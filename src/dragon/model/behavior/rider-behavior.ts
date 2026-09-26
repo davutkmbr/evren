@@ -26,7 +26,7 @@ const PET_GAZE = 0.8;
 /** Seconds between purr phrases while petted (each phrase is ~2 s). */
 const PURR_EVERY = 2.1;
 /** Maneuvers the dragon glances back after ("did you like that?"). */
-const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'urge']);
+const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'urge', 'wingover', 'immelmann', 'splits']);
 
 const LABELS = {
   pet: 'Ejderhayı seviyorsun',
