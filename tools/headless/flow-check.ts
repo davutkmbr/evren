@@ -235,7 +235,7 @@ function baseline(): void {
   const s = new FlightSim();
   check(s.flow.dragScale === 1 && s.flow.thrustScale === 1 && s.flow.powerGainScale === 1 && s.flow.powerThrustScale === 1, 'payback scales are exactly 1 without flow');
   s.flow.setValue(1);
-  check(Math.abs(s.flow.dragScale - (1 - FLOW.dragCut)) < 1e-12 && FLOW.dragCut <= 0.12, `full flow: drag × ${f2(s.flow.dragScale)} (cap −12 %)`);
+  check(Math.abs(s.flow.dragScale - (1 - FLOW.dragCut)) < 1e-12 && FLOW.dragCut <= 0.08, `full flow: drag × ${f2(s.flow.dragScale)} (cap −8 %)`);
 
   // Top cruise: Space held in level flight (path and bank held), stamina kept full.
   const top = (flow: number): number => {
@@ -252,7 +252,7 @@ function baseline(): void {
   const v1 = top(1);
   note('payback.topCruise0', v0);
   note('payback.topCruise1', v1);
-  check(v1 - v0 > 6 && v1 - v0 < 8, `top cruise ${f2(v0)} → ${f2(v1)} m/s at full flow (+${f2(v1 - v0)}, target ~+7)`);
+  check(v1 - v0 > 4 && v1 - v0 < 5.6, `top cruise ${f2(v0)} → ${f2(v1)} m/s at full flow (+${f2(v1 - v0)}, target ~+5)`);
   // A glide at full flow still loses energy (no perpetual acceleration).
   const glide = (flow: number): number => {
     const sim = createSim(400, 45);
@@ -552,11 +552,12 @@ function fuzz(): void {
 function bursts(): void {
   console.log('\n5. Chain bursts (instant push per clean chain link)');
   // Size by link: link 1 small, link 3 and on the full size, capped in m/s.
-  const at50 = [1, 2, 3, 4].map((n) => linkDv(n, 50, 0.9, 1));
+  const at40 = [1, 2, 3, 4].map((n) => linkDv(n, 40, 0.9, 1));
   check(
-    at50[0] < at50[1] && at50[1] < at50[2] && at50[2] === at50[3] && Math.abs(at50[0] / 50 - BURST.fraction[0]) < 1e-9 && Math.abs(at50[2] / 50 - BURST.fraction[2]) < 1e-9,
-    `size grows with the chain at 50 m/s: +${at50.map((v) => f2(v)).join(' / +')} m/s (+${at50.map((v) => Math.round((v / 50) * 100)).join(' / +')} %)`,
+    at40[0] < at40[1] && at40[1] < at40[2] && at40[2] === at40[3] && Math.abs(at40[0] / 40 - BURST.fraction[0]) < 1e-9 && Math.abs(at40[2] / 40 - BURST.fraction[2]) < 1e-9,
+    `size grows with the chain at 40 m/s: +${at40.map((v) => f2(v)).join(' / +')} m/s (+${at40.map((v) => Math.round((v / 40) * 100)).join(' / +')} %)`,
   );
+
   check(linkDv(5, 70, 1, 1) === BURST.maxDv && linkDv(1, 10, 1, 1) === 0, `capped at +${BURST.maxDv} m/s (70 m/s, link 5), none below ${BURST.minSpeed} m/s`);
   check(linkDv(1, 50, BURST.linkHarmony, 1) < linkDv(1, 50, 1, 1), 'a better handover pushes harder');
   check(Math.abs(linkDv(3, 40, 1, 0) - BURST.flowFloor * linkDv(3, 40, 1, 1)) < 1e-9, `without flow a link pushes ${Math.round(BURST.flowFloor * 100)} % of its full size`);

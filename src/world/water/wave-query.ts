@@ -21,7 +21,7 @@
  * point, sunk under land like the Gerstner sheet, the same sum the water shaders draw from the splat texture.
  */
 import type * as THREE from 'three';
-import type { WaterDynamicSample, WaterSeaState, WaterService } from '../../core/contracts';
+import type { WaterDynamicSample, WaterFoam, WaterSeaState, WaterService } from '../../core/contracts';
 import { WORLD_HALF_SIZE } from '../../core/geo-coords';
 import type { RegionBakeResult } from './bake/region-bake';
 import { fromHalf } from './bake/half';
@@ -95,6 +95,26 @@ function sample4(data: Float32Array, n: number, x: number, z: number, out: Float
   }
 }
 
+/** Ambient surface at an undisplaced point (WaveQuery.lagrangianAt). */
+export interface LagrangianSample {
+  jacobian: number;
+  height: number;
+  stokesX: number;
+  stokesZ: number;
+  groups: number;
+  keep: number;
+  /** Local significant wave height of the ambient waves, 4 sqrt(sum (g A)^2 / 2) (m). */
+  hs: number;
+  /** Spread of the linear part of 1 - J, sqrt(sum (g f Q k A)^2 / 2) x keep, and the energy-weighted mean frequency (rad/s). */
+  sigmaJ: number;
+  omega: number;
+  /** Effective number of slots in the Jacobian, (sum q^2)^2 / sum q^4, and sum q x keep (1 - it is the deepest fold). */
+  nEff: number;
+  qSum: number;
+}
+
+export const newLagrangianSample = (): LagrangianSample => ({ jacobian: 1, height: 0, stokesX: 0, stokesZ: 0, groups: 0, keep: 1, hs: 0, sigmaJ: 0, omega: 0, nEff: 1, qSum: 0 });
+
 /**
  * The wave field at the latest sea-state update. `sync` copies the wave table from the SeaState uniforms; the
  * queries then evaluate the displaced surface anywhere in the world.
@@ -120,6 +140,8 @@ export class WaveQuery implements WaterService {
   private lodos = 0;
   /** Wave particles added to every query (null: the ambient waves alone, e.g. the parity test). */
   dynamic: WaveParticles | undefined = undefined;
+  /** Foam and spray sources (phase 21 stage 7c), set by the water system. */
+  foam: WaterFoam | undefined = undefined;
   private readonly dyn: WaterDynamicSample = { height: 0, slopeX: 0, slopeZ: 0, vx: 0, vy: 0, vz: 0 };
   private dynX = NaN;
   private dynZ = NaN;
@@ -318,6 +340,78 @@ export class WaveQuery implements WaterService {
     this.velX = vx * keep;
     this.velY = vy * keep;
     this.velZ = vz * keep;
+  }
+
+  /**
+   * The ambient surface at the undisplaced (Lagrangian) point (x0, z0), as the foam simulation evaluates it per texel
+   * (phase 21 stage 7c): horizontal Jacobian of the Gerstner displacement (1 = flat, -> 0 where the surface folds),
+   * height, Stokes drift sum(A^2 w k D) of the local slots, the sum of the group weights and the land keep factor.
+   * `texel` > 0 fades the slots shorter than FOAM_SIM.minTexels..fullTexels grid cells out of the Jacobian exactly as
+   * the sim shader does (`fade`, see foam/whitecaps.ts slotFade); 0 keeps every slot.
+   */
+  lagrangianAt(x0: number, z0: number, out: LagrangianSample, fade?: (lambda: number) => number): LagrangianSample {
+    this.groupsAt(x0, z0);
+    this.cacheVersion = -1;
+    const xo = x0 - this.originX;
+    const zo = z0 - this.originZ;
+    const gw = this.groupW;
+    let jxx = 0;
+    let jxz = 0;
+    let jzz = 0;
+    let dy = 0;
+    let stx = 0;
+    let stz = 0;
+    let var2 = 0;
+    let m1 = 0;
+    let q2 = 0;
+    let q4 = 0;
+    let qs1 = 0;
+    for (let i = 0; i < this.count; i++) {
+      const g = gw[this.group[i]];
+      if (g <= 0) {
+        continue;
+      }
+      const Dx = this.dirX[i];
+      const Dz = this.dirZ[i];
+      const k = this.k[i];
+      const ph = k * (Dx * xo + Dz * zo) + this.phase[i];
+      const s = Math.sin(ph);
+      const A = this.amp[i] * g;
+      dy += A * s;
+      var2 += A * A;
+      m1 += A * A * this.omega[i];
+      const drift = A * A * this.omega[i] * k;
+      stx += Dx * drift;
+      stz += Dz * drift;
+      const f = fade ? fade((2 * Math.PI) / k) : 1;
+      if (f <= 0) {
+        continue;
+      }
+      const qf = this.steep[i] * g * f;
+      q2 += qf * qf;
+      q4 += qf * qf * qf * qf;
+      qs1 += qf;
+      const qs = qf * s;
+      jxx += Dx * Dx * qs;
+      jxz += Dx * Dz * qs;
+      jzz += Dz * Dz * qs;
+    }
+    const keep = this.keep;
+    const a = 1 - jxx * keep;
+    const c = 1 - jzz * keep;
+    const b = jxz * keep;
+    out.jacobian = a * c - b * b;
+    out.height = dy * keep - this.sink;
+    out.stokesX = stx * keep;
+    out.stokesZ = stz * keep;
+    out.groups = (gw[0] + gw[1] + gw[2] + gw[3]) * keep;
+    out.keep = keep;
+    out.hs = 4 * Math.sqrt(var2 * 0.5) * keep;
+    out.sigmaJ = Math.sqrt(0.5 * q2) * keep;
+    out.nEff = q4 > 0 ? (q2 * q2) / q4 : 1;
+    out.qSum = qs1 * keep;
+    out.omega = var2 > 0 ? m1 / var2 : 0;
+    return out;
   }
 
   /** Find the undisplaced point whose displaced position is (x, z) and evaluate it (cached). */

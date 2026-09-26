@@ -17,6 +17,7 @@ const STORAGE_KEY = 'ejderha.weather.v1';
 const WEATHER_TAU = 2.5;
 const LOOK_TAU = 0.25;
 const FLASH_COLOR = new THREE.Color(0.74, 0.8, 1.0);
+const SETTING_KEYS = ['fog', 'rain', 'storm', 'farBlur'] as const;
 const BOLT_COLOR = new THREE.Color(0.8, 0.85, 1.0);
 
 interface Stored {
@@ -93,7 +94,7 @@ export function createWeatherSystem(): System {
       persist();
     },
     set(partial: Partial<WeatherSettings>) {
-      for (const key of ['fog', 'rain', 'storm', 'farBlur'] as const) {
+      for (const key of SETTING_KEYS) {
         const v = partial[key];
         if (typeof v === 'number') {
           settings[key] = clamp01(v);
@@ -182,7 +183,7 @@ export function createWeatherSystem(): System {
       current.rain += (settings.rain - current.rain) * kw;
       current.storm += (settings.storm - current.storm) * kw;
       current.farBlur += (settings.farBlur - current.farBlur) * kl;
-      for (const key of ['fog', 'rain', 'storm', 'farBlur'] as const) {
+      for (const key of SETTING_KEYS) {
         if (Math.abs(current[key] - settings[key]) < 1e-3) {
           current[key] = settings[key];
         }

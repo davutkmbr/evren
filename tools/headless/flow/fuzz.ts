@@ -56,7 +56,7 @@ export function randomMacro(r: () => number): Macro {
   if (u < 0.93) {
     return macroHoldDouble(pick(PRE_KEYS), 0.4 + r() * 2, pick(DOUBLE_KEYS));
   }
-  return u < 0.97 ? { name: 'Space', play: (p, t) => (p.tap('Space', t), 0.1) } : { name: 'V', play: (p, t) => (p.tap('V', t), 0.1) };
+  return { name: 'Space', play: (p, t) => (p.tap('Space', t), 0.1) };
 }
 
 export interface FuzzRun {

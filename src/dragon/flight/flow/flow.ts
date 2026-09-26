@@ -273,8 +273,12 @@ export class FlowSystem {
   /** Delivers the running burst along the flight path (outside work for the energy bookkeeping). */
   private stepBurst(sim: FlightSim, h: number): void {
     const b = this.burst;
-    if (b.links > 0 && sim.time - b.lastFed > FLOW.maxGap) {
+    const idle = sim.time - b.lastFed;
+    if (idle > FLOW.maxGap && b.links > 0) {
       b.breakChain();
+    }
+    if (idle > BURST.kindMemory && b.kinds.length > 0) {
+      b.forget();
     }
     if (!b.active) {
       b.rate = 0;

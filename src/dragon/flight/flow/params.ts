@@ -136,9 +136,9 @@ export const FLOW = {
 
   /* ------------------------------------------------------------ payback (capped, physical) */
   /** Drag multiplier at full flow: 1 − dragCut (all aerodynamic drag). */
-  dragCut: 0.12,
-  /** Flap force multiplier at full flow: 1 + thrustGain (with dragCut: top cruise 48.3 → ~55.5 m/s, checked by flow-check). */
-  thrustGain: 0.3,
+  dragCut: 0.08,
+  /** Flap force multiplier at full flow: 1 + thrustGain (with dragCut: top cruise 48.3 → 53.1 m/s, checked by flow-check). */
+  thrustGain: 0.2,
   /** Power stroke at full flow: surge gain × (1 + powerGain), thrust × (1 + powerThrust). */
   powerGain: 0.4,
   powerThrust: 0.25,

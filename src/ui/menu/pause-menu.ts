@@ -2,7 +2,7 @@ import { interactive, prompt, stat } from '../components';
 import { BRAND } from '../brand';
 import { el } from '../dom';
 
-export type MenuTab = 'teleport' | 'controls' | 'settings';
+export type MenuTab = 'teleport' | 'controls' | 'settings' | 'moments';
 
 /** A tab's content. `handleKey` gets the keys the menu does not use itself (Esc / P close it). */
 export interface MenuPanel {
@@ -22,11 +22,13 @@ const TABS: ReadonlyArray<{ id: MenuTab; title: string }> = [
   { id: 'teleport', title: 'Işınlan' },
   { id: 'controls', title: 'Kontroller' },
   { id: 'settings', title: 'Ayarlar' },
+  { id: 'moments', title: 'Anlar' },
 ];
 
 /**
- * Pause menu (Esc / P): a top bar (state, the three tabs, discovery progress, Devam) over one tab's content:
- * Işınlan (map + places), Kontroller (key groups + keyboard) or Ayarlar (settings pages).
+ * Pause menu (Esc / P): a top bar (state, the four tabs, discovery progress, Devam) over one tab's content:
+ * Işınlan (map + places), Kontroller (key groups + keyboard), Ayarlar (settings pages) or Anlar (moments seen, with
+ * their sources).
  */
 export class PauseMenu {
   readonly root: HTMLElement;

@@ -63,6 +63,12 @@ class CascadeFrustum extends THREE.Frustum {
   depthMin = -Infinity;
   depthMax = Infinity;
   minRadius = 0;
+  /**
+   * Lowest world height (m) a receiver sampling this cascade can have: the lowest corner of its view-frustum slice
+   * (0 when the mirrored water-reflection view may sample it too). A caster lying wholly below it casts its shadow
+   * (the light travelling down) only below itself, so nothing this cascade shades can be in it.
+   */
+  minReceiverY = -Infinity;
 
   constructor(private readonly cull: CullingContext) {
     super();
@@ -96,8 +102,14 @@ class CascadeFrustum extends THREE.Frustum {
     if (_sphere.radius < this.minRadius) {
       return false;
     }
-    const row = c.depthRow;
     const center = _sphere.center;
+    // Height cull. `userData.shadowTop` (opt-in, world m) is the caster's real highest point when its bounding sphere
+    // overstates it by far (city chunks: 500 m wide, a few tens of metres tall).
+    const top = typeof object.userData.shadowTop === 'number' ? (object.userData.shadowTop as number) : center.y + _sphere.radius;
+    if (c.lightTravel.y < -1e-3 && top < this.minReceiverY) {
+      return false;
+    }
+    const row = c.depthRow;
     const d0 = -(row.x * center.x + row.y * center.y + row.z * center.z + row.w);
     const fall = -c.lightTravel.y;
     const length = fall > 1e-3 ? Math.min(Math.max(center.y + _sphere.radius - c.groundY, 0) / fall, c.maxShadowLength) : c.maxShadowLength;
@@ -300,6 +312,19 @@ export class CascadedSunShadow extends SunLightShadow {
       shadowCamera.updateProjectionMatrix();
       shadowCamera.updateMatrixWorld();
       s._updateMatrix(shadowCamera, s._matrices[i], frustum, s._viewports[i]);
+
+      // Lowest receiver of this slice (convex: the lowest of its 8 corners). The planar reflection reuses this frame's
+      // map; its mirrored fragments lie above the sea (y >= 0), within about 1.25 x this depth of the mirrored camera.
+      let minY = Infinity;
+      for (let k = 0; k < 8; k++) {
+        const z = k < 4 ? n : f;
+        _corner.set((k & 1 ? 1 : -1) * tanH * z, (k & 2 ? 1 : -1) * tanV * z, -z).applyMatrix4(cam.matrixWorld);
+        minY = Math.min(minY, _corner.y);
+      }
+      if (f * 1.25 >= cam.matrixWorld.elements[13]) {
+        minY = Math.min(minY, 0);
+      }
+      frustum.minReceiverY = minY;
 
       this.texelWorldSize[i] = texel;
       const receiverMin = i === 0 ? -1e10 : n;

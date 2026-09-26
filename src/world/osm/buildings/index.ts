@@ -5,7 +5,6 @@
  */
 import * as THREE from 'three';
 import type { CollisionWorld } from '../../../core/collision';
-import type { GeoQuery } from '../../../core/contracts';
 import type { OsmData, OsmPoint } from '../data';
 import { LayerBase } from '../shared/layer';
 import { findPassages } from '../shared/passages';
@@ -15,6 +14,7 @@ import { countTriangles } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { isWallOwned } from '../../landmarks/walls/system/owned';
+import { landmarkClaims } from '../../landmarks/claims';
 import { Poi } from './build';
 import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
@@ -35,21 +35,6 @@ export function poiTriples(points: readonly OsmPoint[]): Float32Array {
     if (kind) {
       out.push(p.x, p.z, kind);
     }
-  }
-  return new Float32Array(out);
-}
-
-/** Modelled landmarks (and neighbourhood mosques) whose footprint OSM buildings must leave free; bridges and walls are linear and excluded. */
-export function landmarkPads(geo: GeoQuery): Float32Array {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind === 'bridge' || l.kind === 'walls') {
-      continue;
-    }
-    out.push(l.x, l.z, l.radius);
-  }
-  for (const m of geo.smallMosqueSites) {
-    out.push(m.x, m.z, m.radius);
   }
   return new Float32Array(out);
 }
@@ -101,7 +86,8 @@ class BuildingsLayer extends LayerBase {
       // Towers and gate pylons of the city walls are drawn by the walls system.
       buildings: data.buildings.filter((b) => !isWallOwned(b.id)),
       pois: poiTriples(data.points),
-      pads: landmarkPads(ctx.geo),
+      // Modelled landmarks keep their ground (pads, line bodies such as the aqueduct): no OSM building through them.
+      claims: landmarkClaims(ctx.geo),
       passages: findPassages(data.buildings, data.roads),
       infill: { roads: data.roads, areas: data.areas, rails: data.rails },
     };

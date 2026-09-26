@@ -56,13 +56,14 @@ export interface LampRange {
 
 export class LampPool {
   readonly points: THREE.Points;
-  private readonly positions: Float32Array;
-  private readonly colors: Uint8Array;
-  private readonly posAttr: THREE.BufferAttribute;
-  private readonly colAttr: THREE.BufferAttribute;
-  private readonly used: Uint8Array;
+  private positions: Float32Array;
+  private colors: Uint8Array;
+  private posAttr: THREE.BufferAttribute;
+  private colAttr: THREE.BufferAttribute;
+  private used: Uint8Array;
   private highWater = 0;
-  readonly capacity: number;
+  /** Current size in lamps; grows when the chunks around the camera need more (see grow()). */
+  capacity: number;
 
   constructor(capacity: number) {
     this.capacity = Math.ceil(capacity / BLOCK) * BLOCK;
@@ -114,7 +115,10 @@ export class LampPool {
       }
     }
     if (startBlock < 0) {
-      return null;
+      // Full (dense districts at long draw distances filled ~94 % of the initial pool on "high"): grow instead of
+      // silently dropping the chunk's street lights. The range starts at the trailing free run (`run` blocks long).
+      startBlock = this.used.length - run;
+      this.grow(startBlock + blocks);
     }
     for (let b = startBlock; b < startBlock + blocks; b++) {
       this.used[b] = 1;
@@ -147,6 +151,31 @@ export class LampPool {
     }
     this.highWater = hw;
     this.points.geometry.setDrawRange(0, this.highWater);
+  }
+
+  /** Reallocates the pool for at least `minBlocks` blocks (keeps every range where it is). */
+  private grow(minBlocks: number): void {
+    const blocks = Math.max(this.used.length * 2, minBlocks);
+    const capacity = blocks * BLOCK;
+    const positions = new Float32Array(capacity * 3);
+    positions.set(this.positions);
+    const colors = new Uint8Array(capacity * 4);
+    colors.set(this.colors);
+    const used = new Uint8Array(blocks);
+    used.set(this.used);
+    this.positions = positions;
+    this.colors = colors;
+    this.used = used;
+    this.capacity = capacity;
+    const g = this.points.geometry;
+    // Frees the GPU buffers of the old attributes; the geometry uploads the new ones in full on its next draw.
+    g.dispose();
+    this.posAttr = new THREE.BufferAttribute(positions, 3);
+    this.posAttr.setUsage(THREE.DynamicDrawUsage);
+    this.colAttr = new THREE.BufferAttribute(colors, 4, false);
+    this.colAttr.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', this.posAttr);
+    g.setAttribute('aLamp', this.colAttr);
   }
 
   private markDirty(start: number, count: number): void {

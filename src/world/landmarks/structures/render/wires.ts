@@ -198,6 +198,9 @@ export class WireRenderer {
   setData(data: Float32Array): void {
     const n = Math.floor(data.length / WIRE_STRIDE);
     const buffer = new THREE.InstancedInterleavedBuffer(data, WIRE_STRIDE, 1);
+    // Rebuilds (joint refinement) replace the instance buffer: dispose() frees the GPU buffers of the old one (deleting
+    // the attributes alone left them allocated); the geometry uploads again on its next draw.
+    this.geometry.dispose();
     for (const name of ['iA', 'iB', 'iRadius', 'iColor', 'iLed', 'iFade']) {
       this.geometry.deleteAttribute(name);
     }

@@ -199,9 +199,9 @@ export class DragonRigImpl implements DragonRig {
     this.animator.setGazeSide(side, immediate);
   }
 
-  /** Debug (screenshots): freeze the urge snap phase (0..1) and the petting stroke phase (rad); null = animate. */
-  setDebugPhases(urge: number | null, stroke: number | null): void {
-    this.animator.setDebugPhases(urge, stroke);
+  /** Debug (screenshots): freeze the petting stroke phase (rad); null = animate. */
+  setDebugStrokePhase(stroke: number | null): void {
+    this.animator.setDebugStrokePhase(stroke);
   }
 
   setPose(p: Partial<DragonPose>): void {
@@ -217,11 +217,6 @@ export class DragonRigImpl implements DragonRig {
 
   getPose(): Readonly<DragonPose> {
     return this.pose;
-  }
-
-  /** True once per rein crack of the rider's "dehh" gesture (for the sound). */
-  consumeReinSnap(): boolean {
-    return this.animator.consumeReinSnap();
   }
 
   setFirstPerson(enabled: boolean): void {

@@ -23,7 +23,7 @@ export const storks: Moment = {
   id: 'storks-bosphorus-migration',
   title: "Boğaz'da Leylek Göçü",
   category: 'city-life',
-  status: 'draft',
+  status: 'ready',
   backlog: 2,
   trigger: {
     place: { label: 'Bosphorus corridor', area: BOSPHORUS_CORRIDOR },
@@ -35,61 +35,77 @@ export const storks: Moment = {
     repeat: { kind: 'repeatable', cooldownSec: 1800 },
   },
   content: {
+    // Procedural (src/moments/content.ts): the instanced flock of src/moments/storks, its wing poses and the
+    // synthesised stork sounds (src/audio/sfx/storks.ts) over a soft wind bed.
     actorId: 'moments/white-stork-flock',
     animationIds: ['moments/stork-soar-circle', 'moments/stork-glide'],
     soundId: 'moments/stork-bill-clatter',
     subtitles: [
-      { at: 0, duration: 4.5, text: "Leylekler! Her güz Avrupa'dan Afrika'ya giderken Boğaz'dan geçerler." },
-      { at: 5, duration: 4, text: 'Denizin üstünde termik azdır; o yüzden en dar geçidi seçerler.' },
-      { at: 9.5, duration: 4, text: 'Daire çizip yükseliyorlar. Katıl onlara, sıcak hava bedava.' },
+      { at: 0, duration: 4.5, text: "Leylekler! Her sonbahar Avrupa'dan Afrika'ya göçerken Boğaz'ın üstünden geçerler." },
+      { at: 5, duration: 4.5, text: 'Denizin üstünde sıcak hava yükselmez; bu yüzden denizi en dar yerinden aşarlar.' },
+      { at: 10, duration: 4.5, text: 'Kanat çırpmadan, daire çizerek yükseliyorlar. Katıl onlara: sıcak hava bedava.' },
+      { at: 20, duration: 4.5, text: 'Tepeye varanlar süzülerek güneye, bir sonraki termiğe doğru yola koyuluyor.' },
     ],
     camera: { kind: 'orbit', note: 'Flock circling in a thermal column; the dragon may join the spiral.' },
     card: {
       title: "Boğaz'dan Göç",
       text:
-        'Her sonbahar yüz binlerce leylek ve yırtıcı kuş Boğaz üzerinden Afrika\'ya göç eder. Uzun deniz geçişlerinden ' +
-        'kaçınıp karanın üstündeki sıcak hava akımlarıyla süzülürler.',
+        "Her sonbahar yüz binlerce leylek ve yırtıcı kuş, Avrupa'dan Afrika'ya göç ederken Boğaz'ın üzerinden geçer. " +
+        'Uzun deniz geçişlerinden kaçınır; karanın üstünde yükselen sıcak hava akımlarında kanat çırpmadan süzülerek ilerler.',
     },
+    waypoints: [
+      // The ?moment= shortcut starts here (420 m ASL), heading up the strait for the narrows; the kettle appears ahead.
+      { id: 'start', lat: 41.078, lon: 29.052, note: 'Mid-strait off Kandilli, facing the heated hills of both shores at the narrows', expect: 'water' },
+      { id: 'narrows', lat: 41.084, lon: 29.0615, note: 'The Rumelihisarı – Anadoluhisarı narrows, where flocks cross', expect: 'water' },
+    ],
   },
   provenance: [original('subtitles', 'White stork and raptor migration over the Bosphorus (natural history)'), original('card', 'White stork and raptor migration over the Bosphorus (natural history)')],
-  needs: ['model', 'animation', 'sound'],
+  needs: [],
   notes:
     'White storks peak from mid-August to mid-September, raptors continue into October; the range 15 Aug – 15 Oct covers both. ' +
-    'Joining the thermal needs phase 05 lift; the runtime should place the flock over land near the strait (Çamlıca, Sarıyer hills).',
+    'Runtime: src/moments/storks spawns a kettle 320–800 m ahead of the dragon on the best real thermal of the lift field ' +
+    '(phase 05) in view, so the dragon can join the spiral; the kettle empties into a glide stream to the south and fades far away.',
 };
 
 export const gullSimit: Moment = {
   id: 'ferry-gull-simit',
   title: 'Martı ve Simit',
   category: 'city-life',
-  status: 'draft',
+  status: 'ready',
   backlog: 4,
   trigger: {
-    place: { label: 'Near any ferry (moving anchor)', anchor: 'ferry', radius: 60 },
-    surface: 'air',
-    altitude: [{ ref: 'agl', max: 40 }],
-    timeOfDay: { from: 7, to: 21 },
+    // 'ferry': the vapurs and city ferries in service (underway on their line), supplied by src/moments/anchors.ts.
+    place: { label: 'Near a ferry in service (moving anchor)', anchor: 'ferry', radius: 250 },
+    surface: 'any',
+    altitude: [{ ref: 'agl', max: 60 }],
+    // Low and slow near the boat: flying, gliding, hovering or perched on it; not diving, swimming or under water.
+    flightModes: ['flying', 'gliding', 'hovering', 'stalling', 'landing', 'takeoff', 'grounded'],
+    timeOfDay: { from: 7, to: 20 },
     weather: ['clear', 'haze', 'fog'],
     repeat: { kind: 'repeatable', cooldownSec: 600 },
   },
   content: {
-    actorId: 'moments/ferry-passenger-and-gull',
-    animationIds: ['moments/passenger-raise-simit', 'moments/gull-snatch', 'moments/passenger-shrug'],
+    // Procedural (src/moments/gull-simit): the ferry's gull flock and the tossed simit pieces; no passengers.
+    actorId: 'moments/ferry-gull-flock',
     soundId: 'moments/gull-call',
     subtitles: [
-      { at: 0, duration: 3.5, text: 'Vapurda biri simidini havaya kaldırdı. Büyük hata.' },
-      { at: 4, duration: 3, text: 'Martı hiç düşünmedi. Simit artık onun.' },
-      { at: 7.5, duration: 3, speaker: 'Martı', text: 'Çay da var mıydı?' },
+      { at: 0, duration: 4, text: 'Vapurun arkasında biri simidini bölüp martılara atıyor.' },
+      { at: 4.5, duration: 4, text: 'Martılar rüzgârda asılı duruyor, parçayı havada kapıyorlar.' },
+      { at: 9, duration: 3, speaker: 'Martı', text: 'Yanında çay da var mı?' },
     ],
-    camera: { kind: 'look-at', note: 'Stern of the ferry, passenger holding a simit, gull diving in from the wake.' },
+    camera: { kind: 'look-at', note: 'Stern of the ferry: gulls hanging in the slipstream, simit pieces tossed from the rail.' },
     card: {
       title: 'Martı ve Simit',
-      text: "İstanbul vapurlarının değişmeyen sahnesi: simit parçaları ve onları havada kapan martılar. Martılar bu işte hiç ıskalamaz.",
+      text:
+        'İstanbul vapurlarının değişmeyen sahnesi: arkadan simit atan yolcular, dümen suyunda asılı duran martılar. ' +
+        'Parçayı çoğu zaman havada kaparlar; kaçanı da denizden toplarlar.',
     },
   },
   provenance: [original('subtitles'), original('card')],
-  needs: ['model', 'animation', 'sound', 'runtime-anchor'],
-  notes: "Needs the ferries' positions as the 'ferry' anchor (living world, phase 13). The dragon may snatch the simit too (future gameplay).",
+  needs: [],
+  notes:
+    "Anchored to the ferries in service ('ferry' anchor: vapur and double-ender kinds underway). The flock takes over " +
+    "the ferry's ambient gulls and hands them back afterwards. The dragon may snatch a simit too (future gameplay).",
 };
 
 export const anglers: Moment = {

@@ -110,7 +110,7 @@ export class FlightSim {
   /* Locomotion state. */
   /** Seconds left of the crouch before a leap take-off (0 = none). */
   leapCharge = 0;
-  /** Seconds into a running take-off (the urge on the ground; 0 = none). */
+  /** Seconds into the take-off run on the water (Space / L while swimming; 0 = none). */
   runTakeoff = 0;
   groundSpeed = 0;
   groundYaw = 0;

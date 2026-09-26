@@ -20,7 +20,7 @@ export interface PilotCommand {
   roarPressed: boolean;
   /**
    * Maneuver edges: A / D double tap (roll), S double tap (loop), Shift double tap (dart when fast, drop when slow),
-   * V (the rider's "dehh"), Space double tap (power stroke), Q / E double tap (side-slip). The same edges start the
+   * Space double tap (power stroke), Q / E double tap (side-slip). The same edges start the
    * stage C reversals by context: S double tap while banked (wingover), A / D double tap in a steep dive (Split-S);
    * the Immelmann reads the held roll axis during a loop.
    */
@@ -28,7 +28,6 @@ export interface PilotCommand {
   rollRightPressed: boolean;
   loopPressed: boolean;
   dropPressed: boolean;
-  urgePressed: boolean;
   powerPressed: boolean;
   slipLeftPressed: boolean;
   slipRightPressed: boolean;
@@ -66,7 +65,6 @@ export type ManeuverId =
   | 'loop'
   | 'freefall'
   | 'catch'
-  | 'urge'
   | 'takeoff'
   | 'land'
   | 'runout'
@@ -152,7 +150,6 @@ export function createPilotCommand(): PilotCommand {
     rollRightPressed: false,
     loopPressed: false,
     dropPressed: false,
-    urgePressed: false,
     powerPressed: false,
     slipLeftPressed: false,
     slipRightPressed: false,
@@ -184,7 +181,6 @@ export function copyPilotCommand(from: PilotCommand, to: PilotCommand): PilotCom
   to.rollRightPressed = from.rollRightPressed;
   to.loopPressed = from.loopPressed;
   to.dropPressed = from.dropPressed;
-  to.urgePressed = from.urgePressed;
   to.powerPressed = from.powerPressed;
   to.slipLeftPressed = from.slipLeftPressed;
   to.slipRightPressed = from.slipRightPressed;
@@ -200,7 +196,6 @@ export const PILOT_EDGES = {
   rollRight: 'rollRightPressed',
   loop: 'loopPressed',
   drop: 'dropPressed',
-  urge: 'urgePressed',
   power: 'powerPressed',
   slipLeft: 'slipLeftPressed',
   slipRight: 'slipRightPressed',
