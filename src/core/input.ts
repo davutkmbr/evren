@@ -101,6 +101,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string }> = [
   { keys: 'G (basılı)', action: 'Ejderhayı sev' },
   { keys: 'T', action: 'Eyerde ayağa kalk / otur' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına' },
+  { keys: 'Y', action: 'Halka yarışı: sıradaki parkuru başlat / iptal et' },
   { keys: 'Fare', action: 'Etrafa bak (sağ tık basılı / POV)' },
   { keys: 'C', action: 'Kamera: üçüncü şahıs / POV / sinematik' },
   { keys: '[ / ]', action: 'Günün saatini değiştir' },
