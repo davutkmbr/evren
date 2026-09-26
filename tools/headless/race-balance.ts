@@ -49,6 +49,9 @@ export interface Balance {
   some: RaceRun;
   chained: RaceRun;
   medals: MedalTimes;
+  /** Every seed's run (the rules use the best; the spread shows how robust the gap is). */
+  someRuns: RaceRun[];
+  chainedRuns: RaceRun[];
 }
 
 function best(runs: RaceRun[]): RaceRun {
@@ -81,7 +84,7 @@ for (const def of COURSES) {
       chained.push(c);
     }
   }
-  results.push({ course: def.id, plain, some: best(some), chained: best(chained), medals: def.medals });
+  results.push({ course: def.id, plain, some: best(some), chained: best(chained), medals: def.medals, someRuns: some, chainedRuns: chained });
 }
 
 console.log('\nCourse     plain (s)  some (s)  chained (s)  gap some / chained   flow plain/some/chained   V plain/chained    medals (gold/silver/bronze)');
@@ -90,6 +93,19 @@ for (const r of results) {
   console.log(
     `${r.course.padEnd(10)} ${fmt(r.plain.time).padStart(9)} ${fmt(r.some.time).padStart(9)} ${fmt(r.chained.time).padStart(12)}  ${(gapOf(r.plain, r.some) * 100).toFixed(1).padStart(6)} % / ${(gapOf(r.plain, r.chained) * 100).toFixed(1).padStart(5)} %      ${r.plain.meanFlow.toFixed(2)} / ${r.some.meanFlow.toFixed(2)} / ${r.chained.meanFlow.toFixed(2)}        ${r.plain.meanSpeed.toFixed(1)} / ${r.chained.meanSpeed.toFixed(1)} m/s   ${formatTargetTime(m.gold)} / ${formatTargetTime(m.silver)} / ${formatTargetTime(m.bronze)}  (${medalFor(r.plain.time, m) ?? '—'} / ${medalFor(r.some.time, m) ?? '—'} / ${medalFor(r.chained.time, m) ?? '—'})`,
   );
+}
+/** Mean, standard deviation, min and max of the gap to plain (%) over every seed and line. */
+function spread(plain: RaceRun, runs: RaceRun[]): string {
+  const g = runs.map((r) => gapOf(plain, r) * 100);
+  const mean = g.reduce((a, b) => a + b, 0) / g.length;
+  const sd = Math.sqrt(g.reduce((a, b) => a + (b - mean) ** 2, 0) / g.length);
+  const median = [...g].sort((a, b) => a - b)[Math.floor(g.length / 2)];
+  return `mean ${mean.toFixed(1)} ± ${sd.toFixed(1)} %, median ${median.toFixed(1)} %, range ${Math.min(...g).toFixed(1)}–${Math.max(...g).toFixed(1)} % (n ${g.length})`;
+}
+console.log('\nSpread of the gap to plain over seeds (the plain racer is deterministic):');
+for (const r of results) {
+  console.log(`  ${r.course.padEnd(8)} some:    ${spread(r.plain, r.someRuns)}`);
+  console.log(`  ${r.course.padEnd(8)} chained: ${spread(r.plain, r.chainedRuns)}`);
 }
 console.log('');
 for (const r of results) {
