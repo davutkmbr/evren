@@ -6,7 +6,7 @@
  * is known).
  */
 import * as THREE from 'three';
-import type { EngineContext, GeoQuery, LandmarkDef, StreetGroundService, System } from '../../../../core/contracts';
+import type { EngineContext, GeoQuery, LandmarkDef, StreetGroundService, System, WorldBounds } from '../../../../core/contracts';
 import { UpdateOrder } from '../../../../core/contracts';
 import { globalUniforms } from '../../../../core/uniforms';
 import { StructureBatches } from '../render/batches';
@@ -15,6 +15,7 @@ import { createGlassMaterial, createOpaqueMaterial } from '../render/materials';
 import { WireRenderer } from '../render/wires';
 import { BatchKind, LIGHT_STRIDE, WIRE_STRIDE } from '../types';
 import type { DeckData, JointGround, PartData, SiteInput, StructureResult, WorkerRequest, WorkerResponse } from '../types';
+import { onOsmExclusionChange } from '../../../osm/regions';
 import { QUAY_EDGE } from '../../../osm/shared/street-surface';
 import { JOINT_REACH } from '../build/deck-joint';
 import { RoadSurface } from './road-surface';
@@ -57,6 +58,10 @@ export class StructureSystem implements System {
   private outstanding = 0;
   private expected = 0;
   private generationMs = 0;
+  /** Joint refinement in flight, and the OSM region rects that started drawing meanwhile (refined after it). */
+  private refining = false;
+  private readonly refineQueue: WorldBounds[] = [];
+  private unsubOsm: (() => void) | null = null;
 
   constructor(private readonly options: StructureSystemOptions = {}) {
     this.root.name = 'structures';
@@ -92,11 +97,32 @@ export class StructureSystem implements System {
         }
         // Landed deck ends are rebuilt against the exact drawn ground: the terrain now, the OSM street ground once
         // it is known.
-        const street = this.ctx?.services.tryGet('streetGround') ?? null;
-        this.refineJoints(street, () => {
-          if (!street) {
-            void this.ctx?.services.when('streetGround').then((st) => this.refineJoints(st, () => undefined, true));
+        // OSM regions that start drawing later bring their own street ground: the deck ends inside them are refined
+        // again (queued behind the refinement in flight).
+        this.unsubOsm = onOsmExclusionChange((rect, active) => {
+          if (active) {
+            this.refineQueue.push(rect);
+            this.refineQueued();
           }
+        });
+        const street = this.ctx?.services.tryGet('streetGround') ?? null;
+        this.refining = true;
+        this.refineJoints(street, () => {
+          if (street) {
+            this.refining = false;
+            this.refineQueued();
+            return;
+          }
+          void this.ctx?.services.when('streetGround').then((st) =>
+            this.refineJoints(
+              st,
+              () => {
+                this.refining = false;
+                this.refineQueued();
+              },
+              true,
+            ),
+          );
         });
       },
     );
@@ -149,7 +175,27 @@ export class StructureSystem implements System {
    * none seaward of the quay wall), else the terrain (none offshore); `streetOnly` limits it to ends on the street
    * ground. The street's tram tracks and lane lines across the end go along (the deck's lines move onto them).
    */
-  private refineJoints(street: StreetGroundService | null, done: () => void, streetOnly = false): void {
+  /** Refines the deck ends inside the queued region rects against the street ground (one refinement at a time). */
+  private refineQueued(): void {
+    const street = this.ctx?.services.tryGet('streetGround') ?? null;
+    if (this.refining || this.refineQueue.length === 0 || !street) {
+      return;
+    }
+    const rects = this.refineQueue.splice(0);
+    this.refining = true;
+    this.refineJoints(
+      street,
+      () => {
+        this.refining = false;
+        this.refineQueued();
+      },
+      true,
+      rects,
+    );
+  }
+
+  /** `within`: only the deck ends inside these rects (the OSM regions that just started drawing). */
+  private refineJoints(street: StreetGroundService | null, done: () => void, streetOnly = false, within?: readonly WorldBounds[]): void {
     const geo = this.geo;
     if (!geo || this.disposed) {
       return;
@@ -160,6 +206,9 @@ export class StructureSystem implements System {
         // Lateral x across the deck, `d` m beyond the end (negative: under the deck).
         const at = (x: number, d = 0.05): { x: number; z: number } => ({ x: e.ox + e.ax * (e.s + e.dir * d) - e.az * x, z: e.oz + e.az * (e.s + e.dir * d) + e.ax * x });
         const c = at(0);
+        if (within && !within.some((r) => c.x >= r.minX && c.x <= r.maxX && c.z >= r.minZ && c.z <= r.maxZ)) {
+          continue;
+        }
         const onStreet = !!street && street.covers(c.x, c.z);
         if (streetOnly && !onStreet) {
           continue;
@@ -337,6 +386,8 @@ export class StructureSystem implements System {
 
   dispose(): void {
     this.disposed = true;
+    this.unsubOsm?.();
+    this.unsubOsm = null;
     for (const w of this.workers) {
       w.terminate();
     }

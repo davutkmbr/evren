@@ -51,7 +51,8 @@ function lotStats(lots: readonly LotRegion[]): Record<string, number> {
   return out;
 }
 
-serveWorker<DetailsRequest, DetailsResult>((req) => {
+/** Builds the details layer of one region (the worker's job; also run headless by tools/headless/osm-details-check.ts). */
+export function buildDetails(req: DetailsRequest): DetailsResult {
   const t0 = performance.now();
   const { base, data, pads } = req;
   const surface = new StreetSurface(base);
@@ -69,7 +70,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   const cover = buildCover(data, parcels.length ? data.buildings.concat(parcels) : data.buildings, surface, pads, poi);
   const t1 = performance.now();
   const coverMesh = buildCoverMesh(cover, surface);
-  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, lines: req.lines, mosques: req.mosques });
+  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, lines: req.lines, mosques: req.mosques, clearings: req.clearings });
   const t2 = performance.now();
   // Props and walkers keep a margin from the area's edges, except where another OSM region continues (base.fade is
   // pushed far out there): on those sides they reach the shared edge.
@@ -92,6 +93,13 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
     props.index = tiled.index;
     propsTiles = tiled.leaves;
   }
+  const kits = stamper.takeKits();
+  let kitsTiles: Float64Array | null = null;
+  if (kits) {
+    const tiled = lodTileIndex(kits.attributes.position.array as Float32Array, kits.index, new Uint8Array(kits.index.length / 3).fill(TriLod.Near));
+    kits.index = tiled.index;
+    kitsTiles = tiled.leaves;
+  }
   return {
     cover: coverMesh.count ? { mesh: coverMesh.take(), raster: coverRaster(cover) } : null,
     trees: trees.trees,
@@ -99,6 +107,8 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
     standers: placed.standers,
     props,
     propsTiles,
+    kits,
+    kitsTiles,
     boats: boats.mesh,
     flags: placed.flags,
     pigeons: placed.pigeons,
@@ -120,6 +130,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
       walkMs: Math.round(t3 - t2),
       boats: boats.count,
       propTris: stamper.mesh.triangles,
+      kitTris: stamper.kits.triangles,
       ...Object.fromEntries(Object.entries(stamper.counts).map(([k, v]) => [`p_${k}`, v])),
       ...stamper.log.flat('stand.'),
       standers: placed.standers.length / 6,
@@ -127,4 +138,9 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
       ms: Math.round(performance.now() - t0),
     },
   };
-});
+}
+
+// In a worker (not when imported headless, where there is no `self`).
+if (typeof self !== 'undefined') {
+  serveWorker<DetailsRequest, DetailsResult>(buildDetails);
+}

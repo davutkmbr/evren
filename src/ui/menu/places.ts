@@ -39,9 +39,8 @@ const PRESET_PERCH: Record<string, string> = {
   galata: 'galata-kulesi',
   koprusu: 'bogazici-koprusu-kule',
   fsm: 'fsm-koprusu-kule',
-  rumelihisari: 'rumeli-hisari-zaganos',
   kizkulesi: 'kiz-kulesi',
-  camlica: 'buyuk-camlica',
+  camlica: 'camlica-camii-kubbe',
 };
 /** Presets never merged into a perch (special views that happen to stand near one). */
 const SPECIAL_PRESETS = new Set(['yuksek', 'gece']);
@@ -51,7 +50,7 @@ const MERGE_DISTANCE = 600;
 /** Region per perch or preset id; anything missing falls back to `regionAt`. */
 const REGION_OF: Record<string, PlaceRegion> = {
   'suleymaniye-kubbe': 'historic',
-  'pierre-loti': 'historic',
+  'sultanahmet-kubbe': 'historic',
   spawn: 'historic',
   sultanahmet: 'historic',
   ayasofya: 'historic',
@@ -61,17 +60,12 @@ const REGION_OF: Record<string, PlaceRegion> = {
   'bogazici-koprusu-kule': 'bosphorus',
   'fsm-koprusu-kule': 'bosphorus',
   'yss-koprusu-kule': 'bosphorus',
-  'rumeli-hisari-zaganos': 'bosphorus',
-  'yusa-tepesi': 'bosphorus',
   bogaz: 'bosphorus',
   karadeniz: 'bosphorus',
-  'buyuk-camlica': 'asia',
+  'camlica-camii-kubbe': 'asia',
   'kiz-kulesi': 'asia',
-  otagtepe: 'asia',
   uskudar: 'asia',
   'istanbul-sapphire': 'around',
-  'buyukada-aya-yorgi': 'around',
-  aydos: 'around',
   levent: 'around',
   adalar: 'around',
   yuksek: 'special',
@@ -83,12 +77,10 @@ const PERCH_NAMES: Record<string, string> = {
   'bogazici-koprusu-kule': '15 Temmuz Şehitler Köprüsü',
   'fsm-koprusu-kule': 'Fatih Sultan Mehmet Köprüsü',
   'yss-koprusu-kule': 'Yavuz Sultan Selim Köprüsü',
-  'buyuk-camlica': 'Büyük Çamlıca',
-  'rumeli-hisari-zaganos': 'Rumeli Hisarı',
+  'camlica-camii-kubbe': 'Büyük Çamlıca Camii',
   'suleymaniye-kubbe': 'Süleymaniye Camii',
   'istanbul-sapphire': 'İstanbul Sapphire',
-  'pierre-loti': 'Pierre Loti',
-  'buyukada-aya-yorgi': 'Aya Yorgi Tepesi',
+  'sultanahmet-kubbe': 'Sultanahmet Camii',
 };
 
 /** A perch's short name (the list and the "[L] Kon" prompt): "Galata Kulesi", "Süleymaniye Camii". */

@@ -29,25 +29,13 @@ import { TREE_SPECIES } from './trees/species';
 import { GalataDeck, placeAnglers, standerArray } from './waterfront/bridge';
 import { createFlags } from './waterfront/flags';
 import { createPigeons } from './waterfront/pigeons';
-import { isModelled, landmarkClaims } from '../../landmarks/claims';
+import { landmarkClaims } from '../../landmarks/claims';
+import { mosquePads } from './mosque-pads';
+import { perchClearings } from '../../perches/clearings';
 
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
 const DECK_TIMEOUT = 40;
-
-/** Landmark mosques (grown by 10 m like the reserved pads) and neighbourhood mosque sites: x, z, radius triples. */
-function mosquePads(geo: GeoQuery): number[] {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind === 'mosque' && isModelled(l)) {
-      out.push(l.x, l.z, l.radius + 10);
-    }
-  }
-  for (const m of geo.smallMosqueSites) {
-    out.push(m.x, m.z, m.radius);
-  }
-  return out;
-}
 
 /** Trees shape the city from the air (always drawn) but cast shadows only within this distance (m, "high"). */
 const TREE_SHADOW_RADIUS = 450;
@@ -65,6 +53,7 @@ class DetailsLayer extends LayerBase {
   private crowd: Crowd | null = null;
   private readonly trees: InstanceLod[] = [];
   private props: LodTiledMesh | null = null;
+  private kits: LodTiledMesh | null = null;
   private result: DetailsResult | null = null;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
@@ -93,6 +82,7 @@ class DetailsLayer extends LayerBase {
       lines: Array.from(claims.lines),
       infillClaims: claims,
       mosques: mosquePads(ctx.geo),
+      clearings: perchClearings(ctx.geo),
     };
     const job = runWorker<DetailsRequest, DetailsResult>(worker, request);
     this.onDispose(() => job.cancel());
@@ -147,6 +137,12 @@ class DetailsLayer extends LayerBase {
     if (res.props && res.propsTiles) {
       this.props = new LodTiledMesh(this.group, 'osm-details-props', res.props, res.propsTiles, this.propMaterial, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
       this.props.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+    }
+    if (res.kits && res.kitsTiles) {
+      const kitMat = createPropMaterial('osm-details-kits', false, false);
+      this.onDispose(() => kitMat.dispose());
+      this.kits = new LodTiledMesh(this.group, 'osm-details-kits', res.kits, res.kitsTiles, kitMat, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
+      this.kits.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -241,9 +237,12 @@ class DetailsLayer extends LayerBase {
     for (const t of this.trees) {
       t.update(cam, preset);
     }
-    if (this.props) {
-      this.props.update(cam, preset);
-      this.props.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
+    for (const m of [this.props, this.kits]) {
+      if (!m) {
+        continue;
+      }
+      m.update(cam, preset);
+      m.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
     }
   }
 }

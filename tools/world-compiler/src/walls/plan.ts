@@ -20,6 +20,8 @@ export interface Site {
   waterName(x: number, z: number): string | null;
   /** Building density 0..1. */
   density(x: number, z: number): number;
+  /** Towers another system draws (heritage fortresses): x, z, radius; no kit tower is placed on them. */
+  reservedTowers?: readonly { x: number; z: number; r: number }[];
 }
 
 export type WallClass = 'land' | 'land-outer' | 'marmara' | 'golden-horn' | 'castle';
@@ -908,6 +910,11 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
       const towersAt: TowerAt[] = [];
       /** Places a tower unless it would stand in a building: shrunk once, else skipped. */
       const placeTower = (s: number, piece: TowerPiece): boolean => {
+        const reach = piece.p.width / 2 + piece.p.projection;
+        if ((site.reservedTowers ?? []).some((t) => Math.hypot(t.x - piece.at[0], t.z - piece.at[1]) < t.r + reach)) {
+          addL('towers.heritage', 1);
+          return false;
+        }
         if (fp && outlineBlocked(towerOutline(piece.at, piece.dir, piece.p, CLEAR), fp, skip)) {
           const small: TowerParams = { ...piece.p, width: piece.p.width * 0.75, projection: Math.max(1.2, piece.p.projection * 0.6), plan: 'square' };
           if (outlineBlocked(towerOutline(piece.at, piece.dir, small, CLEAR), fp, skip)) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { CameraMode, DragonRig, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import { clearOccluderFade, setOccluderFade } from '../core/occluder-fade';
 import { ModeBlend } from './blend';
 import { clamp, smoothstep } from './math/scalar';
 import { ChaseController } from './modes/chase';
@@ -33,6 +34,11 @@ const WHEEL_BACKLOG_PIXELS = 4000;
 
 type MutableFrame = { -readonly [K in keyof CameraFrame]: CameraFrame[K] };
 
+/**
+ * Occluder fade while the perch camera frames the dragon (core/occluder-fade.ts): cone radius at the eye and at the
+ * dragon (fraction of its size), where it stops before the dragon's centre (fraction of its size), ease time (s).
+ */
+const OCCLUDER = { eyeRadius: 1.5, subjectRadius: 0.24, stopBefore: 0.42, ease: 0.6 } as const;
 const _shakeOffset = new THREE.Vector3();
 const _shakeEuler = new THREE.Euler();
 const _shakeQ = new THREE.Quaternion();
@@ -257,6 +263,7 @@ export class CameraSystem implements System, CameraRigHost {
     this.applyShake(ctx);
     this.writeCamera(ctx);
     this.applyFirstPerson();
+    this.updateOccluderFade(frame.camDt);
     ctx.pipeline.speedEffect = clamp(this.finalPose.speedEffect, 0, 1);
   }
 
@@ -275,6 +282,30 @@ export class CameraSystem implements System, CameraRigHost {
   }
 
   /* ---------------- internals ---------------- */
+
+  private occluderFade = 0;
+
+  /**
+   * The perch camera (orbit / fixed) keeps the dragon in view by fading whatever stands between the eye and it: trees,
+   * buildings and props are not in the camera's collision world, so the rig alone cannot avoid them.
+   */
+  private updateOccluderFade(dt: number): void {
+    const on = this.active === 'cinematic' && this.cinematic.perching;
+    this.occluderFade = clamp(this.occluderFade + (on ? 1 : -1) * (dt / OCCLUDER.ease), 0, 1);
+    if (this.occluderFade <= 0) {
+      clearOccluderFade();
+      return;
+    }
+    const size = this.tracker.size;
+    setOccluderFade(
+      this.finalPose.position,
+      this.tracker.position,
+      OCCLUDER.eyeRadius,
+      size * OCCLUDER.subjectRadius,
+      size * OCCLUDER.stopBefore,
+      smoothstep(0, 1, this.occluderFade),
+    );
+  }
 
   private readInput(ctx: EngineContext): void {
     const input = ctx.input;

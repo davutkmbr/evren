@@ -13,6 +13,7 @@ import { CoverChannel, LotHint, LotStyle, isGreenArea, streetClearance, vnoise, 
 import { decodeSdf } from '../raster';
 import { TREE_SPECIES, type TreeSpecies } from './species';
 import { onLineBody } from '../../../landmarks/claim-shapes';
+import { inClearing } from '../../../perches/clearing-test';
 
 interface Planter {
   surface: StreetSurface;
@@ -27,6 +28,8 @@ interface Planter {
   lines: readonly number[];
   /** Mosque pads (x, z, radius): their yards get a loose ring of cypresses and planes. */
   mosques: readonly number[];
+  /** Perch clearings (perches/clearings.ts): no crown over a perch. */
+  clearings?: readonly number[];
 }
 
 /** Model heights (m) at scale 1 (trees/models.ts). */
@@ -126,6 +129,10 @@ class Forest {
     const y = this.p.surface.heightAt(x, z) - 0.15;
     const hs = scale * (0.85 + 0.3 * h);
     const vs = scale * (0.85 + 0.3 * h2);
+    // No tree grows over a perch (perches/clearings.ts).
+    if (this.p.clearings && inClearing(this.p.clearings, x, z, y + BASE_HEIGHT[species] * vs)) {
+      return;
+    }
     let r = 1;
     let g = 1;
     let b = 1;

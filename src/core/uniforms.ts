@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SHARED_GLSL } from '../render/shaders';
 import { registerAtmosphereGlobals } from '../render/sky/globals';
 import { FADE_SLOTS, STREET_DITHER_GLSL } from '../street/fade';
+import { OCCLUDER_FADE_GLSL, OCCLUDER_FADE_PARS_GLSL, occluderUniforms } from './occluder-fade';
 
 /** Fade table of the street tiles (see street/fade.ts) until the street layer sets its own: every slot fully in. */
 function defaultStreetFade(): THREE.DataTexture {
@@ -51,6 +52,8 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uStreetHoleMask: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },
   uStreetHoleRect: { value: new THREE.Vector4(0, 0, 1, 1) },
   uStreetFade: { value: defaultStreetFade() },
+  /** Occluder fade (core/occluder-fade.ts): written by the camera system while the perch camera frames the dragon. */
+  ...occluderUniforms,
   /**
    * Handover of the flight-scale OSM regions (world/osm/fade.ts): per slot a build rect (minX, minZ, maxX, maxZ) and its
    * fade (x) and direction (y: 1 fading out). Materials with the OSM_FADE define (every material of a streamed region)
@@ -167,6 +170,7 @@ ${SHARED_GLSL}
     uniform sampler2D uStreetFade;
     ${STREET_DITHER_GLSL}
   #endif
+  ${OCCLUDER_FADE_PARS_GLSL}
 #endif
 `;
   /**
@@ -218,10 +222,11 @@ ${SHARED_GLSL}
   }
 #endif
 `;
-  THREE.ShaderChunk.clipping_planes_fragment = CLIPPING_PLANES_FRAGMENT + streetHoleTest + osmFadeTest;
+  THREE.ShaderChunk.clipping_planes_fragment = CLIPPING_PLANES_FRAGMENT + streetHoleTest + osmFadeTest + OCCLUDER_FADE_GLSL;
   THREE.ShaderChunk.fog_fragment = /* glsl */ `
 ${streetHoleTest}
 ${osmFadeTest}
+${OCCLUDER_FADE_GLSL}
 #ifdef USE_FOG
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);
 #endif

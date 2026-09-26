@@ -3,28 +3,36 @@
  * derived from the same inputs the landmark builders use (LandmarkDef anchors / heights, builder specs, terrain),
  * so a perch stays on its structure when a builder or the landmark data changes. See resolve.ts.
  *
- * Headings are compass degrees toward the best view. Player-facing text (name, info) is Turkish. Hill coordinates
- * are the summits of the game's terrain near the real spot, except Pierre Loti (the café on the brow above Eyüp);
- * tools/headless/perches-check.ts prints the local summit.
+ * Headings are compass degrees toward the best view. Player-facing text (name, info) is Turkish.
+ *
+ * Placement rules (PERCH_RULES, checked by validatePerch at load and by tools/headless/perches-check.ts): a perch
+ * stands on top of a structure (there is no ground placement: a hill top is not enough, trees and buildings grow
+ * over the dragon and the camera), high above the ground and clear of every neighbour around it, with an open view.
+ * Left out on purpose (the dragon's rig spheres: body r 1.7 m, tail 8.8 m behind, 20 m of spread wings):
+ * - minaret balconies, tower galleries and terraces: body and tail reach into the storeys above;
+ * - the Beyazıt Kulesi: its stone roof is 2.3 m wide around the 11 m signal pole, no grip keeps the body off the pole;
+ * - the Çamlıca Kulesi: no ledge, the crown slopes straight into the 5 m antenna mast;
+ * - Rumeli Hisarı: no built towers yet, and the hillside woods stand over its tower tops;
+ * - hill tops (trees).
+ * The city-wall tower perches are not listed here: walls.ts picks them by rule from the walls bake's candidates.
  */
 import type { PerchSurface } from '../../core/contracts';
 
 export type PerchPlacement =
-  /** Natural ground (hill tops): terrain height at lat/lon. */
-  | { kind: 'ground'; lat: number; lon: number }
   /** Top portal beam (portal towers) or concrete apex (A towers) of a Bosphorus suspension bridge tower. */
   | { kind: 'bridge-tower'; landmarkId: string; tower: 0 | 1 }
-  /** Tip of the Galata Kulesi lead cone (base of the finial). */
-  | { kind: 'galata-cap' }
-  /** Paved terrace of the Kız Kulesi islet, in the builder's local frame (u along the heading, v to the right). */
-  | { kind: 'kiz-terrace'; u: number; v: number }
+  /**
+   * Roof of a round tower (the Galata cone tip): `height` m over the builder's base, `radius` m out from the axis
+   * toward the perch heading.
+   */
+  | { kind: 'tower-roof'; landmarkId: string; height: number; radius: number }
+  /** Top of the Kız Kulesi cupola (base of the finial). */
+  | { kind: 'kiz-cupola' }
   /**
    * Main dome of an imperial landmark mosque, `offset` m from the crown toward the perch heading and `side` m to its
    * right (negative: left), so the alem on the crown stands beside the dragon instead of between its legs.
    */
   | { kind: 'mosque-dome'; landmarkId: string; offset: number; side?: number }
-  /** Top of one of the Rumeli Hisarı great towers. */
-  | { kind: 'fortress-tower'; tower: 'saruca' | 'halil' | 'zaganos' }
   /** Roof of a catalogued skyscraper; `along` = position on the plan's long axis (-1..1, slanted roofs: 1 = high end). */
   | { kind: 'skyscraper-roof'; landmarkId: string; anchor: number; along: number };
 
@@ -78,7 +86,8 @@ export const PERCH_DATA: readonly PerchData[] = [
     surface: 'tower',
     gripRadius: 2,
     landmarkId: 'galata-kulesi',
-    placement: { kind: 'galata-cap' },
+    // The tip of the lead cone (65.6 m, the base of the finial).
+    placement: { kind: 'tower-roof', landmarkId: 'galata-kulesi', height: 65.6, radius: 0 },
   },
   {
     id: 'suleymaniye-kubbe',
@@ -94,51 +103,13 @@ export const PERCH_DATA: readonly PerchData[] = [
   {
     id: 'kiz-kulesi',
     name: 'Kız Kulesi',
-    info: "Adacığın taş terası, deniz seviyesinin hemen üstünde. Bir yanda Üsküdar ve Salacak, karşıda Sarayburnu, Topkapı Sarayı ve Ayasofya.",
+    info: "Kulenin kurşun kaplı küçük kubbesi, Boğaz'ın ağzında denizin ortasında. Bir yanda Üsküdar ve Salacak, karşıda Sarayburnu, Topkapı Sarayı ve Ayasofya.",
     headingDeg: 255,
-    surface: 'rock',
-    gripRadius: 3.5,
+    surface: 'dome',
+    gripRadius: 2,
     landmarkId: 'kiz-kulesi',
-    // 21 m down the terrace from the islet's centre: closer to the tower the 24 m wingspan and the tail have no room
-    // between the tower and the islet's buildings (tools/headless/perch-landing-check.ts).
-    placement: { kind: 'kiz-terrace', u: -21, v: 0 },
-  },
-  {
-    id: 'rumeli-hisari-zaganos',
-    name: 'Rumeli Hisarı, Zağanos Paşa Kulesi',
-    info: "Hisarın en geniş kulesinin burçları. Boğaz'ın en dar noktası tam önünde; karşıda Anadolu Hisarı, kuzeyde Fatih Sultan Mehmet Köprüsü.",
-    headingDeg: 95,
-    surface: 'tower',
-    gripRadius: 5,
-    landmarkId: 'rumeli-hisari',
-    placement: { kind: 'fortress-tower', tower: 'zaganos' },
-  },
-  {
-    id: 'buyuk-camlica',
-    name: 'Büyük Çamlıca Tepesi',
-    info: "Anadolu yakasının simge tepesi; bütün şehir, Boğaz'ın iki köprüsü ve Adalar ayaklarının altındadır. Gün batımı Tarihî Yarımada'nın arkasında olur.",
-    headingDeg: 262,
-    surface: 'hill',
-    gripRadius: 6,
-    placement: { kind: 'ground', lat: 41.0274, lon: 29.069 },
-  },
-  {
-    id: 'otagtepe',
-    name: 'Otağtepe',
-    info: "Fatih Sultan Mehmed'in kuşatma öncesi otağını kurduğu söylenen koru. Fatih Sultan Mehmet Köprüsü ve Rumeli Hisarı hemen aşağıdadır.",
-    headingDeg: 248,
-    surface: 'hill',
-    gripRadius: 6,
-    placement: { kind: 'ground', lat: 41.097, lon: 29.0793 },
-  },
-  {
-    id: 'pierre-loti',
-    name: 'Pierre Loti Tepesi',
-    info: "Fransız yazar Pierre Loti'nin adını taşıyan kahvenin tepesi; Haliç'in bütün uzunluğu Eyüp mezarlığının servilerinin arasından görünür.",
-    headingDeg: 140,
-    surface: 'hill',
-    gripRadius: 5,
-    placement: { kind: 'ground', lat: 41.0553, lon: 28.9336 },
+    // The cupola over the lantern, not the islet's terrace: a perch never sits at sea or ground level.
+    placement: { kind: 'kiz-cupola' },
   },
   {
     id: 'istanbul-sapphire',
@@ -151,32 +122,23 @@ export const PERCH_DATA: readonly PerchData[] = [
     placement: { kind: 'skyscraper-roof', landmarkId: 'levent-kuleleri', anchor: 0, along: 0.9 },
   },
   {
-    id: 'buyukada-aya-yorgi',
-    name: 'Büyükada, Aya Yorgi Tepesi',
-    info: "Adaların en yüksek tepesi Yücetepe'deki Aya Yorgi Manastırı. Heybeliada, Burgazada ve açık Marmara bir bakışta görünür.",
-    headingDeg: 300,
-    surface: 'hill',
-    gripRadius: 6,
-    placement: { kind: 'ground', lat: 40.8486, lon: 29.1195 },
+    id: 'sultanahmet-kubbe',
+    name: 'Sultanahmet Camii Kubbesi',
+    info: "Altı minareli caminin büyük kubbesi. Tam karşıda Ayasofya, arkasında Topkapı Sarayı ve Boğaz'ın girişi; sağda Marmara'nın açıkları.",
+    headingDeg: 37,
+    surface: 'dome',
+    gripRadius: 2.5,
+    landmarkId: 'sultanahmet',
+    placement: { kind: 'mosque-dome', landmarkId: 'sultanahmet', offset: 1.5, side: -2.4 },
   },
   {
-    id: 'aydos',
-    name: 'Aydos Tepesi',
-    info: "537 m ile İstanbul'un en yüksek doğal noktası. Anadolu yakasının yeşil sırtları, Marmara kıyısı ve Adalar geniş bir yay çizer.",
-    headingDeg: 290,
-    surface: 'hill',
-    gripRadius: 8,
-    // Highest point of the built terrain (~560 m), 0.8 km NNW of the surveyed summit (537 m, 40.9315 / 29.2545):
-    // the relief spline overshoots on the ridge, so the surveyed spot is not a summit in the game.
-    placement: { kind: 'ground', lat: 40.9375, lon: 29.2485 },
-  },
-  {
-    id: 'yusa-tepesi',
-    name: 'Yuşa Tepesi',
-    info: "Beykoz sırtlarında, adını Yuşa Peygamber'e atfedilen türbeden alan tepe. Boğaz buradan kıvrılarak Karadeniz'e açılır.",
-    headingDeg: 10,
-    surface: 'hill',
-    gripRadius: 6,
-    placement: { kind: 'ground', lat: 41.162, lon: 29.0855 },
+    id: 'camlica-camii-kubbe',
+    name: 'Büyük Çamlıca Camii Kubbesi',
+    info: "Anadolu yakasının en yüksek tepesindeki caminin büyük kubbesi; bütün şehir, Boğaz'ın iki köprüsü ve Tarihî Yarımada ayaklarının altındadır. Gün batımı yarımadanın arkasında olur.",
+    headingDeg: 250,
+    surface: 'dome',
+    gripRadius: 3,
+    landmarkId: 'camlica-camii',
+    placement: { kind: 'mosque-dome', landmarkId: 'camlica-camii', offset: 2, side: -3 },
   },
 ];

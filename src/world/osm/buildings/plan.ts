@@ -8,6 +8,7 @@ import type { OsmBuilding } from '../data';
 import { hash } from '../shared/geometry';
 import { Arch, ARCHETYPES, Balcony, Head, Layer } from './archetypes';
 import { districtAt, type DistrictProfile, pickColour, pickWeighted } from './districts';
+import { osmColour } from '../shared/colour';
 
 export type RoofShape = 'flat' | 'hipped' | 'gabled' | 'pyramidal' | 'skillion' | 'dome' | 'domes';
 /** Roof covering (roof material: tiles / lead / metal; flat roofs: slab finishes, see materials.ts). */
@@ -173,20 +174,6 @@ const TAG_ROOFS: Record<string, RoofShape> = {
 
 function linear(hex: number, out = new THREE.Color()): THREE.Color {
   return out.setHex(hex, THREE.SRGBColorSpace);
-}
-
-/** Parses an OSM colour (CSS name or #hex); null when unreadable. */
-function osmColour(v: string | undefined): THREE.Color | null {
-  if (!v) {
-    return null;
-  }
-  const c = new THREE.Color();
-  try {
-    c.setStyle(v.replace(/_/g, ''), THREE.SRGBColorSpace);
-  } catch {
-    return null;
-  }
-  return Number.isFinite(c.r) ? c : null;
 }
 
 function isMosque(b: OsmBuilding): boolean {

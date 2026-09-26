@@ -16,6 +16,19 @@ export const LOCK_ROOT = fileURLToPath(new URL('../../.shots/.snap-slots', impor
 /** Headless system Chrome on the Metal ANGLE backend (real GPU). */
 export const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'];
 
+/**
+ * Launch options of the GPU browser: system Chrome with Metal ANGLE, or, when SNAP_CHROME (or EVREN_CHROME) names a
+ * Chromium binary (machines without Chrome or a GPU, e.g. Linux containers), that binary on SwiftShader (software
+ * WebGL: slow, fine for framing shots, not for performance numbers).
+ */
+export function chromeLaunchOptions() {
+  const exe = process.env.SNAP_CHROME ?? process.env.EVREN_CHROME;
+  if (exe) {
+    return { executablePath: exe, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'] };
+  }
+  return { channel: 'chrome', headless: true, args: CHROME_ARGS };
+}
+
 let heldSlot = null;
 
 function alive(pid) {
@@ -112,7 +125,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 export async function launchGpuBrowser(chromium) {
   await acquireSlot();
   try {
-    return await chromium.launch({ channel: 'chrome', headless: true, args: CHROME_ARGS });
+    return await chromium.launch(chromeLaunchOptions());
   } catch (e) {
     releaseSlot();
     throw e;

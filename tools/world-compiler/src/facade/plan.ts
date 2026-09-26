@@ -12,13 +12,13 @@
  * inherit their outline's tags (Simple 3D Buildings: the outline carries building:levels, its parts do not), then a
  * hash over the profile's storey range.
  */
-import * as THREE from 'three';
 import type { OsmBuilding } from '../../../../src/world/osm/data';
 import { pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import type { Solid } from '../buildings';
 import type { RGBA } from '../mesh';
 import { district } from '../district';
 import { h01, lin, mix, pick, pickWeighted, scale } from './frame';
+import { osmColourHex } from '../../../../src/world/osm/shared/colour';
 
 export type Typology = 'T1' | 'T2' | 'T3' | 'T5';
 export type Railing = 'solid' | 'flatbar' | 'squarebar' | 'pipe' | 'glazed' | 'glass' | 'iron';
@@ -245,18 +245,9 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   };
 }
 
-/** sRGB hex of an OSM building:colour (CSS name or #hex), or undefined when unreadable. */
+/** sRGB hex of an OSM building:colour, or undefined when unreadable (src/world/osm/shared/colour.ts). */
 function osmPaint(v: string | undefined): number | undefined {
-  if (!v) {
-    return undefined;
-  }
-  const c = new THREE.Color();
-  try {
-    c.setStyle(v.replace(/_/g, ''), THREE.SRGBColorSpace);
-  } catch {
-    return undefined;
-  }
-  return Number.isFinite(c.r) ? c.getHex(THREE.SRGBColorSpace) : undefined;
+  return osmColourHex(v) ?? undefined;
 }
 
 /** Wall top (topY) of a plan: parapet top for flat roofs, the ridge for hipped ones (conservative box). */

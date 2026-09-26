@@ -80,6 +80,17 @@ interface TrackLane {
   outer: boolean;
 }
 
+/**
+ * No vehicles on the water: where a road's geo polyline leaves the land off a bridge deck (coastal roads traced over
+ * the sea), cars fade out as the terrain under them sinks from 0 to WATER_FADE m (the sea surface is drawn wherever
+ * the terrain is below 0; the coast distance field is too coarse for this).
+ */
+const WATER_FADE = -0.4;
+
+function waterWeight(geo: GeoQuery, x: number, z: number): number {
+  return THREE.MathUtils.clamp(geo.heightAt(x, z) / WATER_FADE, 0, 1);
+}
+
 /** Metres over which cars fade out when entering an excluded rectangle. */
 const EXCLUDE_FADE = 15;
 
@@ -280,7 +291,7 @@ function snapToDeck(path: PathPoint[], deck: DeckAxis): { path: PathPoint[]; alo
  * point, hide weight and the lateral surface profile) and lays out right-hand traffic lanes with car phases.
  * Bridge decks come only from the core 'roadSurface' service: the roads are re-aligned onto the published deck
  * centre lines and take their surface heights (and lanes) from there. `hide` is 1 inside the `exclude` rectangles
- * (the OSM regions, which run their own traffic) and 0 elsewhere.
+ * (the OSM regions, which run their own traffic) and over the water off the bridge decks (WATER_FADE), 0 elsewhere.
  */
 export class RoadNetwork {
   readonly tracks: RoadTrack[] = [];
@@ -375,7 +386,8 @@ export class RoadNetwork {
           return g;
         };
         const yc = at(0);
-        pts.push(x, yc + WHEEL_LIFT, z, excludeWeight(x, z, exclude));
+        const onWater = deck || join ? 0 : waterWeight(geo, x, z);
+        pts.push(x, yc + WHEEL_LIFT, z, Math.max(excludeWeight(x, z, exclude), onWater));
         pts.push(at(-side) - yc, at(side) - yc, at(-side / 2) - yc, at(side / 2) - yc);
         kinds.push(deck ? SampleKind.Deck : join ? SampleKind.Join : SampleKind.Ground);
         minX = Math.min(minX, x);

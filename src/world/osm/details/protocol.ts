@@ -31,6 +31,8 @@ export interface DetailsRequest {
   lines: number[];
   /** Mosque pads (landmark mosques and neighbourhood mosques): x, z, radius triples. */
   mosques: number[];
+  /** Perch clearings (perches/clearings.ts): x, z, radius, highest allowed crown top per record. */
+  clearings: number[];
   /** Claims as the buildings layer passes them to its infill (buildings/index.ts). */
   infillClaims: LandmarkClaims;
 }
@@ -84,6 +86,9 @@ export interface DetailsResult {
   props: MeshArrays | null;
   /** Leaf table of `props` (shared/mesh-tiles.ts lodTileIndex, every triangle Near). */
   propsTiles: Float64Array | null;
+  /** Feature kits drawn through the street layer's hole (props/stamp.ts THROUGH_HOLE), tiled like `props`. */
+  kits: MeshArrays | null;
+  kitsTiles: Float64Array | null;
   /** Rocking boats (position, normal, color, aGlow, aPivot = pivot x, z, rocking amplitude, phase). */
   boats: MeshArrays | null;
   flags: Float32Array;
