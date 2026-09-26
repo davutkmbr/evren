@@ -29,7 +29,7 @@ const BUBBLE_SPLASH_MAX = 0.08;
  * Swimming (phase 21 stage 5 v2): the rig's swim phase (DragonPose.swimPhase) puts the left wing's catch at 0 and the
  * right one's at pi (the animator's convention); the power stroke lasts this share of the cycle (SWIM_RIG.paddlePower).
  */
-const SWIM_POWER_SHARE = 0.42;
+const SWIM_POWER_SHARE = 0.45;
 /** The swimming posture weight (pose.swim) above which strokes are heard (the take-off run fades it below). */
 const SWIM_STROKE_MIN = 0.6;
 
