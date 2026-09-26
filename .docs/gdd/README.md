@@ -47,9 +47,11 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 ### 5.1 Flight and the dragon (`src/dragon/`)
 - Physics-based flight: lift, drag, stall, flapping effort and stamina; glide ratio 8–12, cruise 25–45 m/s, folded
   dive 80–90 m/s.
-- Tricks: barrel roll, loop, free fall with a wing-snap catch, the "dehh" urge; air moves (phase 20 stage B): power
+- Tricks: barrel roll, loop, free fall with a wing-snap catch; air moves (phase 20 stage B): power
   stroke (güç vuruşu), dart, side-slip (kayış) and the automatic surface skim (sıyırma), each reporting a clean or
-  unclean end for the flow system to come.
+  unclean end for the flow system to come. There is no speed button: speed comes from the wing beats, the power
+  stroke, the air and flow (the rider's "dehh" urge on V was removed on 26 Sep; V is reserved for a rider–dragon
+  interaction in the bond phase).
 - Assisted hands-off flight: the dragon holds a safe clearance, climbs over what it cannot pass, **passes under**
   bridges and overhangs that leave room, and with a speed-scaled look-ahead (150–600 m) climbs over or turns away
   from towers. Player input always wins.
@@ -100,8 +102,8 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 
 ### 5.4 Ring races — phase 13 (`src/activities/`)
 - Built-in courses: Boğaz turu (under the 15 Temmuz deck), Haliç kıvrımı, Adalar turu; speed rings give a short push.
-- Medals from course length (gold ≈ 50 m/s average, silver 44, bronze 37): bronze and silver are reachable with clean
-  flying alone, gold needs flow (a chained run is ~6–8 % faster, checked by a scripted pilot); records, per-gate splits
+- Medals from course length (gold ≈ 42 m/s average, silver 38, bronze 32): bronze and silver are reachable with clean
+  flying alone, gold needs flow (a chained run is ~6–10 % faster, checked by a scripted pilot); records, per-gate splits
   and ghost replays stored per player.
 - Course editor: place gates and speed rings in flight, save, race, share as a code (`EVR1.…`).
 - Screens: picker, countdown, in-race readout, result with per-gate chart, editor (design language, section 3).
@@ -137,8 +139,8 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 | Group | Keys |
 |---|---|
 | Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
-| On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off, V galloping take-off; in a run-out Ctrl/X skid to a stop, Space touch-and-go |
-| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
+| On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off (running: the running leap); in a run-out Ctrl/X skid to a stop, Space touch-and-go |
+| Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
 | Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |

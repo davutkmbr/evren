@@ -12,7 +12,7 @@ import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
-import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
+import { playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
@@ -167,7 +167,6 @@ export const MIX = {
   thunder: 0.85,
   wingSnap: 1.3,
   whoosh: 0.9,
-  reinSnap: 0.8,
   purr: 1.1,
   /** Nostril bubbles under water: quiet, they repeat every half second. */
   bubbles: 0.45,
@@ -201,7 +200,6 @@ const COOLDOWN: Record<SoundName, number> = {
   thunder: 0.4,
   'wing-snap': 0.5,
   whoosh: 0.35,
-  'rein-snap': 0.2,
   purr: 1.2,
 };
 
@@ -314,7 +312,6 @@ export class AudioEngine {
     thunder: -1e9,
     'wing-snap': -1e9,
     whoosh: -1e9,
-    'rein-snap': -1e9,
     purr: -1e9,
   };
   private readonly windBusGain: SmoothParam;
@@ -579,13 +576,6 @@ export class AudioEngine {
         const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
         pl.gain *= MIX.whoosh * vol;
         playWhoosh(this.sfx, now, 1, pl);
-        break;
-      }
-      case 'rein-snap': {
-        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
-        pl.gain *= MIX.reinSnap * vol;
-        pl.closeness = this.bodyCloseness();
-        playReinSnap(this.sfx, now, 1, pl);
         break;
       }
       case 'purr': {

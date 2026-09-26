@@ -414,7 +414,7 @@ export function stepUnderwater(sim: FlightSim, cmd: PilotCommand, h: number): vo
 
   // --- strokes and the breach -------------------------------------------------------------
   const strokeReady = d.strokeAge > PLUNGE.strokePeriod;
-  if (!d.breaching && d.time > 0.2 && (cmd.flapPressed || cmd.urgePressed || (cmd.flap && strokeReady))) {
+  if (!d.breaching && d.time > 0.2 && (cmd.flapPressed || (cmd.flap && strokeReady))) {
     if (depth <= PLUNGE.breachDepth) {
       commitBreach(sim, speedNow);
     } else if (strokeReady) {

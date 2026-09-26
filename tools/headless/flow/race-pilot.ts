@@ -2,20 +2,20 @@
  * Scripted race pilot for the flow balance (tools/headless/race-balance.ts): flies a compiled course through the real
  * FlightSim over the real terrain, with the race session's own gate logic and the speed rings' boost envelope.
  *
- *   plain    steers gate to gate (bank and path targets like a stick), takes the speed rings on the way, urges the
- *            dragon on (V) whenever it can and beats the wings with Space while stamina allows (hysteresis); no moves.
+ *   plain    steers gate to gate (bank and path targets like a stick), takes the speed rings on the way and beats the
+ *            wings with Space while stamina allows (hysteresis); no moves.
  *   chained  the same, plus a skilled line and chained moves: on water legs without a speed ring it dives to a low line
  *            over the sea and zooms back to the gate, it takes the gates on the inside of the turn, and strings moves
- *            in the gaps between the urges' surges (the least recently used move that fits: a dart at the top of a
- *            descent, a power stroke, a side-slip onto the racing line or a barrel roll when enabled), started on the
- *            beat when the wings are beating. Flow then pays back as less drag and stronger beats.
+ *            along the legs (the least recently used move that fits: a dart at the top of a descent, a power stroke, a
+ *            side-slip onto the racing line or a barrel roll when enabled), started on the beat when the wings are
+ *            beating. Flow then pays back as less drag and stronger beats.
  */
 import { clamp } from '../../../src/core/math/noise';
 import { type CompiledCourse, type SpeedRing } from '../../../src/activities/courses';
 import { passTightness, RaceSession, type Vec3 } from '../../../src/activities/race';
 import { BoostEnvelope } from '../../../src/activities/speed-boost';
 import { headingToYaw } from '../../../src/core/geo-coords';
-import { DEG, FLAP, TRICKS } from '../../../src/dragon/flight/params';
+import { DEG, FLAP } from '../../../src/dragon/flight/params';
 import type { FlightSim } from '../../../src/dragon/flight/sim';
 import { fly, KeyPilot, type Key } from './key-pilot';
 
@@ -38,7 +38,7 @@ export interface RaceRun {
   motions: Record<string, { n: number; h: number; novelty: number; delta: number }>;
 }
 
-export type MoveName = 'power' | 'dart' | 'slipL' | 'slipR' | 'roll' | 'urge';
+export type MoveName = 'power' | 'dart' | 'slipL' | 'slipR' | 'roll';
 
 const TWO_PI = Math.PI * 2;
 
@@ -163,7 +163,21 @@ function legHeight(plan: LegPlan, u: number, skimY: number): number {
   return to.y;
 }
 
-export const DEFAULT_PILOT: PilotOptions = { moves: ['power', 'dart'], pauseMin: 0.3, pauseSpread: 1, noPayback: false, skimLine: true, dartDescentOnly: true, slipOffset: 15, flapResume: 0.55, apex: 0.85 };
+/**
+ * Balance pilot (race-balance.ts). Without the urge the chained pilot strings three kinds of moves (power stroke, dart,
+ * side-slip onto the racing line) with short pauses and takes the gates half-way to the inside of the turn.
+ */
+export const DEFAULT_PILOT: PilotOptions = {
+  moves: ['power', 'dart', 'slipL', 'slipR'],
+  pauseMin: 0.1,
+  pauseSpread: 1,
+  noPayback: false,
+  skimLine: true,
+  dartDescentOnly: true,
+  slipOffset: 15,
+  flapResume: 0.55,
+  apex: 0.5,
+};
 
 export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyle, seed = 1, maxSeconds = 600, opts: PilotOptions = DEFAULT_PILOT): RaceRun {
   const s = course.start;
@@ -182,14 +196,13 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
   let staminaMin = 1;
   let flapping = false;
   const moves: Record<string, number> = {};
-  const lastUsed: Record<MoveName, number> = { power: -99, dart: -99, slipL: -99, slipR: -99, roll: -99, urge: -99 };
+  const lastUsed: Record<MoveName, number> = { power: -99, dart: -99, slipL: -99, slipR: -99, roll: -99 };
   let rng = seed >>> 0;
   const random = (): number => {
     rng = (rng * 1664525 + 1013904223) >>> 0;
     return rng / 4294967296;
   };
   let lastMoveEnd = -99;
-  let lastUrge = -99;
   let wasBusy = false;
   let lastGateT = 0;
   let pending: { move: MoveName; since: number } | null = null;
@@ -315,11 +328,6 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     } else if (!wantFlap && pilot.isHeld('Space') && !pendingSpace(tt)) {
       pilot.up('Space', tt);
     }
-    // Both racers urge the dragon on ("dehh", V) whenever they can: a basic control, not one of the phase 20 moves.
-    if (sim.stamina > 0.2 && !sim.tired && tt - lastUrge > 2.6 && !busy(sim)) {
-      lastUrge = tt;
-      pilot.tap('V', tt);
-    }
     if (style !== 'chained') {
       return;
     }
@@ -331,8 +339,7 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     wasBusy = b;
     const toGate = Math.hypot(gate.x - p.x, gate.z - p.z);
     const legOk = toGate > 260 && tt - lastGateT > 1.5 && Math.abs(err) < 25 * DEG && sim.mode !== 'landing';
-    // Moves go in the gaps between the urges' surges (a trick would waste the surge).
-    if (b || !legOk || tt - lastUrge < TRICKS.urgeDuration) {
+    if (b || !legOk) {
       pending = null;
       return;
     }
@@ -356,10 +363,8 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     pause = opts.pauseMin + random() * opts.pauseSpread;
     lastUsed[m] = tt;
     moves[m] = (moves[m] ?? 0) + 1;
-    const key: Key = m === 'power' ? 'Space' : m === 'dart' ? 'Shift' : m === 'slipL' ? 'Q' : m === 'slipR' ? 'E' : m === 'urge' ? 'V' : random() < 0.5 ? 'A' : 'D';
-    if (key === 'V') {
-      pilot.tap('V', tt);
-    } else if (key === 'Space') {
+    const key: Key = m === 'power' ? 'Space' : m === 'dart' ? 'Shift' : m === 'slipL' ? 'Q' : m === 'slipR' ? 'E' : random() < 0.5 ? 'A' : 'D';
+    if (key === 'Space') {
       // Release a held Space first, so both taps are fresh presses.
       pilot.up('Space', tt);
       pilot.double('Space', tt + 0.02);
@@ -398,9 +403,6 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     }
     if (V > 26 && clearance > 40 && Math.abs(sim_.bank) < 25 * DEG) {
       fits.push('roll');
-    }
-    if (sim_.stamina > 0.2 && !sim_.tired && tt - lastUsed.urge > 2.6) {
-      fits.push('urge');
     }
     for (let i = fits.length - 1; i >= 0; i--) {
       if (!opts.moves.includes(fits[i])) {

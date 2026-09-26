@@ -453,7 +453,7 @@ export interface DragonPose {
 
   /*
    * Rider cues and dragon attention (optional, 0 = neutral). Every command the player gives shows on the rider.
-   * Written by flight (dragon/flight/pose.ts): riderReinLeft/Right, riderTuck, riderUrge, riderPoint, riderCheer.
+   * Written by flight (dragon/flight/pose.ts): riderReinLeft/Right, riderTuck, riderPoint, riderCheer.
    * Written by the rider behaviour (dragon/model): riderPet, riderStand, gazeRider.
    */
   /** Rein hand: -1 = pushed forward (giving rein, dive), 0 = neutral grip, 1 = pulled back to the chest (climb, brake). */
@@ -461,8 +461,6 @@ export interface DragonPose {
   riderReinRight?: number;
   /** 0..1 crouch flat against the neck, hands on the pommel (dives, rolls, loops, free fall). */
   riderTuck?: number;
-  /** 0..1 envelope of the "dehh" urge: rein snaps and heel kicks (the animator runs the snap cycle itself). */
-  riderUrge?: number;
   /** 0..1 right arm points ahead (fire command). */
   riderPoint?: number;
   /** 0..1 right fist raised (roar, cheering after a trick). */
@@ -571,10 +569,9 @@ export type AudioOneShot =
   | 'discover'
   /** Weather (render/weather): thunder clap; volume 0..1 also encodes distance (quieter = farther, duller). */
   | 'thunder'
-  /** Maneuvers (dragon/flight): wings snapping open out of a fall, a roll/loop air whoosh, the rider's rein snap. */
+  /** Maneuvers (dragon/flight): wings snapping open out of a fall, a roll/loop air whoosh. */
   | 'wing-snap'
   | 'whoosh'
-  | 'rein-snap'
   /** Bond (dragon/model): one purr phrase (~2 s) while being petted. */
   | 'purr';
 
@@ -961,7 +958,7 @@ export interface GameEvents {
    */
   perch: { id: string; state: 'perched' | 'left'; first: boolean };
   /**
-   * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, urge, takeoff, land...; the rider
+   * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, takeoff, land...; the rider
    * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
    */
   maneuver: { id: string; label: string };
