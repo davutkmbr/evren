@@ -67,27 +67,57 @@ Rules:
 
 ## Files
 
-`public/brand/` (served at `/brand/`, linked from `index.html`):
+Everything is generated from the code that draws it; do not edit the SVG or PNG files by hand.
 
-| File | What |
+| Where | What |
 |---|---|
-| `logo.svg` | Title logo with crest, transparent |
-| `logo-title.svg` | Title logo without crest (small sizes) |
-| `icon.svg`, `favicon.svg` | Monogram tile |
-| `favicon-32.png`, `icon-192.png`, `icon-512.png` | Monogram PNGs (transparent corners) |
-| `apple-touch-icon.png` | 180 px monogram, square (iOS rounds the corners) |
-| `og.jpg` | 1200 × 630 share image (Open Graph / Twitter card) |
-| `site.webmanifest` | Web app manifest |
+| `src/ui/brand.ts` | Source: name, lines, URL, hashtag, colours (`BRAND`, `BRAND_COLORS`) |
+| `src/ui/brand-logo.ts` | Source: the lettering, the title logo (`titleLogoSvg`) and the monogram (`monogramSvg`) |
+| `sandbox/brand.html` | Brand sheet and every raster view (`?show=logo`, `icon`, `og`, `banner`) |
+| `scripts/brand/build-brand.ts` | Writes the SVGs, colour tokens, manifest and `scripts/brand/renders.json` |
+| `public/brand/` | Served by the game's page: favicons, app icons, manifest, share image |
+| `.docs/brand/kit/` | The brand kit for store pages, press, social media and anything outside the game |
 
-Regenerate after changing the logo code:
+`public/brand/` (linked from `index.html`):
+
+| File | Size | Use |
+|---|---|---|
+| `favicon.svg`, `favicon-32.png` | any, 32 px | Browser tab |
+| `icon.svg`, `icon-192.png`, `icon-512.png` | any, 192, 512 px | Web app manifest, install icon |
+| `apple-touch-icon.png` | 180 px, square | iOS home screen (iOS rounds the corners) |
+| `og.jpg` | 1200 × 630 | Open Graph / Twitter card |
+| `site.webmanifest` | | Name, colours, icons |
+
+`.docs/brand/kit/`:
+
+| File | Size | Use |
+|---|---|---|
+| `svg/logo.svg` | vector | Title logo with the sky dome and star (default) |
+| `svg/logo-title.svg` | vector | Title only, for small sizes |
+| `svg/monogram.svg`, `svg/monogram-tile.svg` | vector | The S mark, bare or on its night tile |
+| `png/logo-{2400,1200,600}.png` | width in px, transparent | Title logo |
+| `png/logo-title-{1200,600}.png` | width in px, transparent | Title only |
+| `png/monogram-1024.png` | 1024 px, transparent | Bare S mark |
+| `png/monogram-tile-{1024,512}.png` | px, rounded tile | App stores, launchers |
+| `social/avatar-400.png` | 400 px, square | Profile pictures (platforms crop to a circle; the mark stays inside it) |
+| `social/banner-1500x500.jpg` | 1500 × 500 | X / Twitter header, other wide headers |
+| `social/og-1200x630.jpg` | 1200 × 630 | Link previews, posts |
+| `colors.json`, `colors.css` | | Colour tokens (`--ss-night`, `--ss-gold-pale`, …) |
+
+The transparent logos are made for dark backgrounds; on a white page viewer they look washed out, which is
+expected.
+
+### Regenerating
+
+After changing `src/ui/brand.ts` or `src/ui/brand-logo.ts`:
 
 ```bash
-npm run brand            # writes the SVGs and the manifest, prints the snap commands for the PNGs
+npm run brand        # SVGs, colour tokens, manifest, scripts/brand/renders.json
+npm run brand:png    # every PNG / JPG above, plus brand-sheet.jpg (snap.mjs, dev server on 5199)
 ```
 
-The PNGs are screenshots of `sandbox/brand.html` (`?show=og`, `?show=icon&size=…`); the page without parameters is
-the brand sheet above. The share image uses the Bosphorus shot from `.docs/media/bosphorus-bridge.jpg`, cropped so
-the HUD stays out of frame; replace it with a HUD-less capture (`?nohud=1`) when one is taken.
+The share image and the banner use game shots from `.docs/media/`, cropped so the HUD stays out of frame; replace
+them with HUD-less captures (`?nohud=1`) when those exist.
 
 ## Domain setup (to do)
 

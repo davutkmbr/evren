@@ -6,6 +6,8 @@ The game is **Seventeen Skies** (seventeenskies.com). Use that name wherever the
 page titles, docs, READMEs. `evren` stays as the internal codename in code identifiers and tool namespaces
 (`window.__evren`, `EVREN_*` variables, Blender / Unreal asset names, the repository path) so tooling and local
 projects keep working; the dragon itself is also named Evren. Logo, colours and wording rules: `.docs/brand/README.md`.
+The logo, icons and brand kit are generated from `src/ui/brand.ts` and `src/ui/brand-logo.ts` (`npm run brand`,
+`npm run brand:png`); never edit the files in `public/brand/` or `.docs/brand/kit/` by hand.
 
 ## Language
 

@@ -32,6 +32,7 @@
     "preview": "vite preview",
     "snap": "node scripts/snap.mjs",
     "brand": "tsx scripts/brand/build-brand.ts",
+    "brand:png": "node scripts/snap.mjs --batch scripts/brand/renders.json",
     "walk-test": "node scripts/walk-test.mjs",
     "compile:world": "tsx tools/world-compiler/src/cli.ts",
     "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",

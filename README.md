@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/brand/logo.svg" alt="Seventeen Skies" width="560">
+<img src=".docs/brand/kit/social/banner-1500x500.jpg" alt="Seventeen Skies" width="900">
 
 **The sky has seventeen layers. The first is Istanbul.**
 A realistic, open-world flight game in the browser: ride the flying creatures of Turkic myth over a real, living
