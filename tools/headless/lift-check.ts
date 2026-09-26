@@ -16,7 +16,7 @@ import { LandUse } from '../../src/core/contracts';
 import { createLiftSample, sampleLift } from '../../src/dragon/flight/lift';
 import { WindField } from '../../src/dragon/flight/wind';
 import type { FlightSim } from '../../src/dragon/flight/sim';
-import { buildHeadlessGeo } from './lift-geo';
+import { buildHeadlessGeo } from './geo';
 import { createHeadlessSim, LiftEnv, simulate, teleport, type WindRegime } from './lift-sim';
 
 const DEG = Math.PI / 180;
