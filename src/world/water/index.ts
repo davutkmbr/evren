@@ -2,6 +2,7 @@
  * Sea, Bosphorus, Golden Horn and lakes: one camera-centred radial surface at y = 0 with Gerstner swell + FFT-band
  * detail normals, current-advected ripples, PBR water optics and (high/ultra) planar reflections.
  * Draw calls: 1 for the surface + the planar reflection pass.
+ * Provides the `water` service: the same waves evaluated on the CPU (wave-query.ts) plus the baked surface current.
  */
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
@@ -17,10 +18,13 @@ import { PlanarReflection } from './reflection';
 import { SeaState } from './sea-state';
 import { buildRadialGrid } from './surface-grid';
 import { createBandTexture, createFlowTexture, createFoamTexture, createPlaceholders, createRegionTexture } from './textures';
+import { decodeRegionMaps, WaveQuery } from './wave-query';
 
 /** Debug handle (sandbox / console): window.__water */
 export interface WaterDebug {
   sea: SeaState;
+  /** CPU wave evaluator behind the `water` service. */
+  waves: WaveQuery;
   uniforms: WaterUniforms;
   mesh: THREE.Mesh;
   reflection: PlanarReflection;
@@ -52,6 +56,7 @@ export function createWaterSystem(): System {
   const spectrumJob = client.spectrum();
 
   const sea = new SeaState();
+  const waves = new WaveQuery();
   const placeholders = createPlaceholders();
   const origin = new THREE.Vector2();
   const tmpWind = new THREE.Vector3();
@@ -64,6 +69,7 @@ export function createWaterSystem(): System {
   let regionStats: RegionBakeResult['stats'] | null = null;
   let disposed = false;
   let unsubscribeQuality: (() => void) | null = null;
+  let owner: EngineContext | null = null;
   const owned: THREE.Texture[] = [];
 
   function applySpectrum(result: SpectrumJobResult): void {
@@ -87,6 +93,7 @@ export function createWaterSystem(): System {
     uniforms.uFlowTex.value = flow;
     uniforms.uRegionTex.value = region;
     regionStats = result.stats;
+    waves.setRegions(decodeRegionMaps(result));
   }
 
   function applyQuality(settings: QualitySettings): void {
@@ -127,6 +134,9 @@ export function createWaterSystem(): System {
 
     async init(ctx: EngineContext) {
       const geo = await ctx.services.when('geo');
+      owner = ctx;
+      waves.setCoast((x, z) => geo.coastDistance(x, z));
+      ctx.services.provide('water', waves);
       anisotropy = ctx.quality.settings.anisotropy;
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
@@ -174,6 +184,7 @@ export function createWaterSystem(): System {
 
       (window as unknown as { __water: WaterDebug }).__water = {
         sea,
+        waves,
         uniforms,
         mesh,
         reflection,
@@ -191,6 +202,7 @@ export function createWaterSystem(): System {
       const env = ctx.services.tryGet('env');
       const wind = env ? env.wind : tmpWind.copy(globalUniforms.uWind.value as THREE.Vector3);
       sea.update(wind, ctx.time.elapsed, dt, origin.x, origin.y);
+      waves.sync(sea, origin.x, origin.y, ctx.time.elapsed);
       uniforms.uOrigin.value.copy(origin);
     },
 
@@ -230,6 +242,9 @@ export function createWaterSystem(): System {
 
     dispose() {
       disposed = true;
+      if (owner?.services.tryGet('water') === waves) {
+        owner.services.withdraw('water');
+      }
       unsubscribeQuality?.();
       client.dispose();
       if (mesh) {

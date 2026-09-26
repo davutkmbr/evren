@@ -1,7 +1,7 @@
 import type { TextProvenance } from '../types';
 
 /** Author label for text written for this game (MIT, like the rest of the repository). */
-export const OUR_AUTHOR = 'Evren contributors';
+export const OUR_AUTHOR = 'Seventeen Skies contributors';
 
 /** Provenance entry for our own writing, optionally based on a (public-domain) source. */
 export function original(covers: string, basis?: string, pending?: string): TextProvenance {

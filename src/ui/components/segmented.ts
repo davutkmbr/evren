@@ -1,5 +1,6 @@
 import '../styles/components.css';
 import { el } from '../dom';
+import { interactive } from './interaction';
 
 /** A form control that holds a value: `root` goes into the page, `set` shows a value changed elsewhere. */
 export interface Control<T> {
@@ -18,7 +19,7 @@ export function segmented<T extends string | number>(
   onChange: (value: T) => void,
 ): Control<T> {
   const buttons = options.map((option) => {
-    const button = el('button', 'ui-seg-btn', option.label, { type: 'button', role: 'radio', 'aria-checked': 'false' });
+    const button = interactive(el('button', 'ui-seg-btn', option.label, { type: 'button', role: 'radio', 'aria-checked': 'false' }), 'segment');
     button.addEventListener('click', () => {
       set(option.value);
       onChange(option.value);

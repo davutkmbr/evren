@@ -5,9 +5,10 @@
  *   node scripts/snap.mjs --url "/?view=galata&t=18&freeze=1" --out .shots/galata.png
  *   node scripts/snap.mjs --url /sandbox/dragon.html --out .shots/dragon.png --eval "window.myHook?.()"
  *   node scripts/snap.mjs --url "/?view=bogaz" --perf 5000          # measure fps for 5 s
- *   node scripts/snap.mjs --batch shots.json                          # [{url,out,eval?,settle?,w?,h?,trace?}]
+ *   node scripts/snap.mjs --batch shots.json                          # [{url,out,eval?,settle?,w?,h?,trace?,transparent?}]
  *   (trace: path of a Chrome trace JSON recorded from the eval through the settle window; open in Perfetto)
  *   (result: path of a JSON file the eval's (awaited) return value is written to, e.g. in-page measurements)
+ *   (transparent: PNG without the page background, e.g. the brand logos; --transparent for a single shot)
  *
  * Waits for window.__evren.ready and __evren.pending() === 0 (or --timeout), then --settle ms more.
  * Prints JSON with console errors/warnings and engine stats. Requires the dev server (npm run dev, port 5199).
@@ -189,7 +190,7 @@ async function shoot(browser, job) {
   }
   if (job.out) {
     mkdirSync(dirname(job.out), { recursive: true });
-    await page.screenshot({ path: job.out, type: job.out.endsWith('.jpg') ? 'jpeg' : 'png', quality: job.out.endsWith('.jpg') ? 88 : undefined });
+    await page.screenshot({ path: job.out, type: job.out.endsWith('.jpg') ? 'jpeg' : 'png', quality: job.out.endsWith('.jpg') ? 88 : undefined, omitBackground: !!job.transparent });
   }
   await page.close();
   return { url: job.url, out: job.out, ready, pending, loadMs: Date.now() - t0, errors, warnings: warnings.slice(0, 15), logs: logs.slice(0, 40), perf, stats, frameTimes };
@@ -207,7 +208,7 @@ try {
   if (opt('batch')) {
     jobs = JSON.parse(readFileSync(opt('batch'), 'utf8'));
   } else {
-    jobs = [{ url: opt('url', '/'), out: opt('out'), eval: opt('eval'), result: opt('result'), settle: opt('settle'), timeout: opt('timeout'), w: opt('w'), h: opt('h'), perf: opt('perf'), logs: args.includes('--logs') }];
+    jobs = [{ url: opt('url', '/'), out: opt('out'), eval: opt('eval'), result: opt('result'), settle: opt('settle'), timeout: opt('timeout'), w: opt('w'), h: opt('h'), perf: opt('perf'), logs: args.includes('--logs'), transparent: args.includes('--transparent') }];
   }
   const results = [];
   for (const j of jobs) results.push(await shoot(browser, j));

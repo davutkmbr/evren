@@ -154,13 +154,19 @@ export function createFlightSystem(): System {
         case 'flap':
           ctx.events.emit('flap', { strength: e.strength });
           break;
-        case 'impact':
-          ctx.events.emit('ground-impact', { position: e.point, speed: e.speed });
-          cam?.shake(clamp(e.speed / 18, 0.05, 1.2));
-          if (e.surface !== 'water') {
+        case 'impact': {
+          // Water entry and contacts under water are not ground hits: the splash carries the entry sound, and the
+          // land thud (and its dust) would sound like hitting the ground.
+          const wet = e.surface === 'water' || e.surface === 'seabed' || sim.mode === 'underwater';
+          if (!wet) {
+            ctx.events.emit('ground-impact', { position: e.point, speed: e.speed });
+          }
+          cam?.shake(clamp(e.speed / (wet ? 30 : 18), 0.05, 1.2));
+          if (!wet) {
             fx?.dust(e.point, clamp(e.speed / 15, 0.2, 1.5));
           }
           break;
+        }
         case 'splash':
           splashThisFrame = true;
           fx?.splash(e.point, e.strength);
@@ -179,7 +185,10 @@ export function createFlightSystem(): System {
           }
           break;
         case 'maneuver':
-          ctx.events.emit('maneuver', { id: e.id, label: e.label });
+          // Move-end markers (flow hooks) stay inside the flight model.
+          if (!e.ended) {
+            ctx.events.emit('maneuver', { id: e.id, label: e.label });
+          }
           break;
         case 'sound':
           audio?.play(e.name, e.volume);
@@ -240,6 +249,8 @@ export function createFlightSystem(): System {
       void ctx.services.when('env').then((env) => {
         sim.world.env = env;
       });
+      // The wave surface of the sea (flat y = 0 until the water module provides it, or when there is none).
+      sim.world.water = ctx.services.tryGet('water');
       void ctx.services.when('rig').then((r) => {
         rig = r;
         configureRig(r);
@@ -280,6 +291,8 @@ export function createFlightSystem(): System {
       if (!sim.world.env) {
         sim.world.env = ctx.services.tryGet('env');
       }
+      // Picks up the water service once provided (and drops it when withdrawn).
+      sim.world.water = ctx.services.tryGet('water');
       if (dt > 0) {
         const cmd = gatherCommand(ctx);
         latchPilotEdges(cmd, latch);

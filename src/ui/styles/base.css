@@ -65,9 +65,10 @@
   outline: none;
 }
 
+/* the shared focus ring (interaction state tokens in components.css) for anything focusable */
 .ejd :focus-visible {
-  outline: 1.5px solid rgba(232, 184, 114, 0.8);
-  outline-offset: 2px;
+  outline: var(--ui-focus-ring, 2px solid #e8b872);
+  outline-offset: var(--ui-focus-offset, 3px);
 }
 
 .ejd-num {

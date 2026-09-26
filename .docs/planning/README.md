@@ -1,4 +1,4 @@
-# Evren — Roadmap
+# Seventeen Skies — Roadmap
 
 An open-world, realistic and "chill" flight simulation where we ride a dragon over Istanbul.
 The game as a whole is described in the [GDD](../gdd/README.md) and the UI follows the locked

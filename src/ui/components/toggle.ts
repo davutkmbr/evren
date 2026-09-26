@@ -1,5 +1,6 @@
 import '../styles/components.css';
 import { el } from '../dom';
+import { interactive } from './interaction';
 import type { Control } from './segmented';
 
 /**
@@ -7,7 +8,7 @@ import type { Control } from './segmented';
  * state ("açık" / "kapalı"), use `optionSwitch` instead.
  */
 export function toggle(label: string, value: boolean, onChange: (value: boolean) => void): Control<boolean> {
-  const button = el('button', 'ui-toggle', [el('i', 'ui-toggle-knob')], { type: 'button', role: 'switch', 'aria-label': label });
+  const button = interactive(el('button', 'ui-toggle', [el('i', 'ui-toggle-knob')], { type: 'button', role: 'switch', 'aria-label': label }), 'control');
   let state = value;
   const set = (v: boolean): void => {
     state = v;

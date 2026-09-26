@@ -310,7 +310,7 @@ export interface GeoQuery {
 /* Dragon (model: dragon/model → 'rig', physics: dragon/flight → 'dragon') */
 /* ------------------------------------------------------------------ */
 
-export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming';
+export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming' | 'underwater';
 
 export interface DragonState {
   /** Root transform driven by physics. The rig root is parented under it. Origin = center of mass. */
@@ -680,6 +680,80 @@ export interface HotbarService {
   remove(id: string): void;
 }
 
+/** Summary of the ambient sea state (open water), owned by the water module. */
+export interface WaterSeaState {
+  /** Smoothed 10 m wind speed the waves are built from (m/s). */
+  windSpeed: number;
+  /** Significant wave height of the open Marmara / Black Sea, all wave groups at full weight (m). */
+  significantWaveHeight: number;
+  /** Regime blend: 0 = poyraz sea (NE wind), 1 = lodos sea (SW wind). */
+  lodos: number;
+  regime: 'poyraz' | 'lodos';
+}
+
+/**
+ * The sea surface for physics, provided by the water module as `water`: the same Gerstner wave set, phases and
+ * regime the water shader displaces the rendered surface with, plus the Bosphorus surface current. All queries are
+ * allocation-free (results go into `out`) and describe the water at the world position (x, z) at the time of the
+ * latest sea-state update (at most one frame old). Over land the values are meaningless; check the terrain first.
+ * The shading-only detail bands (a few cm) are not part of the height.
+ */
+export interface WaterService {
+  /**
+   * Water surface height (m) at world (x, z), solved at the displaced surface point (Gerstner waves move water
+   * horizontally too). Stage 1 returns the ambient waves; the dynamic part (wave particles from hulls, the dragon
+   * and splashes, phase 21 strand 7) will be added to this sum later, so every caller floats on the same water.
+   */
+  heightAt(x: number, z: number): number;
+  /** Unit surface normal at (x, z). */
+  normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
+  /** Velocity of the surface water at (x, z) (m/s): wave orbital velocity plus the surface current. */
+  velocityAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
+  /** Horizontal surface current at (x, z) (m/s, y = 0): the Bosphorus flow, zero in still water. */
+  currentAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
+  readonly seaState: Readonly<WaterSeaState>;
+}
+
+/**
+ * HUD screen zones (src/ui/zones): every transient HUD message asks for a zone with a priority and a duration; the
+ * director shows the highest priority per zone, defers the others (dropping them once they waited too long) and fades
+ * between them. Provided by the UI as `hudZones`. The `center` band is reserved for the aim / ring area and the
+ * `bottom` cluster is static, so neither can be requested.
+ */
+export type HudZoneId = 'top' | 'title' | 'lowerCenter' | 'corner' | 'toast';
+
+export interface HudZoneRequest {
+  /** Stable key: requesting the same id again updates the item in place (and restarts its duration). */
+  id: string;
+  zone: HudZoneId;
+  /** Higher wins (HUD_PRIORITY in src/ui/zones). Ties go to the newer request. */
+  priority: number;
+  /** Seconds on screen once shown (counted only while shown). Default: until released. */
+  duration?: number;
+  /** Seconds it may wait unshown (queued, displaced or deferred) before it is dropped. Default: forever. */
+  maxWait?: number;
+  /** Contexts that defer this item while active (e.g. 'race'). */
+  deferIn?: readonly string[];
+  /** lowerCenter only: key hints for the shared hint line, [keys, label] in keyCombo syntax. */
+  hints?: readonly (readonly [keys: string, label: string])[];
+  /** lowerCenter only: a caption at the start of the hint line. */
+  caption?: string;
+  /** lowerCenter only: these hints may ride along on a higher-priority hint line that is showing. */
+  joinable?: boolean;
+  /** Called when the item appears / disappears (owner-rendered nodes fade in and out here); onShow runs again when a
+   * shown item is requested anew (content update in place). */
+  onShow?: () => void;
+  onHide?: () => void;
+}
+
+export interface HudZonesService {
+  request(request: HudZoneRequest): void;
+  release(id: string): void;
+  /** Turns a context on or off ('race' while a race is prepared, run or its result is open). */
+  setContext(name: string, on: boolean): void;
+  isShown(id: string): boolean;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -695,6 +769,8 @@ export interface Services {
   weather: WeatherService;
   perches: PerchService;
   hotbar: HotbarService;
+  water: WaterService;
+  hudZones: HudZonesService;
 }
 
 /* ------------------------------------------------------------------ */

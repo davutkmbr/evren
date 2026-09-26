@@ -46,7 +46,7 @@ end) first, then the S5 heart of Kadıköy, the later zones (Moda, Yeldeğirmeni
    Collections have taken dogs off the street since April 2026. The game does not depict them.
 4. **Voice.** The street plan excludes voice acting, but vendor cries, market calls and crowd walla need Turkish
    voices. Proposal: dialogue and barks stay as text, and short street cries count as sound effects (field recordings
-   with a free licence, or recorded for Evren). This needs the user's decision.
+   with a free licence, or recorded for Seventeen Skies). This needs the user's decision.
 5. **Tone filters.** The full list is under [Excluded and why](#excluded-and-why).
    - Every business, bank, delivery app and scooter brand is fictional, and no real logos appear.
    - Fenerbahçe appears as yellow-and-navy colours only, with no crest.
@@ -577,7 +577,7 @@ end) first, then the S5 heart of Kadıköy, the later zones (Moda, Yeldeğirmeni
 - **Build.**
   - *NPC* [MH + clip]: playing loops for each instrument, and an open case with coins [proc].
   - *Crowd*: an attractor that draws a ring of 5–30 listeners.
-  - *Sound* [ext]: tunes with a free licence or written for Evren only, so they stay streamer-safe.
+  - *Sound* [ext]: tunes with a free licence or written for Seventeen Skies only, so they stay streamer-safe.
   - *Rules*: the 19:00–21:00 window on the square, and more on weekends.
 - **When.** S5 on the square and Bahariye, S6+ in Moda.
 - **Src.** [cumhuriyet: sokak müziği](https://www.cumhuriyet.com.tr/haber/ozgurluk-sehirlerinde-sokak-muzigi-nasil-yapiliyor-253591),
@@ -654,7 +654,7 @@ end) first, then the S5 heart of Kadıköy, the later zones (Moda, Yeldeğirmeni
   the Moda stairs, Hacı Şükrü Sk). Since the pandemic, more of this wall space has gone to adverts.
 - **Density.** In Yeldeğirmeni a mural is visible from almost every corner of İskele Sk, Karakolhane and Misak-ı Milli.
 - **Build.** The murals are copyrighted artworks, and some portray real people, so the game must not reproduce them.
-  Put original large murals on the same walls, at the same scale and density, either commissioned or made for Evren
+  Put original large murals on the same walls, at the same scale and density, either commissioned or made for Seventeen Skies
   under a free licence [ext art].
 - **When.** S6+.
 - **Src.** [bayaiyi: Yeldeğirmeni guide](https://bayaiyi.com/yeldegirmeni-sokak-sanati-rehberi/),
@@ -792,7 +792,7 @@ The research rated this *nice*; it is raised here because the scatter reaction i
 - **Build.**
   - *Interior*: the planned han/pasaj L3 shell, with a book-stack and record-crate kit [proc].
   - *Life*: a cat slot on the book piles.
-  - *Sound*: music with a free licence or written for Evren only [ext].
+  - *Sound*: music with a free licence or written for Seventeen Skies only [ext].
 - **When.** S5. It is a natural choice for one of the five enterable places.
 - **Src.** [tr.wikipedia: Akmar Pasajı](https://tr.wikipedia.org/wiki/Akmar_Pasaj%C4%B1),
   [gazetekadikoy: sahaflık tarihi](https://www.gazetekadikoy.com.tr/yasam/kadikyn-sahaflik-tarihi).
@@ -1320,7 +1320,7 @@ distant bed and raise the crowd, market and vendor layers.
 - **Exists.** The synth gull (`playGull`), ferry horn and car horn, and the ambience probe (`src/audio/voices/ambience.ts`).
 - **Synth first.** Tram bell, church bell, card beeps, whistle, drips and kepenk.
 - **Recordings [ext].** Ezan, walla and street cries (see Assumption 4), cats, dogs, pigeons, crows, dice and checkers,
-  cleaver chopping, hose and ice, compactor, stadium roar, and music with a free licence or written for Evren.
+  cleaver chopping, hose and ice, compactor, stadium roar, and music with a free licence or written for Seventeen Skies.
 
 ## One day on the strip (Thursday 24 Sep 2026)
 
@@ -1456,10 +1456,10 @@ All lines below come from the sources. Proposed lines that were written for the 
 7. **Recordings.** Ezan (Istanbul, licensed); Turkish walla and street cries (Assumption 4); cat vocalisations and
    purr; dog barks; pigeon coos and wing clatter; crow calls; kepenk rattle (if the synth fails); tea-glass clinks;
    dice and checkers; cleaver chopping; hose and ice; compactor truck; stadium roar. Music only under a free licence
-   or written for Evren: busker tunes, shop radios, fasıl, kemençe, bar music and records (streamer-safe).
+   or written for Seventeen Skies: busker tunes, shop radios, fasıl, kemençe, bar music and records (streamer-safe).
 8. **Vehicles and props.** A 125 cc courier motorbike (S1r), the T3 tram (S5 hero), the dolmuş minibus (S7), and
    antique props and a piano (H).
-9. **Original murals** for the Mural-İst walls (S6+), commissioned or made for Evren under a free licence.
+9. **Original murals** for the Mural-İst walls (S6+), commissioned or made for Seventeen Skies under a free licence.
 
 **Procedural** [proc] (no approval needed):
 - bowls, cat houses, placeholder cats;

@@ -86,7 +86,7 @@ public/world/<area>/            (gitignored; served by Vite at /world/<area>/)
   lanes.json                    lane graph
 ```
 
-Frame: Evren local metres (`src/core/geo-coords.ts`), +X east, +Y up, +Z south (north is -Z), origin 41.045 N,
+Frame: World-local metres (`src/core/geo-coords.ts`), +X east, +Y up, +Z south (north is -Z), origin 41.045 N,
 29.02 E, sea level y = 0. The glTF axes are the same, so no conversion is needed. Tile `i_j` covers
 `[i·100, (i+1)·100) × [j·100, (j+1)·100)`. Tiles are made for every 100 m square that touches the area bbox. Squares
 with nothing but water are skipped.
@@ -671,8 +671,8 @@ Rules for steps, so parallel and cached compiles give the serial bytes (`--check
 
 ### Blender and other runtimes
 
-- glTF importers convert Y-up to their own axes. Blender: Evren `(x, y, z)` → Blender `(x, -z, y)`; a rotation about
-  Evren +Y is the same angle about Blender +Z. Manifest positions (instances, lights) need that conversion; the tile
+- glTF importers convert Y-up to their own axes. Blender: world `(x, y, z)` → Blender `(x, -z, y)`; a rotation about
+  world +Y is the same angle about Blender +Z. Manifest positions (instances, lights) need that conversion; the tile
   glbs are converted by the importer.
 - Blender's importer keeps UV0 and UV1 as two UV maps, imports every shared image once and puts glTF `extras` into
   custom properties (material `emissive`, `tiling`; node `lightmap`).
