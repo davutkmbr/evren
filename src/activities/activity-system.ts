@@ -10,6 +10,7 @@ import type { DragonState, EngineContext, GameEvents, System } from '../core/con
 import { UpdateOrder } from '../core/contracts';
 import { COURSES, getCourse, type CompiledCourse } from './courses';
 import { GateRings } from './gate-rings';
+import { RingPass } from './ring-pass';
 import { RaceSession, type AbortReason, type RaceEvent } from './race';
 import { GhostRecorder, clearRecords, getRecord, loadRecords, submitRun } from './records';
 import { RACE_TEXT, formatDelta, formatTime } from './text';
@@ -24,6 +25,8 @@ export function createActivitySystem(): System {
   let ctx: EngineContext | null = null;
   let dragon: DragonState | null = null;
   const rings = new GateRings();
+  const ringPass = new RingPass();
+  ringPass.scene.add(rings.group);
   let session: RaceSession | null = null;
   let recorder = new GhostRecorder();
   let lingerLeft = 0;
@@ -216,7 +219,7 @@ export function createActivitySystem(): System {
 
     init(c) {
       ctx = c;
-      c.scene.add(rings.group);
+      c.pipeline.addHdrPass(ringPass);
       dragon = c.services.tryGet('dragon') ?? null;
       if (!dragon) {
         void c.services.when('dragon').then((d) => (dragon = d));
@@ -247,6 +250,8 @@ export function createActivitySystem(): System {
     },
 
     update(dt, c) {
+      // the pass only runs (one full-screen copy + the markers) while rings are shown
+      ringPass.enabled = rings.group.visible;
       if (pendingUrlCourse && loadingDone && dragon) {
         const id = pendingUrlCourse;
         pendingUrlCourse = null;
@@ -285,7 +290,9 @@ export function createActivitySystem(): System {
       for (const d of disposers.splice(0)) {
         d();
       }
+      ctx?.pipeline.removeHdrPass(ringPass);
       rings.dispose();
+      ringPass.dispose();
       ctx = null;
     },
   };

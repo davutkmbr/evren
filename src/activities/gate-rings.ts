@@ -1,10 +1,12 @@
 /**
  * Glowing race rings: one additive InstancedMesh of tori (one instance per gate) plus a light beacon column above the
- * next gate so it can be found from far away. Both live on RenderLayers.NoReflection (kept out of the water mirror).
+ * next gate so it can be found from far away. They are drawn by RingPass after the clouds (not in the main scene), on
+ * RenderLayers.NoReflection so the main camera sees them.
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../core/contracts';
 import type { CompiledCourse } from './courses';
+import { createMarkerMaterial } from './ring-pass';
 
 const MAX_GATES = 32;
 /** Tube radius relative to the ring radius. */
@@ -23,7 +25,7 @@ export class GateRings {
   readonly group = new THREE.Group();
   private readonly mesh: THREE.InstancedMesh;
   private readonly beacon: THREE.Mesh;
-  private readonly beaconMat: THREE.MeshBasicMaterial;
+  private readonly beaconMat: THREE.ShaderMaterial;
   private course: CompiledCourse | null = null;
   private next = 0;
   private finished = false;
@@ -38,14 +40,8 @@ export class GateRings {
   constructor() {
     this.group.name = 'race-gates';
     const torus = new THREE.TorusGeometry(1, TUBE, 10, 72);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-      side: THREE.DoubleSide,
-    });
+    // Drawn by RingPass after the clouds, with a manual depth test (see ring-pass.ts).
+    const mat = createMarkerMaterial(new THREE.Color(1, 1, 1));
     this.mesh = new THREE.InstancedMesh(torus, mat, MAX_GATES);
     this.mesh.name = 'race-gate-rings';
     this.mesh.count = 0;
@@ -67,15 +63,7 @@ export class GateRings {
       colors[i * 3 + 2] = f;
     }
     cyl.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    this.beaconMat = new THREE.MeshBasicMaterial({
-      color: NEXT.clone().multiplyScalar(0.35),
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-      side: THREE.DoubleSide,
-    });
+    this.beaconMat = createMarkerMaterial(NEXT.clone().multiplyScalar(0.35), true);
     this.beacon = new THREE.Mesh(cyl, this.beaconMat);
     this.beacon.name = 'race-gate-beacon';
     this.beacon.frustumCulled = false;
@@ -153,7 +141,7 @@ export class GateRings {
     if (this.mesh.instanceColor) {
       this.mesh.instanceColor.needsUpdate = true;
     }
-    this.beaconMat.opacity = 0.7 + 0.3 * k;
+    this.beaconMat.uniforms.uOpacity.value = 0.7 + 0.3 * k;
   }
 
   dispose(): void {
