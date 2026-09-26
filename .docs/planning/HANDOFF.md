@@ -76,6 +76,11 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    bare hilltops; clear the tallest neighbour within ~40 m; perch camera frames the dragon in the lower third against
    an unobstructed view, occluders fade. Audit shots in `.shots/perches/audit/`. Files: `src/world/perches/*`,
    `src/dragon/flight/perch.ts`, `src/ui/perch-*` (the cloud session also edits perch code).
+   **Stopped mid-work (2026-09-26 ~20:00):** the unfinished work is on branch `wip/perches` (eb7bdfa, pushed; not on
+   main): `src/world/perches/rules.ts` (new), perch data/resolve/service/index, `src/camera/modes/perch-rig.ts`,
+   `src/ui/menu/places.ts`, `scripts/perch-audit.mjs` + `scripts/lib/perch-measure.mjs`, headless perch checks.
+   Before shots in `.shots/perches/audit/before`. Continue: `git merge wip/perches` into main (or cherry-pick),
+   rerun the audit (`node scripts/perch-audit.mjs`), finish the camera composition and occluder fade, verify shots.
 5. Owner wants bigger race payoffs from chains (15–25 %, felt bursts, perceived-speed effects) — given to the cloud
    session as a prompt; not ours.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
