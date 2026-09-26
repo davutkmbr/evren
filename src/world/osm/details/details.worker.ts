@@ -93,6 +93,13 @@ export function buildDetails(req: DetailsRequest): DetailsResult {
     props.index = tiled.index;
     propsTiles = tiled.leaves;
   }
+  const kits = stamper.takeKits();
+  let kitsTiles: Float64Array | null = null;
+  if (kits) {
+    const tiled = lodTileIndex(kits.attributes.position.array as Float32Array, kits.index, new Uint8Array(kits.index.length / 3).fill(TriLod.Near));
+    kits.index = tiled.index;
+    kitsTiles = tiled.leaves;
+  }
   return {
     cover: coverMesh.count ? { mesh: coverMesh.take(), raster: coverRaster(cover) } : null,
     trees: trees.trees,
@@ -100,6 +107,8 @@ export function buildDetails(req: DetailsRequest): DetailsResult {
     standers: placed.standers,
     props,
     propsTiles,
+    kits,
+    kitsTiles,
     boats: boats.mesh,
     flags: placed.flags,
     pigeons: placed.pigeons,
@@ -121,6 +130,7 @@ export function buildDetails(req: DetailsRequest): DetailsResult {
       walkMs: Math.round(t3 - t2),
       boats: boats.count,
       propTris: stamper.mesh.triangles,
+      kitTris: stamper.kits.triangles,
       ...Object.fromEntries(Object.entries(stamper.counts).map(([k, v]) => [`p_${k}`, v])),
       ...stamper.log.flat('stand.'),
       standers: placed.standers.length / 6,

@@ -53,6 +53,7 @@ class DetailsLayer extends LayerBase {
   private crowd: Crowd | null = null;
   private readonly trees: InstanceLod[] = [];
   private props: LodTiledMesh | null = null;
+  private kits: LodTiledMesh | null = null;
   private result: DetailsResult | null = null;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
@@ -136,6 +137,12 @@ class DetailsLayer extends LayerBase {
     if (res.props && res.propsTiles) {
       this.props = new LodTiledMesh(this.group, 'osm-details-props', res.props, res.propsTiles, this.propMaterial, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
       this.props.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+    }
+    if (res.kits && res.kitsTiles) {
+      const kitMat = createPropMaterial('osm-details-kits', false, false);
+      this.onDispose(() => kitMat.dispose());
+      this.kits = new LodTiledMesh(this.group, 'osm-details-kits', res.kits, res.kitsTiles, kitMat, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
+      this.kits.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -230,9 +237,12 @@ class DetailsLayer extends LayerBase {
     for (const t of this.trees) {
       t.update(cam, preset);
     }
-    if (this.props) {
-      this.props.update(cam, preset);
-      this.props.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
+    for (const m of [this.props, this.kits]) {
+      if (!m) {
+        continue;
+      }
+      m.update(cam, preset);
+      m.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
     }
   }
 }
