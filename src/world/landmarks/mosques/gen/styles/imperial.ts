@@ -4,7 +4,7 @@ import { corniceProfile, flatRoof, polyPath, rectPath } from '../parts/details';
 import { leadDome, semiDome, turret, windowDrum } from '../parts/dome';
 import { minaret, minaretTop, type MinaretSpec } from '../parts/minaret';
 import { archRise, rowOpenings, wallPanel, type Opening, type RowSpec } from '../parts/wall';
-import { Light, Mat, type LocalCollider, type LodLevel, type RGB } from '../types';
+import { colliderReach, Light, Mat, shiftColliderZ, type LocalCollider, type LodLevel, type RGB } from '../types';
 
 export type SemiLayout = 'none' | 'axial' | 'all' | 'three';
 
@@ -699,21 +699,8 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
   }
   b.pop();
 
-  for (const c of cols) {
-    if (c.kind === 'box') {
-      c.cz += shift;
-    } else {
-      c.z += shift;
-    }
-  }
   // parts registered theirs in building space already (inside the shifted frame)
-  cols.push(...b.colliders);
-  let radius = 0;
-  for (const c of cols) {
-    const x = c.kind === 'box' ? c.cx : c.x;
-    const z = c.kind === 'box' ? c.cz : c.z;
-    const ext = c.kind === 'box' ? Math.hypot(c.hx, c.hz) : c.r;
-    radius = Math.max(radius, Math.hypot(x, z) + ext);
-  }
-  return { colliders: cols, radius, height: top };
+  const all = [...cols.map((c) => shiftColliderZ(c, shift)), ...b.colliders];
+  const radius = all.reduce((m, c) => Math.max(m, colliderReach(c)), 0);
+  return { colliders: all, radius, height: top };
 }

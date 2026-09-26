@@ -160,6 +160,20 @@ export class MeshBuilder {
     this.colliders.push({ kind: 'cylinder', x: wx, y: wy, z: wz, r: r * k, h: h * k });
   }
 
+  /** Vertical prism over a local footprint [x0, z0, x1, z1, ...] from local y0 to y1 (the frame only yaws). */
+  colPrism(footprint: readonly number[], y0: number, y1: number): void {
+    const ring: number[] = [];
+    let bottom = 0;
+    let top = 0;
+    for (let i = 0; i < footprint.length; i += 2) {
+      const p = this.worldPoint(footprint[i], y0, footprint[i + 1]);
+      ring.push(p[0], p[2]);
+      bottom = p[1];
+      top = this.worldPoint(footprint[i], y1, footprint[i + 1])[1];
+    }
+    this.colliders.push({ kind: 'prism', ring, bottom, top });
+  }
+
   colSphere(x: number, y: number, z: number, r: number): void {
     const k = this.worldScale();
     const [wx, wy, wz] = this.worldPoint(x, y, z);

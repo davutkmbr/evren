@@ -12,7 +12,7 @@ import { corniceProfile, flatRoof, polyPath, rectPath } from '../parts/details';
 import { archRing, leadDome, semiDome, windowDrum } from '../parts/dome';
 import { minaret, minaretTop, type MinaretSpec } from '../parts/minaret';
 import { rowOpenings, wallPanel, type Opening } from '../parts/wall';
-import { Light, Mat, type LocalCollider, type LodLevel, type RGB } from '../types';
+import { Light, Mat, shiftColliderZ, type LocalCollider, type LodLevel, type RGB } from '../types';
 import { boxFacades, tympanumOpenings, type StyleResult } from './imperial';
 
 const PLASTER: RGB = [0.85, 0.62, 0.48];
@@ -46,10 +46,11 @@ function buttressTower(b: MeshBuilder, xi: number, xo: number, zc: number, w: nu
   const topAt = (x: number): number => yHigh + ((yLow - yHigh) * (x - xi)) / L;
   const win = (len: number, top: number): Opening[] =>
     lod === 2 ? [] : rowOpenings(len, { count: Math.max(1, Math.floor(len / 5.5)), sill: top - 8.5, h: 2.6, w: 1.3, arch: 'round', back: 'glass', glazing: 'clear', depth: 0.8 }, 1.5);
-  // the sloping top as four steps, each as high as its inner end
-  for (let k = 0; k < 4; k++) {
-    const x0 = xi + (L * k) / 4;
-    b.colBox(x0, 0, zc - w / 2, x0 + L / 4, topAt(x0), zc + w / 2);
+  // the sloping top as steps of at most 1 m, each as high as its inner end
+  const steps = Math.max(2, Math.ceil(Math.abs(yHigh - yLow)));
+  for (let k = 0; k < steps; k++) {
+    const x0 = xi + (L * k) / steps;
+    b.colBox(x0, 0, zc - w / 2, x0 + L / steps, topAt(x0), zc + w / 2);
   }
   b.at(xi, 0, zc + w / 2, 0, () => wallPanel(b, L, -2, (x) => topAt(xi + x), win(L, yLow), { lod, seed: 11 }));
   b.at(xo, 0, zc - w / 2, Math.PI, () => wallPanel(b, L, -2, (x) => topAt(xo - x), win(L, yLow), { lod, seed: 12 }));
@@ -141,7 +142,7 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   });
   flatRoof(b, -plat, -plat, plat, plat, DOME_BASE + 0.32);
   // core between the great arches: the tympana stand at +-BAY, the arch rings reach 1.8 m beyond them
-  b.colBox(-BAY - 1, AISLE_H - 1, -plat, BAY + 1, DOME_BASE - 2.4, plat);
+  b.colBox(-BAY - 1.4, AISLE_H - 1, -plat, BAY + 1.4, DOME_BASE - 2.4, plat);
   b.colBox(-plat, DOME_BASE - 2.4, -plat, plat, DOME_BASE + 0.32, plat);
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
@@ -226,7 +227,7 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
   let top = CROWN + 4.4;
   b.with({ mat: Mat.Stone, color: OTTOMAN_STONE }, () => {
     for (const m of mins) {
-      cols.push(...minaret(b, m, lod).map((c) => (c.kind === 'box' ? { ...c, cz: c.cz + shift } : { ...c, z: c.z + shift })));
+      cols.push(...minaret(b, m, lod).map((c) => shiftColliderZ(c, shift)));
       top = Math.max(top, minaretTop(m));
     }
   });

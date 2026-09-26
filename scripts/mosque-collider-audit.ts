@@ -26,8 +26,45 @@ const SKIP_MATS = new Set<number>([Mat.Gold, Mat.Lamp, Mat.Glass]);
 
 type P = [number, number, number];
 
+/** Signed horizontal distance to a convex ring (negative inside). */
+function ringDistance(ring: readonly number[], x: number, z: number): number {
+  let best = Infinity;
+  let inside = true;
+  const n = ring.length / 2;
+  // winding-independent convexity test: all edge cross products share a sign
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const ax = ring[i * 2];
+    const az = ring[i * 2 + 1];
+    const bx = ring[((i + 1) % n) * 2];
+    const bz = ring[((i + 1) % n) * 2 + 1];
+    const ex = bx - ax;
+    const ez = bz - az;
+    const len2 = ex * ex + ez * ez;
+    if (len2 < 1e-12) {
+      continue;
+    }
+    const cr = ex * (z - az) - ez * (x - ax);
+    if (cr !== 0) {
+      if (sign === 0) {
+        sign = Math.sign(cr);
+      } else if (Math.sign(cr) !== sign) {
+        inside = false;
+      }
+    }
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / len2));
+    best = Math.min(best, Math.hypot(x - ax - ex * t, z - az - ez * t));
+  }
+  return inside ? -best : best;
+}
+
 function colliderDistance(c: LocalCollider, p: P): number {
   const [x, y, z] = p;
+  if (c.kind === 'prism') {
+    const dr = ringDistance(c.ring, x, z);
+    const dy = Math.max(c.bottom - y, y - c.top);
+    return dr > 0 && dy > 0 ? Math.hypot(dr, dy) : Math.max(dr, dy);
+  }
   if (c.kind === 'sphere') {
     return Math.hypot(x - c.x, y - c.y, z - c.z) - c.r;
   }
@@ -64,6 +101,40 @@ function colliderSurface(c: LocalCollider): Array<{ p: P; a: number }> {
       for (let k = 0; k < ring; k++) {
         const t = ((k + 0.5) / ring) * Math.PI * 2;
         out.push({ p: [c.x + c.r * Math.sin(phi) * Math.cos(t), c.y + c.r * Math.cos(phi), c.z + c.r * Math.sin(phi) * Math.sin(t)], a });
+      }
+    }
+    return out;
+  }
+  if (c.kind === 'prism') {
+    const n = c.ring.length / 2;
+    const rows = Math.max(1, Math.ceil((c.top - c.bottom) / s));
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const ax = c.ring[i * 2];
+      const az = c.ring[i * 2 + 1];
+      const bx = c.ring[((i + 1) % n) * 2];
+      const bz = c.ring[((i + 1) % n) * 2 + 1];
+      minX = Math.min(minX, ax);
+      maxX = Math.max(maxX, ax);
+      minZ = Math.min(minZ, az);
+      maxZ = Math.max(maxZ, az);
+      const len = Math.hypot(bx - ax, bz - az);
+      const cols = Math.max(1, Math.ceil(len / s));
+      for (let j = 0; j < rows; j++) {
+        for (let k = 0; k < cols; k++) {
+          const t = (k + 0.5) / cols;
+          out.push({ p: [ax + (bx - ax) * t, c.bottom + ((j + 0.5) / rows) * (c.top - c.bottom), az + (bz - az) * t], a: (len / cols) * ((c.top - c.bottom) / rows) });
+        }
+      }
+    }
+    for (let gx = minX + s / 2; gx < maxX; gx += s) {
+      for (let gz = minZ + s / 2; gz < maxZ; gz += s) {
+        if (ringDistance(c.ring, gx, gz) < 0) {
+          out.push({ p: [gx, c.top, gz], a: s * s });
+        }
       }
     }
     return out;
