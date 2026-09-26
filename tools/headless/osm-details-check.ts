@@ -52,7 +52,7 @@ for (const id of ids) {
   const st = res.stats as Record<string, number>;
   const props = Object.entries(st).filter(([k]) => k.startsWith('p_')).map(([k, v]) => `${k.slice(2)} ${v}`);
   const refused = Object.entries(st).filter(([k, v]) => k.startsWith('stand.') && !k.endsWith('kept') && v > 0).map(([k, v]) => `${k.slice(6)} ${v}`);
-  console.log(`${id}: ${Math.round(performance.now() - t0)} ms, prop tris ${st.propTris}, trees ${st.trees}`);
+  console.log(`${id}: ${Math.round(performance.now() - t0)} ms, prop tris ${st.propTris} + kits ${st.kitTris} (drawn through the street hole), trees ${st.trees}`);
   console.log(`  props: ${props.join(', ')}`);
   console.log(`  refused by the stand rule: ${refused.join(', ') || '-'}`);
 }
