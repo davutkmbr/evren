@@ -7,17 +7,17 @@
  * - At most one moment at a time; a global gap after a moment keeps them rare; the records' own once-per-session /
  *   cooldown rules apply through the pure evaluator (./triggers.ts).
  * - A moment starts only after its trigger held for `dwellSec` (no flicker starts from a single frame).
- * - It never takes control: when its conditions end (the dragon climbs out of the band, leaves the shore, lands, the
- *   weather turns) for longer than `graceSec`, the line on screen fades out and the rest is skipped. Conditions are
- *   re-checked with a little hysteresis (`HOLD`), so a few wing beats or a gust do not end a glide.
+ * - Once started, a moment plays to its end (owner decision, 26 Sep): leaving its place or its altitude band, landing
+ *   or a change of weather no longer cut it short, so a second moment can never interrupt the first. Only a race and
+ *   switching its category off in the settings end it early.
  * - Nothing advances while the game is paused (menus, map, photo mode: dt = 0); no moment starts or continues during a
  *   race; a category switched off in Ayarlar → Oyun → Anlar ends a playing moment of that category.
- * - A moment cut short before half of its lines were shown is not spent: it may try again after `retrySec`.
+ * - Every end, early or not, starts the global gap (`minGapSec`) before the next moment. A moment cut short before
+ *   half of its lines were shown is not spent: it may try again after `retrySec` (and the gap).
  */
 import { momentAllowed, type MomentPrefs } from './prefs';
-import { eligibleMoments, nearestAnchor, rejectReason, type MomentContext, type MomentSession, type RejectReason } from './triggers';
-import type { Moment, MomentNeed, MomentTrigger, SubtitleLine } from './types';
-import type { FlightMode } from '../core/contracts';
+import { eligibleMoments, nearestAnchor, type MomentContext, type MomentSession } from './triggers';
+import type { Moment, MomentNeed, SubtitleLine } from './types';
 import { latLonToLocal } from '../core/geo-coords';
 import { AVAILABLE_MOMENT_SOUNDS, unresolvedContent } from './content';
 
@@ -26,8 +26,6 @@ export interface MomentPacing {
   minGapSec: number;
   /** Seconds the trigger must hold before the moment starts. */
   dwellSec: number;
-  /** Seconds the conditions may be lost while playing before the moment fades out. */
-  graceSec: number;
   /** A moment cut short before half of its lines may start again after this many seconds. */
   retrySec: number;
   /** Seconds for the coastal ambience lift to swell in or out. */
@@ -37,21 +35,8 @@ export interface MomentPacing {
 export const DEFAULT_PACING: MomentPacing = {
   minGapSec: 180,
   dwellSec: 1,
-  graceSec: 1.2,
   retrySec: 90,
   liftRampSec: 2.5,
-};
-
-/** Hysteresis while a moment plays: how far past its trigger bands the dragon may drift before it counts as gone. */
-export const HOLD = {
-  /** Meters added to both ends of every altitude band. */
-  altitude: 15,
-  /** Meters added to both ends of the shore distance band. */
-  shore: 60,
-  /** A glide may include some flapping: these modes also keep a 'gliding' moment going. */
-  glideModes: ['gliding', 'flying'] as readonly FlightMode[],
-  /** Meters added to the radius around a moving anchor (a ferry pulls away while the dragon watches). */
-  anchorRadius: 100,
 };
 
 /* ------------------------------------------------------------------ */
@@ -103,45 +88,6 @@ export function momentPlayability(m: Moment, availableSounds: ReadonlySet<string
 }
 
 /* ------------------------------------------------------------------ */
-/* Hold conditions (hysteresis while playing)                           */
-/* ------------------------------------------------------------------ */
-
-const relaxedCache = new WeakMap<Moment, Moment>();
-const NO_SESSION: MomentSession = { now: 0, lastFired: new Map() };
-
-function relaxed(m: Moment): Moment {
-  let r = relaxedCache.get(m);
-  if (r) {
-    return r;
-  }
-  const t = m.trigger;
-  const widen = (v: number | undefined, by: number): number | undefined => (v === undefined ? undefined : v + by);
-  let flightModes = t.flightModes;
-  if (flightModes?.includes('gliding')) {
-    flightModes = [...new Set([...flightModes, ...HOLD.glideModes])];
-  }
-  const place = t.place.anchor !== undefined && t.place.radius !== undefined ? { ...t.place, radius: t.place.radius + HOLD.anchorRadius } : t.place;
-  const trigger: MomentTrigger = {
-    place,
-    surface: t.surface,
-    altitude: t.altitude?.map((b) => ({ ref: b.ref, min: widen(b.min, -HOLD.altitude), max: widen(b.max, HOLD.altitude) })),
-    flightModes,
-    shoreDistance: t.shoreDistance && { min: widen(t.shoreDistance.min, -HOLD.shore), max: widen(t.shoreDistance.max, HOLD.shore) },
-    // Clock, season and date do not change meaningfully within a moment: not re-checked.
-    weather: t.weather,
-    repeat: { kind: 'once-per-session' },
-  };
-  r = { ...m, status: 'ready', trigger };
-  relaxedCache.set(m, r);
-  return r;
-}
-
-/** Why a playing moment can no longer continue in `ctx` (with hysteresis), or null while it may go on. */
-export function holdReason(m: Moment, ctx: Omit<MomentContext, 'session'>): RejectReason | null {
-  return rejectReason(relaxed(m), { ...ctx, session: NO_SESSION });
-}
-
-/* ------------------------------------------------------------------ */
 /* Runner                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -168,7 +114,7 @@ export interface MomentFrame {
   racing: boolean;
 }
 
-export type MomentEndReason = 'complete' | 'conditions' | 'race' | 'disabled';
+export type MomentEndReason = 'complete' | 'race' | 'disabled';
 
 export interface MomentRecord {
   id: string;
@@ -187,7 +133,6 @@ interface Playing {
   line: number;
   linesShown: number;
   forced: boolean;
-  lost: number;
   start: number;
   prevFired: number | undefined;
   /** Id of the moving anchor the moment started at (the nearest one), when its place has an anchor. */
@@ -339,7 +284,6 @@ export class MomentRunner {
       line: -1,
       linesShown: 0,
       forced,
-      lost: 0,
       start: this.clock,
       prevFired: this.lastFired.get(m.id),
       anchorId,
@@ -356,17 +300,9 @@ export class MomentRunner {
       this.stop('race');
       return;
     }
-    if (!p.forced) {
-      if (!momentAllowed(frame.prefs, p.moment.category)) {
-        this.stop('disabled');
-        return;
-      }
-      const holds = !!frame.context && holdReason(p.moment, frame.context) === null;
-      p.lost = holds ? 0 : p.lost + dt;
-      if (p.lost >= this.pacing.graceSec - 1e-9) {
-        this.stop('conditions');
-        return;
-      }
+    if (!p.forced && !momentAllowed(frame.prefs, p.moment.category)) {
+      this.stop('disabled');
+      return;
     }
     p.t += dt;
     this.tick();
@@ -408,9 +344,8 @@ export class MomentRunner {
       this.sink.showCard(p.moment);
     }
     const seen = reason === 'complete' || p.linesShown >= Math.ceil(p.moment.content.subtitles.length / 2);
-    if (seen) {
-      this.lastEnd = this.clock;
-    } else {
+    this.lastEnd = this.clock;
+    if (!seen) {
       // Cut short early: not spent, it may try again a little later.
       if (p.prevFired === undefined) {
         this.lastFired.delete(p.moment.id);
