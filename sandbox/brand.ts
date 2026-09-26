@@ -1,12 +1,12 @@
 /**
- * Brand sandbox: the Seventeen Skies logo, icons and share image, drawn from src/ui/brand-logo.ts.
- *   /sandbox/brand.html                   brand sheet (logos, icons, palette, lines)
- *   ?show=og                              1200 x 630 share image (public/brand/og.jpg)
- *   ?show=icon&size=512[&radius=0]        app icon (public/brand/icon-*.png, apple-touch-icon.png)
- *   ?show=logo&w=1600                     the full logo on a transparent background
- * Rasterise with snap.mjs (the page sets __evren.ready), e.g.
- *   node scripts/snap.mjs --url "/sandbox/brand.html?show=og" --w 1200 --h 630 --out public/brand/og.jpg
- * scripts/brand/build-brand.ts writes the SVG files.
+ * Brand sandbox: every raster of the Seventeen Skies identity, drawn from src/ui/brand-logo.ts.
+ *   /sandbox/brand.html                          brand sheet (logos, icons, palette, lines)
+ *   ?show=logo&w=1200[&crest=0]                  title logo, transparent background
+ *   ?show=icon&size=512[&radius=0][&tile=0]      monogram (app icon tile, or the bare mark with tile=0)
+ *   ?show=og                                     1200 x 630 share image
+ *   ?show=banner                                 1500 x 500 social header
+ * The PNGs in public/brand/ and .docs/brand/kit/ are snap.mjs screenshots of these (the page sets __evren.ready):
+ * npm run brand:png runs scripts/brand/renders.json, which npm run brand writes.
  */
 import { BRAND, BRAND_COLORS } from '../src/ui/brand';
 import { monogramSvg, titleLogoSvg } from '../src/ui/brand-logo';
@@ -45,15 +45,25 @@ if (show === 'og') {
     .og .url { position: absolute; left: 0; right: 0; bottom: 30px; margin: 0; text-align: center; font-size: 15px; letter-spacing: 0.3em; text-transform: uppercase; color: ${BRAND_COLORS.goldPale}; text-shadow: 0 1px 10px rgba(0,0,0,0.8); }
   `);
   app.innerHTML = `<div class="og shot" lang="en">${titleLogoSvg({ width: 600 })}<p class="line">${BRAND.lineEn}</p><p class="url">seventeenskies.com</p></div>`;
+} else if (show === 'banner') {
+  // 1500 x 500 header (X, YouTube-safe centre): the Golden Horn shot, logo left of centre, line on the right.
+  css(`
+    .banner { width: 1500px; height: 500px; background: #000 url(${heroShot}) -40px -200px / 1680px 945px no-repeat; }
+    .banner::before { background: linear-gradient(90deg, rgba(7,10,18,0.78), rgba(7,10,18,0.35) 55%, rgba(7,10,18,0.7)); }
+    .banner svg { position: absolute; left: 150px; top: 50%; transform: translateY(-50%); }
+    .banner .line { position: absolute; right: 150px; top: 50%; transform: translateY(-50%); width: 420px; margin: 0; font-size: 30px; line-height: 1.35; color: ${BRAND_COLORS.ivory}; text-shadow: 0 2px 18px rgba(0,0,0,0.75); }
+    .banner .line small { display: block; margin-top: 14px; font-size: 15px; letter-spacing: 0.3em; text-transform: uppercase; color: ${BRAND_COLORS.goldPale}; }
+  `);
+  app.innerHTML = `<div class="banner shot" lang="en">${titleLogoSvg({ width: 560 })}<p class="line">${BRAND.lineEn}<small>seventeenskies.com</small></p></div>`;
 } else if (show === 'icon') {
   const size = Number(params.get('size') ?? 512);
   const radius = params.has('radius') ? Number(params.get('radius')) : undefined;
   document.body.style.background = 'transparent';
-  app.innerHTML = monogramSvg({ size, radius });
+  app.innerHTML = monogramSvg({ size, radius, tile: params.get('tile') !== '0' });
   app.style.cssText = `width:${size}px;height:${size}px;line-height:0`;
 } else if (show === 'logo') {
   document.body.style.background = 'transparent';
-  app.innerHTML = titleLogoSvg({ width: Number(params.get('w') ?? 1600) });
+  app.innerHTML = titleLogoSvg({ width: Number(params.get('w') ?? 1200), crest: params.get('crest') !== '0' });
   app.style.cssText = 'display:inline-block;line-height:0';
 } else {
   css(`
@@ -61,7 +71,6 @@ if (show === 'og') {
     .sheet h1 { margin: 0; font-size: 13px; letter-spacing: 0.24em; text-transform: uppercase; color: ${BRAND_COLORS.gold}; font-weight: 600; }
     .panel { border-radius: 18px; padding: 48px; display: flex; align-items: center; justify-content: center; gap: 40px; flex-wrap: wrap; }
     .dark { background: radial-gradient(80% 90% at 50% 20%, ${BRAND_COLORS.gok}, ${BRAND_COLORS.night}); }
-    .light { background: #efe7da; }
     .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
     .sw { border-radius: 12px; padding: 64px 14px 12px; font-size: 12px; line-height: 1.4; border: 1px solid rgba(255,255,255,0.08); }
     .sw b { display: block; font-size: 13px; }
