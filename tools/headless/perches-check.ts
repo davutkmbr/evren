@@ -5,11 +5,11 @@
  *   npx tsx tools/headless/perches-check.ts
  *
  * Checks per perch:
- * - the grip point is not below the terrain;
- * - hills: |y - terrain| < 3 m;
+ * - the placement rules (src/world/perches/rules.ts): on a structure, at least 20 m above the ground, over the
+ *   neighbour envelope within 40 m, the view along the heading open (the service drops a perch that fails them);
  * - structures: y within 1.5 m of the built mesh top at the grip point (downward ray over the most detailed LOD);
  *   the collider top there is printed and flagged when the dragon would sit inside a collider;
- * - the view along headingDeg is open: terrain sampled every 25 m from 40 m to 1.5 km stays below the eye (y + 3 m).
+ * - the built structure itself does not rise over the grip within the neighbour radius outside the grip area.
  * Exits with code 1 on any failure.
  */
 import * as THREE from 'three';
@@ -21,10 +21,11 @@ import { builderFor } from '../../src/world/landmarks/structures/builders/regist
 import { prepareSite } from '../../src/world/landmarks/structures/system/site-planner';
 import type { ColliderData } from '../../src/world/landmarks/structures/types';
 import { PERCH_DATA } from '../../src/world/perches/data';
+import { resolvePerch } from '../../src/world/perches/resolve';
+import { neighbourEnvelope, PERCH_RULES, validatePerch } from '../../src/world/perches/rules';
 import { buildPerchService } from '../../src/world/perches/service';
 import { buildHeadlessGeo } from './geo';
 
-const HILL_TOLERANCE = 3;
 const TOP_TOLERANCE = 1.5;
 const EYE_HEIGHT = 3;
 const VIEW_FROM = 40;
@@ -172,17 +173,15 @@ function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at: number
   return { height, at };
 }
 
-/** Highest terrain within `radius` (for hills: how far the grip point is from the local summit). */
-function localSummit(geo: GeoQuery, x: number, z: number, radius: number): { height: number; dx: number; dz: number } {
-  let best = { height: -Infinity, dx: 0, dz: 0 };
-  for (let dz = -radius; dz <= radius; dz += 10) {
-    for (let dx = -radius; dx <= radius; dx += 10) {
-      if (dx * dx + dz * dz > radius * radius) {
-        continue;
-      }
-      const t = geo.heightAt(x + dx, z + dz);
+/** Highest point of the built structure on rings from just outside the grip area to the neighbour radius. */
+function ownRise(tris: readonly Float32Array[], p: PerchPoint): { height: number; at: number } {
+  let best = { height: -Infinity, at: 0 };
+  for (let r = p.gripRadius + 4; r <= PERCH_RULES.ownRadius; r += 3) {
+    for (let k = 0; k < 32; k++) {
+      const a = (k / 32) * Math.PI * 2;
+      const t = rayTop(tris, p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
       if (t > best.height) {
-        best = { height: t, dx, dz };
+        best = { height: t, at: r };
       }
     }
   }
@@ -195,15 +194,20 @@ function main(): void {
   const t0 = performance.now();
   const geo = buildHeadlessGeo();
   console.log(`geo built in ${Math.round(performance.now() - t0)} ms`);
-  const service = buildPerchService(geo);
   const failures: string[] = [];
-  if (service.points.length !== PERCH_DATA.length) {
-    failures.push(`resolved ${service.points.length} of ${PERCH_DATA.length} perches`);
+  const points: PerchPoint[] = [];
+  for (const d of PERCH_DATA) {
+    try {
+      points.push(resolvePerch(geo, d));
+    } catch (e) {
+      failures.push(`${d.id}: not resolved (${String(e)})`);
+    }
   }
+  const service = buildPerchService(geo);
   const ids = new Set<string>();
   const built = new Map<string, Built | null>();
 
-  for (const p of service.points) {
+  for (const p of points) {
     const fail = (msg: string): void => {
       failures.push(`${p.id}: ${msg}`);
     };
@@ -218,8 +222,13 @@ function main(): void {
     const lines: string[] = [];
     lines.push(`${p.id} [${p.surface}] "${p.name}"`);
     lines.push(`  pos x=${f1(p.x)} y=${f1(p.y)} z=${f1(p.z)}  heading=${p.headingDeg}  grip r=${p.gripRadius}  terrain=${f1(terrain)}  above terrain=${f1(p.y - terrain)}`);
-    if (p.y < terrain - 0.01) {
-      fail(`below terrain (${f1(p.y)} < ${f1(terrain)})`);
+    for (const v of validatePerch(geo, p)) {
+      fail(`rule: ${v}`);
+    }
+    const env = neighbourEnvelope(geo, p.x, p.z, p.landmarkId);
+    lines.push(`  above ground ${f1(p.y - Math.max(terrain, 0))} m (min ${PERCH_RULES.minAboveGround})  neighbour envelope ${f1(env.height)} (${env.what}) -> clears by ${f1(p.y - env.height)} m`);
+    if (!p.landmarkId) {
+      fail('not on a structure (no landmarkId)');
     }
 
     const def = p.landmarkId ? geo.landmark(p.landmarkId) : undefined;
@@ -230,13 +239,7 @@ function main(): void {
       lines.push(`  landmark ${def.id} (${def.builder}): y=${f1(def.y)} height=${def.height}  top est=${f1(def.y + def.height)}`);
     }
 
-    if (p.surface === 'hill') {
-      if (Math.abs(p.y - terrain) >= HILL_TOLERANCE) {
-        fail(`hill grip ${f1(p.y - terrain)} m off the terrain`);
-      }
-      const s = localSummit(geo, p.x, p.z, 250);
-      lines.push(`  local summit (250 m): ${f1(s.height)} at dx=${s.dx} dz=${s.dz} (${f1(s.height - terrain)} m above the grip)`);
-    } else if (def) {
+    if (def) {
       if (!built.has(def.id)) {
         const b = def.builder === 'structures' ? buildStructure(def, geo) : def.builder === 'mosques' ? buildMosque(def) : null;
         built.set(def.id, b);
@@ -250,6 +253,11 @@ function main(): void {
           fail('no built geometry under the grip point');
         } else if (Math.abs(p.y - top) > TOP_TOLERANCE) {
           fail(`grip ${f1(p.y - top)} m off the built top`);
+        }
+        const rise = ownRise(b.tris, p);
+        lines.push(`  own structure within ${PERCH_RULES.ownRadius} m: top ${f1(rise.height)} at ${rise.at} m (grip ${p.y - rise.height >= 0 ? '+' : ''}${f1(p.y - rise.height)})`);
+        if (rise.height > p.y + PERCH_RULES.neighbourMargin) {
+          fail(`own structure rises ${f1(rise.height - p.y)} m over the grip ${rise.at} m away`);
         }
         if (Number.isFinite(ctop) && ctop - p.y > 0.5) {
           lines.push(`  WARN collider top is ${f1(ctop - p.y)} m above the grip (the dragon would sit inside the collider)`);
@@ -265,9 +273,6 @@ function main(): void {
     const v = viewBlocker(geo, p);
     const open = v.height < p.y + EYE_HEIGHT;
     lines.push(`  view ${VIEW_FROM}-${VIEW_TO} m along ${p.headingDeg}°: max terrain ${f1(v.height)} at ${v.at} m -> ${open ? 'open' : 'BLOCKED'}`);
-    if (!open) {
-      fail(`view blocked by terrain ${f1(v.height)} m at ${v.at} m (eye ${f1(p.y + EYE_HEIGHT)})`);
-    }
     console.log(lines.join('\n'));
   }
 
@@ -286,7 +291,7 @@ function main(): void {
     }
   }
 
-  console.log(`\n${service.points.length} perches, ${failures.length} failure(s) (${Math.round(performance.now() - t0)} ms)`);
+  console.log(`\n${points.length} perches (${service.points.length} pass the rules), ${failures.length} failure(s) (${Math.round(performance.now() - t0)} ms)`);
   for (const f of failures) {
     console.log(`FAIL ${f}`);
   }

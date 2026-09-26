@@ -1,6 +1,6 @@
 /**
- * Viewpoints (phase 03): spots where the dragon can land and watch the city — bridge tower tops, the Galata cap,
- * the Süleymaniye dome, Kız Kulesi, Rumeli Hisarı, the Sapphire roof and the hills. Data + service layer only:
+ * Viewpoints (phase 03): spots where the dragon can land and watch the city, always on top of a structure — bridge
+ * tower tops, the Galata and Beyazıt tower caps, mosque domes, the Kız Kulesi cupola, Rumeli Hisarı, the Sapphire roof. Data + service layer only:
  * waits for 'geo', resolves every catalogue entry to a grip point and provides the 'perches' service.
  */
 import type { EngineContext, System } from '../../core/contracts';
@@ -9,6 +9,7 @@ import { buildPerchService } from './service';
 
 export { PERCH_DATA } from './data';
 export { buildPerchService, PerchServiceImpl } from './service';
+export { PERCH_RULES, validatePerch } from './rules';
 
 /** Creates the perch system; provides the 'perches' service (PerchService) during init, once geo is ready. */
 export function createPerchSystem(): System {
