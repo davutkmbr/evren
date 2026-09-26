@@ -1,12 +1,12 @@
+import { keyHint, keyText } from '../components';
 import { el } from '../dom';
 
-function hintRow(items: Array<[keys: string[], label: string]>): HTMLElement {
+/** A row of key hints; `keys` in keyCombo syntax ("Ctrl + W / S"). */
+function hintRow(items: Array<[keys: string, label: string]>): HTMLElement {
   return el(
     'ul',
     'hint-row',
-    items.map(([keys, label]) =>
-      el('li', 'hint-item', [...keys.map((k) => (k === '+' ? el('span', 'hint-plus', '+') : el('kbd', undefined, k))), el('span', 'hint-label', label)]),
-    ),
+    items.map(([keys, label]) => el('li', 'hint-item', [keyHint(keys, label).root])),
   );
 }
 
@@ -14,10 +14,10 @@ function hintRow(items: Array<[keys: string[], label: string]>): HTMLElement {
 export class FlightHints {
   readonly root = el('div', 'hud-hints ejd-fade is-out', [
     hintRow([
-      [['M'], 'Harita'],
-      [['H'], 'Yardım'],
-      [['O'], 'Fotoğraf'],
-      [['Esc'], 'Menü'],
+      ['M', 'Harita'],
+      ['H', 'Yardım'],
+      ['O', 'Fotoğraf'],
+      ['Esc', 'Menü'],
     ]),
   ]);
   private timer = 0;
@@ -41,16 +41,16 @@ export class HoverHints {
     // Two short rows: one long row would crowd the bottom-centre cluster on narrower screens.
     el('div', 'hint-panel', [
       hintRow([
-        [['Ctrl', '+', 'W', 'S'], 'Yavaşça ileri, geri'],
-        [['A', 'D'], 'Dön'],
+        ['Ctrl + W / S', 'Yavaşça ileri, geri'],
+        ['A / D', 'Dön'],
       ]),
       hintRow([
-        [['Space'], 'Yüksel'],
-        [['Shift'], 'Alçal'],
-        [['L'], 'Kon'],
+        ['Space', 'Yüksel'],
+        ['Shift', 'Alçal'],
+        ['L', 'Kon'],
       ]),
     ]),
-    el('p', 'hint-exit', ['Uçuşa dönmek için freni bırak, ', el('kbd', undefined, 'W'), ' tuşuna bas']),
+    el('p', 'hint-exit', keyText('Uçuşa dönmek için freni bırak, [W] tuşuna bas')),
   ]);
   private timer = 0;
   private shown = 0;
@@ -97,12 +97,12 @@ export class PhotoHint {
   readonly root = el('div', 'ejd-photo-hint ejd-fade is-out', [
     el('p', 'photo-caps', 'Fotoğraf modu'),
     hintRow([
-      [['W', 'A', 'S', 'D'], 'Hareket'],
-      [['Q', 'E'], 'Alçal, yüksel'],
-      [['Shift'], 'Hızlı'],
-      [['Sağ tık'], 'Bak'],
-      [['Tekerlek'], 'Odak uzaklığı'],
-      [['O'], 'Çık'],
+      ['W / A / S / D', 'Hareket'],
+      ['Q / E', 'Alçal, yüksel'],
+      ['Shift', 'Hızlı'],
+      ['Sağ tık', 'Bak'],
+      ['Tekerlek', 'Odak uzaklığı'],
+      ['O', 'Çık'],
     ]),
   ]);
   private timer = 0;

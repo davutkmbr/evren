@@ -1,3 +1,4 @@
+import { prompt } from '../components';
 import { el } from '../dom';
 import { ControlsView } from '../menu/controls-panel';
 
@@ -7,9 +8,8 @@ export class HelpOverlay {
   private isOpen = false;
 
   constructor(onClose: () => void) {
-    const close = el('button', 'help-close', undefined, { type: 'button', 'aria-label': 'Yardımı kapat' });
-    close.innerHTML = `<span>Kapat</span><kbd>H</kbd>`;
-    close.addEventListener('click', onClose);
+    const close = prompt('Kapat', 'H', 'secondary', onClose).root;
+    close.setAttribute('aria-label', 'Yardımı kapat');
     this.root = el('section', 'ejd-help ejd-glass ejd-fade is-out', [
       el('header', 'help-head', [el('div', undefined, [el('p', 'ejd-caps', 'Yardım'), el('h2', 'help-title', 'Kontroller')]), close]),
       new ControlsView({ compact: true }).root,
