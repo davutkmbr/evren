@@ -37,6 +37,8 @@ export interface SettingsPanelOptions {
   onResetDiscoveries(): void;
   /** Opens the key bindings (the pause menu's Kontroller tab). */
   onShowControls?(): void;
+  /** Oyun → İpuçları: the contextual move hints (src/ui/tutorial). */
+  tutorial?: { enabled(): boolean; setEnabled(on: boolean): void; reset(): void };
 }
 
 /**
@@ -62,6 +64,7 @@ export class SettingsPanel {
   private readonly momentPrefs: MomentPrefs = loadMomentPrefs();
   private readonly momentMaster: Control<boolean>;
   private readonly momentToggles: Record<MomentCategory, Control<boolean>>;
+  private readonly tips: Control<boolean> | null = null;
   private readonly pages = new Map<SettingsPage, HTMLElement>();
   private readonly tabs = new Map<SettingsPage, HTMLButtonElement>();
   private page: SettingsPage = 'display';
@@ -264,6 +267,26 @@ export class SettingsPanel {
     });
     setRowsEnabled(momentSubRows, this.momentPrefs.enabled, MOMENTS_OFF);
 
+    // Oyun → İpuçları: the switch and a reset that lets every move hint show again.
+    const tutorial = options.tutorial;
+    let tipsSection: HTMLElement[] = [];
+    if (tutorial) {
+      this.tips = toggle('İpuçları', tutorial.enabled(), (v) => tutorial.setEnabled(v));
+      let resetTimer = 0;
+      const resetTips = prompt('Sıfırla', '', 'secondary', () => {
+        tutorial.reset();
+        resetTips.setLabel('Sıfırlandı');
+        window.clearTimeout(resetTimer);
+        resetTimer = window.setTimeout(() => resetTips.setLabel('Sıfırla'), 2500);
+      });
+      tipsSection = [
+        settingSection('İpuçları', [
+          settingRow('İpuçları', 'Yeni hareketleri doğru anda, kısaca gösterir; bir hareketi temiz yapınca o ipucu bir daha çıkmaz', this.tips.root),
+          settingRow('İpuçlarını sıfırla', 'Gösterilen ve öğrenilen ipuçlarını baştan alır', resetTips.root),
+        ]),
+      ];
+    }
+
     const controlsLink = prompt('Kontroller', '', 'secondary', () => options.onShowControls?.());
 
     const pageContent: Record<SettingsPage, HTMLElement[]> = {
@@ -312,6 +335,7 @@ export class SettingsPanel {
           [settingRow('Anlar', 'Haritaya serpiştirilmiş küçük sürprizler', this.momentMaster.root), ...momentSubRows],
           'Uçarken karşına çıkan kısa sahneler ve altyazılar. İstemediklerini kapatabilirsin.',
         ),
+        ...tipsSection,
         settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', reset.root)]),
       ],
     };
@@ -385,6 +409,9 @@ export class SettingsPanel {
     this.camera.set(mode === 'free' || !mode ? 'third' : mode);
     this.refreshWeather();
     this.momentMaster.set(this.momentPrefs.enabled);
+    if (this.tips && this.options.tutorial) {
+      this.tips.set(this.options.tutorial.enabled());
+    }
     for (const m of MOMENT_ROWS) {
       this.momentToggles[m.category].set(this.momentPrefs.categories[m.category]);
     }

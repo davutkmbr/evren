@@ -822,6 +822,46 @@ export const SWIM_POSE = {
   sprayTailBack: 0.85,
 } as const;
 
+/**
+ * Swimming in weather (phase 21 stage 6, locomotion.ts): how the floating dragon rides big waves and how rough seas
+ * change its water take-off. Times s, angles rad, heights m (Hs = the local significant wave height of the water
+ * service), stamina 0..1.
+ */
+export const SWIM_SEA = {
+  /**
+   * Rocking: the body's pitch and roll follow the plane through the wave surface under it (sampled over its length and
+   * beam, so chop much shorter than the dragon hardly moves it) as a lightly damped oscillator with these natural
+   * periods and damping ratio: long lodos waves (periods near and above the body's) rock it more than their slope,
+   * short chop less. Bounded so the rider stays on top.
+   */
+  pitchPeriod: 2.8,
+  rollPeriod: 3.4,
+  damping: 0.3,
+  maxPitch: 16 * DEG,
+  maxRoll: 20 * DEG,
+  /** Rate (1/s) at which the body follows the rocking attitude (after settling in). */
+  alignRate: 10,
+  /** The body's centre never sits deeper than floatDepth + dryMargin under the local surface (a crest lifts it). */
+  dryMargin: 0.05,
+  /** Rough sea for the take-off: 0 at roughLo, 1 at roughHi (local Hs, m). */
+  roughLo: 0.3,
+  roughHi: 2,
+  /** The run lasts runTime x (1 + runLonger x rough), accelerates runAccelLoss less and costs extra stamina. */
+  runLonger: 0.9,
+  runAccelLoss: 0.3,
+  runStamina: 0.12,
+  /**
+   * A wave crest helps the leap: once the run is crestMinRun x its calm length old, in a sea of at least crestMinHs,
+   * the leap comes as soon as the body rides a crest (body-averaged surface above crestShare x Hs, not falling faster
+   * than crestSink); the rising water adds crestLift x its vertical speed to the leap.
+   */
+  crestMinHs: 0.5,
+  crestMinRun: 0.6,
+  crestShare: 0.2,
+  crestSink: 0.3,
+  crestLift: 1,
+} as const;
+
 /** Body collision spheres as fractions of the rig length (x, y, z, radius). */
 export const BODY_SPHERES: ReadonlyArray<readonly [number, number, number, number]> = [
   [0, 0, -0.1, 0.09],

@@ -149,6 +149,11 @@ export interface RunOptions {
   seconds: number;
   renderFps: number;
   script: FrameScript;
+  /**
+   * Called every render frame after the flight pose went to the rig and before the rig applies it (where the game's
+   * model system runs the rider and bond behaviours on top of the flight pose).
+   */
+  afterPose?: (dt: number, elapsed: number, state: DragonState) => void;
 }
 
 /** Owns the sim, the pose driver and the rig; mirrors createFlightSystem's update() without the engine. */
@@ -328,6 +333,7 @@ export class PoseRuntime {
       state.firing = sim.firing;
       // Flight system: pose; model system (runs after it in the same frame): animator.
       rig.setPose(poseDriver.update(sim, dt, elapsed, null, frameCmd));
+      opts.afterPose?.(dt, elapsed, state);
       rig.applyPose(dt, state, null, null);
       object.updateMatrixWorld(true);
       records.push(this.record(elapsed));
