@@ -240,6 +240,8 @@ export function createFlightSystem(): System {
       void ctx.services.when('env').then((env) => {
         sim.world.env = env;
       });
+      // The wave surface of the sea (flat y = 0 until the water module provides it, or when there is none).
+      sim.world.water = ctx.services.tryGet('water');
       void ctx.services.when('rig').then((r) => {
         rig = r;
         configureRig(r);
@@ -280,6 +282,8 @@ export function createFlightSystem(): System {
       if (!sim.world.env) {
         sim.world.env = ctx.services.tryGet('env');
       }
+      // Picks up the water service once provided (and drops it when withdrawn).
+      sim.world.water = ctx.services.tryGet('water');
       if (dt > 0) {
         const cmd = gatherCommand(ctx);
         latchPilotEdges(cmd, latch);
