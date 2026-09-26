@@ -31,6 +31,8 @@ export interface DetailsRequest {
   lines: number[];
   /** Mosque pads (landmark mosques and neighbourhood mosques): x, z, radius triples. */
   mosques: number[];
+  /** Perch clearings (perches/clearings.ts): x, z, radius, highest allowed crown top per record. */
+  clearings: number[];
   /** Claims as the buildings layer passes them to its infill (buildings/index.ts). */
   infillClaims: LandmarkClaims;
 }

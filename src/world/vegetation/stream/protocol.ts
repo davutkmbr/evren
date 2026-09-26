@@ -35,6 +35,8 @@ export interface PlacementInitMessage {
   /** Per species: reference crown radius (m) and height (m). */
   crownRadius: number[];
   height: number[];
+  /** Perch clearings (perches/clearings.ts): x, z, radius, highest allowed crown top per record. */
+  clearings: number[];
 }
 
 export interface TileRequestMessage {

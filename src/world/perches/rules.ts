@@ -6,8 +6,12 @@
 import { LandUse, type GeoQuery, type PerchPoint } from '../../core/contracts';
 
 export const PERCH_RULES = {
-  /** Grip point at least this high above the ground or the sea under it (m). */
+  /**
+   * Grip point at least this high above the ground or the sea under it (m); `minAboveGroundMeasured` where the
+   * surroundings are measured (PerchSurroundings: the buildings known, the trees cleared around the perch).
+   */
   minAboveGround: 20,
+  minAboveGroundMeasured: 15,
   /** Neighbourhood radius (m) the perch must top, and the margin (m) it keeps over it. */
   neighbourRadius: 40,
   neighbourMargin: 3,
@@ -53,28 +57,42 @@ const OBSTACLE: Record<LandUse, number> = {
   [LandUse.Suburban]: 25,
 };
 
+/**
+ * What is known about a perch's surroundings beyond the GeoQuery: `neighbourTop` is the measured top (m) of the
+ * tallest building / structure within the neighbour radius (the wall-tower candidates carry it from the walls bake).
+ * With it the land-use allowances are not needed: buildings are measured, and trees are cleared around every perch
+ * (clearings.ts), so only the terrain, that top and the landmarks count.
+ */
+export interface PerchSurroundings {
+  neighbourTop: number;
+}
+
 /** Rule violations of a resolved perch (empty when it passes). */
-export function validatePerch(geo: GeoQuery, p: PerchPoint): string[] {
+export function validatePerch(geo: GeoQuery, p: PerchPoint, known?: PerchSurroundings): string[] {
   const R = PERCH_RULES;
   const out: string[] = [];
   const f1 = (v: number): string => v.toFixed(1);
   const ground = Math.max(geo.heightAt(p.x, p.z), 0);
-  if (p.y - ground < R.minAboveGround) {
-    out.push(`only ${f1(p.y - ground)} m above the ground (min ${R.minAboveGround})`);
+  const minAbove = known ? R.minAboveGroundMeasured : R.minAboveGround;
+  if (p.y - ground < minAbove) {
+    out.push(`only ${f1(p.y - ground)} m above the ground (min ${minAbove})`);
   }
-  const top = neighbourEnvelope(geo, p.x, p.z, p.landmarkId);
+  const top = neighbourEnvelope(geo, p.x, p.z, p.landmarkId, known);
   if (p.y < top.height + R.neighbourMargin) {
     out.push(`below the neighbour envelope ${f1(top.height)} m (${top.what}) within ${R.neighbourRadius} m (grip ${f1(p.y)})`);
   }
-  const blocker = viewBlocker(geo, p);
+  const blocker = viewBlocker(geo, p, known);
   if (blocker) {
     out.push(`view blocked by ${blocker.what} ${f1(blocker.height)} m at ${blocker.at} m, ${blocker.bearing}° off the heading`);
   }
   return out;
 }
 
-/** First thing rising over the eye inside the view cone (rules above), or null when the view is open. */
-export function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at: number; bearing: number; what: string } | null {
+/**
+ * First thing rising over the eye inside the view cone (rules above), or null when the view is open. With known
+ * surroundings the near field counts the terrain only (the neighbours are measured by the envelope test).
+ */
+export function viewBlocker(geo: GeoQuery, p: PerchPoint, known?: PerchSurroundings): { height: number; at: number; bearing: number; what: string } | null {
   const R = PERCH_RULES;
   const eye = p.y + R.eye;
   for (let i = 0; i < R.viewRays; i++) {
@@ -84,7 +102,7 @@ export function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at:
       const x = p.x + Math.sin(h) * d;
       const z = p.z - Math.cos(h) * d;
       const t = geo.heightAt(x, z);
-      const near = d <= R.viewNear && t > 0 ? (OBSTACLE[geo.landUseAt(x, z)] ?? 30) : 0;
+      const near = !known && d <= R.viewNear && t > 0 ? (OBSTACLE[geo.landUseAt(x, z)] ?? 30) : 0;
       if (t + near >= eye) {
         return { height: t + near, at: d, bearing, what: near > 0 ? `terrain + ${LandUse[geo.landUseAt(x, z)]} allowance` : 'terrain' };
       }
@@ -95,9 +113,10 @@ export function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at:
 
 /**
  * Highest thing the GeoQuery knows of within the neighbourhood radius: the terrain (or the sea) plus the obstacle
- * allowance of its land use, and every other landmark standing inside it.
+ * allowance of its land use (or, with known surroundings, the bare terrain and the measured neighbour top), and every
+ * other landmark standing inside it.
  */
-export function neighbourEnvelope(geo: GeoQuery, x: number, z: number, own?: string): { height: number; what: string } {
+export function neighbourEnvelope(geo: GeoQuery, x: number, z: number, own?: string, known?: PerchSurroundings): { height: number; what: string } {
   const R = PERCH_RULES.neighbourRadius;
   let height = -Infinity;
   let what = '';
@@ -108,12 +127,16 @@ export function neighbourEnvelope(geo: GeoQuery, x: number, z: number, own?: str
       }
       const t = geo.heightAt(x + dx, z + dz);
       const use = geo.landUseAt(x + dx, z + dz);
-      const e = Math.max(t, 0) + (t > 0 ? (OBSTACLE[use] ?? 30) : 0);
+      const e = Math.max(t, 0) + (t > 0 && !known ? (OBSTACLE[use] ?? 30) : 0);
       if (e > height) {
         height = e;
-        what = t > 0 ? `terrain + ${LandUse[use]} allowance` : 'sea';
+        what = t <= 0 ? 'sea' : known ? 'terrain' : `terrain + ${LandUse[use]} allowance`;
       }
     }
+  }
+  if (known && known.neighbourTop > height) {
+    height = known.neighbourTop;
+    what = 'measured buildings / structures';
   }
   for (const l of geo.landmarks) {
     if (l.id === own || Math.hypot(l.x - x, l.z - z) > R) {
