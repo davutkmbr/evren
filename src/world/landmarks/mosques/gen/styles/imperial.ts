@@ -3,7 +3,7 @@ import { arcade, courtyard } from '../parts/arcade';
 import { corniceProfile, flatRoof, polyPath, rectPath } from '../parts/details';
 import { leadDome, semiDome, turret, windowDrum } from '../parts/dome';
 import { minaret, minaretTop, type MinaretSpec } from '../parts/minaret';
-import { rowOpenings, wallPanel, type Opening, type RowSpec } from '../parts/wall';
+import { archRise, rowOpenings, wallPanel, type Opening, type RowSpec } from '../parts/wall';
 import { Light, Mat, type LocalCollider, type LodLevel, type RGB } from '../types';
 
 export type SemiLayout = 'none' | 'axial' | 'all' | 'three';
@@ -185,7 +185,60 @@ export function boxFacades(
     { side: 'left', x: -w / 2, z: -d / 2, yaw: -Math.PI / 2, len: d },
   ];
   sides.forEach((s, i) => {
-    b.at(s.x, 0, s.z, s.yaw, () => wallPanel(b, s.len, y0, h, openingsFor(s.side, s.len), { lod, seed: 101 + i * 31 }));
+    b.at(s.x, 0, s.z, s.yaw, () => {
+      const ops = openingsFor(s.side, s.len);
+      wallPanel(b, s.len, y0, h, ops, { lod, seed: 101 + i * 31 });
+      if (lod < 2) {
+        facadeRelief(b, s.len, y0, h, ops, lod);
+      }
+    });
+  });
+}
+
+/**
+ * Masonry relief on a wall panel in local XY (facing +Z): a moulded plinth, string courses in the clear bands
+ * between window rows and shallow pilaster strips between the window bays, so a facade reads as built in courses
+ * and bays instead of one flat sheet.
+ */
+export function facadeRelief(b: MeshBuilder, len: number, y0: number, h: number, ops: readonly Opening[], lod: LodLevel): void {
+  if (h - y0 < 4 || len < 4) {
+    return;
+  }
+  const clearOf = (o: Opening): [number, number, number, number] => {
+    const f = (o.frame ?? 0) + 0.12;
+    return [o.x0 - f, o.x1 + f, o.y0 - f, o.y1 + archRise(o) + f];
+  };
+  const boxes = ops.map(clearOf);
+  const plinthTop = Math.min(y0 + 0.95, Math.min(h, ...boxes.map((q) => q[2])) - 0.05);
+  b.with({ ao: 0.9 }, () => {
+    if (plinthTop > y0 + 0.3) {
+      b.box(-0.2, y0, 0, len + 0.2, plinthTop - 0.12, 0.2, 'bn');
+      // chamfered weathering on top of the plinth
+      b.quad([-0.2, plinthTop - 0.12, 0.2], [len + 0.2, plinthTop - 0.12, 0.2], [len + 0.2, plinthTop, 0.02], [-0.2, plinthTop, 0.02]);
+    }
+    // string courses: horizontal bands no opening crosses
+    const tops = [...new Set(boxes.map((q) => Math.round(q[3] * 10) / 10))].sort((p, q) => p - q);
+    for (const t of tops) {
+      const next = boxes.filter((q) => q[2] > t - 0.01).reduce((m, q) => Math.min(m, q[2]), h - 0.8);
+      const y = (t + next) / 2;
+      if (next - t < 0.5 || y > h - 1.2 || boxes.some((q) => y + 0.14 > q[2] && y - 0.14 < q[3])) {
+        continue;
+      }
+      b.with({ mat: Mat.Smooth }, () => b.box(-0.14, y - 0.14, 0, len + 0.14, y + 0.14, 0.16, 'n'));
+    }
+    if (lod > 0) {
+      return;
+    }
+    // pilaster strips midway between neighbouring bays (never over an opening or its frame)
+    const centres = [...new Set(ops.filter((o) => o.back !== 'door').map((o) => Math.round(((o.x0 + o.x1) / 2) * 20) / 20))].sort((p, q) => p - q);
+    const pw = 0.38;
+    for (let i = 0; i < centres.length - 1; i++) {
+      const x = (centres[i] + centres[i + 1]) / 2;
+      if (boxes.some((q) => x + pw > q[0] && x - pw < q[1])) {
+        continue;
+      }
+      b.with({ mat: Mat.Smooth }, () => b.box(x - pw, plinthTop, 0, x + pw, h - 0.35, 0.24, 'bn'));
+    }
   });
 }
 
