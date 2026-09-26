@@ -51,6 +51,26 @@ interface CityNode {
   gen: number;
   /** Re-requested by refresh() while its current mesh stays displayed (swapped when the new one arrives). */
   refreshing: boolean;
+  /** Start (performance.now()) of a handover cross-fade driving `fade` by time instead of by frame steps. */
+  timedFrom: number | null;
+}
+
+/**
+ * Chunks re-requested together for an OSM region handover (osm/fade.ts): their new meshes are held until all are
+ * ready, then swapped at one instant, the old ones fading out as ghosts, and `resolve` gets that instant.
+ */
+interface Handover {
+  nodes: Set<CityNode>;
+  /** Refreshed nodes whose new mesh is built, with the old mesh still on screen. */
+  held: Map<CityNode, THREE.Mesh | null>;
+  resolve: (t0: number) => void;
+}
+
+/** An old chunk mesh fading out after a handover swap. */
+interface Ghost {
+  mesh: THREE.Mesh;
+  handle: FadeHandle;
+  t0: number;
 }
 
 export interface CityLodParams {
@@ -94,6 +114,8 @@ const _m = new THREE.Matrix4();
 export class CityStreamer {
   readonly group = new THREE.Group();
   private readonly nodes = new Map<number, CityNode>();
+  private readonly handovers: Handover[] = [];
+  private readonly ghosts: Ghost[] = [];
   private readonly results: CityNode[] = [];
   private readonly pendingResults = new Map<CityNode, TileResultMsg>();
   private readonly wantedKeys = new Set<number>();
@@ -231,6 +253,7 @@ export class CityStreamer {
         fade: 0,
         target: 1,
         fadeHandle: null,
+        timedFrom: null,
         wanted: true,
         priority: 0,
         distance: dist,
@@ -398,7 +421,11 @@ export class CityStreamer {
       }
       this.buildMesh(n, res);
       n.state = 'ready';
-      if (n.refreshing) {
+      const h = n.refreshing ? this.handovers.find((q) => q.nodes.has(n)) : undefined;
+      if (h) {
+        // Held until the whole handover is ready (startHandover).
+        h.held.set(n, old);
+      } else if (n.refreshing) {
         this.swapRefreshed(n, old);
       }
       count++;
@@ -406,6 +433,7 @@ export class CityStreamer {
         break;
       }
     }
+    this.checkHandovers();
     this.refreshRanges();
   }
 
@@ -466,17 +494,104 @@ export class CityStreamer {
    * Regenerates every chunk overlapping `rect` with the cutter's current exclusion list (an OSM region started or
    * stopped drawing there). Displayed chunks keep their mesh until the new one is uploaded, then swap in place.
    */
-  refresh(rect: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+  refresh(rect: { minX: number; maxX: number; minZ: number; maxZ: number }): Promise<number> {
+    const group = new Set<CityNode>();
     for (const n of this.nodes.values()) {
       if (n.x0 > rect.maxX || n.x0 + n.size < rect.minX || n.z0 > rect.maxZ || n.z0 + n.size < rect.minZ) {
         continue;
+      }
+      // A node still held by an earlier handover: start that one now (its new mesh is replaced below anyway).
+      for (const h of this.handovers) {
+        if (h.held.has(n) || h.nodes.has(n)) {
+          this.startHandover(h);
+        }
       }
       n.gen++;
       this.pendingResults.delete(n);
       if (n.state === 'ready') {
         n.refreshing = true;
+        if (n.displayed) {
+          group.add(n);
+        }
       }
       n.state = 'queued';
+    }
+    // Only chunks on screen need a synchronised swap; the others simply come back with the new content.
+    if (!group.size) {
+      return Promise.resolve(performance.now());
+    }
+    return new Promise<number>((resolve) => {
+      this.handovers.push({ nodes: group, held: new Map(), resolve });
+    });
+  }
+
+  /** Swaps every held chunk of `h` at one instant: old meshes become fading ghosts, new ones fade in by time. */
+  private startHandover(h: Handover): void {
+    const i = this.handovers.indexOf(h);
+    if (i < 0) {
+      return;
+    }
+    this.handovers.splice(i, 1);
+    const t0 = performance.now();
+    for (const [n, old] of h.held) {
+      n.refreshing = false;
+      if (old && old !== n.mesh) {
+        if (n.displayed && this.group.children.includes(old)) {
+          const handle = this.materials.acquireFade();
+          handle.fade.value = 1;
+          handle.invert.value = 1;
+          old.material = handle.material;
+          this.ghosts.push({ mesh: old, handle, t0 });
+        } else {
+          this.group.remove(old);
+          old.geometry.dispose();
+        }
+      }
+      if (!n.displayed) {
+        continue;
+      }
+      if (n.fadeHandle) {
+        this.materials.releaseFade(n.fadeHandle);
+        n.fadeHandle = null;
+      }
+      if (n.mesh) {
+        n.fade = 0;
+        n.target = 1;
+        n.timedFrom = t0;
+        this.group.add(n.mesh);
+      }
+      this.removeLamps(n);
+      if (n.target > 0) {
+        this.addLamps(n);
+      }
+    }
+    h.resolve(t0);
+  }
+
+  /** Starts the handovers whose chunks are all built (or gone). */
+  private checkHandovers(): void {
+    for (const h of [...this.handovers]) {
+      let ready = true;
+      for (const n of h.nodes) {
+        if (this.nodes.get(n.key) !== n || !n.displayed) {
+          // Gone meanwhile (LOD change, dropped): its old mesh, still on screen, goes with it.
+          const old = h.held.get(n);
+          if (old && old !== n.mesh) {
+            this.group.remove(old);
+            old.geometry.dispose();
+          }
+          h.held.delete(n);
+          h.nodes.delete(n);
+          n.refreshing = false;
+          continue;
+        }
+        if (!h.held.has(n)) {
+          ready = false;
+        }
+      }
+      if (ready) {
+        this.startHandover(h);
+      }
     }
   }
 
@@ -618,7 +733,26 @@ export class CityStreamer {
 
   private animate(dt: number): void {
     const step = Math.min(dt > 0 ? dt : 1 / 60, 0.1) / FADE_SECONDS;
+    const now = performance.now();
+    for (let i = this.ghosts.length - 1; i >= 0; i--) {
+      const g = this.ghosts[i];
+      const f = Math.min(1, (now - g.t0) / (FADE_SECONDS * 1000));
+      g.handle.fade.value = 1 - f;
+      if (f >= 1) {
+        this.group.remove(g.mesh);
+        g.mesh.geometry.dispose();
+        this.materials.releaseFade(g.handle);
+        this.ghosts.splice(i, 1);
+      }
+    }
     for (const n of this.nodes.values()) {
+      if (n.timedFrom !== null) {
+        // Handover: the same clock as the region fading in or out (osm/fade.ts).
+        n.fade = Math.min(1, (now - n.timedFrom) / (FADE_SECONDS * 1000));
+        if (n.fade >= 1) {
+          n.timedFrom = null;
+        }
+      }
       if (!n.displayed) {
         continue;
       }
@@ -629,7 +763,7 @@ export class CityStreamer {
         }
         continue;
       }
-      if (n.fade !== n.target) {
+      if (n.timedFrom === null && n.fade !== n.target) {
         n.fade = n.target > n.fade ? Math.min(1, n.fade + step) : Math.max(0, n.fade - step);
       }
       if (n.fade < 1) {
@@ -671,6 +805,15 @@ export class CityStreamer {
   }
 
   clear(): void {
+    for (const h of [...this.handovers]) {
+      this.startHandover(h);
+    }
+    for (const g of this.ghosts) {
+      this.group.remove(g.mesh);
+      g.mesh.geometry.dispose();
+      this.materials.releaseFade(g.handle);
+    }
+    this.ghosts.length = 0;
     for (const n of this.nodes.values()) {
       this.disposeNode(n);
     }

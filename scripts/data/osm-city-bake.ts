@@ -309,7 +309,9 @@ for (let j = 0; j < N; j++) {
       }
     }
     buildable[j * N + i] = b / (S * S);
-    regionCell[j * N + i] = inAnyRegion(-BAKE_HALF + (i + 0.5) * MASK_CELL, -BAKE_HALF + (j + 0.5) * MASK_CELL) ? 1 : 0;
+    // Every cell a region touches: the region's own buildings stand in OSM cells up to its edge.
+    const cell = { minX: -BAKE_HALF + i * MASK_CELL, maxX: -BAKE_HALF + (i + 1) * MASK_CELL, minZ: -BAKE_HALF + j * MASK_CELL, maxZ: -BAKE_HALF + (j + 1) * MASK_CELL };
+    regionCell[j * N + i] = regions.some((r) => overlaps(r.rect, cell)) ? 1 : 0;
   }
 }
 const smooth = new Float32Array(N * N);
@@ -381,7 +383,11 @@ for (const { def, rect } of regions) {
   const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetRects }, layerClaims, surfaceOver(data, def.rect, def.area), def.area);
   regionInfill += infill.parcels.length;
   for (const s of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, rect)) {
-    regionRecs.push(toRec(s));
+    // Half-open ownership: a centroid on the shared edge of two regions belongs to one of them.
+    const r = toRec(s);
+    if (inRect(rect, r.cx, r.cz)) {
+      regionRecs.push(r);
+    }
   }
 }
 log(`regions: ${regionRecs.length} solids (${regionInfill} infill parcels)`);
