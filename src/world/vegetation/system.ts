@@ -11,7 +11,7 @@ import { CHUNK, ImpostorPool } from './render/impostor-pool';
 import type { NearBands } from './render/near-pools';
 import { NearPools } from './render/near-pools';
 import { SPECIES_COUNT, SPECIES_SHAPES } from './species';
-import { osmExclusionRect } from '../osm/area';
+import { onOsmExclusionChange, osmActiveExclusion } from '../osm/regions';
 import { buildPlacementInit } from './stream/geo-window';
 import type { VegTile } from './stream/tile-streamer';
 import { TileState, TileStreamer } from './stream/tile-streamer';
@@ -53,6 +53,7 @@ export class VegetationSystem implements System {
   private lodScale = 1;
   private readonly bands: NearBands = { lod0: 0, lod0Fade: 0, lod1: 0, lod1Fade: 0, shadow: 0, margin: 4 };
   private unsubscribeQuality: (() => void) | null = null;
+  private unsubscribeOsm: (() => void) | null = null;
   private disposed = false;
 
   async init(ctx: EngineContext): Promise<void> {
@@ -101,7 +102,8 @@ export class VegetationSystem implements System {
     }
     const crown = SPECIES_SHAPES.map((s) => s.crownWidth * 0.5);
     const init = buildPlacementInit(geo, this.assets.species, crown);
-    this.streamer = new TileStreamer(geo, init, TILE_SIZE, (t) => this.releaseTile(t), undefined, osmExclusionRect());
+    this.streamer = new TileStreamer(geo, init, TILE_SIZE, (t) => this.releaseTile(t), undefined, osmActiveExclusion());
+    this.unsubscribeOsm = onOsmExclusionChange((rect) => this.streamer?.invalidate(rect));
     this.colliders = new TreeColliders(this.ctx.services.get('collision'));
     this.initJobs = 0;
   }
@@ -333,6 +335,7 @@ export class VegetationSystem implements System {
   dispose(): void {
     this.disposed = true;
     this.unsubscribeQuality?.();
+    this.unsubscribeOsm?.();
     this.colliders?.dispose();
     this.streamer?.dispose();
     this.near?.dispose();
