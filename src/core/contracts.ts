@@ -612,6 +612,17 @@ export interface AudioService {
   momentCue?(cue: MomentAudioCue, position: { x: number; y: number; z: number }, volume?: number, panFrom?: number): void;
   /** Soft open-air wind bed while a moment plays high over the city, 0..1 (swells in and out slowly). */
   setMomentBed?(amount: number): void;
+  /** Adaptive music (src/audio/music): its own volume 0..1 (persisted, like the master volume). */
+  setMusicVolume?(v: number): void;
+  readonly musicVolume?: number;
+  /** "Uyarlanabilir müzik": on = the stems follow the flight; off = the plain full mix (persisted). */
+  setAdaptiveMusic?(on: boolean): void;
+  readonly adaptiveMusic?: boolean;
+  /**
+   * A moment started / ended (src/moments): the music ducks strongly while it plays, or swaps to the moment's own
+   * music set when `musicId` (MomentContent.musicId) names one in the music manifest; restored afterwards.
+   */
+  setMomentMusic?(active: boolean, musicId?: string): void;
 }
 
 /**
