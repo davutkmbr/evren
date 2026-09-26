@@ -9,6 +9,9 @@
  */
 import type { OsmBuilding } from '../../../src/world/osm/data';
 import { pointInRing, ringArea } from '../../../src/world/osm/shared/geometry';
+import { cleanRing } from '../../../src/world/osm/buildings/footprint';
+import { onLandmarkClaim } from '../../../src/world/osm/buildings/selection';
+import type { LandmarkClaims } from '../../../src/world/landmarks/claim-shapes';
 import { DISTRICTS, GENERIC, PROFILES } from '../districts';
 import { readLandingSpot } from '../lib/areas.mjs';
 import type { BalconyMode, SpecRow, Typology } from './facade/plan';
@@ -196,7 +199,19 @@ export function landmarkClasses(buildings: readonly OsmBuilding[]): Map<number, 
   return out;
 }
 
-export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string }): string | null {
+/** Ground claims of the landmarks the runtime models itself (landmarks/claims.ts); set with `--landmarks none`. */
+let landmarkClaims: LandmarkClaims | null = null;
+
+/**
+ * `--landmarks none`: buildings on these claims (selection.ts onLandmarkClaim) are landmarks too, class 'pad'. The
+ * flight game's OSM layer leaves exactly these to its landmark models, so up close the street tiles show the same
+ * buildings as from the air.
+ */
+export function setLandmarkClaims(claims: LandmarkClaims | null): void {
+  landmarkClaims = claims;
+}
+
+export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string; ring?: readonly number[] }): string | null {
   if (district().buildings.landmarkIds.has(b.id)) {
     return b.amenity === 'marketplace' ? 'market' : 'landmark';
   }
@@ -208,6 +223,9 @@ export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: str
   }
   if (b.amenity && LANDMARK_AMENITY.has(b.amenity)) {
     return b.amenity;
+  }
+  if (landmarkClaims && b.ring && onLandmarkClaim(landmarkClaims, cleanRing(b.ring))) {
+    return 'pad';
   }
   return null;
 }

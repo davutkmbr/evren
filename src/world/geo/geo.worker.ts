@@ -33,7 +33,7 @@ scope.onmessage = (e) => {
   const msg = e.data;
   switch (msg.type) {
     case 'full': {
-      const out = buildWorld(getInput());
+      const out = buildWorld(getInput(), msg.land);
       scope.postMessage({ type: 'full', out }, [out.height.buffer, out.coast.buffer, out.landUse.buffer, out.density.buffer, out.district.buffer, out.padHeights.buffer, out.mosqueSites.buffer]);
       break;
     }
@@ -50,7 +50,7 @@ scope.onmessage = (e) => {
       break;
     }
     case 'landuse': {
-      const lu = stageLandUse(getInput(), coastStage!.coast, timings);
+      const lu = stageLandUse(getInput(), coastStage!.coast, timings, msg.land);
       scope.postMessage({ type: 'landuse', landUse: lu.landUse, density: lu.density, district: lu.district, timings }, [
         lu.landUse.buffer,
         lu.density.buffer,
