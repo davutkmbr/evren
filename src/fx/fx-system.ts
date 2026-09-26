@@ -184,8 +184,10 @@ export class FxSystem implements System, FxService {
 
     const dragon = ctx.services.tryGet('dragon');
     const rig = ctx.services.tryGet('rig');
-    this.fire.update(emit, dragon, rig, this.lights);
-    this.surface.update(emit, dragon, rig);
+    // The sea's reaction to low flight (phase 21 stage 2): absent or inactive, the emitters skip that work.
+    const low = ctx.services.tryGet('lowFlight');
+    this.fire.update(emit, dragon, rig, this.lights, low);
+    this.surface.update(emit, dragon, rig, low);
 
     let humidity = 0.8;
     if (dragon) {
