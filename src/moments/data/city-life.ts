@@ -23,7 +23,7 @@ export const storks: Moment = {
   id: 'storks-bosphorus-migration',
   title: "Boğaz'da Leylek Göçü",
   category: 'city-life',
-  status: 'draft',
+  status: 'ready',
   backlog: 2,
   trigger: {
     place: { label: 'Bosphorus corridor', area: BOSPHORUS_CORRIDOR },
@@ -35,27 +35,36 @@ export const storks: Moment = {
     repeat: { kind: 'repeatable', cooldownSec: 1800 },
   },
   content: {
+    // Procedural (src/moments/content.ts): the instanced flock of src/moments/storks, its wing poses and the
+    // synthesised stork sounds (src/audio/sfx/storks.ts) over a soft wind bed.
     actorId: 'moments/white-stork-flock',
     animationIds: ['moments/stork-soar-circle', 'moments/stork-glide'],
     soundId: 'moments/stork-bill-clatter',
     subtitles: [
-      { at: 0, duration: 4.5, text: "Leylekler! Her güz Avrupa'dan Afrika'ya giderken Boğaz'dan geçerler." },
-      { at: 5, duration: 4, text: 'Denizin üstünde termik azdır; o yüzden en dar geçidi seçerler.' },
-      { at: 9.5, duration: 4, text: 'Daire çizip yükseliyorlar. Katıl onlara, sıcak hava bedava.' },
+      { at: 0, duration: 4.5, text: "Leylekler! Her sonbahar Avrupa'dan Afrika'ya göçerken Boğaz'ın üstünden geçerler." },
+      { at: 5, duration: 4.5, text: 'Denizin üstünde sıcak hava yükselmez; bu yüzden denizi en dar yerinden aşarlar.' },
+      { at: 10, duration: 4.5, text: 'Kanat çırpmadan, daire çizerek yükseliyorlar. Katıl onlara: sıcak hava bedava.' },
+      { at: 20, duration: 4.5, text: 'Tepeye varanlar süzülerek güneye, bir sonraki termiğe doğru yola koyuluyor.' },
     ],
     camera: { kind: 'orbit', note: 'Flock circling in a thermal column; the dragon may join the spiral.' },
     card: {
       title: "Boğaz'dan Göç",
       text:
-        'Her sonbahar yüz binlerce leylek ve yırtıcı kuş Boğaz üzerinden Afrika\'ya göç eder. Uzun deniz geçişlerinden ' +
-        'kaçınıp karanın üstündeki sıcak hava akımlarıyla süzülürler.',
+        "Her sonbahar yüz binlerce leylek ve yırtıcı kuş, Avrupa'dan Afrika'ya göç ederken Boğaz'ın üzerinden geçer. " +
+        'Uzun deniz geçişlerinden kaçınır; karanın üstünde yükselen sıcak hava akımlarında kanat çırpmadan süzülerek ilerler.',
     },
+    waypoints: [
+      // The ?moment= shortcut starts here (420 m ASL), heading up the strait for the narrows; the kettle appears ahead.
+      { id: 'start', lat: 41.078, lon: 29.052, note: 'Mid-strait off Kandilli, facing the heated hills of both shores at the narrows', expect: 'water' },
+      { id: 'narrows', lat: 41.084, lon: 29.0615, note: 'The Rumelihisarı – Anadoluhisarı narrows, where flocks cross', expect: 'water' },
+    ],
   },
   provenance: [original('subtitles', 'White stork and raptor migration over the Bosphorus (natural history)'), original('card', 'White stork and raptor migration over the Bosphorus (natural history)')],
-  needs: ['model', 'animation', 'sound'],
+  needs: [],
   notes:
     'White storks peak from mid-August to mid-September, raptors continue into October; the range 15 Aug – 15 Oct covers both. ' +
-    'Joining the thermal needs phase 05 lift; the runtime should place the flock over land near the strait (Çamlıca, Sarıyer hills).',
+    'Runtime: src/moments/storks spawns a kettle 320–800 m ahead of the dragon on the best real thermal of the lift field ' +
+    '(phase 05) in view, so the dragon can join the spiral; the kettle empties into a glide stream to the south and fades far away.',
 };
 
 export const gullSimit: Moment = {

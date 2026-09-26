@@ -7,6 +7,7 @@
  * Exits non-zero on any failure. Warnings (placeholders, pending rights) are printed but do not fail.
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
+import { unresolvedContent } from '../../src/moments/content';
 import { ALL_MOMENTS } from '../../src/moments/data';
 import { defaultMomentPrefs } from '../../src/moments/prefs';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
@@ -187,6 +188,8 @@ function validateRecord(m: Moment): void {
   if (m.status === 'ready') {
     expect(m.needs.length === 0, w, `ready but still needs ${m.needs.join(', ')}`);
     expect(!m.provenance.some((pr) => pr.pending), w, 'ready with pending provenance');
+    const missing = unresolvedContent(m.content);
+    expect(missing.length === 0, w, `ready but its content ids do not resolve to procedural content: ${missing.join(', ')}`);
   }
 }
 
