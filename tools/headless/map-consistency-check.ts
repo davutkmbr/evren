@@ -16,7 +16,7 @@
  *    --area vs --region), so snapshot drift is reported, and fails beyond DATA_DRIFT_MAX.
  * 4. Buildings: the real flight-scale building pipeline (buildings/infill.ts findInfill + build.ts buildBuildings, run
  *    over each region like the game's worker does) against the compiler's rule (buildings.ts makeSolids + district.ts
- *    landmarkOf with the game's landmark pads, as compiled with `--landmarks none`). Every building the tiles draw up
+ *    landmarkOf with the game's landmark claims, as compiled with `--landmarks none`). Every building the tiles draw up
  *    close is drawn from the air as well, and the other way round. Canopies (building=roof/carport) are near-only
  *    detail. The tiles' landmarks draw nothing, so the game's model or the flight-scale twin shows through them.
  * 5. Invented content: no neighbourhood mosque site (a procedural mosque whose pad removes OSM buildings) reaches into
@@ -29,7 +29,8 @@ import { latLonToLocal } from '../../src/core/geo-coords';
 import { buildLandmarkDefs } from '../../src/world/geo/prepare';
 import { buildBuildings } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
-import { CANOPY_KINDS, landmarkPadsOf, ringCentroid } from '../../src/world/osm/buildings/selection';
+import { landmarkClaims } from '../../src/world/landmarks/claims';
+import { CANOPY_KINDS, ringCentroid } from '../../src/world/osm/buildings/selection';
 import type { OsmArea, OsmBuilding, OsmData } from '../../src/world/osm/data';
 import { osmRegions, type OsmRegionDef } from '../../src/world/osm/regions';
 import { cutGeoWindows, reservedPads } from '../../src/world/osm/shared/foundation';
@@ -39,7 +40,7 @@ import { buildStreetRaster, streetRasterInput } from '../../src/world/osm/shared
 import { StreetSurface } from '../../src/world/osm/shared/street-surface';
 import { STREET_TILE_SIZE, streetAreaRects } from '../../src/world/osm/street-areas';
 import { makeSolids } from '../world-compiler/src/buildings';
-import { landmarkOf, setLandmarkPads, useDistrict } from '../world-compiler/src/district';
+import { landmarkOf, setLandmarkClaims, useDistrict } from '../world-compiler/src/district';
 import { readAreas, ROOT } from '../world-compiler/lib/areas.mjs';
 import { buildHeadlessGeo } from './geo';
 
@@ -212,9 +213,9 @@ console.log('3. Data: street data and region data describe the same map');
 
 // ---------------------------------------------------------------------------------------------------------------
 console.log('4. Buildings: the flight layer draws what the street tiles draw');
-const gamePads = landmarkPadsOf(buildLandmarkDefs());
-/** The game's pads as the buildings layer builds them (buildings/index.ts landmarkPads). */
-const layerPads = new Float32Array([...landmarkPadsOf(geo.landmarks), ...geo.smallMosqueSites.flatMap((m) => [m.x, m.z, m.radius])]);
+/** The claims as the compiler builds them (cli.ts) and as the buildings layer builds them (buildings/index.ts). */
+const compilerClaims = landmarkClaims({ landmarks: buildLandmarkDefs(), smallMosqueSites: [] });
+const layerClaims = landmarkClaims(geo);
 const keepOut = streetAreaRects().map((a) => a.rect);
 
 interface FlightBuild {
@@ -240,8 +241,8 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
   };
   const surface = new StreetSurface(base);
   const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
-  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, layerPads, surface, base.area);
-  const out = buildBuildings({ buildings, pois: new Float32Array(), pads: layerPads, extra: infill.parcels }, surface, base.rect);
+  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, layerClaims, surface, base.area);
+  const out = buildBuildings({ buildings, pois: new Float32Array(), claims: layerClaims, extra: infill.parcels }, surface, base.rect);
   const res = { drawn: new Set(Array.from(out.drawnIds)), parcels: infill.parcels };
   flightBuilds.set(r.id, res);
   return res;
@@ -254,7 +255,7 @@ const flatHeights = { at: () => 0, carriage: () => 0, off: () => 0 };
   let compared = 0;
   // Buildings only one of the two fetches has (section 3) are data drift, not a rule difference.
   let drift = 0;
-  setLandmarkPads(gamePads);
+  setLandmarkClaims(compilerClaims);
   for (const a of areas) {
     useDistrict(a.id);
     const data = streetData.get(a.id)!;
@@ -299,7 +300,7 @@ const flatHeights = { at: () => 0, carriage: () => 0, off: () => 0 };
       bad.push(`${a.id}: ${mismatch} buildings differ`);
     }
   }
-  setLandmarkPads([]);
+  setLandmarkClaims(null);
   check(bad.length === 0, `${compared} buildings in ${areas.length} street areas: same set up close and from the air (${drift} not in both fetches, see 3)`, [...bad, ...lines]);
 }
 

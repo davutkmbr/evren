@@ -93,6 +93,9 @@ Towers: `man_made=tower` + `tower:type=defensive` outlines (often `building=yes`
   (ruins / towers mostly inside the band) step aside (`owned`). Towers shrink once or are skipped. A verify pass
   rebuilds a run until no band point is in a building; the bake reports `check.overlapMetres` / `check.overlapCount`
   (target 0).
+- **Roads**: carriageways (full width), rail / tram beds and divided-road medians are obstacles like buildings; the
+  coarse supplement traces are snapped to the land side of major roads within 40 m first (the sea walls stand
+  behind the coastal avenues built on fill). The check reports `check.roadMetres` (target 0).
 - **Rules not yet done**: road gates at mapped gates need gaps < 10 m, and the mapped road openings at the land-wall
   gates are 11+ m (breaches instead); OSM trees are not kept out of the walls.
 

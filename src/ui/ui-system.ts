@@ -17,6 +17,9 @@ import { ControlsView } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
+import { MomentsPanel } from './moments/moments-panel';
+import { SourceSheet } from './moments/source-sheet';
+import { ALL_MOMENTS } from '../moments/data';
 import { PERCH_TOAST, perchTeleportView } from './perch-teleport';
 import { PerchViewing } from './perch-view';
 import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
@@ -33,7 +36,7 @@ import './styles/map.css';
 import './styles/menu.css';
 import './styles/overlays.css';
 
-type Modal = 'none' | 'pause' | 'map';
+type Modal = 'none' | 'pause' | 'map' | 'source';
 export type UiDebugTarget = MenuTab | 'pause' | 'map' | 'help' | 'photo';
 
 const MAP_RASTER_SIZE = 3072;
@@ -69,6 +72,10 @@ export class UiSystem implements System {
   private perchView!: PerchViewing;
   private fullMap!: FullMap;
   private pauseMenu!: PauseMenu;
+  /** Pause menu → Anlar and the moment source sheet ("[I] Kaynağa bak", src/moments/source-prompt.ts). */
+  private momentsPanel!: MomentsPanel;
+  private sourceSheet!: SourceSheet;
+  private sourceMomentId = '';
   private settings!: SettingsPanel;
   private help!: HelpOverlay;
   private stats: StatsOverlay | null = null;
@@ -147,8 +154,10 @@ export class UiSystem implements System {
       onPerch: perchAt,
       onOpenMap: () => this.openModal('map'),
     });
+    this.momentsPanel = new MomentsPanel();
+    this.sourceSheet = new SourceSheet({ onClose: () => this.closeModal(), onClick: () => this.click() });
     this.pauseMenu = new PauseMenu({
-      panels: { teleport: teleportPanel, controls: new ControlsView(), settings: this.settings },
+      panels: { teleport: teleportPanel, controls: new ControlsView(), settings: this.settings, moments: this.momentsPanel },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
@@ -156,18 +165,22 @@ export class UiSystem implements System {
         } else if (tab === 'teleport') {
           teleportPanel.setPerches(ctx.services.tryGet('perches')?.points);
           teleportPanel.opened();
+        } else if (tab === 'moments') {
+          this.momentsPanel.opened();
         }
       },
       onTabClose: (tab) => {
         if (tab === 'teleport') {
           teleportPanel.closed();
+        } else if (tab === 'moments') {
+          this.momentsPanel.closed();
         }
       },
       onClick: () => this.click(),
     });
     this.help = new HelpOverlay(() => this.help.setOpen(false));
 
-    this.root.append(this.hud.root, this.toasts.root, this.photoHint.root, this.help.root, this.fullMap.root, this.pauseMenu.root);
+    this.root.append(this.hud.root, this.toasts.root, this.photoHint.root, this.help.root, this.fullMap.root, this.pauseMenu.root, this.sourceSheet.root);
     if (ctx.debug.stats) {
       this.stats = new StatsOverlay();
       this.root.append(this.stats.root);
@@ -183,6 +196,8 @@ export class UiSystem implements System {
       events.on('loading-progress', ({ label, progress }) => this.loading?.setProgress(label, progress)),
       events.on('loading-done', () => this.onLoadingDone()),
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
+      events.on('moment-source', ({ id }) => this.openSource(id)),
+      () => this.momentsPanel.dispose(),
       this.hud.maneuver.connect(events),
     );
 
@@ -352,6 +367,7 @@ export class UiSystem implements System {
       s.verticalSpeed = dragon.velocity.y;
       s.stamina = dragon.stamina;
       s.flow = dragon.flow ?? 0;
+      s.chain = dragon.chain ?? 0;
       s.mode = dragon.mode;
     } else {
       s.valid = true;
@@ -365,6 +381,7 @@ export class UiSystem implements System {
       s.verticalSpeed = 0;
       s.stamina = 1;
       s.flow = 0;
+      s.chain = 0;
       s.mode = 'hovering';
     }
     s.viewHeadingDeg = horizontal > 0.15 ? Math.atan2(this.viewDir.x, -this.viewDir.z) * RAD : s.headingDeg;
@@ -436,6 +453,7 @@ export class UiSystem implements System {
     } else if (this.modal !== kind) {
       this.pauseMenu.close();
       this.fullMap.close();
+      this.sourceSheet.close();
     }
     this.modal = kind;
     this.reenableInputFrame = -1;
@@ -449,9 +467,23 @@ export class UiSystem implements System {
       this.settings.refresh();
       this.pauseMenu.setProgress(this.tracker.count, this.tracker.total);
       this.pauseMenu.open(tab);
+    } else if (kind === 'source') {
+      const moment = ALL_MOMENTS.find((m) => m.id === this.sourceMomentId);
+      if (moment) {
+        this.sourceSheet.open(moment);
+      }
     } else {
       this.fullMap.open(this.snapshot);
     }
+  }
+
+  /** "[I] Kaynağa bak": the source sheet of a moment over the paused game. */
+  private openSource(id: string): void {
+    if (!this.started || this.photo || !ALL_MOMENTS.some((m) => m.id === id)) {
+      return;
+    }
+    this.sourceMomentId = id;
+    this.openModal('source');
   }
 
   private closeModal(): void {
@@ -460,6 +492,7 @@ export class UiSystem implements System {
     }
     this.pauseMenu.close();
     this.fullMap.close();
+    this.sourceSheet.close();
     this.modal = 'none';
     this.root.classList.toggle('is-modal', false);
     this.ctx.events.emit('pause', { paused: this.pausedBeforeModal });
@@ -481,6 +514,15 @@ export class UiSystem implements System {
       return;
     }
     if (e.repeat) {
+      return;
+    }
+    if (this.modal === 'source') {
+      if (e.code === 'Escape' || e.code === 'KeyI') {
+        e.preventDefault();
+        this.closeModal();
+      } else if (this.sourceSheet.handleKey(e)) {
+        e.preventDefault();
+      }
       return;
     }
     if (this.modal === 'pause' && (e.code === 'Escape' || e.code === 'KeyP')) {
@@ -557,6 +599,8 @@ export class UiSystem implements System {
         this.setPhoto(false);
       },
       discover: (id: string): boolean => this.tracker.force(id),
+      /** Opens a moment's source sheet as "[I] Kaynağa bak" does ('orhan-veli-istanbulu-dinliyorum'). */
+      source: (id: string): void => this.openSource(id),
       /** Sits the dragon on a perch in the viewing mode, as Işınlan does ('galata-kulesi', ...). */
       perch: (id: string): boolean => {
         const perch = this.ctx.services.tryGet('perches')?.get(id);

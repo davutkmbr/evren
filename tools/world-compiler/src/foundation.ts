@@ -179,7 +179,7 @@ export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40, s
   const t2 = performance.now();
   const street = buildStreetRaster(streetRasterInput(data, (x, z) => bilinear(coast, x, z)), outer);
   const t3 = performance.now();
-  // No reserved pads: the street layer draws its own ground everywhere. Buildings on the game's landmark pads are
+  // No reserved pads: the street layer draws its own ground everywhere. Buildings on the game's landmark claims are
   // flagged as landmarks instead (district.ts landmarkOf, `--landmarks none`).
   const base: OsmWorkerBase = { rect: outer, area: rect, height, coast, groundCoast, landUse, reserved: [], street };
   return {

@@ -78,6 +78,8 @@ const FRAGMENT_COLOR = /* glsl */ `
         c = mix(c, vec3(0.018), tipK * (top ? 1.0 : 0.85));
       }
       if (region > 0.5 && region < 1.5 && vSpan < 0.01) c = white;
+      // Bill (region 5, moment gulls): yellow with the red gonys spot toward the tip.
+      if (region > 4.5) c = vSpan > 0.5 ? vec3(0.62, 0.08, 0.05) : vec3(0.86, 0.66, 0.12);
     } else {
       // Rock dove: blue-grey, darker head, pale wings with dark bars; some white or chequered birds.
       float variant = fract(vKind * 7.13);

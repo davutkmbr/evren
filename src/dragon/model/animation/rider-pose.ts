@@ -17,7 +17,6 @@ export interface RiderCues {
   reinLeft: number;
   reinRight: number;
   tuck: number;
-  urge: number;
   point: number;
   cheer: number;
   pet: number;
@@ -30,10 +29,6 @@ const STAND_SHIFT = -0.07;
 /** Saddle seat top (rig y) where the standing feet rest, and the ankle height above the sole. */
 const SEAT_TOP = 1.1;
 const ANKLE_ABOVE_SOLE = 0.055;
-/** Rein snaps per second at full urge. */
-const URGE_HZ = 2;
-/** Urge cycle phase where the fists start snapping down (the rein crack). */
-const SNAP_START = 0.55;
 /** Petting strokes (forward + back) per second. */
 const STROKE_HZ = 0.62;
 /** Share of the wrist twist the forearm takes over (the rest stays at the wrist). */
@@ -175,7 +170,7 @@ function postRotate(q: THREE.Quaternion, axis: THREE.Vector3, angle: number): vo
 
 /**
  * Procedural rider: lean springs, rein hands (IK), and the command cues from DragonPose — rein pull / give, tuck,
- * urge ("dehh": rein snaps and heel kicks), point, cheer, petting the neck and standing on the saddle.
+ * point, cheer, petting the neck and standing on the saddle.
  */
 export class RiderAnimator {
   /** Rider eye (rig space) after the last update. */
@@ -185,20 +180,10 @@ export class RiderAnimator {
    * instead of diving forward with the lean, so the camera looks down onto the stroking hand.
    */
   readonly povOffset = new THREE.Vector3();
-  readonly cues: RiderCues = { reinLeft: 0, reinRight: 0, tuck: 0, urge: 0, point: 0, cheer: 0, pet: 0, stand: 0 };
+  readonly cues: RiderCues = { reinLeft: 0, reinRight: 0, tuck: 0, point: 0, cheer: 0, pet: 0, stand: 0 };
   /** First-person blend 0..1 (the animator's POV blend), see POV_GRIP. */
   firstPerson = 0;
-  /** Set when an urge snap cracks the reins this frame; read and cleared by consumeReinSnap(). */
-  private reinSnap = false;
-
-  /** True once per rein crack of the "dehh" gesture (the model system plays the sound). */
-  consumeReinSnap(): boolean {
-    const snapped = this.reinSnap;
-    this.reinSnap = false;
-    return snapped;
-  }
-  /** Debug overrides (screenshots): fixed urge snap phase (0..1) and petting stroke phase (rad). */
-  debugUrgePhase: number | null = null;
+  /** Debug override (screenshots): fixed petting stroke phase (rad). */
   debugStrokePhase: number | null = null;
 
   private readonly rigRoot: THREE.Object3D;
@@ -225,7 +210,6 @@ export class RiderAnimator {
     reinL: new Ease(9, 7),
     reinR: new Ease(9, 7),
     tuck: new Ease(7, 4),
-    urge: new Ease(14, 5),
     point: new Ease(8, 5),
     cheer: new Ease(7, 4),
     pet: new Ease(4.5, 4),
@@ -234,7 +218,6 @@ export class RiderAnimator {
     petLook: new Ease(3, 0.9),
     gazeLook: new Ease(2.5, 2),
   };
-  private urgePhase = 0;
   private strokePhase = 0;
 
   constructor(skel: RigSkeleton, rigRoot: THREE.Object3D) {
@@ -315,7 +298,6 @@ export class RiderAnimator {
     c.reinLeft = e.reinL.step(clamp(pose.riderReinLeft ?? 0, -1, 1), dt);
     c.reinRight = e.reinR.step(clamp(pose.riderReinRight ?? 0, -1, 1), dt);
     c.tuck = e.tuck.step(clamp(pose.riderTuck ?? 0, 0, 1), dt);
-    c.urge = e.urge.step(clamp(pose.riderUrge ?? 0, 0, 1), dt);
     c.point = e.point.step(clamp(pose.riderPoint ?? 0, 0, 1), dt);
     c.cheer = e.cheer.step(clamp(pose.riderCheer ?? 0, 0, 1), dt);
     c.pet = e.pet.step(clamp(pose.riderPet ?? 0, 0, 1), dt);
@@ -334,21 +316,6 @@ export class RiderAnimator {
     // Getting up (and sitting down) the hands push on the pommel.
     const push = 4 * stand * (1 - stand) * 0.85;
 
-    // Urge cycle: hands rise, snap down; heels kick on the snap. Restarts with each new urge.
-    if (c.urge < 0.01) {
-      this.urgePhase = 0;
-    } else if (dt > 0) {
-      const before = this.urgePhase;
-      this.urgePhase = (this.urgePhase + dt * URGE_HZ * (0.7 + 0.3 * c.urge)) % 1;
-      // The reins crack as the fists come down (the sound follows the animation, see consumeReinSnap).
-      if (before < SNAP_START && this.urgePhase >= SNAP_START && c.urge > 0.35) {
-        this.reinSnap = true;
-      }
-    }
-    const phase = this.debugUrgePhase ?? this.urgePhase;
-    const rise = phase < SNAP_START ? Math.sin((Math.PI / 2) * (phase / SNAP_START)) : phase < 0.75 ? Math.cos((Math.PI / 2) * ((phase - SNAP_START) / 0.2)) : -0.15 * Math.sin((Math.PI * (phase - 0.75)) / 0.25);
-    const snap = phase >= SNAP_START && phase < 0.9 ? Math.sin((Math.PI * (phase - SNAP_START)) / 0.35) : 0;
-    const urge = c.urge * (1 - tuck);
     // Petting stroke position along the neck (0 = saddle end, 1 = front); the body rocks forward with it.
     const strokes = this.anchors.length > 1 && pet > 0.001;
     if (strokes && dt > 0) {
@@ -386,11 +353,6 @@ export class RiderAnimator {
     chY -= 0.08 * asym;
     // The head keeps most of the shoulder turn: the rider looks into the turn (also in first person).
     hdY += 0.02 * asym;
-
-    const pump = urge * (0.04 + 0.07 * Math.max(snap, 0));
-    spP -= pump;
-    chP -= pump * 0.5;
-    hdP += pump * 1.3;
 
     pelP -= 0.2 * tuck;
     spP -= 0.42 * tuck;
@@ -457,7 +419,7 @@ export class RiderAnimator {
       const shoulder = _root.copy(arm.upperLocal).applyQuaternion(_qr).add(_pr);
       const rein = side === 'R' ? c.reinRight : c.reinLeft;
 
-      // Target (wrist) in the dragon chest frame: rest grip + rein + urge snap.
+      // Target (wrist) in the dragon chest frame: rest grip + rein.
       const fp = this.firstPerson;
       _tmp.copy(arm.grip).addScaledVector(mirrored(POV_GRIP, side, _tmp2), fp);
       if (rein > 0) {
@@ -467,13 +429,10 @@ export class RiderAnimator {
         _tmp.addScaledVector(mirrored(REIN_GIVE, side, _tmp2), -rein * (1 - fp));
         _tmp.addScaledVector(mirrored(POV_REIN_GIVE, side, _tmp2), -rein * fp);
       }
-      // "Dehh!": the fists come up to the chin (into the first-person view) and snap down.
-      _tmp.y += urge * (0.03 + 0.37 * rise);
-      _tmp.z -= urge * (0.04 * rise + 0.05 * snap);
       _target.copy(_tmp).applyQuaternion(_qc).add(_pc);
       _poleDir.copy(arm.restPole).lerp(mirrored(POLE_PULL, side, _tmp2), Math.max(rein, 0));
-      // Hand orientation: fist fixed on the reins (dragon frame), wrists cock with pulls and snaps.
-      const tilt = 0.3 * Math.max(rein, 0) - 0.2 * Math.max(-rein, 0) + urge * (0.35 * rise - 0.5 * snap);
+      // Hand orientation: fist fixed on the reins (dragon frame), wrists cock with pulls.
+      const tilt = 0.3 * Math.max(rein, 0) - 0.2 * Math.max(-rein, 0);
       _qh.copy(_qc).multiply(_qa.setFromAxisAngle(_axis.set(1, 0, 0), tilt));
 
       // Tuck / pushing up from the saddle: fists on the pommel.
@@ -534,7 +493,7 @@ export class RiderAnimator {
     // --- Legs ---
     rigTransform(this.pelvis, this.rigRoot, _pp, _qp);
     for (const side of SIDES) {
-      this.poseLeg(side, feet, stand, urge, rise, snap);
+      this.poseLeg(side, feet, stand);
     }
 
     // Eye position for the dragon's gaze.
@@ -604,13 +563,12 @@ export class RiderAnimator {
     this.reinGrip.position.copy(_p).sub(_pc).applyQuaternion(_qi);
   }
 
-  private poseLeg(side: Side, feet: number, stand: number, urge: number, rise: number, snap: number): void {
+  private poseLeg(side: Side, feet: number, stand: number): void {
     const leg = this.legs[side];
     const sgn = sideSign(side);
-    // Seated: legs follow the pelvis; the urge swings them out and kicks the heels in.
-    const kickOut = urge * (0.16 * Math.max(rise, 0) - 0.1 * snap);
-    setEuler(leg.thigh, 0, 0, sgn * kickOut, 'YXZ');
-    leg.shin.quaternion.setFromAxisAngle(leg.bendNormal, urge * 0.35 * snap);
+    // Seated: legs follow the pelvis.
+    leg.thigh.quaternion.identity();
+    leg.shin.quaternion.identity();
     leg.foot.quaternion.identity();
     if (stand < 0.001) {
       return;

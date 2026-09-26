@@ -23,6 +23,8 @@ import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
+import { landmarkClaims } from '../landmarks/claims';
+import { openLandmarkPassages } from './shared/landmark-passages';
 
 /**
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
@@ -104,6 +106,8 @@ class OsmRegion {
     }
     // Vehicle ways never over water (sea tunnels, reclaimed ground the flight world does not have).
     const clip = clipWaysToLand(data, (x, z) => geo.coastDistance(x, z));
+    // Roads OSM maps as passages under a landmark's arches are ground roads (the landmark model stands over them).
+    openLandmarkPassages(data, landmarkClaims(geo));
     const t1 = performance.now();
     const job = buildWorkerBase(geo, data, this.def.rect, this.def.area);
     this.cancel = job.cancel;

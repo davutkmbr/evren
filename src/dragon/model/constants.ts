@@ -22,7 +22,6 @@ export const DEFAULT_POSE = {
   riderReinLeft: 0,
   riderReinRight: 0,
   riderTuck: 0,
-  riderUrge: 0,
   riderPoint: 0,
   riderCheer: 0,
   riderPet: 0,

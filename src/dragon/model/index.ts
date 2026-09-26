@@ -74,9 +74,6 @@ export function createDragonModelSystem(): System {
       // Rider actions and the dragon's attention go on top of this frame's flight pose.
       rider?.update(dt, ctx);
       rig.applyPose(dt, ctx.services.tryGet('dragon'), _lightDir, wind);
-      if (rig.consumeReinSnap()) {
-        ctx.services.tryGet('audio')?.play('rein-snap');
-      }
     },
     dispose() {
       unsubscribe?.();

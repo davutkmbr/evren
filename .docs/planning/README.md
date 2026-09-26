@@ -84,7 +84,8 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   - Aerial softening of the far city (`farBlur`, default 0.6): depth- and haze-driven blur in the weather pass.
   - Flight feel and tricks ([05](05-flight-feel.md) and [04](04-landing-takeoff-variety.md), part):
     `src/dragon/flight/maneuvers.ts` — barrel roll and continuous spin, loop, free fall (≥ 7 m/s² in the first 1.5 s)
-    and wing-snap catch, the "dehh" urge, leap and running take-offs; camera and wind reactions; HUD maneuver caption.
+    and wing-snap catch, leap and running take-offs (the "dehh" urge on V was removed on 26 Sep, see
+    [20](20-movement.md)); camera and wind reactions; HUD maneuver caption.
     Not yet: thermals and ridge lift, g-force vignette, the other landing types.
   - Rider and bond ([10](10-rider-animations.md) and [06](06-dragon-bond.md), part): procedural rider cues for every
     command (`DragonPose` rider fields), rider leg bones, petting with a purr, standing on the saddle, the dragon's

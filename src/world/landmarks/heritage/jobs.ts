@@ -1,5 +1,7 @@
 import type { GeoQuery, LandmarkDef } from '../../../core/contracts';
 import { latLonToLocal } from '../../../core/geo-coords';
+import { visibleGround } from '../visible-ground';
+import CROSSINGS from './data/crossings.json';
 import { DOLMABAHCE_FOOTPRINTS } from './data/dolmabahce';
 import { CIRAGAN_FOOTPRINTS } from './data/others';
 import { ANADOLU_SITE, SELIMIYE_CORNERS } from './data/sites';
@@ -46,7 +48,10 @@ function extraExtent(id: string, b: Bounds): void {
   }
 }
 
-/** Copies the geo cells covering `b` (cell-centred, same layout as the geo height grid). */
+/**
+ * The visible ground over the cells covering `b` (cell-centred, same layout as the geo height grid): the geo terrain,
+ * or the OSM street ground inside the OSM regions (landmarks/visible-ground.ts), so a site meets the drawn surface.
+ */
 function heightWindow(geo: GeoQuery, b: Bounds): GridWindow {
   const g = geo.heightGrid;
   const i0 = Math.max(0, Math.floor((b.minX - g.originX) / g.cellSize) - 1);
@@ -56,9 +61,12 @@ function heightWindow(geo: GeoQuery, b: Bounds): GridWindow {
   const w = i1 - i0 + 1;
   const h = j1 - j0 + 1;
   const data = new Float32Array(w * h);
+  const ground = visibleGround(geo);
   for (let j = 0; j < h; j++) {
-    const src = (j0 + j) * g.width + i0;
-    data.set(g.data.subarray(src, src + w), j * w);
+    for (let i = 0; i < w; i++) {
+      const src = (j0 + j) * g.width + i0 + i;
+      data[j * w + i] = ground(g.originX + (i0 + i) * g.cellSize, g.originZ + (j0 + j) * g.cellSize, g.data[src]);
+    }
   }
   return { originX: g.originX + i0 * g.cellSize, originZ: g.originZ + j0 * g.cellSize, cell: g.cellSize, w, h, data };
 }
@@ -107,6 +115,8 @@ export function siteDef(l: LandmarkDef): SiteDef {
     radius: l.radius,
     height: l.height,
     anchors: (l.anchors ?? []).map((a) => ({ x: a.x, z: a.z })),
+    bodyWidth: l.bodyWidth,
+    crossings: ((CROSSINGS as Record<string, (number | string)[][]>)[l.id] ?? []).map((c) => Number(c[0])),
   };
 }
 

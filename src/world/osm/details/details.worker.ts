@@ -61,7 +61,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   // courtyard trees and plaza walkers stay out of those buildings.
   let parcels: OsmBuilding[] = [];
   try {
-    parcels = findInfill(data.buildings, { roads: data.roads, areas: data.areas, rails: data.rails }, Float32Array.from(req.infillPads), surface, area).parcels;
+    parcels = findInfill(data.buildings, { roads: data.roads, areas: data.areas, rails: data.rails }, req.infillClaims, surface, area).parcels;
   } catch (e) {
     console.warn('[osm:details] infill parcels unavailable', e);
   }
@@ -69,7 +69,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   const cover = buildCover(data, parcels.length ? data.buildings.concat(parcels) : data.buildings, surface, pads, poi);
   const t1 = performance.now();
   const coverMesh = buildCoverMesh(cover, surface);
-  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, mosques: req.mosques });
+  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, lines: req.lines, mosques: req.mosques });
   const t2 = performance.now();
   // Props and walkers keep a margin from the area's edges, except where another OSM region continues (base.fade is
   // pushed far out there): on those sides they reach the shared edge.
@@ -78,7 +78,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   const t3 = performance.now();
   const boats = buildBoats(data, surface.geo);
   const stamper = new PropStamper(osmStandGround(surface));
-  const placer = new Placer({ surface, cover, area: place, pads, poi }, stamper);
+  const placer = new Placer({ surface, cover, area: place, pads, lines: req.lines, poi }, stamper);
   for (let k = 0; k < trees.trunks.length; k += 2) {
     placer.reserve(trees.trunks[k], trees.trunks[k + 1]);
   }

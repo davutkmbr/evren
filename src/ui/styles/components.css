@@ -1013,6 +1013,19 @@
   padding: 0 6px;
 }
 
+/* Link prompt: a prompt that leaves the game; the destination's domain follows the verb, quieter */
+
+.ui-prompt-link,
+.ejd .ui-prompt-link {
+  text-decoration: none;
+}
+
+.ui-prompt-domain {
+  font-size: 12.5px;
+  color: var(--ink-3, rgba(243, 238, 229, 0.48));
+  font-variant-numeric: tabular-nums;
+}
+
 /* Segmented control */
 
 .ui-seg,

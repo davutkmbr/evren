@@ -24,6 +24,33 @@ export function playUiClick(env: SfxEnv, when: number, volume: number): number {
   return 0.09;
 }
 
+/** Chain-link tones (Hz): a major pentatonic from D5 up, one step per link (the fifth link and on stay on top). */
+const CHAIN_NOTES = [587.33, 659.25, 739.99, 880.0, 987.77];
+
+/**
+ * A chain link landed (phase 20 chain bursts): one soft struck-glass tone, a step higher for every link of the chain,
+ * so a growing chain is heard as a rising line. Short and quiet: it plays often in a race.
+ */
+export function playChainCue(env: SfxEnv, when: number, volume: number, link: number): number {
+  const v = new Voice(env, placement({ reverb: 0.35, width: 0.6 }), when, volume);
+  const t = v.t;
+  const f = CHAIN_NOTES[Math.max(0, Math.min(CHAIN_NOTES.length - 1, link - 1))];
+  const partials: Array<[number, number, number]> = [
+    [1, 1, 0.55],
+    [2.01, 0.28, 0.3],
+    [3.02, 0.09, 0.18],
+  ];
+  for (const [ratio, amp, decay] of partials) {
+    const o = v.osc('sine', f * ratio, 0, 0, decay + 0.05);
+    const g = v.gain(0);
+    percEnv(g.gain, t, 0.5 * amp, 0.004, decay);
+    o.connect(g);
+    v.toInput(g);
+  }
+  v.end(0.7);
+  return 0.7;
+}
+
 /**
  * Discovery chime: an airy open-fifth arpeggio (D5 A5 E6) on a soft struck-glass timbre
  * (partials 1, 2.01, 3.02, 4.23 with faster decay on the upper ones) over a gentle pad swell.

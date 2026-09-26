@@ -1,4 +1,4 @@
-import type { AudioOneShot, CameraMode } from '../core/contracts';
+import type { AudioOneShot, CameraMode, MomentAudioCue } from '../core/contracts';
 import { clamp, clamp01, finiteOr, lerp, smoothstep } from './dsp/math';
 import { createNoiseBank, type NoiseBank } from './dsp/noise';
 import { SmoothParam } from './dsp/param';
@@ -10,10 +10,13 @@ import { playBubbles } from './sfx/bubbles';
 import { playPaddle, playSnort } from './sfx/swim';
 import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
-import { playDiscover, playUiClick } from './sfx/ui';
+import { playChainCue, playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
-import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
+import { playBurstRush, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
+import { playGull } from './sfx/ambient';
+import { playBirdFlap } from './sfx/bird-flap';
+import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
@@ -26,6 +29,7 @@ import { UnderwaterVoice } from './voices/underwater';
 import { SeaVoice } from './voices/sea';
 import { SwimVoice } from './voices/swim';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
+import { MomentBedVoice } from './voices/moment';
 
 export type SoundName = AudioOneShot;
 
@@ -51,6 +55,8 @@ export interface DragonAudioState {
   wingspan: number;
   /** 0..1 skimming low over water. */
   skim: number;
+  /** 0..1 perceived-speed surge (race speeds and chain bursts in their context; wind.ts). */
+  surge: number;
   /**
    * The sea reacting to low flight (lowFlight service, phase 21 stage 2): 0..1 downwash on the water, skim wake and
    * fire steam, the water point under the dragon and the steam point.
@@ -118,6 +124,7 @@ export function createAudioFrame(): AudioFrame {
       firing: false,
       wingspan: 18,
       skim: 0,
+      surge: 0,
       downwash: 0,
       wake: 0,
       steam: 0,
@@ -167,7 +174,9 @@ export const MIX = {
   thunder: 0.85,
   wingSnap: 1.3,
   whoosh: 0.9,
-  reinSnap: 0.8,
+  /** Chain bursts (phase 20): the forward rush of a burst and the chain-link tone (quiet: it plays often in a race). */
+  burst: 0.75,
+  chain: 0.32,
   purr: 1.1,
   /** Nostril bubbles under water: quiet, they repeat every half second. */
   bubbles: 0.45,
@@ -181,6 +190,14 @@ export const MIX = {
   swimBed: 0.9,
   paddle: 0.85,
   snort: 0.6,
+  /**
+   * Moments (src/moments): the storks' bill clatter, a nearby stork's wing beat and the air rush of one passing close,
+   * and the soft open-air wind bed of the moment (its own level is MOMENT_BED_LEVEL).
+   */
+  storkClatter: 0.7,
+  storkWing: 0.75,
+  storkPass: 0.6,
+  momentBed: 1.0,
 } as const;
 
 /** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
@@ -201,9 +218,11 @@ const COOLDOWN: Record<SoundName, number> = {
   thunder: 0.4,
   'wing-snap': 0.5,
   whoosh: 0.35,
-  'rein-snap': 0.2,
   purr: 1.2,
 };
+
+/** Two chain links closer than this (s) make one sound. */
+const CHAIN_COOLDOWN = 0.25;
 
 const DRAGON_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 18, delayAbove: 120 };
 /**
@@ -252,12 +271,19 @@ const FLAP_DUCK_DB = 3;
 const FLAP_DUCK_RIDER_DB = 2.5;
 const DRAGON_MOUTH: PlaceOptions = { refDistance: 30, reverb: 0.2, size: 8, backCutoffFactor: 0.28, delayAbove: 120 };
 const WORLD_POINT: PlaceOptions = { refDistance: 30, reverb: 0.18, size: 12, delayAbove: 80 };
+/** A calling gull and a gull's wing beats (src/moments): small point sources. */
+const GULL_POINT: PlaceOptions = { refDistance: 16, reverb: 0.14, size: 2, delayAbove: 80 };
+const GULL_WING_POINT: PlaceOptions = { refDistance: 5, reverb: 0.08, size: 1.5, delayAbove: 80 };
 /** The water under the dragon (downwash patch, wake) and the steam cloud: broad sources on the surface. */
 const SEA_SURFACE: PlaceOptions = { refDistance: 28, reverb: 0.15, size: 24, delayAbove: 120 };
 const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delayAbove: 120 };
 /** The water around the swimming body (a broad source) and one wing's paddle (beside the shoulder). */
 const SWIM_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 16, delayAbove: 120 };
 const PADDLE_POINT: PlaceOptions = { refDistance: 26, reverb: 0.15, size: 6, delayAbove: 120 };
+/** A stork (2 m wingspan) as a sound source: small, heard only up close. */
+const STORK_POINT: PlaceOptions = { refDistance: 8, reverb: 0.12, size: 2, delayAbove: 80 };
+/** Shortest gap (s) between two moment cues of the same kind. */
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5 };
 /** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
 const PADDLE_OFFSET = 4;
 /** Seconds between two snorts while swimming (random within). */
@@ -291,6 +317,7 @@ export class AudioEngine {
   readonly underwater: UnderwaterVoice;
   readonly sea: SeaVoice;
   readonly swim: SwimVoice;
+  readonly momentBed: MomentBedVoice;
   readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
@@ -303,6 +330,7 @@ export class AudioEngine {
   private lastSpray = -1e9;
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
+  private lastChainAt = -1e9;
   private readonly lastPlayed: Record<SoundName, number> = {
     roar: -1e9,
     flap: -1e9,
@@ -314,7 +342,6 @@ export class AudioEngine {
     thunder: -1e9,
     'wing-snap': -1e9,
     whoosh: -1e9,
-    'rein-snap': -1e9,
     purr: -1e9,
   };
   private readonly windBusGain: SmoothParam;
@@ -332,6 +359,8 @@ export class AudioEngine {
   private readonly swimPlace: Placement = placement();
   private readonly paddlePos: Vec3 = { x: 0, y: 0, z: 0 };
   private lastPaddle = -1e9;
+  private momentBedLevel = 0;
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -370,6 +399,7 @@ export class AudioEngine {
     this.underwater = new UnderwaterVoice(ctx, this.noise, this.bus.underwater, rng);
     this.sea = new SeaVoice(ctx, this.noise, this.bus.sfx, rng);
     this.swim = new SwimVoice(ctx, this.noise, this.bus.sfx, rng);
+    this.momentBed = new MomentBedVoice(ctx, this.noise, this.bus.ambience, rng);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -403,6 +433,7 @@ export class AudioEngine {
       p.diving = d.diving;
       p.stall = d.stall;
       p.skim = d.skim;
+      p.surge = d.surge;
       p.exposure = lerp(EXPOSURE_THIRD, EXPOSURE_POV, this.pov);
     } else {
       p.airspeed = frame.listenerSpeed;
@@ -413,6 +444,7 @@ export class AudioEngine {
       p.diving = 0;
       p.stall = 0;
       p.skim = 0;
+      p.surge = 0;
       p.exposure = EXPOSURE_FREE;
     }
     p.pov = this.pov;
@@ -477,6 +509,7 @@ export class AudioEngine {
     this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck) * windKeep, now);
 
     this.ambience.update(frame.probe, dt, now, !this.paused, frame.listener.position.x, frame.listener.position.z);
+    this.momentBed.update(this.paused ? 0 : this.momentBedLevel * MIX.momentBed * (1 - uw), now);
     if (frame.rain > 1e-3) {
       this.samples?.request('rain');
     }
@@ -521,6 +554,26 @@ export class AudioEngine {
   private dragonSource(): Vec3 {
     const f = this.frame;
     return f.dragon.present ? f.dragon.position : f.listener.position;
+  }
+
+  /**
+   * A chain link landed (phase 20 chain bursts): a short forward rush when it pushes (`dv` m/s) and a soft struck tone
+   * whose pitch climbs with the chain (`link`), both scaled by `context` (full in a race, subtle in free flight).
+   */
+  chainLink(link: number, dv: number, context: number): void {
+    const now = this.now;
+    if (now - this.lastChainAt < CHAIN_COOLDOWN || context <= 0) {
+      return;
+    }
+    this.lastChainAt = now;
+    const f = this.frame;
+    const k = clamp(context, 0, 1);
+    if (dv > 0.5) {
+      const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+      pl.gain *= MIX.burst * k;
+      playBurstRush(this.sfx, now, clamp(dv / 12, 0.3, 1.2), pl);
+    }
+    playChainCue(this.ui, now, MIX.chain * (0.55 + 0.45 * k), link);
   }
 
   play(name: SoundName, volume = 1): void {
@@ -581,13 +634,6 @@ export class AudioEngine {
         playWhoosh(this.sfx, now, 1, pl);
         break;
       }
-      case 'rein-snap': {
-        const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
-        pl.gain *= MIX.reinSnap * vol;
-        pl.closeness = this.bodyCloseness();
-        playReinSnap(this.sfx, now, 1, pl);
-        break;
-      }
       case 'purr': {
         const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
         pl.gain *= MIX.purr * vol;
@@ -595,6 +641,51 @@ export class AudioEngine {
         playPurr(this.sfx, now, 1, pl);
         break;
       }
+    }
+  }
+
+  /** Soft open-air wind bed of a playing moment, 0..1 (smoothed by the voice). */
+  setMomentBed(amount: number): void {
+    this.momentBedLevel = clamp01(finiteOr(amount, 0));
+  }
+
+  /**
+   * A positional cue of a moment's creatures at `position` (world): bill clatter, a wing beat, a close pass. `volume`
+   * 0..1.5 on top of the distance; `panFrom` (pass only) is where the rush starts in the stereo field.
+   */
+  momentCue(cue: MomentAudioCue, position: Vec3, volume = 1, panFrom = 0): void {
+    const now = this.now;
+    if (this.paused || this.stats.active > this.maxVoices || now - this.lastCue[cue] < MOMENT_CUE_SPACING[cue]) {
+      return;
+    }
+    if (!Number.isFinite(position.x + position.y + position.z)) {
+      return;
+    }
+    this.lastCue[cue] = now;
+    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : STORK_POINT, this.place);
+    const vol = clamp(finiteOr(volume, 1), 0, 1.5);
+    switch (cue) {
+      case 'stork-clatter':
+        pl.gain *= MIX.storkClatter;
+        playStorkClatter(this.sfx, now, vol, pl);
+        break;
+      case 'stork-wingbeat':
+        pl.gain *= MIX.storkWing;
+        playStorkWingbeat(this.sfx, now, vol, pl);
+        break;
+      case 'stork-pass':
+        pl.gain *= MIX.storkPass;
+        playStorkPass(this.sfx, now, vol, pl, panFrom);
+        break;
+      case 'gull-call':
+        // On the ambience bus with the other gulls, so it follows the coastal mix; silent until the recordings load.
+        this.samples?.request('coast');
+        pl.gain *= Math.min(1, vol);
+        playGull(this.amb, now, pl);
+        break;
+      case 'gull-wingbeat':
+        playBirdFlap(this.amb, now, Math.min(1, vol), pl);
+        break;
     }
   }
 
@@ -764,6 +855,7 @@ export class AudioEngine {
     this.underwater.dispose(this.ctx.currentTime);
     this.sea.dispose(this.ctx.currentTime);
     this.swim.dispose(this.ctx.currentTime);
+    this.momentBed.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();

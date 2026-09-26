@@ -52,6 +52,7 @@ export class HeritageSystem implements System {
   private unsubQuality: (() => void) | null = null;
   private collision: CollisionWorld | null = null;
   private frame = 0;
+  private disposed = false;
   /** Build timings (ms) per site, for diagnostics. */
   readonly timings: Record<string, number> = {};
 
@@ -78,10 +79,18 @@ export class HeritageSystem implements System {
     if (jobs.length === 0) {
       return;
     }
+    const received = new Set<string>();
     const onResult = (r: SiteResult): void => {
+      if (this.disposed || received.has(r.id)) {
+        return;
+      }
+      received.add(r.id);
       this.addSite(r);
       this.outstanding = Math.max(0, this.outstanding - 1);
     };
+    // A worker that fails part-way already delivered some sites: the fallback builds only the missing ones (building
+    // all of them again stacked duplicate meshes and colliders on the delivered sites).
+    const missing = (): SiteJob[] => jobs.filter((j) => !received.has(j.def.id));
     try {
       this.worker = new Worker(new URL('./worker/heritage.worker.ts', import.meta.url), { type: 'module' });
       this.worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
@@ -97,12 +106,12 @@ export class HeritageSystem implements System {
         console.warn('[heritage] worker failed, building on the main thread', e.message);
         this.worker?.terminate();
         this.worker = null;
-        this.buildOnMainThread(jobs, onResult);
+        this.buildOnMainThread(missing(), onResult);
       };
       this.worker.postMessage({ type: 'build', jobs });
     } catch (err) {
       console.warn('[heritage] worker unavailable, building on the main thread', err);
-      this.buildOnMainThread(jobs, onResult);
+      this.buildOnMainThread(missing(), onResult);
     }
   }
 
@@ -111,7 +120,7 @@ export class HeritageSystem implements System {
     const queue = jobs.slice();
     const step = (): void => {
       const job = queue.shift();
-      if (!job) {
+      if (!job || this.disposed) {
         return;
       }
       onResult(buildSite(job));
@@ -213,6 +222,7 @@ export class HeritageSystem implements System {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.worker?.terminate();
     this.worker = null;
     this.unsubQuality?.();

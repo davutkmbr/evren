@@ -22,7 +22,8 @@ import { clearanceOf, planBuilding, wallHeight } from './plan';
 import { encodePrism } from './protocol';
 import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
-import { CANOPY_KINDS, NON_SOLID_KINDS, onLandmarkPad } from './selection';
+import type { LandmarkClaims } from '../../landmarks/claim-shapes';
+import { CANOPY_KINDS, NON_SOLID_KINDS, onLandmarkClaim } from './selection';
 
 /** POI point kinds (x, z, kind triples): 1 shop, 2 food and drink (awnings), 3 services (banks, pharmacies). */
 export const Poi = { Shop: 1, Food: 2, Service: 3, Hotel: 4 } as const;
@@ -31,8 +32,8 @@ export interface BuildInput {
   buildings: readonly OsmBuilding[];
   /** x, z, Poi kind triples. */
   pois: Float32Array;
-  /** Landmark / mosque pads: x, z, radius triples (bridges excluded). */
-  pads: Float32Array;
+  /** Ground claims of the modelled landmarks and neighbourhood mosques (landmarks/claims.ts). */
+  claims: LandmarkClaims;
   /** Extra footprints (infill parcels) built like building=yes. */
   extra?: readonly OsmBuilding[];
   /** Building passages (shared/passages.ts findPassages): arched openings, a lined passage and a free collider. */
@@ -208,7 +209,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     if (cx < rect.minX || cx > rect.maxX || cz < rect.minZ || cz > rect.maxZ) {
       return;
     }
-    if (onLandmarkPad(input.pads, ring)) {
+    if (onLandmarkClaim(input.claims, ring)) {
       stats.skippedLandmark++;
       return;
     }

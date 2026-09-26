@@ -5,6 +5,7 @@
  * .docs/planning/20-movement.md, "Stage D as built".
  */
 export { FlowSystem, FLOW_MOMENT_LABELS, type FlowMoment, type FlowTransition } from './flow';
+export { BURST, type LinkSource } from './burst';
 export { FLOW } from './params';
 export { referenceGlideRate } from './segmenter';
 export type { HarmonyTerms, MotionDescriptor, MotionSnapshot } from './types';

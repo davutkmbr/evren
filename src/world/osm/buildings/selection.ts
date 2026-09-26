@@ -6,12 +6,13 @@
  * - Outlines with building:part children are replaced by their parts (Simple 3D Buildings).
  * - NON_SOLID_KINDS are not drawn at all. CANOPY_KINDS are roofs on posts: the street tiles draw them as canopies,
  *   and the flight layer leaves them out, because a 0.3 m slab is detail that is too small to see from the air.
- * - A building that lies mostly (PAD_COVER_MAX) inside the pad of a landmark the game models itself (a mosque, a
- *   palace or a tower) is left to that model. The street tiles flag it as a landmark (no geometry), so the game's
- *   model shows there at every distance.
+ * - A building on the ground claim of a landmark the game models itself (landmarks/claims.ts: mostly (PAD_COVER_MAX)
+ *   inside a pad, or touching a line landmark's body such as the aqueduct) is left to that model. The street tiles
+ *   flag it as a landmark (no geometry), so the game's model shows there at every distance.
  * - Nothing is dropped for the coarse geo shoreline. That grid misses reclaimed quays by up to about 90 m, and the
  *   street tiles keep every mapped building on the quays and piers.
  */
+import { ringTouchesLineBody, type LandmarkClaims } from '../../landmarks/claim-shapes';
 
 /** building=* values that are not solid buildings. */
 export const NON_SOLID_KINDS: ReadonlySet<string> = new Set(['ruins', 'collapsed', 'bridge', 'construction', 'no']);
@@ -19,20 +20,6 @@ export const NON_SOLID_KINDS: ReadonlySet<string> = new Set(['ruins', 'collapsed
 export const CANOPY_KINDS: ReadonlySet<string> = new Set(['roof', 'carport']);
 /** A building with more than this fraction of its outline vertices (and centroid) on a landmark pad is the landmark's. */
 export const PAD_COVER_MAX = 0.5;
-
-/** Landmark kinds that are linear (bridges, city walls): they own no pad. */
-const LINEAR_LANDMARKS = new Set(['bridge', 'walls']);
-
-/** Pads (x, z, radius triples) of the landmarks the game models itself; linear landmarks have none. */
-export function landmarkPadsOf(landmarks: readonly { kind: string; x: number; z: number; radius: number }[]): number[] {
-  const out: number[] = [];
-  for (const l of landmarks) {
-    if (!LINEAR_LANDMARKS.has(l.kind)) {
-      out.push(l.x, l.z, l.radius);
-    }
-  }
-  return out;
-}
 
 function padHit(pads: ArrayLike<number>, x: number, z: number): boolean {
   for (let k = 0; k < pads.length; k += 3) {
@@ -67,11 +54,16 @@ export function ringCentroid(r: readonly number[]): { x: number; z: number } {
   return { x: x / n, z: z / n };
 }
 
-/** True when the ring (already cleaned, see footprint.ts cleanRing) lies mostly on a landmark pad. */
-export function onLandmarkPad(pads: ArrayLike<number>, ring: readonly number[]): boolean {
-  if (!pads.length) {
-    return false;
+/**
+ * True when the ring (already cleaned, see footprint.ts cleanRing) belongs to a modelled landmark's ground claim
+ * (landmarks/claims.ts): it lies mostly on a pad, or touches a line landmark's body.
+ */
+export function onLandmarkClaim(claims: LandmarkClaims, ring: readonly number[]): boolean {
+  if (claims.pads.length) {
+    const c = ringCentroid(ring);
+    if (padCover(claims.pads, ring, c.x, c.z) > PAD_COVER_MAX) {
+      return true;
+    }
   }
-  const c = ringCentroid(ring);
-  return padCover(pads, ring, c.x, c.z) > PAD_COVER_MAX;
+  return claims.lines.length > 0 && ringTouchesLineBody(claims.lines, ring);
 }

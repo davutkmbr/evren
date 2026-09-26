@@ -2,6 +2,7 @@
 import type { OsmData } from '../data';
 import type { MeshArrays, OsmWorkerBase } from '../shared/protocol';
 import type { TreeSpecies } from './trees/species';
+import type { LandmarkClaims } from '../../landmarks/claim-shapes';
 
 /** Galata Bridge deck frame (waterfront/bridge.ts GalataDeck): origin, unit axis, end and bascule pier stations. */
 export interface DeckFrame {
@@ -22,14 +23,16 @@ export interface DetailsRequest {
   /** Galata Bridge deck of the structures module (null when the landmark is missing). */
   deck: DeckFrame | null;
   /**
-   * Landmark and neighbourhood mosque pads kept free of trees, furniture and walkers: x, z, radius triples (bridges
-   * excluded: their decks are linear and handled through `deck`).
+   * Pads of the modelled landmarks and neighbourhood mosques kept free of trees, furniture and walkers: x, z, radius
+   * triples (landmarks/claims.ts; bridges claim nothing: their decks are handled through `deck`).
    */
   pads: number[];
+  /** Line landmark bodies (landmarks/claims.ts LINE_STRIDE records, e.g. the aqueduct): no trees or furniture on them. */
+  lines: number[];
   /** Mosque pads (landmark mosques and neighbourhood mosques): x, z, radius triples. */
   mosques: number[];
-  /** Pads as the buildings layer passes them to its infill (buildings/index.ts landmarkPads): x, z, radius. */
-  infillPads: number[];
+  /** Claims as the buildings layer passes them to its infill (buildings/index.ts). */
+  infillClaims: LandmarkClaims;
 }
 
 /** Ground cover raster: RGBA8 signed-distance coverage over the build rect (channels: cover/cover.ts CoverChannel). */

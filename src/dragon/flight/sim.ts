@@ -52,7 +52,7 @@ export class FlightSim {
   readonly events: SimEvent[] = [];
   /** When false, events are counted but not queued (fast-forward tests). */
   queueEvents = true;
-  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, spray: 0, dust: 0, landed: 0, mode: 0, maneuver: 0, sound: 0, shake: 0 };
+  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, spray: 0, dust: 0, landed: 0, mode: 0, maneuver: 0, sound: 0, shake: 0, chain: 0 };
 
   mode: FlightMode = 'flying';
   modeTime = 0;
@@ -110,7 +110,7 @@ export class FlightSim {
   /* Locomotion state. */
   /** Seconds left of the crouch before a leap take-off (0 = none). */
   leapCharge = 0;
-  /** Seconds into a running take-off (the urge on the ground; 0 = none). */
+  /** Seconds into the take-off run on the water (Space / L while swimming; 0 = none). */
   runTakeoff = 0;
   groundSpeed = 0;
   groundYaw = 0;

@@ -64,7 +64,7 @@ export interface ControlTargets {
   hover: number;
   /** Tricks: control authority multipliers (pitch, yaw, roll), 1 = normal. */
   readonly authority: THREE.Vector3;
-  /** Flap force multiplier (the urge's strong beats, loops), 1 = normal. */
+  /** Flap force multiplier (the power stroke, take-off beats, loops), 1 = normal. */
   thrustBoost: number;
   /** Dynamic lift of hard-flapping wings in a loop (fraction of extra lift), 0 = none. */
   liftBoost: number;
@@ -498,8 +498,7 @@ export class FlightController {
 
     // Legs come down when slow and near the ground.
     t.legsOut = V < 20 ? smoothstep(40, 8, sim.footClearance) : 0;
-    // The urge ("dehh"): strong beats and a surge, the path hold keeps it level; the power stroke likewise.
-    sim.maneuvers.applyUrge(sim, t, !tuck && !cmd.brake);
+    // The power stroke: deep beats and a surge, the path hold keeps it level.
     sim.maneuvers.applyPower(sim, t, !tuck && !cmd.brake);
   }
 
@@ -685,7 +684,6 @@ export class FlightController {
     t.rate.set(_feedForward.x + pitchRate, _feedForward.y - 1.2 * sim.beta * clamp(V / 10, 0, 1), _feedForward.z + rollRate);
     // The first big beats off the ground carry the dragon up clear of it.
     t.thrustBoost = 1 + TAKEOFF_BOOST * (1 - smoothstep(0.5, 1.4, sim.modeTime));
-    sim.maneuvers.applyUrge(sim, t, true);
   }
 
   /**

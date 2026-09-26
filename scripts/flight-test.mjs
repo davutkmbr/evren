@@ -13,9 +13,9 @@
  *
  * Target envelope: cruise 25-45 m/s, glide ratio 8-12, stall 13-16 m/s (CLmax ~1.5 @ 18-20°),
  * folded dive 80-90 m/s, 60° bank turn at ~2 g, soft landing (< 3 m/s), water skim with splashes.
- * Maneuvers (trickRoll, trickLoop, freefall, urge, leap): a 360° roll in ~1.2 s within 15 m of height, a loop that comes
+ * Maneuvers (trickRoll, trickLoop, freefall, leap): a 360° roll in ~1.2 s within 15 m of height, a loop that comes
  * out on its entry heading, >= 7 m/s² of drop in the first 1.5 s of a free fall and a catch that never hits the
- * surface, a +8-12 m/s urge surge kept level.
+ * surface.
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -742,35 +742,6 @@ const MANEUVERS = {
     out.ok = all.every((x) => x.dropped && x.impacts === 0 && x.minFootClearance > 5 && x.catchMaxLoad <= 3.6) && out.hoverShift2s.downAccelFirst1_5s >= 7 && out.cruiseDoubleTapHold2s.downAccelFirst1_5s >= 7;
     return out;
   `,
-  urge: `
-    // V: rein snap, ~3 strong beats and a +8-12 m/s surge in ~2 s, kept level; 2.5 s cooldown; grounded = running take-off.
-    calm();
-    const w = water();
-    T.teleport(w.x, 400, w.z, 20, 0, 32);
-    T.simulate(4);
-    const a = T.state();
-    let maxV = 0, tMax = 0, beats = 0, minY = 1e9, maxY = -1e9;
-    const r = T.simulate(4, (t, sim, cmd) => {
-      cmd.urgePressed = t < 0.004 || Math.abs(t - 1) < 0.004;
-      if (sim.airspeed > maxV) { maxV = sim.airspeed; tMax = t; }
-      if (sim.beat.downstrokeStarted && t < 2) beats++;
-      minY = Math.min(minY, sim.body.position.y); maxY = Math.max(maxY, sim.body.position.y);
-    });
-    const air = { speedBefore: a.airspeed, speedGain: r1(maxV - a.airspeed), peakAt: r2(tMax), beatsIn2s: beats, altitudeRange: [r1(minY - a.y), r1(maxY - a.y)], staminaCost: r2(a.stamina - r.final.stamina), urgesAccepted: r.events.maneuver };
-    const p0 = T.sim.body.position;
-    const spot = T.findSpot('land', p0.x, p0.z, 9000, 200);
-    let ground = null;
-    if (spot) {
-      T.teleport(spot.x, spot.y + T.sim.standHeight, spot.z, 90, 0, 0);
-      T.ground();
-      T.simulate(1);
-      const y0 = T.state().y;
-      let tLeap = null, tFly = null;
-      const g = T.simulate(10, (t, sim, cmd) => { cmd.urgePressed = t < 0.004; if (tLeap === null && sim.mode === 'takeoff') tLeap = t; if (tFly === null && sim.mode === 'flying') tFly = t; });
-      ground = { leapAt: tLeap && r2(tLeap), flyingAt: tFly && r2(tFly), altitudeGain10s: r1(g.final.y - y0), mode: g.final.mode, impacts: g.events.impact };
-    }
-    return { ok: air.speedGain >= 8 && air.speedGain <= 13 && air.altitudeRange[0] > -5 && air.urgesAccepted === 1 && (!ground || ground.mode === 'flying'), air, ground };
-  `,
   leap: `
     // Space on the ground: a crouch, the jump and the first big beats (Phase 04: >= 10 m within 1.5 s is the goal).
     calm();
@@ -892,7 +863,6 @@ const SHOT_JOBS = [
     setup: `const p = T.sim.body.position; T.teleport(p.x, 380, p.z, 30, 0, 25); T.input({ brake: true }); T.simulate(8); T.input({ dive: true }); T.simulate(1.9); T.snapCamera(); T.input(null);`,
     wait: 560,
   },
-  { name: 'trick-urge', setup: `T.simulate(1.5); T.snapCamera(); T.press('urge');`, wait: 600 },
   {
     name: 'pilotskim',
     setup: `const p = T.sim.body.position; const w = T.findSpot('water', p.x, p.z, 6000);
