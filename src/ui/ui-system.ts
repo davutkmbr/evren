@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CameraMode, EngineContext, System } from '../core/contracts';
+import type { CameraMode, EngineContext, PerchPoint, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
 import type { ViewPreset } from '../core/debug';
 import type { QualityPreset } from '../core/quality';
@@ -17,7 +17,8 @@ import { ControlsView } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
-import { PERCH_TOAST } from './perch-teleport';
+import { PERCH_TOAST, perchTeleportView } from './perch-teleport';
+import { PerchViewing } from './perch-view';
 import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
 import { HelpOverlay } from './overlays/help-overlay';
 import { StatsOverlay } from './overlays/stats-overlay';
@@ -64,6 +65,8 @@ export class UiSystem implements System {
   private hud!: Hud;
   private abilities!: DragonAbilities;
   private statusToasts!: StatusToasts;
+  /** Perching: the "[L] Kon" prompt and the viewing mode (phase 03). */
+  private perchView!: PerchViewing;
   private fullMap!: FullMap;
   private pauseMenu!: PauseMenu;
   private settings!: SettingsPanel;
@@ -103,6 +106,8 @@ export class UiSystem implements System {
     this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hoverHints, this.shotCaption, this.zones);
     ctx.services.provide('hotbar', this.hud.hotbar);
     this.abilities = new DragonAbilities(this.hud.hotbar, () => ctx.services.tryGet('dragon'));
+    this.perchView = new PerchViewing(ctx, this.zones, this.toasts, this.tracker, this.hud.root);
+    this.hud.root.append(this.perchView.root);
     this.statusToasts = new StatusToasts(this.toasts);
     this.settings = new SettingsPanel({
       ctx,
@@ -120,9 +125,15 @@ export class UiSystem implements System {
       }
       this.teleport({ x: view.x, y: view.y, z: view.z, headingDeg: view.headingDeg, pitchDeg: view.pitchDeg, label: view.label });
     };
-    const perchAt = (view: ViewPreset): void => {
+    // Işınlan to a perch: straight into the viewing mode on it (the dragon sits down on the perch); without the perch
+    // flight hook, next to it with the landing left to the player.
+    const perchAt = (perch: PerchPoint): void => {
+      const view = perchTeleportView(perch);
       flyTo(view);
-      this.toasts.push(PERCH_TOAST);
+      const dragon = ctx.services.tryGet('dragon');
+      if (!dragon?.perch?.perchAt(perch.id)) {
+        this.toasts.push(PERCH_TOAST);
+      }
     };
     this.fullMap = new FullMap(this.raster, {
       onTeleport: (target) => this.teleport(target),
@@ -226,7 +237,9 @@ export class UiSystem implements System {
     this.handleInput(ctx);
     this.updateContextHints(ctx);
     this.abilities.update();
-    this.statusToasts.update(ctx, this.modal === 'none' && !this.photo);
+    this.perchView.update(realDt, this.modal === 'none' && !this.photo);
+    // Perched, the camera cycle is named on the viewing hint line instead of a toast.
+    this.statusToasts.update(ctx, this.modal === 'none' && !this.photo && !this.perchView.viewing);
 
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
@@ -266,6 +279,7 @@ export class UiSystem implements System {
     }
     this.loading?.dispose();
     this.tracker?.dispose();
+    this.perchView?.dispose();
     this.hud?.dispose();
     this.ctx?.services.withdraw('hotbar');
     this.ctx?.services.withdraw('hudZones');
@@ -543,6 +557,16 @@ export class UiSystem implements System {
         this.setPhoto(false);
       },
       discover: (id: string): boolean => this.tracker.force(id),
+      /** Sits the dragon on a perch in the viewing mode, as Işınlan does ('galata-kulesi', ...). */
+      perch: (id: string): boolean => {
+        const perch = this.ctx.services.tryGet('perches')?.get(id);
+        if (!perch) {
+          return false;
+        }
+        this.closeModal();
+        this.teleport({ ...perchTeleportView(perch), label: perch.name });
+        return this.ctx.services.tryGet('dragon')?.perch?.perchAt(id) ?? false;
+      },
       toast: (text: string, kind?: 'info' | 'warn'): void => this.toasts.push(text, kind),
       resetDiscoveries: (): void => this.tracker.reset(),
       raster: this.raster,

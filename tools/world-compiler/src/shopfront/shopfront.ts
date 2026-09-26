@@ -348,7 +348,7 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
     if (c.slots) {
       const [ca, cb] = u.awningColors;
       const stripes = Math.abs(ca[0] - cb[0]) + Math.abs(ca[1] - cb[1]) + Math.abs(ca[2] - cb[2]) > 0.05;
-      c.slots.add(f, 'shop.awning', { style: u.awning === 'market' ? 'market' : 'shop', seed: u.seed + 0.7, r: r0, y: yMount, w: r1 - r0, h: yMount - yFront, dd: u.awningDepth, tint0: ca, tint1: stripes ? cb : ca });
+      c.slots.add(f, 'shop.awning', { seed: u.seed + 0.7, r: r0, y: yMount, w: r1 - r0, h: yMount - yFront, dd: u.awningDepth, tint0: ca, tint1: stripes ? cb : ca });
     } else {
       emitAwning(batch, u, yMount, yFront);
     }

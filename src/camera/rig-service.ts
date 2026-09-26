@@ -9,6 +9,8 @@ export interface CameraRigHost {
   /** Caption of the running cinematic shot ('' outside cinematic mode). */
   readonly currentShotLabel: string;
   readonly debugInfo: CameraDebugInfo;
+  /** Perch viewing camera (phase 03). */
+  readonly perchCamera: 'orbit' | 'fixed' | 'rider' | 'other';
 }
 
 export interface CameraDebugInfo {
@@ -56,6 +58,10 @@ export class CameraRigService implements CameraRigState {
 
   get shotLabel(): string {
     return this.host.currentShotLabel;
+  }
+
+  get perchCamera(): 'orbit' | 'fixed' | 'rider' | 'other' {
+    return this.host.perchCamera;
   }
 
   /** Non-contract diagnostics used by the camera sandbox and screenshot tooling. */

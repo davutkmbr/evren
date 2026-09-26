@@ -91,6 +91,11 @@ const PERCH_NAMES: Record<string, string> = {
   'buyukada-aya-yorgi': 'Aya Yorgi Tepesi',
 };
 
+/** A perch's short name (the list and the "[L] Kon" prompt): "Galata Kulesi", "Süleymaniye Camii". */
+export function perchShortName(p: PerchPoint): string {
+  return PERCH_NAMES[p.id] ?? p.name;
+}
+
 /** Info lines for the view presets (a merged place shows its perch's text instead). */
 const PRESET_INFO: Record<string, string> = {
   spawn: 'Topkapı Sarayı, Haliç ağzı ve Boğaz girişi aynı karede.',

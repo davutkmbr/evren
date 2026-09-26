@@ -56,6 +56,21 @@ export class DiscoveryTracker implements DiscoveryState {
     return true;
   }
 
+  /**
+   * Records a landmark as discovered without its card (perching on it: the perch's own title says it). Emits
+   * 'landmark-discovered' like a regular discovery; returns false when it was known already or does not exist.
+   */
+  markDiscovered(id: string): boolean {
+    if (this.discovered.has(id) || !this.landmarks.some((l) => l.id === id)) {
+      return false;
+    }
+    this.discovered.add(id);
+    saveDiscovered(this.discovered);
+    this.ctx.events.emit('landmark-discovered', { id });
+    this.emitChange(true);
+    return true;
+  }
+
   reset(): void {
     this.discovered.clear();
     saveDiscovered(this.discovered);

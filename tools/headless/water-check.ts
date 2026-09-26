@@ -7,7 +7,7 @@
  * 1. Parity: a JS port of the water vertex shader (water-vertex / water-common GLSL: the same uniforms, fp32 phase
  *    arithmetic, GPU texel-centred bilinear sampling with clamp-to-edge of the geo coast, region and flow textures)
  *    displaces mesh vertices near the camera; the CPU evaluator (WaveQuery, the `water` service) must return the
- *    same height at the displaced position (max error < 2 cm), the same normal as the fragment shader's analytic
+ *    same height at the displaced position (max error < 1 cm), the same normal as the fragment shader's analytic
  *    Gerstner normal (over water; under land the sheet is sunk and hidden), and the particle velocity of the vertex (finite difference of the port over time), for every
  *    sea regime and wind speed, many places (open sea, Bosphorus, Golden Horn, near the shore) and times.
  * 2. Current: the Bosphorus surface current is strong in the narrows, weaker at the mouths and in the Golden Horn,
@@ -136,10 +136,13 @@ function shaderGroups(U: Uniforms, wx: number, wz: number): { groups: number[]; 
   const lake = Math.min(Math.max((1 - (region[0] + region[1] + region[2] + region[3]) - 0.006) * 1.006, 0), 1);
   const fetch = Math.min(Math.max(mix(flow[2], flow[3], U.regime), 0), 1);
   const shore = glslSmooth(0, 45, offshore);
-  const shortW = (region[0] + region[1] + region[2] + region[3] * 0.22) * mix(0.3, 1, shore) * mix(0.3, 1, glslSmooth(0.03, 0.4, fetch));
-  const longW = (region[0] + region[2] + region[1] * 0.25) * glslSmooth(0.35, 0.8, fetch) * mix(0.15, 1, shore);
-  const swellW = (region[0] + region[2] * 0.25 + region[1] * 0.04) * glslSmooth(60, 1800, offshore) * glslSmooth(0.45, 0.85, flow[2]);
-  return { groups: [shortW + lake * 0.12 * shore, longW, swellW], coast };
+  const sea = region[0] + region[1] + region[2] + region[3];
+  const chopW = sea * mix(0.35, 1, shore) * mix(0.45, 1, glslSmooth(0.05, 0.35, fetch)) + lake * 0.5 * shore;
+  const shortW = (region[0] + region[1] + region[2] + region[3] * 0.15) * mix(0.3, 1, shore) * mix(0.1, 1, glslSmooth(0.2, 0.5, fetch));
+  const longW = (region[0] + region[2] + region[1] * 0.25) * glslSmooth(0.6, 0.9, fetch) * mix(0.15, 1, shore);
+  const swellRegion = region[0] * mix(1, 0.15, U.regime) + region[1] * mix(0.04, 0.06, U.regime) + region[2] * mix(0.25, 1, U.regime);
+  const swellW = swellRegion * glslSmooth(60, 1800, offshore) * glslSmooth(0.45, 0.85, fetch);
+  return { groups: [shortW, longW, swellW, chopW], coast };
 }
 
 /**
@@ -161,7 +164,7 @@ function shaderVertex(U: Uniforms, xoX: number, xoZ: number, spacing: number): {
     const amp = U.amp[i];
     if (amp[0] <= 0) continue;
     const dir = U.dir[i];
-    const gRaw = amp[3] < 0.5 ? groups[0] : amp[3] < 1.5 ? groups[1] : groups[2];
+    const gRaw = amp[3] < 0.5 ? groups[0] : amp[3] < 1.5 ? groups[1] : amp[3] < 2.5 ? groups[2] : groups[3];
     const g = gRaw * (1 - glslSmooth(dir[3] * 0.1, dir[3] * 0.22, spacing));
     if (g <= 0) continue;
     const ph = fr(fr(dir[2] * fr(fr(dir[0] * ox) + fr(dir[1] * oz))) + amp[2]);
@@ -291,7 +294,7 @@ for (const regime of regimes) {
   console.log(
     `  ${regime.name.padEnd(20)} ${String(count).padStart(7)}  ${f2(hsOpen).padStart(6)} m  ${f3(maxDh * 100).padStart(10)}  ${f3(Math.sqrt(sumDh2 / count) * 100).padStart(6)}  ${f3(maxAngle).padStart(12)}  ${f3(maxDv).padStart(18)}  ${maxIts}`,
   );
-  check(maxDh < 0.02, `${regime.name}: max height error ${f3(maxDh * 100)} cm < 2 cm`);
+  check(maxDh < 0.01, `${regime.name}: max height error ${f3(maxDh * 100)} cm < 1 cm`);
   check(maxAngle < 0.5 && maxDv < 0.05, `${regime.name}: normal within 0.5° (${f3(maxAngle)}°), orbital velocity within 5 cm/s (${f3(maxDv)})`);
 }
 

@@ -22,10 +22,11 @@ import { BALCONY_FAMILIES } from './balcony';
 import { SHOP_FAMILIES } from './shop';
 import { SHOPFRONT_FAMILIES } from './shopfront';
 import { TEXT_FAMILIES } from './text';
+import { WALL_FAMILIES } from './wall';
 import { WINDOW_FAMILIES } from './window';
 
 /** Every module family the compiler authors. */
-export const FAMILIES: readonly FamilySpec[] = [...WINDOW_FAMILIES, ...BALCONY_FAMILIES, ...TEXT_FAMILIES, ...SHOP_FAMILIES, ...SHOPFRONT_FAMILIES];
+export const FAMILIES: readonly FamilySpec[] = [...WINDOW_FAMILIES, ...BALCONY_FAMILIES, ...TEXT_FAMILIES, ...SHOP_FAMILIES, ...SHOPFRONT_FAMILIES, ...WALL_FAMILIES];
 
 const byName = new Map(FAMILIES.map((f) => [f.name, f]));
 

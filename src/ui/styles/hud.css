@@ -168,6 +168,38 @@
   color: rgba(246, 241, 231, 0.8);
 }
 
+/* ---------------- perch viewing (phase 03) ---------------- */
+
+/* Perched: the city is the interface. The compass, the bottom cluster and the minimap fade out; the zones stay. */
+.ejd-hud > .hud-compass,
+.ejd-hud > .hud-cluster,
+.ejd-hud > .hud-minimap {
+  transition: opacity 600ms var(--ease-out);
+}
+
+.ejd-hud.is-perched > .hud-compass,
+.ejd-hud.is-perched > .hud-cluster,
+.ejd-hud.is-perched > .hud-minimap {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1200ms var(--ease-in-out);
+}
+
+/* The perch's name (the area title's type) and its info text in the title zone. */
+.pt-new {
+  font-size: 12.5px;
+  color: var(--accent-2, #f3d3a0);
+}
+
+.pt-info {
+  max-width: min(560px, 80vw);
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+  color: rgba(246, 241, 231, 0.85);
+}
+
 /* ---------------- bottom-centre cluster ---------------- */
 
 .hud-cluster {

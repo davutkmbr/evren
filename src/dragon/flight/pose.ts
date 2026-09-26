@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY, REVERSAL_POSE, SKIM, SWIM_POSE } from './params';
+import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE } from './params';
 import type { FlightSim } from './sim';
 import { tailPitchForClearance } from './skim';
 import type { PilotCommand } from './types';
@@ -72,6 +72,7 @@ export class PoseDriver {
     heelLift: 0,
     legReach: 0,
     skid: 0,
+    landFlare: 0,
     swim: 0,
     swimPhase: 0,
     swimStroke: 0,
@@ -99,6 +100,8 @@ export class PoseDriver {
   private lookTimer = 4;
   private lookYaw = 0;
   private lookSeed = 7;
+  /** Landing: neck yaw (rad) of the look at the spot (into the weave and the final turn, a small scan). */
+  private landingLook = 0;
 
   roar(): void {
     this.roarAge = 0;
@@ -164,7 +167,10 @@ export class PoseDriver {
     } else if (onSurface) {
       neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount - 0.22 * moves.crouch + 0.12 * moves.skid;
       neckYaw += 0.06 * Math.sin(time * 0.37) * (1 - sim.walkAmount);
-    } else if (sim.mode === 'landing' || sim.mode === 'hovering') {
+    } else if (sim.mode === 'landing') {
+      neckPitch = this.landingNeck(sim, time);
+      neckYaw += this.landingLook;
+    } else if (sim.mode === 'hovering') {
       neckPitch = -0.18 - sim.pitch * 0.55;
     } else if (sim.mode === 'diving' || sim.mode === 'underwater') {
       neckPitch = -sim.pitch * 0.15 - 0.05;
@@ -191,7 +197,9 @@ export class PoseDriver {
       neckPitch += clamp(look.pitch, -0.8, 0.6) * 0.45 * look.weight;
     }
     pose.neckYaw = follow(pose.neckYaw, clamp(neckYaw, -0.9, 0.9), 4, dt);
-    pose.neckPitch = follow(pose.neckPitch, clamp(neckPitch, -0.7, 0.6), 4, dt);
+    // The flare's neck bends further down (the rig adds an S-curve on top so the head stays level over the ground).
+    const neckLow = 0.7 + (LANDING_POSE.neckLowFlare - 0.7) * (pose.landFlare ?? 0);
+    pose.neckPitch = follow(pose.neckPitch, clamp(neckPitch, -neckLow, 0.6), 4, dt);
 
     // Tail: trails inside the turn, weathervanes into sideslip, lifts in pull-ups, drops as an airbrake.
     let tailYaw = clamp(-turnRate * 0.5 - sim.beta * 0.8, -0.6, 0.6);
@@ -227,6 +235,14 @@ export class PoseDriver {
         (sim.mode === 'diving' ? 0.08 : 0);
       tailYaw += 0.05 * Math.sin(time * 1.3) * (1 - sim.beat.amplitude);
       tailPitch += 0.05 * Math.sin(sim.beat.phase + 2.2) * sim.beat.amplitude;
+      if (sim.mode === 'landing') {
+        // Landing: the tail steers the small corrections of the approach and is lowered as an airbrake; in the flare
+        // it sweeps down (the ground clearance below curls it up again as far as it needs).
+        const style = sim.controller.landingStyle;
+        tailYaw += -LANDING_POSE.tailSteer * style.bankRate + LANDING_POSE.tailWander * Math.sin(time * 1.7 + style.time * 0.3) * (1 - style.flare);
+        tailPitch += LANDING_POSE.tailBrake * sim.brake * (1 - style.flare);
+        tailPitch = lerp(tailPitch, LANDING_POSE.tailFlare, style.flare);
+      }
       // Power stroke: the tail pumps down with the strokes. Dart: tail straight out behind, in line. Side-slip: the tail
       // flicks out opposite the slip (then back to stop it). Skim: the tail tip lowered until it kisses the surface.
       tailPitch += power * (0.08 + 0.2 * Math.sin(sim.beat.phase + 2.2));
@@ -278,7 +294,7 @@ export class PoseDriver {
     _accelBody.copy(sim.specificForce).applyQuaternion(_invQ);
     const speedTuck = airborne ? smoothstep(28, 75, sim.airspeed) * 0.32 + (sim.mode === 'diving' ? 0.12 : 0) : 0;
     // A soft landing reads in the saddle: the rider sits back through the flare.
-    const flareLean = sim.mode === 'landing' && sim.controller.hoverDescent ? 0.22 : 0;
+    const flareLean = sim.mode === 'landing' ? 0.22 * Math.max(sim.controller.hoverDescent ? 1 : 0, sim.controller.landingStyle.flare) : 0;
     const leapLean = sim.leapCharge > 0 || sim.runTakeoff > 0 ? -0.18 : 0;
     const pitchTarget = clamp((-_accelBody.z / GRAVITY) * 0.5 - (_accelBody.y / GRAVITY - 1) * 0.06 - speedTuck + flareLean + leapLean, -0.55, 0.45);
     // Reversals: the rider leans into the wingover's pivot and with a half roll.
@@ -292,6 +308,8 @@ export class PoseDriver {
     pose.riderLeanPitch = clamp(pose.riderLeanPitch + this.leanPitchVel * h, -0.6, 0.5);
     pose.riderLeanRoll = clamp(pose.riderLeanRoll + this.leanRollVel * h, -0.5, 0.5);
     this.updateRiderCues(sim, dt, cmd);
+    // Perched on a viewpoint: the calm perched pose over everything above (perch.ts).
+    sim.perch.applyPose(pose, dt);
     return pose;
   }
 
@@ -321,7 +339,15 @@ export class PoseDriver {
       const trail = 1 - smoothstep(0.25, 0.9, m.sinceLiftOff);
       const descending = sim.body.velocity.y < 0.5 && (sim.mode === 'landing' || sim.mode === 'flying' || sim.mode === 'gliding') ? 1 : 0;
       reach = descending * smoothstep(6, 1.5, sim.footClearance) - trail;
+      if (sim.mode === 'landing') {
+        // The flare: the hind legs swing forward and reach down for the ground from higher up.
+        reach = Math.max(reach, sim.controller.landingStyle.flare * smoothstep(LANDING_POSE.reachFrom, 2, sim.footClearance));
+      }
     }
+    // Flare cue for the rig (wings forward and cupped, neck S, claws open): rises through the flare, and after the
+    // touchdown fades as the wings fold.
+    const flareTarget = sim.mode === 'landing' ? sim.controller.landingStyle.flare : 0;
+    pose.landFlare = (pose.landFlare ?? 0) + (flareTarget - (pose.landFlare ?? 0)) * (1 - Math.exp(-(flareTarget > (pose.landFlare ?? 0) ? 6 : LANDING_POSE.flareFade) * dt));
     const heel = onGround ? m.heelLift : 1 - smoothstep(0, 0.35, m.sinceLiftOff);
     const k = 1 - Math.exp(-CUE_RATE * dt);
     const ease = (current: number | undefined, target: number, rate = k): number => (current ?? target) + (target - (current ?? target)) * rate;
@@ -333,6 +359,20 @@ export class PoseDriver {
     pose.heelLift = ease(pose.heelLift, heel);
     pose.legReach = ease(pose.legReach, reach, k * 0.5);
     pose.skid = ease(pose.skid, onGround ? m.skid : 0);
+  }
+
+  /**
+   * Landing neck: in the approach the head looks down at the spot (about where the flight path meets the ground,
+   * a little short of it) and into the weave or the final turn; in the flare the neck bends back down against the
+   * body's rear-up so the head stays level and on the ground ahead (the rig adds an S-curve with the flare cue).
+   */
+  private landingNeck(sim: FlightSim, time: number): number {
+    const style = sim.controller.landingStyle;
+    const look = clamp(-sim.gamma + LANDING_POSE.lookBelowPath, LANDING_POSE.lookMin, LANDING_POSE.lookMax);
+    const approach = -LANDING_POSE.lookGain * look - LANDING_POSE.lookPitchCounter * sim.pitch + 0.03 * Math.sin(time * 2.3);
+    const flare = LANDING_POSE.neckFlare - LANDING_POSE.neckFlareCounter * Math.max(0, sim.pitch);
+    this.landingLook = (LANDING_POSE.lookIntoTurn * style.bank + 0.05 * Math.sin(time * 0.9 + 1.3)) * (1 - style.flare);
+    return lerp(approach, flare, style.flare);
   }
 
   /** Swimming idle: an occasional slow head turn to one side and back (rad, added to the neck yaw). */

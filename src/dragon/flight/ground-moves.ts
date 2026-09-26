@@ -606,7 +606,8 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
   } else if (m.runOut) {
     // Wings half open for balance while fast (raised, air brakes when skidding), folded as the speed drops.
     const open = Math.max(smoothstep(RUNOUT.foldSpeed, RUNOUT.openSpeed, speed), m.runTime < RUNOUT.foreDelay ? 0.8 : 0);
-    const spread = Math.max(0.06 + 0.5 * open, 0.85 * m.skid);
+    // The air brakes open once the wrists are off the ground (a skid from a slow, four-footed run).
+    const spread = Math.max(0.06 + 0.5 * open, 0.85 * m.skid * (1 - m.foreGround));
     groundWings(sim, spread, -0.9 * m.skid - 0.3 * open, 0.25 + 0.45 * Math.max(open, m.skid), h, 2.2);
     m.foreGround = approach(m.foreGround, m.skid > 0.3 ? 0 : foreTarget(sim.spread), FORE_RATE, h);
     m.wingRaise = approach(m.wingRaise, 0, 3, h);
