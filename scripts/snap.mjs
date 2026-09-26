@@ -15,12 +15,13 @@
  * Frame times are measured in the page over the settle window: `stats.frameMedianMs` / `stats.frameP99Ms`, and
  * `frameTimes` ({ windowMs, frames, medianMs, p99Ms, maxMs, over50ms }). A frame is a change of the page's frame
  * counter (__evren.frame or __evren.ctx.time.frame), so a capped page (default 24 fps) reports its real cadence.
- * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs).
+ * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs). No Chrome / GPU (cloud containers): set EVREN_CHROME to
+ * a Chromium binary to render on SwiftShader.
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { acquireSlot, releaseSlot, CHROME_ARGS } from './lib/gpu-slot.mjs';
+import { acquireSlot, releaseSlot, chromeLaunchOptions } from './lib/gpu-slot.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -198,11 +199,7 @@ async function shoot(browser, job) {
 
 await ensureServer();
 await acquireSlot();
-const browser = await chromium.launch({
-  channel: 'chrome',
-  headless: true,
-  args: CHROME_ARGS,
-});
+const browser = await chromium.launch(chromeLaunchOptions());
 try {
   let jobs;
   if (opt('batch')) {
