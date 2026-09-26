@@ -8,6 +8,12 @@ import { clamp01, finiteOr, smoothstep } from './dsp/math';
 import { loadVolume, saveVolume } from './settings';
 
 const TWO_PI = Math.PI * 2;
+/**
+ * The flight model marks the nostril bubbles of an under-water dragon as tiny splashes where they reach the surface
+ * (phase 21 stage 3, PLUNGE.bubbleStrength 0.05); at or below this strength, with the dragon under water, they play
+ * as bubbles instead of a splash.
+ */
+const BUBBLE_SPLASH_MAX = 0.08;
 
 export interface AudioDebugHandle {
   readonly engine: AudioEngine | null;
@@ -176,7 +182,13 @@ export function createAudioSystem(): System {
           lastFlapEventAt = performance.now();
           engine?.flap(strength);
         }),
-        ev.on('splash', ({ position, strength }) => engine?.splashAt(position, strength)),
+        ev.on('splash', ({ position, strength }) => {
+          if (strength <= BUBBLE_SPLASH_MAX && ctx.services.tryGet('dragon')?.mode === 'underwater') {
+            engine?.bubblesAt(position, strength);
+          } else {
+            engine?.splashAt(position, strength);
+          }
+        }),
         ev.on('ground-impact', ({ position, speed }) => engine?.landAt(position, speed)),
         ev.on('fire-start', () => {
           eventFiring = true;
@@ -202,6 +214,9 @@ export function createAudioSystem(): System {
       const weather = ctx.services.tryGet('weather');
       frame.rain = weather?.current.rain ?? 0;
       frame.storm = weather?.current.storm ?? 0;
+      const underwater = ctx.services.tryGet('underwater');
+      frame.underwater = underwater ? clamp01(finiteOr(underwater.amount, 0)) : 0;
+      frame.underwaterDepth = underwater ? Math.max(0, finiteOr(underwater.depth, 0)) : 0;
 
       // The camera system has already placed the camera this frame; refresh its world matrix before reading.
       // A non-finite camera (one glitched frame, e.g. during a camera-mode switch) keeps the last good listener pose.
@@ -254,7 +269,8 @@ export function createAudioSystem(): System {
       if (rig && dragon) {
         const pose = rig.getPose();
         const onSurface = dragon.mode === 'grounded' || dragon.mode === 'swimming' || dragon.mode === 'underwater';
-        frame.dragon.grounded = onSurface;
+        // Breathing is audible standing or swimming, not while holding breath under water.
+        frame.dragon.grounded = onSurface && dragon.mode !== 'underwater';
         frame.dragon.exertion = clamp01(pose.breath);
         // Fallback when the flight model does not emit 'flap' events: follow the rig's wing-beat phase. The phase may
         // be wrapped to [0, 2pi) (the flight model does) or continuous (the contract allows both): detect either.
@@ -274,7 +290,7 @@ export function createAudioSystem(): System {
         }
         prevStep = Number.isFinite(step) ? step : Number.NaN;
       } else {
-        frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming' || dragon?.mode === 'underwater';
+        frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming';
       }
     },
 

@@ -689,6 +689,27 @@ export interface WaterService {
 }
 
 /**
+ * The camera below the water (phase 21 stage 4), provided by the water module as `underwater`: whether the camera is
+ * under the local wave surface (the CPU wave height at the camera, the surface the shader draws), with hysteresis.
+ * The post pipeline, the water surface and audio read it; everything is off while `lensActive` is false.
+ */
+export interface UnderwaterView {
+  /** Camera below the surface (hysteresis: switches a few cm past the surface, never flickers on the waterline). */
+  readonly under: boolean;
+  /** Camera depth below the local surface (m): > 0 under, < 0 above. */
+  readonly depth: number;
+  /** 0..1 smoothed `under` for mixes. */
+  readonly amount: number;
+  /** Local surface at the camera: height (m) and unit normal (the lens waterline is this plane). */
+  readonly surfaceY: number;
+  readonly surfaceNormal: THREE.Vector3;
+  /** 0..1 droplets on the lens after a breach (fades out in about a second). */
+  readonly droplets: number;
+  /** Under water, or close enough above it that the waterline can cross the lens. */
+  readonly lensActive: boolean;
+}
+
+/**
  * HUD screen zones (src/ui/zones): every transient HUD message asks for a zone with a priority and a duration; the
  * director shows the highest priority per zone, defers the others (dropping them once they waited too long) and fades
  * between them. Provided by the UI as `hudZones`. The `center` band is reserved for the aim / ring area and the
@@ -744,6 +765,7 @@ export interface Services {
   perches: PerchService;
   hotbar: HotbarService;
   water: WaterService;
+  underwater: UnderwaterView;
   hudZones: HudZonesService;
 }
 
