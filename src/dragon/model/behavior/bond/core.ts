@@ -135,10 +135,10 @@ export class BondCore {
     const petting = inp.petActive ? inp.petting : 0;
     const behaviorAllowed = safety.behaviorOk && petting < 0.05 && !this.answer && !this.gaze.busy && !inp.riderStanding;
     this.attention.update(inp, safety, this.gaze.level > 0.1 || this.behaviors.weight > 0.05);
-    // Every new sight feeds curiosity (a bird a little, a stork kettle or a ferry more).
+    // Every new sight feeds curiosity (a bird a little, a stork kettle or a ferry more, dolphins most).
     const seen = this.attention.started;
     if (seen && seen !== 'landmark') {
-      this.mood.kick('curiosity', seen === 'bird' ? 0.04 : 0.12);
+      this.mood.kick('curiosity', seen === 'bird' ? 0.04 : seen === 'dolphin' ? 0.16 : 0.12);
     }
 
     // --- Self-driven behaviours ---
