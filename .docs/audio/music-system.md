@@ -26,15 +26,17 @@ Open the game with **`?music=test,debug`** (e.g. `http://localhost:5199/?music=t
 
 - `test` renders, at runtime, three tiny procedural sets (a day set with a kanun-like pluck, a hicaz-coloured night set
   in 3/4 with a ney-like voice, a race set with stingers), four test phrases (a breathy ney by day, a few kanun plucks
-  over the water, a low tanbur at night, a darker ney at night or in fog) and one test moment piece (a slow ney over a
-  soft pad, tagged `poem`, `nostalgic`, `sea`). They exist only in memory, are never shipped as files and never load
-  without `?music=test` (or `__evrenMusic.useTestSets()`). They are test tones, not the game's music.
+  over the water, a low tanbur at night, a darker ney at night or in fog) and three test moment pieces (a slow ney over
+  a soft pad for poems, a kanun tune over a tanbur drone for city life, a solemn tanbur for legends and history; only
+  these carry a very faint 78-style hiss and crackle). They exist only in memory, are never shipped as files and never
+  load without `?music=test` (or `__evrenMusic.useTestSets()`). They are test tones, not the game's music.
 - Because test phrases exist, the style is **sparse** unless you chose "Sürekli" in the settings. Force a style for the
   session with `?music=test,sparse,debug` or `?music=test,continuous,debug`.
 - `debug` shows the overlay: set, bar / beat, every stem's level (smoothed → target), the active rule and modifiers,
   the active conditions, the director's phase (playing / silence and time left); in sparse style the sprinkle line
-  (`next in N s (phrase)`, the last phrase, the phrases played), the hold or busy reason and the context tags; and the
-  moment piece line.
+  (`next in N s (phrase)`, the last phrase, the phrases played), the hold or busy reason and the context tags; the
+  moment piece line; and the `source` line of the moment piece (kind, phase `lead` / `moment` / `world`, distance /
+  reach, wind mask, clarity, opening, memory blend, level).
 - `?music=off` disables music entirely.
 
 **Sprinkles:** the first phrase comes 25–70 s after the start, then every 1.5–4 minutes. To skip the wait, run
@@ -44,8 +46,23 @@ context). Then fly slowly over the water by day (ney / kanun), sit on a perch at
 
 **Moment piece:** open `http://localhost:5199/?music=test,debug&moment=orhan-veli-istanbulu-dinliyorum`: the poem
 moment starts after a few seconds and the test piece (chosen by the category `poem` and the moment's `musicMood`
-`nostalgic`, `sea`) fades in under the subtitles; when the moment ends it fades out. Without a moment at hand:
-`__evrenMusic.moment({ category: 'poem', mood: ['sea'] })`, then `__evrenMusic.endMoment()`.
+`nostalgic`, `sea`) fades in under the subtitles as a memory (centred, airy, a slow wobble); when the moment ends it
+fades out. Without a moment at hand: `__evrenMusic.moment({ category: 'poem', mood: ['sea'] })`, then
+`__evrenMusic.endMoment()`.
+
+**Moment sources** (see [Moment music sources](#moment-music-sources)), each with `?music=test,debug&moment=<id>`:
+
+| Kind | Open | What to listen for |
+| --- | --- | --- |
+| `venue` | `katibim-uskudar-yagmur` | a muffled coffeehouse on the Üsküdar shore road; the music starts before the subtitles, opens a little when they begin, stays in the world afterwards |
+| `live` | `karagoz-sehzadebasi` | the Karagöz tent on Şehzadebaşı Caddesi: warmer, wider, a light room |
+| `gramophone` | `fikret-yagmur-asiyan`, `huseyin-rahmi-kuyrukluyildiz` | a narrow, slightly metallic horn at a window of Aşiyan / the Heybeliada house |
+| `ferry` | `ferry-gull-simit` | a small deck radio that moves with the ferry (the shortcut waits for a ferry in service) |
+| `memory` | `nedim-bu-sehr-i-sitanbul`, `prokopios-gokten-asili-kubbe`, `orhan-veli-istanbulu-dinliyorum` | airy and far, from the palace / the dome, or centred for Orhan Veli |
+
+Then fly: hover or land within ~60 m of a world source for the clearest sound, sprint past it (low-passed and
+ducked), fly away mid-moment (it crosses into a memory beyond 0.9 of the reach), come back (it returns to the world),
+leave after the moment (it fades just past the reach). `__evrenMusic.source()` returns the current mix.
 
 **Loops** (continuous style, `?music=test,continuous,debug`), then fly: sit on a perch (calm set, gentle mix), cruise (base + strings), sprint or dive (+ motion), skim the water
 (+ colour), climb in a thermal without flapping (air swell), change the time (night set, softer strings), start a race
@@ -68,6 +85,7 @@ Console (`window.__evrenMusic`):
 | `__evrenMusic.sprinkle()` / `.sprinkle('test-ney-gece')` | the next phrase (or that one) now, once holds and calm allow |
 | `__evrenMusic.phrases()` | phrase and moment piece ids |
 | `__evrenMusic.moment({ category: 'poem', mood: ['sea'], musicId })` / `.endMoment()` | fake a moment start / end as the moments system does |
+| `__evrenMusic.source()` | the moment piece's source mix now (kind, distance, reach, level, cutoff, wind mask, clarity, opening, memory) |
 
 ## Architecture (`src/audio/music/`)
 
@@ -78,11 +96,14 @@ Console (`window.__evrenMusic`):
 | `director.ts` | which set plays when: play / silence cycle, set choice by tags, bar- and phrase-quantised changes, race / moment overrides, stingers (pure) |
 | `sprinkle.ts` | sprinkle mode: gaps, context tags, weighted phrase choice without repeats, holds and calm; all numbers in `SPRINKLE_DEFAULTS` (pure) |
 | `moment-music.ts` | the moment piece: choice by `musicId` / category / mood, fades, no repeat; numbers in `MOMENT_MUSIC_DEFAULTS` (pure) |
+| `moment-source.ts` | moment music sources: the kinds, their chain and distance tuning, `sourceMix` (distance / night / wind → level, cutoff, sends, pan), `SourceTracker` (opening, world ↔ memory) (pure) |
+| `moment-source-session.ts` | per-frame glue between the moments system's source reports and the moment-music director (pure) |
+| `source-graph.ts` | WebAudio: the world / memory chains the moment piece plays through (built on demand, torn down when idle) |
 | `clock.ts` | bar-grid math (pure) |
 | `player.ts` | WebAudio: on-demand decoding (at most 2 decoded sets, 6 phrases), sample-locked stem loops, fades, stingers, one-shot phrase voices, hard pause |
 | `index.ts` | the controller hosted by the audio system: reads the services every frame, runs rules + director + sprinkle director + moment-music director on the AudioContext clock, drives the player; `__evrenMusic`, `?music=` |
 | `settings.ts` | persisted "Müzik" volume, "Uyarlanabilir müzik" switch and "Müzik tarzı" |
-| `test-sets.ts` | DEV-only procedural test sets, phrases and moment piece (lazy chunk) |
+| `test-sets.ts` | DEV-only procedural test sets, phrases and moment pieces (lazy chunk) |
 | `debug-overlay.ts` | `?music=debug` overlay (lazy chunk) |
 
 Signal path: stems → per-stem gain (adaptive mix × stem trim) → deck fade-in → deck fade-out → music output (level ×
@@ -91,6 +112,9 @@ music is **not** ducked by the pause filter: in menus and the map it keeps playi
 Sprinkle phrases play as one-shot voices (edge fades × loudness correction × `gain`) into the same music output, so the
 "Müzik" volume and every duck apply. Moment pieces play into a sibling **moment output** (level × volume² × the menu
 duck only): the strong moment duck hushes the stems and makes room for the piece, it does not hush the piece itself.
+On the way there a moment piece passes the source graph (`source-graph.ts`: the world or memory chain of its
+[source](#moment-music-sources)); the graph's open-air send reaches the master bus reverb through a moment send that
+follows the moment output's gain.
 
 All stems of a set start with one `start(when)` on the AudioContext clock and loop over the grid length (bars × beats
 per bar × 60 / bpm), so they stay sample-locked. Everything musical lands on the grid: a set change waits for the next
@@ -154,12 +178,106 @@ instruments: ney, kanun, oud, tanbur, piano, cello) plays once under the subtitl
   shorter than the moment ends on its own — its file tail plus a 2 s edge fade — and is never looped. When the moment
   ends first the piece fades out over 3.5 s. A new moment right after another fades the old piece and chooses anew.
 - **Ducking.** During every moment the loops duck by 80 % (the `moment` rule) and sprinkles hold (a playing phrase
-  fades out); the piece itself plays on the moment output, so only the volume and the menu duck apply to it.
+  fades out); the piece itself plays on the moment output, so only the volume and the menu duck apply to it. While a
+  source's music plays without a moment (its lead-in, or afterwards in the world) sprinkles hold and the loops duck by
+  up to 60 % as the source gets audible.
+- **Never direct.** The piece always plays through a source chain: a place in the world or a memory (next section).
 - **Moment data.** Add `musicMood: ['nostalgic', 'sea']` to a moment's `content` (`src/moments/data/*.ts`) to steer
   the choice, or `musicId: '<piece-id>'` to pin one piece. "İstanbul'u Dinliyorum" already asks for
   `['nostalgic', 'sea']`.
 
 Numbers: `MOMENT_MUSIC_DEFAULTS` in `moment-music.ts`.
+
+## Moment music sources
+
+Moment music is never heard "directly": it comes from a place in the world, or sounds like a distant memory. Each
+moment record may carry a `musicSource` (`src/moments/types.ts`); without one it is `{ kind: 'memory' }`, centred and
+diffuse.
+
+Code: `moment-source.ts` (pure: the kinds, the tuning tables, the distance / wind / night mapping `sourceMix` and the
+per-voice `SourceTracker`), `moment-source-session.ts` (pure: the per-frame glue the controller and the check share),
+`source-graph.ts` (thin WebAudio graph that applies the numbers), `src/moments/music-source.ts` (resolves records into
+world positions, finds the nearest lead-in candidate). The graph is built on the first moment piece and torn down 8 s
+after the last one ends; with no source near, nothing runs but a few squared distances per frame.
+
+### Kinds and their chains
+
+| Kind | For | Chain |
+| --- | --- | --- |
+| `gramophone` | a horn gramophone on a yalı balcony or at a window | band-pass 300 Hz – 4 kHz (2nd order each side, LP Q 0.9), +4 dB at 1.3 kHz (Q 1.4), gentle tanh saturation (35 % wet), a little street room |
+| `venue` | a coffeehouse or tavern heard from the street | high-pass 110 Hz, low-pass 1.5 kHz (walls and windows), +2.5 dB at 450 Hz, a short room (RT60 0.7 s) with facade reflections at 21 / 34 / 52 ms, send 0.55 |
+| `live` | a Karagöz tent, a fasıl band | 70 Hz – 9 kHz, +1.5 dB at 260 Hz (warmth), a warm small room (RT60 0.9 s, send 0.3), a wider image (a 13 ms opposite-side copy) |
+| `ferry` | a deck radio on a moving ferry | 480 Hz – 3.3 kHz, +5 dB at 1.9 kHz (Q 2.2), 55 % saturation: a small speaker; follows the moment's ferry |
+| `memory` | open sky or sea, no physical source | 170 Hz – 5.2 kHz, a −5 dB high shelf at 2.8 kHz, a large airy hall (RT60 4.2 s), wow 0.55 Hz ±1.1 ms and flutter 6.3 Hz ±0.035 ms (a short modulated delay: about ±6 cents), panned toward `from` (60 % of its side) or centred with less dry and more hall |
+
+Every world source also sends into the city's open-air reverb (the master bus reverb), more with distance, and all of
+it goes through the music bus's under-water muffle.
+
+### Distance, night, wind
+
+World sources are positional (pan from the listener's right vector, as `placeSource` in `src/audio/spatial.ts`):
+
+- **Air absorption.** The cutoff falls from 16 kHz at the source to 850 Hz at the reach, log-interpolated by
+  `u^0.6` (`u` = distance / reach): the highs go first. The level is `(ref / d)^0.5`, held until 0.45 of the reach and
+  faded to silence at the reach.
+- **Night carry.** Reach × (1 + 0.6 · night · calm · water): calm = little wind (3–9 m/s), no rain or storm; water =
+  the listener is over water or the source stands by it (a ferry, a source within 80 m of the coast).
+- **Wind masking.** The mask grows with airspeed from 6 to 45 m/s (hovering at most 0.12, diving at least 0.9, perched,
+  grounded or swimming 0). At full mask the world source loses 10 dB and its cutoff drops to 22 %; a memory only 4 dB and
+  60 %.
+- **Stop and listen.** Perched or standing within ~60 m (fading 40–80 m): +2 dB and cutoff × 1.25, the clearest sound.
+- **Lead-in.** The music's own proximity start: while no moment plays, the nearest world source of a playable moment
+  whose category is switched on starts its piece once the listener is inside its reach (4 s fade-in, the distance does
+  the rest), long before the moment's own trigger. If the moment starts, the same piece carries on; if not, it stays a
+  world sound and fades (3 s) once the listener is beyond 1.08 × the reach. A source whose music stopped does not lead
+  in again for 240 s. Lead-ins wait during races and menus, and never start while another moment plays.
+- **Opening and closing.** When the moment's subtitles begin, a world source opens over 2 s: +3 dB, cutoff × 1.6, the
+  room 35 % drier; it stays positional. When the moment ends it sinks back over 3 s and stays a world sound until the
+  player leaves.
+- **World to memory.** Mid-moment, beyond 0.9 of the reach, the music cross-fades (equal power, 4 s) into the memory
+  treatment, so the moment keeps its music; back inside 0.6 of the reach it returns to the world. A moment that ends
+  as a memory fades its piece out (3.5 s).
+
+### Tuning table (confirm by ear)
+
+Day reach / night reach over calm water, and level / cutoff at 30, 60, 150 and 300 m (hovering, not opened):
+
+| Kind | Reach day / night | 30 m | 60 m | 150 m | 300 m |
+| --- | --- | --- | --- | --- | --- |
+| `gramophone` | 420 / 672 m | −4.0 dB, 8.8 kHz | −7.0 dB, 6.4 kHz | −11.0 dB, 3.3 kHz | −19.5 dB, 1.5 kHz |
+| `venue` | 380 / 608 m | −1.0 dB, 8.4 kHz | −4.0 dB, 6.1 kHz | −8.0 dB, 3.0 kHz | −20.7 dB, 1.3 kHz |
+| `live` | 480 / 768 m | −1.8 dB, 9.2 kHz | −4.8 dB, 6.9 kHz | −8.8 dB, 3.7 kHz | −14.1 dB, 1.7 kHz |
+| `ferry` | 400 / 640 m | −5.2 dB, 8.6 kHz | −8.2 dB, 6.2 kHz | −12.2 dB, 3.1 kHz | −22.5 dB, 1.4 kHz |
+
+(The cutoff is the air-absorption stage; each chain's own band limits apply on top.) Wind mask by airspeed: 12 m/s
+0.06, 20 m/s 0.29, 30 m/s 0.67, 45 m/s 1. Every number lives in `SOURCE_TUNING`, `WORLD_CHAINS` and `MEMORY_CHAIN`
+(`moment-source.ts`) and `MOMENT_MUSIC_DEFAULTS` (`moment-music.ts`).
+
+### Authoring `musicSource`
+
+```ts
+// A place in the world (lat/lon + height above the ground; checked against the real geography like a waypoint):
+musicSource: { kind: 'venue', at: { lat: 41.0258, lon: 29.0135, height: 4, note: 'Coffeehouse on the shore road', expect: 'land' } },
+// A quiet island night carries a gramophone farther (reachScale 0.25..2):
+musicSource: { kind: 'gramophone', at: { lat: 40.8768, lon: 29.1004, height: 6, note: '…', expect: 'land' }, reachScale: 1.8 },
+// The moving anchor the moment started at (must be the place's anchor):
+musicSource: { kind: 'ferry', anchor: 'ferry', height: 8 },
+// A memory from the moment's subject, or centred and diffuse without `from`:
+musicSource: { kind: 'memory', from: { lat: 41.0085, lon: 28.98, height: 55, note: 'The Hagia Sophia dome', nearLandmark: 'ayasofya' } },
+```
+
+Rules (checked by `moments-check`): a world kind has exactly one of `at` / `anchor`; only `ferry` follows an anchor;
+`from` is for memories; heights 0–120 m; `at` lies within its kind's day reach of the trigger centre, so the lead-in
+reaches the moment's place; `expect` and `nearLandmark` are verified against the geography. Pick a real, plausible
+spot near the moment's place (a street-level window ≈ 3 m, a first-floor balcony ≈ 6 m) and say where it is in `note`.
+
+Current records: Kâtibim `venue` (Üsküdar shore road), Karagöz `live` (Şehzadebaşı Caddesi), Kuyrukluyıldız
+`gramophone` (Hüseyin Rahmi's house on Heybeliada, reachScale 1.8), Yağmur `gramophone` (Aşiyan), gull and simit
+`ferry`; memories: Orhan Veli (centred), Nedim and De Amicis (from Topkapı / Sarayburnu), Prokopios (the Hagia Sophia
+dome), Sinan (his tomb), the legends (from their landmark); every other record defaults to a centred memory.
+
+Real 78 rpm transfers get no added crackle; keep their own surface noise faint in the master. Only the synthesized test
+pieces carry a very faint crackle.
 
 ## The stems
 
@@ -461,6 +579,13 @@ shortening, holds for races, moments, photo mode, menus and under water with a f
 waiting for calm after sprints, dives and boosts, decode waits, determinism), moment music (choice by id / category /
 mood / time, no repeat, 2.5 s fade-in, 3.5 s fade-out, short pieces ending on their own, slow decodes dropped,
 back-to-back moments) and the styles (automatic default, loops ending after a race in sparse style).
+
+`npx tsx tools/headless/music-source-check.ts` (Node only, fake clock): the moment music sources — the distance curve
+(level and cutoff fall with distance, the highs first, silent at the reach, night carry and its limits), wind masking
+by speed and mode and the perch / stand clarity, the lead-in (starting inside the reach long before the moment's
+place, carried on by the moment, a world sound that fades just past the reach when the moment never starts, the
+cooldown), the opening and closing, the world-to-memory cross-fade and its return, memory direction from `from`, the
+ferry source following its moving anchor, NaN safety, and zero cost with no source near.
 
 ## Appendix: Suno prompts for stem-friendly music
 

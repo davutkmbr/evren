@@ -1,7 +1,8 @@
 /**
  * `?music=debug` overlay (developer tool, English): current set, bar / beat, each stem's level (target → smoothed),
  * the active state rule and modifiers, the director's phase and next event; in sparse style the sprinkle state (next
- * phrase in N s, the last phrase, the hold or busy reason, the context tags); the moment piece. Updated a few times a
+ * phrase in N s, the last phrase, the hold or busy reason, the context tags); the moment piece and its source (kind,
+ * phase, distance / reach, wind mask, clarity, opening, memory blend, level). Updated a few times a
  * second.
  */
 import { STEM_ROLES } from './manifest';
@@ -65,6 +66,13 @@ export class MusicDebugOverlay {
     }
     const m = s.moment;
     lines.push(`moment ${m.current ? `playing ${m.current}` : m.pending ? `loading ${m.pending}` : '—'}  last ${m.last ?? '—'}  ${m.note}`);
+    const src = s.source;
+    if (src) {
+      const dist = Number.isFinite(src.distance) ? `${src.distance.toFixed(0)}/${src.reach.toFixed(0)} m` : 'no distance';
+      lines.push(`source ${src.kind} [${src.phase}]  ${dist}  wind ${src.windMask.toFixed(2)}  clarity ${src.clarity.toFixed(2)}  open ${src.open.toFixed(2)}  mem ${src.memory.toFixed(2)}  lvl ${src.level.toFixed(2)}`);
+    } else {
+      lines.push('source —');
+    }
     this.body.textContent = lines.join('\n');
   }
 

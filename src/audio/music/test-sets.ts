@@ -10,7 +10,10 @@
  * the loop point continue seamlessly on the next pass.
  *
  * The same switch also brings test PHRASES for sprinkle mode (a breathy ney, a few kanun plucks, a low tanbur at
- * night...) and one gentle test MOMENT PIECE (ney over a soft pad) for moments, rendered once each on first use.
+ * night...) and three test MOMENT PIECES (a ney over a soft pad for poems, a kanun tune for city life, a solemn tanbur
+ * for legends), rendered once each on first use. Only these synthesized moment pieces carry a very faint 78-style
+ * surface (hiss and sparse crackle) so the moment source chains can be judged on something record-like; real 78
+ * transfers get no added crackle.
  */
 import { loopSeconds, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
 import type { MusicBuffers } from './player';
@@ -264,6 +267,92 @@ const MOMENT_SPECS: TestPhraseSpec[] = [
           [31, 2.2, 72, 0.5],
           [33.4, 1.4, 71, 0.45],
           [35, 6, 69, 0.5],
+        ],
+      },
+    ],
+  },
+  {
+    // A light kanun tune over a tanbur drone, a deck radio's kind of song (city life, by day): 44 s.
+    def: {
+      id: 'test-an-kanun-vapur',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-kanun-vapur.opus`],
+      durationSec: 44,
+      family: 'kanun',
+      tags: ['city-life', 'joyful', 'sea', 'day'],
+      credit: { title: 'Test an müziği: vapur (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'tanbur',
+        notes: [
+          [1, 5, 45, 0.6],
+          [7, 5, 50, 0.55],
+          [13, 5, 45, 0.6],
+          [19, 5, 52, 0.55],
+          [25, 5, 50, 0.55],
+          [31, 7, 45, 0.55],
+        ],
+      },
+      {
+        voice: 'kanun',
+        notes: [
+          ...[0, 6, 12, 18, 24].flatMap((b, i): Array<[number, number, number, number]> => {
+            const up = i % 2 === 0 ? 0 : 2;
+            return [
+              [b + 1.5, 0.4, 69 + up, 0.6],
+              [b + 1.9, 0.4, 71 + up, 0.55],
+              [b + 2.3, 0.4, 72 + up, 0.6],
+              [b + 2.7, 1.1, 74 + up, 0.65],
+              [b + 4, 0.4, 72 + up, 0.5],
+              [b + 4.4, 1.2, 71 + up, 0.55],
+            ];
+          }),
+          [31.5, 0.5, 72, 0.55],
+          [32, 0.5, 71, 0.5],
+          [32.5, 4.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A slow, solemn tanbur line over a dark pad (legends and history): 50 s.
+    def: {
+      id: 'test-an-tanbur-eski',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-tanbur-eski.opus`],
+      durationSec: 50,
+      family: 'tanbur',
+      tags: ['legend', 'history', 'solemn', 'mystic'],
+      credit: { title: 'Test an müziği: eski (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'pad',
+        notes: [
+          ...[50, 57, 62].map((m): [number, number, number, number] => [0.5, 12, m, 0.5]),
+          ...[48, 55, 60].map((m): [number, number, number, number] => [12.5, 12, m, 0.45]),
+          ...[46, 53, 58].map((m): [number, number, number, number] => [24.5, 10, m, 0.45]),
+          ...[50, 57, 62].map((m): [number, number, number, number] => [34.5, 11, m, 0.4]),
+        ],
+      },
+      {
+        voice: 'tanbur',
+        notes: [
+          [2, 3, 62, 0.7],
+          [5.5, 1.5, 63, 0.55],
+          [7.2, 3.5, 66, 0.6],
+          [11.5, 4, 62, 0.65],
+          [16.5, 2, 60, 0.55],
+          [18.8, 1.5, 58, 0.5],
+          [20.5, 4, 57, 0.6],
+          [26, 3, 58, 0.55],
+          [29.5, 1.5, 60, 0.5],
+          [31.2, 3, 62, 0.6],
+          [36, 2, 63, 0.5],
+          [38.2, 6, 62, 0.55],
         ],
       },
     ],
@@ -545,7 +634,50 @@ export async function renderTestPhrase(phrase: MusicPhraseDef): Promise<AudioBuf
       playNote(ctx, bus, layer.voice, { t, dur, midi, vel }, noise);
     }
   }
+  if (phrase.role === 'moment') {
+    addTestSurface(ctx, phrase.durationSec);
+  }
   return ctx.startRendering();
+}
+
+/** Level of the test pieces' 78-style surface: hiss about -58 dBFS, clicks peaking about -40 dBFS. */
+const SURFACE_HISS = 0.0013;
+const SURFACE_CLICK = 0.01;
+
+/**
+ * A very faint 78-style surface for the synthesized test moment pieces only (deterministic): band-limited hiss and a
+ * few sparse clicks, fading in and out with the piece.
+ */
+function addTestSurface(ctx: OfflineAudioContext, seconds: number): void {
+  const len = Math.round(seconds * RATE);
+  const buf = ctx.createBuffer(1, len, RATE);
+  const d = buf.getChannelData(0);
+  let seed = 0x7a3d;
+  const rnd = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    lp += (rnd() * 2 - 1 - lp) * 0.35;
+    d[i] = lp * SURFACE_HISS;
+    // About three clicks a second, each a short decaying spike.
+    if (rnd() < 3 / RATE) {
+      const a = SURFACE_CLICK * (0.3 + 0.7 * rnd()) * (rnd() < 0.5 ? -1 : 1);
+      for (let k = 0; k < 40 && i + k < len; k++) {
+        d[i + k] += a * Math.exp(-k / 6);
+      }
+    }
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, 0);
+  g.gain.linearRampToValueAtTime(1, 1.5);
+  g.gain.setValueAtTime(1, Math.max(1.5, seconds - 2.5));
+  g.gain.linearRampToValueAtTime(0, seconds);
+  src.connect(g).connect(ctx.destination);
+  src.start(0);
 }
 
 /** Renders one test set's stems and stingers (a few hundred ms per set on a laptop). */

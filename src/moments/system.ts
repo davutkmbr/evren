@@ -14,8 +14,17 @@
  *
  * Moving anchors (./anchors.ts: the ferries in service) are read from the 'life' service every frame; the runner hands
  * the anchor a moment started at to its actor (the ferry's gull flock follows that ferry).
+ *
+ * Music sources (./music-source.ts): every frame the music gets the playing moment's source, the source of the piece
+ * that still plays (a lead-in, or a moment's music back in the world after it) and, while neither plays, the nearest
+ * world source of a playable, allowed moment, so its music can start from afar before the moment (the lead-in).
  */
-import type { DragonState, EngineContext, System } from '../core/contracts';
+import type { AudioService, DragonState, EngineContext, System } from '../core/contracts';
+import { SOURCE_TUNING } from '../audio/music/moment-source';
+import type { MomentSourceAudio, MomentSourceFrame } from '../audio/music';
+import { hasWorldSource, MusicSourceResolver } from './music-source';
+import { momentAllowed } from './prefs';
+import type { Moment } from './types';
 import { UpdateOrder } from '../core/contracts';
 import { createMomentActor, type MomentActor } from './actors';
 import { AnchorFeed, ferryShortcut } from './anchors';
@@ -25,6 +34,8 @@ import { momentStartPose, MomentRunner, type MomentFrame, type MomentSink } from
 import type { MomentContext } from './triggers';
 import { SourcePromptController } from './source-prompt';
 import { MomentView } from './view';
+
+type SourceAudio = AudioService & Partial<MomentSourceAudio>;
 
 /** Seconds of running game after the ?moment= teleport before the forced moment starts (the camera settles). */
 const FORCE_DELAY_S = 2.5;
@@ -44,13 +55,28 @@ export function createMomentSystem(): System {
   /** Scene actors by moment id (created on first use, kept for reuse). */
   const actors = new Map<string, MomentActor>();
 
+  const musicSources = new MusicSourceResolver();
+  const sourceFrame: MomentSourceFrame = { current: null, focus: null, nearby: null };
+  /** Moments whose music has a world source (lead-in candidates), filtered per frame by playability and settings. */
+  let sourced: readonly Moment[] = [];
+  const leadCandidates: Moment[] = [];
+  const audioOf = (): SourceAudio | undefined => ctxRef?.services.tryGet('audio') as SourceAudio | undefined;
+
   const sink: MomentSink = {
     showLine: (_m, line) => view?.showLine(line),
     hideLine: (_m, how) => view?.hideLine(how === 'fade'),
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
     startMoment: (m, forced, anchorId) => {
-      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(true, m.content.musicId, { category: m.category, mood: m.content.musicMood });
+      const audio = audioOf();
+      if (audio?.updateMomentSources) {
+        // The music learns the moment's source first, so a lead-in piece of this moment carries on.
+        sourceFrame.current = musicSources.resolve(m, ctxRef?.services.tryGet('geo') ?? null, anchorFeed.points, anchorId);
+        sourceFrame.focus = null;
+        sourceFrame.nearby = null;
+        audio.updateMomentSources(sourceFrame);
+      }
+      audio?.setMomentMusic?.(true, m.content.musicId, { category: m.category, mood: m.content.musicMood });
       if (!ctxRef || !m.content.actorId) {
         return;
       }
@@ -71,6 +97,7 @@ export function createMomentSystem(): System {
     },
   };
   const runner = new MomentRunner(ALL_MOMENTS, sink);
+  sourced = runner.playable.filter(hasWorldSource);
   const sources = new SourcePromptController();
   const anchorFeed = new AnchorFeed();
   let forceAnchor: number | undefined;
@@ -132,6 +159,33 @@ export function createMomentSystem(): System {
       ctx.uiRoot.append(container);
     }
     view = new MomentView(zones, container);
+  }
+
+  /** Hands the music the sources it needs this frame (see the header). */
+  function updateMusicSources(ctx: EngineContext, dragon: DragonState | undefined): void {
+    const audio = ctx.services.tryGet('audio') as SourceAudio | undefined;
+    if (!audio?.updateMomentSources) {
+      return;
+    }
+    const geo = ctx.services.tryGet('geo') ?? null;
+    const anchors = frame.context?.anchors ?? anchorFeed.points;
+    const cur = runner.current;
+    sourceFrame.current = cur ? musicSources.resolve(cur, geo, anchors, runner.currentAnchor) : null;
+    const focus = audio.momentMusicFocus ?? null;
+    const focusMoment = focus && focus.momentId !== cur?.id ? ALL_MOMENTS.find((m) => m.id === focus.momentId) : undefined;
+    sourceFrame.focus = focusMoment ? musicSources.resolve(focusMoment, geo, anchors, focus?.anchorId) : null;
+    sourceFrame.nearby = null;
+    const p = dragon?.position;
+    if (!cur && !focus && !frame.racing && p && sourced.length > 0) {
+      leadCandidates.length = 0;
+      for (const m of sourced) {
+        if (momentAllowed(prefs, m.category)) {
+          leadCandidates.push(m);
+        }
+      }
+      sourceFrame.nearby = musicSources.nearest(leadCandidates, p, geo, anchors, SOURCE_TUNING.maxReach);
+    }
+    audio.updateMomentSources(sourceFrame);
   }
 
   function updateForced(ctx: EngineContext, dt: number): void {
@@ -219,6 +273,7 @@ export function createMomentSystem(): System {
       frame.prefs = prefs;
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
+      updateMusicSources(ctx, dragon);
       for (const actor of actors.values()) {
         if (actor.active) {
           actor.update(dt, ctx);
