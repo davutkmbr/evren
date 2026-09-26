@@ -813,11 +813,11 @@ export const SWIM_POSE = {
   /** End of a wing's power stroke after its catch (rad): the rig's SWIM_RIG.paddlePower share of the cycle. */
   paddlePowerPhase: 0.45 * Math.PI * 2,
   sprayCatch: 0.45,
-  sprayCatchOut: 0.13,
-  sprayCatchForward: 0.17,
+  sprayCatchOut: 0.26,
+  sprayCatchForward: 0.12,
   sprayLift: 0.3,
-  sprayLiftOut: 0.18,
-  sprayLiftForward: -0.07,
+  sprayLiftOut: 0.24,
+  sprayLiftForward: -0.12,
   sprayTail: 0.35,
   sprayTailBack: 0.85,
 } as const;
