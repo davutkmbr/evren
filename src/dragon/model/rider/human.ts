@@ -73,13 +73,15 @@ interface ClothSet {
   base: string;
   size: number;
   ao: boolean;
+  /** Ring mask (mail): the gaps between the rings are shaded dark and rough instead of cut out. */
+  opacity?: boolean;
 }
 const SETS: Record<string, ClothSet> = {
   velvet: { base: 'velour_velvet', size: 0.28, ao: true },
   linen: { base: 'rough_linen', size: 0.27, ao: true },
   leather: { base: 'brown_leather', size: 0.4, ao: true },
   satin: { base: 'crepe_satin', size: 0.27, ao: true },
-  mail: { base: 'chainmail002', size: 0.12, ao: false },
+  mail: { base: 'chainmail002', size: 0.12, ao: false, opacity: true },
   steel: { base: 'metal038', size: 0.35, ao: false },
 };
 
@@ -91,7 +93,7 @@ const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number;
   accent: { set: 'satin', sheen: 0.6, sheenRough: 0.25, rough: 0.45 },
   leather: { set: 'leather' },
   darkLeather: { set: 'leather', tint: 0.4 },
-  mail: { set: 'mail', metal: 1 },
+  mail: { set: 'mail', metal: 1, tint: 1.3 },
   // Worn steel (hammered, scratched, smudged) and the same scan tinted for the gilt fittings.
   iron: { set: 'steel', metal: 1, rough: 1 },
   metal: { set: 'steel', metal: 1, rough: 0.8 },
@@ -123,6 +125,8 @@ uniform sampler2D tGdAlb;
 uniform sampler2D tGdNor;
 uniform sampler2D tGdRough;
 uniform sampler2D tGdAO;
+uniform sampler2D tGdOpa;
+uniform float uGdHasOpa;
 uniform float uGdScale;
 uniform float uGdHasSet;
 uniform float uGdHasAO;
@@ -164,7 +168,6 @@ function garmentMaterial(src: THREE.MeshStandardMaterial, ao: boolean): THREE.Ma
     sheenRoughness: look.sheenRough ?? 0.5,
     sheenColor: src.color.clone().lerp(new THREE.Color(1, 1, 1), 0.35),
     side: THREE.DoubleSide,
-    alphaTest: id === 'mail' ? 0.4 : 0,
     vertexColors: ao,
   });
   m.name = src.name;
@@ -173,6 +176,8 @@ function garmentMaterial(src: THREE.MeshStandardMaterial, ao: boolean): THREE.Ma
     tGdNor: { value: set ? tex(`${set.base}_nor.jpg`, false) : null },
     tGdRough: { value: set ? tex(`${set.base}_rough.jpg`, false) : null },
     tGdAO: { value: set && set.ao ? tex(`${set.base}_ao.jpg`, false) : null },
+    tGdOpa: { value: set && set.opacity ? tex(`${set.base}_opacity.jpg`, false) : null },
+    uGdHasOpa: { value: set && set.opacity ? 1 : 0 },
     uGdScale: { value: set ? 1 / set.size : 1 },
     uGdHasSet: { value: set ? 1 : 0 },
     uGdHasAO: { value: set && set.ao ? 1 : 0 },
@@ -202,9 +207,11 @@ vec3 gdAlb = gdSample(tGdAlb).rgb;
 float gdLum = dot(gdAlb, vec3(0.299, 0.587, 0.114));
 diffuseColor.rgb *= clamp(gdLum / 0.35, 0.35, 1.8);
 float gdAO = uGdHasAO > 0.5 ? gdSample(tGdAO).r : 1.0;
-diffuseColor.rgb *= mix(0.55, 1.0, gdAO);`,
+diffuseColor.rgb *= mix(0.55, 1.0, gdAO);
+float gdOpa = uGdHasOpa > 0.5 ? gdSample(tGdOpa).r : 1.0;
+diffuseColor.rgb *= mix(0.4, 1.0, gdOpa);`,
       )
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= gdSample(tGdRough).g * 1.1 + 0.05;')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= gdSample(tGdRough).g * 1.1 + 0.05;\nroughnessFactor = mix(1.0, roughnessFactor, gdOpa);')
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>

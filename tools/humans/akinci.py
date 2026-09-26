@@ -10,7 +10,7 @@ import math
 import bpy
 from mathutils import Vector
 
-from garments import BODY, add_primitive, apply_all, bake_ao, bone_weights, cloth_settle, grow, material, pin_group, piping, region, skin, smooth_shade
+from garments import BODY, add_primitive, apply_all, bake_ao, bone_weights, cloth_settle, edge_rings, grow, material, pin_group, piping, region, skin, smooth_shade
 
 COL = {
     "primary": (0.24, 0.035, 0.03),
@@ -368,10 +368,42 @@ def build(rig, body, colliders):
     band = add_primitive("torus", "helmet_band", Vector((cx, cy, brow + 0.014)), major=1.0, minor=0.012, scale=(half_w * 1.1 + 0.014, half_d * 1.01 + 0.014, 0.9))
     mat(band, "metal", 0.35, 1.0)
     parts += [dome, finial, knob, band]
-    for sg in (1, -1):
-        cheek = add_primitive("sphere", "helmet_cheek", Vector((cx + sg * (half_w + 0.004), cy - half_d * 0.45, brow - 0.05)), scale=(0.004, 0.026, 0.042), rot=(math.radians(8), math.radians(-6 * sg), math.radians(-20 * sg)))
+    # Cheek plates (yanaklık): shaped on the sides of the face in front of the ears, from the band down to the jaw,
+    # the lower front edge cut on a slant; a gilt edge and three rivets along the top.
+    from mathutils.bvhtree import BVHTree
+    for sg, side in ((1, "L"), (-1, "R")):
+        def cheek_keep(co, w, i, sg=sg):
+            # The side of the face behind the eye: temple, cheek and jaw, in front of the ear.
+            # A generous patch of the side of the head; the trim planes below give the plate its clean outline.
+            lateral = co.x * sg - cx * sg
+            return (dominant(w) == "Head" and brow - 0.19 < co.z < brow + 0.01 and lateral > half_w * 0.4
+                    and cy - half_d * 0.75 < co.y < cy + half_d * 0.45)
+        cheek = region(body, f"helmet_cheek_{side}", cheek_keep)
+        hull_out(cheek, Vector((cx, cy, brow - 0.06)))  # a smooth plate over the ear, not its imprint
+        # The hull already clears the head and the ear: little smoothing, no push-out (it would bring the ear back).
+        grow(cheek, 0.009, 0.003, smooth=3, loose=6, subdiv=1, rim=False, keep_out=False,
+             trims=[
+                 (Vector((cx, cy - half_d * 0.56, brow)), Vector((0, -1, 0.12)).normalized()),  # front edge, behind the eye
+                 (Vector((cx, cy + half_d * 0.32, brow)), Vector((0, 1, 0))),  # back edge, over the ear and the aventail
+                 (Vector((cx, cy - half_d * 0.2, brow - 0.15)), Vector((0, -0.7, -1)).normalized()),  # slanted lower edge
+             ])
         mat(cheek, "iron", 0.35, 1.0)
         parts.append(cheek)
+        parts += pipe(cheek, 0.0025, "metal")
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(cheek.data)
+        bm.transform(cheek.matrix_world)
+        tree = BVHTree.FromBMesh(bm)
+        bm.free()
+        for n, fy in enumerate((0.44, 0.12, -0.2)):
+            origin = Vector((cx + sg * (half_w + 0.1), cy - half_d * fy, brow - 0.022))
+            hit = tree.ray_cast(origin, Vector((-sg, 0, 0)), 0.2)[0]
+            if hit is None:
+                continue
+            rv = add_primitive("sphere", f"helmet_rivet_{side}{n}", hit + Vector((sg * 0.001, 0, 0)), scale=(0.004, 0.004, 0.004), segments=12, rings=6)
+            mat(rv, "metal", 0.3, 1.0)
+            parts.append(rv)
     # Sorguç: a gilt socket on the front of the dome, a jewel, and three feathers curving up and back.
     front = Vector((cx, cy - half_d * 0.78, brow + 0.085))
     socket = add_primitive("cylinder", "sorguc_socket", front + Vector((0, 0, 0.02)), scale=(0.009, 0.009, 0.03), rot=(math.radians(-25), 0, 0), vertices=16)
@@ -398,41 +430,43 @@ def build(rig, body, colliders):
         mat(f, "feather", 0.9)
         parts.append(f)
 
-    # Mail curtain (aventail): continues the rim down over the nape and the sides of the neck, flaring a little.
-    import bmesh
-    bm = bmesh.new()
-    aseg = 40
-    arows = []
-    for dz, fl in [(0.0, 1.0), (-0.04, 1.02), (-0.08, 1.06), (-0.12, 1.12), (-0.15, 1.17)]:
-        row = []
+    # Mail curtain (aventail): hangs from the rim round the sides and the back of the head, draped by cloth simulation
+    # onto the neck and the tops of the shoulders, a leather binding along the hem.
+    aseg, arow, alen = 44, 16, 0.2
+    arings = []
+    for r in range(arow + 1):
+        t = r / arow
+        fl = 1.0 + 0.15 * t
+        ring = []
         for k in range(aseg + 1):
-            # From beside the right cheek (-X) round the back (+Y) to beside the left cheek (+X).
-            a_ = math.radians(200) - math.radians(220) * k / aseg
-            row.append(bm.verts.new((cx + math.cos(a_) * (half_w + 0.014) * fl, cy + math.sin(a_) * (half_d + 0.012) * fl, brow + 0.004 + dz)))
-        arows.append(row)
-    for r in range(len(arows) - 1):
-        for k in range(aseg):
-            bm.faces.new((arows[r][k], arows[r][k + 1], arows[r + 1][k + 1], arows[r + 1][k]))
-    me = bpy.data.meshes.new("aventail")
-    bm.to_mesh(me)
-    bm.free()
-    av = bpy.data.objects.new("aventail", me)
-    bpy.context.scene.collection.objects.link(av)
-    tex = bpy.data.textures.new("aventail_folds", "CLOUDS")
-    tex.noise_scale = 0.03
-    dp = av.modifiers.new("folds", "DISPLACE")
-    dp.texture = tex
-    dp.strength = 0.006
+            # From behind the right ear (-X) round the back (+Y) to behind the left ear (+X).
+            a_ = math.radians(165) - math.radians(150) * k / aseg  # behind the ears: the cheek plates guard the sides
+            ring.append(Vector((cx + math.cos(a_) * (half_w + 0.016) * fl, cy + math.sin(a_) * (half_d + 0.014) * fl, brow + 0.006 - alen * t)))
+        arings.append(ring)
+    av = lathe("aventail", [r_[:-1] for r_ in arings], aseg, keep_face=lambda i, k: k < aseg - 1)
+    # lathe() closes the ring; the open arc drops the wrap-around face (k == aseg - 1).
+    pin_group(av, "pin", lambda co: 1.0 if co.z > brow - 0.004 else 0.0)
+    cloth_settle(av, colliders, pin_group="pin", frames=30, mass=0.6, stiffness=3)
     sd = av.modifiers.new("subd", "SUBSURF")
     sd.levels = 1
     so = av.modifiers.new("thick", "SOLIDIFY")
     so.thickness = 0.004
+    so.use_rim = False
     apply_all(av)
     smooth_shade(av)
     mat(av, "mail", 0.45, 1.0)
     parts.append(av)
 
-    head_parts = [o for o in parts if o.name.startswith(("helmet", "sorguc", "aventail"))]
+    def aventail_weights(co):
+        # Rides with the head at the rim, half with the neck at the hem (it lies on the neck and shoulders).
+        t = min(1.0, max(0.0, (brow - co.z) / alen))
+        return {"Head": 1.0 - 0.6 * t, "Neck": 0.6 * t}
+    weights[av] = aventail_weights
+    for pp in pipe(av, 0.004, "leather"):
+        parts.append(pp)
+        weights[pp] = aventail_weights
+
+    head_parts = [o for o in parts if o.name.startswith(("helmet", "sorguc")) and o not in weights]
     for o in head_parts:
         weights[o] = lambda co: {"Head": 1.0}
     bake_ao(parts)
@@ -441,6 +475,43 @@ def build(rig, body, colliders):
     # After skinning: the garments take their weights from the full body (gloves from the fingers).
     hide_covered_body(body, garments)
     return parts
+
+
+def hull_out(obj, centre, passes=4):
+    """
+    Pushes every vertex outward (away from centre) onto the convex hull of the mesh: hollows and bumps such as an
+    ear are bridged by a smooth convex surface. Alternates with relaxing so vertices piled onto the hull (an ear's
+    folds) spread out again instead of leaving tangled triangles.
+    """
+    import bmesh
+    from mathutils.bvhtree import BVHTree
+    mw = obj.matrix_world
+    inv = mw.inverted()
+    bm = bmesh.new()
+    for v in obj.data.vertices:
+        bm.verts.new(mw @ v.co)
+    bmesh.ops.convex_hull(bm, input=bm.verts[:])
+    tree = BVHTree.FromBMesh(bm)
+    bm.free()
+
+    def project():
+        for v in obj.data.vertices:
+            p = mw @ v.co
+            d = (p - centre).normalized()
+            hit = tree.ray_cast(p + d * 0.0005, d, 0.1)[0]
+            if hit is not None:
+                v.co = inv @ hit
+        obj.data.update()
+
+    project()
+    edge_rings(obj, "hull_relax", 4)  # the outline stays where it is
+    for _ in range(passes):
+        sm = obj.modifiers.new("relax", "SMOOTH")
+        sm.factor = 0.8
+        sm.iterations = 8
+        sm.vertex_group = "hull_relax"
+        apply_all(obj)
+        project()
 
 
 def foot_shoe(body, top_z, sg):
