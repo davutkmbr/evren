@@ -179,6 +179,8 @@ export function boxFacades(
   h: number,
   lod: LodLevel,
   openingsFor: (side: 'front' | 'back' | 'left' | 'right', len: number) => Opening[],
+  /** Wall-local x ranges kept free of relief (buttresses standing against the wall). */
+  reliefClear?: (side: FacadeSide, len: number) => ReadonlyArray<readonly [number, number]>,
 ): void {
   const sides = facadeFrames(w, d);
   b.colBox(-w / 2, y0, -d / 2, w / 2, h + 0.1, d / 2);
@@ -187,7 +189,7 @@ export function boxFacades(
       const ops = openingsFor(s.side, s.len);
       wallPanel(b, s.len, y0, h, ops, { lod, seed: 101 + i * 31 });
       if (lod < 2) {
-        facadeRelief(b, s.len, y0, h, ops, lod);
+        facadeRelief(b, s.len, y0, h, ops, lod, reliefClear?.(s.side, s.len) ?? []);
       }
     });
   });
@@ -277,7 +279,15 @@ export function wallButtress(b: MeshBuilder, s: ButtressSpec, lod: LodLevel): vo
  * between window rows and shallow pilaster strips between the window bays, so a facade reads as built in courses
  * and bays instead of one flat sheet.
  */
-export function facadeRelief(b: MeshBuilder, len: number, y0: number, h: number, ops: readonly Opening[], lod: LodLevel): void {
+export function facadeRelief(
+  b: MeshBuilder,
+  len: number,
+  y0: number,
+  h: number,
+  ops: readonly Opening[],
+  lod: LodLevel,
+  clear: ReadonlyArray<readonly [number, number]> = [],
+): void {
   if (h - y0 < 4 || len < 4) {
     return;
   }
@@ -306,12 +316,18 @@ export function facadeRelief(b: MeshBuilder, len: number, y0: number, h: number,
     if (lod > 0) {
       return;
     }
-    // pilaster strips midway between neighbouring bays (never over an opening or its frame)
+    // pilaster strips midway between neighbouring bays (never over an opening or its frame); a gap much wider than a
+    // bay is where windows gave way to a buttress or a portal, and gets none
     const centres = [...new Set(ops.filter((o) => o.back !== 'door').map((o) => Math.round(((o.x0 + o.x1) / 2) * 20) / 20))].sort((p, q) => p - q);
+    const gaps = centres.slice(1).map((c, i) => c - centres[i]).sort((p, q) => p - q);
+    const bay = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
     const pw = 0.38;
     for (let i = 0; i < centres.length - 1; i++) {
+      if (centres[i + 1] - centres[i] > bay * 1.5) {
+        continue;
+      }
       const x = (centres[i] + centres[i + 1]) / 2;
-      if (boxes.some((q) => x + pw > q[0] && x - pw < q[1])) {
+      if (boxes.some((q) => x + pw > q[0] && x - pw < q[1]) || clear.some(([c0, c1]) => x + pw > c0 - 0.3 && x - pw < c1 + 0.3)) {
         continue;
       }
       b.with({ mat: Mat.Smooth }, () => b.box(x - pw, plinthTop, 0, x + pw, h - 0.35, 0.24, 'bn'));
@@ -362,11 +378,12 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
 
   // Plinth / terrace.
   b.with({ mat: Mat.Stone, ao: 0.85 }, () => {
-    b.box(-minW / 2 - 2, -9, zMin - 2, minW / 2 + 2, 0.3, zMax + 2, 'b');
+    // LOD0 lays paving on the terrace: the stone top would lie 1 cm under it and z-fight
+    b.box(-minW / 2 - 2, -9, zMin - 2, minW / 2 + 2, 0.3, zMax + 2, lod === 0 ? 'bt' : 'b');
   });
   if (lod === 0) {
     b.with({ mat: Mat.Paving, light: Light.Ground, lightBase: -2 }, () => {
-      b.quad([-minW / 2 - 2, 0.31, zMax + 2], [minW / 2 + 2, 0.31, zMax + 2], [minW / 2 + 2, 0.31, zMin - 2], [-minW / 2 - 2, 0.31, zMin - 2]);
+      b.quad([-minW / 2 - 2, 0.3, zMax + 2], [minW / 2 + 2, 0.3, zMax + 2], [minW / 2 + 2, 0.3, zMin - 2], [-minW / 2 - 2, 0.3, zMin - 2]);
     });
   }
 
@@ -435,7 +452,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
       return keep;
     }
     return ops;
-  });
+  }, (side, len) => butAt(side, len).map((x) => [x - butW / 2, x + butW / 2] as const));
   if (lod < 2 && archY !== undefined) {
     for (const [x, z, yaw, len] of [
       [-hall.w / 2, hall.d / 2, 0, hall.w],
@@ -463,7 +480,8 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     }
   }
   cornice(b, hall.w + (s.pilasters ?? 0) * 0.8, hall.d + (s.pilasters ?? 0) * 0.8, hall.h, s.cornice ?? Math.max(0.45, hall.h * 0.03), lod);
-  flatRoof(b, -hall.w / 2, -hall.d / 2, hall.w / 2, hall.d / 2, hall.h + 0.02);
+  // 6 cm over the wall top: the cornice's sloping top meets the wall at hall.h and z-fought with a roof 2 cm up
+  flatRoof(b, -hall.w / 2, -hall.d / 2, hall.w / 2, hall.d / 2, hall.h + 0.06);
 
   // Cubic dome base with tympana (when not every side carries a semi-dome).
   const semiSides: { x: number; z: number; yaw: number }[] = [];
@@ -514,7 +532,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
         }
       });
     }
-    flatRoof(b, -bw, -bw, bw, bw, drumBase + 0.02);
+    flatRoof(b, -bw, -bw, bw, bw, drumBase + 0.06);
     if (lod < 2) {
       b.sweep(rectPath(-bw, -bw, bw, bw), corniceProfile(0.5).map((v, k) => (k % 2 === 1 ? v + drumBase - 0.25 : v)));
     }
@@ -604,7 +622,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
       b.at(cx, 0, wz, 0, () => {
         boxFacades(b, wg.w, wg.d, 0.3, wh, lod, (side, len) => (side === 'left' && sx > 0) || (side === 'right' && sx < 0) ? [] : facadeOpenings(len, classicRows(wh, lod), 5, 1.5));
         cornice(b, wg.w, wg.d, wh, 0.4, lod);
-        flatRoof(b, -wg.w / 2, -wg.d / 2, wg.w / 2, wg.d / 2, wh + 0.02);
+        flatRoof(b, -wg.w / 2, -wg.d / 2, wg.w / 2, wg.d / 2, wh + 0.06);
         const dr = Math.min(wg.w, wg.d / wg.domes) * 0.4;
         for (let i = 0; i < wg.domes; i++) {
           const z = -wg.d / 2 + ((i + 0.5) / wg.domes) * wg.d;
@@ -631,7 +649,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     b.at(a.x, 0, a.z, 0, () => {
       boxFacades(b, a.w, a.d, 0.3, a.h, lod, (_side, len) => facadeOpenings(len, classicRows(a.h, lod, 0.9), 4.5, 1.2));
       cornice(b, a.w, a.d, a.h, 0.35, lod);
-      flatRoof(b, -a.w / 2, -a.d / 2, a.w / 2, a.d / 2, a.h + 0.02, a.domes ? 0 : 0.8);
+      flatRoof(b, -a.w / 2, -a.d / 2, a.w / 2, a.d / 2, a.h + 0.06, a.domes ? 0 : 0.8);
       if (a.domes) {
         const long = a.w > a.d;
         const n = a.domes;

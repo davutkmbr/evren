@@ -55,10 +55,12 @@ export function arcade(b: MeshBuilder, o: ArcadeOptions): void {
   }
   // Raised stylobate.
   b.with({ mat: Mat.Marble, light: Light.Ground, lightBase: base - 1, ao: 0.9 }, () => {
-    b.box(0, -1.5, -o.depth, o.len, floor, 0.35, 'bn');
+    // the paving below is the stylobate's top (a top face 1 cm under it z-fought); its ends stop 15 cm short, so a
+    // portico running into the courtyard's outer wall ends inside it instead of in the wall's outer face
+    b.box(0.15, -1.5, -o.depth, o.len - 0.15, floor, 0.35, 'bnt');
   });
   b.with({ mat: Mat.Paving, light: Light.Soffit, ao: 0.75 }, () => {
-    b.quad([0, floor + 0.01, 0.3], [o.len, floor + 0.01, 0.3], [o.len, floor + 0.01, -o.depth], [0, floor + 0.01, -o.depth]);
+    b.quad([0.15, floor, 0.35], [o.len - 0.15, floor, 0.35], [o.len - 0.15, floor, -o.depth], [0.15, floor, -o.depth]);
   });
   // Columns.
   const colSeg = o.lod === 0 ? 12 : 6;
@@ -78,7 +80,8 @@ export function arcade(b: MeshBuilder, o: ArcadeOptions): void {
         } else {
           b.lathe([colR * 0.92, top - capH, colR * 1.4, top], { seg: 4, facets: true, phase: Math.PI / 4 });
         }
-        b.box(-colR * 1.55, top, -t / 2, colR * 1.55, top + 0.2, t / 2, 'b');
+        // impost 3 cm proud of the arcade wall on both faces (flush, it z-fought with the spandrel wall)
+        b.box(-colR * 1.55, top, -t / 2 - 0.03, colR * 1.55, top + 0.2, t / 2 + 0.03, 'b');
       });
     });
   }
