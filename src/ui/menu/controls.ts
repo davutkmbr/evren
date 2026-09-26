@@ -133,7 +133,7 @@ export function settingRow(
 
 export function settingSection(title: string, rows: HTMLElement[], lede?: string): HTMLElement {
   return el('section', 'set-section', [
-    el('h3', 'ejd-caps set-heading', title),
+    el('h3', 'menu-heading', title),
     lede ? el('p', 'set-lede', lede) : null,
     el('div', 'set-rows', rows),
   ]);

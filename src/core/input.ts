@@ -104,28 +104,40 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'tricks' | 'dragon' | 'camera' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'tricks' | 'dragon' | 'camera' | 'game';
 
+/**
+ * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
+ * alternatives, "Ctrl + W" are held together, a trailing "×2" is a double tap; single letters, Space, Shift, Ctrl, Esc,
+ * "[", "]", "Sol tık" and "Sağ tık" light up on the keyboard and mouse drawing (extra words such as "bırak" are kept
+ * on the key cap).
+ */
 export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlGroup }> = [
   { keys: 'W / S', action: 'Burun aşağı / yukarı', group: 'flight' },
   { keys: 'A / D', action: 'Sola / sağa yatış', group: 'flight' },
-  { keys: 'Q / E', action: 'Sola / sağa dönüş (dümen)', group: 'flight' },
-  { keys: 'Space', action: 'Kanat çırp (tırmanış, hız)', group: 'flight' },
+  { keys: 'Q / E', action: 'Dümen: sola / sağa dön', group: 'flight' },
+  { keys: 'Space', action: 'Kanat çırp: tırman, hızlan', group: 'flight' },
   { keys: 'Ctrl / X', action: 'Fren, havada asılı kal', group: 'flight' },
   { keys: 'L', action: 'İniş / kalkış', group: 'flight' },
+  { keys: 'Ctrl / X', action: 'Yavaşla ve havada asılı kal', group: 'hover' },
+  { keys: 'Ctrl + W / S', action: 'Yavaşça ileri, geri', group: 'hover' },
+  { keys: 'A / D', action: 'Olduğun yerde dön', group: 'hover' },
+  { keys: 'Space / Shift', action: 'Yüksel / alçal', group: 'hover' },
+  { keys: 'W', action: 'Freni bırak, uçuşa geç', group: 'hover' },
+  { keys: 'L', action: 'Olduğun yere kon', group: 'hover' },
   { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
-  { keys: 'A / D çift dokun', action: 'Takla at (basılı tut: dönmeye devam et)', group: 'tricks' },
-  { keys: 'S çift dokun', action: 'Looping', group: 'tricks' },
+  { keys: 'A / D ×2', action: 'Takla at (basılı tut: dönmeye devam et)', group: 'tricks' },
+  { keys: 'S ×2', action: 'Looping', group: 'tricks' },
   { keys: 'F / Sol tık', action: 'Ateş püskür', group: 'dragon' },
   { keys: 'R', action: 'Kükre', group: 'dragon' },
-  { keys: 'G (basılı)', action: 'Ejderhayı sev', group: 'dragon' },
+  { keys: 'G', action: 'Ejderhayı sev (basılı tut)', group: 'dragon' },
   { keys: 'T', action: 'Eyerde ayağa kalk / otur', group: 'dragon' },
-  { keys: 'Fare', action: 'Etrafa bak (sağ tık basılı / POV)', group: 'camera' },
-  { keys: 'C', action: 'Kamera: üçüncü şahıs / POV / sinematik', group: 'camera' },
+  { keys: 'Sağ tık', action: 'Etrafa bak (basılı tut)', group: 'camera' },
+  { keys: 'C', action: 'Kamera: 3. şahıs, binici, sinematik', group: 'camera' },
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
-  { keys: '[ / ]', action: 'Günün saatini değiştir', group: 'camera' },
+  { keys: '[ / ]', action: 'Saati yarım saat geri / ileri', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
   { keys: '1–5', action: 'Hotbar: yetenek / eşya kullan', group: 'game' },
   { keys: 'Y', action: 'Halka yarışı: parkur seç, parkur editörü (yarışta: iptal et, editörde: çık)', group: 'game' },
