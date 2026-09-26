@@ -3,7 +3,9 @@ import { createImpulseResponse } from './dsp/impulse';
 
 /**
  * Master mix:
- *   sfx / wind / ambience / reverb-return -> mix -> subsonic HP (24 Hz, 4th order) -> pause duck (gain + LP) -> pre
+ *   sfx / wind / ambience / reverb-return -> air -> underwater muffle (LP, open above water) -> mix
+ *   underwater (sounds in the water with the listener: bubbles, the water bed) --------------> mix
+ *   mix -> subsonic HP (24 Hz, 4th order) -> pause duck (gain + LP) -> pre
  *   ui ----------------------------------------------------------------------------------------------------> pre
  *   pre (input trim) -> glue compressor (2:1 from -22 dBFS) + makeup -> limiter (safety net, -2 dBFS) -> soft clipper
  *   -> master volume -> destination
@@ -18,6 +20,8 @@ export interface MasterBus {
   readonly ambience: GainNode;
   /** UI sounds: dry, never ducked by pause. */
   readonly ui: GainNode;
+  /** Sounds in the water with an under-water listener (bubbles, the water bed): not muffled. */
+  readonly underwater: GainNode;
   /** Reverb input shared by every voice's send. */
   readonly reverbSend: GainNode;
   /** The signal entering the dynamics stage (measurement tap for the offline analysis). */
@@ -26,6 +30,8 @@ export interface MasterBus {
   setVolume(volume: number, now: number): void;
   /** 0 = normal, 1 = fully ducked (paused): quieter and muffled. */
   setDuck(amount: number, now: number): void;
+  /** 0 = listener above water, 1 = under water: everything from the air is low-passed and a little quieter. */
+  setUnderwater(amount: number, now: number): void;
   /** Reverb return level (open sky at altitude has almost nothing to reflect from). */
   setReverbLevel(level: number, now: number): void;
   /** Disconnecting the convolver input lets it go idle (saves audio-thread CPU on low-end devices). */
@@ -43,6 +49,9 @@ export interface GainReduction {
 const DUCK_GAIN = 0.28;
 const REVERB_RETURN = 0.55;
 const DUCK_CUTOFF = 900;
+/** Under water: cutoff (Hz) and level of the sounds from the air (the listener's ears in the water). */
+const UNDERWATER_CUTOFF = 380;
+const UNDERWATER_AIR_GAIN = 0.55;
 /** 4th-order Butterworth high-pass as two biquads (Q of the pole pairs). */
 const SUBSONIC_HZ = 24;
 const BUTTERWORTH4_Q = [0.5412, 1.3066] as const;
@@ -73,6 +82,8 @@ export function createMasterBus(ctx: BaseAudioContext, destination: AudioNode = 
   const wind = gain(1);
   const ambience = gain(1);
   const ui = gain(1);
+  const underwater = gain(1);
+  const air = gain(1);
   const mix = gain(1);
   const reverbSend = gain(1);
   const reverbReturn = gain(REVERB_RETURN);
@@ -84,12 +95,19 @@ export function createMasterBus(ctx: BaseAudioContext, destination: AudioNode = 
   const convolver = ctx.createConvolver();
   convolver.normalize = false;
   convolver.buffer = impulse ?? createImpulseResponse(ctx);
-  reverbSend.connect(reverbHp).connect(convolver).connect(reverbReturn).connect(mix);
+  reverbSend.connect(reverbHp).connect(convolver).connect(reverbReturn).connect(air);
   let reverbEnabled = true;
 
-  sfx.connect(mix);
-  wind.connect(mix);
-  ambience.connect(mix);
+  sfx.connect(air);
+  wind.connect(air);
+  ambience.connect(air);
+  const nyquistHz = ctx.sampleRate / 2;
+  const waterFilter = ctx.createBiquadFilter();
+  waterFilter.type = 'lowpass';
+  waterFilter.Q.value = 0.6;
+  waterFilter.frequency.value = nyquistHz;
+  air.connect(waterFilter).connect(mix);
+  underwater.connect(mix);
 
   const subsonic = BUTTERWORTH4_Q.map((q) => {
     const f = ctx.createBiquadFilter();
@@ -134,13 +152,14 @@ export function createMasterBus(ctx: BaseAudioContext, destination: AudioNode = 
   ui.connect(pre);
   pre.connect(glue).connect(glueTrim).connect(limiter).connect(limiterTrim).connect(clipper).connect(volume).connect(destination);
 
-  const all: AudioNode[] = [sfx, wind, ambience, ui, mix, reverbSend, reverbReturn, reverbHp, convolver, ...subsonic, duck, duckFilter, pre, glue, glueTrim, limiter, limiterTrim, clipper, volume];
+  const all: AudioNode[] = [sfx, wind, ambience, ui, underwater, air, waterFilter, mix, reverbSend, reverbReturn, reverbHp, convolver, ...subsonic, duck, duckFilter, pre, glue, glueTrim, limiter, limiterTrim, clipper, volume];
 
   return {
     sfx,
     wind,
     ambience,
     ui,
+    underwater,
     reverbSend,
     preDynamics: pre,
     output: volume,
@@ -153,6 +172,13 @@ export function createMasterBus(ctx: BaseAudioContext, destination: AudioNode = 
       const a = Number.isFinite(amount) ? Math.max(0, Math.min(1, amount)) : 0;
       duck.gain.setTargetAtTime(1 + (DUCK_GAIN - 1) * a, now, 0.12);
       duckFilter.frequency.setTargetAtTime(a > 0.01 ? DUCK_CUTOFF + (nyquist - DUCK_CUTOFF) * Math.pow(1 - a, 3) : nyquist, now, 0.12);
+    },
+    setUnderwater(amount: number, now: number): void {
+      const a = Number.isFinite(amount) ? Math.max(0, Math.min(1, amount)) : 0;
+      // Exponential sweep: the cutoff falls fast at first, like ears going under.
+      const cutoff = a > 0.001 ? nyquistHz * Math.pow(UNDERWATER_CUTOFF / nyquistHz, Math.pow(a, 0.5)) : nyquistHz;
+      waterFilter.frequency.setTargetAtTime(cutoff, now, 0.05);
+      air.gain.setTargetAtTime(1 + (UNDERWATER_AIR_GAIN - 1) * a, now, 0.08);
     },
     setReverbEnabled(enabled: boolean): void {
       if (enabled === reverbEnabled) {

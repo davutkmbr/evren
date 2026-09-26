@@ -236,10 +236,16 @@ export class CameraSystem implements System, CameraRigHost {
     } else if (this.active !== this.requested) {
       this.switchTo(this.requested);
     }
+    // Under water (phase 21 stage 4) every camera may follow the dragon below the surface; afterwards the allowance
+    // shrinks from the eye's own depth so the camera comes out smoothly.
+    this.collision.updateSubmerge(this.tracker.mode === 'underwater', this.lastPose.position, frame.dt);
     if (this.snapPending) {
       this.snapPending = false;
       this.blend.cancel();
       this.shaker.reset();
+      if (this.tracker.mode !== 'underwater') {
+        this.collision.submerge = 0;
+      }
       this.controllers[this.active].reset(frame);
     }
 

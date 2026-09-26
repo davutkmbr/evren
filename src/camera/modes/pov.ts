@@ -184,9 +184,9 @@ export class PovController implements CameraController {
     _eye.applyQuaternion(this.relRotSmooth);
     _local.add(_eye);
     out.position.copy(_local).applyQuaternion(t.quaternion).add(t.position);
-    // Never dip the eye below the water surface.
-    if (out.position.y < 0.3 && frame.collision.groundHeight(out.position.x, out.position.z) <= 0) {
-      out.position.y = 0.3;
+    // Never dip the eye below the waves, except while the dragon is under water (then down to the seabed).
+    if (frame.collision.groundHeight(out.position.x, out.position.z) <= 0) {
+      out.position.y = Math.max(out.position.y, frame.collision.floorHeight(out.position.x, out.position.z, 0.3));
     }
 
     // Neutral look: replace the rig head's static pitch with "a little below the flight path"; the head's
