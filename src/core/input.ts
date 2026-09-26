@@ -104,7 +104,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'hover' | 'tricks' | 'dragon' | 'camera' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'game';
 
 /**
  * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
@@ -118,13 +118,20 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Q / E', action: 'Dümen: sola / sağa dön', group: 'flight' },
   { keys: 'Space', action: 'Kanat çırp: tırman, hızlan', group: 'flight' },
   { keys: 'Ctrl / X', action: 'Fren, havada asılı kal', group: 'flight' },
-  { keys: 'L', action: 'İniş / kalkış', group: 'flight' },
+  { keys: 'L', action: 'İniş / kalkış (hızlı ve alçakken: koşarak iniş)', group: 'flight' },
   { keys: 'Ctrl / X', action: 'Yavaşla ve havada asılı kal', group: 'hover' },
   { keys: 'Ctrl + W / S', action: 'Yavaşça ileri, geri', group: 'hover' },
   { keys: 'A / D', action: 'Olduğun yerde dön', group: 'hover' },
   { keys: 'Space / Shift', action: 'Yüksel / alçal', group: 'hover' },
   { keys: 'W', action: 'Freni bırak, uçuşa geç', group: 'hover' },
   { keys: 'L', action: 'Olduğun yere kon', group: 'hover' },
+  { keys: 'W / S', action: 'İleri yürü / geri git', group: 'ground' },
+  { keys: 'Shift + W', action: 'Koş', group: 'ground' },
+  { keys: 'A / D', action: 'Dön', group: 'ground' },
+  { keys: 'Space / L', action: 'Sıçrayarak kalk (çatı kenarında: boşluğa atıl)', group: 'ground' },
+  { keys: 'V', action: 'Dörtnala koşup kalk', group: 'ground' },
+  { keys: 'Ctrl / X', action: 'Koşarak inerken: fren yap, kayarak dur', group: 'ground' },
+  { keys: 'Space', action: 'Koşarak inerken: dokun-kalk, hızını koruyarak uçuşa dön', group: 'ground' },
   { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },

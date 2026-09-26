@@ -17,6 +17,7 @@ import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
 import { AmbienceVoice, emptyProbe, type AmbienceProbe } from './voices/ambience';
 import { CreatureVoice } from './voices/creature';
+import { SkidVoice } from './voices/skid';
 import { FireVoice } from './voices/fire';
 import { RainVoice } from './voices/rain';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
@@ -49,6 +50,10 @@ export interface DragonAudioState {
   grounded: boolean;
   /** 0..1 exertion (rig pose `breath`). */
   exertion: number;
+  /** 0..1 braking skid of a run-out (rig pose `skid`). */
+  skid: number;
+  /** Ground speed (m/s). */
+  groundSpeed: number;
 }
 
 /** Everything the audio engine needs for one frame. Filled in place by the system glue (no allocations). */
@@ -96,6 +101,8 @@ export function createAudioFrame(): AudioFrame {
       skim: 0,
       grounded: false,
       exertion: 0.2,
+      skid: 0,
+      groundSpeed: 0,
     },
     ambientWind: 4,
     rain: 0,
@@ -119,6 +126,7 @@ export const MIX = {
   discover: 0.95,
   breath: 0.5,
   step: 1.0,
+  skid: 0.9,
   /** Airflow bed: players found it too loud and harsh at 1.0 (Sep 2026); the hiss and whistle were cut too. */
   wind: 0.55,
   ambience: 1.0,
@@ -216,6 +224,7 @@ export class AudioEngine {
   readonly fire: FireVoice;
   readonly ambience: AmbienceVoice;
   readonly creature: CreatureVoice;
+  readonly skid: SkidVoice;
   readonly rain: RainVoice;
   readonly samples: SampleBank | null;
 
@@ -247,6 +256,7 @@ export class AudioEngine {
   private readonly place: Placement = placement();
   private readonly firePlace: Placement = placement();
   private readonly breathPlace: Placement = placement();
+  private readonly skidPlace: Placement = placement();
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
   private pov = 0;
@@ -278,6 +288,7 @@ export class AudioEngine {
     this.fire = new FireVoice(ctx, this.noise, rng, this.bus.sfx, this.bus.reverbSend, this.stats);
     this.ambience = new AmbienceVoice(ctx, this.noise, this.amb, this.bus.ambience, (rng() * 1e6) | 0);
     this.creature = new CreatureVoice(ctx, this.noise, this.bus.sfx, (rng() * 1e6) | 0);
+    this.skid = new SkidVoice(ctx, this.noise, this.bus.sfx, (rng() * 1e6) | 0);
     this.rain = new RainVoice(ctx, this.noise, this.bus.ambience, rng, this.samples);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
@@ -342,6 +353,8 @@ export class AudioEngine {
 
     const bp = placeSource(frame.listener, d.mouth, this.mouthOpts, this.breathPlace);
     this.creature.update(d.present && d.grounded && !this.fire.active && now > this.roarUntil, clamp01(d.exertion), bp.gain * MIX.breath, bp.pan, bp.cutoff, now);
+    const sp = placeSource(frame.listener, d.position, WORLD_POINT, this.skidPlace);
+    this.skid.update(d.present && d.grounded && !this.paused ? d.skid : 0, d.groundSpeed, sp.gain * MIX.skid, sp.pan, sp.cutoff, now);
 
     const roarDuck = now < this.roarUntil ? 1 : 0;
     const fireDuck = this.fire.active ? 1 : 0;
@@ -572,6 +585,7 @@ export class AudioEngine {
     this.fire.dispose();
     this.ambience.dispose();
     this.creature.dispose();
+    this.skid.dispose();
     this.rain.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();

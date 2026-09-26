@@ -260,6 +260,27 @@ export const CASES: RenderCase[] = [
       }
     },
   },
+  {
+    id: 'runout-skid',
+    label: 'Koşarak iniş: dörtnala yavaşlama, sonra frenle kayarak durma',
+    seconds: 5,
+    measure: 'integrated',
+    target: [-30, -20],
+    step: (t, p, f, e) => {
+      f.dragon.airspeed = 0;
+      f.dragon.grounded = true;
+      f.dragon.exertion = 0.8;
+      // 20 m/s run-out: 1.2 s of gallop footfalls, then Ctrl down (skid 0 → 1 in 0.25 s) until it stops at ~4.5 s.
+      const speed = t < 1.2 ? 20 - 3.2 * t : Math.max(0, 16.2 - 7.5 * (t - 1.2));
+      f.dragon.groundSpeed = speed;
+      f.dragon.skid = t < 1.2 ? 0 : Math.min(1, (t - 1.2) / 0.25) * (speed > 3 ? 1 : speed / 3);
+      for (let k = 0; k < 6; k++) {
+        if (crossed(t, p, 0.1 + k * 0.2)) {
+          e.step(k % 2 === 0 ? 1.1 : 0.85, k % 2 === 0 ? -1 : 1);
+        }
+      }
+    },
+  },
   oneShot('ui-click', 'Arayüz tık', 0.6, [-40, -32], 'third', (t, p, e) => {
     for (const at of [0.05, 0.25, 0.45]) {
       if (crossed(t, p, at)) {

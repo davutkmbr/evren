@@ -6,6 +6,7 @@ import type { RigSkeleton } from '../skeleton';
 import { aimBone, aimBoneUp, damp, rigTransform, setEuler, solveTwoBone, Spring } from './kinematics';
 import { RiderAnimator, type SurfaceAnchor } from './rider-pose';
 import { computeWingAngles, createWingAngles, strokeLoad, strokePhase, type Angles, type WingAngles } from './wing-pose';
+import { footfallOffsets } from '../../../core/gait';
 
 interface WingBones {
   humerus: THREE.Bone;
@@ -92,10 +93,6 @@ const REACH_FORWARD = 0.6;
 const REACH_BACK = 0.75;
 /** Hind feet braced forward in a braking skid (m). */
 const SKID_BRACE = 0.7;
-/** Footfall phase offsets (fraction of a cycle) of LH, RH, LF, RF for a walk, a trot and a gallop. */
-const FOOTFALL_WALK = [0, 0.5, 0.25, 0.75];
-const FOOTFALL_TROT = [0, 0.5, 0.5, 1.0];
-const FOOTFALL_GALLOP = [0, 0.12, 0.55, 0.67];
 /** Wrist of a raised wing lifting off the ground, relative to the shoulder (rig, right side). */
 const RAISED_WRIST = [2.2, 2.6, 0.9];
 /** Tail pitch limits (total curl, rad): up to lift it clear of the ground, down to droop. */
@@ -686,10 +683,7 @@ export class DragonAnimator {
     }
     this.gait = THREE.MathUtils.clamp(pose.gait ?? 0, 0, 2);
     this.stride = Math.max(0, pose.stride ?? DEFAULT_STRIDE);
-    const g = this.gait;
-    for (let i = 0; i < 4; i++) {
-      this.footfall[i] = g <= 1 ? THREE.MathUtils.lerp(FOOTFALL_WALK[i], FOOTFALL_TROT[i], g) : THREE.MathUtils.lerp(FOOTFALL_TROT[i], FOOTFALL_GALLOP[i], g - 1);
-    }
+    footfallOffsets(this.gait, this.footfall);
     this.foreGround = THREE.MathUtils.clamp(pose.foreGround ?? 1, 0, 1);
     this.wingRaise = THREE.MathUtils.clamp(pose.wingRaise ?? 0, 0, 1);
     this.heelLift = THREE.MathUtils.clamp(pose.heelLift ?? 0, 0, 1);
