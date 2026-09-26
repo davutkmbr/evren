@@ -11,11 +11,14 @@
  * - 'line': the anchor polyline as capsules. `body` = half the modelled body width plus a clearance: any building
  *   touching it is dropped (the landmark never passes through a building); `corridor` = footprintWidth, kept free of
  *   synthetic infill parcels only.
- * - 'none' (bridges) and kind 'walls' (the city walls system owns its buildings, walls/system/owned.ts): no claim.
+ * - 'none' (bridges): no ground claim; their solid volumes (deck pieces, towers, piers, anchorages, baked by
+ *   `npm run bake:structures`, structure-volumes.ts) ride along as `structures`, tested with each object's height.
+ * - kind 'walls' (the city walls system owns its buildings, walls/system/owned.ts): no claim.
  */
 import type { GeoQuery, LandmarkDef } from '../../core/contracts';
 import { SITE_BUILDERS } from './heritage/build/registry';
 import type { LandmarkClaims } from './claim-shapes';
+import { structureBoxes } from './structure-volumes';
 
 export { LINE_STRIDE, onLineBody, ringTouchesLineBody, type LandmarkClaims } from './claim-shapes';
 
@@ -66,6 +69,6 @@ export function landmarkClaims(geo: Pick<GeoQuery, 'landmarks' | 'smallMosqueSit
   for (const m of geo.smallMosqueSites) {
     pads.push(m.x, m.z, m.radius);
   }
-  return { pads: new Float32Array(pads), lines: new Float32Array(lines) };
+  return { pads: new Float32Array(pads), lines: new Float32Array(lines), structures: structureBoxes() };
 }
 

@@ -11,6 +11,7 @@ import type { OsmBuilding } from '../../../src/world/osm/data';
 import { pointInRing, ringArea } from '../../../src/world/osm/shared/geometry';
 import { cleanRing } from '../../../src/world/osm/buildings/footprint';
 import { onLandmarkClaim } from '../../../src/world/osm/buildings/selection';
+import { structureBlocks } from '../../../src/world/osm/buildings/build';
 import type { LandmarkClaims } from '../../../src/world/landmarks/claim-shapes';
 import { DISTRICTS, GENERIC, PROFILES } from '../districts';
 import { readLandingSpot } from '../lib/areas.mjs';
@@ -226,6 +227,10 @@ export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: str
   }
   if (landmarkClaims && b.ring && onLandmarkClaim(landmarkClaims, cleanRing(b.ring))) {
     return 'pad';
+  }
+  // A building that would enter a bridge (its towers, piers or a low deck): the game's bridge model shows there.
+  if (landmarkClaims && b.ring && structureBlocks(landmarkClaims, b as OsmBuilding)) {
+    return 'bridge';
   }
   return null;
 }

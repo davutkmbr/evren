@@ -42,6 +42,7 @@
     "check:map": "tsx tools/headless/map-consistency-check.ts",
     "audit:city": "tsx scripts/data/osm-city-audit.ts",
     "bake:city": "tsx scripts/data/osm-city-bake.ts",
+    "bake:structures": "tsx scripts/data/structure-volumes.ts",
     "blender": "node scripts/blender-run.mjs"
   },
   "dependencies": {
