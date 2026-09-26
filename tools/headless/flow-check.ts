@@ -13,8 +13,8 @@
  *    scales are exactly 1 without flow; at full flow the drag is 8 % lower, the top cruise ~5 m/s higher, a glide still
  *    loses energy, the power stroke surges harder.
  * 3. Chains through the real sim (key gestures): Split-S → dart → power stroke, wingover → power stroke, skim →
- *    touch-and-go, loop → Immelmann → dive → dart, dart → power → slip → roll → power; chained harmony and flow above
- *    the same moves spaced out by steady flight, and not below them when started off the beat.
+ *    landing → run-out → touch-and-go, loop → Immelmann → dive → dart, dart → power → slip → roll → power: chained
+ *    harmony and flow above the same moves spaced out by steady flight; a move started on the beat vs off it.
  * 4. Fuzz: random gestures with random timing. (a) no repeated pattern dominates (every macro repeated back to back
  *    stays low, no macro brings most of a run's flow), (b) no full flow without energy-efficient flying, (c) no free
  *    energy (the muscle-free energy never rises without contact, also with full flow forced), (d) no NaN.
@@ -359,8 +359,8 @@ function chains(): void {
         p.tap('Space', t + 0.6);
       }
     });
-    // The landing chain: the run-out and the touch-and-go.
-    const ts = sim.flow.log.filter((l) => l.motion.id === 'touchgo' || l.motion.id === 'runout');
+    // The landing chain: the approach, the run-out and the touch-and-go.
+    const ts = sim.flow.log.filter((l) => l.motion.id === 'land' || l.motion.id === 'touchgo' || l.motion.id === 'runout');
     const h = ts.length ? ts.reduce((a, l) => a + l.terms.total, 0) / ts.length : NaN;
     return { h: ts.some((l) => l.motion.id === 'touchgo') ? h : NaN, id: ts.length ? 'touchgo' : null, flow: sim.flow.value };
   };
@@ -407,8 +407,8 @@ function chains(): void {
   note('chain.skimTouchGo.flowChained', tgSkim.flow);
   note('chain.skimTouchGo.flowPlain', tgPlain.flow);
   check(
-    Number.isFinite(tgSkim.h) && Number.isFinite(tgPlain.h) && tgSkim.h > tgPlain.h + 0.05,
-    `skim → run-out → touch-and-go: H ${f2(tgSkim.h)}, flow ${f3(tgSkim.flow)} vs from a plain approach H ${f2(tgPlain.h)}, flow ${f3(tgPlain.flow)}`,
+    Number.isFinite(tgSkim.h) && Number.isFinite(tgPlain.h) && tgSkim.h > tgPlain.h + 0.05 && tgSkim.flow > tgPlain.flow,
+    `skim → landing → run-out → touch-and-go: H ${f2(tgSkim.h)}, flow ${f3(tgSkim.flow)} vs from a plain approach H ${f2(tgPlain.h)}, flow ${f3(tgPlain.flow)}`,
   );
 }
 
