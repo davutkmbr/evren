@@ -80,8 +80,8 @@ export class VegetationSystem implements System {
     this.near = new NearPools(a);
     this.root.add(this.near.group);
     this.pools = [
-      new ImpostorPool('veg-impostors-near', a.quad, a.impostors.near, a.impostors.depth, 128),
-      new ImpostorPool('veg-impostors-far', a.quad, a.impostors.far, null, 512),
+      new ImpostorPool('veg-impostors-near', a.quad, a.impostors.near, a.impostors.depth, 8192 / CHUNK),
+      new ImpostorPool('veg-impostors-far', a.quad, a.impostors.far, null, 32768 / CHUNK),
     ];
     for (const p of this.pools) {
       this.root.add(p.mesh);
