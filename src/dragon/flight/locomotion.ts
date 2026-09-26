@@ -314,7 +314,11 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     : SWIM_POSE.strokeIdle + (SWIM_POSE.strokePaddle - SWIM_POSE.strokeIdle) * smoothstep(0, SWIM.paddleSpeed, speed) + (SWIM_POSE.strokeFast - SWIM_POSE.strokePaddle) * fastK;
   sim.swimStroke += (strokeTarget - sim.swimStroke) * (1 - Math.exp(-h * SWIM_POSE.strokeRate));
   sim.swimFreq = freq;
+  const prevPhase = sim.swimPhase;
   sim.swimPhase = (sim.swimPhase + TWO_PI * freq * h) % TWO_PI;
+  if (!running) {
+    paddleSpray(sim, prevPhase, sim.swimPhase, fx, fz, fastK);
+  }
   sim.walkAmount = 0;
   // No splash events while swimming: the stroke's water sounds (the wing paddles, the lapping along the flanks) are the
   // audio system's, driven from the pose.
@@ -345,4 +349,45 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     relaxWings(sim, 0, 0.3, h);
   }
   fillLocomotionTelemetry(sim);
+}
+
+/** True when the phase stepped across `at` (radians, both in [0, 2pi)), including across the wrap. */
+function crossed(prev: number, cur: number, at: number): boolean {
+  return prev <= cur ? prev < at && cur >= at : prev < at || cur >= at;
+}
+
+/**
+ * Visible water from the swimming stroke (the sounds are the audio's): each wing's catch throws a spray where the hand
+ * enters beside the shoulder, the lift-out at the end of its power stroke sheds a trail of drops behind it, and the
+ * tail churns the water at each reversal of a fast swim. The phase conventions are the rig's: the left catch at 0, the
+ * right at pi, the power stroke ending SWIM_POSE.paddlePowerPhase later.
+ */
+function paddleSpray(sim: FlightSim, prev: number, cur: number, fx: number, fz: number, fastK: number): void {
+  const k = sim.swimStroke;
+  if (k < SWIM_POSE.sprayMinStroke) {
+    return;
+  }
+  const L = sim.rigLength;
+  const p = sim.body.position;
+  const at = (side: number, lateral: number, forward: number, strength: number): void => {
+    // right = (-fz, fx) in the ground plane (fx, fz = forward).
+    const x = p.x + fx * forward * L - fz * lateral * L * side;
+    const z = p.z + fz * forward * L + fx * lateral * L * side;
+    sim.emit({ type: 'spray', point: new THREE.Vector3(x, sim.waterHeight(x, z), z), strength });
+  };
+  const power = SWIM_POSE.paddlePowerPhase;
+  for (const [side, catchAt] of [
+    [-1, 0],
+    [1, Math.PI],
+  ] as const) {
+    if (crossed(prev, cur, catchAt)) {
+      at(side, SWIM_POSE.sprayCatchOut, SWIM_POSE.sprayCatchForward, SWIM_POSE.sprayCatch * k);
+    }
+    if (crossed(prev, cur, (catchAt + power) % TWO_PI)) {
+      at(side, SWIM_POSE.sprayLiftOut, SWIM_POSE.sprayLiftForward, SWIM_POSE.sprayLift * k);
+    }
+  }
+  if (fastK > 0.2 && (crossed(prev, cur, Math.PI / 2) || crossed(prev, cur, 1.5 * Math.PI))) {
+    at(0, 0, -SWIM_POSE.sprayTailBack, SWIM_POSE.sprayTail * fastK);
+  }
 }
