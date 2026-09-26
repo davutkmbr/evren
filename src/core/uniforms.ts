@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SHARED_GLSL } from '../render/shaders';
+import { registerAtmosphereGlobals } from '../render/sky/globals';
 import { FADE_SLOTS, STREET_DITHER_GLSL } from '../street/fade';
 
 /** Fade table of the street tiles (see street/fade.ts) until the street layer sets its own: every slot fully in. */
@@ -186,3 +187,8 @@ ${streetHoleTest}
 #endif
 `;
 }
+
+// SHARED_GLSL declares the sky's atmosphere and cloud-shadow uniforms (render/sky/globals.ts registers them while the
+// shader chunks load). When this module is the first of that import cycle, the chunks load before `globalUniforms`
+// exists and the registration has to wait: finish it here, synchronously, so no program can compile without them.
+registerAtmosphereGlobals();
