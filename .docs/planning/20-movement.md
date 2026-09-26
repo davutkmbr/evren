@@ -385,7 +385,19 @@ manoeuvring) takes part without registering anything.
   (`audio/analysis/scenarios.ts`): −27.6 LUFS momentary (target −31..−25; the discovery chime −21.7, the cruise wind
   bed ~−28), the four figures within 2 dB of each other; case `chain-links` (the burst rush and the rising link tone):
   −27.2 LUFS (target −28..−18).
-- **Not yet:** the rider's reaction to high flow, tuning in the game (feel test). The balance numbers move with any
+- **Rider reaction to high flow** (added 26 Sep, owner request): the rider shows the flow with body language only,
+  from the existing cues (`RIDER_FLOW` in `flight/pose.ts`, fed by `sim.flow`):
+  - **crouch into the speed:** from flow 0.7 the rider goes lower on the neck, up to tuck 0.4 at flow 1 while a chain
+    is open; a burst's surge adds up to 0.3 more at its peak. Outside a chain the crouch stays at most 0.15, under
+    the 0.2 at which standing (T) and petting (G) give way (`rider-behavior.ts`), so calm high-flow gliding keeps them;
+  - **a fist pumped** (the trick cheer) at chain link 3 and every second link after it (3, 5, 7 …), at most once per
+    2.5 s;
+  - **a short laugh** (the bond laugh, 1.1 s) on each "Kusursuz" moment; the bond core's laugh and this one combine
+    (`bondPose` takes the larger).
+
+  Not while falling, under water or on the ground; a flow reset (a new race, a respawn) starts nothing. Check:
+  `flow-check.ts` section 6 (the crouch with and without a chain, the surge, the cheer by link, the laugh, the reset).
+- **Not yet:** tuning in the game (feel test). The balance numbers move with any
   flight-model change: rerun `race-balance.ts` after one.
 
 ### Urge removed (owner decision 26 Sep)
