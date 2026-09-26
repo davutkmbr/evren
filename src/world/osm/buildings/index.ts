@@ -16,6 +16,8 @@ import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { isWallOwned } from '../../landmarks/walls/system/owned';
 import { Poi } from './build';
+import { landmarkPadsOf } from './selection';
+import { streetAreaRects } from '../street-areas';
 import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
 import { type BuildingMaterials, createBuildingMaterials } from './materials';
@@ -39,15 +41,13 @@ export function poiTriples(points: readonly OsmPoint[]): Float32Array {
   return new Float32Array(out);
 }
 
-/** Modelled landmarks (and neighbourhood mosques) whose footprint OSM buildings must leave free; bridges and walls are linear and excluded. */
+/**
+ * Modelled landmarks (selection.ts landmarkPadsOf, the pads the street tiles leave to the game's models too) and
+ * neighbourhood mosques (none inside the OSM rects, geo BuildInput.siteExclusion) whose footprint OSM buildings must
+ * leave free.
+ */
 export function landmarkPads(geo: GeoQuery): Float32Array {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind === 'bridge' || l.kind === 'walls') {
-      continue;
-    }
-    out.push(l.x, l.z, l.radius);
-  }
+  const out = landmarkPadsOf(geo.landmarks);
   for (const m of geo.smallMosqueSites) {
     out.push(m.x, m.z, m.radius);
   }
@@ -103,7 +103,7 @@ class BuildingsLayer extends LayerBase {
       pois: poiTriples(data.points),
       pads: landmarkPads(ctx.geo),
       passages: findPassages(data.buildings, data.roads),
-      infill: { roads: data.roads, areas: data.areas, rails: data.rails },
+      infill: { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetAreaRects().map((a) => a.rect) },
     };
     const job = runWorker<BuildingsRequest, BuildingsResult>(worker, request);
     this.onDispose(() => job.cancel());

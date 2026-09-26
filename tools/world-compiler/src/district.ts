@@ -8,6 +8,8 @@
  * anything else and every module reads `district()`. Tools that never call `useDistrict` get the generic profile.
  */
 import type { OsmBuilding } from '../../../src/world/osm/data';
+import { cleanRing } from '../../../src/world/osm/buildings/footprint';
+import { onLandmarkPad } from '../../../src/world/osm/buildings/selection';
 import { DISTRICTS, GENERIC, PROFILES } from '../districts';
 import { readLandingSpot } from '../lib/areas.mjs';
 import type { BalconyMode, SpecRow, Typology } from './facade/plan';
@@ -154,7 +156,19 @@ export function landmarkBlocksEnabled(): boolean {
   return landmarkBlocks;
 }
 
-export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string }): string | null {
+/** Pads of the landmarks the runtime models itself (selection.ts landmarkPadsOf); set with `--landmarks none`. */
+let landmarkPads: readonly number[] = [];
+
+/**
+ * `--landmarks none`: buildings lying mostly on these pads (selection.ts onLandmarkPad) are landmarks too, class
+ * 'pad'. The flight game's OSM layer leaves exactly these to its landmark models, so up close the street tiles show
+ * the same buildings as from the air.
+ */
+export function setLandmarkPads(pads: readonly number[]): void {
+  landmarkPads = pads;
+}
+
+export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string; ring?: readonly number[] }): string | null {
   if (district().buildings.landmarkIds.has(b.id)) {
     return b.amenity === 'marketplace' ? 'market' : 'landmark';
   }
@@ -166,6 +180,9 @@ export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: str
   }
   if (b.amenity && LANDMARK_AMENITY.has(b.amenity)) {
     return b.amenity;
+  }
+  if (landmarkPads.length && b.ring && onLandmarkPad(landmarkPads, cleanRing(b.ring))) {
+    return 'pad';
   }
   return null;
 }

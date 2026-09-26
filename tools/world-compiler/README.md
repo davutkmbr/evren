@@ -27,7 +27,7 @@ id; areas without their own profile use the generic one.
 | `--all-props` | off | processes every registered prop, also those no tile places (inspection, Blender) |
 | `--no-validate` | off | skips the glTF-Validator |
 | `--no-compress` | off | format 1: writes plain float glbs instead of quantized, meshopt-compressed ones |
-| `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); manifest records stay |
+| `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); so do the buildings lying mostly on the pad of a landmark the game models itself (class `pad`, `src/world/osm/buildings/selection.ts`), exactly those the flight-scale OSM layer leaves to that model; manifest records stay |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
 | `--jobs N\|auto` | `auto` | tile worker threads ([Parallel and incremental compiles](#parallel-and-incremental-compiles)); `auto` = cores − 1, capped by memory and tile count; `1` compiles in the main thread |
 | `--cache strict\|local\|off` | `strict` | incremental compile: area stamp, per-step tile effects and assembled tiles; `local` keys tiles on nearby OSM features only |
@@ -250,6 +250,25 @@ images) and `UNUSED_OBJECT` (TEXCOORD_1 until bakes use it). The summary printed
 triangles, byte sizes, doors, kerb-step lengths, graph sizes and connectivity, and in format 1 the strip, LODs,
 lightmap densities, materials, textures (and skipped sets), props (and skipped ones), instances, lights by source,
 asset credits, per-step times, validator totals by message code and timings.
+
+### One map at every distance (`npm run check:map`)
+
+In the flight game the street tiles replace the flight-scale OSM layer (`src/world/osm`, public/data/osm/**) close to
+the ground, and that layer is what the player sees from the air. Both must show the same buildings and parks; only
+the detail may differ. The shared rule is `src/world/osm/buildings/selection.ts`: which OSM records are drawn,
+non-solid kinds, canopies (near-only detail) and the landmark pads the game's own models own. There is one further
+rule: the flight layer invents nothing inside a street area (`src/world/osm/street-areas.ts`: no infill parcels; no
+neighbourhood mosque site reaches into an OSM region). `npm run check:map`
+(`tools/headless/map-consistency-check.ts`) runs the real flight-scale building pipeline over every region under a
+street area and compares it with this compiler's rule. It also checks the following:
+
+- the tile rects;
+- region coverage;
+- that the street data (`fetch-osm.mjs --area`) and the region data (`fetch-osm.mjs --region`) agree on building and
+  green-area ids and places.
+
+Snapshot drift in that last check goes away when both are fetched from the same local extract (`--source local`, the
+default). Run the check after changing either side or re-fetching data.
 
 ## Placement rules
 

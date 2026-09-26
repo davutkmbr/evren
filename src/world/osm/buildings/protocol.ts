@@ -1,4 +1,5 @@
 /** Messages between the buildings layer and buildings.worker.ts. */
+import type { WorldBounds } from '../../../core/contracts';
 import type { OsmArea, OsmBuilding, OsmRail, OsmRoad } from '../data';
 import type { Passage } from '../shared/passages';
 import type { MeshArrays, OsmWorkerBase } from '../shared/protocol';
@@ -15,7 +16,7 @@ export interface BuildingsRequest {
   /** Building passages (shared/passages.ts findPassages) the buildings open: arches, lining, free colliders. */
   passages?: Passage[];
   /** Street and open-space data for the infill of blocks OSM leaves empty (infill.ts); null disables infill. */
-  infill: { roads: OsmRoad[]; areas: OsmArea[]; rails: OsmRail[] } | null;
+  infill: { roads: OsmRoad[]; areas: OsmArea[]; rails: OsmRail[]; keepOut?: WorldBounds[] } | null;
 }
 
 export interface BuildingsResult {

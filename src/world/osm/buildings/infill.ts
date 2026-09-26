@@ -8,6 +8,9 @@
  * (parks, squares, parking, platforms, piers, pitches, construction sites...), not near a railway, not a landmark
  * pad, and not water / park / forest / cemetery land use. Parcels are only placed where the surrounding 60 m are
  * already built up (OSM building cover >= MIN_COVER), so genuinely open areas stay open.
+ *
+ * No parcel reaches into a compiled street area (`keepOut`): the street tiles draw only the mapped buildings up close,
+ * so the city seen from the air has to be the same there.
  */
 import type { WorldBounds } from '../../../core/contracts';
 import { LandUse } from '../../../core/contracts';
@@ -21,6 +24,8 @@ const OPEN = /^(leisure=(park|garden|pitch|playground|sports_centre|track|dog_pa
 const FRONT = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'living_street', 'pedestrian', 'service', 'primary_link', 'secondary_link', 'tertiary_link', 'steps', 'footway']);
 const NO_BUILD_USE = new Set<number>([LandUse.Water, LandUse.Park, LandUse.Forest, LandUse.Cemetery, LandUse.Landmark]);
 const MIN_COVER = 0.26;
+/** Growth (m) of the keep-out rects: rectFree samples 0.4 m inside a parcel on 1 m cells, so corners overhang ~1.7 m. */
+const KEEP_OUT_GROW = 2.5;
 
 class Grid {
   readonly w: number;
@@ -120,7 +125,7 @@ export interface InfillResult {
   stats: Record<string, number>;
 }
 
-export function findInfill(buildings: readonly OsmBuilding[], data: { roads: readonly OsmRoad[]; areas: readonly OsmArea[]; rails: readonly OsmRail[] }, pads: Float32Array, surface: StreetSurface, area: WorldBounds): InfillResult {
+export function findInfill(buildings: readonly OsmBuilding[], data: { roads: readonly OsmRoad[]; areas: readonly OsmArea[]; rails: readonly OsmRail[]; keepOut?: readonly WorldBounds[] }, pads: Float32Array, surface: StreetSurface, area: WorldBounds): InfillResult {
   const geo = surface.geo;
   const grid = new Grid(area.minX, area.minZ, area.maxX, area.maxZ);
   const built = new Grid(area.minX, area.minZ, area.maxX, area.maxZ);
@@ -175,6 +180,12 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
   for (let k = 0; k < pads.length; k += 3) {
     const r = pads[k + 2];
     grid.line([pads[k], pads[k + 1], pads[k] + 0.01, pads[k + 1]], r, 1);
+  }
+  // Compiled street areas (street-areas.ts): up close the street tiles draw only the mapped buildings there, so no
+  // parcel may reach into one.
+  for (const k of data.keepOut ?? []) {
+    const [x0, z0, x1, z1] = [k.minX - KEEP_OUT_GROW, k.minZ - KEEP_OUT_GROW, k.maxX + KEEP_OUT_GROW, k.maxZ + KEEP_OUT_GROW];
+    grid.fill([[x0, z0, x1, z0, x1, z1, x0, z1]], 1);
   }
 
   const freeAfterMasks = free(cells);

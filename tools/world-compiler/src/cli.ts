@@ -6,7 +6,8 @@
  *   [--no-compress]  (format 1 glbs are meshopt-compressed by default, see compress.ts)
  *   [--web]  (format 1: the flight game's delivery profile, see web.ts: unread attributes dropped, --tex-max 1024 unless
  *            given, WebP in the shared store, gzip, root index public/world/index.json)
- *   [--landmarks block|none]  (none: landmark buildings get no geometry, for runtimes with their own models)
+ *   [--landmarks block|none]  (none: landmark buildings and the buildings on the game's landmark pads get no geometry,
+ *                             for runtimes with their own models)
  *                            [--tiles all|strip] [--tex-max 2048] [--all-props] [--no-validate] [--min-walk-share 0.9]
  *   [--jobs N|auto]  (tile worker threads, parallel/pool.ts; default auto = cores - 1, capped by memory)
  *   [--cache strict|local|off] [--force]  (incremental compile: cache.ts, stage-cache.ts; --force rebuilds everything)
@@ -44,7 +45,9 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { landmarkOf, setLandmarkBlocks, useDistrict } from './district';
+import { landmarkOf, setLandmarkBlocks, setLandmarkPads, useDistrict } from './district';
+import { buildLandmarkDefs } from '../../../src/world/geo/prepare';
+import { landmarkPadsOf } from '../../../src/world/osm/buildings/selection';
 import { buildFoundation, type CoastSpec, coastGrid, coastPlan, coastRows, type SharedFoundation } from './foundation';
 import { CoastField } from './coast';
 import type { GridWin } from '../../../src/world/osm/shared/protocol';
@@ -128,6 +131,8 @@ async function main(): Promise<void> {
   }
   const landmarkBlocks = landmarkMode === 'block';
   setLandmarkBlocks(landmarkBlocks);
+  // The game's own landmark models own their pads: the buildings the flight-scale OSM layer leaves to them go too.
+  setLandmarkPads(landmarkBlocks ? [] : landmarkPadsOf(buildLandmarkDefs()));
   const minWalkShare = Number(argOf('--min-walk-share') ?? MIN_WALK_SHARE);
   const onlyStrip = argOf('--tiles') === 'strip';
   const texMax = argOf('--tex-max') ? Number(argOf('--tex-max')) : args.includes('--web') ? WEB_TEX_MAX : null;
