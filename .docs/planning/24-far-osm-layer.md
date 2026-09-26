@@ -81,10 +81,15 @@ a pre-thinned set:
 - the per-building attribute block: height dm, min height dm, roof class, colour indices, usage, fade class and the
   OSM id (for the handover and the checks).
 
-**Coverage mask.** Per 250 m cell (the city's layout cell): the OSM footprint coverage, compared with the building
-coverage the procedural city would place there (land use + density grid). A cell counts as covered above a tuned
-threshold. The mask is stored with the bake and decides OSM versus procedural per cell. Its outline is the only place
-where the two may meet.
+**Coverage mask.** Per 250 m cell (the city's layout cell), the mask decides OSM versus procedural. Its outline is the
+only place where the two may meet. It is stored with the bake. The threshold comes from the S0 audit
+([osm-city-coverage.md](../research/osm-city-coverage.md)):
+
+- A cell is OSM when its **OSM footprint coverage of the geo-buildable land, averaged over the 3 × 3 cells around it,
+  is ≥ 0.05**. That covers 97 % of the known-good region cells and 77 % of all built cells. Hysteresis keeps the
+  outline from fraying.
+- A cell is also OSM when the geo map does not build on it: it draws whatever OSM buildings it has. About 70k
+  buildings, mostly villages the hand-drawn zones miss.
 
 **Land use** (see section 4): OSM `landuse` / `leisure` / `natural` polygons, simplified to 2 m, written as a
 polygon list per 2 km tile.
@@ -93,9 +98,11 @@ polygon list per 2 km tile.
 the street areas (`fetch-osm.mjs --area`). The data drift `check:map` reports today (Taksim green areas) then
 disappears.
 
-**Size estimate.** To be measured in S0. For scale: the region JSON is about 215 B per building (21.35 MB for 99k).
-The binary record is about 40 B per building (Int16 rings, about 7 vertices, plus about 12 B of attributes). At
-0.5–1.5 M buildings in the square, that is roughly 20–60 MB raw and 10–30 MB gzip for L0, plus about 30 % for L1/L2.
+**Size (measured in S0).**
+- 616k outlines, 5.0 vertices each after simplification.
+- L0: about 20 MB raw, about 11 MB gzip.
+- The L0–L2 pyramid: about 14 MB gzip.
+- Land use: 1.8 MB.
 
 ### 2. City worker in data mode (`src/world/city`)
 
@@ -195,14 +202,13 @@ Performance checks with `snap.mjs --perf` on the reference machine:
 
 | # | Stage | Result | Gate |
 |---|---|---|---|
-| S0 | Audit | Build the extract index; count OSM buildings, footprint coverage and land-use polygons per 250 m cell over the square; coverage map image against the procedural density; bake size estimate | Size and coverage threshold reviewed with the user before S1 |
+| S0 | Audit — **done** ([osm-city-coverage.md](../research/osm-city-coverage.md)) | 616k outlines; about 14 MB gzip for the pyramid; mask threshold: smoothed coverage ≥ 0.05. Most geo "urban" land without OSM buildings is forest, meadow or park in OSM | — |
 | S1 | Bake | `osm-city.mjs` → L0/L1/L2 tiles, coverage mask and land-use polygons. Regions and street areas re-fetched from the same extract. `plan.ts` runs in Node | `check:map` far-vs-region section green |
-| S2 | Data mode | City worker emits baked buildings in covered cells; region exclusion by centroid ownership | Views recognisable against satellite imagery (phase 08 criteria); perf within budget |
+| S2 | Data mode + land use | City worker emits baked buildings in covered cells; region exclusion by centroid ownership. OSM land use is stamped into the geo build in the same stage (the S0 audit shows the procedural fallback would otherwise keep building on about 110 km² of real forest, meadow and park); mosque sites and vegetation follow | Views recognisable against satellite imagery (phase 08 criteria); perf within budget; `check:map` land-use section green |
 | S3 | Handover | Screen-door cross-fade between city and region content, both directions | No visible pop when flying into and out of every landing region |
-| S4 | Land use | OSM land use stamped into the geo build; mosque sites and vegetation follow | `check:map` land-use section green |
 | S5 | Night | One occupancy curve and emission scale | Night flight into a region shows no window change at the handover |
 
-S2 is useful on its own even before S3–S5. S3 also helps before S2, because it removes today's pop against the
+S2 is useful on its own even before S3 and S5. S3 also helps before S2, because it removes today's pop against the
 procedural city.
 
 ## Decisions (user, 2026-09-26)
