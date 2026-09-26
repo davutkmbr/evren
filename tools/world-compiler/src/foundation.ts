@@ -3,22 +3,27 @@
  * the OSM coastline (coast.ts), the shared street raster (src/world/osm/shared/street-field.ts) and the StreetSurface
  * query over them. Same code the OSM slice uses at runtime, so the tiles sit on the flight world's terrain.
  *
- * Street-layer changes to the geo windows (they only feed the compiler):
- * - coast: signed distance to the OSM coastline on a 2 m grid (exact within 24 m of the shore, interpolated from an
- *   8 m grid further away) instead of the 23 m geo grid, which misses the reclaimed quays by up to ~90 m;
- * - height: resampled to the 5 m ground grid and held at least at QUAY_TOP on OSM land, so reclaimed ground that the
- *   geo build still treats as sea floor becomes a level quay.
+ * Heights are the runtime slice's, input for input: the geo height window and the geo coast (`groundCoast`, which
+ * the quay raise follows) are cut from the same grids the flight game cuts them from (src/world/osm/shared/
+ * foundation.ts cutGeoWindows), over a rect on the global ground lattice (ground.ts groundRect), so a compiled tile's
+ * ground and the runtime OSM ground are the same surface wherever both exist (bridge decks landing on the streets,
+ * anything placed on StreetSurface.heightAt at runtime). Reclaimed quays the geo terrain still treats as sea floor are
+ * levelled by the quay raise (it holds QUAY_TOP wherever the geo coast is below QUAY_FLAT, sea included).
+ *
+ * The street layer's own change: `coast` (land and water only: the quay walls, the land field, zones) is the signed
+ * distance to the OSM coastline on a 2 m grid (exact within 24 m of the shore, interpolated from an 8 m grid further
+ * away) instead of the 23 m geo grid, which misses the reclaimed quays by up to ~90 m.
  */
 import type { WorldBounds } from '../../../src/core/contracts';
 import { buildWorld } from '../../../src/world/geo/build/build-world';
-import { type GridSpec, HEIGHT_GRID, LANDUSE_GRID, sampleBilinear } from '../../../src/world/geo/build/grid';
+import { type GridSpec, HEIGHT_GRID, LANDUSE_GRID } from '../../../src/world/geo/build/grid';
 import { prepareBuildInput } from '../../../src/world/geo/prepare';
 import type { OsmData } from '../../../src/world/osm/data';
 import { FootprintIndex } from '../../../src/world/osm/shared/footprints';
-import { GROUND_STEP } from '../../../src/world/osm/shared/ground';
+import { groundRect } from '../../../src/world/osm/shared/ground';
 import type { GridWin, OsmWorkerBase } from '../../../src/world/osm/shared/protocol';
 import { buildStreetRaster, streetRasterInput } from '../../../src/world/osm/shared/street-field';
-import { QUAY_TOP, StreetSurface } from '../../../src/world/osm/shared/street-surface';
+import { StreetSurface } from '../../../src/world/osm/shared/street-surface';
 import { CoastField } from './coast';
 
 /** Geo grid margin (m) kept around the rect for bilinear lookups. */
@@ -26,6 +31,12 @@ const WINDOW_MARGIN = 40;
 const COAST_CELL = 2;
 const COAST_COARSE = 8;
 const COAST_EXACT = 24;
+
+/** The part of a Foundation that is plain data (worker threads get it from the main thread instead of rebuilding it). */
+export interface SharedFoundation {
+  base: OsmWorkerBase;
+  coastSource: 'osm' | 'geo';
+}
 
 export interface Foundation {
   /** Tile-aligned build rect (all tiles). */
@@ -87,16 +98,74 @@ function bilinear(g: GridWin<Float32Array>, x: number, z: number): number {
  * `rect`: the tile-aligned area of all tiles. The street raster covers it plus `margin` so distance fields near the
  * outer tile edges still see streets beyond them (street-profile data is fetched ~155 m wider than the area).
  */
-export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40): Foundation {
+/** Window of a coast grid (sampleGrid's layout). */
+export interface CoastSpec {
+  x0: number;
+  z0: number;
+  w: number;
+  h: number;
+  cell: number;
+}
+
+const coastSpec = (rect: WorldBounds, cell: number): CoastSpec => {
+  const x0 = rect.minX - WINDOW_MARGIN;
+  const z0 = rect.minZ - WINDOW_MARGIN;
+  return { x0, z0, w: Math.ceil((rect.maxX + WINDOW_MARGIN - x0) / cell) + 1, h: Math.ceil((rect.maxZ + WINDOW_MARGIN - z0) / cell) + 1, cell };
+};
+
+/** The OSM coast grids a foundation needs (coarse, then fine), or null when the data has no coastline. */
+export function coastPlan(data: OsmData, rect: WorldBounds, margin = 40): { coarse: CoastSpec; fine: CoastSpec } | null {
+  if (!new CoastField(data).segments) {
+    return null;
+  }
+  const outer = groundRect({ minX: rect.minX - margin, maxX: rect.maxX + margin, minZ: rect.minZ - margin, maxZ: rect.maxZ + margin });
+  return { coarse: coastSpec(outer, COAST_COARSE), fine: coastSpec(outer, COAST_CELL) };
+}
+
+/**
+ * Rows [j0, j1) of a coast grid: the exact signed distance on the coarse grid (`coarse` null), or on the fine grid
+ * the exact one within COAST_EXACT of the shore and the coarse grid's bilinear value elsewhere. Worker threads
+ * compute row ranges of the main thread's grids with it (the same values as one thread computing them all).
+ */
+export function coastRows(shore: CoastField, spec: CoastSpec, coarse: GridWin<Float32Array> | null, j0: number, j1: number): Float32Array {
+  const out = new Float32Array((j1 - j0) * spec.w);
+  for (let j = j0; j < j1; j++) {
+    for (let i = 0; i < spec.w; i++) {
+      const x = spec.x0 + i * spec.cell;
+      const z = spec.z0 + j * spec.cell;
+      let v: number;
+      if (!coarse) {
+        v = shore.at(x, z);
+      } else {
+        const c = bilinear(coarse, x, z);
+        v = Math.abs(c) < COAST_EXACT ? shore.at(x, z) : c;
+      }
+      out[(j - j0) * spec.w + i] = v;
+    }
+  }
+  return out;
+}
+
+/** Grids from coastRows (all rows). */
+export const coastGrid = (spec: CoastSpec, data: Float32Array): GridWin<Float32Array> => ({ data, ...spec });
+
+export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40, shared?: SharedFoundation, coastGrids?: GridWin<Float32Array> | null): Foundation {
+  if (shared) {
+    // Worker threads (--jobs): the main thread's terrain windows, coast and street raster (parallel/share.ts).
+    return { rect, base: shared.base, surface: new StreetSurface(shared.base), footprints: new FootprintIndex(data.buildings), coastSource: shared.coastSource, ms: { geo: 0, coast: 0, raster: 0 } };
+  }
   const t0 = performance.now();
   const world = buildWorld(prepareBuildInput().input);
-  const outer = { minX: rect.minX - margin, maxX: rect.maxX + margin, minZ: rect.minZ - margin, maxZ: rect.maxZ + margin };
+  const outer = groundRect({ minX: rect.minX - margin, maxX: rect.maxX + margin, minZ: rect.minZ - margin, maxZ: rect.maxZ + margin });
   const landUse = cut(world.landUse, LANDUSE_GRID, outer);
   const t1 = performance.now();
   const shore = new CoastField(data);
   let coast: GridWin<Float32Array>;
   const coastSource = shore.segments ? 'osm' : 'geo';
-  if (shore.segments) {
+  if (shore.segments && coastGrids) {
+    // Sampled by the worker threads (coastPlan, coastRows).
+    coast = coastGrids;
+  } else if (shore.segments) {
     const coarse = sampleGrid(outer, COAST_COARSE, (x, z) => shore.at(x, z));
     coast = sampleGrid(outer, COAST_CELL, (x, z) => {
       const c = bilinear(coarse, x, z);
@@ -105,15 +174,13 @@ export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40): 
   } else {
     coast = cut(world.coast, HEIGHT_GRID, outer);
   }
-  const height = sampleGrid(outer, GROUND_STEP, (x, z) => {
-    const h = sampleBilinear(world.height, HEIGHT_GRID, x, z);
-    return bilinear(coast, x, z) > 0 ? Math.max(h, QUAY_TOP) : h;
-  });
+  const height = cut(world.height, HEIGHT_GRID, outer);
+  const groundCoast = cut(world.coast, HEIGHT_GRID, outer);
   const t2 = performance.now();
-  const street = buildStreetRaster(streetRasterInput(data), outer);
+  const street = buildStreetRaster(streetRasterInput(data, (x, z) => bilinear(coast, x, z)), outer);
   const t3 = performance.now();
   // No landmark pads: the street layer draws every OSM building itself (hero buildings included).
-  const base: OsmWorkerBase = { rect: outer, area: rect, height, coast, landUse, reserved: [], street };
+  const base: OsmWorkerBase = { rect: outer, area: rect, height, coast, groundCoast, landUse, reserved: [], street };
   return {
     rect,
     base,

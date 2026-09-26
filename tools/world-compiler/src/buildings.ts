@@ -13,6 +13,7 @@ import type { GroundHeights } from './ground';
 import type { TileMesh, Vec3 } from './mesh';
 import type { OsmStreetPoint } from './osm-street';
 import { district } from './district';
+import { emitLining, emitPiece, portalsOn, spandrels, type SolidPassage } from './passages';
 import { entranceSize, INFERRED_DOOR, isEntrance, isStorefront } from './pois';
 
 /** Storey height (m) for building:levels without a height tag. */
@@ -49,6 +50,8 @@ export interface Solid {
   /** Hosts doors (starts at the ground). */
   grounded: boolean;
   doors: DoorPlan[];
+  /** Building passages through this solid (passages.ts attachPassages): arched openings and their lining. */
+  passages?: SolidPassage[];
 }
 
 function defaultLevels(b: OsmBuilding, area: number): number {
@@ -413,10 +416,27 @@ export function emitSolid(s: Solid, mesh: TileMesh): void {
     for (let i = 0; i < n; i++) {
       const e = edgeOf(ring, i);
       const nrm: Vec3 = [e.nx, 0, e.nz];
-      const doors = ri === 0 ? s.doors.filter((d) => d.edge === i).sort((a, b) => a.t - b.t) : [];
+      const portals = portalsOn(s, ri, i);
+      // Doors that would overlap a passage opening give way to it.
+      const doors = ri === 0 ? s.doors.filter((d) => d.edge === i && !portals.some((po) => d.t + d.width / 2 > po.t0 - 0.3 && d.t - d.width / 2 < po.t1 + 0.3)).sort((a, b) => a.t - b.t) : [];
       const at = (t: number): [number, number] => [e.ax + e.ux * t, e.az + e.uz * t];
       let t0 = 0;
+      // Passage openings (rule walk.passage): the wall stops at the opening and closes over its arch.
+      const portalTo = (limit: number): void => {
+        for (const po of portals) {
+          if (po.t0 >= t0 - 1e-6 && po.t1 <= limit + 1e-6) {
+            const [sx, sz] = at(t0);
+            const [lx, lz] = at(po.t0);
+            mesh.wall('wall', sx, sz, lx, lz, bottomY, topY, bottomY, topY, nrm);
+            for (const q of spandrels(po, topY)) {
+              emitPiece(mesh, 'wall', e.ax, e.az, e.ux, e.uz, nrm, q);
+            }
+            t0 = po.t1;
+          }
+        }
+      };
       for (const d of doors) {
+        portalTo(d.t - d.width / 2);
         const l = d.t - d.width / 2;
         const r = d.t + d.width / 2;
         const [lx, lz] = at(l);
@@ -453,11 +473,13 @@ export function emitSolid(s: Solid, mesh: TileMesh): void {
         mesh.flatPolygon(d.inferred ? 'doorInferred' : 'door', [l0, r0, r1, l1], nrm);
         t0 = r;
       }
+      portalTo(e.len);
       const [sx, sz] = at(t0);
       const [ex, ez] = at(e.len);
       mesh.wall('wall', sx, sz, ex, ez, bottomY, topY, bottomY, topY, nrm);
     }
   });
+  emitLining(mesh, s, 'wall', 'pedestrian');
   const contour = pairs(s.ring);
   const holes = s.holes.map(pairs);
   const tris = THREE.ShapeUtils.triangulateShape(contour, holes);

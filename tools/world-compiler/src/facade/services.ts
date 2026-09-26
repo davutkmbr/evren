@@ -14,7 +14,8 @@
  */
 import { district } from '../district';
 import type { Weather } from '../mesh';
-import { emitText, textWidth } from '../shopfront/font';
+import { textWidth } from '../shopfront/font';
+import { emitTextSlot } from '../modules/text';
 import type { ShopUnit } from '../shopfront/shopfront';
 import type { Balcony, Cikma, Ctx2, Edge, Rect, Win } from './build';
 import { type Batch, h01, lin, pick, scale } from './frame';
@@ -406,11 +407,11 @@ function banners(x: Ctx2, e: Edge, b: Batch, inp: LifeInput, H: (k: number) => n
   b.quadF('fac_vinyl', 'N', [[r0, y0, d], [mid, y0 - 0.01, d + 0.015], [mid, y1, d + 0.01], [r0, y1, d]], bg);
   b.quadF('fac_vinyl', 'N', [[mid, y0 - 0.01, d + 0.015], [r1, y0, d], [r1, y1, d], [mid, y1, d + 0.01]], bg);
   const wCap = Math.min((y1 - y0) * 0.3, (r1 - r0 - 0.08) / textWidth(word));
-  emitText(b, word, { material: 'fac_letters', color: ink, r: mid, y: y1 - 0.06 - wCap, d: d + 0.02, capH: wCap, depth: 0 });
+  emitTextSlot(b, x.c.slots, word, { material: 'fac_letters', color: ink, r: mid, y: y1 - 0.06 - wCap, d: d + 0.02, capH: wCap, depth: 0 });
   const num = phone(x.p.seed + e.i);
   const nCap = Math.min((y1 - y0) * 0.16, (r1 - r0 - 0.06) / textWidth(num));
   if (nCap > 0.025) {
-    emitText(b, num, { material: 'fac_letters', color: ink, r: mid, y: y0 + 0.06, d: d + 0.02, capH: nCap, depth: 0 });
+    emitTextSlot(b, x.c.slots, num, { material: 'fac_letters', color: ink, r: mid, y: y0 + 0.06, d: d + 0.02, capH: nCap, depth: 0 });
   }
 }
 

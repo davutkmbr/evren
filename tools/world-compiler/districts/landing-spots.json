@@ -1,0 +1,33 @@
+{
+  "$comment": "Dragon landing spots compiled at full street detail (tools/world-compiler/README.md 'Landing spots'). lat/lon: the landing point (WGS84); radius: half side (m) of the square compiled around it; profile: district profile the spot starts from (districts/index.ts PROFILES); placeWords: place words of the fictional shop names; area: an existing OSM_AREAS entry (src/world/osm/area.ts) that already covers the spot, whose own bbox and profile win. Coordinates from OpenStreetMap (Nominatim) and src/world/geo/data/landmarks.ts.",
+  "spots": [
+    { "id": "eminonu", "name": "Eminönü", "lat": 41.0171, "lon": 28.9721, "radius": 380, "profile": "eminonu", "area": "eminonu" },
+    { "id": "kadikoy", "name": "Kadıköy İskelesi", "lat": 40.9915, "lon": 29.0245, "radius": 560, "profile": "kadikoy", "area": "kadikoy" },
+    { "id": "karakoy", "name": "Karaköy", "lat": 41.0225, "lon": 28.9763, "radius": 180, "profile": "historic", "placeWords": ["KARAKÖY", "GALATA", "TOPHANE", "RIHTIM"] },
+    { "id": "galata-kulesi", "name": "Galata Kulesi Meydanı", "lat": 41.0258, "lon": 28.9742, "radius": 160, "profile": "historic", "placeWords": ["GALATA", "KULE", "BEYOĞLU", "ŞİŞHANE"] },
+    { "id": "sultanahmet", "name": "Sultanahmet Meydanı", "lat": 41.0063, "lon": 28.9766, "radius": 200, "profile": "historic", "placeWords": ["SULTANAHMET", "HİPODROM", "CAĞALOĞLU", "SUR"] },
+    { "id": "suleymaniye", "name": "Süleymaniye", "lat": 41.0158, "lon": 28.9642, "radius": 160, "profile": "historic", "placeWords": ["SÜLEYMANİYE", "VEFA", "HALİÇ", "MİMAR"] },
+    { "id": "kumkapi", "name": "Kumkapı", "lat": 41.0033, "lon": 28.9645, "radius": 160, "profile": "historic", "placeWords": ["KUMKAPI", "MARMARA", "SUR", "LİMAN"] },
+    { "id": "balat", "name": "Balat", "lat": 41.0303, "lon": 28.9478, "radius": 200, "profile": "historic", "placeWords": ["BALAT", "FENER", "HALİÇ", "AYVANSARAY"] },
+    { "id": "eyup", "name": "Eyüp Sultan Meydanı", "lat": 41.0475, "lon": 28.9337, "radius": 180, "profile": "historic", "placeWords": ["EYÜP", "SULTAN", "HALİÇ", "PİYERLOTİ"] },
+    { "id": "taksim", "name": "Taksim Meydanı", "lat": 41.0368, "lon": 28.9855, "radius": 200, "profile": "generic", "placeWords": ["TAKSİM", "BEYOĞLU", "İSTİKLAL", "GÜMÜŞSUYU"] },
+    { "id": "galatasaray", "name": "Galatasaray (İstiklal Caddesi)", "lat": 41.0333, "lon": 28.9774, "radius": 160, "profile": "historic", "placeWords": ["BEYOĞLU", "İSTİKLAL", "PERA", "TOMTOM"] },
+    { "id": "dolmabahce", "name": "Dolmabahçe Saat Kulesi", "lat": 41.0378, "lon": 28.9965, "radius": 160, "profile": "generic", "placeWords": ["DOLMABAHÇE", "BEŞİKTAŞ", "KABATAŞ"] },
+    { "id": "besiktas", "name": "Beşiktaş İskelesi", "lat": 41.0420, "lon": 29.0070, "radius": 200, "profile": "generic", "placeWords": ["BEŞİKTAŞ", "BARBAROS", "ÇARŞI", "İSKELE"] },
+    { "id": "ortakoy", "name": "Ortaköy Meydanı", "lat": 41.0474, "lon": 29.0262, "radius": 160, "profile": "bosphorus", "placeWords": ["ORTAKÖY", "BOĞAZ", "İSKELE", "MECİDİYE"] },
+    { "id": "bebek", "name": "Bebek", "lat": 41.0768, "lon": 29.0440, "radius": 180, "profile": "bosphorus", "placeWords": ["BEBEK", "BOĞAZ", "KOY"] },
+    { "id": "arnavutkoy", "name": "Arnavutköy", "lat": 41.0672, "lon": 29.0438, "radius": 160, "profile": "bosphorus", "placeWords": ["ARNAVUTKÖY", "BOĞAZ", "AKINTI"] },
+    { "id": "rumeli-hisari", "name": "Rumeli Hisarı", "lat": 41.0842, "lon": 29.0562, "radius": 180, "profile": "bosphorus", "placeWords": ["HİSAR", "RUMELİ", "BOĞAZ"] },
+    { "id": "emirgan", "name": "Emirgan", "lat": 41.1033, "lon": 29.0555, "radius": 160, "profile": "bosphorus", "placeWords": ["EMİRGAN", "ÇINARALTI", "BOĞAZ"] },
+    { "id": "kanlica", "name": "Kanlıca", "lat": 41.1003, "lon": 29.0650, "radius": 130, "profile": "bosphorus", "placeWords": ["KANLICA", "YOĞURT", "BOĞAZ"] },
+    { "id": "anadolu-hisari", "name": "Anadolu Hisarı", "lat": 41.0830, "lon": 29.0668, "radius": 150, "profile": "bosphorus", "placeWords": ["HİSAR", "GÖKSU", "ANADOLU"] },
+    { "id": "cengelkoy", "name": "Çengelköy", "lat": 41.0508, "lon": 29.0516, "radius": 150, "profile": "bosphorus", "placeWords": ["ÇENGELKÖY", "ÇINAR", "BOĞAZ"] },
+    { "id": "beylerbeyi", "name": "Beylerbeyi", "lat": 41.0447, "lon": 29.0448, "radius": 150, "profile": "bosphorus", "placeWords": ["BEYLERBEYİ", "SARAY", "BOĞAZ"] },
+    { "id": "kuzguncuk", "name": "Kuzguncuk", "lat": 41.0366, "lon": 29.0305, "radius": 160, "profile": "bosphorus", "placeWords": ["KUZGUNCUK", "İCADİYE", "BOĞAZ"] },
+    { "id": "uskudar", "name": "Üsküdar Meydanı", "lat": 41.0262, "lon": 29.0150, "radius": 200, "profile": "generic", "placeWords": ["ÜSKÜDAR", "İSKELE", "MİHRİMAH", "DOĞANCILAR"] },
+    { "id": "salacak", "name": "Salacak (Kız Kulesi kıyısı)", "lat": 41.0212, "lon": 29.0080, "radius": 150, "profile": "bosphorus", "placeWords": ["SALACAK", "KIZ KULESİ", "ÜSKÜDAR"] },
+    { "id": "moda", "name": "Moda", "lat": 40.9822, "lon": 29.0258, "radius": 180, "profile": "generic", "placeWords": ["MODA", "KADIKÖY", "YELDEĞİRMENİ", "BURUN"] },
+    { "id": "buyukada", "name": "Büyükada İskelesi", "lat": 40.8752, "lon": 29.1285, "radius": 200, "profile": "bosphorus", "placeWords": ["BÜYÜKADA", "ADALAR", "İSKELE", "PRENS"] },
+    { "id": "heybeliada", "name": "Heybeliada İskelesi", "lat": 40.8778, "lon": 29.1008, "radius": 150, "profile": "bosphorus", "placeWords": ["HEYBELİADA", "ADALAR", "İSKELE"] }
+  ]
+}

@@ -2,8 +2,9 @@
  * Façade kit (format 1, full-detail tiles): real geometry for one building from its FacadePlan.
  *
  * Per footprint edge (facade/frame.ts Frame): party walls stay blank; street and open edges get a wall with openings
- * (grid-decomposed around windows, shopfronts and the çıkma, no T-junctions), window assemblies (reveals, frames,
- * glass, sills, roller boxes or surrounds, shutters, curtains, a room box behind, some lit at night), balconies
+ * (grid-decomposed around windows, shopfronts and the çıkma, no T-junctions), window reveals with a module slot per
+ * part of the window assembly (frames, glass, sills, roller boxes or surrounds, shutters, curtains, a room box
+ * behind, some lit at night: modules/window.ts, placed by the runtime from the module library), balconies
  * (slab, soffit, solid / steel / pipe / glazed / glass parapets), the çıkma (front wall with windows, sides, soffit,
  * slab edge), cornices, eaves, string courses, parapets with copings, the roof (flat with tanks, aerials and dishes
  * as instances, or hipped tiles with eaves), AC units as instances and wear (damaged-plaster patches, peeling
@@ -28,12 +29,15 @@ import type { GroundHeights } from '../ground';
 import type { LightSink } from '../lights';
 import { LOD0, LOD1, type RGBA, type TileMesh, type Vec2, type Vec3, type Weather } from '../mesh';
 import type { PlaceOptions } from '../registry';
-import { emitText, textWidth } from '../shopfront/font';
+import { textWidth } from '../shopfront/font';
 import { emitShopUnit, planShops, type ShopUnit } from '../shopfront/shopfront';
 import { Batch, Frame, h01, lin, mix, pick, scale, type SheetAttr } from './frame';
 import type { FacadePlan } from './plan';
-import { crack, facadeLife, flag } from './services';
+import { emitLining, portalsOn, wallPieces } from '../passages';
+import { crack, facadeLife } from './services';
 import { fbm, paintAt, type WallInfo, wallWeather, wavyTilt } from './weather';
+import type { SlotSink } from '../modules/slots';
+import { emitTextSlot } from '../modules/text';
 
 export type EdgeKind = 'street' | 'open' | 'party' | 'short';
 
@@ -81,6 +85,8 @@ export interface FacadeCtx {
   pois: readonly PoiRec[];
   doors: readonly DoorRec[];
   market: boolean;
+  /** Module slots of the tile (modules/slots.ts): what fills the openings, placed by the runtime. */
+  slots: SlotSink;
   /** The interiors step's shared record (`area.shared.get('interiors')`), read when the tile is emitted. */
   interiors: () => { doors: ReadonlyMap<string, { poi: string; name?: string; doorWidth: number }>; pois: ReadonlySet<string> } | undefined;
 }
@@ -309,9 +315,8 @@ export function buildFacade(s: Solid, p: FacadePlan, edges: readonly Edge[], c: 
         shops.push({ r0: r2(u.r0), r1: r2(u.r1), kind: u.kind, trade: u.trade, name: u.name?.name ?? null, poi: u.poi, kepenk: u.kepenk, awning: u.awning, lit: u.signLit, projecting: u.projecting, ...(u.interior ? { interior: true as const } : {}) });
       }
     }
-    for (const hole of s.holes) {
-      plainRing(x, hole);
-    }
+    s.holes.forEach((hole, k) => plainRing(x, hole, k + 1));
+    emitLining(c.mesh, s, 'fac_render@weathered', 'pedestrian', { color: scale(p.wall, 0.85) });
     corners(x, edges);
     emitRoof(x, edges);
   });
@@ -579,23 +584,58 @@ const WALL_GAPS: [number, number] = [2.9, 2.3];
 /* Edges                                                                                                           */
 /* ------------------------------------------------------------------------------------------------------------- */
 
+/**
+ * Passage openings (rule walk.passage, passages.ts) on edge e in frame coordinates (r = len - t): the clear rectangle
+ * up to the crown, cut from the wall grid as a hole, and the arch (r, y) whose spandrels close it.
+ */
+function edgePortals(x: Ctx2, e: Edge): { hole: Rect; arc: [number, number][] }[] {
+  return portalsOn(x.s, 0, e.i).map((po) => ({
+    hole: { r0: e.len - po.t1, r1: e.len - po.t0, y0: x.bottom, y1: po.crownY },
+    arc: po.arc.map(([t, y]): [number, number] => [e.len - t, y]),
+  }));
+}
+
+/** The spandrels over a passage arch, from the arch up to the hole's top, as wall quads of material `m(r, y)` (at each quad's centre). */
+function emitSpandrels(b: Batch, m: (r: number, y: number) => string, hole: Rect, arc: readonly [number, number][], attr: (r: number, y: number, m: string) => SheetAttr): void {
+  for (let k = 1; k < arc.length; k++) {
+    const [ra, ya] = arc[k - 1];
+    const [rb, yb] = arc[k];
+    if (Math.abs(rb - ra) < 1e-4) {
+      continue;
+    }
+    const c4: [number, number, number][] = ra < rb ? [[ra, ya, 0], [rb, yb, 0], [rb, hole.y1, 0], [ra, hole.y1, 0]] : [[rb, yb, 0], [ra, ya, 0], [ra, hole.y1, 0], [rb, hole.y1, 0]];
+    const mat = m((ra + rb) / 2, (ya + yb + 2 * hole.y1) / 4);
+    const at = c4.map(([r, y]) => attr(r, y, mat));
+    b.quadF(mat, 'N', c4, at.map((q) => q.color), undefined, at.map((q) => q.weather ?? ([0, 0, 0, 0] as Weather)));
+  }
+}
+
 function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
   const { p, c } = x;
   const b = new Batch(c.mesh, e.f);
   const g = e.gMean;
   const partyColor = mix(p.wall, lin(0xb9b6b0), 0.55);
+  const portals = edgePortals(x, e);
+  /** Overlaps a passage opening (with 0.3 m of pier beside it). */
+  const onPortal = (r0: number, r1: number, y0: number): boolean => portals.some((q) => r1 > q.hole.r0 - 0.3 && r0 < q.hole.r1 + 0.3 && y0 < q.hole.y1 + 0.3);
   if (e.kind === 'party' || e.kind === 'short') {
     const R: Rect = { r0: 0, r1: e.len, y0: x.bottom, y1: x.wallTop };
     const wi = wallInfo(x, e, null);
     const mat = wallVariant(x, e);
     const lines = { r: [] as number[], y: [g + 0.4, g + 1.3, x.wallTop - 0.8] };
-    wallGrid(b, 0, R, [], lines.r, lines.y, () => mat, (r, y) => ({ color: paintAt(wi, partyColor, r, y), weather: wallWeather(wi, r, y), tilt: wavyTilt(wi, r, y) }), 'N', () => 0, [3.2, 2.6]);
+    const partyAttr = (r: number, y: number): SheetAttr => ({ color: paintAt(wi, partyColor, r, y), weather: wallWeather(wi, r, y), tilt: wavyTilt(wi, r, y) });
+    wallGrid(b, 0, R, portals.map((q) => q.hole), lines.r, lines.y, () => mat, partyAttr, 'N', () => 0, [3.2, 2.6]);
+    for (const q of portals) {
+      emitSpandrels(b, () => mat, q.hole, q.arc, partyAttr);
+    }
     b.flush();
     parapetPieces(x, e, b, null);
     b.flush();
     return [];
   }
-  const ck = cikmaSpan(x, e);
+  // A çıkma whose floor would sit below a passage arch's crown yields to the passage.
+  const ck0 = cikmaSpan(x, e);
+  const ck = ck0 && portals.some((q) => q.hole.r1 > ck0.c0 - 0.3 && q.hole.r0 < ck0.c1 + 0.3 && q.hole.y1 > ck0.y0 - 0.3) ? null : ck0;
   // Ground floor: shop units on street edges.
   const units =
     e.kind === 'street'
@@ -618,7 +658,14 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
           c.avoid,
         )
       : [];
+  // Shop units and windows give way to a passage opening.
+  for (let k = units.length - 1; k >= 0; k--) {
+    if (onPortal(units[k].r0, units[k].r1, units[k].yFloor)) {
+      units.splice(k, 1);
+    }
+  }
   const holes: Rect[] = units.map((u) => ({ r0: u.r0, r1: u.r1, y0: u.yFloor, y1: u.yOpen }));
+  holes.push(...portals.map((q) => q.hole));
   // Upper windows on the wall plane (outside the çıkma), and small ground-floor windows on open edges.
   const m = 0.35;
   const spans: [number, number][] = ck ? [[m, ck.c0 - 0.25], [ck.c1 + 0.25, e.len - m]].filter(([a0, a1]) => a1 - a0 > 1.0) as [number, number][] : [[m, e.len - m]];
@@ -628,6 +675,11 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
   }
   if (e.kind === 'open' && x.p.typ !== 'T5') {
     wins.push(...groundWindows(x, e));
+  }
+  for (let k = wins.length - 1; k >= 0; k--) {
+    if (onPortal(wins[k].r0, wins[k].r1, wins[k].y0)) {
+      wins.splice(k, 1);
+    }
   }
   for (const w of wins) {
     holes.push({ r0: w.r0, r1: w.r1, y0: w.y0, y1: w.y1 + w.box });
@@ -673,6 +725,9 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
   };
   const extraY = [g + 0.4, g + 1.3, x.G1, x.wallTop - 0.8, p.roofY, ...(ck ? [ck.y0 - 0.5] : [])];
   wallGrid(b, 0, R, holes, patches.flatMap((q) => [q.r0, q.r1]), [...extraY, ...patches.flatMap((q) => [q.y0, q.y1])], cell, attr, 'N', () => 0, WALL_GAPS);
+  for (const q of portals) {
+    emitSpandrels(b, cell, q.hole, q.arc, attr);
+  }
   // Repairs (fresher paint, little grime, no chips yet) and peeling ground-floor paint: thin overlays 3-4 mm proud
   // of the wall, so they need no grid lines of their own.
   const fresh = repairPaint(p.wall, x.H(330 + e.i));
@@ -705,7 +760,7 @@ function emitEdge(x: Ctx2, e: Edge): ShopUnit[] {
   parapetPieces(x, e, b, ck);
   b.flush();
   for (const u of units) {
-    emitShopUnit(b, u, p, { lights: c.lights, place: c.place, tile: c.tile, clad: x.clad, G1: x.G1, depthAt: (r) => depthBehind(x, e, r) });
+    emitShopUnit(b, u, p, { lights: c.lights, place: c.place, tile: c.tile, clad: x.clad, G1: x.G1, depthAt: (r) => depthBehind(x, e, r), slots: c.slots });
     b.flush();
   }
   decals(x, e, b, wins, units);
@@ -880,7 +935,7 @@ function streetWear(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], units: rea
       const cap = Math.min(0.32, (sf.r1 - sf.r0 - 0.1) / Math.max(0.1, textWidth(tag)));
       if (cap > 0.1) {
         const tc = lin(pick([0x1e1e1e, 0xb02a2a, 0x2a50b0, 0xd8d8d8, 0x2a8a3a, 0x1e1e1e], H(220 + k)));
-        spray(b, tag, sf.r0 + (sf.r1 - sf.r0) * (0.3 + 0.4 * H(225 + k)), Math.min(sf.y1 - cap - 0.05, sf.y0 + 0.3 + 0.5 * H(230 + k)), sf.d + 0.006, cap, tc, null, p.seed + k * 7.3);
+        spray(b, x.c.slots, tag, sf.r0 + (sf.r1 - sf.r0) * (0.3 + 0.4 * H(225 + k)), Math.min(sf.y1 - cap - 0.05, sf.y0 + 0.3 + 0.5 * H(230 + k)), sf.d + 0.006, cap, tc, null, p.seed + k * 7.3);
       }
       if (kepenk && sf.r1 - sf.r0 > 2.2 && H(240 + k) < 0.5) {
         const word = pick(THROWUPS, H(245 + k));
@@ -888,7 +943,7 @@ function streetWear(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], units: rea
         const yb = sf.y0 + 0.1 + 0.25 * H(250 + k);
         const rc = (sf.r0 + sf.r1) / 2 + (H(255 + k) - 0.5) * 0.4;
         // A throw-up: a chrome or bright fill over a black outline, letters bouncing, paint running.
-        spray(b, word, rc, yb, sf.d + 0.008, big, scale(lin(pick([0xb8b8b4, 0xc8b040, 0xc05a8a, 0x40a0b0, 0xd07030, 0xb8b8b4], H(260 + k))), 0.8), lin(0x121212), p.seed + k * 11.1);
+        spray(b, x.c.slots, word, rc, yb, sf.d + 0.008, big, scale(lin(pick([0xb8b8b4, 0xc8b040, 0xc05a8a, 0x40a0b0, 0xd07030, 0xb8b8b4], H(260 + k))), 0.8), lin(0x121212), p.seed + k * 11.1);
       }
     }
   });
@@ -898,7 +953,7 @@ function streetWear(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], units: rea
  * Sprayed lettering: each letter bounces (height and size jitter) and leans on its neighbours, an optional outline
  * sits behind the fill, and paint runs from some letters. `r` is the centre of the word, `y` its baseline.
  */
-function spray(b: Batch, word: string, r: number, y: number, d: number, cap: number, fill: RGBA, outline: RGBA | null, seed: number): void {
+function spray(b: Batch, slots: SlotSink | null, word: string, r: number, y: number, d: number, cap: number, fill: RGBA, outline: RGBA | null, seed: number): void {
   const chars = [...word];
   const adv = (ch: string, c: number): number => (textWidth(ch) + 0.06) * c;
   const caps = chars.map((_, k) => cap * (0.88 + 0.26 * h01(seed, 600 + k)));
@@ -910,9 +965,9 @@ function spray(b: Batch, word: string, r: number, y: number, d: number, cap: num
     const rc = cur + w / 2;
     const yc = y + (h01(seed, 620 + k) - 0.5) * cap * 0.28;
     if (outline) {
-      emitText(b, ch, { material: 'fac_spray', color: outline, r: rc + c * 0.05, y: yc - c * 0.06, d, capH: c * 1.12, depth: 0 });
+      emitTextSlot(b, slots, ch, { material: 'fac_spray', color: outline, r: rc + c * 0.05, y: yc - c * 0.06, d, capH: c * 1.12, depth: 0 });
     }
-    emitText(b, ch, { material: 'fac_spray', color: fill, r: rc, y: yc, d: d + 0.0015, capH: c, depth: 0 });
+    emitTextSlot(b, slots, ch, { material: 'fac_spray', color: fill, r: rc, y: yc, d: d + 0.0015, capH: c, depth: 0 });
     // A run of paint below some letters.
     if (h01(seed, 640 + k) < 0.3) {
       const dr = rc + (h01(seed, 660 + k) - 0.5) * c * 0.4;
@@ -945,7 +1000,7 @@ function upperTrade(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[]): void {
     if (cap < 0.06) {
       continue;
     }
-    emitText(b, word, { material: 'fac_letters', color: letter, r: (w.r0 + w.r1) / 2, y: w.y0 + (w.y1 - w.y0) * 0.55, d: -rev + 0.045, capH: cap, depth: 0 });
+    emitTextSlot(b, x.c.slots, word, { material: 'fac_letters', color: letter, r: (w.r0 + w.r1) / 2, y: w.y0 + (w.y1 - w.y0) * 0.55, d: -rev + 0.045, capH: cap, depth: 0 });
   }
   // A banner across the spandrel under the row (above the shop sign band).
   const first = row[0];
@@ -968,7 +1023,7 @@ function upperTrade(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[]): void {
     const text = word;
     const cap = Math.min((y1 - y0) * 0.5, (r1 - r0 - 0.3) / Math.max(0.1, textWidth(text)));
     if (cap > 0.08) {
-      emitText(b, text, { material: 'fac_letters', color: dark ? lin(0xf6f2e8) : lin(0x1e1e1e), r: (r0 + r1) / 2, y: (y0 + y1) / 2 - cap / 2, d: 0.028, capH: cap, depth: 0 });
+      emitTextSlot(b, x.c.slots, text, { material: 'fac_letters', color: dark ? lin(0xf6f2e8) : lin(0x1e1e1e), r: (r0 + r1) / 2, y: (y0 + y1) / 2 - cap / 2, d: 0.028, capH: cap, depth: 0 });
     }
   }
 }
@@ -1166,7 +1221,12 @@ function groundWindows(x: Ctx2, e: Edge): Win[] {
   return out;
 }
 
-/** One window assembly (LOD0) on the plane d = dp. */
+/**
+ * One window on the plane d = dp: the reveals stay in the wall shell; the assembly in the opening (frame and glass,
+ * room box, curtain, cracked pane, roller box and shutter, sill, T2 surround, wooden shutters, boiler flue) is a slot
+ * per module (modules/window.ts), which the runtime fills from the module library. The AC unit stays a prop instance
+ * with its hose and streak on the wall.
+ */
 function emitWindow(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, wallCol: RGBA): void {
   const { p, c } = x;
   const U = (q: number): number => h01(w.seed, q);
@@ -1187,117 +1247,55 @@ function emitWindow(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, wallCol: RGB
   b.quadF(rm, '-Y', [[r0, top, dp], [r1, top, dp], [r1, top, df], [r0, top, df]], [outer, outer, inner, inner], undefined, wxRev);
   b.quadF(rm, 'Y', [[r0, y0, dp], [r1, y0, dp], [r1, y0, df], [r0, y0, df]], [outer, outer, inner, inner], undefined, wxRev);
   const shop = w.kind === 'shopribbon';
-  const frameMat = p.typ === 'T3' || shop ? 'fac_alu' : p.frame === 'timber' ? 'fac_timber' : 'fac_pvc';
+  const S = c.slots;
+  const f = e.f;
+  const W = r1 - r0;
+  const Hh = y1 - y0;
+  const at = { r: r0, y: y0, d: dp, w: W, h: Hh, dd: rev };
+  const t2 = p.typ === 'T2';
   // White PVC yellows and greys with age, a little differently per window (replaced one at a time).
   const frameCol = p.typ === 'T3' || shop ? lin(0x3b3e41) : p.frame === 'pvc' ? scale(mix(p.frameColor, lin(0xd9d2bd), 0.25 * U(40) + 0.2 * p.wear), 0.97 + 0.05 * U(41)) : p.frameColor;
-  const fw = p.typ === 'T2' ? 0.075 : 0.065;
-  const fd = 0.07;
-  // Roller box (T1) at the top of the opening.
-  if (w.box > 0) {
-    b.box('fac_pvc', r0, r1, y1, top, df, dp - 0.012, lin(pick([0xe6e4dc, 0xdcd4c0, 0xcfcfca], U(1))), { front: true, bottom: true });
-  }
-  // Room box behind the glass (lit at night for some windows).
-  const lit = shop || U(2) < 0.35;
-  const room = shop ? 'fac_shop_lit' : lit ? 'fac_room_lit' : 'fac_room';
-  const roomCol = shop ? lin(0xeeeae2) : lin(pick([0x5b5147, 0x4a4540, 0x6a5a4a, 0x505862], U(3)), 0.8);
-  const rb = df - (shop ? 2.5 : 0.45);
-  const ra = r0 - 0.45;
-  const rz = r1 + 0.45;
-  const ya = y0 - 0.35;
-  const yz = y1 + 0.3;
-  b.quadF(room, 'N', [[ra, ya, rb], [rz, ya, rb], [rz, yz, rb], [ra, yz, rb]], roomCol);
-  b.quadF(room, 'R', [[ra, ya, df], [ra, ya, rb], [ra, yz, rb], [ra, yz, df]], scale(roomCol, 0.8));
-  b.quadF(room, '-R', [[rz, ya, df], [rz, ya, rb], [rz, yz, rb], [rz, yz, df]], scale(roomCol, 0.8));
-  b.quadF(room, 'Y', [[ra, ya, df], [rz, ya, df], [rz, ya, rb], [ra, ya, rb]], scale(roomCol, 0.6));
-  b.quadF(room, '-Y', [[ra, yz, df], [rz, yz, df], [rz, yz, rb], [ra, yz, rb]], scale(roomCol, 0.9));
-  if (!shop && w.kind !== 'small') {
-    curtains(b, w, df - 0.08, U);
-  }
-  // Glass (a few panes cracked and taped, or boarded with cardboard on neglected buildings).
+  const frameStyle = p.typ === 'T3' || shop ? 'alu' : p.frame === 'timber' ? 'timber' : 'pvc';
   const glass: RGBA = [0.2 + 0.05 * U(7), 0.25 + 0.05 * U(7), 0.28, shop ? 0.2 : 0.38];
-  const gd = df + 0.035;
-  b.quadF('fac_glass', 'N', [[r0 + fw, y0 + fw, gd], [r1 - fw, y0 + fw, gd], [r1 - fw, y1 - fw, gd], [r0 + fw, y1 - fw, gd]], glass);
+  const fw = t2 ? 0.075 : 0.065;
+  if (w.box > 0) {
+    S.add(f, 'window.rollerbox', { seed: w.seed + 0.11, r: r0, y: y1, d: dp, w: W, h: w.box, dd: rev });
+  }
+  S.add(f, 'window.room', { ...at, style: shop ? 'shop' : 'home', seed: w.seed + 0.21 });
+  if (!shop && w.kind !== 'small') {
+    S.add(f, 'window.curtain', { ...at, seed: w.seed + 0.31 });
+  }
+  // A few panes cracked and taped, or boarded with cardboard, on neglected buildings.
   if (!shop && w.kind !== 'door' && U(42) < 0.012 + 0.05 * p.wear * p.wear) {
-    brokenPane(b, r0 + fw, (r0 + r1) / 2, y0 + fw, y1 - fw, gd + 0.004, U);
+    S.add(f, 'window.pane', { seed: w.seed + 0.41, r: r0 + fw, y: y0 + fw, d: dp, w: W / 2 - fw, h: Hh - 2 * fw, dd: rev });
   }
-  // Frame: outer bars with their inner faces, mullions and transoms (grime collects on the bottom rail).
-  const f0 = df;
-  const f1 = df + fd;
-  const frameWx = (_r: number, y: number): Weather => [y < y0 + fw + 0.01 ? 0.55 : 0.12, 0, 0.3, 0];
-  b.box(frameMat, r0, r0 + fw, y0, y1, f0, f1, frameCol, { front: true, right: true }, frameWx);
-  b.box(frameMat, r1 - fw, r1, y0, y1, f0, f1, frameCol, { front: true, left: true }, frameWx);
-  b.box(frameMat, r0 + fw, r1 - fw, y0, y0 + fw, f0, f1, scale(frameCol, 0.93), { front: true }, frameWx);
-  b.box(frameMat, r0 + fw, r1 - fw, y1 - fw, y1, f0, f1, frameCol, { front: true, bottom: true }, frameWx);
-  const wid = r1 - r0;
-  const mull: number[] = [];
-  if (w.kind === 'ribbon' || w.kind === 'shopribbon') {
-    const n = Math.max(1, Math.round(wid / 1.3));
-    for (let k = 1; k < n; k++) {
-      mull.push(r0 + (wid * k) / n);
-    }
-  } else if (w.kind === 'door') {
-    mull.push(U(8) < 0.5 ? r0 + 0.88 : r1 - 0.88);
-    if (wid > 2.0) {
-      mull.push(U(8) < 0.5 ? (r0 + 0.88 + r1) / 2 : (r0 + r1 - 0.88) / 2);
-    }
-  } else if (wid > 2.0) {
-    mull.push(r0 + wid / 3, r0 + (2 * wid) / 3);
-  } else if (wid > 0.8) {
-    mull.push((r0 + r1) / 2);
-  }
-  for (const mx of mull) {
-    b.box(frameMat, mx - fw / 2, mx + fw / 2, y0 + fw, y1 - fw, f0, f1, frameCol, { front: true, left: true, right: true }, frameWx);
-  }
-  const transom = p.typ === 'T2' ? y1 - 0.55 : w.kind === 'window' && wid > 2.0 ? y1 - 0.5 : 0;
-  if (transom > y0 + 0.8) {
-    b.box(frameMat, r0 + fw, r1 - fw, transom - fw / 2, transom + fw / 2, f0, f1, frameCol, { front: true, top: true, bottom: true }, frameWx);
-  }
-  if (w.kind === 'door') {
-    // Kick panel under the fixed part of a balcony door.
-    const dx = mull[0];
-    const [k0, k1] = dx - r0 < r1 - dx ? [dx, r1 - fw] : [r0 + fw, dx];
-    b.quadF(frameMat, 'N', [[k0, y0 + fw, f1 - 0.01], [k1, y0 + fw, f1 - 0.01], [k1, w.fy + 0.9, f1 - 0.01], [k0, w.fy + 0.9, f1 - 0.01]], scale(frameCol, 0.97));
-  }
+  const family = w.kind === 'ribbon' || shop ? 'window.frame.ribbon' : w.kind === 'door' ? (t2 ? 'window.door.t2' : 'window.door') : t2 ? 'window.frame.t2' : 'window.frame';
+  S.add(f, family, { ...at, style: frameStyle, seed: w.seed + 0.51, tint0: frameCol, tint1: glass });
   // Roller shutter in front of the frame: at every height, and never quite level (one side hangs lower).
   if (w.box > 0 && p.shutters === 'roller' && !shop) {
     const s = U(9);
     const yb = s < 0.45 ? y1 : s < 0.82 ? y1 - (y1 - y0) * (0.12 + 0.72 * U(10)) : y0 + 0.02;
-    if (yb < y1 - 0.02) {
-      const tilt = (U(43) - 0.5) * 0.09;
-      const ybl = Math.max(y0 + 0.02, Math.min(y1 - 0.03, yb + tilt));
-      const ybr = Math.max(y0 + 0.02, Math.min(y1 - 0.03, yb - tilt));
-      const rc = lin(pick([0xe3e1d9, 0xd8cfb8, 0xc0c2c2, 0xcdbf9c, 0xb9b3a6], U(11)));
-      const wxS = (_r: number, y: number): Weather => [0.25 + 0.3 * p.wear, y > y1 - 0.4 ? 0.4 : 0.1, 0, 0];
-      b.quadF('fac_roller', 'N', [[r0 + 0.01, ybl, f1 + 0.012], [r1 - 0.01, ybr, f1 + 0.012], [r1 - 0.01, y1, f1 + 0.012], [r0 + 0.01, y1, f1 + 0.012]], rc, undefined, wxS);
-      b.poly('fac_pvc', e.f.dir('N'), [e.f.p(r0 + 0.01, ybl - 0.04, f1 + 0.03), e.f.p(r1 - 0.01, ybr - 0.04, f1 + 0.03), e.f.p(r1 - 0.01, ybr, f1 + 0.03), e.f.p(r0 + 0.01, ybl, f1 + 0.03)], scale(rc, 0.88));
+    if (yb < y1 - 0.05) {
+      S.add(f, 'window.roller', { seed: w.seed + 0.61, r: r0, y: y1, d: dp, w: W, h: y1 - yb, dd: rev });
     }
   }
-  // Sill: marble (T1/T3) or a rendered moulding (T2), both with chamfered arrises and grime on top.
+  // Sill: marble (T1/T3) or a rendered moulding (T2), both with chamfered arrises.
   if (w.kind !== 'door' && w.kind !== 'shopribbon') {
-    const wxSill = (_r: number, y: number, d: number): Weather => [y > y0 - 0.005 ? 0.45 + 0.3 * p.wear : 0.15, 0.2, d > dp ? 0.8 : 0.2, 0];
-    if (p.typ === 'T2') {
-      b.slab('fac_render', r0 - 0.08, r1 + 0.08, y0 - 0.08, y0, df, dp + 0.07, x.p.trim, 0.018, { front: true, top: true, bottom: true, left: true, right: true }, wxSill);
-    } else {
-      b.box('fac_marble', r0 - 0.04, r1 + 0.04, y0 - 0.035, y0, df, dp + 0.05, scale(lin(0xdcd8cf), 1 - p.wear * 0.2), { front: true, top: true, bottom: true, left: true, right: true }, wxSill);
-    }
+    S.add(f, 'window.sill', { ...at, h: 0, style: t2 ? 't2' : 'marble', seed: w.seed + 0.65, tint0: t2 ? x.p.trim : scale(lin(0xdcd8cf), 1 - p.wear * 0.2) });
   }
   // T2 surround: architrave and a cornice cap over the head.
-  if (p.typ === 'T2' && w.kind !== 'small') {
-    const t = x.p.trim;
-    const wxT = (_r: number, y: number, d: number): Weather => [0.2, y > top + 0.2 ? 0.3 : 0.1, d > dp + 0.02 ? 0.6 : 0.1, 0];
-    b.box('fac_render', r0 - 0.12, r0, y0, top, dp, dp + 0.03, t, { front: true, left: true }, wxT);
-    b.box('fac_render', r1, r1 + 0.12, y0, top, dp, dp + 0.03, t, { front: true, right: true }, wxT);
-    b.box('fac_render', r0 - 0.12, r1 + 0.12, top, top + 0.12, dp, dp + 0.03, t, { front: true }, wxT);
-    b.slab('fac_render', r0 - 0.2, r1 + 0.2, top + 0.12, top + 0.26, dp, dp + 0.12, scale(t, 0.97), 0.015, { front: true, top: true, bottom: true, left: true, right: true }, wxT);
+  if (t2 && w.kind !== 'small') {
+    S.add(f, 'window.surround', { seed: w.seed + 0.67, r: r0, y: y0, d: dp, w: W, h: top - y0, tint0: x.p.trim });
   }
   // Wooden shutters (T2): folded back against the wall, half open at an angle, or closed in the reveal.
   if (p.shutters === 'wood' && w.kind === 'window') {
-    woodShutters(x, e, b, w, dp, U);
+    S.add(f, 'window.shutter', { seed: w.seed + 0.71, r: r0, y: y0, d: dp, w: W, h: Hh });
   }
   // AC unit on brackets under the window, or on the balcony beside the door; a condensate hose and its streak.
   if ((p.typ === 'T1' || p.typ === 'T3') && w.kind !== 'shopribbon' && w.kind !== 'small' && U(14) < (w.kind === 'ribbon' ? 0.45 : 0.34) * district().facade.acScale && roomAt(x, e, (w.r0 + w.r1) / 2) >= AC_DEPTH) {
     const yaw = Math.atan2(e.f.nx, e.f.nz);
-    const rc = w.kind === 'ribbon' ? r0 + (r1 - r0) * (0.2 + 0.6 * U(15)) : w.kind === 'door' ? (mull[0] - r0 < r1 - mull[0] ? r1 - 0.5 : r0 + 0.5) : (r0 + r1) / 2;
+    const leaf = U(8) < 0.5 ? r0 + 0.88 : r1 - 0.88;
+    const rc = w.kind === 'ribbon' ? r0 + (r1 - r0) * (0.2 + 0.6 * U(15)) : w.kind === 'door' ? (leaf - r0 < r1 - leaf ? r1 - 0.5 : r0 + 0.5) : (r0 + r1) / 2;
     const yb = w.kind === 'door' ? w.fy + 0.03 : y0 - 0.74;
     const dd = w.kind === 'door' ? dp + 0.05 : dp;
     const [px, pz] = e.f.xz(rc, dd);
@@ -1317,142 +1315,14 @@ function emitWindow(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, wallCol: RGB
       ]);
     }
   }
-  // Combi-boiler flue beside the kitchen window (one per flat): a short terminal, soot fanning up, drips below.
+  // Combi-boiler flue beside the kitchen window (one per flat).
   if ((p.typ === 'T1' || p.typ === 'T2') && w.kind === 'window' && U(21) < 0.2 && w.floor >= 1) {
-    const left = U(22) < 0.5;
-    const fr = left ? r0 - 0.32 : r1 + 0.32;
+    const fr = U(22) < 0.5 ? r0 - 0.32 : r1 + 0.32;
     const fy = y1 - 0.25 - 0.3 * U(23);
     if (fr > 0.2 && fr < e.len - 0.2) {
-      flue(b, fr, fy, dp, U);
+      S.add(f, 'wall.flue', { seed: w.seed + 0.81, r: fr, y: fy, d: dp });
     }
   }
-}
-
-/** Curtains and blinds of many kinds (net, side drapes, roller blind at any height, venetian slats, dark lined). */
-function curtains(b: Batch, w: Win, dc: number, U: (q: number) => number): void {
-  const { r0, r1, y0, y1 } = w;
-  const cu = U(4);
-  const net = lin(pick([0xefe9dc, 0xe8e4da, 0xf2ede0, 0xe6dccb], U(5)), 0.85);
-  const drape = lin(pick([0xb89c78, 0x8a3a34, 0x44546e, 0xd9cbb0, 0x6e7a5a, 0x7a5c48, 0x9aa2a8], U(5)), 0.85);
-  if (cu < 0.3) {
-    // Net curtain across, sometimes pulled to one side at the bottom.
-    const pull = U(24) < 0.3 ? (r1 - r0) * (0.2 + 0.3 * U(25)) : 0;
-    b.quadF('fac_curtain', 'N', [[r0, y0 + 0.02, dc], [r1 - pull, y0 + 0.02, dc], [r1, y1, dc], [r0, y1, dc]], net);
-  } else if (cu < 0.48) {
-    const cwid = (r1 - r0) * (0.18 + 0.17 * U(6));
-    b.quadF('fac_curtain', 'N', [[r0, y0 + 0.05, dc], [r0 + cwid, y0 + 0.05, dc], [r0 + cwid, y1, dc], [r0, y1, dc]], drape);
-    b.quadF('fac_curtain', 'N', [[r1 - cwid * (0.7 + 0.6 * U(26)), y0 + 0.05, dc], [r1, y0 + 0.05, dc], [r1, y1, dc], [r1 - cwid * (0.7 + 0.6 * U(26)), y1, dc]], drape);
-    if (U(27) < 0.5) {
-      b.quadF('fac_curtain', 'N', [[r0 + cwid, y0 + 0.02, dc + 0.01], [r1 - cwid, y0 + 0.02, dc + 0.01], [r1 - cwid, y1, dc + 0.01], [r0 + cwid, y1, dc + 0.01]], net);
-    }
-  } else if (cu < 0.64) {
-    // Roller blind (stor perde) at any height, a little skewed.
-    const yb = y1 - (y1 - y0) * (0.15 + 0.8 * U(28));
-    const sk = (U(29) - 0.5) * 0.05;
-    const bc = lin(pick([0xe8e2d2, 0xd8c8a8, 0xb8b8b0, 0x8c7a66, 0xf0ece4], U(30)), 0.85);
-    b.poly('fac_curtain', b.f.dir('N'), [b.f.p(r0 + 0.04, yb + sk, dc + 0.02), b.f.p(r1 - 0.04, yb - sk, dc + 0.02), b.f.p(r1 - 0.04, y1, dc + 0.02), b.f.p(r0 + 0.04, y1, dc + 0.02)], bc);
-    b.box('fac_curtain', r0 + 0.03, r1 - 0.03, Math.min(yb + sk, yb - sk) - 0.03, Math.max(yb + sk, yb - sk), dc + 0.02, dc + 0.035, scale(bc, 0.8), { front: true });
-  } else if (cu < 0.74) {
-    // Venetian blind: slats down to a random height.
-    const yb = y1 - (y1 - y0) * (0.3 + 0.65 * U(31));
-    const sc = lin(pick([0xe9e7e0, 0xc9c6bd, 0x9a8a70], U(32)), 0.85);
-    for (let y = y1 - 0.05; y > yb; y -= 0.2) {
-      b.quadF('fac_curtain', 'N', [[r0 + 0.04, y - 0.035, dc + 0.015], [r1 - 0.04, y - 0.035, dc + 0.015], [r1 - 0.04, y, dc + 0.025], [r0 + 0.04, y, dc + 0.025]], sc);
-    }
-  } else if (cu < 0.8) {
-    // Dark lined curtain drawn (bedroom by day).
-    b.quadF('fac_curtain', 'N', [[r0, y0 + 0.02, dc], [r1, y0 + 0.02, dc], [r1, y1, dc], [r0, y1, dc]], scale(drape, 0.55));
-  } else if (cu < 0.815) {
-    // A plain yellow-and-navy flag hung inside the window (no crest).
-    flag(b, r0 + 0.08, y1 - 0.05, dc + 0.03, Math.min(0.9, r1 - r0 - 0.16), Math.min(1.1, y1 - y0 - 0.2), U(34) < 0.5);
-  } else if (cu < 0.88) {
-    // Newspaper or foil taped inside (an empty flat).
-    b.quadF('fac_paper', 'N', [[r0 + 0.05, y0 + 0.05, dc + 0.06], [r1 - 0.05, y0 + 0.05, dc + 0.06], [r1 - 0.05, y1 - 0.05, dc + 0.06], [r0 + 0.05, y1 - 0.05, dc + 0.06]], lin(pick([0xd8d2c0, 0xc8c8c4], U(33)), 0.9));
-  }
-}
-
-/** A cracked pane: tape strips in an X, or a cardboard patch behind the glass. */
-function brokenPane(b: Batch, a: number, c2: number, y0: number, y1: number, d: number, U: (q: number) => number): void {
-  if (U(45) < 0.6) {
-    const tape = lin(0xc9b98a, 0.95);
-    const t = 0.024;
-    const seg = (ra: number, ya: number, rb: number, yb: number): void => {
-      const l = Math.hypot(rb - ra, yb - ya) || 1;
-      const nr = (-(yb - ya) / l) * t;
-      const ny = ((rb - ra) / l) * t;
-      b.quadF('fac_paper', 'N', [[ra - nr, ya - ny, d], [rb - nr, yb - ny, d], [rb + nr, yb + ny, d], [ra + nr, ya + ny, d]], tape);
-    };
-    seg(a + 0.04, y0 + 0.05, c2 - 0.04, y1 - 0.05);
-    seg(a + 0.04, y1 - 0.05, c2 - 0.04, y0 + 0.05);
-    // Crack lines radiating from the impact.
-    const cx = a + (c2 - a) * (0.3 + 0.4 * U(46));
-    const cy = y0 + (y1 - y0) * (0.3 + 0.4 * U(47));
-    for (let k = 0; k < 5; k++) {
-      const ang = (k / 5) * Math.PI * 2 + U(48 + k);
-      const len = 0.12 + 0.25 * U(53 + k);
-      const ex = Math.max(a, Math.min(c2, cx + Math.cos(ang) * len));
-      const ey = Math.max(y0, Math.min(y1, cy + Math.sin(ang) * len));
-      const l = Math.hypot(ex - cx, ey - cy) || 1;
-      const nr = (-(ey - cy) / l) * 0.003;
-      const ny = ((ex - cx) / l) * 0.003;
-      b.quadF('fac_crack', 'N', [[cx - nr, cy - ny, d - 0.001], [ex - nr, ey - ny, d - 0.001], [ex + nr, ey + ny, d - 0.001], [cx + nr, cy + ny, d - 0.001]], lin(0xe8eef0));
-    }
-  } else {
-    b.quadF('fac_paper', 'N', [[a + 0.02, y0 + 0.02, d - 0.03], [c2 - 0.02, y0 + 0.02, d - 0.03], [c2 - 0.02, y1 - 0.02, d - 0.03], [a + 0.02, y1 - 0.02, d - 0.03]], lin(0x9a7b55));
-  }
-}
-
-/** Wooden shutters of a T2 window: folded back against the wall, swung half open at an angle, or closed. */
-function woodShutters(x: Ctx2, e: Edge, b: Batch, w: Win, dp: number, U: (q: number) => number): void {
-  const { r0, r1, y0, y1 } = w;
-  const s = U(12);
-  const tint: RGBA = U(13) < 0.6 ? [1, 1, 1, 1] : [0.95, 0.72, 0.55, 1];
-  const wx: Weather = [0.3 * x.p.wear, 0.3, 0.6, 0];
-  const lw = (r1 - r0) / 2;
-  if (s < 0.42) {
-    b.box('fac_shutter_wood', r0 - 0.14 - lw, r0 - 0.14, y0, y1, dp + 0.03, dp + 0.07, tint, { front: true, left: true, right: true, top: true }, wx);
-    b.box('fac_shutter_wood', r1 + 0.14, r1 + 0.14 + lw, y0, y1, dp + 0.03, dp + 0.07, tint, { front: true, left: true, right: true, top: true }, wx);
-  } else if (s < 0.72) {
-    // Half open: each leaf hinged at the reveal edge, swung out by 35-80 degrees (one sagging a little).
-    for (const side of [-1, 1]) {
-      const hr = side < 0 ? r0 - 0.02 : r1 + 0.02;
-      const ang = ((35 + 45 * U(60 + side)) * Math.PI) / 180;
-      const tipR = hr + side * Math.cos(ang) * lw;
-      const tipD = dp + 0.02 + Math.sin(ang) * lw;
-      const sag = 0.02 * U(62 + side);
-      const n = e.f.vec(side * Math.sin(ang), 0, -Math.cos(ang));
-      const pts = [e.f.p(hr, y0, dp + 0.02), e.f.p(tipR, y0 - sag, tipD), e.f.p(tipR, y1 - sag, tipD), e.f.p(hr, y1, dp + 0.02)];
-      b.poly('fac_shutter_wood', n, pts, tint, undefined, wx);
-      b.poly('fac_shutter_wood', [-n[0], -n[1], -n[2]], pts, scale(tint, 0.85), undefined, wx);
-    }
-  } else if (s < 0.9) {
-    b.quadF('fac_shutter_wood', 'N', [[r0, y0, dp - 0.06], [r1, y0, dp - 0.06], [r1, y1, dp - 0.06], [r0, y1, dp - 0.06]], tint, undefined, wx);
-  }
-}
-
-/** A boiler flue terminal (Ø 8-10 cm, 25-40 cm out) with a soot fan above it and a drip stain below. */
-function flue(b: Batch, r: number, y: number, dp: number, U: (q: number) => number): void {
-  const out = 0.25 + 0.15 * U(70);
-  const hw = 0.045;
-  const col = lin(pick([0xe8e6e0, 0xd0d0cc, 0xb8bab8], U(71)));
-  b.box('fac_metal', r - hw, r + hw, y - hw, y + hw, dp, dp + out, col, { front: true, left: true, right: true, bottom: true });
-  // Soot: the streak image upside down (dense at the flue, fading upward) in near-black.
-  const h = 0.7 + 0.6 * U(72);
-  const wS = 0.35 + 0.2 * U(73);
-  const u0 = 0.2 + 0.4 * U(74);
-  b.quadF('fac_leak', 'N', [[r - wS / 2, y - 0.02, dp + 0.013], [r + wS / 2, y - 0.02, dp + 0.013], [r + wS / 2, y + h, dp + 0.013], [r - wS / 2, y + h, dp + 0.013]], [0.05, 0.045, 0.04, 0.9], [
-    [u0, 0],
-    [u0 + 0.22, 0],
-    [u0 + 0.22, 1],
-    [u0, 1],
-  ]);
-  // Drips below.
-  b.quadF('fac_leak', 'N', [[r - 0.12, y - 0.55 - 0.4 * U(75), dp + 0.012], [r + 0.12, y - 0.55 - 0.4 * U(75), dp + 0.012], [r + 0.12, y - hw, dp + 0.012], [r - 0.12, y - hw, dp + 0.012]], [0.45, 0.4, 0.36, 0.6], [
-    [0.3, 1],
-    [0.4, 1],
-    [0.4, 0],
-    [0.3, 0],
-  ]);
 }
 
 /* ------------------------------------------------------------------------------------------------------------- */
@@ -1502,67 +1372,31 @@ function emitBalconies(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], ck: Cik
     if (room < P + 0.05) {
       continue;
     }
-    const y0 = run.fy - 0.14;
     const y1 = run.fy + 0.04;
-    const U = (q: number): number => h01(p.seed + run.k * 7.1 + r0, q);
-    const edgeCol = p.typ === 'T3' ? lin(0xe8e8e4) : p.trim;
-    const wxTop = (_r: number, _y: number, d: number): Weather => [0.35 + 0.3 * p.wear, 0, 0, d < 0.2 ? 0.5 : 0.15];
-    b.box('fac_concrete', r0, r1, y1 - 0.001, y1, 0, P, lin(0xbdb7ad), { top: true }, wxTop);
-    // Slab edge: chamfered arrises, chipped, streaked below the drip line.
-    b.slab('fac_render', r0, r1, y0, y1, 0, P, edgeCol, 0.02, { front: true, left: true, right: true }, (_r, y, d) => [0.25, y < y0 + 0.03 ? 0.5 : 0.1, d > P - 0.03 ? 0.9 : 0.3, 0]);
-    // Soffit: grime towards the wall (AO), run-off stains along the front.
-    b.quadF('fac_render', '-Y', [[r0, y0, 0], [r1, y0, 0], [r1, y0, P - 0.02], [r0, y0, P - 0.02]], [scale(edgeCol, 0.55), scale(edgeCol, 0.55), scale(edgeCol, 0.82), scale(edgeCol, 0.82)], undefined, (_r, _y, d) => [d < 0.1 ? 0.75 : 0.35, d > P - 0.2 ? 0.5 : 0, 0, 0]);
     const h = 1.0;
     const top = y1 + h;
+    // Slab, railing or parapet (and a glazed enclosure), T2 brackets: module slots (modules/balcony.ts).
+    const S = x.c.slots;
+    const seed = p.seed + run.k * 7.1 + r0;
+    const at = { r: r0, y: y1, d: 0, w: r1 - r0, dd: P };
+    S.add(e.f, 'balcony.slab', { ...at, seed: seed + 0.1, tint0: p.typ === 'T3' ? lin(0xe8e8e4) : p.trim });
     switch (p.railing) {
       case 'solid':
-      case 'glazed': {
-        const acc = p.accent;
-        const t = 0.1;
-        const mat = U(1) < 0.6 ? 'fac_render_rough' : 'fac_render';
-        const ph = p.railing === 'glazed' ? 0.9 : h;
-        b.box(mat, r0, r1, y1, y1 + ph, P - t, P, acc, { front: true, back: true, top: true });
-        b.box(mat, r0, r0 + t, y1, y1 + ph, 0, P - t, acc, { left: true, right: true, top: true });
-        b.box(mat, r1 - t, r1, y1, y1 + ph, 0, P - t, acc, { left: true, right: true, top: true });
-        b.box('fac_render', r0 - 0.01, r1 + 0.01, y1 + ph - 0.06, y1 + ph + 0.01, P - t - 0.01, P + 0.02, x.p.trim, { front: true, top: true });
+      case 'glazed':
+        S.add(e.f, 'balcony.parapet', { ...at, h: p.railing === 'glazed' ? 0.9 : h, seed: seed + 0.2, tint0: p.accent, tint1: x.p.trim });
         if (p.railing === 'glazed') {
-          const gTop = x.floorY(run.k + 1) - 0.16;
-          const fc = lin(0xf0f0ec);
-          const n = Math.max(1, Math.round((r1 - r0) / 0.9));
-          for (let k = 0; k <= n; k++) {
-            const rr = r0 + ((r1 - r0) * k) / n;
-            b.box('fac_pvc', Math.max(r0, rr - 0.03), Math.min(r1, rr + 0.03), y1 + ph, gTop, P - 0.07, P - 0.01, fc, { front: true, left: true, right: true });
-          }
-          b.box('fac_pvc', r0, r1, gTop - 0.06, gTop, P - 0.07, P - 0.01, fc, { front: true, bottom: true });
-          b.quadF('fac_glass', 'N', [[r0, y1 + ph, P - 0.04], [r1, y1 + ph, P - 0.04], [r1, gTop, P - 0.04], [r0, gTop, P - 0.04]], [0.22, 0.27, 0.3, 0.4]);
-          b.quadF('fac_glass', '-R', [[r0 + 0.01, y1 + ph, 0], [r0 + 0.01, y1 + ph, P - 0.05], [r0 + 0.01, gTop, P - 0.05], [r0 + 0.01, gTop, 0]], [0.22, 0.27, 0.3, 0.4]);
-          b.quadF('fac_glass', 'R', [[r1 - 0.01, y1 + ph, 0], [r1 - 0.01, y1 + ph, P - 0.05], [r1 - 0.01, gTop, P - 0.05], [r1 - 0.01, gTop, 0]], [0.22, 0.27, 0.3, 0.4]);
-          // The ceiling of the enclosure (the next slab's soffit covers it on upper floors; the top floor needs one).
-          b.quadF('fac_render', '-Y', [[r0, gTop + 0.01, 0], [r1, gTop + 0.01, 0], [r1, gTop + 0.01, P], [r0, gTop + 0.01, P]], scale(x.p.trim, 0.7));
-          b.box('fac_render', r0, r1, gTop, gTop + 0.16, 0, P, x.p.trim, { front: true, top: true, left: true, right: true });
+          S.add(e.f, 'balcony.enclosure', { ...at, h: x.floorY(run.k + 1) - 0.16 - y1, seed: seed + 0.3, tint0: x.p.trim });
         }
         break;
-      }
-      case 'glass': {
-        const gc: RGBA = [0.55, 0.66, 0.66, 0.28];
-        b.quadF('fac_glass', 'N', [[r0 + 0.03, y1 + 0.05, P - 0.04], [r1 - 0.03, y1 + 0.05, P - 0.04], [r1 - 0.03, top - 0.05, P - 0.04], [r0 + 0.03, top - 0.05, P - 0.04]], gc);
-        b.quadF('fac_glass', '-R', [[r0 + 0.03, y1 + 0.05, 0], [r0 + 0.03, y1 + 0.05, P - 0.05], [r0 + 0.03, top - 0.05, P - 0.05], [r0 + 0.03, top - 0.05, 0]], gc);
-        b.quadF('fac_glass', 'R', [[r1 - 0.03, y1 + 0.05, 0], [r1 - 0.03, y1 + 0.05, P - 0.05], [r1 - 0.03, top - 0.05, P - 0.05], [r1 - 0.03, top - 0.05, 0]], gc);
-        const al = lin(0xc8cacc);
-        b.box('fac_alu', r0, r1, top - 0.05, top, P - 0.06, P - 0.01, al, { front: true, top: true, bottom: true, back: true });
-        b.box('fac_alu', r0, r0 + 0.05, top - 0.05, top, 0, P - 0.06, al, { left: true, right: true, top: true, bottom: true });
-        b.box('fac_alu', r1 - 0.05, r1, top - 0.05, top, 0, P - 0.06, al, { left: true, right: true, top: true, bottom: true });
+      case 'glass':
+        S.add(e.f, 'balcony.glass', { ...at, h, seed: seed + 0.4 });
         break;
-      }
       default:
-        railing(x, b, r0, r1, y1, top, P, U);
+        S.add(e.f, `balcony.rail.${p.railing === 'iron' || p.railing === 'pipe' || p.railing === 'flatbar' ? p.railing : 'square'}`, { ...at, h, seed: seed + 0.5, tint0: p.railColor });
     }
     if (p.typ === 'T2') {
-      for (const rr of [r0 + 0.15, (r0 + r1) / 2, r1 - 0.15]) {
-        b.box('fac_render', rr - 0.07, rr + 0.07, y0 - 0.32, y0, 0, P - 0.12, x.p.trim, { front: true, left: true, right: true, bottom: true });
-      }
+      S.add(e.f, 'balcony.brackets', { ...at, seed: seed + 0.6, tint0: x.p.trim });
     }
-    b.flush();
     out.push({ r0, r1, y1, top: p.railing === 'glazed' ? y1 + 0.9 : top, P, k: run.k, open: p.railing !== 'glazed', ceiling: x.floorY(run.k + 1) - 0.16, room });
   }
   return out;
@@ -1581,58 +1415,6 @@ export interface Balcony {
   ceiling: number;
   /** Room in front of the wall over the balcony (roomAt): what hangs outside the railing must fit in it. */
   room: number;
-}
-
-/** Steel railings: flat-bar, square-bar, wrought iron or galvanised pipe, on the front and both ends. */
-function railing(x: Ctx2, b: Batch, r0: number, r1: number, y1: number, top: number, P: number, U: (q: number) => number): void {
-  const { p } = x;
-  const col = p.railColor;
-  const m = 'fac_metal';
-  const allF = { front: true, left: true, right: true };
-  // Rust (the dirt channel of fac_metal's flat rust layer): worst at the foot of the bars and on the bottom rail,
-  // patchy along the run; galvanised pipe barely rusts.
-  const rustK = p.railing === 'pipe' ? 0.12 : Math.min(1, Math.max(0.08, p.wear * 1.25 - 0.15 + 0.3 * (U(3) - 0.5)));
-  const rust = (r: number, y: number): Weather => [rustK * (0.3 + 0.7 * Math.max(0, 1 - (y - y1) / 0.55)) * (0.35 + 1.1 * fbm(r, y, 0.6, p.seed + 91)), 0, 0, 0];
-  const rail = (ra: number, rb: number, ya: number, yb: number, da: number, db: number): void => b.box(m, ra, rb, ya, yb, da, db, col, { front: true, back: true, top: true, bottom: true, left: true, right: true }, rust);
-  // Top rails on the front and the ends, posts at the corners.
-  rail(r0, r1, top - 0.045, top, P - 0.05, P);
-  rail(r0, r0 + 0.045, top - 0.045, top, 0, P - 0.05);
-  rail(r1 - 0.045, r1, top - 0.045, top, 0, P - 0.05);
-  b.box(m, r0, r0 + 0.045, y1, top, P - 0.05, P, col, allF, rust);
-  b.box(m, r1 - 0.045, r1, y1, top, P - 0.05, P, col, allF, rust);
-  if (p.railing === 'pipe') {
-    for (const yy of [y1 + 0.35, y1 + 0.68]) {
-      rail(r0, r1, yy - 0.02, yy + 0.02, P - 0.04, P - 0.01);
-      rail(r0, r0 + 0.04, yy - 0.02, yy + 0.02, 0, P - 0.05);
-      rail(r1 - 0.04, r1, yy - 0.02, yy + 0.02, 0, P - 0.05);
-    }
-    const n = Math.max(1, Math.round((r1 - r0) / 1.2));
-    for (let k = 1; k < n; k++) {
-      const rr = r0 + ((r1 - r0) * k) / n;
-      b.box(m, rr - 0.02, rr + 0.02, y1, top, P - 0.045, P - 0.005, col, allF, rust);
-    }
-    return;
-  }
-  rail(r0, r1, y1 + 0.08, y1 + 0.12, P - 0.045, P - 0.005);
-  if (p.railing === 'iron') {
-    rail(r0, r1, y1 + 0.3, y1 + 0.33, P - 0.04, P - 0.01);
-  }
-  const step = p.railing === 'iron' ? 0.11 : p.railing === 'flatbar' ? 0.14 : 0.12;
-  const [bw, bd] = p.railing === 'flatbar' ? [0.012, 0.045] : [0.02, 0.02];
-  const bars = (a: number, bb: number, along: 'r' | 'd'): void => {
-    const n = Math.max(1, Math.round((bb - a) / step));
-    for (let k = 1; k < n; k++) {
-      const v = a + ((bb - a) * k) / n;
-      if (along === 'r') {
-        b.box(m, v - bw / 2, v + bw / 2, y1 + 0.12, top - 0.045, P - 0.025 - bd / 2, P - 0.025 + bd / 2, col, { front: true, left: bw > 0.015, right: true }, rust);
-      } else {
-        b.box(m, r0 + 0.0225 - bd / 2, r0 + 0.0225 + bd / 2, y1 + 0.12, top - 0.045, v - bw / 2, v + bw / 2, col, { left: true, front: true }, rust);
-        b.box(m, r1 - 0.0225 - bd / 2, r1 - 0.0225 + bd / 2, y1 + 0.12, top - 0.045, v - bw / 2, v + bw / 2, col, { right: true, front: true }, rust);
-      }
-    }
-  };
-  bars(r0, r1, 'r');
-  bars(0, P - 0.05, 'd');
 }
 
 /* ------------------------------------------------------------------------------------------------------------- */
@@ -2022,12 +1804,16 @@ function clipHalf(poly: Vec2[], fn: (x: number, z: number) => number): Vec2[] {
 }
 
 /** Hole rings (light wells, courtyards): plain walls and a roof sheet over the well. */
-function plainRing(x: Ctx2, ring: readonly number[]): void {
+/** Plain walls of a courtyard ring `ri` (1.. the solid's holes; -1: no passage openings, LOD1) and its roof sheet. */
+function plainRing(x: Ctx2, ring: readonly number[], ri: number): void {
   const n = ring.length / 2;
   for (let i = 0; i < n; i++) {
     const f = Frame.ofEdge(ring[i * 2], ring[i * 2 + 1], ring[((i + 1) % n) * 2], ring[((i + 1) % n) * 2 + 1]);
     const b = new Batch(x.c.mesh, f);
-    b.quadF('fac_render', 'N', [[0, x.bottom, 0], [f.len, x.bottom, 0], [f.len, x.wallTop, 0], [0, x.wallTop, 0]], scale(x.p.wall, 0.8));
+    // Passage openings into the courtyard (passages.ts): the wall around the arch, in frame r = len - t.
+    for (const q of wallPieces(f.len, x.bottom, x.wallTop, portalsOn(x.s, ri, i))) {
+      b.quadF('fac_render', 'N', [[f.len - q.t1, q.b1, 0], [f.len - q.t0, q.b0, 0], [f.len - q.t0, q.top0, 0], [f.len - q.t1, q.top1, 0]], scale(x.p.wall, 0.8));
+    }
     b.flush();
   }
   // Light wells are roofed over at the roof line (a corrugated translucent sheet on a curb), so they never read as
@@ -2160,7 +1946,7 @@ function lod1(x: Ctx2, edges: readonly Edge[]): void {
     b.flush();
   }
   for (const hole of s.holes) {
-    plainRing(x, hole);
+    plainRing(x, hole, -1);
   }
   if (p.roof === 'hipped' && hippedRoof(x, edges)) {
     return;

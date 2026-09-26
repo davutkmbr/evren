@@ -23,6 +23,7 @@ import type { MaterialName } from '../materials';
 import { LOD0, LOD1, LOD2, type RGBA, type Vec2, type Vec3, type Weather } from '../mesh';
 import type { CompileStep, TileContext } from '../registry';
 import { COPING_WIDTH, GUTTER_WIDTH, hash, KERB_BEVEL, KERB_WIDTH, streetContext, streetTile, valueNoise, type StreetContext } from './common';
+import { placementLog } from './placement';
 import { groundWeather, wearPlan, type WearPatch } from './wear';
 
 const CELL = 1;
@@ -46,7 +47,7 @@ const TAG_KERB = 2;
 /** Edge of the flush tram track bed: a kerb step where the pavement beside it is raised. */
 const TAG_TRACK = 3;
 
-type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W' | 'K' | 'Q' | 'S' | 'A' | 'T';
+type Field = 'L' | 'D' | 'P' | 'B' | 'G' | 'W' | 'K' | 'Q' | 'S' | 'A' | 'R' | 'M' | 'C' | 'T';
 interface V {
   x: number;
   z: number;
@@ -62,12 +63,18 @@ interface V {
    * Material borders as fields, so pieces are cut along them instead of taking the raster's per-texel flags at their
    * centre (which draws the borders as 1 m saw teeth): K > 0 where a kerbed street is the nearest (winning) one, Q > 0
    * where a pedestrian street is, S = D - sidewalk width of the winning street (< 0 on its sidewalk), A > 0 inside
-   * paved OSM areas (squares, platforms, quays, worship grounds).
+   * paved OSM areas (squares, platforms, quays, worship grounds), R > 0 inside surface car parks. Every OSM area
+   * class that picks a ground material has such a field (rule `ground.areaEdge`): none is read from the raster.
+   * On the carriageway, C > 0 where a sett / paver street wins, M > 0 where a main asphalt road does (rule
+   * `ground.streetEdge`): the paving changes along the border between two streets, not per 1 m cell.
    */
   K: number;
   Q: number;
   S: number;
   A: number;
+  R: number;
+  M: number;
+  C: number;
   /** Signed distance into the flush tram track bed (> 0 inside; common.ts trackBed). */
   T: number;
 }
@@ -89,6 +96,9 @@ const lerpV = (a: V, b: V, t: number): V => ({
   Q: a.Q + (b.Q - a.Q) * t,
   S: a.S + (b.S - a.S) * t,
   A: a.A + (b.A - a.A) * t,
+  R: a.R + (b.R - a.R) * t,
+  M: a.M + (b.M - a.M) * t,
+  C: a.C + (b.C - a.C) * t,
   T: a.T + (b.T - a.T) * t,
 });
 
@@ -193,10 +203,10 @@ const splitAll = (ps: Poly[], f: Field, level: number): Poly[] =>
     return [r.neg, r.pos].filter((x): x is Poly => x !== null);
   });
 
-const FIELDS = ['x', 'z', 'L', 'D', 'P', 'B', 'G', 'W', 'K', 'Q', 'S', 'A', 'T'] as const;
+const FIELDS = ['x', 'z', 'L', 'D', 'P', 'B', 'G', 'W', 'K', 'Q', 'S', 'A', 'R', 'M', 'C', 'T'] as const;
 
 function centre(p: Poly): V {
-  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0, K: 0, Q: 0, S: 0, A: 0, T: 0 };
+  const c: V = { x: 0, z: 0, L: 0, D: 0, P: 0, B: 0, G: 0, W: 0, K: 0, Q: 0, S: 0, A: 0, R: 0, M: 0, C: 0, T: 0 };
   const n = p.v.length;
   for (const v of p.v) {
     for (const f of FIELDS) {
@@ -279,6 +289,19 @@ function isMain(st: Street): boolean {
   return /^(trunk|primary|secondary|tertiary)/.test(st.kind);
 }
 
+type CarriageClass = 'sett' | 'main' | 'road';
+
+/** Paving class of a street's carriageway: setts / pavers, patched main-road asphalt or plain asphalt. */
+function carriageClass(st: Street): CarriageClass | null {
+  if (st.pedestrian) {
+    return null;
+  }
+  if (st.surf === Surf.Cobble || st.surf === Surf.Granite || st.surf === Surf.Pavers) {
+    return 'sett';
+  }
+  return isMain(st) ? 'main' : 'road';
+}
+
 /** Emits the street ground of one full-detail tile. */
 export function buildStreetGround(t: TileContext, sc: StreetContext, totals: GroundTotals): StreetGroundStats {
   const a = t.area;
@@ -300,19 +323,23 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
   const Q = new Float32Array(n);
   const S = new Float32Array(n);
   const A = new Float32Array(n);
+  const R = new Float32Array(n);
+  const M = new Float32Array(n);
+  const C = new Float32Array(n);
   const T = new Float32Array(n);
-  const pavedAreas = a.data.areas.filter((ar) => {
-    const g = groundOf(ar);
-    if (g !== Ground.Plaza && g !== Ground.Worship && g !== Ground.Platform && g !== Ground.Quay) {
-      return false;
-    }
-    const b = bounds(ar.ring);
-    return b.maxX > tile.minX - 5 && b.minX < tile.maxX + 5 && b.maxZ > tile.minZ - 5 && b.minZ < tile.maxZ + 5;
-  });
-  /** Signed distance to the paved OSM areas (positive inside), clamped to ±3 m. */
-  const pavedDist = (x: number, z: number): number => {
+  /** OSM areas of the given ground classes near the tile. */
+  const areasOf = (...kinds: number[]): typeof a.data.areas =>
+    a.data.areas.filter((ar) => {
+      if (!kinds.includes(groundOf(ar))) {
+        return false;
+      }
+      const b = bounds(ar.ring);
+      return b.maxX > tile.minX - 5 && b.minX < tile.maxX + 5 && b.maxZ > tile.minZ - 5 && b.minZ < tile.maxZ + 5;
+    });
+  /** Signed distance to the outlines of `areas` (positive inside), clamped to ±3 m. */
+  const areaDist = (areas: typeof a.data.areas, x: number, z: number): number => {
     let best = -3;
-    for (const ar of pavedAreas) {
+    for (const ar of areas) {
       const r = ar.ring;
       let d = Infinity;
       const m = r.length / 2;
@@ -323,27 +350,10 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     }
     return best;
   };
-  const greens = a.data.areas.filter((ar) => {
-    const g = groundOf(ar);
-    if (g !== Ground.Grass && g !== Ground.Pitch) {
-      return false;
-    }
-    const b = bounds(ar.ring);
-    return b.maxX > tile.minX - 5 && b.minX < tile.maxX + 5 && b.maxZ > tile.minZ - 5 && b.minZ < tile.maxZ + 5;
-  });
-  const greenDist = (x: number, z: number): number => {
-    let best = -3;
-    for (const ar of greens) {
-      const r = ar.ring;
-      let d = Infinity;
-      const m = r.length / 2;
-      for (let i = 0, j = m - 1; i < m; j = i++) {
-        d = Math.min(d, segDist(x, z, r[j * 2], r[j * 2 + 1], r[i * 2], r[i * 2 + 1]));
-      }
-      best = Math.max(best, pointInRing(r, x, z) ? Math.min(d, 3) : -Math.min(d, 3));
-    }
-    return best;
-  };
+  const pavedAreas = areasOf(Ground.Plaza, Ground.Worship, Ground.Platform, Ground.Quay);
+  const greens = areasOf(Ground.Grass, Ground.Pitch);
+  const greenDist = (x: number, z: number): number => areaDist(greens, x, z);
+  const parkings = areasOf(Ground.Parking);
   // Raised solids (building=roof canopies, bridges) stand over paving: the ground under them stays.
   const raised = a.solids.filter((q) => {
     if (q.grounded) {
@@ -385,6 +395,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
         B[k] = 1;
       }
       G[k] = greens.length ? greenDist(x, z) : -3;
+      R[k] = parkings.length ? areaDist(parkings, x, z) : -3;
+      M[k] = sc.winMargin(x, z, (st) => carriageClass(st) === 'main');
+      C[k] = sc.winMargin(x, z, (st) => carriageClass(st) === 'sett');
       Wd[k] = sc.drop(x, z);
       // The block standing here (emitted grounded solids only: courtyards, gaps between blocks and buildings the
       // tiles do not emit keep their ground; raised solids stand over it).
@@ -392,7 +405,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       K[k] = sc.winMargin(x, z, (st) => st.kerbed);
       Q[k] = sc.winMargin(x, z, (st) => st.pedestrian);
       S[k] = D[k] - s.sidewalkWidth(x, z);
-      A[k] = pavedAreas.length ? pavedDist(x, z) : -3;
+      A[k] = pavedAreas.length ? areaDist(pavedAreas, x, z) : -3;
       T[k] = sc.trackBed(x, z);
     }
   }
@@ -420,6 +433,24 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     return [gx / l, gz / l];
   };
   const wp = wearPlan(a);
+  // Per-vertex colour, weather and heights are asked once per polygon that uses the vertex (2-6 times): memoised
+  // on the vertex object (they depend on its fields only; callers never change the returned arrays).
+  const memo = <T>(fn: (v: V) => T): ((v: V) => T) => {
+    const m = new WeakMap<V, T>();
+    return (v) => {
+      let r = m.get(v);
+      if (r === undefined) {
+        r = fn(v);
+        m.set(v, r);
+      }
+      return r;
+    };
+  };
+  const memo2 = <T>(fn: (v: V, carriage: boolean) => T): ((v: V, carriage: boolean) => T) => {
+    const on = memo((v) => fn(v, true));
+    const off = memo((v) => fn(v, false));
+    return (v, carriage) => (carriage ? on(v) : off(v));
+  };
   const liftOf = (x: number, z: number): number => s.liftAt(x, z) - sc.drop(x, z);
   const kerbStone = (x: number, z: number): boolean => s.kerbed(x, z) && s.liftAt(x, z) > 0.05;
   /** Bevel depth at a pavement vertex: KERB_BEVEL at the kerb line, 0 from D = KERB_BEVEL on. */
@@ -430,10 +461,10 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     const step = Math.max(0, liftOf(v.x, v.z));
     return Math.min(KERB_BEVEL, step * 0.3) * (1 - Math.max(0, v.D) / KERB_BEVEL);
   };
-  const offY = (v: V): number => a.heights.off(v.x, v.z) - sc.drop(v.x, v.z) - bevel(v) - wp.dip(v.x, v.z);
-  const carriageY = (v: V): number => a.heights.carriage(v.x, v.z) - wp.dip(v.x, v.z);
+  const offY = memo((v: V): number => a.heights.off(v.x, v.z) - sc.drop(v.x, v.z) - bevel(v) - wp.dip(v.x, v.z));
+  const carriageY = memo((v: V): number => a.heights.carriage(v.x, v.z) - wp.dip(v.x, v.z));
   /** Wear colour (linear multiplier) of a ground vertex. */
-  const wear = (v: V, carriage: boolean): RGBA => {
+  const wear = memo2((v: V, carriage: boolean): RGBA => {
     // Blotches at 2-6 m and a macro variation at about 13-30 m (breaks the paving repeat seen across the square),
     // desire lines walked darker, and the tone of a relaid patch.
     const macro = carriage ? 0.9 + 0.1 * valueNoise(v.x, v.z, 17, 4) : 0.74 + 0.28 * (0.6 * valueNoise(v.x, v.z, 31, 2) + 0.4 * valueNoise(v.x, v.z, 13, 3));
@@ -448,9 +479,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     }
     const k = blotch * (1 - g);
     return rgba(k, k * (1 - g * 0.04), k * (1 - g * 0.1));
-  };
+  });
   /** `_WEATHER` of a ground vertex: dirt from walls, gutters, desire lines and blotches; damp at puddles and gutters. */
-  const weatherOf = (v: V, carriage: boolean): Weather => {
+  const weatherOf = memo2((v: V, carriage: boolean): Weather => {
     let dirt = 0.12 * Math.max(0, valueNoise(v.x, v.z, 3.7, 11) - 0.35);
     let damp = wp.damp(v.x, v.z);
     if (carriage && v.D > -0.9 && kerbStone(v.x, v.z)) {
@@ -466,7 +497,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       dirt = Math.max(dirt, 0.35 * wp.trodden(v.x, v.z));
     }
     return groundWeather(dirt, damp);
-  };
+  });
   /** Chipped arris of a kerb stone (edge wear) in patches along the kerb. */
   const kerbWeather = (v: V, face: boolean): Weather => {
     const chip = Math.max(0, valueNoise(v.x, v.z, 0.7, 13) - 0.45) * 2;
@@ -539,20 +570,36 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     }
     return [st.street.surf === Surf.Cobble ? 'st_kup' : st.street.surf === Surf.Asphalt && !st.street.pedestrian ? 'st_road' : 'st_slabs', streetFrame(st.index)];
   };
+  const streetEdgeM2 = { kept: 0, moved: 0 };
+  let streetEdge: 'kept' | 'moved' | null = null;
+  /**
+   * Carriageway paving by the winning street's class, read from the C / M border fields (ground.streetEdge counts
+   * the m² where the nearest street at the piece's centre would have picked another class: the saw teeth avoided).
+   */
   const carriageMaterial = (c: V): [MaterialName, Frame] => {
+    streetEdge = null;
     if (c.Q > 0) {
       return lanePaving(c) ?? ['st_slabs', WORLD];
     }
-    const st = sc.near(c.x, c.z, 30, (q) => !q.pedestrian);
-    if (st && (st.street.surf === Surf.Cobble || st.street.surf === Surf.Granite)) {
-      return ['st_kup', streetFrame(st.index)];
+    const cls: CarriageClass = c.C > 0 ? 'sett' : c.M > 0 ? 'main' : 'road';
+    const nearest = sc.near(c.x, c.z, 30, (q) => !q.pedestrian);
+    streetEdge = (nearest ? carriageClass(nearest.street) : 'road') === cls ? 'kept' : 'moved';
+    if (cls === 'sett') {
+      const st = sc.near(c.x, c.z, 30, (q) => carriageClass(q) === 'sett');
+      if (st) {
+        return [st.street.surf === Surf.Pavers ? 'st_slabs' : 'st_kup', streetFrame(st.index)];
+      }
     }
-    if (st && st.street.surf === Surf.Pavers) {
-      return ['st_slabs', streetFrame(st.index)];
-    }
-    return [st && isMain(st.street) ? 'st_road_main' : 'st_road', WORLD];
+    return [cls === 'main' ? 'st_road_main' : 'st_road', WORLD];
   };
+  /**
+   * ground.areaEdge (m², summed per tile): ground whose material an OSM area outline decided, `kept` where the
+   * raster texel agrees, `moved` where the outline corrected it (the saw teeth the raster would have drawn).
+   */
+  const areaEdge = { kept: 0, moved: 0 };
+  let edgeCheck: 'kept' | 'moved' | null = null;
   const offMaterial = (c: V): [MaterialName, Frame] => {
+    edgeCheck = null;
     if (s.geo.isWater(c.x, c.z)) {
       return ['st_pavers', WORLD];
     }
@@ -579,13 +626,18 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       }
       return ['st_pavers', kerbFrame()];
     }
-    if (g === Ground.Grass || g === Ground.Pitch) {
+    // Area classes by their outline fields (G, R), never by the raster texel (1 m saw teeth; rule ground.areaEdge).
+    const green = c.G > 0;
+    edgeCheck = green !== (g === Ground.Grass || g === Ground.Pitch) ? 'moved' : green ? 'kept' : null;
+    if (green) {
       return [kerbed ? 'st_sidewalk' : 'st_pavers', kerbFrame()];
     }
     if (d < PAVED_REACH) {
       return kerbed ? ['st_sidewalk', kerbFrame()] : (lanePaving(c) ?? ['st_pavers', WORLD]);
     }
-    if (g === Ground.Parking) {
+    const parking = c.R > 0;
+    edgeCheck = edgeCheck ?? (parking !== (g === Ground.Parking) ? 'moved' : parking ? 'kept' : null);
+    if (parking) {
       return ['st_road', WORLD];
     }
     return s.pathDistance(c.x, c.z) < PATH_REACH ? ['st_pavers', WORLD] : ['lot', WORLD];
@@ -711,6 +763,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       stats.gutterM += polyArea(q) / GUTTER_WIDTH;
     } else {
       const [m0, fr0] = carriageMaterial(c);
+      if (streetEdge) {
+        streetEdgeM2[streetEdge] += polyArea(q);
+      }
       const { m, fr, tone } = dressed(m0, fr0, c, true);
       const pts: Vec3[] = q.v.map((v, k) => [v.x, ys[k], v.z]);
       const cols = q.v.map((v): RGBA => {
@@ -790,6 +845,9 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
       }
     } else {
       const [m0, fr0] = offMaterial(c);
+      if (edgeCheck) {
+        areaEdge[edgeCheck] += polyArea(q);
+      }
       const { m, fr, tone, pit } = dressed(m0, fr0, c, false);
       const pts: Vec3[] = q.v.map((v, k) => [v.x, ys[k] - (pit ? PIT_DEPTH : 0), v.z]);
       const cols = q.v.map((v): RGBA => {
@@ -809,7 +867,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
 
   const corner = (i: number, j: number): V => {
     const k = j * W + i;
-    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k], K: K[k], Q: Q[k], S: S[k], A: A[k], T: T[k] };
+    return { x: tile.minX + i * CELL, z: tile.minZ + j * CELL, L: L[k], D: D[k], P: P[k], B: B[k], G: G[k], W: Wd[k], K: K[k], Q: Q[k], S: S[k], A: A[k], R: R[k], M: M[k], C: C[k], T: T[k] };
   };
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
@@ -834,7 +892,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
         }
         const parts = split(land, 'D', TAG_KERB);
         if (parts.neg) {
-          for (const q of cutPatches(splitAll(splitAll([parts.neg], 'D', -GUTTER_WIDTH), 'Q', 0), wp.patchesIn)) {
+          for (const q of cutPatches(splitAll(splitAll(splitAll(splitAll([parts.neg], 'D', -GUTTER_WIDTH), 'Q', 0), 'M', 0), 'C', 0), wp.patchesIn)) {
             emitCarriage(q);
           }
         }
@@ -859,6 +917,7 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
             ['K', 0],
             ['S', 0],
             ['A', 0],
+            ['R', 0],
             ['T', -KERB_WIDTH],
           ] as const) {
             pieces = splitAll(pieces, field, level);
@@ -881,6 +940,11 @@ export function buildStreetGround(t: TileContext, sc: StreetContext, totals: Gro
     mesh.addMesh(m, { positions: p.pos, indices: p.idx, uvm: p.uvm, color: p.col, weather: p.wx, normals: smoothNormals(p.pos, p.idx) });
   }
   stats.droppedKerbs = sc.dropped.filter((d) => d.x >= tile.minX && d.x < tile.maxX && d.z >= tile.minZ && d.z < tile.maxZ).length;
+  const log = placementLog(a);
+  log.note('ground.areaEdge', 'kept', Math.round(areaEdge.kept));
+  log.note('ground.areaEdge', 'moved', Math.round(areaEdge.moved));
+  log.note('ground.streetEdge', 'kept', Math.round(streetEdgeM2.kept));
+  log.note('ground.streetEdge', 'moved', Math.round(streetEdgeM2.moved));
   return stats;
 }
 
