@@ -69,7 +69,10 @@ export class FlightSim {
   /** Vertical component of the aerodynamic force last step (N). */
   aeroVertical = 0;
   flapForce = 0;
+  /** Surface under the dragon: the highest one reaching up to its body (a bridge deck overhead does not count). */
   surfaceY = 0;
+  /** Lowest bottom of a structure entirely above the body (bridge deck, arch, overhang), Infinity when open sky. */
+  ceilingY = Infinity;
   terrainY = 0;
   overWater = false;
   /** Height of the center of mass above the surface below (m). */
@@ -103,11 +106,17 @@ export class FlightSim {
   dustTimer = 0;
   impactCooldown = 0;
 
-  /* Terrain look-ahead along the ground track (refreshed at 20 Hz while airborne). */
+  /*
+   * Look-ahead along the ground track (refreshed at 20 Hz while airborne): the surface the dragon has to stay above
+   * at each point (terrain, roofs, and anything reaching into its predicted body band), and the ceiling it passes
+   * under there (Infinity when none, or when the gap is too small and the structure counts as an obstacle).
+   */
   readonly aheadSurface: number[] = PROXIMITY.lookahead.map(() => 0);
+  readonly aheadCeiling: number[] = PROXIMITY.lookahead.map(() => Infinity);
   readonly aheadDistance: number[] = PROXIMITY.lookahead.map(() => 0);
   readonly aheadWater: boolean[] = PROXIMITY.lookahead.map(() => false);
   private aheadTimer = 0;
+  private readonly column = { floor: 0, ceiling: Infinity };
 
   standHeight = 0.5 * DEFAULT_RIG_HEIGHT;
   rigLength = DEFAULT_RIG_LENGTH;
@@ -220,10 +229,15 @@ export class FlightSim {
     const col = this.world.collision;
     if (col) {
       this.terrainY = col.terrainHeight(p.x, p.z);
-      this.surfaceY = col.surfaceHeight(p.x, p.z);
+      // Split the column at the top of the body: what reaches down to it is the surface below, what lies entirely
+      // above it is a ceiling (flying or walking under a bridge keeps the water / ground as the surface).
+      col.columnAt(p.x, p.z, p.y + this.contacts.bellyDepth, this.column);
+      this.surfaceY = this.column.floor;
+      this.ceilingY = this.column.ceiling;
     } else {
       this.terrainY = -10;
       this.surfaceY = 0;
+      this.ceilingY = Infinity;
     }
     this.overWater = this.surfaceIsWater();
     this.agl = p.y - this.surfaceY;
@@ -412,7 +426,14 @@ export class FlightSim {
     }
   }
 
-  /** Surface heights 0.8 / 1.7 / 2.8 s ahead along the ground track (ground-proximity assist). */
+  /**
+   * Surface and ceiling 0.8 / 1.7 / 2.8 s ahead along the ground track (ground-proximity assist). At each point
+   * the column is split at the top of the body band swept on the way there (the higher of now and the predicted
+   * height, plus the raised wings and a margin): structures reaching into it are obstacles (their top is the
+   * surface to clear), structures entirely above it are ceilings to fly under — unless the gap below them is too
+   * small for the dragon, then they are obstacles as well. A ceiling the dragon is already under caps the band: it
+   * cannot climb over what it is beneath.
+   */
   private updateLookahead(h: number): void {
     this.aheadTimer -= h;
     if (this.aheadTimer > 0) {
@@ -423,6 +444,9 @@ export class FlightSim {
     const v = this.body.velocity;
     const col = this.world.collision;
     const horizontal = Math.hypot(v.x, v.z);
+    const above = PROXIMITY.headroom + PROXIMITY.ceilingMargin;
+    const gapNeed = this.footDepth() + PROXIMITY.headroom + PROXIMITY.ceilingKeep + PROXIMITY.passClearance;
+    const under = this.ceilingY < Infinity;
     for (let i = 0; i < PROXIMITY.lookahead.length; i++) {
       const t = PROXIMITY.lookahead[i];
       const x = p.x + v.x * t;
@@ -430,11 +454,24 @@ export class FlightSim {
       this.aheadDistance[i] = horizontal * t;
       if (col) {
         const terrain = col.terrainHeight(x, z);
-        const surface = col.surfaceHeight(x, z);
+        let band = Math.max(p.y, p.y + v.y * t) + above;
+        if (under) {
+          band = Math.min(band, this.ceilingY - 0.01);
+        }
+        const c = col.columnAt(x, z, band, this.column);
+        let surface = c.floor;
+        let ceiling = c.ceiling;
+        if (ceiling < Infinity && ceiling - surface < gapNeed && !under) {
+          // Too low to pass under: climb over the whole structure.
+          surface = col.surfaceHeight(x, z);
+          ceiling = Infinity;
+        }
         this.aheadSurface[i] = surface;
+        this.aheadCeiling[i] = ceiling;
         this.aheadWater[i] = terrain < -0.4 && surface < 0.05;
       } else {
         this.aheadSurface[i] = 0;
+        this.aheadCeiling[i] = Infinity;
         this.aheadWater[i] = true;
       }
     }

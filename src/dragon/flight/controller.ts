@@ -127,6 +127,8 @@ export class FlightController {
   private forwardLatch = false;
   /** Pitch rate limit (rad/s) of the flight-path override (the landing approach pitches over faster). */
   private pathRateLimit = 0.5;
+  /** Steepest flight path that keeps the dragon below the ceilings along its track (Infinity when open sky). */
+  private ceilingPath = Infinity;
 
   reset(gamma = 0): void {
     this.gammaHold = gamma;
@@ -374,6 +376,8 @@ export class FlightController {
         floor = cmd.brake
           ? this.groundFloor(sim, PROXIMITY.pilotLand, PROXIMITY.pilotWater, PROXIMITY.idleHorizon)
           : this.groundFloor(sim, PROXIMITY.idleLand, PROXIMITY.idleWater, PROXIMITY.idleHorizon);
+        // Under a bridge deck or an overhang the held path never climbs into it.
+        this.gammaHold = Math.min(this.gammaHold, this.ceilingPath);
         pitchRate = clamp(1.4 * (Math.max(this.gammaHold, floor) - sim.gamma), -0.3, 0.3) * cosBank;
         // Auto-level never pulls into a stall: with the wing stalled, lower the nose first.
         const excess = sim.alpha + WING.incidence - (WING.stall - 3 * DEG);
@@ -730,12 +734,26 @@ export class FlightController {
   private groundFloor(sim: FlightSim, wantLand: number, wantWater: number, horizon: number): number {
     const reach = Math.max(sim.airspeed, 8) * horizon;
     const feet = sim.body.position.y - sim.footDepth();
-    let floor = pathFloor(feet - sim.surfaceY - (sim.overWater ? wantWater : wantLand), reach);
-    for (let i = 0; i < sim.aheadSurface.length; i++) {
-      const room = feet - sim.aheadSurface[i] - (sim.aheadWater[i] ? wantWater : wantLand);
-      floor = Math.max(floor, pathFloor(room, reach + sim.aheadDistance[i]));
+    // Highest the lowest body point may fly under a ceiling: raised wings and the safety margin stay below it.
+    const up = sim.footDepth() + PROXIMITY.headroom + PROXIMITY.ceilingKeep;
+    let ceilingPath = Infinity;
+    let floor = -Infinity;
+    for (let i = -1; i < sim.aheadSurface.length; i++) {
+      const surface = i < 0 ? sim.surfaceY : sim.aheadSurface[i];
+      const ceiling = i < 0 ? sim.ceilingY : sim.aheadCeiling[i];
+      const dist = reach + (i < 0 ? 0 : sim.aheadDistance[i]);
+      let want = (i < 0 ? sim.overWater : sim.aheadWater[i]) ? wantWater : wantLand;
+      if (ceiling < Infinity) {
+        // Squeeze the wanted clearance into the gap (never below the least clearance to pass) and stay under.
+        const top = ceiling - up;
+        want = Math.min(want, Math.max(top - surface, Math.min(want, PROXIMITY.passClearance)));
+        ceilingPath = Math.min(ceilingPath, -pathFloor(top - feet, dist));
+      }
+      floor = Math.max(floor, pathFloor(feet - surface - want, dist));
     }
-    return floor;
+    this.ceilingPath = ceilingPath;
+    // The ceiling wins: pushing up into a deck the dragon is under or about to pass under is never the way out.
+    return Math.min(floor, ceilingPath);
   }
 
   /** Height of the lowest body point above the surface ~0.8-1.7 s ahead along the track. */

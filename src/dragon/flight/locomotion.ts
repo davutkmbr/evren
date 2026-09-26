@@ -16,6 +16,7 @@ const _targetQ = new THREE.Quaternion();
 const _extraQ = new THREE.Quaternion();
 const _step = new THREE.Vector3();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _column = { floor: 0, ceiling: Infinity };
 
 function approach(current: number, target: number, rate: number, h: number): number {
   const d = target - current;
@@ -194,7 +195,8 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
   const fz = -Math.cos(sim.groundYaw);
   const nx = p.x + fx * sim.groundSpeed * h;
   const nz = p.z + fz * sim.groundSpeed * h;
-  const nextSurface = collision ? collision.surfaceHeight(nx, nz) : sim.surfaceY;
+  // Next ground under the standing body: a deck or an overhang above the dragon's back is not a step.
+  const nextSurface = collision ? collision.columnAt(nx, nz, sim.surfaceY + sim.standHeight + sim.contacts.bellyDepth, _column).floor : sim.surfaceY;
   if (nextSurface - sim.surfaceY > GROUND.maxStep) {
     sim.groundSpeed *= 0.2;
     if (collision && sim.contacts.onWall) {

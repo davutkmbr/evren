@@ -174,6 +174,20 @@ export const PROXIMITY = {
   idleHorizon: 3,
   lookahead: [0.8, 1.7, 2.8] as readonly number[],
   sampleInterval: 0.05,
+  /**
+   * Overhead structures (bridge decks, arches, overhangs): height of the raised wings above the center of mass and
+   * the safety margin kept below a ceiling. Anything reaching down into that band along the path is an obstacle to
+   * climb over; anything entirely above it is a ceiling to pass under.
+   */
+  headroom: 5,
+  ceilingMargin: 3,
+  /**
+   * Clearance the assist keeps between the raised wings and a ceiling it flies under; larger than ceilingMargin so
+   * a dragon held there does not flicker between "pass under" and "climb over".
+   */
+  ceilingKeep: 6,
+  /** Least clearance (lowest body point above the floor) a gap under a ceiling must leave to fly through it. */
+  passClearance: 2,
   /** Lower wingtip must stay this far above the surface when banking. */
   wingtipMargin: 1,
   /** Wingtip clearance kept at the bottom of the downstroke (limits the stroke amplitude). */
