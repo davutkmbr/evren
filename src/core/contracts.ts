@@ -589,7 +589,14 @@ export interface AudioService {
    * 0 restores the normal mix. The ambience's own smoothing makes the change a slow swell.
    */
   setAmbienceLift?(amount: number): void;
+  /** A positional cue of a moment's procedural creatures (src/moments), e.g. a stork's bill clatter nearby. */
+  momentCue?(cue: MomentAudioCue, position: { x: number; y: number; z: number }, volume?: number, panFrom?: number): void;
+  /** Soft open-air wind bed while a moment plays high over the city, 0..1 (swells in and out slowly). */
+  setMomentBed?(amount: number): void;
 }
+
+/** Positional sound cues of moment creatures (synthesised, src/audio/sfx/storks.ts). */
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).
