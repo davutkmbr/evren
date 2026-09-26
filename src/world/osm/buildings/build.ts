@@ -22,9 +22,7 @@ import { clearanceOf, planBuilding, wallHeight } from './plan';
 import { encodePrism } from './protocol';
 import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
-
-/** building=* values that are not solid buildings (canopies, ruins, bridge decks). */
-const SKIP_KINDS = new Set(['roof', 'ruins', 'collapsed', 'bridge', 'construction', 'no', 'carport']);
+import { CANOPY_KINDS, NON_SOLID_KINDS, onLandmarkPad } from './selection';
 
 /** POI point kinds (x, z, kind triples): 1 shop, 2 food and drink (awnings), 3 services (banks, pharmacies). */
 export const Poi = { Shop: 1, Food: 2, Service: 3, Hotel: 4 } as const;
@@ -50,6 +48,8 @@ export interface BuildOutput {
   colliders: Float32Array;
   /** OSM id per collider record (debug labels). */
   colliderIds: Float64Array;
+  /** OSM id of every building record (outline or part) that got geometry; infill parcels excluded. */
+  drawnIds: Float64Array;
   stats: Record<string, number>;
 }
 
@@ -117,27 +117,6 @@ class PoiIndex {
   }
 }
 
-function padHit(pads: Float32Array, x: number, z: number): boolean {
-  for (let k = 0; k < pads.length; k += 3) {
-    const dx = x - pads[k];
-    const dz = z - pads[k + 1];
-    if (dx * dx + dz * dz < pads[k + 2] * pads[k + 2]) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Fraction of ring vertices (and the centroid) inside a landmark pad. */
-function padCover(pads: Float32Array, r: readonly number[], cx: number, cz: number): number {
-  let hit = padHit(pads, cx, cz) ? 1 : 0;
-  const n = r.length / 2;
-  for (let i = 0; i < n; i++) {
-    hit += padHit(pads, r[i * 2], r[i * 2 + 1]) ? 1 : 0;
-  }
-  return hit / (n + 1);
-}
-
 /** building:part with the parent outline's tags filled in where the part leaves them open (S3DB inheritance). */
 function inherit(part: OsmBuilding, parent: OsmBuilding): OsmBuilding {
   return {
@@ -155,7 +134,6 @@ function inherit(part: OsmBuilding, parent: OsmBuilding): OsmBuilding {
 }
 
 export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: WorldBounds): BuildOutput {
-  const geo = surface.geo;
   const facade = new StateMesh(FACADE_STATE);
   const roof = new StateMesh(ROOF_STATE);
   const details = new DetailSink(rect);
@@ -167,7 +145,6 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     infill: 0,
     parts: 0,
     skippedLandmark: 0,
-    skippedWater: 0,
     party: 0,
     streetWalls: 0,
     shopWalls: 0,
@@ -188,7 +165,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   const archStats: Record<string, number> = {};
 
   // 1. Solids: parts replace outlines that have them (and inherit their tags and colour seed); everything outside
-  // the rect, on water or on a landmark goes.
+  // the rect or on a landmark pad goes.
   const parents = input.buildings.filter((b) => b.hasParts);
   const parentOf = (b: OsmBuilding): OsmBuilding | null => {
     const n = b.ring.length / 2;
@@ -202,7 +179,8 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   };
   const solids: Solid[] = [];
   const consider = (src: OsmBuilding, infill: boolean): void => {
-    if (src.hasParts || SKIP_KINDS.has(src.kind)) {
+    // The shared rule (selection.ts): the street tiles draw the same set up close.
+    if (src.hasParts || NON_SOLID_KINDS.has(src.kind) || CANOPY_KINDS.has(src.kind)) {
       return;
     }
     const parent = src.part ? parentOf(src) : null;
@@ -230,11 +208,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     if (cx < rect.minX || cx > rect.maxX || cz < rect.minZ || cz > rect.maxZ) {
       return;
     }
-    if (geo.isWater(cx, cz)) {
-      stats.skippedWater++;
-      return;
-    }
-    if (padCover(input.pads, ring, cx, cz) > 0.5) {
+    if (onLandmarkPad(input.pads, ring)) {
       stats.skippedLandmark++;
       return;
     }
@@ -286,7 +260,8 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     let gMin = Infinity;
     let gMax = -Infinity;
     for (let i = 0; i < n; i++) {
-      const g = geo.height(r[i * 2], r[i * 2 + 1]);
+      // The OSM ground (quay raise included), like the street tiles' buildings: shore buildings stand on the quay.
+      const g = surface.baseAt(r[i * 2], r[i * 2 + 1]);
       ground.push(g);
       gMin = Math.min(gMin, g);
       gMax = Math.max(gMax, g);
@@ -346,7 +321,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
       if (court) {
         stats.courtyards++;
         for (let i = 0; i < m; i++) {
-          rg.push(geo.height(ring[i * 2], ring[i * 2 + 1]));
+          rg.push(surface.baseAt(ring[i * 2], ring[i * 2 + 1]));
         }
       }
       for (let i = 0; i < m; i++) {
@@ -471,5 +446,5 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   for (const [k, v] of Object.entries(archStats)) {
     stats[`arch${k}`] = v;
   }
-  return { facade, roof, details, props, colliders: new Float32Array(colliders), colliderIds: new Float64Array(colliderIds), stats };
+  return { facade, roof, details, props, colliders: new Float32Array(colliders), colliderIds: new Float64Array(colliderIds), drawnIds: new Float64Array(solids.filter((s) => !s.infill).map((s) => s.b.id)), stats };
 }

@@ -37,6 +37,7 @@
     "compile:world": "node tools/world-compiler/run.mjs",
     "compile:walls": "tsx tools/world-compiler/src/walls/cli.ts",
     "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",
+    "check:map": "tsx tools/headless/map-consistency-check.ts",
     "blender": "node scripts/blender-run.mjs"
   },
   "dependencies": {
