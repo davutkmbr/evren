@@ -95,12 +95,13 @@ const SETS: Record<string, ClothSet> = {
 };
 
 /** Which set and look each exported material id gets. */
-const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number; rough?: number; metal?: number; tint?: number }> = {
-  primary: { set: 'velvet', sheen: 1, sheenRough: 0.35 },
+const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number; rough?: number; metal?: number; tint?: number; bump?: number }> = {
+  primary: { set: 'velvet', sheen: 1, sheenRough: 0.35, bump: 0.45 },
   secondary: { set: 'linen', sheen: 0.4, sheenRough: 0.6 },
   linen: { set: 'linen', sheen: 0.4, sheenRough: 0.6 },
   accent: { set: 'satin', sheen: 0.6, sheenRough: 0.25, rough: 0.45 },
-  leather: { set: 'leather' },
+  // Soft, fine-grained leather: a light bump (the scan's full relief reads as fur on gloves).
+  leather: { set: 'leather', bump: 0.35, rough: 0.8 },
   darkLeather: { set: 'leather', tint: 0.4 },
   mail: { set: 'mail', metal: 1, tint: 1.3 },
   // Worn steel (hammered, scratched, smudged) and the same scan tinted for the gilt fittings.
@@ -140,6 +141,7 @@ uniform float uGdScale;
 uniform float uGdHasSet;
 uniform float uGdHasAO;
 uniform float uGdTintScale;
+uniform float uGdBump;
 vec3 gdWeights() {
   vec3 w = pow(abs(normalize(vGdNrm)), vec3(4.0));
   return w / (w.x + w.y + w.z);
@@ -191,6 +193,7 @@ function garmentMaterial(src: THREE.MeshStandardMaterial, ao: boolean): THREE.Ma
     uGdHasSet: { value: set ? 1 : 0 },
     uGdHasAO: { value: set && set.ao ? 1 : 0 },
     uGdTintScale: { value: 1 },
+    uGdBump: { value: look.bump ?? 0.9 },
   };
   patchMaterial(m, `rider-garment-${set ? set.base : 'plain'}${ao ? '-ao' : ''}`, (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -224,7 +227,7 @@ diffuseColor.rgb *= mix(0.4, 1.0, gdOpa);`,
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
-normal = normalize(normal + mat3(vGdRx, vGdRy, vGdRz) * gdNormalDelta() * 0.9);`,
+normal = normalize(normal + mat3(vGdRx, vGdRy, vGdRz) * gdNormalDelta() * uGdBump);`,
       )
       .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= mix(0.5, 1.0, gdAO);');
   });

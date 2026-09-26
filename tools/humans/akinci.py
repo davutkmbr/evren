@@ -277,8 +277,8 @@ def build(rig, body, colliders):
     mat(sleeves, "mail", 0.45, 1.0)
     parts.append(sleeves)
     garments.append(sleeves)
-    vamb = region(body, "vambraces", fore_keep(0.5, 0.95))
-    grow(vamb, 0.018, 0.004, smooth=6, loose=20, subdiv=1, rim=False)
+    vamb = region(body, "vambraces", fore_keep(0.4, 0.95))  # over the sleeve's cuff: no gap at the forearm
+    grow(vamb, 0.026, 0.004, smooth=6, loose=20, subdiv=1, rim=False)
     mat(vamb, "iron", 0.35, 1.0)
     parts.append(vamb)
     parts += pipe(vamb, 0.004, "metal")
@@ -599,13 +599,18 @@ def hide_covered_body(body, garments, reach=0.06):
         bm.free()
     mw = body.matrix_world
     nm = mw.to_3x3().inverted().transposed()
+    w = bone_weights(body)
     covered = []
-    for v in body.data.vertices:
-        # Covered when a garment lies right over the skin along its normal (and near it anyway): skin beyond a hem or
-        # a neckline stays, so the cut in the body never shows.
+    for i, v in enumerate(body.data.vertices):
+        # Covered when a garment lies right over the skin along its normal: skin beyond a hem or a neckline stays, so
+        # the cut in the body never shows. Round the hips and thighs (under the şalvar and the skirt, bent hard in the
+        # saddle) nearness is enough, so no skin pokes through the creases.
         p = mw @ v.co
         n = (nm @ v.normal).normalized()
-        covered.append(any(t.ray_cast(p - n * 0.002, n, reach)[0] is not None for t in trees))
+        hit = any(t.ray_cast(p - n * 0.002, n, reach)[0] is not None for t in trees)
+        if not hit and dominant(w[i]) in ("Hips", "LeftUpLeg", "RightUpLeg", "Spine"):
+            hit = any(t.find_nearest(p, 0.05)[0] is not None for t in trees)
+        covered.append(hit)
     bm = bmesh.new()
     bm.from_mesh(body.data)
     bm.verts.ensure_lookup_table()
