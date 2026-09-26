@@ -61,6 +61,12 @@ function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
 const LOAD_DISTANCE = 1800;
 const UNLOAD_DISTANCE = 2400;
 const MAX_LOADED = 5;
+/**
+ * A loaded region takes over from the far layer (city swap + fade in) only inside this distance: between it and
+ * LOAD_DISTANCE the region is built but hidden, so the far layer keeps drawing the same buildings in one merged set
+ * of chunks instead of the region's own draws and shadow casters.
+ */
+const ACTIVATE_DISTANCE = 1200;
 /** Near-only layers (traffic) of a streamed region start inside NEAR_ON and stop beyond NEAR_OFF (m, "high"). */
 const NEAR_ON = 1000;
 const NEAR_OFF = 1400;
@@ -303,7 +309,8 @@ class OsmRegion {
   update(dt: number): void {
     this.stepFade();
     const ctx = this.ctx;
-    if (!ctx) {
+    // Built but not yet taken over from the far layer (hidden): nothing of it is drawn, so its LODs need no streaming.
+    if (!ctx || !this.group.visible) {
       return;
     }
     for (const l of this.layers) {
@@ -451,7 +458,7 @@ class OsmSystem implements System {
       } else if (dist > NEAR_OFF * scale) {
         r.setNear(false);
       }
-      if (!r.active && r.buildingsDrawn()) {
+      if (!r.active && r.buildingsDrawn() && dist < ACTIVATE_DISTANCE * scale) {
         r.active = true;
         void withTimeout(setOsmRegionActive(r.def, true)).then((t0) => r.beginFadeIn(t0));
       }

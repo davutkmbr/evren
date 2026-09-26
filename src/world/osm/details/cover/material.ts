@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { WorldBounds } from '../../../../core/contracts';
 import { patchMaterial, streetHole } from '../../../../core/uniforms';
 import { loadPbrArrays, maxAnisotropy, REPEAT_M } from '../../shared/textures';
+import { releaseAfterUpload } from '../../shared/three';
 import type { CoverRaster } from '../protocol';
 
 const COVER_PARS = /* glsl */ `
@@ -101,6 +102,8 @@ export function createCoverMaterial(renderer: THREE.WebGLRenderer, raster: Cover
   mask.magFilter = THREE.LinearFilter;
   mask.generateMipmaps = false;
   mask.needsUpdate = true;
+  // The raster is the worker's; after upload only the GPU reads it.
+  releaseAfterUpload(mask);
   const uniforms = {
     uCover: { value: mask as THREE.Texture },
     uCoverAlb: { value: null as THREE.Texture | null },
