@@ -255,7 +255,7 @@ export function prepareBuildInput(): PreparedInput {
     reservedDiscs,
     reservedLines,
     reservedPolygons,
-    roads: ROADS.map((r) => ({ pts: projectRing(r.ll), halfWidth: Math.max(6, r.width / 2 + 3), overWater: r.kind === 'bridge' })),
+    roads: ROADS.map((r) => ({ pts: projectRing(r.ll), halfWidth: Math.max(6, r.width / 2 + 3), overWater: r.kind === 'bridge', highway: r.kind === 'highway' ? r.name : undefined })),
     breakwaters: BREAKWATERS.map((b) => ({ pts: projectRing(b.ll), halfWidth: b.width / 2 + 12 })),
     districts: DISTRICTS.map((d) => ({
       ...latLonToLocal(d.lat, d.lon),
