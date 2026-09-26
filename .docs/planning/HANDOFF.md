@@ -50,10 +50,14 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
      (`.shots/walls/debug/`, input lines by source, openings, placed pieces: positions match the real course — the
      owner's "wrong place" report was the aqueduct), walk-test --dragon kumkapi (0 phantoms, no city-wall collider
      blocks a street), perf (`.shots/walls/perf/`: +7 draw calls, +58k triangles at 300 m over the land walls, walls
-     CPU < 0.01 ms), worktree typecheck clean. Data issues left: OSM tags the Hippodrome sphendone (321386212) and two
-     Dolmabahçe garden walls (castle_wall) as walls; mapped land-wall gate openings are 11+ m (breaches, no gate
-     pieces); street lamps / OSM trees are not kept out of the walls. Compiled street areas need a recompile to drop
+     CPU < 0.01 ms), worktree typecheck clean. Data issues left: OSM tags the Hippodrome sphendone (321386212) as a
+     wall (it is outside the Hipodrom site's radius; left as is). Compiled street areas need a recompile to drop
      wall-owned buildings.
+     **Done (cloud session, PR #62):** walls mostly inside a modelled palace site are left to the palace (Dolmabahçe's
+     two castle_wall ways); a tower flanks each end of a 10–60 m road / rail breach at a mapped gate
+     (`towers.breachFlank`); no prop, lamp, parked car or OSM tree stands inside the wall bodies (stand fault
+     `structure`, `walls/data/bodies.ts` from corridors.json). Needs a local `npm run compile:walls` (the baked tiles
+     are gitignored) and an in-game look.
    - Roads (owner report: supplement walls stood in the Kennedy Cd median): carriageways (with their width + 0.5 m),
      rail / tram beds and the medians of divided major roads (< 35 m) are now obstacles like buildings (`buildings.ts`
      road quads, `fit.ts`); supplement (OHM) traces are snapped to the land side of major roads within 40 m before
