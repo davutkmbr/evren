@@ -71,6 +71,38 @@ export function horizontalDistanceToSegment(p: Vec3, a: Vec3, b: Vec3): number {
   return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
 }
 
+/**
+ * Fraction (0..1) of the way from a to b reached by p: its projection onto the segment, clamped. Uses the full 3D
+ * direction so climbing legs count too.
+ */
+export function segmentFraction(p: Vec3, a: Vec3, b: Vec3): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const abz = b.z - a.z;
+  const len2 = abx * abx + aby * aby + abz * abz;
+  if (len2 <= 0) {
+    return 1;
+  }
+  const t = ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / len2;
+  return Math.max(0, Math.min(1, t));
+}
+
+/** Largest fraction reported for the leg still being flown: a leg only completes by passing its gate. */
+const MAX_LEG_FRACTION = 0.999;
+
+/**
+ * Progress along a course: `next` (gates passed) plus the fraction along the leg towards gate `next` (from the lead-in
+ * start for gate 0). 0 at the lead-in start, gates.length at the finish.
+ */
+export function courseProgress(course: CompiledCourse, next: number, pos: Vec3): number {
+  const n = course.gates.length;
+  if (next >= n) {
+    return n;
+  }
+  const from: Vec3 = next > 0 ? course.gates[next - 1] : course.start;
+  return next + Math.min(MAX_LEG_FRACTION, segmentFraction(pos, from, course.gates[next]));
+}
+
 export class RaceSession {
   readonly course: CompiledCourse;
   phase: RacePhase = 'idle';

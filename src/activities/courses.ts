@@ -28,7 +28,24 @@ export interface CourseDef {
   /** One sentence Turkish description. */
   description: string;
   gates: readonly GateDef[];
+  /** Medal target times (s, whole seconds). Defaults come from defaultMedalTimes(); keep them in sync by hand. */
+  medals: MedalTimes;
 }
+
+export type Medal = 'gold' | 'silver' | 'bronze';
+
+/** Target times (s): a finish at or under a target earns that medal. gold < silver < bronze. */
+export interface MedalTimes {
+  gold: number;
+  silver: number;
+  bronze: number;
+}
+
+/** Average speeds (m/s) the default medal targets ask for, over the timed distance (course + rest of the lead-in). */
+export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 44, silver: 38, bronze: 32 };
+
+/** Medals from best to worst. */
+export const MEDAL_ORDER: readonly Medal[] = ['gold', 'silver', 'bronze'];
 
 export interface Gate {
   index: number;
@@ -67,12 +84,15 @@ export const RACE_PACE = 35;
 export const COUNTDOWN_SECONDS = 3;
 /** Lead-in distance (m): the dragon covers the countdown and a little more before reaching the start gate. */
 export const LEAD_IN = RACE_PACE * COUNTDOWN_SECONDS + 160;
+/** Lead-in distance still ahead at GO when the dragon holds the race pace through the countdown (m): timed. */
+export const TIMED_LEAD_IN = LEAD_IN - RACE_PACE * COUNTDOWN_SECONDS;
 
 export const COURSES: readonly CourseDef[] = [
   {
     id: 'bogaz',
     name: 'Boğaz turu',
     description: 'Kız Kulesi’nden Boğaziçi Köprüsü’nün üstünden Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
+    medals: { gold: 248, silver: 288, bronze: 342 },
     gates: [
       { lat: 41.0135, lon: 28.9996, alt: 70, radius: 32, label: 'Başlangıç' },
       { lat: 41.0216, lon: 28.9998, alt: 60, radius: 30, label: 'Kız Kulesi' },
@@ -91,6 +111,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'halic',
     name: 'Haliç kıvrımı',
     description: 'Karaköy’den köprülerin üstünden Haliç’in kıvrımını izleyerek Eyüp’e.',
+    medals: { gold: 120, silver: 139, bronze: 165 },
     gates: [
       { lat: 41.0202, lon: 28.9807, alt: 55, radius: 26, label: 'Başlangıç' },
       { lat: 41.022, lon: 28.97, alt: 95, radius: 24, label: 'Galata Köprüsü' },
@@ -105,6 +126,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'adalar',
     name: 'Adalar turu',
     description: 'Kınalıada ile Burgaz arasından Heybeli’nin güneyinden dolaşıp Büyükada’nın çevresinden güney ucuna.',
+    medals: { gold: 344, silver: 399, bronze: 473 },
     gates: [
       { lat: 40.8919, lon: 29.0569, alt: 55, radius: 32, label: 'Başlangıç' },
       { lat: 40.8802, lon: 29.0498, alt: 55, radius: 30, label: 'Burgazada' },
@@ -162,6 +184,40 @@ export function compileCourse(def: CourseDef): CompiledCourse {
   const headingDeg = ((Math.atan2(fx, -fz) * 180) / Math.PI + 360) % 360;
   const start: CourseStart = { x: g0.x - fx * LEAD_IN, y: g0.y, z: g0.z - fz * LEAD_IN, headingDeg, pitchDeg: 0, speed: RACE_PACE };
   return { def, gates, length, start };
+}
+
+/** Default medal targets for a timed distance (m): MEDAL_PACE averages, rounded to whole seconds. */
+export function defaultMedalTimes(timedDistance: number): MedalTimes {
+  return {
+    gold: Math.round(timedDistance / MEDAL_PACE.gold),
+    silver: Math.round(timedDistance / MEDAL_PACE.silver),
+    bronze: Math.round(timedDistance / MEDAL_PACE.bronze),
+  };
+}
+
+/** Timed distance of a course (m): the rest of the lead-in after GO plus the gate-to-gate legs. */
+export function timedDistance(course: CompiledCourse): number {
+  return TIMED_LEAD_IN + course.length;
+}
+
+/** Medal earned by a finish time, or null when slower than bronze. */
+export function medalFor(time: number, medals: MedalTimes): Medal | null {
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+  for (const m of MEDAL_ORDER) {
+    if (time <= medals[m]) {
+      return m;
+    }
+  }
+  return null;
+}
+
+/** The better of two medals (null = none). */
+export function betterMedal(a: Medal | null | undefined, b: Medal | null | undefined): Medal | null {
+  const rank = (m: Medal | null | undefined): number => (m ? MEDAL_ORDER.indexOf(m) : MEDAL_ORDER.length);
+  const best = Math.min(rank(a), rank(b));
+  return best < MEDAL_ORDER.length ? MEDAL_ORDER[best] : null;
 }
 
 const compiled = new Map<string, CompiledCourse>();

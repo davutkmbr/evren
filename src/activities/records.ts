@@ -1,11 +1,13 @@
 /**
- * Race records: best time, best splits and the best run's path (for a later ghost replay) per course, in localStorage.
+ * Race records: best time, best splits, best medal and the best run's path (ghost replay) per course, in localStorage.
  * Every storage access is guarded; without storage (private window, headless) the records live in memory only.
  *
  * Ghost path encoding (compact): samples at GHOST_HZ; the first sample as three Int16 (whole meters), then three Int8
  * deltas per sample in GHOST_STEP meter units, quantized against the reconstructed position so errors do not
  * accumulate. Bytes → base64. About 4 characters per sample (a 5 minute run ≈ 6 KB).
  */
+import { betterMedal, type Medal } from './courses';
+
 export const GHOST_HZ = 5;
 const GHOST_STEP = 0.5;
 const STORAGE_KEY = 'evren.races.v1';
@@ -19,6 +21,19 @@ export interface RaceRecord {
   ghost?: string;
   /** ISO date of the record. */
   date?: string;
+  /** Best medal earned on this course (any run). */
+  medal?: Medal;
+}
+
+export interface SubmitResult {
+  /** Best time before this run (undefined for a first finish). */
+  previousBest?: number;
+  /** This run became the record. */
+  newRecord: boolean;
+  /** Best medal on the course after this run (null = none yet). */
+  medal: Medal | null;
+  /** This run improved the course's best medal. */
+  newMedal: boolean;
 }
 
 export type RecordTable = Record<string, RaceRecord>;
@@ -38,6 +53,8 @@ function isRecord(v: unknown): v is RaceRecord {
   return !!r && typeof r.best === 'number' && Number.isFinite(r.best) && Array.isArray(r.splits);
 }
 
+const MEDALS: ReadonlySet<string> = new Set(['gold', 'silver', 'bronze']);
+
 export function loadRecords(): RecordTable {
   if (memory) {
     return memory;
@@ -49,6 +66,9 @@ export function loadRecords(): RecordTable {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       for (const [id, rec] of Object.entries(parsed)) {
         if (isRecord(rec)) {
+          if (rec.medal !== undefined && !MEDALS.has(rec.medal)) {
+            delete rec.medal;
+          }
           table[id] = rec;
         }
       }
@@ -74,18 +94,24 @@ export function getRecord(courseId: string): RaceRecord | undefined {
 }
 
 /**
- * Stores a finished run if it beats the record. Returns the previous best (undefined for a first finish) and whether
- * this run became the new record.
+ * Stores a finished run if it beats the record (the course's best medal is kept separately: it only ever improves).
+ * `medal` is the medal this run earned (null/undefined = none).
  */
-export function submitRun(courseId: string, time: number, splits: readonly number[], ghost?: string): { previousBest?: number; newRecord: boolean } {
+export function submitRun(courseId: string, time: number, splits: readonly number[], ghost?: string, medal?: Medal | null): SubmitResult {
   const table = { ...loadRecords() };
   const prev = table[courseId];
+  const bestMedal = betterMedal(prev?.medal, medal);
+  const newMedal = !!medal && bestMedal === medal && prev?.medal !== medal;
   if (prev && prev.best <= time) {
-    return { previousBest: prev.best, newRecord: false };
+    if (newMedal) {
+      table[courseId] = { ...prev, medal: bestMedal ?? undefined };
+      saveRecords(table);
+    }
+    return { previousBest: prev.best, newRecord: false, medal: bestMedal, newMedal };
   }
-  table[courseId] = { best: time, splits: splits.slice(), ghost, date: new Date().toISOString() };
+  table[courseId] = { best: time, splits: splits.slice(), ghost, date: new Date().toISOString(), medal: bestMedal ?? undefined };
   saveRecords(table);
-  return { previousBest: prev?.best, newRecord: true };
+  return { previousBest: prev?.best, newRecord: true, medal: bestMedal, newMedal };
 }
 
 export function clearRecords(courseId?: string): void {
