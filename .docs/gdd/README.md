@@ -47,7 +47,9 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 ### 5.1 Flight and the dragon (`src/dragon/`)
 - Physics-based flight: lift, drag, stall, flapping effort and stamina; glide ratio 8–12, cruise 25–45 m/s, folded
   dive 80–90 m/s.
-- Tricks: barrel roll, loop, free fall with a wing-snap catch, the "dehh" urge.
+- Tricks: barrel roll, loop, free fall with a wing-snap catch, the "dehh" urge; air moves (phase 20 stage B): power
+  stroke (güç vuruşu), dart, side-slip (kayış) and the automatic surface skim (sıyırma), each reporting a clean or
+  unclean end for the flow system to come.
 - Assisted hands-off flight: the dragon holds a safe clearance, climbs over what it cannot pass, **passes under**
   bridges and overhangs that leave room, and with a speed-scaled look-ahead (150–600 m) climbs over or turns away
   from towers. Player input always wins.
@@ -56,9 +58,9 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Rider: every command shows on the rider; petting, standing, the dragon's gaze back. Humans are MetaHuman +
   Mixamo (private asset store).
 - Hooks for other systems: `addVelocity` (speed rings, powers), `requestRoar`, `fireBurst`.
-- Planned (phase 20): run-out landings and touch-and-go, leaping take-offs, new air moves (power stroke, dart,
-  wingover, Immelmann / Split-S, side-slip, surface skim) and a flow system that rewards clean chains with capped
-  speed — the skill ceiling for races.
+- Phase 20: run-out landings and touch-and-go, leaping take-offs and the stage B air moves are built; planned are
+  wingover, Immelmann / Split-S and a flow system that rewards clean chains with capped speed — the skill ceiling for
+  races.
 - Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
   dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
 
@@ -109,7 +111,7 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 |---|---|
 | Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off, V galloping take-off; in a run-out Ctrl/X skid to a stop, Space touch-and-go |
-| Speed and tricks | V urge, Shift fold wings (dive), A/D ×2 roll, S ×2 loop |
+| Speed and tricks | V urge, Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
 | Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |

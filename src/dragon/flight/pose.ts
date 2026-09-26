@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
-import { clamp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY, SWIM_POSE } from './params';
+import { clamp, lerp, smoothstep } from '../../core/math/noise';
+import { ENVELOPE, GRAVITY, SKIM, SWIM_POSE } from './params';
 import type { FlightSim } from './sim';
+import { tailPitchForClearance } from './skim';
 import type { PilotCommand } from './types';
 
 /** Rider cue smoothing rates (1/s): reins ~0.17 s, crouch ~0.25 s, arm gestures ~0.2 s. */
@@ -17,15 +18,16 @@ const _omegaWorld = new THREE.Vector3();
 const _accelBody = new THREE.Vector3();
 const _invQ = new THREE.Quaternion();
 const _groundN = new THREE.Vector3();
-/** Tail root behind / above the centre of mass (rig frame) and the tail's length (m) for the ground clearance. */
-const TAIL_ROOT_Z = 2.7;
-const TAIL_ROOT_Y = 0.35;
-const TAIL_LENGTH = 8.5;
 /** Height the tail tip keeps above the ground near it (m) and the most it curls up for that (rad). */
 const TAIL_CLEARANCE = 1.2;
 const TAIL_MAX_CURL = 1.6;
 /** Rate (1/s) of the ground cues (they are already continuous; this only rounds the corners). */
 const CUE_RATE = 14;
+
+/** The skim's strength while airborne (0 on the ground and in the water). */
+function airborneSkim(sim: FlightSim): number {
+  return sim.airborne ? sim.skim.amount : 0;
+}
 
 /** Optional look target for the head (POV camera direction), angles relative to the body. */
 export interface LookTarget {
@@ -131,9 +133,17 @@ export class PoseDriver {
     const turnRate = onSurface ? sim.groundYawRate : _omegaWorld.y;
     const roar = this.roarEnvelope();
 
-    // Wings: asymmetric twist mirrors the roll control moment actually applied.
+    // Stage B air moves: the power stroke's envelope, the side-slip's signed flick, the skim's strength.
+    const m = sim.maneuvers;
+    const power = airborne ? m.powerEnvelope : 0;
+    const slip = m.slipCue;
+    const dart = m.kind === 'dart' ? 1 - smoothstep(0.9, 1.3, m.time) : 0;
+    const skim = airborne ? sim.skim.amount : 0;
+
+    // Wings: asymmetric twist mirrors the roll control moment actually applied; the side-slip's flick drives the
+    // outer wing down hard (then the other one to stop).
     const twist = airborne ? clamp(-sim.controlMoment.z / (sim.controlCapacity.z + 1), -1, 1) * 0.85 : 0;
-    pose.wingTwist = follow(pose.wingTwist, twist, 14, dt);
+    pose.wingTwist = follow(pose.wingTwist, clamp(twist * (1 - Math.abs(slip)) + 0.9 * slip, -1, 1), 14, dt);
 
     // Neck: look into turns, keep the head nearer the horizon (bird-like stabilization), look down to land.
     let neckYaw = clamp(turnRate * 0.55 + sim.beta * 0.6, -0.55, 0.55);
@@ -157,6 +167,12 @@ export class PoseDriver {
     } else {
       neckPitch = -sim.pitch * 0.38 + 0.05;
     }
+    // Power stroke: neck stretched forward and down into the strokes. Dart: neck in line with the body, an arrow.
+    // Skim: head low, eyes on the surface ahead. Side-slip: the head looks where the body goes.
+    neckPitch -= 0.24 * power;
+    neckPitch = lerp(neckPitch, -0.14, dart);
+    neckPitch = lerp(neckPitch, -0.2, skim);
+    neckYaw -= 0.35 * slip;
     neckPitch += roar * 0.32;
     if (look && look.weight > 0) {
       neckYaw += clamp(look.yaw, -1, 1) * 0.6 * look.weight;
@@ -195,9 +211,20 @@ export class PoseDriver {
         (sim.mode === 'diving' ? 0.08 : 0);
       tailYaw += 0.05 * Math.sin(time * 1.3) * (1 - sim.beat.amplitude);
       tailPitch += 0.05 * Math.sin(sim.beat.phase + 2.2) * sim.beat.amplitude;
+      // Power stroke: the tail pumps down with the strokes. Dart: tail straight out behind, in line. Side-slip: the tail
+      // flicks out opposite the slip (then back to stop it). Skim: the tail tip lowered until it kisses the surface.
+      tailPitch += power * (0.08 + 0.2 * Math.sin(sim.beat.phase + 2.2));
+      tailPitch = lerp(tailPitch, 0.1, dart);
+      tailYaw = lerp(tailYaw, 0, dart) - 0.65 * slip;
+      if (skim > 0) {
+        const kiss = tailPitchForClearance(sim.agl, sim.pitch, sim.overWater ? SKIM.tailKissWater : SKIM.tailKissLand);
+        tailPitch = lerp(tailPitch, clamp(kiss, -0.5, SKIM.tailMax), skim);
+      }
     }
-    // Near the ground the tail curls up enough to keep its tip clear (a flare pitched 50° would drag it).
-    tailPitch = Math.min(clamp(tailPitch, -0.5, 0.5), -this.tailClearCurl(sim));
+    // Near the ground the tail curls up enough to keep its tip clear (a flare pitched 50° would drag it). A skim lets
+    // it down to its kiss height instead (over the water it may touch).
+    const tailLimit = skim > 0.01 ? this.tailKissLimit(sim) : -this.tailClearCurl(sim);
+    tailPitch = Math.min(clamp(tailPitch, -0.5, Math.max(0.5, SKIM.tailMax * skim)), tailLimit);
     pose.tailYaw = follow(pose.tailYaw, clamp(tailYaw, -0.7, 0.7), 2.5, dt);
     pose.tailPitch = follow(pose.tailPitch, tailPitch, tailPitch < pose.tailPitch ? 6 : 2.5, dt);
 
@@ -305,7 +332,17 @@ export class PoseDriver {
    * Tail curl (rad, upward) that keeps the tip TAIL_CLEARANCE above the ground: with the body pitched θ nose-up the
    * tail points down by θ; an even curl c along it turns its chord up by c / 2.
    */
-  private tailClearCurl(sim: FlightSim): number {
+  /** Lowest the tail may go while skimming (pose tail pitch): the tip at the kiss height over land, free over water. */
+  private tailKissLimit(sim: FlightSim): number {
+    if (sim.overWater) {
+      return Infinity;
+    }
+    const theta = sim.pitch + clamp(sim.body.angularVelocity.x, -1, 3) * 0.3;
+    const height = sim.agl + Math.min(sim.body.velocity.y, 0) * 0.5;
+    return Math.max(tailPitchForClearance(height, theta, SKIM.tailKissLand), -TAIL_MAX_CURL);
+  }
+
+  private tailClearCurl(sim: FlightSim, clearance: number = TAIL_CLEARANCE): number {
     // Over the sea the tail may dip (spray is the water model's business); swimming or under water it streamlines.
     if (sim.overWater || sim.mode === 'swimming' || sim.mode === 'underwater') {
       return 0;
@@ -313,11 +350,7 @@ export class PoseDriver {
     // Lead the pitch a little (a push-off or a flare rears up faster than the tail can follow).
     const theta = sim.pitch + clamp(sim.body.angularVelocity.x, -1, 3) * 0.3;
     const height = sim.agl + Math.min(sim.body.velocity.y, 0) * 0.5;
-    const root = height + TAIL_ROOT_Y * Math.cos(theta) - TAIL_ROOT_Z * Math.sin(theta);
-    const room = clamp((root - TAIL_CLEARANCE) / TAIL_LENGTH, -1, 1);
-    // The tail hangs a little below the body line at rest (about 0.05 rad).
-    const need = 2 * (theta + 0.05 - Math.asin(room));
-    return clamp(need, 0, TAIL_MAX_CURL);
+    return clamp(-tailPitchForClearance(height, theta, clearance), 0, TAIL_MAX_CURL);
   }
 
   /**
@@ -327,6 +360,7 @@ export class PoseDriver {
   private updateRiderCues(sim: FlightSim, dt: number, cmd: PilotCommand | null): void {
     const pose = this.pose;
     const m = sim.maneuvers;
+    const skim = airborneSkim(sim);
     const trick = m.kind;
     const airborne = sim.airborne;
     const roll = cmd ? clamp(cmd.roll + 0.5 * cmd.yaw, -1, 1) : 0;
@@ -363,6 +397,20 @@ export class PoseDriver {
     } else if (trick === 'loop') {
       tuck = Math.max(tuck, 0.85);
       left = right = 0.6;
+    } else if (trick === 'dart') {
+      // Low along the neck, reins given: the dragon is an arrow.
+      tuck = Math.max(tuck, 0.8);
+      left = right = -0.6;
+    } else if (trick === 'slip') {
+      // The rein on the slip side comes back hard, the rider leans with it (the lean follows the push by itself).
+      const side = m.slipDir;
+      left = side < 0 ? 0.85 : -0.2;
+      right = side > 0 ? 0.85 : -0.2;
+      tuck = Math.max(tuck, 0.45);
+    } else if (skim > 0.3) {
+      // Skimming: crouched low, hands low and forward.
+      tuck = Math.max(tuck, 0.55 * skim);
+      left = right = Math.min(left, right, 0) - 0.25 * skim;
     } else if (brake || sim.mode === 'hovering') {
       left = right = brake ? 1 : 0.75;
     } else if (sim.mode === 'landing') {
@@ -382,7 +430,7 @@ export class PoseDriver {
       this.pumpAge = 0;
     }
     const tapPump = this.pumpAge < PUMP_TIME ? Math.sin((Math.PI * this.pumpAge) / PUMP_TIME) : 0;
-    const heldPump = cmd?.flap && airborne && !falling ? Math.max(0, Math.sin(sim.beat.phase)) * sim.beat.amplitude : 0;
+    const heldPump = (cmd?.flap || m.powerActive) && airborne && !falling ? Math.max(0, Math.sin(sim.beat.phase)) * sim.beat.amplitude : 0;
     const pump = -0.35 * Math.max(tapPump, heldPump);
     pose.riderReinLeft = clamp(this.reinLeft + pump, -1, 1);
     pose.riderReinRight = clamp(this.reinRight + pump, -1, 1);

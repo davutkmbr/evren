@@ -17,9 +17,15 @@
  *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
+ *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap
  * Hotbar: slot1..slot5 = Digit1..Digit5 (and the numpad digits); the digit keys are reserved for the hotbar.
- * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS.
+ * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS
+ * (the recogniser and the gesture collisions are documented in core/gestures.ts).
  */
+import { DOUBLE_TAP_MS, DoubleTapRecognizer } from './gestures';
+
+export { DOUBLE_TAP_MS };
+
 export type AxisName = 'pitch' | 'roll' | 'yaw';
 export type ButtonName =
   | 'flap'
@@ -45,6 +51,8 @@ export type ButtonName =
   | 'rollRight'
   | 'pitchUp'
   | 'pitchDown'
+  | 'yawLeft'
+  | 'yawRight'
   | 'slot1'
   | 'slot2'
   | 'slot3'
@@ -53,9 +61,6 @@ export type ButtonName =
 
 /** Hotbar slot buttons in slot order (number keys 1..5). */
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
-
-/** Two presses of the same button within this window count as a double tap (ms). */
-export const DOUBLE_TAP_MS = 300;
 
 /** Buttons that only exist as edges (never reported as held). */
 const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', ...HOTBAR_BUTTONS]);
@@ -91,6 +96,8 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   ArrowDown: 'pitchUp',
   KeyW: 'pitchDown',
   ArrowUp: 'pitchDown',
+  KeyQ: 'yawLeft',
+  KeyE: 'yawRight',
   Digit1: 'slot1',
   Digit2: 'slot2',
   Digit3: 'slot3',
@@ -135,8 +142,12 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
+  { keys: 'Space ×2', action: 'Güç vuruşu: iki derin kanat çırpışıyla hızlan (dayanıklılık harcar)', group: 'tricks' },
+  { keys: 'Shift ×2', action: 'Hızlıyken ok gibi atıl: kanatlar yarı kapalı, sığ dalışla hız kazan (yavaşken: serbest düşüş)', group: 'tricks' },
+  { keys: 'Q / E ×2', action: 'Kayış: yönünü bozmadan yana kay', group: 'tricks' },
   { keys: 'A / D ×2', action: 'Takla at (basılı tut: dönmeye devam et)', group: 'tricks' },
   { keys: 'S ×2', action: 'Looping', group: 'tricks' },
+  { keys: 'W', action: 'Suya ya da düz zemine alçal: hızlı ve kanatlar düzken sıyırma (kendiliğinden)', group: 'tricks' },
   { keys: 'F / Sol tık', action: 'Ateş püskür', group: 'dragon' },
   { keys: 'R', action: 'Kükre', group: 'dragon' },
   { keys: 'G', action: 'Ejderhayı sev (basılı tut)', group: 'dragon' },
@@ -181,7 +192,7 @@ export class Input {
   private pressedQueue = new Set<ButtonName>();
   private doubleNow = new Set<ButtonName>();
   private doubleQueue = new Set<ButtonName>();
-  private readonly lastPressAt = new Map<ButtonName, number>();
+  private readonly doubleTaps = new DoubleTapRecognizer<ButtonName>(DOUBLE_TAP_MS);
   private mouseButtons = new Set<number>();
   private axes: Record<AxisName, AxisState> = {
     pitch: { value: 0, target: 0 },
@@ -379,12 +390,8 @@ export class Input {
       const b = KEY_BUTTONS[e.code];
       if (b) {
         this.pressedQueue.add(b);
-        const now = performance.now();
-        if (now - (this.lastPressAt.get(b) ?? -Infinity) < DOUBLE_TAP_MS) {
+        if (this.doubleTaps.press(b, performance.now())) {
           this.doubleQueue.add(b);
-          this.lastPressAt.delete(b);
-        } else {
-          this.lastPressAt.set(b, now);
         }
       }
     }
