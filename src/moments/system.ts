@@ -4,11 +4,16 @@
  * the snapshot to the pure MomentRunner (./runtime.ts) with the player's settings, and renders what the runner asks for
  * (subtitle line, closing card, the coastal ambience lift) through the HUD zone director.
  *
+ * Moments with a scene actor (./actors.ts, e.g. the stork flock) spawn it when they start; the actor is updated every
+ * running frame while it is alive and may outlive its lines. With no actor alive nothing is simulated or drawn.
+ *
  * Debug / discoverability: `?moment=<id>` puts the dragon at the moment's start waypoint once the game starts and plays
- * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`).
+ * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`,
+ * `?moment=storks-bosphorus-migration`).
  */
 import type { DragonState, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import { createMomentActor, type MomentActor } from './actors';
 import { ALL_MOMENTS } from './data';
 import { loadMomentPrefs, onMomentPrefsChange, type MomentPrefs } from './prefs';
 import { momentStartPose, MomentRunner, type MomentFrame, type MomentSink } from './runtime';
@@ -28,12 +33,30 @@ export function createMomentSystem(): System {
   let forceId: string | null = null;
   let forceTimer = -1;
   const disposers: Array<() => void> = [];
+  /** Scene actors by moment id (created on first use, kept for reuse). */
+  const actors = new Map<string, MomentActor>();
 
   const sink: MomentSink = {
     showLine: (_m, line) => view?.showLine(line),
     hideLine: (_m, how) => view?.hideLine(how === 'fade'),
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
+    startMoment: (m, forced) => {
+      if (!ctxRef || !m.content.actorId) {
+        return;
+      }
+      let actor = actors.get(m.id);
+      if (!actor) {
+        const created = createMomentActor(m.content.actorId);
+        if (!created) {
+          return;
+        }
+        actor = created;
+        actors.set(m.id, actor);
+      }
+      actor.start(m, ctxRef, forced);
+    },
+    endMoment: (m, reason) => actors.get(m.id)?.end(reason),
   };
   const runner = new MomentRunner(ALL_MOMENTS, sink);
 
@@ -159,6 +182,11 @@ export function createMomentSystem(): System {
       frame.prefs = prefs;
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
+      for (const actor of actors.values()) {
+        if (actor.active) {
+          actor.update(dt, ctx);
+        }
+      }
     },
 
     dispose(): void {
@@ -166,6 +194,10 @@ export function createMomentSystem(): System {
         fn();
       }
       ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(0);
+      for (const actor of actors.values()) {
+        actor.dispose();
+      }
+      actors.clear();
       view?.dispose();
       view = null;
     },
