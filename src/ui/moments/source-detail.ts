@@ -17,7 +17,7 @@ import './moments-ui.css';
 const CATEGORY_LABEL: Record<MomentCategory, string> = {
   legend: 'Efsane',
   'city-life': 'Şehir hayatı',
-  poem: 'Şiir',
+  poem: 'Edebiyat',
 };
 
 const KIND_LABEL: Record<MomentSourceKind, string> = {
