@@ -233,8 +233,11 @@ const keepOut = streetAreaRects().map((a) => a.rect);
 interface FlightBuild {
   drawn: Set<number>;
   parcels: OsmBuilding[];
-  /** Wall and bottom height (dm) per drawn OSM id, from the layer's own plan (buildings/build.ts planSolid). */
-  heights: Map<number, [number, number]>;
+  /**
+   * Wall and bottom height (dm) and centroid of every drawn solid, from the layer's own plan (buildings/build.ts
+   * planSolid). Infill parcel ids restart at 2e9 in every region, so solids are listed, not keyed by id.
+   */
+  heights: { id: number; wallH: number; minH: number; cx: number; cz: number }[];
 }
 const flightBuilds = new Map<string, FlightBuild>();
 /** Runs the flight-scale buildings worker (buildings.worker.ts) for one region, synchronously. */
@@ -257,10 +260,20 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
   const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
   const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, layerClaims, surface, base.area);
   const out = buildBuildings({ buildings, pois: new Float32Array(), claims: layerClaims, extra: infill.parcels }, surface, base.rect);
-  const heights = new Map<number, [number, number]>();
+  const heights: FlightBuild['heights'] = [];
   for (const sol of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, base.rect)) {
     const { plan, wallH } = planSolid(sol);
-    heights.set(sol.b.id, [Math.round(wallH * 10), Math.round(plan.minH * 10)]);
+    const n = sol.ring.length / 2;
+    let cx = 0;
+    let cz = 0;
+    for (let q = 0; q < n; q++) {
+      cx += sol.ring[q * 2] / n;
+      cz += sol.ring[q * 2 + 1] / n;
+    }
+    // Half-open ownership, as the bake takes it (a centroid on a shared region edge counts once).
+    if (inRect(base.rect, cx, cz)) {
+      heights.push({ id: sol.b.id, wallH: Math.round(wallH * 10), minH: Math.round(plan.minH * 10), cx, cz });
+    }
   }
   const res = { drawn: new Set(Array.from(out.drawnIds)), parcels: infill.parcels, heights };
   flightBuilds.set(r.id, res);
@@ -388,8 +401,8 @@ console.log('6. Far layer: the city bake draws what the regions draw');
     }
     check(bases.size === 1, `one OSM snapshot for the bake, ${regions.length} regions and ${streetData.size} street areas`, [...bases].map(([b, list]) => `${b}: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` +${list.length - 6}` : ''}`));
 
-    // Baked records: id -> centroid and heights.
-    const baked = new Map<number, { cx: number; cz: number; wallH: number; minH: number }>();
+    // Baked records by id (a list: infill ids repeat across regions); matched by id and centroid (within 1 m).
+    const baked = new Map<number, { cx: number; cz: number; wallH: number; minH: number; used: boolean }[]>();
     for (const f of index.files) {
       const d = decodeBuildings(gunzipSync(readFileSync(resolve(bakeDir, f.file))));
       for (let k = 0; k < d.header.count; k++) {
@@ -399,7 +412,9 @@ console.log('6. Far layer: the city bake draws what the regions draw');
           x += d.xy[v * 2];
           z += d.xy[v * 2 + 1];
         }
-        baked.set(d.id[k], { cx: x / d.nv[k], cz: z / d.nv[k], wallH: d.wallH[k], minH: d.minH[k] });
+        const list = baked.get(d.id[k]) ?? [];
+        list.push({ cx: x / d.nv[k], cz: z / d.nv[k], wallH: d.wallH[k], minH: d.minH[k], used: false });
+        baked.set(d.id[k], list);
       }
     }
     const bad: string[] = [];
@@ -412,21 +427,26 @@ console.log('6. Far layer: the city bake draws what the regions draw');
       let missing = 0;
       let extra = 0;
       let height = 0;
-      for (const [id, [wallH, minH]] of fb.heights) {
+      for (const h of fb.heights) {
         compared++;
-        const b = baked.get(id);
+        const b = (baked.get(h.id) ?? []).find((c) => !c.used && Math.hypot(c.cx - h.cx, c.cz - h.cz) < 1);
         if (!b) {
           missing++;
-          lines.push(`${r.id}: ${id} drawn by the region, missing from the bake`);
-        } else if (Math.abs(b.wallH - wallH) > HEIGHT_DM || Math.abs(b.minH - minH) > HEIGHT_DM) {
+          lines.push(`${r.id}: ${h.id} at ${h.cx.toFixed(0)}, ${h.cz.toFixed(0)} drawn by the region, missing from the bake`);
+          continue;
+        }
+        b.used = true;
+        if (Math.abs(b.wallH - h.wallH) > HEIGHT_DM || Math.abs(b.minH - h.minH) > HEIGHT_DM) {
           height++;
-          lines.push(`${r.id}: ${id} wall ${(b.wallH / 10).toFixed(1)} m baked, ${(wallH / 10).toFixed(1)} m in the region`);
+          lines.push(`${r.id}: ${h.id} wall ${(b.wallH / 10).toFixed(1)} m baked, ${(h.wallH / 10).toFixed(1)} m in the region`);
         }
       }
-      for (const [id, b] of baked) {
-        if (inRect(rect, b.cx, b.cz) && !fb.heights.has(id)) {
-          extra++;
-          lines.push(`${r.id}: ${id} in the bake, not drawn by the region`);
+      for (const [id, list] of baked) {
+        for (const b of list) {
+          if (!b.used && inRect(rect, b.cx, b.cz)) {
+            extra++;
+            lines.push(`${r.id}: ${id} at ${b.cx.toFixed(0)}, ${b.cz.toFixed(0)} in the bake, not drawn by the region`);
+          }
         }
       }
       if (missing || extra || height) {

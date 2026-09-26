@@ -213,6 +213,53 @@ Performance checks with `snap.mjs --perf` on the reference machine:
 S2 is useful on its own even before S3 and S5. S3 also helps before S2, because it removes today's pop against the
 procedural city.
 
+## Status (2026-09-26)
+
+S0–S3 are implemented. None of it has been looked at on a GPU yet: the cloud session had no browser that could run
+the game. Owner checks are listed below.
+
+**S1 bake.** `npm run bake:city` takes about 8 min on 4 cores with the extract and block cache present.
+
+- 797k buildings, including 187k infill parcels.
+- Buildings 15.2 MB gzip, land use 1.3 MB.
+- Mask: 34,141 of 36,864 cells are OSM.
+- `check:map` section 6: inside every region the bake holds the region layer's own buildings with the same heights.
+
+**S2 data mode.** `tools/headless/far-city-check.ts` runs the real tile builder in Node over seven views at "high".
+The far OSM layer draws as many or fewer triangles than the procedural city:
+
+- Galata 4.62 M → 4.32 M;
+- Fatih 5.07 M → 4.22 M;
+- Levent 3.59 M → 3.38 M.
+
+The slowest data-mode tile builds in about 7 ms of worker time.
+
+Land use:
+- 99 % of the samples inside OSM parks, woods and cemeteries over 2 ha are green in the geo land use.
+- Neighbourhood mosque sites drop from 400 to 173 (none in an OSM cell).
+
+**S3 handover.**
+- A streamed region loads hidden.
+- The city rebuilds its chunks without the region's buildings and swaps them all at one instant (`city/streamer.ts`
+  handovers and ghosts).
+- The region's materials fade in on that instant with the city's dither pattern (`osm/fade.ts`, `OSM_FADE` in
+  `core/uniforms.ts`).
+- Leaving is the reverse.
+
+**Known limits:**
+- Level 0 outside the regions draws the compact geometry: real footprints and roofs, but not the procedural near
+  detail (balconies, rooftop clutter).
+- Courtyards are filled.
+- Street lights stay procedural in OSM cells.
+- Shadows and the procedural trees still switch without a dither at a handover.
+- Infill ids repeat across regions (the check matches them by place).
+
+**Owner checks on the reference machine:**
+- Fly from 9 km into a landing region and out again, by day and by night. There should be no pop, and the window
+  light must match (S5 is still open).
+- `node scripts/snap.mjs --perf` on `?view=levent`, `camlica` and `yuksek`, with and without `?osmfar=0`.
+- The first frames of a handover: shader compiles for the `OSM_FADE` variants.
+
 ## Decisions (user, 2026-09-26)
 
 1. **Coverage: the whole playable square**, with the procedural fallback in cells OSM maps poorly (coverage mask).

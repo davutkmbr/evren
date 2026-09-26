@@ -160,8 +160,9 @@ export class CitySystem implements System {
     const offExclusion = onOsmExclusionChange((rect) => {
       // Workers cache cell layouts: forget those first (posted ahead of the new requests).
       this.pool?.broadcast({ type: 'forget', ...rect });
-      this.streamer?.refresh(rect);
       this.colliders?.invalidate(rect);
+      // The region's handover (osm/fade.ts) starts when the rebuilt chunks swap in.
+      return this.streamer?.refresh(rect);
     });
     this.unsubscribe = () => {
       offQuality();
