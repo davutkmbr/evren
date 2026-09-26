@@ -69,7 +69,7 @@ All candidates are offered under the Fab **Standard License** ([EULA](https://ww
 | Can exported meshes ship in a non-Unreal build? | **Yes, as part of the game only.** | EULA §4(c): "you may Distribute software applications (such as video games) that include Content to the general public", but "you must restrict end users from extracting or otherwise using Content outside of the Project". |
 | Can the raw or converted files go in the public MIT repo? | **No.** | EULA §5(a): "you may not Distribute Content on a standalone basis to third parties". |
 | Can it be converted to glTF? | Yes. | §3(a) allows you to "reproduce, display, perform, and modify the Content". §6(i) forbids you to "reverse engineer, decompile, translate…". I read "translate" there as applying to code, not to mesh format conversion. |
-| Is combining with GPL code a problem? | Only for GPL code that ships with the content. Evren is MIT. Character DNA (GPLv3) is only a tool and does not ship in the build. | EULA §6(a) forbids combining Standard content with code under "GNU General Public License (GPL)". |
+| Is combining with GPL code a problem? | Only for GPL code that ships with the content. Seventeen Skies is MIT. Character DNA (GPLv3) is only a tool and does not ship in the build. | EULA §6(a) forbids combining Standard content with code under "GNU General Public License (GPL)". |
 | AI | The Epic listings are tagged NoAI: the content may not be used to train generative AI. | EULA §16(l). |
 | Tier | Pick **Professional** when acquiring (it is also $0), so the Personal tier's revenue limit never applies. | EULA §2(a): the Personal tier requires "not generated more than $100,000 USD in gross revenue". |
 

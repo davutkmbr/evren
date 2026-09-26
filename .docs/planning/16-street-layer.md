@@ -14,7 +14,7 @@ genuinely feels like walking there. Enter cafés and shops, talk to NPCs, later 
 - The street is a **separate layer**, not the flight city seen up close. Shipped games split their flight/driving
   scale from their street scale (Starfield, Zelda TotK, Spider-Man); Flight Simulator 2024 shows what happens without
   the split (photogrammetry built to be seen from the air).
-- An **offline world compiler** (Node + Blender command line) reuses Evren's OSM and façade code and emits plain
+- An **offline world compiler** (Node + Blender command line) reuses the game's OSM and façade code and emits plain
   glTF 2.0 tiles plus JSON manifests (doors, POIs, lights, spawn points, seats, NPC slots) that any runtime loads.
   Compiled tiles stay out of git (release assets, later R2).
 - The **runtime is chosen by measurement** (S2): the same compiled strip is rendered in three.js r186

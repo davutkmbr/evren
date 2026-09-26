@@ -23,7 +23,7 @@ export interface LandingSpot {
   profile: string;
   placeWords: string[];
   area?: string;
-  /** Landing point in Evren local metres. */
+  /** Landing point in world-local metres. */
   x: number;
   z: number;
   /** Compiled square (local metres) and its bbox in degrees. */

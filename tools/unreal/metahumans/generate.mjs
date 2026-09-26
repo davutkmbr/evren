@@ -195,7 +195,7 @@ function contactSheet() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Evren ${esc(spec.batch)} review</title>
+<title>Seventeen Skies ${esc(spec.batch)} review</title>
 <style>
   :root {
     --bg: #141517; --surface: #1d1f22; --surface-2: #26292d; --line: #33373c; --text: #eceae6; --muted: #a3a6ab;
@@ -252,7 +252,7 @@ function contactSheet() {
 </head>
 <body>
 <header>
-  <h1>Evren · ${esc(spec.batch)}<small>${spec.characters.length} characters</small></h1>
+  <h1>Seventeen Skies · ${esc(spec.batch)}<small>${spec.characters.length} characters</small></h1>
   <div class="toolbar">
     <output id="picked" aria-live="polite"></output>
     <span class="count" id="count">0 selected</span>

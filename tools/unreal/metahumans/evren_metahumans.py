@@ -1,5 +1,5 @@
 """
-Evren MetaHuman batch generator: the part that runs inside the Unreal editor (UE 5.8, MetaHumanCharacter plugin).
+Seventeen Skies MetaHuman batch generator: the part that runs inside the Unreal editor (UE 5.8, MetaHumanCharacter plugin).
 
 Driven by tools/unreal/metahumans/generate.mjs through the file-based job runner (tools/unreal/run-job.mjs). Every
 public step_* function is one short job; the driver calls them in order per character:

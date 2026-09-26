@@ -42,7 +42,7 @@ are English.
 - **Provenance** (`provenance`): one entry per text (`covers: 'subtitles' | 'card' | 'subtitles:3'`) with `kind`
   (`original` or `public-domain`), `licence`, `author`, `basis` (the source it rests on) and `pending` (anything the user
   still has to confirm). Our own writing is `original`, licence `MIT` (the repository licence), author
-  `Evren contributors`; a public-domain source is always named in `basis`.
+  `Seventeen Skies contributors`; a public-domain source is always named in `basis`.
 
 ### Evaluator
 

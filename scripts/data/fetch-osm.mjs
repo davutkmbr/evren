@@ -299,7 +299,7 @@ async function runQuery(name, q) {
       const t = Date.now();
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'evren-slice/0.2 (scripts/data/fetch-osm.mjs)' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'seventeen-skies-slice/0.2 (scripts/data/fetch-osm.mjs)' },
         body: 'data=' + encodeURIComponent(q),
         signal: AbortSignal.timeout(200_000),
       });

@@ -1,4 +1,4 @@
-# Evren — UI design language (locked)
+# Seventeen Skies — UI design language (locked)
 
 Status: **locked on 26 September 2026** after the HUD, pause menu, map, race and loading-screen redesigns were approved.
 New screens follow this document. A change to the language itself is a deliberate decision: update this file first,

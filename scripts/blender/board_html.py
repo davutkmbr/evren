@@ -123,7 +123,7 @@ def write(out_dir, root, metas, cams, sources):
     w('<title>S1 render panosu</title>')
     w(f'<style>{CSS}</style></head><body>')
     w('<header class="top"><div class="wrap">')
-    w('<p class="eyebrow">Evren · sokak katmanı · S1</p>')
+    w('<p class="eyebrow">Seventeen Skies · sokak katmanı · S1</p>')
     w('<h1>Kadıköy şeridi: fotoğraf ve son render</h1>')
     w('<p class="lede">Rıhtım’dan çarşıya ~200 m, 1,6 m göz yüksekliğinde. Her kamerada solda gerçek fotoğraf, sağda Blender Cycles ile alınan son render.</p>')
     real = crit.get('realismScore')

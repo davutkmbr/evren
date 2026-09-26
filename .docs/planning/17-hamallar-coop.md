@@ -20,7 +20,7 @@ Physics and proximity voice turn every job into shared comedy; the real city mak
 - **Unique setting:** no other game has a walkable, realistic Kadıköy. The *hamal* is an iconic Istanbul figure.
 - **Reuses the street track directly:** streets and crowds (S1/S5), apartment stairwell and shop interiors (L3 shells),
   NPCs and ink dialogue (S4), vehicles (S7). A small area is enough.
-- **Fits the tone:** chaotic but warm; no horror, no violence; the chill flight game stays the other side of Evren.
+- **Fits the tone:** chaotic but warm; no horror, no violence; the chill flight game stays the other side of Seventeen Skies.
 
 ## Core loop (one job, 15–25 minutes)
 

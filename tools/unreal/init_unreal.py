@@ -1,5 +1,5 @@
 """
-Evren job runner for the Unreal editor (copied to <project>/Content/Python/init_unreal.py, runs at editor start).
+Seventeen Skies job runner for the Unreal editor (copied to <project>/Content/Python/init_unreal.py, runs at editor start).
 
 Agents drop Python files into <project>/Jobs/inbox/; each one runs once on the game thread, in file-name order, and
 its stdout, error and optional RESULT variable are written to <project>/Jobs/outbox/<name>.json. File based, so it

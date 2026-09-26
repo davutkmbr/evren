@@ -6,7 +6,7 @@ Every external model in the game, with its licence and source (CLAUDE.md: extern
 
 ## Street layer props
 
-Approved models placed as props in the compiled street output (`public/world/<area>/props/`), generated from the compiled `index.json` credits. Their LOD glbs (`<id>.lod1.glb`, `<id>.lod2.glb`) are decimated copies made by the compiler (meshoptimizer). Procedural props (`st_*`, `fac_*`, lamp masts, mannequins) are Evren's own work under the repository licence.
+Approved models placed as props in the compiled street output (`public/world/<area>/props/`), generated from the compiled `index.json` credits. Their LOD glbs (`<id>.lod1.glb`, `<id>.lod2.glb`) are decimated copies made by the compiler (meshoptimizer). Procedural props (`st_*`, `fac_*`, lamp masts, mannequins) are Seventeen Skies' own work under the repository licence.
 
 | Asset | Source | Author | Licence | Conditions (how met) | Used by |
 | --- | --- | --- | --- | --- | --- |

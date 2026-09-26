@@ -1,5 +1,5 @@
 """
-Lighting presets for the Evren reference renders (imported by render.py and import_area.py; Blender units: 1 W = 683 lm).
+Lighting presets for the Seventeen Skies reference renders (imported by render.py and import_area.py; Blender units: 1 W = 683 lm).
 
 - day:   Kadıköy, a September afternoon (default 2026-09-19 16:00 +03:00). Physical multiple-scattering sky
          (Blender's successor of the Nishita model) without its sun disc, plus a Sun lamp whose direction, colour and

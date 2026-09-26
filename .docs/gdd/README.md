@@ -1,14 +1,14 @@
-# Evren — Game Design Document
+# Seventeen Skies — Game Design Document
 
 Version 1 · 26 September 2026 · owner: Davut Kember
 
-This document describes what Evren is and how its parts fit together. The phase files in `.docs/planning/` describe
+This document describes what Seventeen Skies is and how its parts fit together. The phase files in `.docs/planning/` describe
 how and when each part gets built; the UI design language is locked in `.docs/design/README.md`. Where this document
 and a phase file disagree, the newer decision wins and both get updated.
 
 ## 1. The game in one paragraph
 
-Evren is a calm, open-world flight game in the browser: you ride a dragon over a realistic Istanbul, generated in
+Seventeen Skies is a calm, open-world flight game in the browser: you ride a dragon over a realistic Istanbul, generated in
 code from real geography and OpenStreetMap data. There is no fail state. You fly, glide on thermals along the
 Bosphorus, perch on bridge towers and mosque domes to watch the sunset, discover landmarks, race through rings,
 stumble on small moments from the city's legends and daily life, and later land, walk and meet people in a walkable

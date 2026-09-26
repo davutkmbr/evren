@@ -1,6 +1,6 @@
 /**
  * Street tile formats (see ../README.md): what the compiler writes to public/world/<area>/. World coordinates are
- * Evren local metres (src/core/geo-coords.ts): +X east, +Y up, +Z south, origin 41.045 N 29.02 E. Positions are
+ * World-local metres (src/core/geo-coords.ts): +X east, +Y up, +Z south, origin 41.045 N 29.02 E. Positions are
  * [x, y, z]; footprints are flat [x0, z0, x1, z1, ...] with positive shoelace area (outer) as in the OSM schema.
  *
  * Format 0: greybox (flat colours, one glb per tile). Format 1 adds textured PBR materials with shared external

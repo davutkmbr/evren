@@ -98,7 +98,7 @@ should replace or underlay these layers:
 | 3 | Heavy Thunder Strike - no Rain - QUADRO.wav | BlueDelta | [Freesound 446753](https://freesound.org/people/BlueDelta/sounds/446753/) | CC0 | 1:02.0 | WAV, 48 kHz, 24-bit, **4 channels** (FL, FR, RL, RR) | 34.1 MB | 46,073 dl, 4.7 (504) | [thunder-close-3.png](../../../.shots/assets/sounds/thunder-close-3.png) |
 | 4 | big thunder clap | seth-m | [Freesound 458015](https://freesound.org/people/seth-m/sounds/458015/) | CC0 | 0:11.4 | WAV, 48 kHz, 16-bit, stereo | 2.1 MB | 1,116 dl, 4.4 (19) | [thunder-close-4.png](../../../.shots/assets/sounds/thunder-close-4.png) |
 
-| # | Sounds like | Use in Evren | Caveats |
+| # | Sounds like | Use in Seventeen Skies | Caveats |
 |---|---|---|---|
 | 1 | A faint sizzle at 0.8 s, then an explosive broadband crack at 2.5 s (energy above 10 kHz). A heavy low-mid roll follows until about 8 s, with a low tail to 12 s. No rain. Peaks at 0.73 of full scale, no clipping. | One-shot for near strikes (thunder strength ≥ 0.6). Trim to 0.5–13 s. Replaces the synthesized "tear" and first roll; keep the synthesized sub swell under it. | Only 11 ratings. "ms" = mid/side pair: confirm the file is decoded L/R before use. |
 | 2 | Starts on the blast: bright, broadband (to about 10 kHz), decaying over 3 s, with a second rumble at 5–8 s. Recorded on Nessebar beach (Bulgaria) with a Shure MV88 and de-noised in iZotope RX 6. | Variation for random choice. Use 0–9 s with a 5 ms fade-in. | No pre-roll (the attack starts at sample 0). After 8.5 s the de-noising leaves a gated, empty-sounding tail, so cut there. |
@@ -131,7 +131,7 @@ clipping, and it comes from the same storm as the distant and rain picks. bajko 
 | 3 | Rolling thunder low muffled ms 77mel 190903.flac | TRP | [Freesound 574385](https://freesound.org/people/TRP/sounds/574385/) | CC0 | 0:15.1 | FLAC, 48 kHz, 24-bit, stereo (M/S pair) | 2.1 MB | 104 dl, 4.5 (4) | [thunder-distant-3.png](../../../.shots/assets/sounds/thunder-distant-3.png) |
 | 4 | 230405 Thunder DRY rolling distant low rumbles, roof, EM272s, Toronto 7am | TRP | [Freesound 717845](https://freesound.org/people/TRP/sounds/717845/) | CC0 | 2:57.6 | **MP3** (about 320 kbps), 48 kHz, stereo | 6.8 MB | 749 dl, 4.9 (37) | [thunder-distant-4.png](../../../.shots/assets/sounds/thunder-distant-4.png) |
 
-| # | Sounds like | Use in Evren | Caveats |
+| # | Sounds like | Use in Seventeen Skies | Caveats |
 |---|---|---|---|
 | 1 | A deep roll in several swells from 0 to about 26 s (the biggest at 9 s). Almost all the energy is below 1 kHz. Light rain drops and some wind remain after the roll. | Distant rumble one-shot (strength < 0.6). Use 0–22 s, or single swells as shorter variations. The existing distance low-pass and reverb still apply. | Faint steady background tones near 2.5 and 7 kHz. Rain drops in the tail, which the rain bed will cover. |
 | 2 | A strike at about 4 s, then a long low roll decaying until about 35 s. No rain. Peaks at 0.94. Rode NT1-A mics in an IRT cross. | Medium-distance thunder (strength 0.4–0.7), or distant if the first 5 s are cut. Trim to 3–30 s and downmix 4 → 2. | Large 4-channel file. 44.1 kHz (resampled when decoded, which is fine). |
@@ -159,7 +159,7 @@ as the close strike, and together they give four or five far-thunder variations.
 | 3 | air over mic.wav | cognito perceptu | [Freesound 20108](https://freesound.org/people/cognito%20perceptu/sounds/20108/) | CC0 | 0:20.2 | WAV, 44.1 kHz, 16-bit, stereo | 3.4 MB | 1,074 dl, 4.3 (12) | [wind-3.png](../../../.shots/assets/sounds/wind-3.png) |
 | 4 (dive) | Jet Plane Wind Noise Loop of a KC-135 Stratotanker 1.flac | qubodup | [Freesound 162417](https://freesound.org/people/qubodup/sounds/162417/) | CC0 | 0:06.2 | FLAC, 44.1 kHz, 24-bit, stereo | 1.2 MB | 703 dl, no ratings | [wind-4.png](../../../.shots/assets/sounds/wind-4.png) |
 
-| # | Sounds like | Use in Evren | Caveats |
+| # | Sounds like | Use in Seventeen Skies | Caveats |
 |---|---|---|---|
 | 1 | A dense, steady broadband rush (energy up to about 10 kHz, strongest below 1 kHz) with slow buffeting swells. No whistle or tonal howl. Quiet file (peaks at 0.23). | Main airflow bed. Crossfade-loop about 60 s. Replaces the synthesized body and hiss noise layers; keep the existing speed curve, gusts and filters. | A designed sound (UCS category "WINDDsgn"), not a field recording, and its source is not stated. Published in August 2025 with only 3 ratings. Needs about +12 dB of normalisation. |
 | 2 | Low, turbulent buffeting, like wind in the ears: energy below about 1 kHz with irregular puffs every 0.5–2 s. Loopable, according to the author. | Low buffet layer under #1, scaled by airspeed and the first-person blend. Replaces the synthesized rumble and buffeting modulation. | No highs, so it needs #1 on top. Tagged "sound-design", so it may be edited. |
@@ -201,7 +201,7 @@ roar is wanted. "Too loud" is a mix problem: whichever bed is chosen, recalibrat
 | 3 | Wing Flap (Flag Flapping) 1a–7a (a set of 7 files) | ani_music | Freesound [1a](https://freesound.org/people/ani_music/sounds/244979/), [2a](https://freesound.org/people/ani_music/sounds/244978/), [3a](https://freesound.org/people/ani_music/sounds/244977/), [4a](https://freesound.org/people/ani_music/sounds/244976/), [5a](https://freesound.org/people/ani_music/sounds/244982/), [6a](https://freesound.org/people/ani_music/sounds/244981/), [7a](https://freesound.org/people/ani_music/sounds/244980/) | CC0 (all 7) | 0.38–0.88 s each | WAV, 44.1 kHz, 32-bit float, mono | 70–158 KB each, 748 KB total | 2,611–4,955 dl each, 4.3–4.8 | [flap-3.png](../../../.shots/assets/sounds/flap-3.png) |
 | 4 | Large Wings / Superhero Cape Foley | Cultureshock007 | [Freesound 711122](https://freesound.org/people/Cultureshock007/sounds/711122/) | CC0 | 0:43.4 | **MP3** (about 192 kbps), 48 kHz, stereo | 1.0 MB | 1,157 dl, 4.6 (49) | [flap-4.png](../../../.shots/assets/sounds/flap-4.png) |
 
-| # | Sounds like | Use in Evren | Caveats |
+| # | Sounds like | Use in Seventeen Skies | Caveats |
 |---|---|---|---|
 | 1 | About 15 separate bed-sheet flaps, 0.3–0.5 s each and roughly 0.5–1 s apart, with clean gaps. A low-mid body with airy tails up to about 5 kHz. Recorded with an Oktava MK-012 on a Zoom F3. | Slice into a round-robin of 10–15 hits, played pitched down to 0.6–0.85× according to wingspan and strength. Replaces the synthesized push and rush; keep the synthesized sub thump for weight. | Cloth, not leather, so little "leathery" snap (layer #3, or an umbrella snap). Mono, so pan it per wing. |
 | 2 | Five deep "whomp" beats about 0.75 s apart. Each is a strong low-frequency air pulse with a short airy tail. | Five hits for the low push, layered with #1. | 16-bit, only five hits, and the foley source is not stated. |
@@ -237,7 +237,7 @@ low push. Keep the synthesized sub thump and `duckWind`.
 | 3 | rain medium on terrasse roof.flac | kyles | [Freesound 450360](https://freesound.org/people/kyles/sounds/450360/) | CC0 | 1:36.1 | FLAC, 48 kHz, 24-bit, stereo | 19.2 MB | 773 dl, 4.9 (18) | [rain-3.png](../../../.shots/assets/sounds/rain-3.png) |
 | 4 | steady rain in the city.wav | roofusj | [Freesound 217236](https://freesound.org/people/roofusj/sounds/217236/) | CC0 | 3:05.7 | WAV, 96 kHz, 16-bit, stereo | 68.0 MB | 7,211 dl, 4.4 (103) | [rain-4.png](../../../.shots/assets/sounds/rain-4.png) |
 
-| # | Sounds like | Use in Evren | Caveats |
+| # | Sounds like | Use in Seventeen Skies | Caveats |
 |---|---|---|---|
 | 1 | A dense, even wash of heavy urban rain, broadband from 200 Hz to 12 kHz (most energy at 0.5–2 kHz). No discrete events are visible. From the same session as thunder 1a-1 and 1b-1. | The `RainVoice` wash layer, replacing the band-passed pink noise. Crossfade-loop about 60 s. For "moderate", lower its level and low-pass it. | "Heavy" rather than moderate. Unrated (47 dl). Confirm the M/S file is decoded L/R. |
 | 2 | Moderate-to-heavy rain on roof tiles, heard from a window (Zoom H5 + SGH-6 shotgun, Vevey). A very even level, body at 200 Hz–1 kHz, a few drips. | Wash layer with roof-tile character, which suits Istanbul's roofs. Crossfade-loop about 50 s. | Only 54 s. The shotgun mic gives a narrower image. The page tags it "metallic", so drips may stand out at the loop point. |
