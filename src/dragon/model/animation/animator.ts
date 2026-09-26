@@ -144,14 +144,19 @@ const GAZE_PET_TILT = 0.16;
  *  - body wave: the side-to-side undulation runs from the shoulders (root, lumbar, pelvis, each later in phase) into a
  *    travelling wave down the tail (per-bone yaw growing toward the tip, tailLag rad of phase per bone); the body rolls
  *    into each wing's power stroke, the chest and neck undo part of the swing so the head keeps to the course;
- *  - wings as paddles: each wing strokes once per cycle, the left one's catch at swimPhase 0, the right one's at pi.
- *    The wrist runs a loop around the shoulder (IK): forward and out at the catch, back along the surface through the
- *    power stroke (paddleLow: the hand at the waterline, the half-open membrane pushing water back), then lifted up and
- *    in, folded, and swung forward through the air (recovery). paddlePower is the share of the cycle in the power stroke
- *    (via a smooth phase warp). The loop grows with the stroke strength; floating idle it shrinks to a lazy scull;
+ *  - wings as paddles, a dog paddle with the wing-arms: each wing strokes once per cycle, the left one's catch at
+ *    swimPhase 0, the right one's at pi. The wrist runs a round loop beside the shoulder (IK, the elbow folded up and
+ *    back along the flank as on the ground): reaching forward at the catch, scooping down and back just under the
+ *    surface through the power stroke (paddleLow; the hand webbing opens like a duck's foot and trails back along the
+ *    flank), then drawn in and forward just above the water with the fingers folded flat along the forearm (paddleHigh;
+ *    nothing is raised into the air). paddlePower is the share of the cycle in the power stroke (via a smooth phase
+ *    warp). The loop grows with the stroke strength; floating idle it shrinks to a lazy scull;
  *  - surge: the chest lifts (bob, m) and the nose rises (surgePitch) at each power stroke, the lower neck rises
- *    (neckSurge) and the head counters it; idle the body breathes (breathBob at breathHz);
- *  - neck: a swan-like S (lower neck up, upper neck forward) and the head held level;
+ *    (neckSurge) and the head counters it, nodding along a moment later (headNod); idle the body breathes (breathBob at
+ *    breathHz);
+ *  - neck and head: a swan-like S (lower neck up, upper neck forward), the nose held a little below level; the head
+ *    waggles gently with the strokes (headWaggle) and tilts into a look to the side (headTilt), like a curious dog;
+ *  - tail: its tip curls up out of the water (tailTipLift), slowly swaying;
  *  - hind legs kick alternately below the body (thigh swinging around `thigh`); in the fast swim they trail further
  *    back (thighFast) and kick harder (thighKickFast), up near the surface;
  *  - turning (turnRef rad/s of yaw rate = full turn): the body curves into it (turnCurve) and the outer wing strokes
@@ -169,32 +174,46 @@ const SWIM_RIG = {
   tailYawTip: 0.12,
   tailLag: 0.18,
   /** Idle tail drift (rad per bone at the tip) and its frequency (Hz): the floating tail never freezes. */
-  tailDrift: 0.07,
+  tailDrift: 0.09,
   tailDriftHz: 0.09,
-  neckCurve: [0.11, 0.09, 0.06, 0.02, -0.02, -0.05, -0.07, -0.07, -0.07],
-  headLevel: 0.55,
-  bob: 0.09,
-  surgePitch: 0.015,
-  neckSurge: 0.05,
+  /** Tail tip curled up out of the water (rad per bone over the outer third, + = up) and its slow sway (Hz). */
+  tailTipLift: 0.07,
+  tailTipHz: 0.13,
+  neckCurve: [0.16, 0.13, 0.09, 0.03, -0.03, -0.07, -0.09, -0.09, -0.08],
+  headLevel: 0.7,
+  /** Head nod with each surge (rad at full stroke, + = nose up) and its lag behind the surge (rad of 2x phase). */
+  headNod: 0.07,
+  headNodLag: 0.9,
+  /** Head roll: the waggle with the strokes (rad at full stroke) and the tilt into a look to the side (per rad of yaw). */
+  headWaggle: 0.09,
+  headTilt: 0.35,
+  bob: 0.11,
+  surgePitch: 0.02,
+  neckSurge: 0.06,
   breathBob: 0.05,
   breathHz: 0.2,
-  /* Wing paddle (right side; x out, y up, z back, relative to the shoulder). */
-  paddleCenter: [2.2, 0.4, -0.8],
-  paddleReach: 2.0,
-  paddleLow: 0.85,
-  paddleHigh: 0.75,
-  paddleOut: 0.55,
-  paddlePower: 0.42,
-  /** Hand direction through the power stroke (out, down, back; unnormalised): the membrane just under the surface. */
-  paddleHandOut: 0.85,
-  paddleHandDown: 0.08,
-  paddleHandBack: 0.5,
+  /* Wing paddle (right side; x out, y up, z back, relative to the shoulder; the waterline is ~0.15 below it). */
+  paddleCenter: [1.55, -0.05, -0.7],
+  paddleReach: 1.55,
+  paddleLow: 0.4,
+  paddleHigh: 0.42,
+  paddleOut: 0.4,
+  paddlePower: 0.45,
+  /** Elbow pole (IK, from the shoulder): up and back along the flank, as the folded wing sits on the ground. */
+  paddlePole: [1.1, 1.0, 1.8],
+  /** Hand direction through the power stroke (out, down, back; unnormalised): the webbing trailing back, just under water. */
+  paddleHandOut: 0.55,
+  paddleHandDown: 0.25,
+  paddleHandBack: 0.85,
+  /** Hand direction through the recovery (out, down, back): folded flat back along the forearm, never pointing up. */
+  paddleRecoverOut: 0.12,
+  paddleRecoverDown: 0.12,
   /** Loop size at idle (share of the full loop) and how far the idle wing unfolds toward the paddle pose. */
-  paddleIdle: 0.35,
-  paddleIdleOpen: 0.35,
+  paddleIdle: 0.4,
+  paddleIdleOpen: 0.45,
   /** Membrane fan in the power stroke (0 = open fan, 0.97 = closed) and the outer finger joints opening (0..1). */
-  paddleFan: 0.62,
-  paddleFingerOpen: 0.3,
+  paddleFan: 0.4,
+  paddleFingerOpen: 0.2,
   turnRef: 0.6,
   turnCurve: 0.1,
   turnBoost: 0.45,
@@ -517,8 +536,15 @@ export class DragonAnimator {
     // neck's net pitch (level, as in third person) and raises its nose unless it is breathing fire.
     const headStab = -bodyPitch * 0.6 - heave * 0.25;
     const povHead = this.povBlend * povKeep * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
-    const swimHead = -SWIM_RIG.headLevel * Math.max(0, np) * swimW - 0.6 * SWIM_RIG.neckSurge * swimLift - SWIM_RIG.surgePitch * swimLift;
+    const swimNod = SWIM_RIG.headNod * swSt * Math.cos(2 * (swPh - SWIM_RIG.surgePhase) - SWIM_RIG.headNodLag);
+    const swimHead = -SWIM_RIG.headLevel * Math.max(0, np) * swimW - 0.6 * SWIM_RIG.neckSurge * swimLift - SWIM_RIG.surgePitch * swimLift + swimNod;
     setEuler(this.head, headStab - groundNeck * 0.25 + povHead + swimHead + LAND_HEAD * this.landFlare, 0, 0, 'YXZ');
+    if (swimW > 0.001) {
+      // Swimming: the head waggles with the strokes (a little behind the body's roll) and tilts into a look aside.
+      const waggle = SWIM_RIG.headWaggle * swSt * Math.sin(swPh + Math.PI / 2 - SWIM_RIG.surgePhase - 0.8);
+      const tilt = swimW * SWIM_RIG.headTilt * THREE.MathUtils.clamp(ny, -0.8, 0.8);
+      this.head.quaternion.multiply(_q.setFromAxisAngle(_bondAxis.copy(HEAD_FWD).normalize(), -(waggle + tilt)));
+    }
     if (g > 0.001) {
       this.aimHeadAtRider(g, side, pet);
     }
@@ -638,7 +664,9 @@ export class DragonAnimator {
       const curlYaw = curl * tip * (0.2 * side + 0.07 * Math.sin(this.time * 0.55 - i * 0.35)) + bondCurl * 0.12 * side;
       const curlPitch = -curl * tip * 0.1 - bondCurl * 0.08;
       const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc + curlYaw;
-      const tp = basePitch + inertialPitch + wave + droop + curlPitch + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
+      // Swimming: the tip curls up out of the water, slowly swaying.
+      const swimTip = -this.swimW * SWIM_RIG.tailTipLift * THREE.MathUtils.smoothstep(k, 0.6, 1) * (1 + 0.35 * Math.sin(this.time * Math.PI * 2 * SWIM_RIG.tailTipHz - i * 0.3));
+      const tp = basePitch + inertialPitch + wave + droop + curlPitch + swimTip + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
       let yaw: number;
       let pitch: number;
       if (dt > 0) {
@@ -813,16 +841,17 @@ export class DragonAnimator {
       c[1] - (sa > 0 ? R.paddleLow : R.paddleHigh) * sa * loop,
       c[2] - R.paddleReach * Math.cos(a) * loop,
     ).add(shoulder);
-    _pole.copy(shoulder).add(_dir.set(0.8 * sgn, 1.5, 1.6));
+    const pole = R.paddlePole;
+    _pole.copy(shoulder).add(_dir.set(pole[0] * sgn, pole[1], pole[2]));
     solveTwoBone(shoulder, _target, rest.l1, rest.l2, _pole, _mid, _end);
     _restUp.set(0, 1, 0);
     _up.set(0.2 * sgn, 1, 0.3);
     aimBoneUp(bones.humerus, _sq, rest.upper, _restUp, _dir.subVectors(_mid, shoulder), _up, _qa);
     aimBoneUp(bones.forearm, _qa, rest.fore, _restUp, _dir.subVectors(_end, _mid), _up, _qb);
-    // Hand: out, back and down into the water with the membrane facing back through the power stroke; folded back
-    // along the forearm, edge-on, through the recovery.
-    _dir.set(0.2 * sgn, 0.2, 1).lerp(_dir2.set(R.paddleHandOut * sgn, R.paddleHandDown, R.paddleHandBack), power).normalize();
-    _up.set(0.3 * sgn, 1, 0).lerp(_dir2.set(0.15 * sgn, 0.45, 0.9), power).normalize();
+    // Hand: back, a little out and down into the water with the webbing facing back through the power stroke; folded
+    // flat back along the forearm through the recovery.
+    _dir.set(R.paddleRecoverOut * sgn, -R.paddleRecoverDown, 1).lerp(_dir2.set(R.paddleHandOut * sgn, -R.paddleHandDown, R.paddleHandBack), power).normalize();
+    _up.set(0.3 * sgn, 1, 0).lerp(_dir2.set(0.2 * sgn, 0.7, 0.6), power).normalize();
     aimBoneUp(bones.hand, _qb, rest.hand, _restUp, _dir, _up, _qc);
     const fan = 0.97 - (0.97 - R.paddleFan) * power;
     const fingerOpen = R.paddleFingerOpen * power;

@@ -14,6 +14,7 @@ import type { DragonPose, DragonRig, DragonState, System } from '../src/core/con
 import { UpdateOrder } from '../src/core/contracts';
 import { createDragonModelSystem } from '../src/dragon/model';
 import { STANDING_ROOT_HEIGHT } from '../src/dragon/model/constants';
+import { SWIM, SWIM_POSE } from '../src/dragon/flight/params';
 import { createSkySystem } from '../src/render/sky';
 import { createRenderPipeline } from '../src/render/post';
 import { SHARED_GLSL } from '../src/render/shaders';
@@ -46,6 +47,23 @@ const POSES: Record<string, PoseFn> = {
   idle: () => ({ flapAmplitude: 0, wingSpread: 0, legsTuck: 0, walkAmount: 0, breath: 1, neckPitch: 0.1 }),
   tuck: () => ({ flapAmplitude: 0, wingSpread: 0, wingSweep: 0, legsTuck: 1 }),
   half: () => ({ flapAmplitude: 0, wingSpread: 0.5, wingSweep: 0, legsTuck: 1 }),
+  // Swimming at the surface: ?stroke= strength (0.22 idle, 0.7 paddle, 1 fast), ?freq= stroke cycle (Hz).
+  swim: (t) => {
+    const stroke = Number(params.get('stroke') ?? 0.7);
+    const freq = Number(params.get('freq') ?? SWIM_POSE.freqIdle + SWIM_POSE.freqPerSpeed * SWIM.paddleSpeed * Math.min(1, stroke / SWIM_POSE.strokePaddle));
+    return {
+      swim: 1,
+      swimStroke: stroke,
+      swimPhase: (t * Math.PI * 2 * freq) % (Math.PI * 2),
+      flapAmplitude: 0,
+      wingSpread: 0,
+      legsTuck: 0,
+      neckPitch: SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * stroke,
+      neckYaw: Number(params.get('yaw') ?? 0),
+      tailPitch: SWIM_POSE.tailPitch,
+      breath: 0.5,
+    };
+  },
   bank: () => ({ flapAmplitude: 0, wingSpread: 1, wingTwist: 0.8, legsTuck: 1, neckYaw: 0.25, tailYaw: -0.3, riderLeanRoll: 0.3 }),
 };
 
@@ -182,6 +200,15 @@ const driver: System = {
       ground.receiveShadow = true;
       ctx.scene.add(ground);
     }
+    if (poseName === 'swim') {
+      // The waterline: the floating body sits SWIM.floatDepth under the surface.
+      const water = new THREE.Mesh(
+        new THREE.CircleGeometry(400, 64).rotateX(-Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x2d5a6e, roughness: 0.15, transparent: true, opacity: 0.72 }),
+      );
+      water.position.y = rootHeight + SWIM.floatDepth;
+      ctx.scene.add(water);
+    }
     void ctx.services.when('rig').then((r) => {
       rig = r;
       dragonObject.add(r.root);
@@ -200,6 +227,9 @@ const driver: System = {
     const pose = fn(t);
     if (fixedPhase !== undefined && pose.flapPhase !== undefined) {
       pose.flapPhase = fixedPhase;
+    }
+    if (fixedPhase !== undefined && pose.swimPhase !== undefined) {
+      pose.swimPhase = fixedPhase;
     }
     rig?.setPose(pose);
     fakeState.flapEffort = pose.flapAmplitude ?? 0;

@@ -249,6 +249,7 @@ export class FlowSystem {
       this.moments++;
       this.lastMoment = now;
       sim.emit({ type: 'maneuver', id: 'flow', label: FLOW_MOMENT_LABELS[moment] });
+      sim.emit({ type: 'moment', kind: moment });
     }
   }
 
