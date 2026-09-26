@@ -154,13 +154,19 @@ export function createFlightSystem(): System {
         case 'flap':
           ctx.events.emit('flap', { strength: e.strength });
           break;
-        case 'impact':
-          ctx.events.emit('ground-impact', { position: e.point, speed: e.speed });
-          cam?.shake(clamp(e.speed / 18, 0.05, 1.2));
-          if (e.surface !== 'water' && e.surface !== 'seabed') {
+        case 'impact': {
+          // Water entry and contacts under water are not ground hits: the splash carries the entry sound, and the
+          // land thud (and its dust) would sound like hitting the ground.
+          const wet = e.surface === 'water' || e.surface === 'seabed' || sim.mode === 'underwater';
+          if (!wet) {
+            ctx.events.emit('ground-impact', { position: e.point, speed: e.speed });
+          }
+          cam?.shake(clamp(e.speed / (wet ? 30 : 18), 0.05, 1.2));
+          if (!wet) {
             fx?.dust(e.point, clamp(e.speed / 15, 0.2, 1.5));
           }
           break;
+        }
         case 'splash':
           splashThisFrame = true;
           fx?.splash(e.point, e.strength);
