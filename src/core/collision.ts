@@ -165,6 +165,39 @@ export class CollisionWorld {
   }
 
   /**
+   * The column at x,z split at height `y`: `floor` is the highest surface of everything reaching down to `y` or
+   * lower (terrain / water, and the top of every collider whose bottom is at or below `y`, so a collider containing
+   * `y` counts with its top); `ceiling` is the lowest bottom of the colliders lying entirely above `y` (bridge decks,
+   * arches, overhangs), Infinity when there is none. Writes into and returns `out` (no allocation).
+   */
+  columnAt(x: number, z: number, y: number, out: { floor: number; ceiling: number }): { floor: number; ceiling: number } {
+    let floor = this.groundHeight(x, z);
+    let ceiling = Infinity;
+    const list = this.cells.get(this.key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    if (list) {
+      for (const id of list) {
+        const e = this.entries.get(id)!;
+        if (x < e.minX || x > e.maxX || z < e.minZ || z > e.maxZ) {
+          continue;
+        }
+        if (e.bottom <= y ? e.top <= floor : e.bottom >= ceiling) {
+          continue;
+        }
+        if (this.containsXZ(e.collider, x, z)) {
+          if (e.bottom <= y) {
+            floor = e.top;
+          } else {
+            ceiling = e.bottom;
+          }
+        }
+      }
+    }
+    out.floor = floor;
+    out.ceiling = ceiling;
+    return out;
+  }
+
+  /**
    * Sphere vs world. Returns the deepest contact (push-out normal and depth) or null.
    */
   resolveSphere(center: THREE.Vector3, radius: number, out?: ContactResult): ContactResult | null {
