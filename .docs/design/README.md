@@ -88,18 +88,21 @@ stamina, the next gate).
   | Zone | Band | Holds |
   |---|---|---|
   | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while racing the race readout (gutter + 72 px) replaces it |
-  | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
+  | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; a perch's name and info; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
   | `center` | between title and lowerCenter (≥ 25 % of the height) | reserved for the aim and the ring: no text except small labels next to world markers (gate distance) |
-  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption), maneuver and shot captions, hover controls |
+  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys), maneuver and shot captions, hover controls |
   | `bottom` | gutter + 10 px, 146 px tall | the static cluster (not a zone item) |
   | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card / one toast at a time |
 
   Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
-  race callouts (85) > discovery card (70) > area title (60) > maneuver captions (50) > hover hints and shot caption
-  (40) > start-of-game hints and the compass label (30) > toasts (10); ties go to the newer message (a toast replaces
-  the current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
-  (dropped after 8 s) and the compass landmark label (the next gate is the target). Start hints and "[Y] iptal" are
-  items of the same hint line and never share it; only hints marked `joinable` ride along on a higher line.
+  race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > perch
+  prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > start-of-game hints and the
+  compass label (30) > toasts (10); ties go to the newer message (a toast replaces the current one). The context
+  `race` (a race prepared, running, aborting or its result open) defers the area title (dropped after 8 s) and the
+  compass landmark label (the next gate is the target). Start hints and "[Y] iptal" are items of the same hint line
+  and never share it; only hints marked `joinable` ride along on a higher line. While perched on a viewpoint (the
+  viewing mode, phase 03) the compass, the bottom cluster and the minimap fade out: only the zones remain (the perch
+  title, the viewing hint line, toasts).
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
   prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
 - **Full-screen overlays (map, result):** content directly on a scrim or the map, chrome in the corners: title top

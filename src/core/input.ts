@@ -111,7 +111,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'perch' | 'game';
 
 /**
  * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
@@ -157,6 +157,13 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
   { keys: '[ / ]', action: 'Saati yarım saat geri / ileri', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
+  // Viewpoints (phase 03, src/dragon/flight/perch.ts, src/ui/perch-view.ts).
+  { keys: 'L', action: 'Seyir noktası yakındayken ("Kon" yazısı çıkınca): kon ve izle', group: 'perch' },
+  { keys: 'L / Space', action: 'Konmak üzereyken: vazgeç (yön tuşları da iptal eder)', group: 'perch' },
+  { keys: 'Space / L', action: 'Seyir noktasında: havalan, boşluğa atıl', group: 'perch' },
+  { keys: 'T', action: 'Seyir noktasında: zamanı hızlandır / normale döndür', group: 'perch' },
+  { keys: 'C', action: 'Seyir noktasında: kamera (yörünge, sabit, binici gözü)', group: 'perch' },
+  { keys: 'O', action: 'Seyir noktasında: fotoğraf modu', group: 'perch' },
   { keys: '1–5', action: 'Hotbar: yetenek / eşya kullan', group: 'game' },
   { keys: 'Y', action: 'Halka yarışı: parkur seç, parkur editörü (yarışta: iptal et, editörde: çık)', group: 'game' },
   { keys: 'B', action: 'Parkur editöründe: halka koy', group: 'game' },

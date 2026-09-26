@@ -15,6 +15,7 @@ import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, GROUND, HOVER, I
 import type { AssistOverrides, PilotCommand, SimEvent, SimOptions, SimWorld } from './types';
 import { createOverrides } from './types';
 import { DiveState, stepUnderwater, updatePlungeLook } from './underwater';
+import { PerchDriver } from './perch';
 import { WingBeat } from './wingbeat';
 import { WindField } from './wind';
 
@@ -39,6 +40,8 @@ export class FlightSim {
   readonly dive = new DiveState();
   /** Surface skim / ground effect ("sıyırma", skim.ts). */
   readonly skim = new SkimState();
+  /** Perching on viewpoints (perch.ts): prompt, guided approach, perched hold, drop take-off off the perch. */
+  readonly perch: PerchDriver = new PerchDriver(this);
   readonly wing: WingShape = createWingShape();
   readonly overrides: AssistOverrides = createOverrides();
   readonly options: SimOptions = { autoFlap: true, stallProtection: true, turbulence: true, thermals: true, wind: true };
@@ -243,6 +246,7 @@ export class FlightSim {
     this.leapCharge = 0;
     this.runTakeoff = 0;
     this.moves.reset();
+    this.perch.reset();
     this.aheadTimer = 0;
     this.resetFarLookahead();
     this.splashDistance = 0;
@@ -355,7 +359,9 @@ export class FlightSim {
     this.maneuvers.tick(h, this);
     this.moves.sinceLiftOff += h;
 
-    if (this.mode === 'grounded') {
+    if (this.perch.step(this, cmd, h)) {
+      // The perch approach, the perched hold or a drop-off off the perch moved the body this step (perch.ts).
+    } else if (this.mode === 'grounded') {
       stepGrounded(this, cmd, h);
     } else if (this.mode === 'swimming') {
       stepSwimming(this, cmd, h);
