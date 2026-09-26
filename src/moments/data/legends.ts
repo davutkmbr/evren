@@ -8,6 +8,7 @@ import { EVLIYA, original } from './provenance';
 export const hezarfen: Moment = {
   id: 'hezarfen-galata-uskudar',
   title: 'Hezarfen Ahmed Çelebi',
+  category: 'legend',
   status: 'draft',
   backlog: 3,
   trigger: {
@@ -50,6 +51,7 @@ export const hezarfen: Moment = {
 export const lagari: Moment = {
   id: 'lagari-sarayburnu-rocket',
   title: 'Lagari Hasan Çelebi',
+  category: 'legend',
   status: 'draft',
   backlog: 7,
   trigger: {
@@ -92,6 +94,7 @@ export const lagari: Moment = {
 export const kizKulesi: Moment = {
   id: 'kiz-kulesi-legend',
   title: 'Kız Kulesi Efsanesi',
+  category: 'legend',
   status: 'draft',
   backlog: 9,
   trigger: {
@@ -130,6 +133,7 @@ export const kizKulesi: Moment = {
 export const ayaYorgi: Moment = {
   id: 'aya-yorgi-challenge',
   title: "Aya Yorgi'nin Meydan Okuması",
+  category: 'legend',
   status: 'draft',
   backlog: 5,
   trigger: {
@@ -170,6 +174,7 @@ export const ayaYorgi: Moment = {
 export const shipsOverLand: Moment = {
   id: 'ships-over-land-1453',
   title: 'Karadan Yürüyen Gemiler',
+  category: 'legend',
   status: 'draft',
   backlog: 8,
   trigger: {

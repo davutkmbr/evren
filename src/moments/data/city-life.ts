@@ -17,6 +17,7 @@ export const BOSPHORUS_CORRIDOR: readonly LatLon[] = [
 export const storks: Moment = {
   id: 'storks-bosphorus-migration',
   title: "Boğaz'da Leylek Göçü",
+  category: 'city-life',
   status: 'draft',
   backlog: 2,
   trigger: {
@@ -55,6 +56,7 @@ export const storks: Moment = {
 export const gullSimit: Moment = {
   id: 'ferry-gull-simit',
   title: 'Martı ve Simit',
+  category: 'city-life',
   status: 'draft',
   backlog: 4,
   trigger: {
@@ -88,6 +90,7 @@ export const gullSimit: Moment = {
 export const anglers: Moment = {
   id: 'galata-bridge-anglers',
   title: 'Galata Köprüsü Oltacıları',
+  category: 'city-life',
   status: 'draft',
   backlog: 4,
   trigger: {

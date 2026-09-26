@@ -1,24 +1,30 @@
 /**
  * Poems (phase 19 backlog item 14).
  *
- * Orhan Veli Kanık, "İstanbul'u Dinliyorum". The poet died on 14 November 1950, so under Turkish law (FSEK art. 27,
- * life + 70 years) his works entered the public domain in Turkey on 1 January 2021. The poem's text is NOT in this
- * repository yet: the wording could not be checked against a reliable edition, and its status in the United States
- * (where the repository is hosted) needs the user's decision — see `pending` below and .docs/moments/README.md.
- * The subtitle lines are placeholders (`[[...]]`), which the headless check accepts only in draft records.
+ * Orhan Veli Kanık, "İstanbul'u Dinliyorum". The poet died on 14 November 1950, so under Turkish law (FSEK art.
+ * 27, life + 70 years) his works entered the public domain in Turkey on 1 January 2021. Only the first stanza is used
+ * (user decision 2026-09-26): a short quotation keeps the moment light and limits exposure to a possible restored US
+ * term, since the repository is hosted in the United States.
  */
 import type { Moment } from '../types';
 import { BOSPHORUS_CORRIDOR } from './city-life';
 import { original } from './provenance';
 
-/** Placeholder subtitle text; replaced by the poem's lines after approval. */
-function verse(n: number): string {
-  return `[[dize ${n} — metin onay bekliyor]]`;
-}
+/** The first stanza, one subtitle per line. */
+const FIRST_STANZA = [
+  "İstanbul'u dinliyorum, gözlerim kapalı;",
+  'Önce hafiften bir rüzgâr esiyor;',
+  'Yavaş yavaş sallanıyor',
+  'Yapraklar, ağaçlarda;',
+  'Uzaklarda, çok uzaklarda,',
+  'Sucuların hiç durmayan çıngırakları;',
+  "İstanbul'u dinliyorum, gözlerim kapalı.",
+];
 
 export const istanbuluDinliyorum: Moment = {
   id: 'orhan-veli-istanbulu-dinliyorum',
   title: "İstanbul'u Dinliyorum",
+  category: 'poem',
   status: 'draft',
   backlog: 14,
   trigger: {
@@ -32,14 +38,8 @@ export const istanbuluDinliyorum: Moment = {
   },
   content: {
     soundId: 'moments/shore-ambience-soft',
-    subtitles: [
-      { at: 0, duration: 4, text: verse(1) },
-      { at: 4.5, duration: 4, text: verse(2) },
-      { at: 9, duration: 4, text: verse(3) },
-      { at: 13.5, duration: 4, text: verse(4) },
-      { at: 18, duration: 4, text: verse(5) },
-      { at: 22.5, duration: 4, text: verse(6) },
-    ],
+    // unhurried: 4 s per line, half a second of silence between lines
+    subtitles: FIRST_STANZA.map((text, i) => ({ at: i * 4.5, duration: 4, text })),
     card: {
       title: "İstanbul'u Dinliyorum",
       text: "Orhan Veli Kanık'ın (1914–1950) en sevilen şiirlerinden biri. Gözler kapalı, şehir sesleriyle dinlenir.",
@@ -51,14 +51,11 @@ export const istanbuluDinliyorum: Moment = {
       kind: 'public-domain',
       licence: 'public domain (Turkey, since 1 January 2021)',
       author: 'Orhan Veli Kanık (1914–1950)',
-      basis: "Orhan Veli Kanık, \"İstanbul'u Dinliyorum\"",
-      pending:
-        'Text not yet added: verify the wording against a reliable edition, and decide on the US status (a 1940s Turkish ' +
-        'work still protected in Turkey on 1 Jan 1996 may have a restored US term until 95 years after publication).',
+      basis: "Orhan Veli Kanık, \"İstanbul'u Dinliyorum\", first stanza only",
     },
     original('card'),
   ],
-  needs: ['sound', 'text-approval'],
+  needs: ['sound'],
   notes: 'No character: just subtitles over a soft shore ambience while gliding low. Lines should fade with the glide, not force pacing.',
 };
 

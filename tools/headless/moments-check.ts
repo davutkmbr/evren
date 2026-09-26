@@ -8,6 +8,7 @@
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
 import { ALL_MOMENTS } from '../../src/moments/data';
+import { defaultMomentPrefs } from '../../src/moments/prefs';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
 import {
   dayOfYearOf,
@@ -316,6 +317,7 @@ function testTriggers(): void {
   const mk = (over: Partial<Moment['trigger']>, id = 'test'): Moment => ({
     id,
     title: 'Test',
+    category: 'legend',
     status: 'draft',
     backlog: 1,
     trigger: { place: { label: 'origin', center: { lat: 41.045, lon: 29.02 }, radius: 100 }, surface: 'any', repeat: { kind: 'once-per-session' }, ...over },
@@ -341,6 +343,16 @@ function testTriggers(): void {
   expect(rejectReason(circle, base(), opts) === null, T, 'inside the circle should be eligible');
   expect(rejectReason(circle, base({ position: { x: 150, z: 0 } }), opts) === 'place', T, 'outside the circle should be rejected by place');
   expect(rejectReason(circle, base()) === 'status', T, 'drafts are skipped unless includeDrafts');
+
+  // Player settings (Ayarlar → Oyun → Anlar).
+  const prefs = defaultMomentPrefs();
+  expect(rejectReason(circle, base(), { ...opts, prefs }) === null, T, 'default prefs allow every category');
+  prefs.categories.legend = false;
+  expect(rejectReason(circle, base(), { ...opts, prefs }) === 'disabled', T, 'a switched-off category is rejected');
+  expect(rejectReason({ ...circle, category: 'poem' }, base(), { ...opts, prefs }) === null, T, 'other categories still play');
+  prefs.categories.legend = true;
+  prefs.enabled = false;
+  expect(rejectReason({ ...circle, category: 'poem' }, base(), { ...opts, prefs }) === 'disabled', T, 'the master switch silences everything');
   const square = mk({ place: { label: 'sq', area: [{ lat: 41.04, lon: 29.01 }, { lat: 41.04, lon: 29.03 }, { lat: 41.05, lon: 29.03 }, { lat: 41.05, lon: 29.01 }] } });
   expect(rejectReason(square, base(), opts) === null && rejectReason(square, base({ position: at(41.06, 29.02) }), opts) === 'place', T, 'area polygon');
   const anchored = mk({ place: { label: 'ferry', anchor: 'ferry', radius: 60 } });
