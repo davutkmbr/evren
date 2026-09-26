@@ -263,8 +263,8 @@ up close, as before.
   `osm/index.ts`). The procedural trees dither out under a region (`OSM_FADE_OUT`, the complement of the region's
   dither) and the vegetation rebuilds its tiles once the fade is done (`onOsmTreesChange`).
 
-**Still open:**
-- Infill ids repeat across regions (the check matches them by place).
+- Infill parcels carry one id everywhere: negative, from the 3 m cell of their centre (`buildings/infill.ts
+  infillId`); `check:map` section 5 fails on a non-negative id or one id at two places.
 
 **Owner checks on the reference machine:**
 - Fly from 9 km into a landing region and out again, by day and by night. There should be no pop, and the window

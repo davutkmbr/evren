@@ -25,6 +25,23 @@ const OPEN = /^(leisure=(park|garden|pitch|playground|sports_centre|track|dog_pa
 const FRONT = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'living_street', 'pedestrian', 'service', 'primary_link', 'secondary_link', 'tertiary_link', 'steps', 'footway']);
 const NO_BUILD_USE = new Set<number>([LandUse.Water, LandUse.Park, LandUse.Forest, LandUse.Cemetery, LandUse.Landmark]);
 const MIN_COVER = 0.26;
+const ID_CELL = 3;
+const ID_HALF = 24000;
+const ID_ROW = (ID_HALF * 2) / ID_CELL;
+
+/**
+ * Id of an infill parcel, the same in every region and in the bake: negative (never an OSM id), from the ID_CELL cell
+ * of its centre in the playable square. Parcels do not overlap and are at least 5 m wide, so their centres lie at least
+ * 5 m apart, more than a cell's diagonal (4.2 m): two parcels never share a cell.
+ */
+export function infillId(corners: readonly (readonly number[])[]): number {
+  const cx = (corners[0][0] + corners[2][0]) / 2;
+  const cz = (corners[0][1] + corners[2][1]) / 2;
+  const ix = Math.min(ID_ROW - 1, Math.max(0, Math.floor((cx + ID_HALF) / ID_CELL)));
+  const iz = Math.min(ID_ROW - 1, Math.max(0, Math.floor((cz + ID_HALF) / ID_CELL)));
+  return -(1 + iz * ID_ROW + ix);
+}
+
 /** Growth (m) of the keep-out rects: rectFree samples 0.4 m inside a parcel on 1 m cells, so corners overhang ~1.7 m. */
 const KEEP_OUT_GROW = 2.5;
 
@@ -234,7 +251,6 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
   const parcels: OsmBuilding[] = [];
   let tested = 0;
   let lowCover = 0;
-  let id = 0;
   for (const road of data.roads) {
     if (!FRONT.has(road.kind) || road.tunnel || road.bridge || road.covered) {
       continue;
@@ -315,7 +331,7 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
               ring = [ring[0], ring[1], ring[6], ring[7], ring[4], ring[5], ring[2], ring[3]];
             }
             mark(ring);
-            parcels.push({ id: 2_000_000_000 + id++, ring, kind: 'yes' });
+            parcels.push({ id: infillId(corners), ring, kind: 'yes' });
           }
           s += f;
         }
