@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { CELL_TILES, encodeMeshes, WALLS_FORMAT, WALLS_TILE, type MeshArrays, type MeshKind, type WallsColliders, type WallsIndex, type WallsTile } from '../../../../src/world/landmarks/walls/data/baked';
 import type { WallData } from '../../../../src/world/landmarks/walls/data/types';
+import { latLonToLocal } from '../../../../src/core/geo-coords';
+import { HERITAGE_FORTRESS_TOWERS } from '../../../../src/world/landmarks/heritage/data/fortresses';
 import { osmGroundHeight } from '../../../../src/world/osm/shared/street-surface';
 import { buildHeadlessGeo } from '../../../headless/geo';
 import { buildPieces, LODS, mergeParts } from './build';
@@ -39,6 +41,7 @@ const t0 = performance.now();
 const data = JSON.parse(readFileSync(resolve(ROOT, 'data/osm/walls.json'), 'utf8')) as WallData;
 const geo = buildHeadlessGeo();
 const site: Site = {
+  reservedTowers: HERITAGE_FORTRESS_TOWERS.map((t) => ({ ...latLonToLocal(t.lat, t.lon), r: t.r })),
   ground: (x, z) => osmGroundHeight(geo.heightAt(x, z), geo.coastDistance(x, z)),
   coast: (x, z) => geo.coastDistance(x, z),
   waterName: (x, z) => geo.waterNameAt(x, z),
