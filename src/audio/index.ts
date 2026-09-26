@@ -258,6 +258,8 @@ export function createAudioSystem(): System {
         const onSurface = dragon.mode === 'grounded' || dragon.mode === 'swimming' || dragon.mode === 'underwater';
         frame.dragon.grounded = onSurface;
         frame.dragon.exertion = clamp01(pose.breath);
+        frame.dragon.skid = dragon.mode === 'grounded' ? clamp01(pose.skid ?? 0) : 0;
+        frame.dragon.groundSpeed = Math.hypot(dragon.velocity.x, dragon.velocity.z);
         // Fallback when the flight model does not emit 'flap' events: follow the rig's wing-beat phase. The phase may
         // be wrapped to [0, 2pi) (the flight model does) or continuous (the contract allows both): detect either.
         const phase = pose.flapPhase;
@@ -291,6 +293,7 @@ export function createAudioSystem(): System {
         prevCycle = Number.isFinite(cycle) && dragon.mode === 'grounded' ? cycle : Number.NaN;
       } else {
         frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming' || dragon?.mode === 'underwater';
+        frame.dragon.skid = 0;
       }
     },
 
