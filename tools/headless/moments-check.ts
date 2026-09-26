@@ -8,6 +8,7 @@
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
 import { MOMENT_MUSIC_TAGS } from '../../src/audio/music/manifest';
+import { MUSIC_SOURCE_KINDS, WORLD_CHAINS } from '../../src/audio/music/moment-source';
 import { ENVELOPE } from '../../src/dragon/flight/params';
 import { momentPlayability } from '../../src/moments/runtime';
 import { LITERATURE } from '../../src/moments/data/literature';
@@ -180,6 +181,40 @@ function validateRecord(m: Moment): void {
     expect(finite(wp.lat, wp.lon) && insideWorld(wp), w, `waypoint ${wp.id} outside the world bounds`);
     expect(wp.note.trim().length > 0, w, `waypoint ${wp.id} has no note`);
   }
+  // Music source: where the moment's music comes from (defaults to memory).
+  const ms = m.content.musicSource;
+  if (ms) {
+    expect((MUSIC_SOURCE_KINDS as readonly string[]).includes(ms.kind), w, `musicSource kind '${ms.kind}' unknown`);
+    const world = ms.kind !== 'memory';
+    if (world) {
+      expect(!!ms.at !== !!ms.anchor, w, 'a world musicSource needs exactly one of `at` or `anchor`');
+      expect(ms.from === undefined, w, '`from` is for memory sources only');
+    } else {
+      expect(!ms.at && !ms.anchor, w, 'a memory musicSource has no `at` or `anchor` (use `from` for its direction)');
+    }
+    if (ms.anchor !== undefined) {
+      expect(ms.anchor === p.anchor, w, `musicSource anchor '${ms.anchor}' must be the place's anchor '${p.anchor}'`);
+      expect(ms.kind === 'ferry', w, 'only the ferry kind follows a moving anchor');
+    }
+    if (ms.kind === 'ferry') expect(ms.anchor !== undefined, w, 'a ferry source follows its anchor');
+    for (const [name, pt] of [
+      ['at', ms.at],
+      ['from', ms.from],
+    ] as const) {
+      if (!pt) continue;
+      expect(finite(pt.lat, pt.lon, pt.height) && insideWorld(pt), w, `musicSource.${name} outside the world bounds`);
+      expect(pt.height === undefined || (pt.height >= 0 && pt.height <= 120), w, `musicSource.${name}.height outside 0..120 m`);
+      expect(pt.note.trim().length > 0, w, `musicSource.${name} has no note`);
+    }
+    expect(ms.reachScale === undefined || (ms.reachScale >= 0.25 && ms.reachScale <= 2), w, 'musicSource.reachScale outside 0.25..2');
+    if (ms.at && p.center && p.radius) {
+      // The source stands near the moment's place (a lead-in from afar, not from another district).
+      const a = latLonToLocal(ms.at.lat, ms.at.lon);
+      const c = latLonToLocal(p.center.lat, p.center.lon);
+      const d = Math.hypot(a.x - c.x, a.z - c.z);
+      expect(d <= p.radius + 400, w, `musicSource.at is ${d.toFixed(0)} m from the place centre (> radius + 400 m)`);
+    }
+  }
   if (m.content.camera?.waypoint) {
     expect(wpIds.has(m.content.camera.waypoint), w, `camera hint names unknown waypoint ${m.content.camera.waypoint}`);
   }
@@ -235,9 +270,14 @@ function checkGeo(): void {
       const c = local(p.center);
       expect(!geo.isWater(c.x, c.z), m.id, 'ground moment centred over water');
     }
-    for (const wp of m.content.waypoints ?? []) {
+    const ms = m.content.musicSource;
+    const musicPoints = [
+      ...(ms?.at ? [{ ...ms.at, id: 'musicSource.at' }] : []),
+      ...(ms?.from ? [{ ...ms.from, id: 'musicSource.from' }] : []),
+    ];
+    for (const wp of [...(m.content.waypoints ?? []), ...musicPoints]) {
       const q = local(wp);
-      const where = `${m.id} waypoint ${wp.id}`;
+      const where = `${m.id} ${wp.id.startsWith('musicSource') ? '' : 'waypoint '}${wp.id}`;
       if (wp.expect === 'water') expect(geo.isWater(q.x, q.z), where, `expected water (coast distance ${geo.coastDistance(q.x, q.z).toFixed(0)} m)`);
       if (wp.expect === 'land') expect(!geo.isWater(q.x, q.z), where, `expected land (coast distance ${geo.coastDistance(q.x, q.z).toFixed(0)} m)`);
       if (wp.nearLandmark) {
@@ -297,6 +337,36 @@ function checkGeo(): void {
     const q = local(ridge);
     expect(geo.heightAt(q.x, q.z) > 40, 'ships ridge', `ridge only ${geo.heightAt(q.x, q.z).toFixed(0)} m high`);
     expect(pointInPolygon(q, shipsArea.map(local)), 'ships ridge', 'ridge waypoint outside the trigger area');
+  }
+  // Music sources at their real places.
+  const at = (id: string) => byId.get(id)?.content.musicSource?.at;
+  const katibimVenue = at('katibim-uskudar-yagmur');
+  if (katibimVenue) {
+    const q = local(katibimVenue);
+    const cd = geo.coastDistance(q.x, q.z);
+    expect(geo.districtAt(q.x, q.z)?.name === 'Üsküdar' && cd > 0 && cd < 120, 'katibim venue', `the coffeehouse should be on the Üsküdar shore (district ${geo.districtAt(q.x, q.z)?.name}, coast ${cd.toFixed(0)} m)`);
+  }
+  const rahmi = at('huseyin-rahmi-kuyrukluyildiz');
+  if (rahmi) {
+    const q = local(rahmi);
+    expect(geo.districtAt(q.x, q.z)?.name === 'Heybeliada', 'kuyrukluyildiz gramophone', `district is ${geo.districtAt(q.x, q.z)?.name}, expected Heybeliada`);
+  }
+  const asiyan = at('fikret-yagmur-asiyan');
+  const asiyanWp = wp('fikret-yagmur-asiyan', 'asiyan');
+  if (asiyan && asiyanWp) {
+    const a = local(asiyan);
+    const b = local(asiyanWp);
+    expect(Math.hypot(a.x - b.x, a.z - b.z) < 40, 'yagmur gramophone', 'the gramophone should be at Aşiyan (the asiyan waypoint)');
+  }
+  for (const m of ALL_MOMENTS) {
+    const ms = m.content.musicSource;
+    if (ms?.at && m.trigger.place.center) {
+      // The lead-in reaches the moment's own place: the source lies within its kind's reach of the trigger centre.
+      const a = local(ms.at);
+      const c = local(m.trigger.place.center);
+      const reach = WORLD_CHAINS[ms.kind as Exclude<typeof ms.kind, 'memory'>].reach * (ms.reachScale ?? 1);
+      expect(Math.hypot(a.x - c.x, a.z - c.z) < reach, `${m.id} musicSource`, `source ${Math.hypot(a.x - c.x, a.z - c.z).toFixed(0)} m from the place centre, beyond its day reach ${reach.toFixed(0)} m`);
+    }
   }
   const yorgi = byId.get('aya-yorgi-challenge')?.trigger.place.center;
   if (yorgi) {

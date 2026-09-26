@@ -8,7 +8,9 @@
  *   stingers (intro, go, finish) -> stinger gain -> fade-out gain;  outro -> player output
  *   player output (level x volume x duck) -> master bus `music` (underwater muffle) -> master dynamics
  *   sprinkle phrase (one-shot) -> voice gain (edge fades x phrase gain) -> player output
- *   moment piece (one-shot) -> voice gain -> moment output (level x volume x menu duck only) -> master bus `music`
+ *   moment piece (one-shot) -> voice gain -> [moment source graph: world / memory chain, ./source-graph.ts]
+ *     -> moment output (level x volume x menu duck only) -> master bus `music`
+ *   source graph open-air send -> moment send (follows the moment output's gain) -> master bus reverb (the city's tail)
  *
  * Every stem of a deck is started with the same `when` on the AudioContext clock and loops over the same grid length,
  * so the stems stay sample-locked forever. Decoding happens only when the director asks for a set; at most
@@ -100,6 +102,13 @@ export class MusicPlayer {
   readonly output: GainNode;
   /** Moment pieces: volume and the menu duck, not the moment duck of the stems. */
   readonly momentOutput: GainNode;
+  /**
+   * Send of the moment source graph into the city's open-air reverb: follows the moment output's gain (level, volume,
+   * menu duck), connected by `connectReverb`.
+   */
+  readonly momentSend: GainNode;
+  /** Where moment voices play into: the source graph's input while it exists, else the moment output. */
+  momentInput: AudioNode | null = null;
   private readonly cache = new Map<string, MusicBuffers>();
   private readonly loading = new Map<string, Promise<void>>();
   private readonly failed = new Set<string>();
@@ -133,7 +142,25 @@ export class MusicPlayer {
     this.momentOutput = ctx.createGain();
     this.momentOutput.gain.value = 0;
     this.momentOutput.connect(destination);
+    this.momentSend = ctx.createGain();
+    this.momentSend.gain.value = 0;
     this.applyOutput(0);
+  }
+
+  /** Connects the moment send to the master bus reverb input. */
+  connectReverb(dest: AudioNode): void {
+    this.momentSend.connect(dest);
+  }
+
+  /** One-shot voices of `owner` still sounding. */
+  voicesOf(owner: string): number {
+    let n = 0;
+    for (const k of this.voices.keys()) {
+      if (k.startsWith(`${owner}:`)) {
+        n++;
+      }
+    }
+    return n;
   }
 
   isReady(id: string): boolean {
@@ -260,7 +287,7 @@ export class MusicPlayer {
         g.gain.linearRampToValueAtTime(level, t0 + Math.max(0.02, cmd.fadeIn));
         g.gain.setValueAtTime(level, Math.max(t0 + cmd.fadeIn, t1 - cmd.fadeOut));
         g.gain.linearRampToValueAtTime(0, t1);
-        g.connect(bus === 'moment' ? this.momentOutput : this.output);
+        g.connect(bus === 'moment' ? (this.momentInput ?? this.momentOutput) : this.output);
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.connect(g);
@@ -509,6 +536,7 @@ export class MusicPlayer {
     };
     set(this.output, base * (1 - this.duck));
     set(this.momentOutput, base * (1 - this.momentDuck));
+    set(this.momentSend, base * (1 - this.momentDuck));
   }
 
   /** Fades every one-shot voice of `owner` out (style switched, test phrases loaded). */
@@ -630,5 +658,6 @@ export class MusicPlayer {
     this.phraseCache.clear();
     this.output.disconnect();
     this.momentOutput.disconnect();
+    this.momentSend.disconnect();
   }
 }

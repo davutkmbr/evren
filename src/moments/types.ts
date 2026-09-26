@@ -9,6 +9,9 @@
  * Player-facing strings are Turkish; everything else (ids, notes) is English.
  */
 import type { FlightMode, WeatherPreset } from '../core/contracts';
+import type { MusicSourceKind } from '../audio/music/moment-source';
+
+export type { MusicSourceKind } from '../audio/music/moment-source';
 
 /**
  * 'draft' until every referenced model, animation and sound exists and is approved. 'ready' moments play; a 'draft'
@@ -132,6 +135,36 @@ export interface SubtitleLine {
   speaker?: string;
 }
 
+/** A point of a music source: real coordinates, a height above the ground, and what the headless check verifies. */
+export interface MusicSourcePoint extends LatLon {
+  /** Height above the ground (m): a first-floor balcony ≈ 6, a street-level window ≈ 3. Default per kind. */
+  height?: number;
+  /** English note ("coffeehouse on the shore road between Şemsi Paşa and the İskele square"). */
+  note: string;
+  /** Checked headlessly against the real geography, like a waypoint. */
+  expect?: 'land' | 'water';
+  /** Landmark id the point must lie near (≤ 150 m from its centre). */
+  nearLandmark?: string;
+}
+
+/**
+ * Where a moment's music plays from. World kinds need `at` (a fixed place) or `anchor` (the moving anchor the moment
+ * started at, e.g. the ferry's deck radio); `memory` may name `from`, the moment's subject the memory comes from.
+ */
+export interface MomentMusicSource {
+  kind: MusicSourceKind;
+  /** World kinds: the place of the gramophone, the coffeehouse, the tent. */
+  at?: MusicSourcePoint;
+  /** World kinds: follow this moving anchor (the record's `trigger.place.anchor`, e.g. 'ferry'). */
+  anchor?: string;
+  /** Anchor sources: height of the speaker above the water (m). Default per kind. */
+  height?: number;
+  /** Memory: the direction of the moment's subject (a landmark); omitted = centred and diffuse. */
+  from?: MusicSourcePoint;
+  /** Multiplies the kind's reach (0.25..2, default 1), e.g. a gramophone over a quiet island night. */
+  reachScale?: number;
+}
+
 /** Camera suggestion for the moment; the camera system may ignore it and never takes control away from the player. */
 export interface CameraHint {
   kind: 'look-at' | 'follow' | 'orbit';
@@ -165,6 +198,12 @@ export interface MomentContent {
    * ['history', 'solemn'] (MOMENT_MUSIC_TAGS in src/audio/music/manifest.ts; the category counts as a tag too).
    */
   musicMood?: readonly string[];
+  /**
+   * Where the moment's music comes from (.docs/audio/music-system.md, Moment music sources): a place in the world
+   * (gramophone, venue, live, ferry) or a memory. Omitted = `{ kind: 'memory' }`, centred and diffuse: moment music
+   * is never heard "directly".
+   */
+  musicSource?: MomentMusicSource;
   subtitles: readonly SubtitleLine[];
   camera?: CameraHint;
   card?: DiscoveryCard;
