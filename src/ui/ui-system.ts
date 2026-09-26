@@ -20,6 +20,8 @@ import { TeleportPanel } from './menu/teleport-panel';
 import { MomentsPanel } from './moments/moments-panel';
 import { SourceSheet } from './moments/source-sheet';
 import { ALL_MOMENTS } from '../moments/data';
+import { IdbPhotoStore } from './album/idb-store';
+import { PhotoAlbum } from './album/photo-album';
 import { PERCH_TOAST, perchTeleportView } from './perch-teleport';
 import { PerchViewing } from './perch-view';
 import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
@@ -79,6 +81,8 @@ export class UiSystem implements System {
   private momentsPanel!: MomentsPanel;
   private sourceSheet!: SourceSheet;
   private sourceMomentId = '';
+  /** Pause menu → Albüm and [Enter] in photo mode (src/ui/album). */
+  private album!: PhotoAlbum;
   private settings!: SettingsPanel;
   private help!: HelpOverlay;
   private stats: StatsOverlay | null = null;
@@ -164,9 +168,10 @@ export class UiSystem implements System {
     });
     this.momentsPanel = new MomentsPanel();
     const controlsView = new ControlsView({ untried: (group, keys) => this.tutorial.untried(group, keys) });
+    this.album = new PhotoAlbum(ctx, this.toasts, new IdbPhotoStore(), () => this.click());
     this.sourceSheet = new SourceSheet({ onClose: () => this.closeModal(), onClick: () => this.click() });
     this.pauseMenu = new PauseMenu({
-      panels: { teleport: teleportPanel, controls: controlsView, settings: this.settings, moments: this.momentsPanel },
+      panels: { teleport: teleportPanel, controls: controlsView, settings: this.settings, moments: this.momentsPanel, album: this.album.panel },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
@@ -178,6 +183,8 @@ export class UiSystem implements System {
           this.momentsPanel.opened();
         } else if (tab === 'controls') {
           controlsView.refresh();
+        } else if (tab === 'album') {
+          this.album.panel.opened();
         }
       },
       onTabClose: (tab) => {
@@ -185,13 +192,15 @@ export class UiSystem implements System {
           teleportPanel.closed();
         } else if (tab === 'moments') {
           this.momentsPanel.closed();
+        } else if (tab === 'album') {
+          this.album.panel.closed();
         }
       },
       onClick: () => this.click(),
     });
     this.help = new HelpOverlay(() => this.help.setOpen(false));
 
-    this.root.append(this.hud.root, this.toasts.root, this.photoHint.root, this.help.root, this.fullMap.root, this.pauseMenu.root, this.sourceSheet.root);
+    this.root.append(this.hud.root, this.toasts.root, this.photoHint.root, this.album.flash, this.help.root, this.fullMap.root, this.pauseMenu.root, this.sourceSheet.root);
     if (ctx.debug.stats) {
       this.stats = new StatsOverlay();
       this.root.append(this.stats.root);
@@ -209,6 +218,7 @@ export class UiSystem implements System {
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
       events.on('moment-source', ({ id }) => this.openSource(id)),
       () => this.momentsPanel.dispose(),
+      () => this.album.dispose(),
       this.hud.maneuver.connect(events),
       this.tutorial.connect(events),
     );
@@ -262,6 +272,7 @@ export class UiSystem implements System {
     }
     this.fillSnapshot(ctx);
     this.handleInput(ctx);
+    this.album.update();
     this.updateContextHints(ctx);
     this.abilities.update();
     this.perchView.update(realDt, this.modal === 'none' && !this.photo);
@@ -517,6 +528,11 @@ export class UiSystem implements System {
 
   private onKeyDown(e: KeyboardEvent): void {
     if (this.modal === 'none') {
+      // Photo mode: [Enter] takes a photo for the album.
+      if (this.photo && !e.repeat && (e.code === 'Enter' || e.code === 'NumpadEnter')) {
+        e.preventDefault();
+        this.album.requestCapture(this.cameraBeforePhoto);
+      }
       return;
     }
     const target = e.target as HTMLElement | null;
@@ -542,6 +558,9 @@ export class UiSystem implements System {
     }
     if (this.modal === 'pause' && (e.code === 'Escape' || e.code === 'KeyP')) {
       e.preventDefault();
+      if (e.code === 'Escape' && this.pauseMenu.back()) {
+        return;
+      }
       this.closeModal();
     } else if (this.modal === 'map') {
       if (e.code === 'Escape' || e.code === 'KeyM') {
@@ -578,6 +597,7 @@ export class UiSystem implements System {
     } else {
       rig?.setMode(this.cameraBeforePhoto === 'free' ? 'third' : this.cameraBeforePhoto);
       ctx.events.emit('pause', { paused: this.pausedBeforePhoto });
+      this.album.photoModeEnded();
     }
     this.root.classList.toggle('is-photo', on);
     this.photoHint.setVisible(on && !ctx.debug.nohud);
@@ -627,6 +647,11 @@ export class UiSystem implements System {
         return this.ctx.services.tryGet('dragon')?.perch?.perchAt(id) ?? false;
       },
       toast: (text: string, kind?: 'info' | 'warn'): void => this.toasts.push(text, kind),
+      /** Photo mode on and a photo for the album taken on the next frame (as [Enter] does). */
+      takePhoto: (): void => {
+        this.setPhoto(true);
+        this.album.requestCapture(this.cameraBeforePhoto);
+      },
       resetDiscoveries: (): void => this.tracker.reset(),
       raster: this.raster,
       state: () => ({

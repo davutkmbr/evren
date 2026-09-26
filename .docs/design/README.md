@@ -114,7 +114,10 @@ stamina, the next gate).
 - **Small sheets (a moment's sources):** the same sheet look at ≈760 px wide, one column that scrolls, a top bar with
   the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
-  prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
+  prompt; content in two columns (list left, detail right). Scales down under 1440 × 820. A tab whose content is a
+  gallery (Albüm) uses one column instead: the thumb grid with a header line and a key/option footer, and one item
+  large with its caption and the key-first actions underneath; Esc steps back out of the detail before it closes the
+  menu (`MenuPanel.back`).
   The pause menu's top bar carries one quiet line about the dragon's mood under the game's name (`.menu-mood`,
   11.5 px, `--ink-3`, e.g. "Evren keyifli."): the only place the mood is ever written; in flight it shows only in the
   dragon's pose and sound (phase 06).
@@ -140,6 +143,7 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 | Medal dot / disc | `medalDot(medal, size)`, `medalDisc(medal)` | a small dot in a medal's colour (ring when none); the big result-screen disc with a star |
 | Pill | `pill(text, tone)` | a short status tag ("Yeni rekor"), `gold` or `quiet` |
 | Legend | `legend(items, className)` | colour keys for a chart or map: swatch (`dot`, `ring`, `square`) + label |
+| Thumb grid | `thumbGrid({ label, onSelect, onOpen }).set(items)`, `.select(i)`, `.handleKey(e)` | image thumbnails in 16:9 cells, as many columns as fit (the album); selection is a gold bar under the cell, an optional small gold corner dot marks a badge; arrow keys move in 2D, Enter / Space open |
 | List row | `listRow(content, onPick, onHover, { focusable })` | a selectable list entry: name, quieter second line, value and marker; selection is a gold bar on the left edge; `focusable` puts it in the tab order (Enter / Space pick it) |
 | Text field | `textField(label, { key, placeholder, maxLength, size })` | a labelled single-line input with an optional focus key and a message line |
 | Segmented control | `segmented(label, options, current, onChange)` | one of a few options as equal segments; a radio group driven by ArrowLeft / ArrowRight |
