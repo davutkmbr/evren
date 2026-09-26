@@ -23,6 +23,8 @@ export interface WaterUniforms extends SeaStateUniforms {
   uAtten: { value: THREE.Vector3[] };
   uFloorAlbedo: { value: THREE.Vector3[] };
   uRoughness: { value: number[] };
+  /** 1 while the camera is under the water (underwater service): the surface shades its underside. */
+  uCamUnder: { value: number };
 }
 
 export interface WaterTextureSet {
@@ -63,6 +65,7 @@ export function createWaterUniforms(sea: SeaStateUniforms, textures: WaterTextur
     uAtten: { value: vec3List((o) => o.attenuation) },
     uFloorAlbedo: { value: vec3List((o) => o.floor) },
     uRoughness: { value: OPTICS_ORDER.map((o) => o.roughness) },
+    uCamUnder: { value: 0 },
   };
 }
 
