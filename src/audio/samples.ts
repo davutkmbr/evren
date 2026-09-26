@@ -81,7 +81,7 @@ export class SampleLibrary {
   private manifest: Promise<Manifest | null> | null = null;
   private readonly files = new Map<string, Promise<ArrayBuffer | null>>();
 
-  constructor(private readonly base = `${import.meta.env.BASE_URL}audio/`) {}
+  constructor(private readonly base = `${import.meta.env?.BASE_URL ?? '/'}audio/`) {}
 
   private getManifest(): Promise<Manifest | null> {
     this.manifest ??= fetch(`${this.base}sounds.json`)
