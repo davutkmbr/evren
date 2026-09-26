@@ -439,6 +439,71 @@
   border-radius: 2px;
 }
 
+/* Thumb grid: 16:9 image cells; selection is a gold bar under the cell, a badge a small gold corner dot */
+
+.ui-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.ui-thumb,
+.ejd .ui-thumb {
+  position: relative;
+  display: block;
+  padding: 6px 6px 10px;
+  border-radius: 12px;
+  color: var(--ink, #f3eee5);
+}
+
+.ui-thumb-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  opacity: 0.86;
+  transition: opacity var(--ui-motion-fast) var(--ui-ease-out);
+}
+
+.ui-thumb:hover .ui-thumb-img,
+.ui-thumb.is-selected .ui-thumb-img {
+  opacity: 1;
+}
+
+.ui-thumb-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.ui-thumb.is-selected .ui-thumb-bar {
+  background: var(--accent, #e8b872);
+}
+
+.ui-thumb.is-selected,
+.ejd .ui-thumb.is-selected {
+  --ui-int-hover-bg: var(--ui-selected-hover-surface);
+  background-color: var(--ui-selected-surface);
+}
+
+.ui-thumb-mark {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #e8b872);
+  box-shadow: 0 0 0 2px rgba(17, 19, 24, 0.7);
+}
+
 /* List row: selection is a gold bar on the left edge */
 
 .ui-row,

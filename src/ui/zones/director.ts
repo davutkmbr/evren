@@ -33,6 +33,8 @@ export const HUD_PRIORITY = {
   momentSource: 35,
   /** Start-of-game key hints and the compass landmark label. */
   startHint: 30,
+  /** Contextual move hints (src/ui/tutorial): the quietest item of the hint line, one at a time, well paced. */
+  tutorialHint: 20,
   toast: 10,
 } as const;
 

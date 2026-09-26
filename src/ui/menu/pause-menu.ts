@@ -2,12 +2,14 @@ import { interactive, prompt, stat } from '../components';
 import { BRAND } from '../brand';
 import { el } from '../dom';
 
-export type MenuTab = 'teleport' | 'controls' | 'settings' | 'moments';
+export type MenuTab = 'teleport' | 'controls' | 'settings' | 'moments' | 'album';
 
 /** A tab's content. `handleKey` gets the keys the menu does not use itself (Esc / P close it). */
 export interface MenuPanel {
   readonly root: HTMLElement;
   handleKey?(e: KeyboardEvent): boolean;
+  /** Esc: true when the tab stepped back itself (e.g. out of a detail view) instead of the menu closing. */
+  back?(): boolean;
 }
 
 export interface PauseMenuOptions {
@@ -23,12 +25,13 @@ const TABS: ReadonlyArray<{ id: MenuTab; title: string }> = [
   { id: 'controls', title: 'Kontroller' },
   { id: 'settings', title: 'Ayarlar' },
   { id: 'moments', title: 'Anlar' },
+  { id: 'album', title: 'Albüm' },
 ];
 
 /**
- * Pause menu (Esc / P): a top bar (state, the four tabs, discovery progress, Devam) over one tab's content:
- * Işınlan (map + places), Kontroller (key groups + keyboard), Ayarlar (settings pages) or Anlar (moments seen, with
- * their sources).
+ * Pause menu (Esc / P): a top bar (state, the tabs, discovery progress, Devam) over one tab's content:
+ * Işınlan (map + places), Kontroller (key groups + keyboard), Ayarlar (settings pages), Anlar (moments seen, with
+ * their sources) or Albüm (photos from photo mode, golden-hour badges).
  */
 export class PauseMenu {
   readonly root: HTMLElement;
@@ -162,6 +165,11 @@ export class PauseMenu {
       this.body.replaceChildren(panel);
     }
     this.options.onTabOpen?.(tab);
+  }
+
+  /** Esc while open: the open tab may step back first (true); otherwise the menu closes. */
+  back(): boolean {
+    return this.isOpen ? (this.options.panels[this.tab].back?.() ?? false) : false;
   }
 
   /** Keys while open (after Esc / P, which close it): passed to the open tab. */

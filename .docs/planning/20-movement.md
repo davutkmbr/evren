@@ -609,6 +609,60 @@ as a big flying animal (raptor / swan / bat); the settle, run-out and touch-and-
   the pure hover descent from 60 m takes ~16 s (v1 13 s). Perch landings can drive the approach through
   `overrides.bankTarget` (it wins over the weave) and `landingStyle.forceNext`.
 
+## Discoverability: contextual move hints (built, awaiting the owner's feel test)
+
+Owner request (26 Sep): the many moves should be discoverable in play, each hint at the right moment, once (or a
+few times until the move is used), quietly and key first, on the shared hint line through the zones director.
+
+- **Code:** `src/ui/tutorial/` — `hints-data.ts` (the catalogue: id, key caps, Turkish text, trigger predicate over a
+  `TutorialFrame`, hold, cooldown, max shows, learn rule, optional prerequisites and the Kontroller row), `engine.ts`
+  (pure, deterministic: pacing, gates, one zone item `hint.tutorial`), `store.ts` (localStorage
+  `ejderha.ui.tutorial.v1`, every access guarded), `sense.ts` (the frame from `DragonState`, geo and the zones),
+  `index.ts` (`TutorialHints`, owned by the UI system). The flight now emits `maneuver-end` `{ id, clean }` for the
+  moves that report their end, and `maneuver` carries the breach's `clean`.
+- **Catalogue** (order = precedence when several hold at once):
+
+  | Id | Hint | Trigger | Learned when |
+  |---|---|---|---|
+  | breach | [Space] Sudan fırla | under water ≥ 1 s | a breach (clean) |
+  | water-takeoff | [Space / L] Sudan havalan | swimming ≥ 4 s | a take-off while swimming |
+  | touchgo | [Space] Dokun-kalk | running out a fast landing, ≥ 10 m/s | a touch-and-go |
+  | plunge | [Shift] Dal: suya gir | path < −20° toward water ≥ 12 m deep, coast ≥ 40 m, 30–300 m up, ≥ 18 m/s | a clean plunge |
+  | splits | [A / D ×2] Split-S | dive steeper than 32°, ≥ 190 m up, ≥ 24 m/s | a clean Split-S |
+  | wingover | [S ×2] Kanat üstü dönüş | bank 48–100°, ≥ 26 m/s, ≥ 45 m up, path within ±30° | a clean wingover |
+  | immelmann | [A / D] Looping tepesinde: Immelmann | 2–10 s after a loop, upright, ≥ 40 m up | a clean Immelmann |
+  | runout | [L] Koşarak in | 14–34 m/s, 3–30 m over flat open land, path within ±15°, 1 s | a run-out |
+  | skim | Suya yakın uç: sıyırma | ≥ 20 m/s, 6–35 m over water, wings and path level, 1.5 s | a skim |
+  | dart | [Shift ×2] Ok gibi süzül | level flight > 30 m/s, ≥ 20 m up, 1 s | a clean dart |
+  | power | [Space ×2] Güç vuruşu | level flight at 12–22 m/s, ≥ 15 m up, stamina ≥ 45 %, 2 s | a clean power stroke |
+  | flow | Hareketleri zincirle: akış | flow first rises (≥ 0.12); shown once, stays its full time | a chain of two links |
+  | dive | [Shift] Kanatları kapat: dal | cruising ≥ 150 m up, 4 s | a free fall or a dive |
+  | roll | [A / D ×2] Takla at | calm level flight ≥ 60 m up, ≥ 20 m/s, 5 s; after the power hint | a roll |
+  | loop | [S ×2] Looping | calm level flight ≥ 80 m up, ≥ 24 m/s, 5 s; after the roll hint | a loop |
+  | slip | [Q / E ×2] Kayış | steady level flight at 18–34 m/s, ≥ 15 m up, 5 s; after the dart hint | a clean slip |
+  | land | [L] Yere in | < 17 m/s, < 40 m over flat open land, 3 s | a landing |
+
+  Not duplicated: "[L] Kon" near a perch (the perch prompt), "[I] Kaynağa bak" (the moments), the hover controls and
+  the start-of-game keys.
+- **Pacing** (`TUTORIAL_PACING`, seconds of play; paused time, menus and photo mode do not count): evaluated 4 times a
+  second; nothing in the first 45 s or while the start hints are requested; the hint line, the title and the corner
+  free for 3 s; one new hint per 60 s; at most 12 per session; a hint shows 6 s and is dropped if the line is not free
+  within 1 s; a non-sticky hint leaves 1.5 s after its trigger stops holding; displaced by any other message it does
+  not come back. Per hint: 3 shows in total (persisted), 240 s cooldown (90–120 s for the fleeting situations); once
+  the move was tried at most 2 shows and a doubled cooldown; learned (clean) = never again; performing the move while
+  its hint shows removes it at once.
+- **Gates:** a race (the `race` zone context or `DragonState.racing`), a landing approach (`landing` mode), perching
+  (a perch offer, approach, perched viewing, the leap off), no dragon, a busy hint line (moments' subtitle lines and
+  cards, captions, perch prompts, hover hints); the UI suspends the engine while a menu, the map, photo mode or a
+  hidden HUD is up. Priority `HUD_PRIORITY.tutorialHint` (20): below the start hints, above toasts.
+- **Settings:** Ayarlar → Oyun → İpuçları: the "İpuçları" switch (on by default) and "İpuçlarını sıfırla".
+- **Pause menu:** Kontroller marks the rows of moves not yet tried with a small gold dot, explained once under the
+  rows ("Henüz denemediğin hareket"); the H overlay's compact list is unmarked.
+- **Checks:** `tools/headless/tutorial-check.ts` (every entry fires in its situation, pacing, hold, cooldown, max
+  shows, tried / learned, relevance, gates, one at a time, persistence round trip, sense).
+- **Not yet:** gamepad key names in the hints (the hints name keyboard keys, like `CONTROL_HELP`); the plunge,
+  breach and swimming rows in `CONTROL_HELP`.
+
 ## Controls summary (additions)
 
 | Gesture | Move |
