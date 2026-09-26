@@ -1,0 +1,70 @@
+/* HUD zones (src/ui/zones): every transient HUD message sits in one fixed band; the director shows one item per zone.
+   The bands come from the viewport (bands.ts writes --zone-* on the UI root); the fallbacks repeat the formulas.
+   The centre band (between title and lowerCenter) is reserved for the aim / ring area and has no class on purpose. */
+
+.hud-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* top: the line right under the compass heading (the landmark label lives inside the compass at this height). */
+.hud-zone-top-line {
+  top: var(--zone-top-line, calc(var(--gutter) + 52px));
+}
+
+/* top: the race readout replaces the landmark line while racing. */
+.hud-zone-top-readout {
+  top: var(--zone-top-readout, calc(var(--gutter) + 72px));
+}
+
+/* title: the upper third, below the top band. Content is anchored at the band's top edge. */
+.hud-zone-title {
+  top: var(--zone-title-top, max(calc(var(--gutter) + 158px), 18vh));
+  max-height: var(--zone-title-h, clamp(150px, 21vh, 290px));
+}
+
+/* lowerCenter: one line right above the bottom cluster; taller content (the hover panel) grows upwards. */
+.hud-zone-lower {
+  bottom: var(--zone-lower-bottom, calc(var(--gutter) + 158px));
+}
+
+/* corner: the discovery card, top right. */
+.hud-zone-corner {
+  top: calc(var(--gutter) + 4px);
+  right: calc(var(--gutter) + 8px);
+  left: auto;
+  align-items: flex-end;
+}
+
+/* toast: top left, kept clear of the compass tape (centred, min(500px, 40vw) wide). */
+.hud-zone-toast {
+  top: calc(var(--gutter) + 4px);
+  left: calc(var(--gutter) + 8px);
+  right: auto;
+  max-width: calc(50vw - min(250px, 20vw) - var(--gutter) - 32px);
+  align-items: flex-start;
+}
+
+/* Over a menu or the map the toast moves to the top centre (the map's title owns the top left). */
+.ejd.is-modal .hud-zone-toast {
+  left: 50%;
+  max-width: 60vw;
+  align-items: center;
+  transform: translateX(-50%);
+  top: var(--gutter);
+}
+
+/* The shared hint line: an optional caption, then key hints, one row. */
+.hud-hintline.is-out {
+  transform: translateY(6px);
+}
+
+.hint-caption {
+  font-size: 13.5px;
+  color: rgba(246, 241, 231, 0.9);
+}

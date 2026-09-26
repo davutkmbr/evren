@@ -130,16 +130,9 @@
 
 /* ---------------- area title ---------------- */
 
+/* Position: the title zone (src/ui/zones/zones.css). */
 .hud-area {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 25.5vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 8px;
-  pointer-events: none;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
   transition: opacity 700ms var(--ease-out), transform 900ms var(--ease-out), visibility 0s linear 0s;
 }
@@ -475,11 +468,10 @@
 
 /* ---------------- discovery card ---------------- */
 
-/* Top right, plain text on the scene with a soft shadow (a faint vignette keeps long info texts legible). */
+/* Corner zone (top right), plain text on the scene with a soft shadow (a faint vignette keeps long info texts
+   legible). */
 .hud-dcard {
-  position: absolute;
-  top: calc(var(--gutter) + 4px);
-  right: calc(var(--gutter) + 8px);
+  display: block;
   width: min(300px, 26vw);
   padding: 4px 0 10px;
   text-align: right;
@@ -580,16 +572,9 @@
 
 /* ---------------- key hints ---------------- */
 
-/* Above the bottom-centre cluster; keys keep their caps, labels are plain shadowed text. */
-.hud-hints {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--gutter) + 158px);
-  transform: translateX(-50%);
-}
-
+/* The lowerCenter zone, above the bottom-centre cluster; keys keep their caps, labels are plain shadowed text. */
 .hud-hints.is-out {
-  transform: translate(-50%, 6px);
+  transform: translateY(6px);
 }
 
 .hint-row {
@@ -661,25 +646,14 @@
 
 /* ---------------- cinematic shot caption ---------------- */
 
+/* The lowerCenter zone. */
 .hud-shot {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--gutter) + 158px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 2px;
-  transform: translateX(-50%);
-  pointer-events: none;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 
 .hud-shot.is-out {
-  transform: translate(-50%, 4px);
-}
-
-.hud-hints:not(.is-out) ~ .hud-shot {
-  opacity: 0;
+  transform: translateY(4px);
 }
 
 .shot-caps {
@@ -733,26 +707,14 @@
 
 /* ---------------- maneuver caption ---------------- */
 
+/* The lowerCenter zone: the director shows it instead of the hint line or the hover controls, never beside them. */
 .hud-maneuver {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--gutter) + 186px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 7px;
-  transform: translateX(-50%);
-  pointer-events: none;
   white-space: nowrap;
 }
 
 .hud-maneuver.is-out {
-  transform: translate(-50%, 6px);
-}
-
-/* Lifted clear of the hover controls when they share the bottom centre. */
-.hud-hints-hover:not(.is-out) ~ .hud-maneuver {
-  bottom: calc(var(--gutter) + 284px);
+  transform: translateY(6px);
 }
 
 .mnv-label {
@@ -849,11 +811,5 @@
 
   .at-title {
     font-size: 38px;
-  }
-}
-
-@media (max-height: 720px) {
-  .hud-area {
-    top: 20vh;
   }
 }

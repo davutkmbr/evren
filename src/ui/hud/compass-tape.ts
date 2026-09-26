@@ -47,12 +47,15 @@ function buildStripSvg(): string {
 /**
  * Bare heading tape at the top centre: a thin line, ticks fading to the ends, Turkish cardinal letters, a gold caret
  * and the heading under it. The targeted landmark (the discovery card's, else the nearest one ahead) shows as a gold
- * diamond on the tape with one line "Name · 1,2 km".
+ * diamond on the tape with one line "Name · 1,2 km". The label is the top zone's second line: it shows only while the
+ * zone director grants it (`labelAllowed`); a race takes that line for its readout and hides marker and label.
  */
 export class CompassTape {
   readonly root: HTMLElement;
   /** The landmark the player is aiming for right now, when there is one (the discovery card's). */
   focus: (() => LandmarkDef | null) | null = null;
+  /** The top zone's second line is ours right now (the zone director shows the 'compass.landmark' item). */
+  labelAllowed: () => boolean = () => true;
   private readonly strip: TransformSlot;
   private readonly readout: TextSlot;
   private readonly marker: HTMLElement;
@@ -180,7 +183,7 @@ export class CompassTape {
   private placeMarker(snapshot: FlightSnapshot, heading: number, relayout: boolean): void {
     const target = this.target;
     let shown = false;
-    if (target) {
+    if (target && this.labelAllowed()) {
       const delta = wrapDeg(bearingTo(snapshot.x, snapshot.z, target) - heading);
       if (Math.abs(delta) < this.halfRangeDeg()) {
         shown = true;
