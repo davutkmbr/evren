@@ -266,6 +266,9 @@ export function createFlightSystem(): System {
         case 'chain':
           ctx.events.emit('chain-link', { link: e.link, dv: e.dv, source: e.source });
           break;
+        case 'moment':
+          ctx.events.emit('flow-moment', { kind: e.kind });
+          break;
         case 'shake':
           cam?.shake(e.amount);
           break;
