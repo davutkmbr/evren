@@ -212,8 +212,9 @@ const SLAP_PHASE = TWO_PI * FLAP.downstrokeFraction * 0.85;
 /**
  * Floating and swimming on the sea (W/S swim, Shift fast, A/D turn, Space/L the take-off run, V an instant leap).
  * The body floats on the wave surface of the water service, pitches and rolls with it and is carried by the orbital
- * motion and the current. The stroke (swimPhase / swimStroke) is the side-to-side undulation of the body and tail with
- * the hind legs kicking; its frequency and strength follow the speed through the water.
+ * motion and the current. The stroke (swimPhase / swimStroke) is the whole-body swim of the rig (the wave down the body
+ * and tail, the paddling wings, the kicking hind legs); its frequency and strength follow the speed through the water,
+ * and each wing's power stroke surges the body forward.
  */
 export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const b = sim.body;
@@ -261,6 +262,14 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const drag = 1 - Math.exp(-h * (1.6 + 0.15 * Math.hypot(dx, dz)));
   v.x += dx * drag;
   v.z += dz * drag;
+  // Surge: each wing's power stroke pushes the body on (two per cycle), a zero-mean thrust on top of the drag toward the
+  // swim speed, so the average speed is unchanged and the speed swings by about ±SWIM_POSE.surge of it.
+  if (!running && sim.swimStroke > 0.05) {
+    const omega = 2 * TWO_PI * sim.swimFreq;
+    const thrust = SWIM_POSE.surge * Math.abs(sim.groundSpeed) * omega * Math.cos(2 * (sim.swimPhase - SWIM_POSE.surgePhase));
+    v.x += fx * thrust * h;
+    v.z += fz * thrust * h;
+  }
   // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave. The
   // take-off run lifts the body onto the surface.
   const depth = SWIM.floatDepth + (SWIM_POSE.runRiseDepth - SWIM.floatDepth) * run * run * (3 - 2 * run);
@@ -304,20 +313,11 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     ? SWIM_POSE.strokeFast
     : SWIM_POSE.strokeIdle + (SWIM_POSE.strokePaddle - SWIM_POSE.strokeIdle) * smoothstep(0, SWIM.paddleSpeed, speed) + (SWIM_POSE.strokeFast - SWIM_POSE.strokePaddle) * fastK;
   sim.swimStroke += (strokeTarget - sim.swimStroke) * (1 - Math.exp(-h * SWIM_POSE.strokeRate));
-  const prevPhase = sim.swimPhase;
+  sim.swimFreq = freq;
   sim.swimPhase = (sim.swimPhase + TWO_PI * freq * h) % TWO_PI;
   sim.walkAmount = 0;
-  // Paddle cue: a small splash at the tail on each stroke reversal (the tail at the end of its sweep).
-  const reversal = Math.floor((prevPhase + Math.PI / 2) / Math.PI) !== Math.floor((sim.swimPhase + Math.PI / 2) / Math.PI);
-  if (!running && reversal && speed > SWIM_POSE.splashSpeed && sim.splashTimer > 0.3) {
-    sim.splashTimer = 0;
-    const side = Math.sin(sim.swimPhase) > 0 ? 1 : -1;
-    const back = 0.42 * sim.rigLength;
-    const lateral = 0.08 * sim.rigLength * side * sim.swimStroke;
-    const sx = p.x - fx * back - fz * lateral;
-    const sz = p.z - fz * back + fx * lateral;
-    sim.emit({ type: 'splash', point: new THREE.Vector3(sx, sim.waterHeight(sx, sz), sz), strength: SWIM_POSE.splashBase + SWIM_POSE.splashPerSpeed * speed });
-  }
+  // No splash events while swimming: the stroke's water sounds (the wing paddles, the lapping along the flanks) are the
+  // audio system's, driven from the pose.
   sim.touchingWater = speed > 1.5 || running;
 
   if (running) {

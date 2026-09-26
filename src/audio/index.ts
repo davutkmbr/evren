@@ -23,6 +23,13 @@ function copyFinite(src: { x: number; y: number; z: number }, dst: { x: number; 
  * as bubbles instead of a splash.
  */
 const BUBBLE_SPLASH_MAX = 0.08;
+/**
+ * Swimming (phase 21 stage 5 v2): the rig's swim phase (DragonPose.swimPhase) puts the left wing's catch at 0 and the
+ * right one's at pi (the animator's convention); the power stroke lasts this share of the cycle (SWIM_RIG.paddlePower).
+ */
+const SWIM_POWER_SHARE = 0.42;
+/** The swimming posture weight (pose.swim) above which strokes are heard (the take-off run fades it below). */
+const SWIM_STROKE_MIN = 0.6;
 
 export interface AudioDebugHandle {
   readonly engine: AudioEngine | null;
@@ -50,6 +57,9 @@ export function createAudioSystem(): System {
   let prevFlapPhase = Number.NaN;
   let prevCycle = Number.NaN;
   const footfall = [0, 0.5, 0.25, 0.75];
+  let prevSwimPhase = Number.NaN;
+  /** Smoothed stroke frequency (Hz) from the swim phase's rate. */
+  let swimFreq = 0.5;
   let eventFiring = false;
   let externalRoar = false;
   let dragonReportsFiring = false;
@@ -300,6 +310,32 @@ export function createAudioSystem(): System {
         frame.dragon.exertion = clamp01(pose.breath);
         frame.dragon.skid = dragon.mode === 'grounded' ? clamp01(pose.skid ?? 0) : 0;
         frame.dragon.groundSpeed = Math.hypot(dragon.velocity.x, dragon.velocity.z);
+        // Swimming: the water bed follows the floating posture; each wing's catch (its phase crossing 0 / pi) plays its
+        // stroke, as strong as the stroke and as long as its power stroke.
+        const swim = dragon.mode === 'swimming' ? clamp01(finiteOr(pose.swim ?? 0, 0)) : 0;
+        frame.dragon.swimming = swim;
+        const swimPhase = pose.swimPhase ?? Number.NaN;
+        if (swim > 0 && Number.isFinite(swimPhase) && Number.isFinite(prevSwimPhase) && !ctx.time.paused) {
+          let dp = swimPhase - prevSwimPhase;
+          if (dp < -Math.PI) {
+            dp += TWO_PI;
+          }
+          if (dp >= 0 && dp < 1 && realDt > 0) {
+            swimFreq += (dp / TWO_PI / realDt - swimFreq) * (1 - Math.exp(-realDt * 2));
+            const power = SWIM_POWER_SHARE / Math.max(0.15, swimFreq);
+            for (const [catchAt, side] of [
+              [0, -1],
+              [Math.PI, 1],
+            ] as const) {
+              // Crossing catchAt going forward (the phase wraps at 2 pi).
+              const a = (((prevSwimPhase - catchAt) % TWO_PI) + TWO_PI) % TWO_PI;
+              if (a + dp >= TWO_PI && swim > SWIM_STROKE_MIN) {
+                engine.swimStroke(clamp01(finiteOr(pose.swimStroke ?? 0, 0)), side, power);
+              }
+            }
+          }
+        }
+        prevSwimPhase = swim > 0 ? swimPhase : Number.NaN;
         // Fallback when the flight model does not emit 'flap' events: follow the rig's wing-beat phase. The phase may
         // be wrapped to [0, 2pi) (the flight model does) or continuous (the contract allows both): detect either.
         const phase = pose.flapPhase;
@@ -334,6 +370,7 @@ export function createAudioSystem(): System {
       } else {
         frame.dragon.grounded = dragon?.mode === 'grounded' || dragon?.mode === 'swimming';
         frame.dragon.skid = 0;
+        frame.dragon.swimming = 0;
       }
     },
 

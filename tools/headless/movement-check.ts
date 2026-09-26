@@ -17,9 +17,12 @@
  *   - leaps (standing, running, tired, off an edge): crouch and push-off durations, no velocity jump > 3 m/s in one
  *     frame, first full downstroke within 0.15 s of lift-off, legs tucked only after the second stroke;
  *   - hover in still air: no bank without roll input;
- *   - swimming (calm sea): no walk cycle, rider and head above the water, the waterline along the back, wings folded,
- *     the tail's undulation frequency and amplitude growing with speed; a slow L landing settling into the float with
- *     no walk cycle; the water take-off run lifting off; wading in at a shore and floating again walking out.
+ *   - swimming (calm sea): no walk cycle, no NaNs, rider and head above the water, the waterline along the back, the
+ *     tail tip's sweep (floating / swim / fast envelopes) at the stroke frequency, the wings paddling at the surface
+ *     and recovering above it (wrist heights), never deeper than a limit, the rider's head steady enough, the speed
+ *     surging with each wing stroke around an unchanged mean, the outer wing stroking harder in a turn; a slow L landing
+ *     settling into the float with no walk cycle; the water take-off run lifting off; wading in at a shore and floating
+ *     again walking out.
  */
 import { writeFileSync } from 'node:fs';
 import * as THREE from 'three';
@@ -55,6 +58,7 @@ interface Run {
   records: FrameRecord[];
   meshes: MeshData[];
   boneNames: string[];
+  skel: { id(name: string): number; restHeads: THREE.Vector3[] };
   ground: (x: number, z: number) => number;
   rt: PoseRuntime;
 }
@@ -67,7 +71,7 @@ async function simulate(setup: (rt: PoseRuntime) => void, seconds: number, scrip
   const boneNames = rig.skel.bones.map((b) => b.name);
   const meshes = collectMeshes(rig.root, boneNames);
   const geo = rt.sim.world.geo!;
-  return { records, meshes, boneNames, ground: (x, z) => geo.heightAt(x, z), rt };
+  return { records, meshes, boneNames, skel: rig.skel, ground: (x, z) => geo.heightAt(x, z), rt };
 }
 
 async function scenario(name: string): Promise<Run> {
@@ -436,7 +440,7 @@ async function simulateSea(setup: (rt: PoseRuntime) => void, seconds: number, sc
   const boneNames = rig.skel.bones.map((b) => b.name);
   const meshes = collectMeshes(rig.root, boneNames);
   const geo = rt.sim.world.geo!;
-  return { records, meshes, boneNames, ground: (x, z) => geo.heightAt(x, z), rt };
+  return { records, meshes, boneNames, skel: rig.skel, ground: (x, z) => geo.heightAt(x, z), rt };
 }
 
 async function seaScenario(name: string): Promise<Run> {
@@ -467,6 +471,20 @@ interface SwimStats {
   tailFreq: number;
   tailAmp: number;
   tailFit: number;
+  /** Wrist (hand bone head) height above the water, lowest and highest over the window, per wing (left, right). */
+  wristLow: [number, number];
+  wristHigh: [number, number];
+  /** Rider's head (riderHead bone) in the body frame: vertical and lateral range (m). */
+  riderRise: number;
+  riderSway: number;
+  /**
+   * Horizontal speed: mean (m/s) and its surge at twice the stroke frequency (m/s: amplitude of the fit on sin / cos of
+   * 2 x the stroke phase; one surge per wing stroke).
+   */
+  speedMean: number;
+  surgeAmp: number;
+  /** Every record finite (positions, velocities, skinning matrices). */
+  finite: boolean;
 }
 
 function swimStats(run: Run, t0: number, t1: number): SwimStats {
@@ -516,12 +534,39 @@ function swimStats(run: Run, t0: number, t1: number): SwimStats {
     }
     return high;
   };
-  const out: SwimStats = { frames: 0, allSwimming: true, walkMax: 0, riderLow: Infinity, headLow: Infinity, backLow: Infinity, backHigh: -Infinity, wingLow: Infinity, tailFreq: 0, tailAmp: 0, tailFit: 0 };
+  const out: SwimStats = {
+    frames: 0,
+    allSwimming: true,
+    walkMax: 0,
+    riderLow: Infinity,
+    headLow: Infinity,
+    backLow: Infinity,
+    backHigh: -Infinity,
+    wingLow: Infinity,
+    tailFreq: 0,
+    tailAmp: 0,
+    tailFit: 0,
+    wristLow: [Infinity, Infinity],
+    wristHigh: [-Infinity, -Infinity],
+    riderRise: 0,
+    riderSway: 0,
+    speedMean: 0,
+    surgeAmp: 0,
+    finite: true,
+  };
   const lateral: number[] = [];
   const times: number[] = [];
   const phases: number[] = [];
+  const speeds: number[] = [];
   const q = new THREE.Quaternion();
   const v = new THREE.Vector3();
+  const m4 = new THREE.Matrix4();
+  const skel = run.skel;
+  const wristIds = [skel.id('handL'), skel.id('handR')];
+  const riderHeadId = skel.id('riderHead');
+  const boneHead = (id: number, r: FrameRecord): THREE.Vector3 => v.copy(skel.restHeads[id]).applyMatrix4(m4.fromArray(r.bones, id * 16));
+  const riderMin = [Infinity, Infinity];
+  const riderMax = [-Infinity, -Infinity];
   for (let k = 0; k < run.records.length; k++) {
     const r = run.records[k];
     if (r.time < t0 || r.time > t1) {
@@ -530,6 +575,19 @@ function swimStats(run: Run, t0: number, t1: number): SwimStats {
     out.frames++;
     out.allSwimming &&= r.mode === 'swimming';
     out.walkMax = Math.max(out.walkMax, r.pose.walkAmount ?? 0);
+    out.finite &&= r.position.every(Number.isFinite) && r.velocity.every(Number.isFinite) && r.bones.every(Number.isFinite);
+    speeds.push(Math.hypot(r.velocity[0], r.velocity[2]));
+    for (let w = 0; w < 2; w++) {
+      const y = boneHead(wristIds[w], r).y;
+      out.wristLow[w] = Math.min(out.wristLow[w], y);
+      out.wristHigh[w] = Math.max(out.wristHigh[w], y);
+    }
+    q.set(r.quaternion[0], r.quaternion[1], r.quaternion[2], r.quaternion[3]).invert();
+    boneHead(riderHeadId, r).sub(new THREE.Vector3(r.position[0], r.position[1], r.position[2])).applyQuaternion(q);
+    riderMin[0] = Math.min(riderMin[0], v.x);
+    riderMin[1] = Math.min(riderMin[1], v.y);
+    riderMax[0] = Math.max(riderMax[0], v.x);
+    riderMax[1] = Math.max(riderMax[1], v.y);
     if (tip) {
       skinVertex(tip[0], tip[1], r, p, 0);
       q.set(r.quaternion[0], r.quaternion[1], r.quaternion[2], r.quaternion[3]).invert();
@@ -583,26 +641,64 @@ function swimStats(run: Run, t0: number, t1: number): SwimStats {
     const b = det > 1e-9 ? (sc * s2 - ss * sxc) / det : 0;
     out.tailAmp = Math.hypot(a, b);
     out.tailFit = total > 0 ? (a * ss + b * sc) / total : 0;
+    // The speed's surge: its fit on sin / cos of twice the stroke phase (two power strokes per cycle).
+    out.speedMean = speeds.reduce((x, y) => x + y, 0) / speeds.length;
+    out.surgeAmp = fitAmplitude(
+      speeds,
+      phases.map((ph) => 2 * ph),
+    );
   }
+  out.riderSway = riderMax[0] - riderMin[0];
+  out.riderRise = riderMax[1] - riderMin[1];
   return out;
+}
+
+/** Amplitude of the least-squares fit of the (mean-free) samples on sin / cos of the given phases. */
+function fitAmplitude(samples: readonly number[], phases: readonly number[]): number {
+  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+  let ss = 0;
+  let sc = 0;
+  let s2 = 0;
+  let c2 = 0;
+  let sxc = 0;
+  for (let k = 0; k < samples.length; k++) {
+    const x = samples[k] - mean;
+    const sn = Math.sin(phases[k]);
+    const cs = Math.cos(phases[k]);
+    ss += x * sn;
+    sc += x * cs;
+    s2 += sn * sn;
+    c2 += cs * cs;
+    sxc += sn * cs;
+  }
+  const det = s2 * c2 - sxc * sxc;
+  if (det <= 1e-9) {
+    return 0;
+  }
+  return Math.hypot((ss * c2 - sc * sxc) / det, (sc * s2 - ss * sxc) / det);
 }
 
 async function swimming(): Promise<void> {
   console.log('\nSwimming (calm sea, surface y = 0; 5 s windows at steady speed)');
-  const cases: Array<[string, string]> = [
-    ['swim-idle', 'floating'],
-    ['swim', 'swim (W)'],
-    ['swim-fast', 'fast swim (W + Shift)'],
+  const surge = (params.SWIM_POSE as unknown as { surge?: number }).surge ?? 0;
+  const cases: Array<[string, string, number]> = [
+    ['swim-idle', 'floating', 0],
+    ['swim', 'swim (W)', params.SWIM.paddleSpeed],
+    ['swim-fast', 'fast swim (W + Shift)', params.SWIM.fastSpeed],
   ];
   const stats: SwimStats[] = [];
-  for (const [name, label] of cases) {
+  for (const [name, label, target] of cases) {
     const run = await seaScenario(name);
     const s = scenarioByName(name)!;
     const t0 = s.window(run.records);
     const st = swimStats(run, t0, t0 + 5);
     stats.push(st);
+    const wr = (w: number): string => `${f2(st.wristLow[w])}..${f2(st.wristHigh[w])}`;
     console.log(
       `  ${label}: walk ${f2(st.walkMax)}, rider low ${f2(st.riderLow)} m, head low ${f2(st.headLow)} m, back top ${f2(st.backLow)}..${f2(st.backHigh)} m, wing low ${f2(st.wingLow)} m, stroke ${f2(st.tailFreq)} Hz, tail tip ±${f2(st.tailAmp)} m at it (explains ${(st.tailFit * 100).toFixed(0)} %)`,
+    );
+    console.log(
+      `    wrists L ${wr(0)} m / R ${wr(1)} m above the water, rider head moves ${f2(st.riderRise)} m up-down / ${f2(st.riderSway)} m sideways, speed ${f2(st.speedMean)} m/s surging ±${f2(st.surgeAmp)} m/s per stroke`,
     );
     note(`swim.${name}.walkMax`, st.walkMax);
     note(`swim.${name}.riderLow`, st.riderLow);
@@ -612,19 +708,62 @@ async function swimming(): Promise<void> {
     note(`swim.${name}.wingLow`, st.wingLow);
     note(`swim.${name}.tailFreq`, st.tailFreq);
     note(`swim.${name}.tailAmp`, st.tailAmp);
+    note(`swim.${name}.wristLow`, Math.min(...st.wristLow));
+    note(`swim.${name}.wristHigh`, Math.min(...st.wristHigh));
+    note(`swim.${name}.riderRise`, st.riderRise);
+    note(`swim.${name}.riderSway`, st.riderSway);
+    note(`swim.${name}.speedMean`, st.speedMean);
+    note(`swim.${name}.surgeAmp`, st.surgeAmp);
+    check(st.finite, `${label}: no NaN or infinite values in the body state or the skinning`);
     check(st.allSwimming && st.walkMax < 0.01, `${label}: swimming, no walk cycle (walkAmount max ${f2(st.walkMax)} < 0.01)`);
     check(st.riderLow > 0.05, `${label}: rider's torso and head above the water (lowest ${f2(st.riderLow)} m > 0.05)`);
-    check(st.headLow > 0.3, `${label}: head above the water (lowest ${f2(st.headLow)} m > 0.3)`);
-    check(st.backLow > -0.1 && st.backHigh < 0.7, `${label}: waterline along the back (back top ${f2(st.backLow)}..${f2(st.backHigh)} m within -0.1..0.7)`);
-    check(st.wingLow > -0.8, `${label}: wings folded, tips no deeper than 0.8 m (${f2(st.wingLow)} m)`);
+    check(st.headLow > 0.8, `${label}: head above the water (lowest ${f2(st.headLow)} m > 0.8)`);
+    check(st.backLow > 0.25 && st.backHigh < 0.9, `${label}: waterline along the back (back top ${f2(st.backLow)}..${f2(st.backHigh)} m within 0.25..0.9)`);
+    check(st.wingLow > -2.2, `${label}: wings never deeper than 2.2 m (${f2(st.wingLow)} m)`);
+    check(st.riderRise < 0.32 && st.riderSway < 0.55, `${label}: rider's head steady enough (${f2(st.riderRise)} m < 0.32 up-down, ${f2(st.riderSway)} m < 0.55 sideways)`);
+    const wristLow = Math.min(...st.wristLow);
+    const wristHigh = Math.min(...st.wristHigh);
+    const wristRange = Math.min(st.wristHigh[0] - st.wristLow[0], st.wristHigh[1] - st.wristLow[1]);
+    if (target > 0) {
+      check(
+        wristLow > -0.5 && wristLow < 0.45 && wristHigh > 1.2 && wristRange > 1.0,
+        `${label}: both wings paddle at the surface and recover above it (wrists down to ${f2(wristLow)} m within -0.5..0.45, up to ${f2(wristHigh)} m > 1.2, range ${f2(wristRange)} m > 1)`,
+      );
+      check(Math.abs(st.speedMean - target) < 0.04 * target, `${label}: mean speed unchanged by the surge (${f2(st.speedMean)} m/s vs ${f2(target)} ± 4 %)`);
+      check(
+        st.surgeAmp > 0.6 * surge * target && st.surgeAmp < 1.4 * surge * target,
+        `${label}: speed surges with each wing stroke (±${f2(st.surgeAmp)} m/s, expected ±${f2(surge * target)} ± 40 %)`,
+      );
+    } else {
+      check(wristRange > 0.08 && wristHigh < 1.3, `${label}: lazy sculls, wings moving but mostly folded (wrist range ${f2(wristRange)} m > 0.08, top ${f2(wristHigh)} m < 1.3)`);
+    }
   }
   const [idle, swim, fast] = stats;
   check(
     idle.tailFreq > 0 && idle.tailFreq < swim.tailFreq && swim.tailFreq * 1.3 < fast.tailFreq,
-    `undulation frequency scales with speed (${f2(idle.tailFreq)} < ${f2(swim.tailFreq)} < ${f2(fast.tailFreq)} Hz)`,
+    `stroke frequency scales with speed (${f2(idle.tailFreq)} < ${f2(swim.tailFreq)} < ${f2(fast.tailFreq)} Hz)`,
   );
-  check(idle.tailAmp < swim.tailAmp && swim.tailAmp < fast.tailAmp, `undulation amplitude grows with speed (±${f2(idle.tailAmp)} < ±${f2(swim.tailAmp)} < ±${f2(fast.tailAmp)} m)`);
+  check(
+    idle.tailAmp > 0.3 && idle.tailAmp < 1.4 && swim.tailAmp > 1.5 && swim.tailAmp < 2.5 && fast.tailAmp > swim.tailAmp + 0.3 && fast.tailAmp < 4,
+    `tail tip sweep: floating ±${f2(idle.tailAmp)} m (0.3..1.4), swim ±${f2(swim.tailAmp)} m (1.5..2.5), fast ±${f2(fast.tailAmp)} m (> swim + 0.3, < 4)`,
+  );
   check(swim.tailFit > 0.6 && fast.tailFit > 0.6, `the tail sweeps at the stroke frequency (explains ${(swim.tailFit * 100).toFixed(0)} % / ${(fast.tailFit * 100).toFixed(0)} % of its sweep)`);
+  const top = (st: SwimStats): number => Math.max(...st.wristHigh);
+  check(top(fast) > top(swim) - 0.05 && top(swim) > top(idle) + 0.3, `the wing strokes grow with speed (wrist tops ${f2(top(idle))} < ${f2(top(swim))} <= ${f2(top(fast))} m)`);
+
+  // Turning: the outer wing strokes harder (its wrist loop spans more).
+  {
+    const run = await seaScenario('swim-turn');
+    const st = swimStats(run, 7, 11);
+    // D held: a right turn, the left wing is the outer one.
+    const spanL = st.wristHigh[0] - st.wristLow[0];
+    const spanR = st.wristHigh[1] - st.wristLow[1];
+    console.log(`  right turn: wrist loop heights L ${f2(spanL)} m / R ${f2(spanR)} m, tail tip ±${f2(st.tailAmp)} m, rider head ${f2(st.riderRise)} m up-down`);
+    note('swim.turn.outerSpan', spanL);
+    note('swim.turn.innerSpan', spanR);
+    check(st.finite && st.allSwimming, 'swimming turn: still swimming, all values finite');
+    check(spanL > spanR * 1.15, `swimming turn: the outer wing strokes harder (outer ${f2(spanL)} m > inner ${f2(spanR)} m × 1.15)`);
+  }
 
   // A slow landing onto the water (L): settles into the float with no walk cycle.
   {
