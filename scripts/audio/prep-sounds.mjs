@@ -453,6 +453,12 @@ the credits are kept anyway.
 | File | Recording | Author | Licence |
 | --- | --- | --- | --- |
 ${rows.join('\n')}
+
+## Music
+
+Music sets, phrases and the moment pieces restored from historic 78 rpm records (public domain, approved by the owner on
+2026-09-26) are listed in [\`music/LICENSES.md\`](music/LICENSES.md), with their provenance in
+[\`.docs/assets/archive-78rpm.md\`](../../.docs/assets/archive-78rpm.md). Rights holders' requests: \`<contact-email>\`.
 `;
 }
 

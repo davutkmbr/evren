@@ -10,12 +10,16 @@
  *   textures, or an HDRI sky (kind 'hdri', Radiance .hdr), at the requested resolution.
  * - ambientCG (API v2 full_json): the <RES>-JPG zip, extracted with the system `unzip`.
  * - Freesound: the public HQ preview (OGG) at the entry's download_url; the originals need a login.
+ * - Historic recordings (kind 'recording': the 78 rpm archive, .docs/assets/archive-78rpm.md): the exact original files
+ *   listed in the entry's `files` (Library of Congress, Wikimedia Commons, analogion.com, Internet Archive, Gallica),
+ *   cached in assets-src/audio/78rpm/<id>/ and verified against their recorded sha256. A file without a sha256 is
+ *   downloaded and its hash printed; --write-sha writes it into the manifest.
  * - Sketchfab (login-gated) and cgbookcase (no direct link): listed as a checklist, never downloaded.
  *
  * Downloads run one at a time with retries, and files that already exist with the expected size are skipped. If the
  * planned cache exceeds the budget, every asset is fetched one resolution step lower. public/ is never touched.
  * --kind limits the downloads to one asset kind, --id to the listed asset ids; the generated docs still cover the whole
- * manifest.
+ * manifest (they list only what is cached on this machine, so --no-docs leaves them untouched after a partial fetch).
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -56,8 +60,28 @@ const SOURCE_LABEL = {
   freesound: 'Freesound',
   cgbookcase: 'cgbookcase',
   sketchfab: 'Sketchfab',
+  loc: 'Library of Congress',
+  commons: 'Wikimedia Commons',
+  analogion: 'analogion.com',
+  'internet-archive': 'Internet Archive',
+  gallica: 'Gallica (BnF)',
 };
-const LICENCE_LABEL = { 'CC0-1.0': 'CC0 1.0', 'CC-BY-4.0': 'CC BY 4.0' };
+const LICENCE_LABEL = {
+  'CC0-1.0': 'CC0 1.0',
+  'CC-BY-4.0': 'CC BY 4.0',
+  'public-domain': 'public domain',
+  'public-domain-tr': 'public domain in Turkey (US-risky, private only)',
+};
+/** Where each direct-download source may serve its files from. */
+const DIRECT_HOSTS = {
+  loc: 'https://tile.loc.gov/',
+  commons: 'https://upload.wikimedia.org/',
+  analogion: 'https://analogion.com/',
+  'internet-archive': 'https://archive.org/download/',
+  gallica: 'https://gallica.bnf.fr/ark:/12148/',
+};
+/** Cache folder per kind when it is not assets-src/<kind>/. */
+const KIND_DIR = { recording: 'audio/78rpm' };
 const MANUAL_FORMAT = {
   sketchfab: 'Download 3D Model → glTF (the zip includes Sketchfab\'s `license.txt`); extract the whole zip',
   cgbookcase: 'pick the 2K resolution, then Download; extract the whole zip',
@@ -65,6 +89,8 @@ const MANUAL_FORMAT = {
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const noDocs = args.includes('--no-docs');
+const writeSha = args.includes('--write-sha');
 const onlyKind = args.find((a) => a.startsWith('--kind='))?.split('=')[1];
 const onlyIds = args.find((a) => a.startsWith('--id='))?.split('=')[1]?.split(',');
 // 400 MB held the S1 textures and props; the six 4k HDRI skies of the realism pass add about 110 MB.
@@ -72,7 +98,7 @@ const budgetMb = Number(args.find((a) => a.startsWith('--budget-mb='))?.split('=
 
 const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
 const lowerRes = (res) => (RES_STEPS.includes(res) ? RES_STEPS[Math.max(0, RES_STEPS.indexOf(res) - 1)] : res);
-const assetDir = (asset) => join(CACHE, asset.kind, asset.id);
+const assetDir = (asset) => join(CACHE, KIND_DIR[asset.kind] ?? asset.kind, asset.id);
 const rel = (path) => relative(ROOT, path).split('\\').join('/');
 
 async function withRetry(label, fn) {
@@ -80,10 +106,12 @@ async function withRetry(label, fn) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt >= ATTEMPTS) {
+      // upload.wikimedia.org answers bursts with 429: back off much longer there.
+      const limited = /HTTP 429/.test(err.message);
+      if (attempt >= (limited ? ATTEMPTS * 2 : ATTEMPTS)) {
         throw new Error(`${label}: ${err.message}`);
       }
-      const wait = 2000 * 2 ** (attempt - 1);
+      const wait = limited ? Math.min(300_000, 30_000 * 2 ** (attempt - 1)) : 2000 * 2 ** (attempt - 1);
       console.warn(`    retry ${attempt}/${ATTEMPTS - 1} in ${wait / 1000}s: ${label} (${err.message})`);
       await sleep(wait);
     }
@@ -100,9 +128,9 @@ async function getJson(url) {
   });
 }
 
-function md5File(path) {
+function hashFile(path, algo = 'md5') {
   return new Promise((ok, fail) => {
-    const hash = createHash('md5');
+    const hash = createHash(algo);
     createReadStream(path)
       .on('data', (chunk) => hash.update(chunk))
       .on('end', () => ok(hash.digest('hex')))
@@ -221,6 +249,21 @@ async function planFreesound(asset) {
   return [{ url, path: safePath(basename(new URL(url).pathname)), size }];
 }
 
+/** Historic recordings: the exact files of the entry, from the source's own host. */
+function planDirect(asset) {
+  const prefix = DIRECT_HOSTS[asset.source];
+  if (!prefix || !Array.isArray(asset.files) || asset.files.length === 0) {
+    throw new Error(`recording without files or with an unknown source "${asset.source}"`);
+  }
+  return asset.files.map((f) => ({
+    url: checkHost(f.url, prefix),
+    path: safePath(f.name),
+    size: f.bytes ?? undefined,
+    sha256: f.sha256 ?? undefined,
+    file: f,
+  }));
+}
+
 async function planAll(assets, pickRes) {
   const plans = [];
   for (const asset of assets) {
@@ -233,7 +276,9 @@ async function planAll(assets, pickRes) {
             ? await planAmbientCg(asset, res, assets)
             : asset.source === 'freesound'
               ? await planFreesound(asset)
-              : null;
+              : asset.kind === 'recording'
+                ? planDirect(asset)
+                : null;
       if (!items) {
         throw new Error(`no automatic download for source "${asset.source}"`);
       }
@@ -259,9 +304,12 @@ async function downloadFile(item, dest) {
       if (size !== item.size) {
         throw new Error(`size ${size} differs from the expected ${item.size}`);
       }
-      if ((await md5File(part)) !== item.md5) {
+      if ((await hashFile(part)) !== item.md5) {
         throw new Error('md5 mismatch');
       }
+    }
+    if (item.sha256 && (await hashFile(part, 'sha256')) !== item.sha256) {
+      throw new Error(`sha256 mismatch (the archive changed the file? check ${item.url} before updating the manifest)`);
     }
     if (item.zip) {
       execFileSync('unzip', ['-tqq', part], { stdio: 'pipe' });
@@ -269,6 +317,26 @@ async function downloadFile(item, dest) {
   });
   renameSync(part, dest);
 }
+
+/** A recording file already cached: its size and sha256 must match the manifest (a missing hash is filled in). */
+async function cachedRecordingOk(item, dest) {
+  if (!existsSync(dest)) {
+    return false;
+  }
+  if (item.size !== undefined && statSync(dest).size !== item.size) {
+    return false;
+  }
+  const sha = await hashFile(dest, 'sha256');
+  if (!item.sha256) {
+    item.file.sha256 = sha;
+    item.file.bytes = statSync(dest).size;
+    shaFilled.push(`${item.path} ${sha}`);
+    return true;
+  }
+  return sha === item.sha256;
+}
+
+const shaFilled = [];
 
 /** Downloads one asset; returns the number of bytes fetched (0 when everything was already cached). */
 async function fetchAsset(plan) {
@@ -294,6 +362,14 @@ async function fetchAsset(plan) {
       execFileSync('unzip', ['-o', '-qq', dest, '-d', dir], { stdio: 'pipe' });
       rmSync(dest);
       files.push(...listed);
+    } else if (item.file) {
+      if (!(await cachedRecordingOk(item, dest))) {
+        await downloadFile(item, dest);
+        fetched += statSync(dest).size;
+        await cachedRecordingOk(item, dest);
+        await sleep(asset.source === 'commons' ? 5000 : PAUSE_MS);
+      }
+      files.push(item.path);
     } else {
       if (!(existsSync(dest) && statSync(dest).size === item.size)) {
         await downloadFile(item, dest);
@@ -314,6 +390,7 @@ async function fetchAsset(plan) {
       resolution: res,
       fetched: new Date().toISOString(),
       files: files.map((f) => f.split('\\').join('/')).sort(),
+      ...(asset.kind === 'recording' ? { sha256: Object.fromEntries(items.map((i) => [i.path, i.file.sha256])) } : {}),
     };
     writeFileSync(join(dir, STAMP), `${JSON.stringify(record, null, 2)}\n`);
   }
@@ -333,7 +410,9 @@ function writeCachedDoc(manifest, rows, pending, downgraded) {
       cell(asset.name),
       asset.kind,
       `[${SOURCE_LABEL[asset.source]}](${asset.url})`,
-      `[${LICENCE_LABEL[asset.licence] ?? asset.licence}](${asset.licence_url})`,
+      asset.licence_url
+        ? `[${LICENCE_LABEL[asset.licence] ?? asset.licence}](${asset.licence_url})`
+        : (LICENCE_LABEL[asset.licence] ?? asset.licence),
       cell(asset.author),
       asset.attribution ? cell(asset.attribution) : 'not required (CC0)',
       `\`${rel(assetDir(asset))}/\``,
@@ -423,12 +502,14 @@ async function main() {
   const manual = manifest.assets.filter((a) => a.download === 'manual');
 
   let plans = await planAll(apiAssets, (a) => a.resolution);
-  let planned = plans.reduce((sum, p) => sum + p.bytes, 0);
+  // The budget is for assets with a resolution; the archived recordings are always fetched as they are.
+  const sized = (list) => list.reduce((sum, p) => sum + (p.asset.kind === 'recording' ? 0 : p.bytes), 0);
+  let planned = sized(plans);
   let downgraded = false;
-  console.log(`Planned: ${apiAssets.length} assets, ${mb(planned)} at the requested resolutions.`);
+  console.log(`Planned: ${apiAssets.length} assets, ${mb(plans.reduce((sum, p) => sum + p.bytes, 0))} (${mb(planned)} with a resolution) at the requested resolutions.`);
   if (planned > budgetMb * 1e6) {
     plans = await planAll(apiAssets, (a) => lowerRes(a.resolution));
-    planned = plans.reduce((sum, p) => sum + p.bytes, 0);
+    planned = sized(plans);
     downgraded = true;
     console.log(`Over the ${budgetMb} MB budget: fetching one resolution step lower (${mb(planned)}).`);
   }
@@ -468,8 +549,19 @@ async function main() {
     }
   }
   const pending = manual.filter((a) => !hasManualFiles(a));
-  writeCachedDoc(manifest, rows, pending, downgraded);
-  writeManualDoc(manual);
+  if (!noDocs) {
+    writeCachedDoc(manifest, rows, pending, downgraded);
+    writeManualDoc(manual);
+  }
+  if (shaFilled.length) {
+    console.log(`\nsha256 of files without one in the manifest${writeSha ? ' (written to the manifest)' : ' (add them, or rerun with --write-sha)'}:`);
+    for (const line of shaFilled) {
+      console.log(`  ${line}`);
+    }
+    if (writeSha) {
+      writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 1)}\n`);
+    }
+  }
 
   console.log(`\nManual downloads (${pending.length} pending, written to ${rel(DOC_MANUAL)}):`);
   for (const asset of manual) {
