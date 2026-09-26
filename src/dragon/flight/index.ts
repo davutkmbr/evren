@@ -53,6 +53,7 @@ export function createFlightSystem(): System {
     fireBurst(seconds) {
       fireBurstLeft = Math.max(fireBurstLeft, seconds);
     },
+    perch: sim.perch,
   };
 
   const previous = new BodyState();
@@ -172,6 +173,9 @@ export function createFlightSystem(): System {
           fx?.splash(e.point, e.strength);
           ctx.events.emit('splash', { position: e.point, strength: e.strength });
           break;
+        case 'spray':
+          fx?.splash(e.point, e.strength);
+          break;
         case 'dust':
           fx?.dust(e.point, e.strength);
           break;
@@ -249,6 +253,12 @@ export function createFlightSystem(): System {
       void ctx.services.when('env').then((env) => {
         sim.world.env = env;
       });
+      // Viewpoints to perch on (perch.ts); perchAt() places the body directly, so snap the interpolation after it.
+      sim.perch.onPlaced = () => {
+        accumulator = 0;
+        snapInterpolation();
+      };
+      void ctx.services.when('perches').then((perches) => sim.perch.setPoints(perches.points));
       // The wave surface of the sea (flat y = 0 until the water module provides it, or when there is none).
       sim.world.water = ctx.services.tryGet('water');
       void ctx.services.when('rig').then((r) => {

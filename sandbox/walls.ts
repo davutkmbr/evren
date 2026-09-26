@@ -256,6 +256,7 @@ const SHOTS: Record<string, [number, number, number, number, number, number, num
   ruin: [150, 26, 1.7, 135, 0, 4, 62],
   sea: [-178, 60, 3, -200, 22, 6, 55],
   closeup: [-86, 6.5, 1.7, -86, 2, 3.5, 60],
+  'tower-close': [-24, 14, 6, -28.6, 3, 7, 60],
   lod: [-40, 700, 180, -40, 0, 0, 40],
 };
 

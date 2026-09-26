@@ -99,6 +99,8 @@ class Part {
   wx: number[] | null = null;
   idx: number[] = [];
   lod: number[] = [];
+  /** Triangles per LOD mask value (triangles() is asked per building: counting `lod` each time was quadratic). */
+  readonly lodTris = new Map<number, number>();
   readonly weld = new Map<string, number>();
 }
 
@@ -331,6 +333,7 @@ export class TileMesh {
     }
     p.idx.push(a, b, c);
     p.lod.push(lod);
+    p.lodTris.set(lod, (p.lodTris.get(lod) ?? 0) + 1);
   }
 
   /** Planar convex polygon with a flat normal; the winding is fixed so the front face matches `n`. One chart. */
@@ -381,6 +384,7 @@ export class TileMesh {
       p.idx.push(a, b, c);
     }
     p.lod.push(lod);
+    p.lodTris.set(lod, (p.lodTris.get(lod) ?? 0) + 1);
   }
 
   /** Vertical quad between a bottom edge (a, b) and heights (top at a, b); normal horizontal `n`. */
@@ -571,6 +575,7 @@ export class TileMesh {
       }
       p.idx.push(tri[0], tri[1], tri[2]);
       p.lod.push(lod);
+      p.lodTris.set(lod, (p.lodTris.get(lod) ?? 0) + 1);
     }
   }
 
@@ -581,9 +586,9 @@ export class TileMesh {
       if (lod === ALL_LODS) {
         t += p.idx.length / 3;
       } else {
-        for (const l of p.lod) {
+        for (const [l, n] of p.lodTris) {
           if (l & lod) {
-            t++;
+            t += n;
           }
         }
       }
@@ -595,7 +600,7 @@ export class TileMesh {
   lodsIdentical(a: number, b: number): boolean {
     const both = a | b;
     for (const p of this.parts.values()) {
-      for (const l of p.lod) {
+      for (const l of p.lodTris.keys()) {
         const m = l & both;
         if (m !== 0 && m !== both) {
           return false;

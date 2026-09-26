@@ -155,6 +155,7 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 19 | [Moments: references, legends and city life](19-moments.md) | E · Variety | L | 01, 05, 13 |
 | 20 | [Movement variety, combos and flow](20-movement.md) | B · Chill loop | L | 05, 13 |
 | 21 | [The sea: low flight, plunge dives and swimming](21-sea.md) | B · Chill loop | L | 20 |
+| 23 | [OSM feature kits: one parametric kit and compiler rule per place type](23-osm-feature-kits.md) | C · Realistic city | L | 16 (world compiler), fetch changes |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 

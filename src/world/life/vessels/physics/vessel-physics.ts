@@ -1,8 +1,9 @@
 /**
  * Runs every vessel as a floating rigid body (phase 21 stage 7b): level of detail by camera distance, water sampling
- * from the water service's CPU evaluator (the very surface the shader draws), passing wakes of other vessels, the
- * fixed-step integration with interpolated render poses, impulses from splashes and the dragon, a land / leash safety
- * net and the CPU time it all costs.
+ * from the water service's CPU evaluator (the very surface the shader draws, wave particles included: the wakes of
+ * other vessels, the dragon's waves and splashes, stage 7a), the hulls' own bow and stern waves emitted into the
+ * water service's wave particles, the fixed-step integration with interpolated render poses, impulses from splashes
+ * and the dragon, a land / leash safety net and the CPU time it all costs.
  *
  * Levels of detail (camera distance, with 8 % hysteresis):
  * - Full (<= FULL_RANGE): every buoyancy column, heave / roll / pitch; water refreshed at 30 Hz within 600 m, 12 Hz
@@ -14,7 +15,7 @@
 import * as THREE from 'three';
 import type { GeoQuery, WaterService } from '../../../../core/contracts';
 import { Wander, type Vessel } from '../agents';
-import { buildHullBody, GRAVITY } from './hull-data';
+import { buildHullBody } from './hull-data';
 import { HullLod, RigidHull, wrapPi, type HullReference } from './rigid-hull';
 
 /** Physics tunables (see .docs/planning/21-sea.md, stage 7b). */
@@ -44,14 +45,14 @@ export const VESSEL_PHYSICS = {
   /** Splash impulse per unit strength (N s) and reach (m + per strength). */
   splashImpulse: 1500,
   splashReach: 6,
-  /** Wakes of vessels at least this long and fast push hulls shorter than wakeTargetMax (m, m/s, m). */
-  wakeSourceMin: 20,
-  wakeSourceSpeed: 2,
-  wakeTargetMax: 35,
+  /**
+   * Wave emission (stage 7a): hulls not kinematic, moving through the water faster than emitSpeed (m/s) and within
+   * emitRange of the camera (m) emit their bow and stern waves into the water service's wave particles (which apply
+   * their own range and budget on top).
+   */
+  emitSpeed: 0.8,
+  emitRange: 1500,
 } as const;
-
-/** Kelvin half-angle tangent (19.47 degrees). */
-const KELVIN_TAN = 0.3536;
 
 export interface VesselPhysicsStats {
   /** CPU time of the last update and a smoothed average (ms). */
@@ -71,18 +72,6 @@ export interface VesselPhysicsStats {
   teleports: number;
 }
 
-interface WakeSource {
-  id: number;
-  x: number;
-  z: number;
-  fx: number;
-  fz: number;
-  u: number;
-  length: number;
-  beam: number;
-  amp: number;
-}
-
 interface Slot {
   v: Vessel;
   body: RigidHull;
@@ -93,15 +82,8 @@ interface Slot {
   /** Double-ended: the hull may swap ends while held. */
   doubleEnded: boolean;
   wander: boolean;
-  small: boolean;
   /** Within the near water-refresh range of the camera. */
   near: boolean;
-}
-
-function smoothstep(e0: number, e1: number, x: number): number {
-  let t = (x - e0) / (e1 - e0);
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return t * t * (3 - 2 * t);
 }
 
 export class VesselPhysics {
@@ -113,7 +95,6 @@ export class VesselPhysics {
   private readonly byId = new Map<number, Slot>();
   private acc = 0;
   private time = 0;
-  private readonly wakes: WakeSource[] = [];
   private readonly tmp = new THREE.Vector3();
   private readonly moments = { heel: 0, trim: 0, lift: 0 };
 
@@ -132,7 +113,6 @@ export class VesselPhysics {
         contactCooldown: 0,
         doubleEnded: !!body.hull.design.doubleEnded,
         wander: v.behaviour instanceof Wander,
-        small: v.model.length < VESSEL_PHYSICS.wakeTargetMax,
         near: false,
       };
       this.readRef(slot, 0);
@@ -197,7 +177,6 @@ export class VesselPhysics {
     st.mid = 0;
     st.far = 0;
     st.samples = 0;
-    this.collectWakes();
     for (const s of this.slots) {
       this.readRef(s, dt);
       this.prepare(s, dt, camPos);
@@ -241,6 +220,7 @@ export class VesselPhysics {
       s.contactCooldown = Math.max(0, s.contactCooldown - dt);
       this.writePose(s, s.body.lod === HullLod.Far ? 1 : alpha);
     }
+    this.emitWaves(camPos);
     const ms = performance.now() - t0;
     st.ms = ms;
     st.avgMs = st.avgMs === 0 ? ms : st.avgMs + (ms - st.avgMs) * 0.05;
@@ -315,6 +295,9 @@ export class VesselPhysics {
     const cols = b.columns;
     const water = this.water;
     const tmp = this.tmp;
+    // A hull does not ride its own bow and stern waves (the wave particles it emitted).
+    const dyn = water?.dynamic;
+    if (dyn) dyn.exclude = s.v.id;
     for (let i = 0; i < cols.length; i++) {
       const c = cols[i];
       const x = b.worldX(c.lx, c.lz);
@@ -325,14 +308,10 @@ export class VesselPhysics {
         eta = water.heightAt(x, z);
         rate = water.velocityAt(x, z, tmp).y;
       }
-      if (s.small && b.lod === HullLod.Full && this.wakes.length > 0) {
-        const w = this.wakeAt(s.v.id, x, z);
-        eta += w.eta;
-        rate += w.rate;
-      }
       b.eta[i] = eta;
       b.etaDot[i] = rate;
     }
+    if (dyn) dyn.exclude = -1;
     this.stats.samples += water ? cols.length : 0;
     b.etaAge = 0;
     if (water) {
@@ -392,61 +371,30 @@ export class VesselPhysics {
     b.savePrevious();
   }
 
-  /** Moving vessels whose wakes can push small hulls this frame. */
-  private collectWakes(): void {
-    const P = VESSEL_PHYSICS;
-    this.wakes.length = 0;
-    for (const s of this.slots) {
-      const L = s.v.model.length;
-      if (L < P.wakeSourceMin || s.body.lod === HullLod.Far) continue;
-      const b = s.body;
-      const u = Math.hypot(b.vx - b.cx, b.vz - b.cz);
-      if (u < P.wakeSourceSpeed || s.v.state.astern) continue;
-      const fn = u / Math.sqrt(GRAVITY * L);
-      this.wakes.push({
-        id: s.v.id,
-        x: b.x,
-        z: b.z,
-        fx: -Math.sin(b.yaw),
-        fz: -Math.cos(b.yaw),
-        u,
-        length: L,
-        beam: s.v.model.beam,
-        amp: Math.min(0.6, 0.45 * Math.min(1, (fn / 0.3) ** 2) * Math.sqrt(L / 70)),
-      });
-    }
-  }
-
-  private readonly wakeOut = { eta: 0, rate: 0 };
-
   /**
-   * Height (and its rate) of the passing wakes at (x, z): the Kelvin pattern of each source, strongest along the cusp
-   * lines at 19.5 degrees, weaker inside the wedge, fixed in the source's frame (so it sweeps past at the source's
-   * speed with the transverse wavelength 2 pi U² / g), decaying with distance astern.
+   * Bow and stern waves (stage 7a): every moving, non-kinematic hull near the camera hands its motion through the water
+   * to the wave particles, which turn it into the Kelvin pattern other hulls and the dragon then float on.
    */
-  wakeAt(selfId: number, x: number, z: number): { eta: number; rate: number } {
-    const out = this.wakeOut;
-    out.eta = 0;
-    out.rate = 0;
-    for (const w of this.wakes) {
-      if (w.id === selfId) continue;
-      const dx = x - w.x;
-      const dz = z - w.z;
-      const a = -(dx * w.fx + dz * w.fz) - 0.5 * w.length;
-      if (a <= 0 || a > 450) continue;
-      const lat = Math.abs(dx * -w.fz + dz * w.fx);
-      const rc = a * KELVIN_TAN + 0.5 * w.beam;
-      const width = 0.25 * a * KELVIN_TAN + w.beam + 5;
-      const off = (lat - rc) / width;
-      if (off > 3) continue;
-      const env = Math.exp(-off * off) + (lat < rc ? 0.35 : 0);
-      const amp = w.amp * env * Math.pow(1 + a / w.length, -1 / 3) * (1 - smoothstep(250, 450, a));
-      const k = GRAVITY / (w.u * w.u);
-      const ph = k * (a + 0.5 * lat);
-      out.eta += amp * Math.sin(ph);
-      out.rate += amp * k * w.u * Math.cos(ph);
+  private emitWaves(camPos: THREE.Vector3): void {
+    const dyn = this.water?.dynamic;
+    if (!dyn) return;
+    const P = VESSEL_PHYSICS;
+    const range2 = P.emitRange * P.emitRange;
+    for (const s of this.slots) {
+      const b = s.body;
+      if (b.lod === HullLod.Far) continue;
+      const cx = b.x - camPos.x;
+      const cz = b.z - camPos.z;
+      if (cx * cx + cz * cz > range2) continue;
+      const ux = b.vx - b.cx;
+      const uz = b.vz - b.cz;
+      const u = Math.sqrt(ux * ux + uz * uz);
+      if (u < P.emitSpeed) continue;
+      const m = s.v.model;
+      // Planing hulls ride up out of the water: less draft, less wave making.
+      const draft = Math.max(0.05, b.hull.draft - b.hull.lift) * (1 - 0.6 * b.planing);
+      dyn.hull(s.v.id, b.x, b.z, ux / u, uz / u, u, m.length, m.beam, draft);
     }
-    return out;
   }
 
   /** Render pose: interpolated between the last two fixed steps. */

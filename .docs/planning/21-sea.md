@@ -6,7 +6,8 @@ Status: in progress (requested by the owner on 26 September 2026): stage 1 done;
 flight), awaiting the owner's GPU review; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval
 and the feel test; stage 4 built (underwater camera, look and audio), awaiting the owner's GPU review; stage 5 swimming
 part built, awaiting the pose-sheet approval and the feel test; stage 7b built (vessels as floating rigid bodies),
-awaiting the owner's look in game.
+awaiting the owner's look in game; stage 7a built (wind-wave spectrum, wave particles), awaiting the owner's GPU
+review.
 
 ## Goal
 
@@ -26,10 +27,11 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
 - **Life** (`src/world/life/`): ferries, boats and ships with Kelvin wakes (`wakes/`), gulls.
 - **Mismatch:** the dragon floats and skims on a flat plane while the rendered surface moves with waves up to a few
   metres in lodos.
-- **Vessel motion** (stage 7b): every vessel is a floating rigid body on the real waves (`vessels/physics/`); wakes
-  are still parametric ribbons drawn from speed and hull size (`wakes/wake-trails.ts`), not from what the hull does
-  to the water (7a). Small hulls feel the wakes of passing ships through an analytic Kelvin pattern until wave
-  particles exist.
+- **Vessel motion** (stage 7b): every vessel is a floating rigid body on the real waves (`vessels/physics/`).
+- **Wave field** (stage 7a): the Gerstner amplitudes come from a fetch-limited JONSWAP spectrum of the wind; hulls,
+  the dragon and splashes emit wave particles that the water service adds to every query and the surface draws from a
+  splat window, so the Kelvin wakes are real water other hulls and the dragon float on. The ribbon wakes
+  (`wakes/wake-trails.ts`) remain as the foam line until 7c.
 
 ## Strand 1 — One sea for physics and pictures
 
@@ -400,6 +402,138 @@ must not be canned effects; they come from the physics of the moment, and perfor
 - **Crossing wakes interact:** a ferry's wake reaches a small boat, and the boat rolls because the water under it
   really rises; the dragon swimming in a wake bobs the same way.
 
+### Stage 7a as built (GPU review needed)
+
+**Wind-wave spectrum** (`src/world/water/spectrum.ts`, lattice and tunables in `config.ts`):
+- The Gerstner set is now a fixed lattice of 11 wind-sea slots per regime (2.2–66 m, steps of ~1.4) plus 2 swell
+  slots per regime (26 slots, `MAX_WAVES`). Wavelengths and directions never change (the origin-relative phases stay
+  continuous); every frame the `SeaState` gives each slot the energy of its frequency bin of a fetch-limited JONSWAP
+  spectrum (Hasselmann 1973: X = gF/U10², Hs = 1.6e-3 √X U10²/g, Tp = 0.286 X^⅓ U10/g, capped at the fully developed
+  sea X = 22 500; shape γ = 3.3, σ 0.07 / 0.09, normalised to m0 = Hs²/16; Simpson in log frequency), A = √(2E), no
+  slot steeper than kA = 0.26, crest sharpening Q·k·A per group with the old total cap of 0.8.
+- Groups are fetch classes: **chop** (1 km, slots 2.2–4.6 m; grows everywhere incl. the Golden Horn, harbours and
+  lakes), **short** (4 km, the Bosphorus; 6.3–12.1 m), **long** (the open sea: 100 km in a poyraz, the
+  duration-limited Black Sea sea; 45 km in a lodos, across the Marmara; 17–66 m) and **swell** (Black Sea swell toward
+  SSW in a poyraz, Tp 8.2 s, Hs 0.45 + 0.05 U10; Marmara swell toward NE in a lodos, Tp 5.6 s, Hs 0.1 + 0.04 U10;
+  γ = 6). A chop slot carries at least the short sea's energy in its bin (in light winds the short sea peaks there).
+- Where each class exists comes from the baked fetch-exposure map (the same `waveGroupWeights` in the shaders and
+  `groupsAt` on the CPU, both changed together): chop everywhere (0.45 at the shortest fetch), short from ~1 km of
+  fetch, long from ~15 km (full at ~140 km), swell offshore on the exposed side of the regime (the Black Sea in a
+  poyraz, the Marmara in a lodos). Directions: poyraz seas toward 212°, lodos seas toward 38°, each slot at a fixed
+  sample of the cos^2s(θ/2) spreading lobe (chop rms 33°, short 29°, long 25°, swell 14°). U10 comes from the
+  environment wind as before (×0.78, 1.5–16 m/s, smoothed over 40 s) or `?wu10=`.
+- **One source for GPU and CPU:** the amplitudes go into the same wave uniforms the shaders and the CPU evaluator read,
+  so parity is unchanged (water-check: max 0.02 cm; the test now requires < 1 cm).
+- The detail normal bands are unchanged (their slope variance already follows the equilibrium range).
+
+**Spectrum table** (waves-check section 1: the model's wind sea at each place vs JONSWAP at the place's baked fetch,
+and 4 × the standard deviation of the CPU surface height over 400 s, swell included):
+
+Cells: wind-sea Hs / Tp of the model at the place (JONSWAP Hs / Tp at the place's baked fetch in brackets); where a
+swell is present, its Hs and the surface's 4 std. The Marmara in a poyraz and the Black Sea in a lodos are the lee
+sides (short fetch). Golden Horn peaks shorter than the lattice's 2.2 m are carried by the detail bands (normals).
+
+| poyraz U10 (m/s) | Golden Horn (0.3 km) | Bosphorus (2.8 km) | Marmara (8 km) | Black Sea (300 km) |
+|---|---|---|---|---|
+| 4 | 0.06 m / 1.4 s (0.04 / 0.7) | 0.12 m / 1.4 s (0.11 / 1.4) | 0.12 m / 1.4 s (0.18 / 2.0) | 0.32 m / 3.3 s (0.39 / 3.3), swell 0.66, surface 0.76 |
+| 7 | 0.08 m / 1.7 s (0.06 / 0.8) | 0.20 m / 1.7 s (0.19 / 1.7) | 0.22 m / 2.0 s (0.32 / 2.4) | 1.11 m / 5.5 s (1.13 / 5.5), swell 0.82, surface 1.40 |
+| 10 | 0.09 m / 1.7 s (0.09 / 0.9) | 0.26 m / 2.0 s (0.27 / 1.9) | 0.32 m / 2.0 s (0.46 / 2.7) | 1.61 m / 6.5 s (1.62 / 6.2), swell 0.97, surface 1.90 |
+| 13 | 0.11 m / 1.4 s (0.11 / 1.0) | 0.33 m / 2.4 s (0.35 / 2.1) | 0.42 m / 2.4 s (0.59 / 2.9) | 2.11 m / 6.5 s (2.10 / 6.8), swell 1.12, surface 2.42 |
+| 16 | 0.12 m / 1.7 s (0.14 / 1.0) | 0.40 m / 2.4 s (0.43 / 2.2) | 0.51 m / 2.4 s (0.73 / 3.1) | 2.60 m / 6.5 s (2.58 / 7.3), swell 1.28, surface 2.93 |
+
+| lodos U10 (m/s) | Golden Horn (0.3 km) | Bosphorus (2.4 km) | Marmara (126.3 km) | Black Sea (4.7 km) |
+|---|---|---|---|---|
+| 4 | 0.06 m / 1.4 s (0.04 / 0.7) | 0.12 m / 1.4 s (0.10 / 1.3) | 0.32 m / 3.3 s (0.39 / 3.3), swell 0.27, surface 0.42 | 0.12 m / 1.4 s (0.14 / 1.7) |
+| 7 | 0.09 m / 1.7 s (0.07 / 0.8) | 0.19 m / 1.7 s (0.18 / 1.6) | 0.72 m / 3.9 s (0.76 / 4.2), swell 0.39, surface 0.82 | 0.22 m / 1.7 s (0.24 / 2.0) |
+| 10 | 0.09 m / 1.7 s (0.09 / 0.9) | 0.25 m / 1.7 s (0.25 / 1.8) | 1.06 m / 4.7 s (1.08 / 4.8), swell 0.51, surface 1.18 | 0.31 m / 2.0 s (0.35 / 2.2) |
+| 13 | 0.11 m / 1.4 s (0.12 / 1.0) | 0.31 m / 2.4 s (0.33 / 2.0) | 1.40 m / 5.5 s (1.41 / 5.2), swell 0.63, surface 1.54 | 0.40 m / 2.4 s (0.45 / 2.5) |
+| 16 | 0.12 m / 1.7 s (0.15 / 1.1) | 0.37 m / 2.4 s (0.40 / 2.1) | 1.74 m / 5.5 s (1.73 / 5.6), swell 0.76, surface 1.90 | 0.49 m / 2.4 s (0.56 / 2.6) |
+
+**Wave particles** (`src/world/water/particles/`):
+- `wave-particles.ts` (CPU, `water.dynamic` in `contracts.ts`, additive API): a pool of wave-front particles after
+  Yuksel et al. (2007) with dispersion and a carrier: each particle leaves its origin at the deep-water group speed of
+  its wavelength and describes h = a · Wf(f/l) · Wq(q/s) · cos(k q + phase), where W(u) = (1 + cos πu)/2 is a partition
+  of unity across the front (l = dispersion angle × radius) and along the wave vector (s = the spacing of a continuous
+  source's emissions), so overlapping particles sum to the physical amplitude. The amplitude falls as √(r0/r) (energy
+  a²·l conserved on a widening front) and decays at 1/150 s⁻¹ + 0.006·k; it never grows. A particle whose front
+  half-width exceeds max(1.8 λ, 6 m) splits into three with a third of the dispersion angle (energy exactly conserved,
+  at most 2 generations; 4 in the check), a nearly full pool shrinks the emission range (far sources stop first),
+  particles die below 4 mm, after 50 s, over land (coast test, a sixth of the pool per frame) or far from the camera.
+- **Hulls:** a moving hull emits, per side and per direction class θ (4 classes near, 3 beyond 350 m from the camera,
+  bow and stern, the stern a trough at 0.6), the wave whose phase speed matches its speed along θ (λ = 2πU²cos²θ/g,
+  λ between max(1.5 m, beam/4) and 70 m), once per wave period, born at its due instant where the hull was then (frame
+  rate independent). The phases are coherent between emissions (the pattern is stationary in the hull's frame) and
+  each class runs along its ray at U cos θ / 2: the rays fill a wedge whose envelope is the Kelvin cusp line at 19.5°,
+  nothing draws it. Fast sources lose the transverse classes (longer than 70 m): the wake narrows (a planing
+  motorboat's peak sits at 16°). Amplitude: 1.0 · √(B·T) · Fr² / (1 + (Fr/0.5)³), ≤ 0.6 m (a vapur at 7 m/s: ~0.25 m
+  crests near the hull, ~0.1 m 150 m off).
+- **The dragon** (`dragon-waves.ts`, reads DragonState and the low-flight model only): swimming is a 14 × 4 × 1.2 m
+  displacement hull, the skim contact a planing patch scaled by the low-flight wake, each downstroke that reaches the
+  water a faint ring (0.03 m, λ 3 m), every `splash` event a two-ring train (0.14 × strength m, ≤ 0.5 m; λ 2 + 1.5 ×
+  strength m; a plunge ≈ 0.4 m, λ 6 m); the nostril bubbles under water make none.
+- **Water service:** `heightAt` / `normalAt` / `velocityAt` add the particles at the queried (displaced) point, sunk
+  under land like the sheet (cached per point and update); `ambientHeightAt` and `groupWeightsAt` are new
+  diagnostics. The vertical velocity includes the envelope's motion and the decay, so hull heave damping sees the real
+  rate. A spatial hash (32 m cells, 4096 buckets, rebuilt once per update) serves the queries.
+- **Vessels:** `vessel-physics.ts` drops the 7b analytic Kelvin push; every non-kinematic hull moving faster than
+  0.8 m/s within 1.5 km of the camera emits through `water.dynamic.hull` (draft reduced by planing), and every hull
+  samples the water with its own particles excluded (`dynamic.exclude`), so boats rock on each other's real wakes (a
+  fishing boat 80 m off a passing vapur: 1.7° rms, 0 in calm water).
+- **GPU** (`splat-gpu.ts`, `shaders.glsl.ts`): a stateless half-float RGBA window around the camera (medium 256² ×
+  1.5 m, high 512² × 1 m, ultra 768² × 0.8 m, off on low), placed in whole texels, cleared and drawn every frame as
+  one instanced oriented quad per particle (additive; r = height, g/b = gradient, a = envelope for 7c). The kernel is
+  the CPU formula exactly; waves shorter than 5 texels are faded out. The water vertex shader adds the height at the
+  displaced vertex where the grid can carry it (vertex spacing < 1.5–4 texels), the fragment shader adds the slope
+  (faded into roughness below the pixel footprint); both skip the lookup while no particle is near the camera
+  (`uWaveParams.x`), the outer 6 % of the window fades out. The stage 2 disturbance window stays separate (a
+  ping-pong simulation at 0.5–0.8 m around the dragon); the splat reuses its whole-texel placement idea.
+- **Quality tiers:** pool 384 / 1536 / 3072 / 4096, emission within 0 / 700 / 1000 / 1300 m of the camera and 250–300 m
+  of the dragon; "low" has no splat (the spectrum only on screen) and CPU particles only near the dragon.
+- The ribbon wakes (`wakes/wake-trails.ts`) stay for now as the foam line and the far LOD; 7c replaces them.
+
+**Cost** (Node timings; browser similar, plain JS, no allocations per frame; GPU estimated):
+- CPU: ~60–90 ns per particle and update plus the grid; a ship makes 300–900 particles. Real high-preset fleet on the
+  real sea: camera at Karaköy 0.03–0.05 ms per frame, camera over the Bosphorus (3 ships passing, pool full at 3072)
+  0.22–0.25 ms avg / 0.30–0.36 ms p95 update + ~0.01 ms of queries (~0.1–0.8 µs each). Budget 0.5 ms.
+- GPU on "high": the busiest Bosphorus frame splats ~1600 particles, 0.27 M quad fragments of ~40 ALU with an RGBA16F
+  blend, plus a 2 MB clear: ≈ 0.1–0.15 ms, and one bilinear lookup per water vertex / pixel inside the window.
+  Budget 0.4 ms.
+
+**Tunables:** `SEA_SPECTRUM` (fetch per class, γ, swell per regime, crest sharpening, slot steepness cap) and the slot
+lattice in `config.ts`; `WAVE_PARTICLES` (wavelength range, life, damping, subdivision, grid), `HULL_WAVES` (classes,
+amplitude law `ampScale` / `frKnee`, stern share, transverse fade, initial front width), `RING_WAVES`, `DRAGON_WAVES`
+and `waveParticleQualityFor` in `particles/config.ts`; `VESSEL_PHYSICS.emitSpeed` / `emitRange`.
+
+**Checks:** `tools/headless/waves-check.ts` (`--quick`): spectrum statistics (above; Hs within 0.6–1.5× of JONSWAP at
+the local fetch, Tp within 0.72–1.4× (lattice-quantised), growth with wind and fetch, directions within 30° of the
+regime, the surface's 4 std within 20 % of the model); the Kelvin cusp at 20° / 20° / 20° / 18° for a tour boat, a
+vapur, a fishing boat and a yacht, 16° for a planing motorboat; energy under subdivision constant to 0.000 % over 40 s
+(96 splits), no amplitude growth, the subdivided ring within 11 % of the exact circular ring after 25 s (75 % without
+subdivision); CPU/GPU parity: the splat shader's kernel equals the CPU sum within 0.003 mm and the window lookup
+reconstructs it within 4.1 % rms on high (5.1 % medium, 3.0 % ultra; worst texel 12 % of the peak); the water
+service sums ambient + particles exactly, normals match finite differences, vy matches d/dt within 5 cm/s, a hull does not feel its own waves; the
+real FlightSim swimming 40 s on the real sea with its own wake (float within 0.06 m rms of the surface); splashes and
+bubbles; budgets and quality tiers; the same wake at dt 1/24, 1/60, 1/144 within 5 % rms (jittered 6 %); no NaNs;
+bad inputs ignored; the GLSL (and the whole water shaders) parse with @shaderfrog/glsl-parser (scratch directory).
+`water-check.ts` now ports the four-group weights and requires < 1 cm; `vessels-check.ts` rocks the fishing boat on
+the vapur's particle wake.
+
+**What the owner should look at (GPU):**
+
+1. A vapur crossing to Kadıköy in calm weather (`?wu10=3`), camera low behind it: the V of the wake at ~19.5° with
+   the transverse crests between its arms and the cusp waves strongest along the edge, fading over a few hundred m;
+   the bow wave riding with the hull. Tunables: `HULL_WAVES.ampScale`, `classes`, `WAVE_PARTICLES.damping`.
+2. Small boats and the swimming dragon rocking when a wake reaches them; a motorboat's narrower, steeper wake.
+3. Swim (`L` on the water, then W): a small bow wave and a V behind the dragon; plunge and breach: expanding rings.
+4. The splat window's edge (~250 m from the camera on high): the wake should fade out, not stop at a line; no
+   shimmering as the camera moves (whole-texel placement).
+5. Wind: poyraz and lodos at `?wu10=4`, `10`, `16`: small chop in the Golden Horn, a Bosphorus sea of ~0.3–0.4 m,
+   the long lodos sea (Hs ~1.7 m, Tp ~5.5 s) in the Marmara and the poyraz sea on the Black Sea side; waves running
+   SSW in a poyraz and NE in a lodos.
+6. Cost with `?stats=1` on "high": the water pass with a busy Bosphorus in view (splat ≤ 0.4 ms), `__water.particles`
+   (`count`, `stats`) and `__water.splat.drawn`.
+7. "Low": no splat (flat wakes on screen), no errors.
+
 ### 7b. Vessels as floating rigid bodies
 - Each vessel gets a simplified 6-DOF rigid body: mass, inertia and a set of hull sample points generated from its hull
   model (`hull.ts`: 8–24 points on the waterline and keel, more for long hulls).
@@ -448,9 +582,9 @@ must not be canned effects; they come from the physics of the moment, and perfor
   breaches, bubbles) lifts the near side of hulls within 6·(1 + strength) m and pushes them away;
   `contact(pos, vel)` (the dragon, every frame): landing on a small hull (from above, descending) presses it down at
   the contact point, bumping into one pushes it; momentum exchange with the reduced mass (dragon 1600 kg), 0.8 s
-  cooldown per hull. Passing wakes: moving hulls ≥ 20 m at ≥ 2 m/s add an analytic Kelvin pattern (cusp lines at
-  19.5°, transverse wavelength 2πU²/g, amplitude from length and Froude number, decaying astern) to the water under
-  hulls < 35 m; wave particles replace it in 7a.
+  cooldown per hull. Passing wakes: in 7b moving hulls ≥ 20 m at ≥ 2 m/s added an analytic Kelvin pattern to the
+  water under hulls < 35 m; since 7a every moving hull emits wave particles and every hull floats on the others'
+  (see "Stage 7a as built").
 - `fleet.ts`: the behaviours still run first and produce the reference (`vessel.state`, unchanged for the traffic
   rules); the render pose is the body's (`vessel.x/z/yaw/heave/roll/pitch`), used by the renderer, wakes, lights,
   gulls and `hull-colliders.ts` (the box follows position, heading and heave; its bottom follows the lowest keel
@@ -487,7 +621,8 @@ refresh rates, leashes, dragon mass, splash impulse and reach, wake source / tar
 the formulas (they agree within 1 %) and roll periods in range for the size; righting arm positive at every heel to
 30° (GZ at 30° from 0.17 m, tour, to 1.5 m, seabus); equilibrium draft exact (±10 % allowed), ballast drafts too; a
 lodos of U10 18 m/s (beyond the game's 16 m/s cap; Hs 2.2 m): max roll motorboat 25°, fishing 22°, ferry 14°, vapur
-7°, tanker 1.4°, nothing capsizes; the high-preset fleet for 25 simulated minutes with every hull physical:
+7°, tanker 1.4°, nothing capsizes (on 7a's spectrum sea, Hs 2.2 m with a longer 5.5–6 s peak: motorboat 26°, fishing
+23°, tour 21°, ferry 16°, vapur 11°, tanker 1.9°); the high-preset fleet for 25 simulated minutes with every hull physical:
 route-bound cross-track p95 0.2–3 m (max 8.7 m, vapur / seabus in the current), free-roaming craft within their
 leash, 24 of 24 ferry arrivals alongside (2 m, 3°) after 7.5 s median / 11.5 s max, ≤ 2 m while alongside, no hull
 ever nearer the land than its reference, no resets; a dragon landing on a fishing boat / motorboat / sailboat rocks
@@ -509,7 +644,7 @@ jittered frame times. Node timings; the browser should be similar (plain JS, no 
 
 Not built in 7b: wind heel from the superstructure's side area, slamming, moored boats swinging on real mooring-line
 geometry (they sit on a spring at their spot), roll / pitch of the underwater hull boxes (they stay yawed boxes),
-wave particles from hulls (7a replaces the analytic wake push).
+wave particles from hulls (built in 7a, which replaced the analytic wake push).
 
 ### 7c. Foam and spray from the water's state
 - **Foam** is generated where the simulated surface breaks (steepness / surface compression above a threshold: wave
@@ -576,7 +711,7 @@ only as the far LOD and as a fallback on "low".
 | 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company (swimming pose and stroke, take-off run, wading built) | Checks and sheets approved; feel test OK |
 | 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
-| 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes | Wake-angle and energy checks pass; budgets met; owner GPU review |
+| 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes (built) | Wake-angle and energy checks pass; budgets met; owner GPU review |
 | 7b | Vessels as floating rigid bodies with LOD; propulsion/rudder forces; moorings | Period, stability and interaction checks pass; CPU ≤ 1 ms |
 | 7c | Foam and spray from breaking, propellers and impacts; advected foam texture | Owner GPU review; ≤ 0.3 ms |
 

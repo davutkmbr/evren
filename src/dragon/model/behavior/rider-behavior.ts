@@ -26,7 +26,7 @@ const PET_GAZE = 0.8;
 /** Seconds between purr phrases while petted (each phrase is ~2 s). */
 const PURR_EVERY = 2.1;
 /** Maneuvers the dragon glances back after ("did you like that?"). */
-const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'urge']);
+const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'urge', 'wingover', 'immelmann', 'splits']);
 
 const LABELS = {
   pet: 'Ejderhayı seviyorsun',
@@ -158,7 +158,9 @@ export class RiderBehavior {
     // --- Standing (T toggles) ---
     const standOk = tuck < 0.2 && ((calmFlight && bank < 30 * DEG && g > 0.7 && g < 1.4) || grounded);
     const input = ctx.input;
-    if (input.wasPressed('stand')) {
+    // Perched on a viewpoint T is the time-lapse (src/ui/perch-view.ts), not standing up.
+    const perched = state?.perch?.phase === 'perched';
+    if (input.wasPressed('stand') && !perched) {
       if (this.wantStand) {
         this.sit(ctx);
       } else if (standOk && !this.petting) {

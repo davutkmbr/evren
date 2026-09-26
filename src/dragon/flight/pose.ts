@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY, LANDING_POSE, SKIM, SWIM_POSE } from './params';
+import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE } from './params';
 import type { FlightSim } from './sim';
 import { tailPitchForClearance } from './skim';
 import type { PilotCommand } from './types';
@@ -142,11 +142,18 @@ export class PoseDriver {
     const slip = m.slipCue;
     const dart = m.kind === 'dart' ? 1 - smoothstep(0.9, 1.3, m.time) : 0;
     const skim = airborne ? sim.skim.amount : 0;
+    // Stage C reversals: the pull of a loop-like half loop, the signed half roll, the signed wingover pivot.
+    const rev = m.reversalCue;
+    const revPull = airborne ? rev.pull : 0;
+    const revRoll = airborne ? rev.roll : 0;
+    const pivot = airborne ? rev.pivot : 0;
 
     // Wings: asymmetric twist mirrors the roll control moment actually applied; the side-slip's flick drives the
-    // outer wing down hard (then the other one to stop).
+    // outer wing down hard (then the other one to stop). The wingover's pivot and the reversals' half rolls twist the
+    // wings into the roll on top of that (the high wing pushed over the top).
     const twist = airborne ? clamp(-sim.controlMoment.z / (sim.controlCapacity.z + 1), -1, 1) * 0.85 : 0;
-    pose.wingTwist = follow(pose.wingTwist, clamp(twist * (1 - Math.abs(slip)) + 0.9 * slip, -1, 1), 14, dt);
+    const revTwist = REVERSAL_POSE.pivotTwist * pivot + REVERSAL_POSE.rollTwist * revRoll;
+    pose.wingTwist = follow(pose.wingTwist, clamp(twist * (1 - Math.abs(slip)) + 0.9 * slip + revTwist, -1, 1), 14, dt);
 
     // Neck: look into turns, keep the head nearer the horizon (bird-like stabilization), look down to land.
     let neckYaw = clamp(turnRate * 0.55 + sim.beta * 0.6, -0.55, 0.55);
@@ -179,6 +186,11 @@ export class PoseDriver {
     neckPitch = lerp(neckPitch, -0.14, dart);
     neckPitch = lerp(neckPitch, -0.2, skim);
     neckYaw -= 0.35 * slip;
+    // Reversals: the head raised into the pull (looking up through the loop), into the turn over the wingover's top
+    // (the turn's centre lies off the dragon's back there), toward the side of a half roll
+    // (The pull replaces the horizon-seeking neck: pitched past the vertical that would crane the head right back.)
+    neckPitch = lerp(neckPitch, REVERSAL_POSE.pullNeck, revPull) + REVERSAL_POSE.pivotNeckPitch * Math.abs(pivot);
+    neckYaw -= REVERSAL_POSE.pivotNeckYaw * pivot + REVERSAL_POSE.rollNeckYaw * revRoll;
     neckPitch += roar * 0.32;
     if (look && look.weight > 0) {
       neckYaw += clamp(look.yaw, -1, 1) * 0.6 * look.weight;
@@ -236,6 +248,10 @@ export class PoseDriver {
       tailPitch += power * (0.08 + 0.2 * Math.sin(sim.beat.phase + 2.2));
       tailPitch = lerp(tailPitch, 0.1, dart);
       tailYaw = lerp(tailYaw, 0, dart) - 0.65 * slip;
+      // Reversals: the tail swept out opposite the pivot (a rudder swinging the body around the top) and opposite a
+      // half roll (a counterweight); it trails low behind a pull.
+      tailYaw -= REVERSAL_POSE.pivotTail * pivot + REVERSAL_POSE.rollTail * revRoll;
+      tailPitch = lerp(tailPitch, REVERSAL_POSE.pullTail, revPull);
       if (skim > 0) {
         const kiss = tailPitchForClearance(sim.agl, sim.pitch, sim.overWater ? SKIM.tailKissWater : SKIM.tailKissLand);
         tailPitch = lerp(tailPitch, clamp(kiss, -0.5, SKIM.tailMax), skim);
@@ -281,7 +297,9 @@ export class PoseDriver {
     const flareLean = sim.mode === 'landing' ? 0.22 * Math.max(sim.controller.hoverDescent ? 1 : 0, sim.controller.landingStyle.flare) : 0;
     const leapLean = sim.leapCharge > 0 || sim.runTakeoff > 0 ? -0.18 : 0;
     const pitchTarget = clamp((-_accelBody.z / GRAVITY) * 0.5 - (_accelBody.y / GRAVITY - 1) * 0.06 - speedTuck + flareLean + leapLean, -0.55, 0.45);
-    const rollTarget = clamp((-_accelBody.x / GRAVITY) * 0.5 + (airborne ? sim.bank * 0.1 : 0), -0.45, 0.45);
+    // Reversals: the rider leans into the wingover's pivot and with a half roll.
+    const revLean = airborne ? REVERSAL_POSE.riderLean * (pivot + 0.6 * revRoll) : 0;
+    const rollTarget = clamp((-_accelBody.x / GRAVITY) * 0.5 + (airborne ? sim.bank * 0.1 : 0) + revLean, -0.45, 0.45);
     const wn = 7;
     const zeta = 0.55;
     const h = Math.min(dt, 1 / 30);
@@ -290,6 +308,8 @@ export class PoseDriver {
     pose.riderLeanPitch = clamp(pose.riderLeanPitch + this.leanPitchVel * h, -0.6, 0.5);
     pose.riderLeanRoll = clamp(pose.riderLeanRoll + this.leanRollVel * h, -0.5, 0.5);
     this.updateRiderCues(sim, dt, cmd);
+    // Perched on a viewpoint: the calm perched pose over everything above (perch.ts).
+    sim.perch.applyPose(pose, dt);
     return pose;
   }
 
@@ -439,6 +459,24 @@ export class PoseDriver {
     } else if (trick === 'loop') {
       tuck = Math.max(tuck, 0.85);
       left = right = 0.6;
+    } else if (trick === 'wingover') {
+      // The inside rein comes back hard through the pivot; low on the neck through the climb and the dive.
+      const side = m.reversalDir;
+      left = side < 0 ? 0.9 : -0.15;
+      right = side > 0 ? 0.9 : -0.15;
+      tuck = Math.max(tuck, 0.6);
+    } else if (trick === 'immelmann' || trick === 'splits') {
+      if (m.reversalPhase === 'roll') {
+        // The half roll: the rein on the roll side back, the other one given.
+        const side = m.reversalDir;
+        left = side < 0 ? 0.8 : -0.1;
+        right = side > 0 ? 0.8 : -0.1;
+        tuck = Math.max(tuck, 0.7);
+      } else {
+        // Pulling through: both reins back, tucked low like in a loop.
+        tuck = Math.max(tuck, 0.85);
+        left = right = 0.65;
+      }
     } else if (trick === 'dart') {
       // Low along the neck, reins given: the dragon is an arrow.
       tuck = Math.max(tuck, 0.8);

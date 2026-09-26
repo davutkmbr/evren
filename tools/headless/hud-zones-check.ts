@@ -52,8 +52,8 @@ function onePerZone(d: HudDirector, ids: readonly string[], zoneOf: Record<strin
 /* ---------------- priority table ---------------- */
 {
   const p = HUD_PRIORITY;
-  const order = [p.raceCountdown, p.raceWarning, p.discovery, p.areaTitle, p.maneuver, p.flightHint, p.startHint, p.toast];
-  check(order.every((v, i) => i === 0 || order[i - 1] > v), 'priority table: countdown > warnings > discovery > area > maneuver > flight hints > start hints > toasts');
+  const order = [p.raceCountdown, p.raceWarning, p.discovery, p.areaTitle, p.maneuver, p.momentLine, p.flightHint, p.startHint, p.toast];
+  check(order.every((v, i) => i === 0 || order[i - 1] > v), 'priority table: countdown > warnings > discovery > area > maneuver > moment lines > flight hints > start hints > toasts');
 }
 
 /* ---------------- highest priority wins, lower waits, then shows ---------------- */
