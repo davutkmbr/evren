@@ -17,11 +17,13 @@
  * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges, metro
  *   entrances (railway=subway_entrance), taxi stands (amenity=taxi), GSM masts (man_made=mast) and lattice towers
  *   (man_made=tower).
+ * - leisure=swimming_pool: water in its coping, fitted to the outline's box (a disc for free-form pools); indoor
+ *   and rooftop pools (inside a building outline, layer above ground) are left to the buildings.
  * - untagged lots (cover.ts LotStyle): shrubs on garden lots, stones and weedy scrub on vacant lots (the verges and
  *   leftover land along the big roads are mostly these).
  */
 import type { OsmArea, OsmData, OsmLine, OsmPoint } from '../../data';
-import { hash, pointInRing } from '../../shared/geometry';
+import { hash, pointInRing, ringArea } from '../../shared/geometry';
 import { Zone } from '../../shared/street-surface';
 import { CoverChannel, LotStyle } from '../cover/cover';
 import type { Placer } from './placement';
@@ -446,6 +448,48 @@ function placeHotels(pl: Placer, points: readonly OsmPoint[]): void {
   });
 }
 
+/** Pools filling at least this share of their outline's box are drawn as rectangles, the rest as discs. */
+const POOL_RECT_FILL = 0.8;
+const POOL_COPING = 0.45;
+
+function placePools(pl: Placer, areas: readonly OsmArea[]): void {
+  for (const a of areas) {
+    if (a.kind !== 'leisure=swimming_pool' || (a.layer ?? 0) > 0) {
+      continue;
+    }
+    const b = orientedBox(a.ring);
+    if (b.len < 2 || b.wid < 1.5 || b.len > 80 || !pl.inArea(b.cx, b.cz, 2)) {
+      continue;
+    }
+    // The local x axis of a prop turned to yaw runs along (cos yaw, -sin yaw).
+    const yaw = Math.atan2(-b.az, b.ax);
+    const y = pl.y(b.cx, b.cz);
+    const fill = Math.abs(ringArea(a.ring)) / (b.len * b.wid);
+    if (fill < POOL_RECT_FILL) {
+      if (!pl.props.add('poolRound', b.cx, y, b.cz, yaw, b.len, undefined, 1, b.wid)) {
+        continue;
+      }
+    } else {
+      if (!pl.props.add('poolWater', b.cx, y, b.cz, yaw, b.len, undefined, 1, b.wid)) {
+        continue;
+      }
+      const c = POOL_COPING;
+      for (const side of [-1, 1]) {
+        let [x, z] = at(b.cx, b.cz, yaw, 0, side * (b.wid + c) / 2);
+        pl.props.add('poolEdge', x, pl.y(x, z), z, yaw, b.len + 2 * c, undefined, 1, 1);
+        [x, z] = at(b.cx, b.cz, yaw, side * (b.len + c) / 2, 0);
+        pl.props.add('poolEdge', x, pl.y(x, z), z, yaw + Math.PI / 2, b.wid, undefined, 1, 1);
+      }
+    }
+    // Keeps shrubs, stones and furniture out of the water.
+    for (let u = -b.len / 2; u <= b.len / 2; u += 2) {
+      for (let v = -b.wid / 2; v <= b.wid / 2; v += 2) {
+        pl.reserve(...at(b.cx, b.cz, yaw, u, v));
+      }
+    }
+  }
+}
+
 /** Sunbed pairs under a straw umbrella in rows across the beach, facing the water. */
 function placeBeaches(pl: Placer, areas: readonly OsmArea[]): void {
   let left = BUDGET.sunbed;
@@ -656,6 +700,7 @@ export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'
   placeAt(pl, data, ['advertising=billboard'], 'billboard', 5, 3, 4);
   placeHotels(pl, data.points);
   placeBeaches(pl, data.areas);
+  placePools(pl, data.areas);
   placeMarkets(pl, data);
   placeFronts(pl, data.points);
   placeAtms(pl, data.points);

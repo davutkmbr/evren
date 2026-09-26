@@ -298,6 +298,7 @@ export function groundOf(a: OsmArea): number {
     case 'landuse=harbour':
     case 'leisure=playground':
     case 'amenity=fountain':
+    case 'leisure=swimming_pool':
       return Ground.Plaza;
     case 'landuse=commercial':
       return a.name && /galataport/i.test(a.name) ? Ground.Plaza : -1;
