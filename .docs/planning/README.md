@@ -149,6 +149,7 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 17 | [Hamallar: co-op moving game in Kadıköy](17-hamallar-coop.md) | H · Co-op | L×many | 16 S4 (walk, enter, talk), S2 runtime decision |
 | 19 | [Moments: references, legends and city life](19-moments.md) | E · Variety | L | 01, 05, 13 |
 | 20 | [Movement variety, combos and flow](20-movement.md) | B · Chill loop | L | 05, 13 |
+| 21 | [The sea: low flight, plunge dives and swimming](21-sea.md) | B · Chill loop | L | 20 |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 

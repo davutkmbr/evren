@@ -23,6 +23,9 @@ Principles (from the GDD pillars):
   room, and the hands-off assist still guards clearance between moves.
 - **No fail state.** A botched move costs speed or stamina, never a crash screen.
 
+The sea (low flight, plunge dives, breach, swimming) is planned in [phase 21](21-sea.md) and shares the skim, the
+breach and flow with this phase.
+
 ## Current state (what exists)
 
 - Modes: flying, gliding, diving, hovering, stalling, landing, grounded, takeoff, swimming (`FlightMode`).

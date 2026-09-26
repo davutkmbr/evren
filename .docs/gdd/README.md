@@ -59,6 +59,8 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Planned (phase 20): run-out landings and touch-and-go, leaping take-offs, new air moves (power stroke, dart,
   wingover, Immelmann / Split-S, side-slip, surface skim) and a flow system that rewards clean chains with capped
   speed — the skill ceiling for races.
+- Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
+  dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
 
 ### 5.2 The world (`src/world/`, `tools/world-compiler/`)
 - Real relief (SRTM-based), coastline and land use; OSM streets, buildings, traffic and pedestrians (the
