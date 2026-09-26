@@ -227,7 +227,7 @@ export function enterRunOut(sim: FlightSim): void {
   sim.attachment = 1;
   sim.leapCharge = 0;
   sim.runTakeoff = 0;
-  sim.maneuvers.cancel();
+  sim.maneuvers.cancel(sim);
   enterStance(sim, true);
   b.velocity.y = 0;
   b.angularVelocity.set(0, 0, 0);

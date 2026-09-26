@@ -14,8 +14,9 @@ import {
 import { integrateOrientation } from './body';
 import { enterRunOut } from './ground-moves';
 import { enterGrounded, enterSwimming } from './locomotion';
+import { skimKiss, updateSkim } from './skim';
 import { tryPlunge } from './underwater';
-import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
+import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, SKIM, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { maxAmplitudeForClearance } from './wingtip';
@@ -90,7 +91,9 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const thin = ceilingFactor(p.y);
   const qbar = 0.5 * rho * V * V;
   const wingHeight = sim.agl + WING.rootHeight;
-  const geInduced = groundEffectInduced(wingHeight, shape.span);
+  // Sıyırma (surface skim): low, fast and level over water or flat ground the ground effect cuts the drag further.
+  const skim = updateSkim(sim, h);
+  const geInduced = groundEffectInduced(wingHeight, shape.span) * (1 - SKIM.inducedCut * skim);
   const geLift = sim.overWater || sim.agl < 60 ? groundEffectLift(wingHeight, shape.span) : 0;
 
   const clAttached = attachedLift(alphaWing, shape.liftSlope) * sim.attachment;
@@ -98,7 +101,8 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const cdi = shape.inducedFactor * clAttached * clAttached * geInduced;
   const cdSep = (1 - sim.attachment) * separatedDrag(alphaWing);
   const liftMag = qbar * shape.area * cl;
-  const dragMag = qbar * (shape.area * (cdi + cdSep) + shape.parasiteArea + sim.brake * BODY.brakeCdA);
+  const parasite = shape.parasiteArea * t.dragScale * (1 - SKIM.dragCut * skim);
+  const dragMag = qbar * (shape.area * (cdi + cdSep) + parasite + sim.brake * BODY.brakeCdA);
   const sideMag = qbar * BODY.sideArea * BODY.sideForceSlope * sim.beta;
   sim.lift = liftMag;
   sim.drag = dragMag;
@@ -126,7 +130,10 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   // Near a surface the stroke gets shallower so the lower wingtip clears it at the bottom of the downstroke
   // (every airborne mode: cruising, hovering, landing and take-off).
   const cruising = sim.mode === 'flying' || sim.mode === 'gliding' || sim.mode === 'diving' || sim.mode === 'stalling';
-  const clearAmplitude = maxAmplitudeForClearance(sim.agl, sim.sweep, shape.span, sim.pitch, sim.bank, PROXIMITY.strokeMargin);
+  // Skimming, the membrane's trailing edge early in the upstroke reaches lower than the fitted stroke bottom: keep a
+  // wider margin so the wingtips only kiss the surface.
+  const strokeMargin = PROXIMITY.strokeMargin + SKIM.strokeMargin * skim;
+  const clearAmplitude = maxAmplitudeForClearance(sim.agl, sim.sweep, shape.span, sim.pitch, sim.bank, strokeMargin);
   const ampLimit = Math.max(clearAmplitude, cruising ? PROXIMITY.minAmplitudeCruise : PROXIMITY.minAmplitudeHover);
   beat.update(h, t.effort, sim.hoverBlend, ampLimit);
   if (beat.downstrokeStarted) {
@@ -141,6 +148,8 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   const stroke = lerp(FLAP.strokeAngle, FLAP.hoverStrokeAngle, sim.hoverBlend);
   _flapDir.copy(axes.forward).multiplyScalar(Math.cos(stroke)).addScaledVector(axes.up, Math.sin(stroke));
   _force.addScaledVector(_flapDir, flapNow);
+  // Muscle push of a move (the side-slip's flick).
+  _force.add(t.push);
 
   // --- water skim --------------------------------------------------------------------------
   if (applyWaterSkim(sim, h)) {
@@ -238,6 +247,7 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
     }
   }
 
+  skimKiss(sim, h);
   checkTouchdown(sim, h);
 }
 

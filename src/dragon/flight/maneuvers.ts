@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import type { FlightMode } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DEG, GRAVITY, MASS, PROXIMITY, TRICKS, WING } from './params';
+import { DART, DEG, FLAP, GRAVITY, MASS, POWER_STROKE, PROXIMITY, SLIP, TRICKS, WING } from './params';
 import type { ControlTargets } from './controller';
 import type { FlightSim } from './sim';
-import type { ManeuverId, PilotCommand } from './types';
+import type { ManeuverId, MoveId, MoveRecord, PilotCommand } from './types';
 
-/** Tricks that replace the normal control law while they run. The urge runs on top of the normal law. */
-export type TrickKind = 'none' | 'roll' | 'loop' | 'drop' | 'catch';
+/**
+ * Tricks that replace the normal control law while they run. The urge and the power stroke run on top of the normal
+ * law; the surface skim is automatic (skim.ts).
+ */
+export type TrickKind = 'none' | 'roll' | 'loop' | 'drop' | 'catch' | 'dart' | 'slip';
 
 const TWO_PI = Math.PI * 2;
 /** Turkish captions of the maneuvers (the HUD shows them briefly). */
@@ -24,7 +27,64 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   touchgo: 'Dokun-kalk',
   plunge: 'Dalış',
   breach: 'Fırlama',
+  power: 'Güç vuruşu',
+  dart: 'Ok gibi',
+  slip: 'Kayış',
+  skim: 'Sıyırma',
 };
+
+/** Moves kept in the log of finished moves (headless checks, diagnostics). */
+const MOVE_LOG = 16;
+
+/**
+ * Clean-exit bookkeeping of one move (phase 20 flow hooks): entry speed, contact and stall while it runs. A move ends
+ * clean with no contact, no stall and an exit speed of at least the entry speed - tolerance.
+ */
+export class MoveTracker {
+  start = 0;
+  entrySpeed = 0;
+  entryY = 0;
+  contact = false;
+  stalled = false;
+
+  begin(sim: FlightSim): void {
+    this.start = sim.time;
+    this.entrySpeed = sim.airspeed;
+    this.entryY = sim.body.position.y;
+    this.contact = false;
+    this.stalled = false;
+  }
+
+  /** Every substep while the move runs. */
+  sample(sim: FlightSim): void {
+    if (sim.impact.touched || sim.footClearance < 0 || sim.touchingWater || !sim.airborne) {
+      this.contact = true;
+    }
+    if (sim.attachment < 0.6 || sim.controller.upset || sim.mode === 'stalling') {
+      this.stalled = true;
+    }
+  }
+
+  /** The finished move's record (`forced`: ended early or cancelled, never clean). */
+  finish(sim: FlightSim, id: MoveId, tolerance: number, forced = false): MoveRecord {
+    const exitSpeed = sim.airspeed;
+    const clean = !forced && !this.contact && !this.stalled && exitSpeed >= this.entrySpeed - tolerance;
+    return {
+      id,
+      start: this.start,
+      duration: sim.time - this.start,
+      entrySpeed: this.entrySpeed,
+      exitSpeed,
+      heightChange: sim.body.position.y - this.entryY,
+      clean,
+      contact: this.contact,
+      stalled: this.stalled,
+      forced,
+      lateral: 0,
+      headingChange: 0,
+    };
+  }
+}
 
 /** Largest angle of attack the tricks ask for (a margin below the stall). */
 const ALPHA_MAX = WING.stall - 2.5 * DEG - WING.incidence;
@@ -45,6 +105,18 @@ function wrapAngle(a: number): number {
 const _dir = new THREE.Vector3();
 const _invQ = new THREE.Quaternion();
 const _cross = new THREE.Vector3();
+const _slipDir = new THREE.Vector3();
+const _slipFrom = new THREE.Vector3();
+const _slipOffset = new THREE.Vector3();
+const _slipHit = { distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3(), surface: '' };
+const _slipColumn = { floor: 0, ceiling: Infinity };
+/** Sideways shift of a side-slip (m): SLIP.lengths body lengths of this dragon's rig. */
+export function slipDistance(sim: FlightSim): number {
+  return SLIP.lengths * sim.rigLength;
+}
+
+/** Fractions of the slip's run along the track at which the room beside it is probed. */
+const SLIP_PROBES = [0, 0.35, 0.7, 1];
 
 /** Angle of attack that gives load factor `n` with the current wing (dynamic lift `boost` on top of the lift curve). */
 function alphaForLoad(sim: FlightSim, n: number, boost = 0): number {
@@ -111,6 +183,31 @@ export class Maneuvers {
   private urgeSpeed = 0;
   private hintTimer = 0;
 
+  /** Finished stage B moves, newest last (at most MOVE_LOG). */
+  readonly log: MoveRecord[] = [];
+
+  /* Power stroke (runs on top of the normal law). */
+  /** A power stroke is running. */
+  powerActive = false;
+  /** Seconds since the power stroke started (large when idle). */
+  powerTime = 99;
+  private powerBeats = 0;
+  private powerEntry = 0;
+  private powerCooldown = 0;
+  private powerPrevPhase = 0;
+  private readonly powerTrack = new MoveTracker();
+
+  /* Dart and side-slip (tricks). */
+  private readonly moveTrack = new MoveTracker();
+  private dartOpened = false;
+  /** Side of the running side-slip: +1 right, -1 left. */
+  slipDir = 0;
+  private readonly slipOrigin = new THREE.Vector3();
+  private readonly slipLateral = new THREE.Vector3();
+  private slipYaw = 0;
+  private slipPath = 0;
+  private slipPushPrev = 0;
+
   reset(): void {
     this.kind = 'none';
     this.time = 0;
@@ -121,16 +218,28 @@ export class Maneuvers {
     this.diveSuppressed = false;
     this.urgeCooldown = 0;
     this.pullOutNeed = 0;
+    this.powerActive = false;
+    this.powerTime = 99;
+    this.powerCooldown = 0;
+    this.slipDir = 0;
+    this.log.length = 0;
   }
 
   get active(): boolean {
     return this.kind !== 'none';
   }
 
-  /** Ends any trick at once (touchdown, splashdown). */
-  cancel(): void {
+  /** Ends any trick at once (touchdown, splashdown); a running dart, side-slip or power stroke ends unclean. */
+  cancel(sim?: FlightSim): void {
+    if (sim && (this.kind === 'dart' || this.kind === 'slip')) {
+      this.endMove(sim, this.moveTrack.finish(sim, this.kind, 0, true));
+    }
+    if (sim && this.powerActive) {
+      this.endPower(sim, true);
+    }
     this.kind = 'none';
     this.time = 0;
+    this.slipDir = 0;
   }
 
   /** The pilot's Shift is ignored (a held dive that Space caught). */
@@ -162,9 +271,12 @@ export class Maneuvers {
     switch (this.kind) {
       case 'drop':
         return 'diving';
+      case 'dart':
+        return 'diving';
       case 'roll':
       case 'loop':
       case 'catch':
+      case 'slip':
         return 'flying';
       default:
         return null;
@@ -172,13 +284,18 @@ export class Maneuvers {
   }
 
   /** Timers; every substep in every mode. */
-  tick(h: number): void {
+  tick(h: number, sim?: FlightSim): void {
     this.urgeTime += h;
     this.cheerTime += h;
+    this.powerTime += h;
     this.urgeCooldown = Math.max(0, this.urgeCooldown - h);
+    this.powerCooldown = Math.max(0, this.powerCooldown - h);
     this.hintTimer = Math.max(0, this.hintTimer - h);
     if (this.kind !== 'none') {
       this.time += h;
+    }
+    if (sim && this.powerActive) {
+      this.updatePower(sim);
     }
   }
 
@@ -261,6 +378,17 @@ export class Maneuvers {
     }
 
     const clearance = this.clearance(sim);
+    // Dart: a Shift double tap while fast from about level flight (slower, or diving steeply: the drop below).
+    if (cmd.dropPressed && cruising && V > DART.minSpeed && Math.abs(sim.gamma) < DART.maxEntryPath) {
+      if (Math.abs(sim.bank) > DART.maxEntryBank) {
+        this.hint(sim, 'Ok gibi atılmak için düz uç');
+      } else if (clearance < DART.minClearance || cmd.brake) {
+        this.hint(sim, 'Ok gibi atılmak için yer yok');
+      } else {
+        this.startDart(sim);
+      }
+      return;
+    }
     // Drop: Shift while slow (hover, stall, < ~20 m/s) or a Shift double tap at any speed, when there is room for
     // a real fall (at least ~a second before the automatic catch). Lower down Shift keeps its hover descent.
     const dropMode = cruising || mode === 'hovering';
@@ -295,6 +423,28 @@ export class Maneuvers {
         this.hint(sim, why);
       }
     }
+    if (cmd.slipLeftPressed || cmd.slipRightPressed) {
+      const dir = cmd.slipRightPressed ? 1 : -1;
+      if (cruising && !cmd.brake && !cmd.dive) {
+        const why =
+          V < SLIP.minSpeed
+            ? 'Kayış için hızlan'
+            : sim.tired || sim.stamina < SLIP.stamina
+              ? 'Ejderha yorgun'
+              : clearance < SLIP.minClearance || !this.slipRoom(sim, dir)
+                ? 'Kayış için yer yok'
+                : null;
+        if (why) {
+          this.hint(sim, why);
+        } else {
+          this.startSlip(sim, dir);
+          return;
+        }
+      }
+    }
+    if (cmd.powerPressed && cruising && !cmd.dive && !cmd.brake) {
+      this.tryPower(sim);
+    }
   }
 
   /** Control law while a trick runs (replaces the normal law). */
@@ -312,6 +462,12 @@ export class Maneuvers {
       case 'catch':
         this.catchLaw(sim, t);
         break;
+      case 'dart':
+        this.dartLaw(sim, cmd, t);
+        break;
+      case 'slip':
+        this.slipLaw(sim, t);
+        break;
       default:
         break;
     }
@@ -328,6 +484,85 @@ export class Maneuvers {
     t.thrustBoost = Math.max(t.thrustBoost, 1 + (TRICKS.urgeThrust - 1) * smoothstep(0, 3, room) * fade);
     t.spread = Math.max(t.spread, 0.95);
     t.sweep = Math.min(t.sweep, 0.05);
+  }
+
+  /** 0..1 envelope of the running power stroke (pose and rider cues). */
+  get powerEnvelope(): number {
+    if (!this.powerActive) {
+      return 0;
+    }
+    return smoothstep(0, 0.08, this.powerTime);
+  }
+
+  /** Normal-law hook: the power stroke's two deep, full-amplitude downstrokes and their capped surge. */
+  applyPower(sim: FlightSim, t: ControlTargets, wingsFree: boolean): void {
+    if (!this.powerActive || !wingsFree) {
+      return;
+    }
+    const room = this.powerEntry + POWER_STROKE.gain - sim.airspeed;
+    t.effort = 1;
+    t.thrustBoost = Math.max(t.thrustBoost, 1 + (POWER_STROKE.thrust - 1) * smoothstep(0, 2.5, room));
+    t.spread = 1;
+    t.sweep = Math.min(t.sweep, POWER_STROKE.sweep);
+  }
+
+  /** Space double tap: starts the power stroke (refused, with a hint, when tired or low on stamina). */
+  private tryPower(sim: FlightSim): void {
+    if (this.powerActive || this.powerCooldown > 0) {
+      return;
+    }
+    if (sim.tired || sim.stamina < POWER_STROKE.minStamina) {
+      this.hint(sim, 'Güç vuruşu için ejderha yorgun');
+      return;
+    }
+    this.powerActive = true;
+    this.powerTime = 0;
+    this.powerEntry = sim.airspeed;
+    this.powerTrack.begin(sim);
+    sim.stamina = Math.max(0, sim.stamina - POWER_STROKE.stamina);
+    const beat = sim.beat;
+    const split = TWO_PI * FLAP.downstrokeFraction;
+    // The first tap's downstroke still under way counts as the first of the two; otherwise the next one starts now.
+    if (beat.amplitude > 0.25 && beat.phase < 0.5 * split) {
+      this.powerBeats = 1;
+    } else {
+      this.powerBeats = 0;
+      beat.phase = TWO_PI - 0.25;
+    }
+    this.powerPrevPhase = beat.phase;
+    beat.effort = Math.max(beat.effort, 0.85);
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.5 });
+    this.announce(sim, 'power');
+  }
+
+  /** Counts the power stroke's downstrokes and ends it after the last one (every substep while it runs). */
+  private updatePower(sim: FlightSim): void {
+    this.powerTrack.sample(sim);
+    const phase = sim.beat.phase;
+    if (phase < this.powerPrevPhase - 1) {
+      this.powerBeats++;
+    }
+    this.powerPrevPhase = phase;
+    const split = TWO_PI * FLAP.downstrokeFraction;
+    const done = this.powerBeats >= POWER_STROKE.beats && phase >= split;
+    if (done || this.powerTime > POWER_STROKE.maxTime || !sim.airborne) {
+      this.endPower(sim, !sim.airborne);
+    }
+  }
+
+  private endPower(sim: FlightSim, forced: boolean): void {
+    this.powerActive = false;
+    this.powerCooldown = POWER_STROKE.cooldown;
+    this.endMove(sim, this.powerTrack.finish(sim, 'power', POWER_STROKE.cleanTolerance, forced));
+  }
+
+  /** Logs a finished move and marks its end on the flight-internal maneuver event (flow hooks). */
+  endMove(sim: FlightSim, record: MoveRecord): void {
+    this.log.push(record);
+    if (this.log.length > MOVE_LOG) {
+      this.log.shift();
+    }
+    sim.emit({ type: 'maneuver', id: record.id, label: MANEUVER_LABELS[record.id], ended: true, clean: record.clean });
   }
 
   /* ---------------------------------------------------------------- starts */
@@ -387,6 +622,67 @@ export class Maneuvers {
     sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.55 + 0.6 * snap });
     sim.emit({ type: 'shake', amount: 0.16 + 0.3 * snap });
     this.announce(sim, 'catch');
+  }
+
+  private startDart(sim: FlightSim): void {
+    this.enter('dart');
+    this.moveTrack.begin(sim);
+    this.dartOpened = false;
+    this.diveTime = 0;
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.7 });
+    this.announce(sim, 'dart');
+  }
+
+  private startSlip(sim: FlightSim, dir: number): void {
+    this.enter('slip');
+    this.moveTrack.begin(sim);
+    this.slipDir = dir;
+    this.slipOrigin.copy(sim.body.position);
+    this.slipYaw = sim.axes.yaw();
+    // Right of the heading, horizontal (yaw measured with forward = -z).
+    this.slipLateral.set(Math.cos(this.slipYaw), 0, -Math.sin(this.slipYaw)).multiplyScalar(dir);
+    this.slipPath = clamp(sim.gamma, -15 * DEG, 15 * DEG);
+    this.slipPushPrev = 0;
+    sim.stamina = Math.max(0, sim.stamina - SLIP.stamina);
+    sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.45 });
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.6 });
+    this.announce(sim, 'slip');
+  }
+
+  /**
+   * Room for a side-slip toward `dir`: horizontal rays along the slip from points along the track (at the body, the
+   * feet and the raised wings) reach the shift plus half the span and a margin without a hit, and at the destination
+   * the ground (or a roof) stays SLIP.minClearance below the feet and nothing hangs lower than SLIP.headroom above.
+   */
+  private slipRoom(sim: FlightSim, dir: number): boolean {
+    const col = sim.world.collision;
+    if (!col) {
+      return true;
+    }
+    const p = sim.body.position;
+    const yaw = sim.axes.yaw();
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    _slipDir.set(Math.cos(yaw) * dir, 0, -Math.sin(yaw) * dir);
+    const reach = slipDistance(sim) + 0.5 * sim.wing.span + SLIP.sideMargin;
+    const run = Math.max(sim.airspeed, 10) * SLIP.time;
+    const feet = p.y - sim.footDepth();
+    for (const f of SLIP_PROBES) {
+      for (const dy of [0, 1 - sim.footDepth(), 3]) {
+        _slipFrom.set(p.x + fx * run * f, p.y + dy, p.z + fz * run * f);
+        if (col.raycast(_slipFrom, _slipDir, reach, false, _slipHit)) {
+          return false;
+        }
+      }
+      const x = p.x + fx * run * f + _slipDir.x * slipDistance(sim);
+      const z = p.z + fz * run * f + _slipDir.z * slipDistance(sim);
+      col.columnAt(x, z, p.y, _slipColumn);
+      const floor = col.terrainHeight(x, z) < -0.4 && _slipColumn.floor < 0.05 ? sim.waterHeight(x, z) : _slipColumn.floor;
+      if (feet - floor < SLIP.minClearance || _slipColumn.ceiling < p.y + SLIP.headroom) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private enter(kind: TrickKind): void {
@@ -639,6 +935,128 @@ export class Maneuvers {
     t.authority.set(2.5, 1.5, 1.5);
   }
 
+  /* ---------------------------------------------------------------- dart */
+
+  /**
+   * Dart: wings half folded and the body streamlined for DART.time, a shallow push-over onto DART.path (shallower
+   * near the ground), then the wings open on their own and the path rounds out. A / D steer with a little bank.
+   */
+  private dartLaw(sim: FlightSim, cmd: PilotCommand, t: ControlTargets): void {
+    this.moveTrack.sample(sim);
+    const tt = this.time;
+    const clearance = this.clearance(sim);
+    const tooLow = tt > 0.1 && clearance < DART.minClearance;
+    if (tt >= DART.time + DART.open || tooLow) {
+      this.endMove(sim, this.moveTrack.finish(sim, 'dart', DART.cleanTolerance, tooLow));
+      // Shift still held from the double tap stays ignored until released: the wings stay open.
+      this.diveSuppressed = cmd.dive;
+      this.finish(sim, clamp(sim.gamma, -5 * DEG, 3 * DEG), true);
+      this.normalTargets(t);
+      return;
+    }
+    const folded = tt < DART.time;
+    if (!folded && !this.dartOpened) {
+      this.dartOpened = true;
+      sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.35 });
+    }
+    const open = smoothstep(DART.time, DART.time + DART.open, tt);
+    const depth = DART.path * smoothstep(DART.levelClearance, DART.levelClearance + 8, clearance);
+    const gammaTarget = depth * clamp(tt / DART.pathTime, 0, 1) * (1 - open);
+    const V = Math.max(sim.airspeed, 10);
+    const bankTarget = clamp(cmd.roll, -1, 1) * DART.bank;
+    const load = clamp(
+      Math.cos(sim.gamma) / Math.max(Math.cos(sim.bank), 0.5) + (V / GRAVITY) * DART.pathGain * (gammaTarget - sim.gamma),
+      DART.minLoad,
+      DART.maxLoad,
+    );
+    const alphaTarget = clamp(alphaForLoad(sim, load), ALPHA_MIN, ALPHA_MAX);
+    const pitchRate = pitchFeed(sim) + 6 * (alphaTarget - sim.alpha);
+    t.rate.set(clamp(pitchRate, -1.2, 1.2), yawFeed(sim) - 1.8 * sim.beta, clamp(3.2 * (sim.bank - bankTarget), -1.5, 1.5));
+    t.effort = 0;
+    t.spread = folded ? DART.spread : 1;
+    t.sweep = folded ? DART.sweep : 0;
+    t.spreadRate = DART.foldRate;
+    t.sweepRate = DART.foldRate;
+    t.dragScale = lerp(DART.dragScale, 1, open);
+    t.brake = 0;
+    t.legsOut = 0;
+    t.hover = 0;
+    t.authority.set(1.5, 1.5, 1.5);
+  }
+
+  /* ---------------------------------------------------------------- side-slip */
+
+  /**
+   * Side-slip: the lateral offset from the entry line follows a sine-shaped acceleration profile (out, then back to
+   * zero lateral speed) over SLIP.time. The bank into the slip and out of it tilts the lift sideways; the wing and tail
+   * flick (t.push) supplies the rest, with feedback on the offset and its rate. The heading and the entry path are held.
+   */
+  private slipLaw(sim: FlightSim, t: ControlTargets): void {
+    this.moveTrack.sample(sim);
+    const T = SLIP.time;
+    const tt = this.time;
+    const L = this.slipLateral;
+    const p = sim.body.position;
+    const v = sim.body.velocity;
+    _slipOffset.copy(p).sub(this.slipOrigin);
+    const offset = _slipOffset.dot(L);
+    if (tt >= T) {
+      const record = this.moveTrack.finish(sim, 'slip', SLIP.cleanTolerance);
+      record.lateral = offset;
+      record.headingChange = wrapAngle(sim.axes.yaw() - this.slipYaw);
+      this.endMove(sim, record);
+      this.slipDir = 0;
+      this.finish(sim, clamp(sim.gamma, -5 * DEG, 8 * DEG), true);
+      this.normalTargets(t);
+      return;
+    }
+    const w = TWO_PI / T;
+    const A = (TWO_PI * slipDistance(sim)) / (T * T);
+    const sDes = slipDistance(sim) * (tt / T - Math.sin(w * tt) / TWO_PI);
+    const vDes = (A / w) * (1 - Math.cos(w * tt));
+    const aDes = A * Math.sin(w * tt);
+    const a = aDes + SLIP.offsetGain * (sDes - offset) + SLIP.speedGain * (vDes - v.dot(L));
+    // Lateral acceleration the air already gives (last substep's specific force without last substep's push).
+    const aero = sim.specificForce.dot(L) - this.slipPushPrev / MASS;
+    const push = clamp(a - aero, -SLIP.maxPush * GRAVITY, SLIP.maxPush * GRAVITY) * MASS;
+    this.slipPushPrev = push;
+    t.push.copy(L).multiplyScalar(push);
+
+    // Heading held (world yaw rate toward the entry heading), a quick bank into the slip and out of it.
+    const yawRate = -SLIP.headingGain * wrapAngle(sim.axes.yaw() - this.slipYaw);
+    _invQ.copy(sim.body.quaternion).invert();
+    _dir.set(0, yawRate, 0).applyQuaternion(_invQ);
+    // The bank leads a little (the roll takes a moment), so the wings are level again as the slip ends.
+    const bankTarget = this.slipDir * SLIP.bank * Math.sin(w * Math.min(tt + SLIP.bankLead, T));
+    const V = Math.max(sim.airspeed, 10);
+    // Load the wing has to carry: what holds the path, minus the part of the push along the body's up axis.
+    const pushUp = (push * L.dot(sim.axes.up)) / (MASS * GRAVITY);
+    const load = clamp(
+      Math.cos(sim.gamma) / Math.max(Math.cos(sim.bank), 0.5) + (V / GRAVITY) * 2.5 * (this.slipPath - sim.gamma) - pushUp,
+      0,
+      3.5,
+    );
+    const alphaTarget = clamp(alphaForLoad(sim, load), ALPHA_MIN, ALPHA_MAX);
+    const pitchRate = pitchFeed(sim) + 6 * (alphaTarget - sim.alpha);
+    t.rate.set(_dir.x + clamp(pitchRate, -1.2, 1.2), _dir.y, _dir.z + clamp(4 * (sim.bank - bankTarget), -2.5, 2.5));
+    // One strong asymmetric beat for the flick, lighter strokes while sliding.
+    t.effort = tt < 0.5 * T ? 0.9 : 0.4;
+    t.spread = 1;
+    t.sweep = 0;
+    t.brake = 0;
+    t.legsOut = 0;
+    t.hover = 0;
+    t.authority.set(SLIP.authority[0], SLIP.authority[1], SLIP.authority[2]);
+  }
+
+  /** The side-slip's flick, signed (+ right): into the slip, then out of it (the pose's wing and tail cue). */
+  get slipCue(): number {
+    if (this.kind !== 'slip') {
+      return 0;
+    }
+    return this.slipDir * Math.sin((TWO_PI * this.time) / SLIP.time);
+  }
+
   /** Neutral targets for the substep in which a trick ends (the normal law takes over from the next one). */
   private normalTargets(t: ControlTargets): void {
     t.effort = 0;
@@ -647,8 +1065,9 @@ export class Maneuvers {
   }
 
   /** Test/diagnostics view of the running trick. */
-  describe(): { kind: TrickKind; time: number; rolledDeg: number; revolutions: number; loopDeg: number; pullOutNeed: number } {
+  describe(): { kind: TrickKind; time: number; rolledDeg: number; revolutions: number; loopDeg: number; pullOutNeed: number; power: boolean } {
     return {
+      power: this.powerActive,
       kind: this.kind,
       time: Math.round(this.time * 100) / 100,
       rolledDeg: Math.round((this.rolled * 180) / Math.PI),

@@ -8,6 +8,7 @@ import { BodyAxes, BodyState } from './body';
 import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
 import { GroundMoves } from './ground-moves';
+import { endSkim, SkimState } from './skim';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
 import { MANEUVER_LABELS, Maneuvers } from './maneuvers';
 import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, GROUND, HOVER, INERTIA, LEAP, MASS, PLUNGE, PROXIMITY, STAMINA } from './params';
@@ -36,6 +37,8 @@ export class FlightSim {
   readonly moves = new GroundMoves();
   /** Plunge look-ahead and the under-water state (underwater.ts). */
   readonly dive = new DiveState();
+  /** Surface skim / ground effect ("sıyırma", skim.ts). */
+  readonly skim = new SkimState();
   readonly wing: WingShape = createWingShape();
   readonly overrides: AssistOverrides = createOverrides();
   readonly options: SimOptions = { autoFlap: true, stallProtection: true, turbulence: true, thermals: true, wind: true };
@@ -235,6 +238,7 @@ export class FlightSim {
     this.beat.reset();
     this.controller.reset(0);
     this.maneuvers.reset();
+    this.skim.reset();
     this.dive.resetLook();
     this.leapCharge = 0;
     this.runTakeoff = 0;
@@ -348,7 +352,7 @@ export class FlightSim {
     this.touchingWater = false;
     this.axes.update(this.body.quaternion);
     this.sampleSurface();
-    this.maneuvers.tick(h);
+    this.maneuvers.tick(h, this);
     this.moves.sinceLiftOff += h;
 
     if (this.mode === 'grounded') {
@@ -365,6 +369,13 @@ export class FlightSim {
       stepAirborne(this, cmd, h);
     }
 
+    if (this.skim.active && !this.airborne) {
+      // Touched down or splashed into the water: the skim ends unclean.
+      endSkim(this, true);
+    }
+    if (!this.airborne) {
+      this.skim.amount = 0;
+    }
     this.updateStamina(cmd, h);
     this.enforceCeiling();
     this.enforceBoundary();

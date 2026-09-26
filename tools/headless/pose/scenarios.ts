@@ -572,6 +572,83 @@ export const SCENARIOS: Scenario[] = [
     span: 30,
   },
   {
+    name: 'power',
+    description: 'Space double tap at 28 m/s (taps at 0.5 and 0.68 s): güç vuruşu, two deep full-amplitude downstrokes',
+    setup: fly(200, 28),
+    seconds: 3,
+    script: () => {
+      const first = pressAt(0.5, 'flap')();
+      let second = false;
+      return (t, sim, input) => {
+        first(t, sim, input);
+        if (!second && t >= 0.68) {
+          second = true;
+          input.press('flap');
+          input.press('power');
+        }
+      };
+    },
+    frames: 18,
+    fps: 15,
+    window: () => 0.45,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'dart',
+    description: 'Shift double tap at 36 m/s: dart, wings half folded and streamlined for ~1 s, then open on their own',
+    setup: fly(200, 36),
+    seconds: 3.5,
+    script: pressAt(0.5, 'drop'),
+    frames: 24,
+    fps: 12,
+    window: () => 0.35,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'slip',
+    description: 'E double tap at 34 m/s: kayış, a sideways shift of ~1 body length with the heading kept (wing and tail flick)',
+    setup: fly(150, 34),
+    seconds: 3.5,
+    script: pressAt(0.5, 'slipRight'),
+    frames: 18,
+    fps: 10,
+    window: () => 0.4,
+    view: 'front',
+    camera: 'fixed',
+    span: 44,
+  },
+  {
+    name: 'skim',
+    description: 'held 3 m over flat ground at 32 m/s (altitude hold): sıyırma, tail lowered, wingtips kissing the ground',
+    setup: fly(5, 32),
+    seconds: 6,
+    script: () => (_t, sim, input) => {
+      input.pathDeg = Math.max(-4, Math.min(4, (3 - sim.footClearance) * 2.5));
+    },
+    frames: 16,
+    fps: 8,
+    window: () => 3,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'skim-water',
+    description: 'held 3 m over the sea at 32 m/s (altitude hold): sıyırma over water, the tail tip in the spray',
+    sea: 30,
+    setup: (rt) => rt.teleport(0, 5, 0, 0, 32),
+    seconds: 6,
+    script: () => (_t, sim, input) => {
+      input.pathDeg = Math.max(-4, Math.min(4, (3 - sim.footClearance) * 2.5));
+    },
+    frames: 16,
+    fps: 8,
+    window: () => 3,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
     name: 'turn',
     description: '60° bank held (assist override) at 32 m/s',
     setup: fly(250, 32),

@@ -168,6 +168,11 @@ export const PROXIMITY = {
   idleLand: 18,
   idleWater: 6,
   pilotLand: 1.5,
+  /** Below pilotLand with the stick pushed: the floor climbs by pilotLandGain rad per metre missing, up to pilotLandClimb. */
+  pilotLandGain: 0.12,
+  pilotLandClimb: 0.15,
+  /** Over land the stick's push fades out over this much flight path (rad) above the floor. */
+  pilotFloorSoften: 6 * DEG,
   pilotWater: -0.3,
   diveLand: 8,
   diveWater: 2,
@@ -647,6 +652,119 @@ export const TRICKS = {
   cheer: 1.3,
   /** Refused-trick hints repeat at most this often (s). */
   hintInterval: 6,
+} as const;
+
+/**
+ * Phase 20 stage B air moves (maneuvers.ts, skim.ts). Every move reports its end on the flight-internal 'maneuver'
+ * event (`ended`, `clean`): clean = no contact, no stall, exit speed at least the entry speed − cleanTolerance.
+ * Speeds m/s, times s, clearances m (lowest body point above the surface), angles rad, stamina 0..1.
+ */
+export const POWER_STROKE = {
+  /** Two deep, full-amplitude downstrokes (Space double tap); the move ends after `beats` of them or maxTime. */
+  beats: 2,
+  maxTime: 1.2,
+  /** Flap force multiplier of the strokes, faded out as the surge reaches entry speed + gain. */
+  thrust: 2.6,
+  gain: 5,
+  /** Stamina the strokes cost up front, and the least stamina left for one (refused below, and while tired). */
+  stamina: 0.07,
+  minStamina: 0.12,
+  /** Wing sweep of the strokes (negative = reaching forward: a deeper stroke). */
+  sweep: -0.25,
+  /** A new power stroke needs this long after the last one ended. */
+  cooldown: 0.25,
+  cleanTolerance: 1,
+} as const;
+
+export const DART = {
+  /** Shift double tap faster than this (slower: the free fall, as before), from a flight path within maxEntryPath. */
+  minSpeed: 30,
+  maxEntryPath: 25 * DEG,
+  maxEntryBank: 50 * DEG,
+  /** Wings half folded (spread, sweep) for `time`, then open again over `open` on their own. */
+  time: 1,
+  open: 0.35,
+  spread: 0.5,
+  sweep: 0.8,
+  foldRate: 5,
+  /** Streamlined body (neck stretched, legs and tail in line): parasite drag multiplier while folded. */
+  dragScale: 0.6,
+  /** Shallow dive: flight path aimed for (rad), reached over pathTime; shallower below levelClearance + 8 m, level below it. */
+  path: -15 * DEG,
+  pathTime: 0.3,
+  levelClearance: 4,
+  /** Path gain (1/s) and load limits (g) of the push-over and the round-out. */
+  pathGain: 3.5,
+  minLoad: -0.2,
+  maxLoad: 2,
+  /** Bank A / D may steer with during the dart. */
+  bank: 30 * DEG,
+  /** Refused below this clearance (and ended early if it gets this low). */
+  minClearance: 3,
+  cleanTolerance: 1,
+} as const;
+
+export const SLIP = {
+  /**
+   * Sideways shift (Q / E double tap) of `lengths` body lengths (the rig's nose-to-tail length, 18.5 m) over `time`
+   * s, heading kept: a sine-shaped lateral acceleration (out, then back to zero lateral speed; peak 2π·d / T²) made of
+   * the lift of a quick bank into the slip (then out of it) and the flick of the outer wing's asymmetric downstroke
+   * and the tail (a muscle push, capped at maxPush × weight).
+   */
+  lengths: 1.1,
+  time: 1.7,
+  bank: 35 * DEG,
+  /** Lead (s) of the bank on the lateral profile. */
+  bankLead: 0.15,
+  maxPush: 4,
+  /** Feedback on the lateral offset (1/s²) and speed (1/s) that keeps the shift on its profile. */
+  offsetGain: 12,
+  speedGain: 6,
+  /** Heading hold (1/s) and the yaw / roll authority multipliers while slipping. */
+  headingGain: 3,
+  authority: [2, 4, 2] as readonly [number, number, number],
+  minSpeed: 16,
+  stamina: 0.04,
+  /** Least clearance below (now and at the destination) and beside (m beyond the outer wingtip) to allow one. */
+  minClearance: 3,
+  sideMargin: 4,
+  /** Headroom above the centre of mass at the destination (raised wings). */
+  headroom: 6,
+  cleanTolerance: 2,
+} as const;
+
+export const SKIM = {
+  /**
+   * Surface skim / ground effect ("sıyırma"), automatic: foot clearance below `height` (full from fullHeight) over water
+   * or flat open ground, at least minSpeed (full from minSpeed + 4), wings level (bank below maxBank) and spread.
+   */
+  height: 6,
+  fullHeight: 3,
+  minSpeed: 20,
+  maxBank: 12 * DEG,
+  minSpread: 0.7,
+  /** Flat ground: the surface ahead within this of the surface below, no structure underneath. */
+  flatness: 1.5,
+  /** Rate (1/s) the skim builds and fades. */
+  rate: 3,
+  /** Induced drag cut (fraction, on top of the physical ground effect) and parasite drag cut at full skim. */
+  inducedCut: 0.45,
+  dragCut: 0.1,
+  /** The caption and the start of the move: skim above 0.6 for announceTime; ends below 0.2 for endTime. */
+  announceTime: 0.5,
+  endTime: 0.35,
+  /** Captions no more often than this (s). */
+  captionInterval: 8,
+  /** Wingtips and tail within kissHeight of the surface throw spray (water) or dust (land), spaced by kissSpacing m. */
+  kissHeight: 1.3,
+  /** Extra wingtip margin (m) of the stroke amplitude limit at full skim (on top of PROXIMITY.strokeMargin). */
+  strokeMargin: 0.6,
+  kissSpacing: 6,
+  /** Tail tip lowered to this height over land / water (m), with the tail pitch capped at tailMax (rad). */
+  tailKissLand: 0.45,
+  tailKissWater: -0.05,
+  tailMax: 0.9,
+  cleanTolerance: 3,
 } as const;
 
 /**
