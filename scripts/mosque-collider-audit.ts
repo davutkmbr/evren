@@ -368,3 +368,11 @@ console.log(`TOTAL uncovered ${tot('uncovered')} m², phantom ${tot('phantom')} 
 if (jsonOut) {
   writeFileSync(jsonOut, JSON.stringify(results, null, 1));
 }
+// CI budget per mosque: uncovered geometry or phantom collider surface above
+// max(100 m², 1% of the collider surface) means a real hole or invisible wall.
+const budget = (r: AuditResult): number => Math.max(100, r.surface * 0.01);
+const over = results.filter((r) => r.uncovered > budget(r) || r.phantom > budget(r));
+for (const r of over) {
+  console.error(`FAIL ${r.id}: uncovered ${r.uncovered} m², phantom ${r.phantom} m² (budget ${Math.round(budget(r))} m²)`);
+}
+if (over.length) process.exit(1);
