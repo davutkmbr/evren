@@ -146,10 +146,16 @@ export interface MomentContent {
   /** Placeholder id of the sound cue (not yet recorded or approved). */
   soundId?: string;
   /**
-   * Id of an approved music set (public/audio/music/manifest.json) that plays as the moment's own bed; without it
-   * (or while that set does not exist) the adaptive music only ducks under the moment.
+   * Id of an approved moment piece (a `role: "moment"` phrase in public/audio/music/manifest.json) or music set that
+   * plays under the moment. Without it a moment piece is chosen by the category and `musicMood`; when none matches
+   * the adaptive music only ducks under the moment (.docs/audio/music-system.md, Moment music).
    */
   musicId?: string;
+  /**
+   * Mood tags for choosing the moment piece when `musicId` is not set, e.g. ['nostalgic', 'sea'] or
+   * ['history', 'solemn'] (MOMENT_MUSIC_TAGS in src/audio/music/manifest.ts; the category counts as a tag too).
+   */
+  musicMood?: readonly string[];
   subtitles: readonly SubtitleLine[];
   camera?: CameraHint;
   card?: DiscoveryCard;

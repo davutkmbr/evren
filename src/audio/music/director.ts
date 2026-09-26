@@ -261,6 +261,16 @@ export class MusicDirector {
     return this.out.slice();
   }
 
+  /**
+   * Ends the play window now: outside a playing policy the current set ends on its next phrase boundary (sparse style
+   * after a race). No effect while silent.
+   */
+  endWindow(now: number): void {
+    if (this.playUntil !== null && this.playUntil > now) {
+      this.playUntil = now;
+    }
+  }
+
   /** Skips the rest of the current silence (debug / __evrenMusic.play). */
   skipSilence(now: number): void {
     this.silenceUntil = now;

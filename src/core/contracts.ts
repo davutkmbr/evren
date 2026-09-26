@@ -657,10 +657,17 @@ export interface AudioService {
   setAdaptiveMusic?(on: boolean): void;
   readonly adaptiveMusic?: boolean;
   /**
-   * A moment started / ended (src/moments): the music ducks strongly while it plays, or swaps to the moment's own
-   * music set when `musicId` (MomentContent.musicId) names one in the music manifest; restored afterwards.
+   * "Müzik tarzı": 'sparse' ("Seyrek": mostly silence, a short phrase now and then) or 'continuous' ("Sürekli": the
+   * looping sets); persisted. Unset, it is 'sparse' when the manifest has sprinkle phrases.
    */
-  setMomentMusic?(active: boolean, musicId?: string): void;
+  setMusicStyle?(style: 'sparse' | 'continuous'): void;
+  readonly musicStyle?: 'sparse' | 'continuous';
+  /**
+   * A moment started / ended (src/moments): the music ducks strongly while it plays and a moment piece plays under it
+   * (the one `musicId` names, else one matching `info`: the moment's category and MomentContent.musicMood); a
+   * `musicId` naming a music set swaps to that set instead. Restored afterwards.
+   */
+  setMomentMusic?(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void;
   /** A bond sound of the dragon at its head (phase 06); `volume` 0..1.5 also sets its intensity. */
   bondCue?(cue: BondAudioCue, volume?: number): void;
 }

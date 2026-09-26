@@ -8,8 +8,11 @@
  *
  * Each stem is rendered one loop long plus a tail, and the tail is folded back onto the start so notes ringing over
  * the loop point continue seamlessly on the next pass.
+ *
+ * The same switch also brings test PHRASES for sprinkle mode (a breathy ney, a few kanun plucks, a low tanbur at
+ * night...) and one gentle test MOMENT PIECE (ney over a soft pad) for moments, rendered once each on first use.
  */
-import { loopSeconds, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
+import { loopSeconds, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
 import type { MusicBuffers } from './player';
 
 export interface TestNote {
@@ -20,7 +23,7 @@ export interface TestNote {
   vel: number;
 }
 
-type Voice = 'piano' | 'pad' | 'pluck' | 'shaker' | 'ney' | 'kanun' | 'air' | 'bell';
+type Voice = 'piano' | 'pad' | 'pluck' | 'shaker' | 'ney' | 'kanun' | 'air' | 'bell' | 'tanbur';
 
 interface TestSetSpec {
   def: MusicSetDef;
@@ -140,6 +143,146 @@ const SPECS: TestSetSpec[] = [
 
 /** The test sets' manifest entries (valid MusicSetDefs; their `src` files do not exist and are never fetched). */
 export const TEST_SETS: readonly MusicSetDef[] = SPECS.map((s) => s.def);
+
+/* ------------------------------------------------------------------ */
+/* Test phrases (sprinkle mode) and the test moment piece               */
+/* ------------------------------------------------------------------ */
+
+interface TestPhraseSpec {
+  def: MusicPhraseDef;
+  /** Layers rendered into the one-shot: a voice and its notes ([start s, length s, midi, velocity]). */
+  layers: Array<{ voice: Voice; notes: Array<[number, number, number, number]> }>;
+}
+
+const phraseSrc = (id: string): string[] => [`dev-test/phrases/${id}.opus`];
+const phraseCredit = { title: 'Test cümlesi (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' as const };
+
+const PHRASE_SPECS: TestPhraseSpec[] = [
+  {
+    // A soft breathy ney by day: a long tone, a small turn, a fall (D uşşak colour).
+    def: { id: 'test-ney-nefes', src: phraseSrc('test-ney-nefes'), durationSec: 22, family: 'ney', tags: ['day', 'dawn', 'calm', 'water'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'ney',
+        notes: [
+          [1.5, 4.2, 74, 0.8],
+          [6, 1.1, 76, 0.6],
+          [7.2, 1, 77, 0.55],
+          [8.3, 4.5, 74, 0.7],
+          [13.4, 4.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A few kanun notes over the water: two short falling groups, then silence.
+    def: { id: 'test-kanun-damla', src: phraseSrc('test-kanun-damla'), durationSec: 20, family: 'kanun', tags: ['day', 'water', 'flight'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'kanun',
+        notes: [
+          [1.2, 0.45, 81, 0.7],
+          [1.65, 0.45, 79, 0.6],
+          [2.1, 1.6, 76, 0.7],
+          [5.2, 0.45, 74, 0.6],
+          [5.65, 0.45, 76, 0.6],
+          [6.1, 2.2, 78, 0.7],
+          [10.5, 0.4, 81, 0.5],
+          [10.9, 0.4, 79, 0.5],
+          [11.3, 2.6, 74, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A low tanbur at night: four slow notes that ring out.
+    def: { id: 'test-tanbur-gece', src: phraseSrc('test-tanbur-gece'), durationSec: 24, family: 'tanbur', tags: ['night', 'calm', 'perch'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'tanbur',
+        notes: [
+          [1.5, 3, 45, 0.8],
+          [5, 2, 52, 0.6],
+          [7.4, 4, 50, 0.7],
+          [12.6, 5, 45, 0.7],
+        ],
+      },
+    ],
+  },
+  {
+    // A lower, darker ney at night or in fog (hicaz turn: A, B♭, C♯).
+    def: { id: 'test-ney-gece', src: phraseSrc('test-ney-gece'), durationSec: 24, family: 'ney', tags: ['night', 'fog', 'water'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'ney',
+        notes: [
+          [2, 4.5, 69, 0.7],
+          [6.8, 1.2, 70, 0.55],
+          [8.1, 2.6, 73, 0.6],
+          [11, 5.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+];
+
+const MOMENT_SPECS: TestPhraseSpec[] = [
+  {
+    // A gentle moment piece: a slow ney line over a soft pad (A uşşak / minor), 48 s with a quiet ending.
+    def: {
+      id: 'test-an-ney',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-ney.opus`],
+      durationSec: 48,
+      family: 'ney',
+      tags: ['poem', 'nostalgic', 'sea', 'tender'],
+      credit: { title: 'Test an müziği (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'pad',
+        notes: [
+          ...[57, 60, 64].map((m): [number, number, number, number] => [0.5, 10, m, 0.55]),
+          ...[53, 57, 60].map((m): [number, number, number, number] => [10.5, 10, m, 0.5]),
+          ...[55, 59, 62].map((m): [number, number, number, number] => [20.5, 10, m, 0.5]),
+          ...[52, 57, 60].map((m): [number, number, number, number] => [30.5, 12, m, 0.45]),
+        ],
+      },
+      {
+        voice: 'ney',
+        notes: [
+          [3, 3.5, 69, 0.6],
+          [6.8, 1.2, 71, 0.5],
+          [8.1, 2.4, 72, 0.55],
+          [11.5, 3, 74, 0.6],
+          [14.8, 1.2, 72, 0.5],
+          [16.1, 3.2, 71, 0.55],
+          [21, 2.5, 67, 0.5],
+          [23.8, 1.2, 69, 0.5],
+          [25.2, 4, 71, 0.55],
+          [31, 2.2, 72, 0.5],
+          [33.4, 1.4, 71, 0.45],
+          [35, 6, 69, 0.5],
+        ],
+      },
+    ],
+  },
+];
+
+/** The test phrases (valid sprinkle phrases; their files do not exist and are never fetched). */
+export const TEST_PHRASES: readonly MusicPhraseDef[] = PHRASE_SPECS.map((s) => s.def);
+/** The test moment pieces (valid `role: "moment"` phrases). */
+export const TEST_MOMENT_PIECES: readonly MusicPhraseDef[] = MOMENT_SPECS.map((s) => s.def);
+
+/** The notes of a test phrase or moment piece, flattened (pure: the headless check verifies they end before the tail). */
+export function testPhraseNotes(id: string): TestNote[] {
+  const spec = [...PHRASE_SPECS, ...MOMENT_SPECS].find((s) => s.def.id === id);
+  if (!spec) {
+    throw new Error(`no test phrase ${id}`);
+  }
+  return spec.layers.flatMap((l) => l.notes.map(([t, dur, midi, vel]) => ({ t, dur, midi, vel })));
+}
 
 /** The notes of every stem of a test set (pure: the headless check verifies they fit the loop). */
 export function testScore(id: string): Record<StemRole, TestNote[]> {
@@ -333,6 +476,21 @@ function playNote(ctx: OfflineAudioContext, out: AudioNode, voice: Voice, n: Tes
       g.linearRampToValueAtTime(0, t + n.dur + 0.8);
       break;
     }
+    case 'tanbur': {
+      // A long-necked lute: a bright pluck through a low-pass that closes as the string rings out.
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(f * 8, t);
+      lp.frequency.setTargetAtTime(f * 2.5, t + 0.01, 0.4);
+      env.disconnect();
+      env.connect(lp).connect(out);
+      osc('sawtooth', f, 0.6);
+      osc('triangle', f * 2, 0.25, 4);
+      g.setValueAtTime(0, t);
+      g.linearRampToValueAtTime(0.3 * n.vel, t + 0.004);
+      g.setTargetAtTime(0, t + 0.005, Math.min(1.4, n.dur * 0.5));
+      break;
+    }
     case 'bell':
       osc('sine', f, 1);
       osc('sine', f * 2.76, 0.4);
@@ -366,6 +524,28 @@ async function renderNotes(voice: Voice, notes: readonly TestNote[], seconds: nu
     dst[i] = src[i] + (i + len < src.length ? src[i + len] : 0);
   }
   return out;
+}
+
+/**
+ * Renders a test phrase or moment piece: every layer into one buffer exactly `durationSec` long (the notes end a few
+ * seconds before the end, so the file has its own silent tail like a real phrase).
+ */
+export async function renderTestPhrase(phrase: MusicPhraseDef): Promise<AudioBuffer> {
+  const spec = [...PHRASE_SPECS, ...MOMENT_SPECS].find((s) => s.def.id === phrase.id);
+  if (!spec) {
+    throw new Error(`no test phrase ${phrase.id}`);
+  }
+  const ctx = new OfflineAudioContext(1, Math.round(phrase.durationSec * RATE), RATE);
+  const noise = noiseBuffer(ctx, 2);
+  const bus = ctx.createGain();
+  bus.gain.value = 1.4;
+  bus.connect(ctx.destination);
+  for (const layer of spec.layers) {
+    for (const [t, dur, midi, vel] of layer.notes) {
+      playNote(ctx, bus, layer.voice, { t, dur, midi, vel }, noise);
+    }
+  }
+  return ctx.startRendering();
 }
 
 /** Renders one test set's stems and stingers (a few hundred ms per set on a laptop). */
