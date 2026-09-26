@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * Fetches the OpenStreetMap content of one area of OSM_AREAS (src/world/osm/area.ts) from the Overpass API and
- * writes compact local-metre JSON to the area's `dataFile`:
+ * Extracts the OpenStreetMap content of one area of OSM_AREAS (src/world/osm/area.ts) and writes compact local-metre
+ * JSON to the area's `dataFile` (or `--out <file>`):
  *
- *   node scripts/data/fetch-osm.mjs [--area galata|kadikoy] [--cache /tmp/overpass-<area>.json]
+ *   node scripts/data/fetch-osm.mjs [--area galata|kadikoy] [--cache /tmp/overpass-<area>.json] [--out <file>]
  *   node scripts/data/fetch-osm.mjs --region <id>      # a flight-scale region of src/world/osm/regions.json
+ *
+ * --source local (default): the queries below run against the local Geofabrik extract index
+ * (scripts/data/lib/osm-local.mjs; build it once with `node scripts/data/osm-extract.mjs all`), in seconds.
+ * --source overpass: the same queries go to the public Overpass API (rate-limited; minutes per area).
  *
  * - galata (default, profile 'slice'): the OSM vertical slice (Eminönü, Galata Bridge, Karaköy, Galata, Tophane,
  *   Cihangir) -> public/data/osm/slice.json. Queries and records are unchanged by the street extension.
@@ -26,6 +30,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
+import { overpassLocal, sourceArg } from './lib/osm-local.mjs';
 
 const args = process.argv.slice(2);
 const argOf = (name) => {
@@ -35,8 +40,9 @@ const argOf = (name) => {
 const REGION = argOf('--region');
 const AREA = REGION ? readRegion(REGION) : readArea(argOf('--area') ?? 'galata');
 const STREET = AREA.profile === 'street';
-const OUT = resolve(ROOT, AREA.dataFile);
-const LEGACY_OUT = AREA.id === 'galata' ? resolve(ROOT, 'public/data/osm/galata.json') : null;
+const SOURCE = sourceArg(args);
+const OUT = resolve(ROOT, argOf('--out') ?? AREA.dataFile);
+const LEGACY_OUT = AREA.id === 'galata' && !argOf('--out') ? resolve(ROOT, 'public/data/osm/galata.json') : null;
 const SCHEMA_VERSION = 2;
 /** Street extension version (profile 'street' only). */
 const STREET_EXTENSION = 'street/1';
@@ -292,6 +298,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let preferred = 0;
 
 async function runQuery(name, q) {
+  if (SOURCE === 'local') {
+    const t = Date.now();
+    const json = overpassLocal(q);
+    console.error(`[fetch-osm] ${name}: ${json.elements.length} elements from the local index in ${Date.now() - t} ms`);
+    return json;
+  }
   let lastError = null;
   for (let attempt = 0; attempt < 6; attempt++) {
     const endpoint = ENDPOINTS[(preferred + attempt) % ENDPOINTS.length];
@@ -338,7 +350,9 @@ async function query() {
         merged.elements.push(e);
       }
     }
-    await sleep(2500);
+    if (SOURCE === 'overpass') {
+      await sleep(2500);
+    }
   }
   if (cachePath) {
     writeFileSync(cachePath, JSON.stringify(merged));
@@ -1157,7 +1171,7 @@ async function main() {
   const [x1, z0] = project(BBOX.north, BBOX.east);
   const out = {
     version: SCHEMA_VERSION,
-    source: 'OpenStreetMap contributors, ODbL 1.0 (Overpass API)',
+    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? 'Geofabrik extract' : 'Overpass API'})`,
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
