@@ -138,7 +138,8 @@ export function buildCamlicaTower(b: StructureBuild): void {
             [1, 1],
             [-1, 1],
           ]) {
-            mb.box(x + dx * 1.88, y0 + 80, cz + dz * 1.48, 0.1, 58, 0.1, 0, true, false);
+            // no top cap: it would lie in the plane of the glass shaft's roof
+            mb.box(x + dx * 1.88, y0 + 80, cz + dz * 1.48, 0.1, 58, 0.1, 0, true, true);
           }
         }
         for (let h = 26; h < 138; h += lod === 0 ? 4.5 : 13.5) {
