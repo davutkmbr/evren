@@ -39,7 +39,7 @@ import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_
 import { LEVEL_SIZES } from '../../src/world/city/protocol';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { Arch } from '../../src/world/osm/buildings/archetypes';
-import { collectSolids, planSolid, type Solid } from '../../src/world/osm/buildings/build';
+import { collectSolids, planSolid, solidGround, type Solid, type SolidGround } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
 import type { OsmArea, OsmBuilding, OsmData } from '../../src/world/osm/data';
 import { osmRegions } from '../../src/world/osm/regions';
@@ -146,6 +146,8 @@ interface Rec {
   cx: number;
   cz: number;
   area: number;
+  /** Outline ground (pass B), for the historic mosque settings (planSolid). */
+  ground?: SolidGround;
 }
 const centroidOf = (r: readonly number[]): [number, number] => {
   const n = r.length / 2;
@@ -166,9 +168,9 @@ const areaOf = (r: readonly number[]): number => {
   }
   return a / 2;
 };
-const toRec = (s: Solid): Rec => {
+const toRec = (s: Solid, groundAt?: (x: number, z: number) => number): Rec => {
   const [cx, cz] = centroidOf(s.ring);
-  return { s, cx, cz, area: Math.abs(areaOf(s.ring)) };
+  return { s, cx, cz, area: Math.abs(areaOf(s.ring)), ground: groundAt ? solidGround(s.ring, groundAt) : undefined };
 };
 /** Douglas-Peucker on a closed flat ring; null when it collapses. */
 function simplifyRing(r: number[], tol: number): number[] | null {
@@ -431,7 +433,7 @@ for (const { def, rect } of regions) {
   regionInfill += infill.parcels.length;
   for (const s of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, rect)) {
     // Half-open ownership: a centroid on the shared edge of two regions belongs to one of them.
-    const r = toRec(s);
+    const r = toRec(s, (x, z) => surface.baseAt(x, z));
     if (inRect(rect, r.cx, r.cz)) {
       regionRecs.push(r);
     }
@@ -460,7 +462,7 @@ for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
       }
     }
     for (const s of collectSolids({ buildings, claims: bakeClaims, extra }, rect)) {
-      const r = toRec(s);
+      const r = toRec(s, surface ? (x, z) => surface.baseAt(x, z) : (x, z) => geo.heightAt(x, z));
       if (inRect(rect, r.cx, r.cz) && !inAnyRegion(r.cx, r.cz)) {
         recs.push(r);
       }
@@ -505,7 +507,7 @@ const c565 = (c: THREE.Color): number => {
   return pack565((h >> 16) & 255, (h >> 8) & 255, h & 255);
 };
 const outs: Out[] = kept.map((r) => {
-  const { plan, rise, wallH } = planSolid(r.s);
+  const { plan, rise, wallH } = planSolid(r.s, layerClaims.settings, r.ground);
   const b = r.s.b;
   const total = wallH + rise;
   const usage = plan.arch === Arch.Mosque ? Usage.Worship : INDUSTRIAL.test(b.kind) ? Usage.Industrial : plan.office ? Usage.Office : Usage.Residential;

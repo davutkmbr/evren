@@ -81,6 +81,9 @@ export interface SpecRow {
   F?: number;
 }
 
+/** Ridge rise (m) of a hipped roof over the wall top (planTop). */
+export const HIPPED_RIDGE = 2.2;
+
 /** Storey metrics per typology: ground floor, upper floor-to-floor ranges (m) and parapet. */
 const METRICS: Record<Typology, { G: [number, number]; F: [number, number]; parapet: number }> = {
   T1: { G: [4.0, 4.4], F: [2.95, 3.1], parapet: 0.9 },
@@ -123,8 +126,11 @@ export function parentOf(part: Solid, buildings: readonly OsmBuilding[]): OsmBui
   return best;
 }
 
-/** Plans one building. `osm` is its own record; `parent` the outline it is a part of (if any). */
-export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBuilding | null, streetBase: number): FacadePlan {
+/**
+ * Plans one building. `osm` is its own record; `parent` the outline it is a part of (if any). `maxTop`: highest roof
+ * top of an untagged building (historic mosque settings, landmarks/monument-setting.ts).
+ */
+export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBuilding | null, streetBase: number, maxTop = Infinity): FacadePlan {
   const seed = (Math.abs(s.rec.osmId) % 1_000_003) * 0.618 + 0.37;
   const H = (k: number): number => h01(seed, k);
   const area = Math.abs(ringArea(s.ring));
@@ -166,6 +172,12 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
     storeys = 1;
   }
   const roof: FacadePlan['roof'] = spec?.roof ?? (typ === 'T2' && osm?.roofShape !== 'flat' && H(5) < 0.25 && area < 260 ? 'hipped' : osm?.roofShape === 'hipped' ? 'hipped' : 'flat');
+  if (source === 'hash') {
+    const lift = roof === 'hipped' ? HIPPED_RIDGE : met.parapet;
+    while (storeys > 1 && streetBase + G + (storeys - 1) * F + lift > maxTop) {
+      storeys--;
+    }
+  }
   const roofY = streetBase + G + (storeys - 1) * F;
 
   const pal = dp.facade.paint;

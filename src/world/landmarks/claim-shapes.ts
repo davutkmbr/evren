@@ -6,6 +6,8 @@ export interface LandmarkClaims {
   pads: Float32Array;
   /** ax, az, bx, bz, body radius, corridor radius per segment of a line landmark. */
   lines: Float32Array;
+  /** Historic mosque settings (monument-setting.ts): x, z, radius, platform y per site. */
+  settings?: Float32Array;
 }
 
 export const LINE_STRIDE = 6;
