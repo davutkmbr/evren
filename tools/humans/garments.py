@@ -232,7 +232,8 @@ def skin(obj, body, rig, weights=None):
             for bone, w in ws.items():
                 if w <= 0:
                     continue
-                g = groups.get(bone) or obj.vertex_groups.new(name="mixamorig:" + bone)
+                # Skeleton bones are named without their "mixamorig:" prefix; the added wind chains by full name.
+                g = groups.get(bone) or obj.vertex_groups.new(name=bone if bone.startswith("wind_") else "mixamorig:" + bone)
                 groups[bone] = g
                 g.add([v.index], w / tot, "REPLACE")
         arm = obj.modifiers.new("Armature", "ARMATURE")
@@ -424,3 +425,43 @@ def bake_ao(objs, samples=48, distance=0.25):
         o.select_set(True)
         bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
     scene.render.engine = engine
+
+
+def add_chain(rig, name, points, parent):
+    """
+    A chain of bones through the world points (len(points) - 1 bones, "<name>_1".. from the root), the root parented
+    to `parent` (a full bone name). Added to the rest skeleton; the game bends these with the wind.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = rig
+    rig.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    inv = rig.matrix_world.inverted()
+    prev = rig.data.edit_bones[parent]
+    names = []
+    for i in range(len(points) - 1):
+        eb = rig.data.edit_bones.new(f"{name}_{i + 1}")
+        eb.head = inv @ points[i]
+        eb.tail = inv @ points[i + 1]
+        eb.roll = 0.0
+        eb.parent = prev
+        eb.use_connect = i > 0
+        eb.use_deform = True
+        prev = eb
+        names.append(eb.name)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return names
+
+
+def chain_weights(names, s):
+    """Weights over a chain for a vertex at s (0 at the chain's root, 1 at its tip): each bone owns its span, blended
+    with its neighbours."""
+    n = len(names)
+    x = min(max(s, 0.0), 1.0) * n
+    ws = {nm: max(0.0, 1.0 - abs(x - (i + 0.5))) for i, nm in enumerate(names)}
+    if x <= 0.5:
+        ws = {names[0]: 1.0}
+    elif x >= n - 0.5:
+        ws = {names[-1]: 1.0}
+    tot = sum(ws.values()) or 1.0
+    return {k: v / tot for k, v in ws.items() if v > 0}
