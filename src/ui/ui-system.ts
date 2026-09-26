@@ -249,6 +249,10 @@ export class UiSystem implements System {
   }
 
   onResize(width: number, height: number): void {
+    // The engine resizes once before init(); the bands are applied in init() then.
+    if (!this.ctx) {
+      return;
+    }
     applyZoneBands(this.ctx.uiRoot, width, height);
     if (this.hudShown) {
       this.hud.measure();
