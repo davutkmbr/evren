@@ -9,8 +9,32 @@
  *   Start pause (Esc / P), Back map (M), the right stick looks around (right mouse button)
  *
  * A double tap of a button is a double tap on the pad too ("Space ×2" → "A ×2"); the roll's "A / D ×2" is the D-pad's
- * single press. Pure; `null` when a key has no pad binding (the caller keeps the keyboard keys).
+ * single press. A PlayStation pad (`PadLayout` 'playstation', from the pad's id in core/input.ts) gets its own names:
+ * ✕ ○ □ △, L1 / R1, L2 / R2, Options, Share. Pure; `null` when a key has no pad binding (the caller keeps the
+ * keyboard keys).
  */
+
+/** Button names of the pad in use: Xbox (the standard layout's usual names) or PlayStation. */
+export type PadLayout = 'xbox' | 'playstation';
+
+/** PlayStation names of the Xbox names used below (sticks, stick clicks and the D-pad are the same). */
+const PLAYSTATION: Readonly<Record<string, string>> = {
+  A: '✕',
+  B: '○',
+  X: '□',
+  Y: '△',
+  LB: 'L1',
+  RB: 'R1',
+  LT: 'L2',
+  RT: 'R2',
+  Start: 'Options',
+  Back: 'Share',
+};
+
+/** The layout of a connected pad from its id (Sony's USB vendor id 054c, or its name). */
+export function padLayoutOf(id: string): PadLayout {
+  return /054c|playstation|dualshock|dualsense/i.test(id) ? 'playstation' : 'xbox';
+}
 
 /** Pad name of one keyboard key name (null: not on the pad). */
 const PAD: Readonly<Record<string, string>> = {
@@ -46,7 +70,7 @@ const RIGHT_CLICK = /^sağ tık/i;
  * One alternative ("Dik dalışta A", "Shift bırak", "S"): the key it names translated, the other words kept; null when
  * it names a key with no pad binding, undefined when it is a mouse button (dropped).
  */
-function translatePart(part: string, rollPress: boolean): string | null | undefined {
+function translatePart(part: string, rollPress: boolean, layout: PadLayout): string | null | undefined {
   if (LEFT_CLICK.test(part)) {
     return undefined;
   }
@@ -57,7 +81,8 @@ function translatePart(part: string, rollPress: boolean): string | null | undefi
   let found = false;
   const out: string[] = [];
   for (const w of words) {
-    const name = (rollPress && DPAD_ROLL[w]) || PAD[w];
+    const xbox = (rollPress && DPAD_ROLL[w]) || PAD[w];
+    const name = xbox && layout === 'playstation' ? (PLAYSTATION[xbox] ?? xbox) : xbox;
     if (name && !found && (w.length > 1 || w === w.toUpperCase())) {
       out.push(name);
       found = true;
@@ -69,7 +94,7 @@ function translatePart(part: string, rollPress: boolean): string | null | undefi
 }
 
 /** The gamepad version of a key hint ("Space ×2" → "A ×2", "A / D ×2" → "D-pad ◀ / D-pad ▶"), or null. */
-export function padKeys(keys: string): string | null {
+export function padKeys(keys: string, layout: PadLayout = 'xbox'): string | null {
   let text = keys.trim();
   if (!text) {
     return null;
@@ -86,7 +111,7 @@ export function padKeys(keys: string): string | null {
   for (const [ci, combo] of combos.entries()) {
     const alts: string[] = [];
     for (const part of combo.split('/').map((k) => k.trim())) {
-      const t = translatePart(part, rollPress && ci === combos.length - 1);
+      const t = translatePart(part, rollPress && ci === combos.length - 1, layout);
       if (t === null) {
         return null;
       }

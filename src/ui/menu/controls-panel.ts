@@ -2,6 +2,7 @@ import { CONTROL_HELP, type ControlGroup } from '../../core/input';
 import { padKeys } from '../../core/pad-keys';
 import { interactive, keyCap, keyCombo, setKeyCapState } from '../components';
 import { el } from '../dom';
+import { onPadHints, padLayout } from '../zones';
 
 /** Group order and titles (the hover block right after flight: it is how the brake key is used). */
 const GROUPS: ReadonlyArray<{ id: ControlGroup; title: string }> = [
@@ -105,9 +106,33 @@ const UNTRIED = 'Henüz denemedin';
 /** Title of a row's gamepad buttons (core/pad-keys.ts; rows without a pad binding show none). */
 const PAD_TITLE = 'Oyun kolu';
 
+/** Every row's pad line with its keys: refilled when a pad of the other layout (Xbox / PlayStation) shows up. */
+const padLines: Array<[HTMLElement, string]> = [];
+let padLinesLayout = padLayout();
+onPadHints(() => {
+  if (padLayout() === padLinesLayout) {
+    return;
+  }
+  padLinesLayout = padLayout();
+  for (const [node, keys] of padLines) {
+    fillPadLine(node, keys);
+  }
+});
+
+function fillPadLine(node: HTMLElement, keys: string): void {
+  const pad = padKeys(keys, padLayout()) ?? '';
+  node.replaceChildren(keyCombo(pad, 'quiet', { size: 's' }));
+  node.setAttribute('aria-label', `${PAD_TITLE}: ${pad}`);
+}
+
 const padLine = (keys: string): HTMLElement[] => {
-  const pad = padKeys(keys);
-  return pad ? [el('span', 'ctl-pad', [keyCombo(pad, 'quiet', { size: 's' })], { title: PAD_TITLE, 'aria-label': `${PAD_TITLE}: ${pad}` })] : [];
+  if (!padKeys(keys)) {
+    return [];
+  }
+  const node = el('span', 'ctl-pad', undefined, { title: PAD_TITLE });
+  fillPadLine(node, keys);
+  padLines.push([node, keys]);
+  return [node];
 };
 
 const bindRow = (entry: Entry, untried = false): HTMLElement =>

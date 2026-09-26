@@ -1049,6 +1049,13 @@ export const WINGOVER = {
   easeOut: 0.3,
   /** Horizontal lift (g) that turns the path: from tan(entry bank) to `turnLoad` over the first quarter ... */
   turnLoad: 1.15,
+  /**
+   * Faster than loadSpeed the turn loads (turn, dive, end) grow with (V / loadSpeed)², up to × maxLoadScale: the turn
+   * keeps about the radius it has at loadSpeed instead of growing with V² (a fast entry would otherwise spend ten
+   * seconds and more against the drag and lose a quarter of its energy).
+   */
+  loadSpeed: 40,
+  maxLoadScale: 2.4,
   /** ... lighter in the dive (a longer dive: the height comes back as speed), and endLoad as it rolls out. */
   diveLoad: 0.7,
   endLoad: 0.6,
@@ -1085,6 +1092,13 @@ export const WINGOVER = {
   stamina: 0.03,
   headingTolerance: 15 * DEG,
   cleanEnergy: 0.9,
+  /**
+   * Faster entries may keep less, down to cleanEnergyFast at cleanFastSpeed (entry airspeed, m/s): the drag grows with
+   * V² and most of the loss comes on the climb, while still fast. Even with the tighter turn a 60 m/s entry keeps ~78 %
+   * over its 6.5 s, where a straight glide over the same time keeps ~70 %.
+   */
+  cleanEnergyFast: 0.72,
+  cleanFastSpeed: 62,
 } as const;
 
 export const IMMELMANN = {

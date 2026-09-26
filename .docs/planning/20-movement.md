@@ -206,12 +206,13 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   above 30 m/s from about level flight; slower, or already diving steeply, it stays the free fall. Shift held on after
   the dart's second tap is ignored until released (the wings reopen as planned), like after a catch. The dart's
   shallow path never arms a plunge. Q / E held after the double tap keep the rudder once the slip ends. A / D ×2 and
-  S ×2 are unchanged.
+  S ×2 are unchanged. Space and Shift held together (owner feedback 26 Sep: folded wings still beat and climbed):
+  the one pressed last wins (`pilot.ts`): Space pressed while Shift is held opens the wings and beats, Shift pressed
+  while Space is held folds them and stops the beats; releasing the later key hands back to the one still held.
 - **Checks:** `tools/headless/air-moves-check.ts` (gesture unit tests, collisions in the flight model, per-move
   envelopes and refusals, skim drag and clearance on the rig mesh); the mesh part measurements moved to
   `tools/headless/pose/parts.ts`. Pose scenarios `power`, `dart`, `slip`, `skim`, `skim-water`.
-- **Not yet:** audio beyond the existing whoosh / wing-snap / splash cues; the flow system that consumes the clean
-  flags (stage D).
+- **Later (built):** the move sounds and the flow system that consumes the clean flags came with stage D.
 
 ### Stage C as built (awaiting the owner's feel test)
 
@@ -268,8 +269,14 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   (24–27 m/s) and past knife-edge over the top; Immelmann +46–60 m, ≤ 3° off; Split-S −150 to −200 m, +13–15 m/s,
   < 1° off; refusals; collisions; the spinning dive), gesture resolvers and the axis press in section 1. Pose
   scenarios `wingover`, `immelmann`, `splits`.
-- **Not yet:** a wingover entry faster than ~43 m/s keeps less than 90 % of its energy (unclean, still flies); the
-  flow system that consumes the clean flags (stage D, built below).
+- **Fast wingovers** (26 Sep): above `WINGOVER.loadSpeed` (40 m/s) the turn loads grow with (V / 40)², up to × 2.4,
+  so the turn keeps about its 40 m/s radius instead of growing with V² (a 60 m/s entry took ~12 s against the drag and
+  kept ×0.64). The clean bar falls from 90 % at 40 m/s to 72 % at 62 m/s (`wingoverCleanEnergy`): the drag grows with
+  V² and most of the loss comes on the climb, while still fast; a straight glide over the same seconds keeps less.
+  Entries 44 / 50 / 58 / 66 m/s (≈ 41 / 46 / 53 / 60 m/s at the S ×2) now keep ×0.99 / 0.94 / 0.85 / 0.78 (before
+  ×0.95 / 0.85 / 0.73 / 0.64) in 8.7 / 7.9 / 7.2 / 6.6 s and end higher the faster they enter (−9 / +12 / +36 / +57 m,
+  ~41 m/s out); up to 38 m/s nothing changed. `air-moves-check.ts` section 7 flies all seven speeds.
+- The flow system that consumes the clean flags is stage D, built below.
 
 ### Stage D as built (awaiting the owner's feel test)
 
@@ -790,8 +797,10 @@ few times until the move is used), quietly and key first, on the shared hint lin
     trick row has a pad name, the catalogue's Kontroller rows exist, and a stub gamepad through `Input`: A, RT, LT,
     LB / RB and stick flicks double-tap, the D-pad rolls, a held button is one press, slow or far-apart presses are
     not double taps).
-- **Not yet:** the pad names in the game (feel test; no gamepad in the container); the hover panel's sentence "[W]
-  tuşuna bas" stays in keyboard terms; PlayStation button names.
+  - PlayStation pads (Sony's vendor id 054c or "DualShock" / "DualSense" in the pad's id, `padLayoutOf`) get their
+    names: ✕ ○ □ △, L1 / R1, L2 / R2, Options, Share; the Kontroller pad lines follow the last pad seen. The hover
+    panel's way back to flight says "sol çubuğu aşağı it [LS ▼]" on a pad.
+- **Not yet:** the pad names in the game (feel test; no gamepad in the container).
 
 ## Controls summary (additions)
 

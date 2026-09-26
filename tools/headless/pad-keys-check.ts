@@ -4,17 +4,20 @@
  *   npx tsx tools/headless/pad-keys-check.ts
  *
  * - core/pad-keys.ts: the pad names of the key hints (alternatives, combos, conditions, the double tap, the roll's
- *   D-pad press, keys without a pad binding);
+ *   D-pad press, keys without a pad binding), the PlayStation names and the layout from a pad's id;
  * - every key of the move hints (the tutorial catalogue, the lesson, the race's next-move hint) has a pad name, and
  *   every Kontroller row a catalogued move points to exists (the new water rows included);
  * - core/input.ts with a stub gamepad: A, RT, LT, LB / RB and the left stick's flicks press and double-tap like the
- *   keys, so every trick is reachable from the pad; a held button is one press.
+ *   keys, so every trick is reachable from the pad; a held button is one press; Shift and Space held together: the
+ *   one pressed last wins (pilot.ts: folded wings never beat).
  *
  * Exits non-zero on any failure.
  */
 import { CONTROL_HELP, Input, type ButtonName } from '../../src/core/input';
-import { padKeys } from '../../src/core/pad-keys';
+import { padKeys, padLayoutOf } from '../../src/core/pad-keys';
 import { LESSON_STEPS } from '../../src/activities/lesson';
+import { readPilotInput } from '../../src/dragon/flight/pilot';
+import { createPilotCommand } from '../../src/dragon/flight/types';
 import { TUTORIAL_HINTS } from '../../src/ui/tutorial/hints-data';
 
 let failures = 0;
@@ -53,6 +56,31 @@ for (const [keys, want] of CASES) {
   const got = padKeys(keys);
   check(got === want, `padKeys(${JSON.stringify(keys)}) = ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
 }
+
+// PlayStation names (the layout from the pad's id).
+const PS: Array<[string, string]> = [
+  ['Space ×2', '✕ ×2'],
+  ['Shift ×2', 'L2 ×2'],
+  ['Q / E ×2', 'L1 / R1 ×2'],
+  ['Ctrl / X', '○'],
+  ['F / Sol tık', '□'],
+  ['C', '△'],
+  ['Esc / P', 'Options'],
+  ['M', 'Share'],
+  ['A / D ×2', 'D-pad ◀ / D-pad ▶'],
+  ['S ×2', 'LS ▲ ×2'],
+];
+for (const [keys, want] of PS) {
+  const got = padKeys(keys, 'playstation');
+  check(got === want, `padKeys(${JSON.stringify(keys)}, playstation) = ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
+}
+check(
+  padLayoutOf('Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)') === 'playstation' &&
+    padLayoutOf('DualSense Wireless Controller') === 'playstation' &&
+    padLayoutOf('Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)') === 'xbox' &&
+    padLayoutOf('') === 'xbox',
+  'pad layout from the id: Sony (054c, DualSense) → PlayStation, others → Xbox',
+);
 
 // Every move hint names pad buttons (a hint the pad cannot perform would be a dead end).
 const hintKeys = [
@@ -169,6 +197,31 @@ for (let i = 0; i < 30; i++) {
   slow += f.double.includes('pitchUp') ? 1 : 0;
 }
 check(slow === 0, 'the stick pulled and held: no double tap');
+
+// Shift and Space held together: the one pressed last wins (folded wings never beat).
+idle(30);
+const cmd = createPilotCommand();
+frame(btn(6));
+frame(btn(6));
+const diveOnly = readPilotInput(input, cmd);
+check(diveOnly.dive && !diveOnly.flap, 'LT held: wings folded, no beat');
+frame(() => {
+  btn(6)();
+  btn(0)();
+});
+const spaceLater = { ...readPilotInput(input, cmd) };
+check(spaceLater.flap && !spaceLater.dive, `LT held, then A: the beat wins, the wings open (flap ${spaceLater.flap}, dive ${spaceLater.dive})`);
+idle(30);
+frame(btn(0));
+frame(() => {
+  btn(0)();
+  btn(6)();
+});
+const shiftLater = { ...readPilotInput(input, cmd) };
+check(shiftLater.dive && !shiftLater.flap, `A held, then LT: the wings fold, no beat (flap ${shiftLater.flap}, dive ${shiftLater.dive})`);
+frame(btn(0));
+const released = { ...readPilotInput(input, cmd) };
+check(released.flap && !released.dive, 'LT released while A is still held: the beats come back');
 
 console.log(`${checks - failures}/${checks} pad checks passed`);
 process.exit(failures ? 1 : 0);

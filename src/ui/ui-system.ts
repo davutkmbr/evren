@@ -282,7 +282,7 @@ export class UiSystem implements System {
     this.statusToasts.update(ctx, this.modal === 'none' && !this.photo && !this.perchView.viewing);
 
     // Key hints name the pad's buttons while the player uses a gamepad.
-    setPadHints(ctx.input.lastDevice === 'gamepad');
+    setPadHints(ctx.input.lastDevice === 'gamepad', ctx.input.padLayout);
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
       this.hudShown = hudVisible;
