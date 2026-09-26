@@ -16,13 +16,17 @@
  *
  * Doubles throughout; phases stay relative to the shading origin exactly like on the GPU. The last solved point is
  * cached, so heightAt + normalAt + velocityAt at one position cost one solve.
+ *
+ * Stage 7a: the wave particles (`dynamic`, particles/wave-particles.ts) are added on top at the queried (displaced)
+ * point, sunk under land like the Gerstner sheet, the same sum the water shaders draw from the splat texture.
  */
 import type * as THREE from 'three';
-import type { WaterSeaState, WaterService } from '../../core/contracts';
+import type { WaterDynamicSample, WaterSeaState, WaterService } from '../../core/contracts';
 import { WORLD_HALF_SIZE } from '../../core/geo-coords';
 import type { RegionBakeResult } from './bake/region-bake';
 import { fromHalf } from './bake/half';
 import { MAX_WAVES } from './config';
+import type { WaveParticles } from './particles/wave-particles';
 import type { SeaState } from './sea-state';
 
 const GRAVITY = 9.81;
@@ -114,13 +118,20 @@ export class WaveQuery implements WaterService {
   private readonly phase = new Float64Array(MAX_WAVES);
   private readonly group = new Uint8Array(MAX_WAVES);
   private lodos = 0;
+  /** Wave particles added to every query (null: the ambient waves alone, e.g. the parity test). */
+  dynamic: WaveParticles | undefined = undefined;
+  private readonly dyn: WaterDynamicSample = { height: 0, slopeX: 0, slopeZ: 0, vx: 0, vy: 0, vz: 0 };
+  private dynX = NaN;
+  private dynZ = NaN;
+  private dynVersion = -1;
+  private dynExclude = -2;
   private coast: ((x: number, z: number) => number) | null = null;
   private maps: WaterRegionMaps | null = null;
 
   /* Scratch + solve cache. */
   private readonly regionS = new Float64Array(4);
   private readonly flowS = new Float64Array(4);
-  private readonly groupW = new Float64Array(3);
+  private readonly groupW = new Float64Array(4);
   private keep = 1;
   private sink = 0;
   private cacheVersion = -1;
@@ -178,7 +189,7 @@ export class WaveQuery implements WaterService {
       this.amp[n] = a.x;
       this.steep[n] = a.y;
       this.phase[n] = a.z;
-      this.group[n] = a.w < 0.5 ? 0 : a.w < 1.5 ? 1 : 2;
+      this.group[n] = a.w < 0.5 ? 0 : a.w < 1.5 ? 1 : a.w < 2.5 ? 2 : 3;
       sumA2 += a.x * a.x;
       n++;
     }
@@ -221,13 +232,30 @@ export class WaveQuery implements WaterService {
     const lake = clamp01((1 - (r + g + b + a) - 0.006) * 1.006);
     const fetch = clamp01(flow[2] + (flow[3] - flow[2]) * this.lodos);
     const shore = smoothstep(0, 45, offshore);
+    const sea = r + g + b + a;
     const w = this.groupW;
-    w[0] = (r + g + b + a * 0.22) * (0.3 + 0.7 * shore) * (0.3 + 0.7 * smoothstep(0.03, 0.4, fetch)) + lake * 0.12 * shore;
-    w[1] = (r + b + g * 0.25) * smoothstep(0.35, 0.8, fetch) * (0.15 + 0.85 * shore);
-    w[2] = (r + b * 0.25 + g * 0.04) * smoothstep(60, 1800, offshore) * smoothstep(0.45, 0.85, flow[2]);
+    w[0] = (r + g + b + a * 0.15) * (0.3 + 0.7 * shore) * (0.1 + 0.9 * smoothstep(0.2, 0.5, fetch));
+    w[1] = (r + b + g * 0.25) * smoothstep(0.6, 0.9, fetch) * (0.15 + 0.85 * shore);
+    // Swell region weights blend from the Black Sea swell (poyraz) to the Marmara swell (lodos) with the regime.
+    const L = this.lodos;
+    const swellRegion = r * (1 + (0.15 - 1) * L) + g * (0.04 + (0.06 - 0.04) * L) + b * (0.25 + (1 - 0.25) * L);
+    w[2] = swellRegion * smoothstep(60, 1800, offshore) * smoothstep(0.45, 0.85, fetch);
+    w[3] = sea * (0.35 + 0.65 * shore) * (0.45 + 0.55 * smoothstep(0.05, 0.35, fetch)) + lake * 0.5 * shore;
     const land = smoothstep(0, 25, coast);
     this.keep = 1 - land;
     this.sink = land * 1.5;
+  }
+
+  /**
+   * Diagnostics: the wave group weights (short, long, swell, chop, as in the shaders) at the undisplaced point (x, z)
+   * into `out[0..3]`; returns the fetch exposure of the current regime there (0..1, see bake/fetch.ts).
+   */
+  groupWeightsAt(x: number, z: number, out: Float64Array | number[]): number {
+    this.groupsAt(x, z);
+    for (let i = 0; i < 4; i++) out[i] = this.groupW[i];
+    this.cacheVersion = -1;
+    const flow = this.flowS;
+    return clamp01(flow[2] + (flow[3] - flow[2]) * this.lodos);
   }
 
   /** Displacement, Jacobian, slopes and orbital velocity of the undisplaced point (x0, z0). */
@@ -324,7 +352,40 @@ export class WaveQuery implements WaterService {
     this.cacheVersion = this.version;
   }
 
+  /** The particle field at (x, z) (cached per point, particle update and excluded source). */
+  private dynamicAt(x: number, z: number): WaterDynamicSample {
+    const d = this.dynamic;
+    const out = this.dyn;
+    if (!d || d.count === 0) {
+      out.height = 0;
+      out.slopeX = 0;
+      out.slopeZ = 0;
+      out.vx = 0;
+      out.vy = 0;
+      out.vz = 0;
+      this.dynVersion = -1;
+      return out;
+    }
+    if (x !== this.dynX || z !== this.dynZ || d.version !== this.dynVersion || d.exclude !== this.dynExclude) {
+      d.sample(x, z, out);
+      this.dynX = x;
+      this.dynZ = z;
+      this.dynVersion = d.version;
+      this.dynExclude = d.exclude;
+    }
+    return out;
+  }
+
   heightAt(x: number, z: number): number {
+    this.solve(x, z);
+    if (!this.dynamic) {
+      return this.dispY;
+    }
+    return this.dispY + this.dynamicAt(x, z).height * this.keep;
+  }
+
+  /** Height of the ambient waves alone (no wave particles) at (x, z). */
+  ambientHeightAt(x: number, z: number): number {
     this.solve(x, z);
     return this.dispY;
   }
@@ -338,9 +399,20 @@ export class WaveQuery implements WaterService {
     const bx = this.jxz;
     const by = this.slopeZ;
     const bz = this.jzz;
-    const nx = by * az - bz * ay;
-    const ny = bz * ax - bx * az;
-    const nz = bx * ay - by * ax;
+    let nx = by * az - bz * ay;
+    let ny = bz * ax - bx * az;
+    let nz = bx * ay - by * ax;
+    if (this.dynamic && this.dynamic.count > 0) {
+      // As the fragment shader: the particle slope is added to the Gerstner slope (-n.xz / n.y).
+      const dyn = this.dynamicAt(x, z);
+      const k = this.keep;
+      const iy = 1 / Math.max(ny, 1e-6);
+      const sx = -nx * iy + dyn.slopeX * k;
+      const sz = -nz * iy + dyn.slopeZ * k;
+      nx = -sx;
+      ny = 1;
+      nz = -sz;
+    }
     const len = Math.hypot(nx, ny, nz) || 1;
     return out.set(nx / len, ny / len, nz / len);
   }
@@ -348,14 +420,19 @@ export class WaveQuery implements WaterService {
   /** Orbital velocity of the surface water at (x, z) (m/s), without the current. */
   orbitalVelocityAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
     this.solve(x, z);
+    if (this.dynamic && this.dynamic.count > 0) {
+      const dyn = this.dynamicAt(x, z);
+      const k = this.keep;
+      return out.set(this.velX + dyn.vx * k, this.velY + dyn.vy * k, this.velZ + dyn.vz * k);
+    }
     return out.set(this.velX, this.velY, this.velZ);
   }
 
   velocityAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
-    this.solve(x, z);
-    const vx = this.velX;
-    const vy = this.velY;
-    const vz = this.velZ;
+    this.orbitalVelocityAt(x, z, out);
+    const vx = out.x;
+    const vy = out.y;
+    const vz = out.z;
     this.currentAt(x, z, out);
     return out.set(out.x + vx, vy, out.z + vz);
   }

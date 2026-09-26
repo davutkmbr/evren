@@ -22,6 +22,12 @@ export function fetchExposure(fetch: number): number {
   return Math.min(1, Math.max(0, e));
 }
 
+/** Inverse of fetchExposure: the fetch (m) an exposure value stands for (150 m .. 300 km). */
+export function fetchFromExposure(exposure: number): number {
+  const e = Math.min(1, Math.max(0, exposure));
+  return FETCH_MIN * (FETCH_MAX / FETCH_MIN) ** e;
+}
+
 function marchFetch(water: Uint8Array, size: number, cell: number, cx: number, cy: number, dirX: number, dirZ: number): number {
   let x = cx + 0.5;
   let y = cy + 0.5;

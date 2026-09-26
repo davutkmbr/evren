@@ -22,28 +22,28 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 
 ## In progress when this was written (uncommitted, in the working tree)
 
-1. **Façade modules referenced by id** (tiles keep wall shells + slot lists; modules assembled off-thread at load):
-   `tools/world-compiler/src/{modules/*,facade/*,shopfront/*,format.ts,web.ts,cli.ts}`, `src/street/modules/*`,
-   `src/street/format.ts`. Goal: new façade variants need no recompile; MB per landing should drop. Check `git diff`,
-   typecheck, finish windows+shutters end to end first, then the rest; before/after shots in `.shots/modules/`.
-2. **Compiler speed round 2** (finished, uncommitted because it shares `cli.ts` with item 1): `src/parallel/share.ts`,
-   `src/quantize.ts`, `foundation.ts`, `compress.ts`, `parallel/pool.ts`, `stage-cache.ts`, `street/markings.ts`,
-   `street/common.ts`, `street/ground.ts`, `mesh.ts`, `lib/areas.mjs`, README. Commit together with item 1 once
-   `npm run typecheck && npm run typecheck:world` pass; `--check` must stay byte-identical.
-3. **City walls placement** (just started): offline bake `compile:walls` separate from `cli.ts`, runtime streaming
+1. **Façade modules** and **compiler speed round 2**: finished and committed (07a8595). Façade variety is now slots +
+   a shared module library (`public/world/_shared/modules`); LOD0 per landing −37…−56 %. Only karakoy, eminonu, balat,
+   galata-kulesi and kadikoy are compiled in the new format 1.2 — recompile the rest.
+2. **City walls placement** (just started): offline bake `compile:walls` separate from `cli.ts`, runtime streaming
    system in `src/world/landmarks/walls/system/`, follow `.docs/planning/22-city-walls.md` steps 1–9.
+   **Owner report (live game): walls currently pass through buildings.** Fix generically first: no wall piece may
+   intersect any building (OSM slice/regions, compiled tiles, procedural city); end `flush` against buildings on the
+   line, small sheds/annexes step aside, larger buildings break the wall (thresholds + counts); procedural city keeps
+   out of the wall corridor; towers never inside buildings; an overlap check per stretch with target 0.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
 
 ## Next, in order (agreed with the owner)
 
-1. Recompile all 28 spots once items 1–2 land (`npm run compile:world -- --area <id> --landmarks none --web`).
+1. Recompile all 28 spots in format 1.2 (`npm run compile:world -- --area <id> --landmarks none --web`).
 2. Fatih as one OSM region + compiled tiles (data from the local extract, not Overpass).
 3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
    +4–7 ms near Kadıköy — over budget; lower `MAX_LOADED`, drop base raster copy, merge far regions).
 4. OSM feature kits first batch (pitches, pools, bus stops, fuel stations) — extend the fetch to keep those tags.
 5. Small open items: bridge joints re-refined when later regions load (`structure-system.ts`); Haydarpaşa port and
    Hazine Kapısı as landmarks; generic "no vehicles on water" rule in life traffic; street layer test rerun on a quiet
-   machine (`node scripts/street-layer-test.mjs`); sea flicker (not reproduced — needs the owner's view/time/weather).
+   machine (`node scripts/street-layer-test.mjs`); street-layer-test gpu scenario errors with `THREE.Color: Unknown color kiremit` (find the named colour and
+   map it); flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
 
 ## Working notes
 

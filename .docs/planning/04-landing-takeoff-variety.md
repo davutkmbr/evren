@@ -19,6 +19,12 @@ situation, surface and speed.
 | Water landing | Sea | Belly slide, long splash trail, transition to swimming |
 | Hard landing | Too fast | Tumbles and recovers, shakes its head and growls; no penalty |
 
+Built so far (phase 20, `20-movement.md`): the running landing (run-out, with the *glide* and *swoop* variants of its
+flare), hover-and-settle and rooftop / slope landings through the slow landing (landing v2: an animal approach with
+checks and a weave or a final turn, a flare pitched back 55–60° with backstrokes, hind feet first; *drop*, *shallow*
+and *tired* variants, never the same twice in a row) and the water landing into swimming. A slow landing from 45 m
+takes 7.7–9.2 s from L (the animal flare and near-hover last metre cost ~1 s over the ≤ 8 s target below).
+
 ## Takeoff types
 
 | Type | When | Look |

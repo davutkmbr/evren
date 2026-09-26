@@ -82,51 +82,102 @@ export const FLOW_PERIOD = 7;
 /* ------------------------------------------------------------------ */
 
 export const enum WaveGroup {
-  /** Short wind sea (all open water incl. the Bosphorus). */
+  /** Bosphorus-scale wind sea (a few km of fetch): all open water incl. the Bosphorus. */
   Short = 0,
-  /** Longer wind sea of the open Marmara / Black Sea. */
+  /** Longer wind sea of the open Marmara / Black Sea (tens of km of fetch). */
   Long = 1,
-  /** Black Sea swell entering from the north. */
+  /** Swell: from the Black Sea in a poyraz, from the Marmara in a lodos. */
   Swell = 2,
+  /** Short fetch-limited chop (~1.5 km of fetch): sheltered water, the Golden Horn, harbours, lakes. */
+  Chop = 3,
 }
 
+/**
+ * One Gerstner slot. Wavelengths and directions are fixed (a slot never changes its wavenumber or heading, so the
+ * origin-relative phases stay continuous); the amplitude of every slot comes from the wind-wave spectrum each frame
+ * (spectrum.ts: JONSWAP for the group's fetch, integrated over the slot's frequency bin).
+ */
 export interface GerstnerSpec {
   lambda: number;
-  /** Propagation direction relative to the regime's downwind heading (deg). */
+  /** Propagation direction relative to the regime's downwind heading (deg): a fixed sample of the spreading lobe. */
   dirOffsetDeg: number;
-  /** Amplitude at group weight 1 and reference wind (m). */
-  amplitude: number;
   group: WaveGroup;
-  /** Crest sharpening Q*k*A at weight 1 (sum over waves must stay < 1). */
-  steepness: number;
   phase: number;
 }
 
-/** Poyraz (NE wind) seas travel toward SSW; lodos seas are the same set turned around. */
+/** Poyraz (NE wind) seas travel toward SSW (along the Bosphorus); lodos (SW wind) seas travel toward NE. */
 export const POYRAZ_DOWNWIND_DEG = 212;
 export const LODOS_DOWNWIND_DEG = 38;
-/** Swell from the Black Sea always runs toward SSW. */
+/** Swell headings: Black Sea swell toward SSW in a poyraz, Marmara swell toward NE in a lodos. */
 export const SWELL_HEADING_DEG = 200;
+export const LODOS_SWELL_HEADING_DEG = 42;
 
 /**
- * Amplitudes: Hs = 4 sqrt(sum A^2 / 2). Short group ~0.33 m (Bosphorus chop), short + long ~0.8 m (Marmara),
- * + swell ~1.3 m (Black Sea) at U10 = 7 m/s.
+ * The wind-sea slot lattice, shared by both regimes (the lodos set is the same lattice turned around). Wavelengths
+ * step by ~1.4 from 2.2 m to 66 m: the chop class peaks in the first three, the short (Bosphorus) class in the next
+ * three, the long class from 17 m up (its fully developed peak at 4 m/s is ~17 m). Direction offsets sample the
+ * cos^2s(theta / 2) spreading lobe (Mitsuyasu) at a representative spreading per group: chop s ~ 5 (rms 33 deg),
+ * short s ~ 7 (29 deg), long s ~ 10 (25 deg); the longest slot of each group sits closest to the mean direction.
  */
 export const GERSTNER_WAVES: readonly GerstnerSpec[] = [
-  { lambda: 13.7, dirOffsetDeg: 0, amplitude: 0.072, group: WaveGroup.Short, steepness: 0.075, phase: 0.3 },
-  { lambda: 10.9, dirOffsetDeg: -27, amplitude: 0.058, group: WaveGroup.Short, steepness: 0.07, phase: 2.1 },
-  { lambda: 8.8, dirOffsetDeg: 21, amplitude: 0.047, group: WaveGroup.Short, steepness: 0.065, phase: 4.4 },
-  { lambda: 7.1, dirOffsetDeg: -11, amplitude: 0.037, group: WaveGroup.Short, steepness: 0.06, phase: 1.2 },
-  { lambda: 5.6, dirOffsetDeg: 37, amplitude: 0.028, group: WaveGroup.Short, steepness: 0.055, phase: 5.6 },
-  { lambda: 37.5, dirOffsetDeg: 7, amplitude: 0.17, group: WaveGroup.Long, steepness: 0.06, phase: 0.9 },
-  { lambda: 28.6, dirOffsetDeg: -19, amplitude: 0.135, group: WaveGroup.Long, steepness: 0.055, phase: 3.3 },
-  { lambda: 21.9, dirOffsetDeg: 25, amplitude: 0.105, group: WaveGroup.Long, steepness: 0.05, phase: 5.0 },
-  { lambda: 104, dirOffsetDeg: 0, amplitude: 0.34, group: WaveGroup.Swell, steepness: 0.035, phase: 1.7 },
-  { lambda: 79, dirOffsetDeg: 9, amplitude: 0.24, group: WaveGroup.Swell, steepness: 0.03, phase: 4.1 },
+  { lambda: 2.2, dirOffsetDeg: 30, group: WaveGroup.Chop, phase: 2.7 },
+  { lambda: 3.2, dirOffsetDeg: -26, group: WaveGroup.Chop, phase: 0.6 },
+  { lambda: 4.6, dirOffsetDeg: 8, group: WaveGroup.Chop, phase: 4.9 },
+  { lambda: 6.3, dirOffsetDeg: -30, group: WaveGroup.Short, phase: 5.6 },
+  { lambda: 8.7, dirOffsetDeg: 23, group: WaveGroup.Short, phase: 1.2 },
+  { lambda: 12.1, dirOffsetDeg: -8, group: WaveGroup.Short, phase: 4.4 },
+  { lambda: 17, dirOffsetDeg: 26, group: WaveGroup.Long, phase: 0.3 },
+  { lambda: 24, dirOffsetDeg: -19, group: WaveGroup.Long, phase: 5.0 },
+  { lambda: 34, dirOffsetDeg: 12, group: WaveGroup.Long, phase: 3.3 },
+  { lambda: 48, dirOffsetDeg: -6, group: WaveGroup.Long, phase: 0.9 },
+  { lambda: 66, dirOffsetDeg: 2, group: WaveGroup.Long, phase: 2.2 },
 ];
 
-/** Wave slots in the shader: the poyraz set followed by the lodos set (swell only once). */
-export const MAX_WAVES = 18;
+/** Swell slots (narrow spectrum, s ~ 30: rms 14 deg) per regime, relative to the regime's swell heading. */
+export const SWELL_WAVES: { poyraz: readonly GerstnerSpec[]; lodos: readonly GerstnerSpec[] } = {
+  poyraz: [
+    { lambda: 79, dirOffsetDeg: 9, group: WaveGroup.Swell, phase: 4.1 },
+    { lambda: 104, dirOffsetDeg: 0, group: WaveGroup.Swell, phase: 1.7 },
+  ],
+  lodos: [
+    { lambda: 41, dirOffsetDeg: -8, group: WaveGroup.Swell, phase: 3.6 },
+    { lambda: 54, dirOffsetDeg: 0, group: WaveGroup.Swell, phase: 0.4 },
+  ],
+};
+
+/**
+ * Wind-wave spectrum (phase 21 stage 7a, spectrum.ts). Fetch-limited JONSWAP (Hasselmann et al. 1973):
+ * X = g F / U10^2, Hs = 1.6e-3 sqrt(X) U10^2 / g, Tp = 0.286 X^(1/3) U10 / g, growth capped at the fully developed
+ * sea (X = 22 500, Pierson-Moskowitz). Each group stands for a fetch class; the baked fetch-exposure map decides
+ * where each group is present (waveGroupWeights in the shaders, groupsAt on the CPU).
+ */
+export const SEA_SPECTRUM = {
+  /** JONSWAP peak enhancement of the wind sea and of the (narrower) swell. */
+  gamma: 3.3,
+  swellGamma: 6,
+  /**
+   * Effective fetch per group (m). Long: the duration-limited Black Sea sea in a poyraz, the sea built across the
+   * Marmara toward the Istanbul shore in a lodos.
+   */
+  fetchChop: 1000,
+  fetchShort: 4000,
+  fetchLongPoyraz: 100_000,
+  fetchLongLodos: 45_000,
+  /** Dimensionless fetch of the fully developed sea. */
+  fullyDeveloped: 22_500,
+  /** Swell per regime: peak period (s) and Hs = hsBase + hsPerU10 * U10 (m). */
+  swellPoyraz: { tp: 8.2, hsBase: 0.45, hsPerU10: 0.05 },
+  swellLodos: { tp: 5.6, hsBase: 0.1, hsPerU10: 0.04 },
+  /** Shortest wavelength the Gerstner lattice carries (m): shorter waves are the detail bands' job. */
+  lambdaMin: 1.6,
+  /** Crest sharpening Q per group (Q*k*A per slot), Short / Long / Swell / Chop. */
+  crest: [1.6, 2.0, 1.5, 1.0] as readonly number[],
+  /** No single slot is steeper than this (k*A). */
+  maxSlotSteepness: 0.26,
+} as const;
+
+/** Wave slots in the shader: 13 poyraz slots (lattice + swell) followed by 13 lodos slots. */
+export const MAX_WAVES = 26;
 
 /* ------------------------------------------------------------------ */
 /* Regions (water body optics)                                         */

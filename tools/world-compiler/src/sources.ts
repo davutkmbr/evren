@@ -220,6 +220,6 @@ export function setupSourceHash(): string {
  * all over the lanes) is checked per tile instead (cli.ts assemblyDeps).
  */
 export function assemblySourceHash(): string {
-  const roots = ['mesh', 'gltf', 'compress', 'lod', 'validate', 'web', 'materials', 'textures', 'props'].map((f) => `${SRC}${f}.ts`);
+  const roots = ['mesh', 'gltf', 'compress', 'lod', 'validate', 'web', 'materials', 'textures', 'props', 'modules/assemble'].map((f) => `${SRC}${f}.ts`);
   return sha(sources().hash(roots), sources().files.get(`${SRC}cli.ts`)?.hash ?? '');
 }

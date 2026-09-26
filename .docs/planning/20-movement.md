@@ -2,7 +2,8 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: stages A, B, C and D built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
+Status: stages A, B, C and D built, and landing v2 (the approach and flare, after the owner's stage A feedback); all
+awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -34,7 +35,7 @@ breach and flow with this phase.
 - Ground (`locomotion.ts`, `GROUND`): walk 3.5 m/s, run 9 m/s, standing leap take-off (crouch 0.3 s, leap 8 m/s up),
   running take-off from the urge (gallop to 12 m/s, then leap).
 - Landing (`LANDING`): approach, flare, settle; touchdown ground speed ≤ 6 m/s. A fast approach flares hard to shed
-  speed instead of running it out.
+  speed instead of running it out. (Superseded by stage A's run-out and landing v2 below.)
 - Pose (`PoseDriver` → `DragonPose`): flap phase/amplitude, spread, sweep, twist, neck, jaw, tail, legs tuck,
   walk phase/amount, breath, rider cues.
 
@@ -372,6 +373,81 @@ manoeuvring) takes part without registering anything.
     chained 0.89–0.92. The plain run earns silver, the chained run gold on every course.
 - **Not yet:** a sound for the moments (they reuse the caption only), the rider's reaction to high flow, tuning in the
   game (feel test). The balance numbers move with any flight-model change: rerun `race-balance.ts` after one.
+
+### Landing v2 as built (owner feedback 26 Sep, awaiting the feel test)
+
+Owner feedback on stage A: "On L landings the dragon comes down like an aeroplane, rigid and steady; after it lands
+the run-out and the manoeuvres are good." Landing v2 rebuilds everything from pressing L to the touchdown so it reads
+as a big flying animal (raptor / swan / bat); the settle, run-out and touch-and-go after the touchdown are unchanged.
+
+- **Code:** `src/dragon/flight/landing.ts` (`LandingStyle`, owned by `FlightController.landingStyle`: the variant, the
+  approach progress and path shape, checks, weave / turn, backstroke count, the flare envelope, the touchdown record),
+  the laws in `controller.ts` (`landingLaw`, `runOutApproachLaw`, new `runOutFlare`, `countBackstroke`,
+  `openAround`), the touchdown window and leg flex in `airborne.ts checkTouchdown`, pose cues in `pose.ts`
+  (`landingNeck`, tail steering, `legReach`, the new optional `DragonPose.landFlare`), the rig's flare shape in
+  `animator.ts` (neck S-curve, head, claws) and `wing-pose.ts` (wings forward, steeper stroke, cupped hand). Tunables:
+  `LANDING_STYLE` (with the per-variant `variants`) and `LANDING_POSE` in `params.ts`; `LANDING` keeps the base glide
+  slope, speed schedule and flare trigger (unused v1 fields removed).
+- **Physics first:** every change of speed comes from the flight model. A *check* pulls the path up towards level for
+  ~1 s: the nose comes above the horizon, the airbrake opens and one deep beat with the stroke tilted forward (hover
+  blend) lifts instead of pushing (a beat while nose-down drove the dragon forward, so the beat waits for the nose).
+  The flare's *backstrokes* are real flap force: with the body pitched 55–60° the stroke force points up and back
+  (hover stroke 62° over the body), so the beats brake while they carry the weight; the stalled, cupped wing and the
+  airbrake do the rest. Until the body has reared past ~18–38° the effort is capped (the wing's lift arrests the sink;
+  a beat while still level would balloon it forward), except to arrest a fast sink.
+- **Approach (slow landing):** the glide slope × a shape over the approach progress (0.9 at L → 1.3 in the middle →
+  0.85 before the flare): a steeper drop in the middle and a round-out. Wing sweep and spread breathe on seeded slow
+  waves, checks every 2–3.4 s while higher than 12 m (and 3 m above the flare height). With open air around the track
+  (no deck or ceiling over it, nothing tall ahead) a seeded weave (a cosine bank of 6–9°, 2.2–3.8 s period, so the
+  heading swings about the entry heading) or, for the drop-in, a final turn (24° bank over 1.8 s, seeded side) is flown
+  through `overrides.bankTarget` — only while the pilot's stick and any other override leave the bank free. The head
+  looks at the spot (about where the flight path meets the ground, 0.1 rad short of it) and into the weave / turn; the
+  tail steers with the bank changes, wanders a little and is lowered as an airbrake.
+- **Flare (slow):** starts at (1 + 0.65 × sink + 0.1 × ground speed) × the variant's scale (drop 9–12 m, shallow and
+  tired from 6.5 m). The body rears to 55–61° (flare back tilt 0.55–0.78 over the hover attitude), floats down no
+  faster than 1.4 m/s while the ground speed is still above the touchdown speed, the backstrokes (beat effort 0.7–0.8,
+  sloppy ±30 % when tired) hold on until it stops sinking, the lift dump is small (0.18) so the wings stay forward and
+  open. Then the settle: the sink profile √(0.25² + 2 × 1 × h), no faster than 0.55 + 0.7 × h (the last metre is nearly
+  a hover, because the wing beat's force profile bobs the body ±0.7–1.5 m/s at hover effort), cushioning beats with
+  +35 % force in the last 2.5 m, the tilt back to ~30° so the stroke points down, the touchdown speed 2.2 m/s (W / S
+  adjust it). Downwash dust at each backstroke below 9 m over land (sea: the low-flight module's downwash).
+- **Contact (slow):** feet within 0.6 m count as the touchdown only while sinking slower than 1.2 m/s at walking pace
+  (the legs reach down the rest and the stance's settle takes it, flexing 1 m/s deeper as the wings unload); sinking
+  faster, the feet wait for the ground itself (2 cm). Hind feet first (pitch ~30–35° at contact), wings high and open,
+  then stage A's settle folds them over ~0.6 s while the body comes down onto the wrists.
+- **Run-out:** the shallow approach (9–13° path) with the airbrake and seeded checks / weave down to 3.5 m, a round-out
+  (sink 0.9 + 0.45 × h), then from 1.7 m × the variant's scale a short flare: the hover law with the pitch at the hover
+  attitude + the variant's tilt, less while fast (1.6°/(m/s) above 14 m/s) and eased forward while it balloons
+  (0.3 rad per m/s of missing sink), a lift dump of 0.35, one or two backstrokes (the first kicked off as the body starts
+  to come up, like a tap), the hind feet down at 13–20 m/s and the run-out takes over. Still faster than 24 m/s low
+  down it floats until the airbrake has taken the speed out.
+- **Variants** (`LandingStyle.pick`: the most specific first, never the one used last time when another applies,
+  seeded otherwise): *drop* (steep drop-in from ≥ 22 m: path × 1.3, a final turn, a big flare from higher up),
+  *shallow* (≤ 45 m: a lower path, a weave, a lower flare), *tired* (stamina < 0.3: sloppier beats and weave), and for
+  the run-out *glide* (flat, a shallow flare, touches ~16–20 m/s) and *swoop* (steeper, deeper flare ~25–30°, two
+  backstrokes, ~13–16 m/s). `landingStyle.forceNext` picks the next one (scenarios, tests).
+- **Rig:** `landFlare` (0..1, rises through the flare, fades at 3/s after the touchdown): per-bone neck S (base raised,
+  upper neck bent down, sum −0.22 rad) with the pose's flare neck (−0.12 − 0.95 × pitch, allowed down to −0.9), head
+  +0.12, claws opened 0.45 on the reaching feet; wings (with the flare sweep) humerus +0.16 forward and +0.1 up, more
+  elevation and less fore-aft stroke, hand twisted 0.14 and outer fingers curled 0.1 (cupped). The legs reach forward
+  from 10 m up in the flare.
+- **Run-out skid fix:** braking from a slow, four-footed run opened the air-brake wings while the wrists were still on
+  the ground (membrane below it); the spread now waits for the wrists (`ground-moves.ts`).
+- **Numbers** (movement-check, before → after): slow landing (30 m, 22 m/s) contact ground speed 3.95 → 1.6 m/s, sink
+  0.58 → 1.19 m/s, flare pitch 51 → 60°, backstrokes 3 → 4; run-out (8 m, 30 m/s) contact 20.4 → 14.3 m/s at a flare
+  pitch of 4 → 30°, 0 → 2 backstrokes; the glide variant 17.7 m/s at 14°. Sweep over 26–60 m × 16–24 m/s × three variants: every slow landing ≤ 1.2 m/s
+  sink, ≤ 3 m/s ground speed, 60° flare, ≥ 4 backstrokes; 45 m takes 7.7–9.2 s from L (v1: 7.5 s). Run-outs from
+  5–20 m × 18–36 m/s: 13.8–20 m/s at contact, 1–4 backstrokes.
+- **Checks:** `movement-check.ts` section "Landing v2" (`--landing` runs only the landing sections): contact sink
+  ≤ 1.5 m/s and ground speed ≤ 3 m/s (slow), 8–22 m/s (run-out), flare pitch ≥ 40° (slow) / ≥ 10° with a backstroke
+  (run-out), approach pitch not held constant (sd ≥ 3°, range ≥ 10°), ≥ 2 backstrokes (slow), hind feet first (the
+  first part within 10 cm of the ground), wings and tail above the ground from L on, no per-frame velocity jump
+  > 1.5 m/s, variants alternating. Pose scenarios `land`, `land-drop`, `land-shallow`, `land-tired`, `fastland`,
+  `runout`, `runout-glide`, `runout-swoop`; the `runout-edge` drop moved from 100 to 125 m (the approach and flare
+  cover ~105 m now).
+- **Known:** a slow landing is up to ~1.5 s longer than v1 from high up (the float and the near-hover last metre);
+  the pure hover descent from 60 m takes ~16 s (v1 13 s). Perch landings can drive the approach through
+  `overrides.bankTarget` (it wins over the weave) and `landingStyle.forceNext`.
 
 ## Controls summary (additions)
 
