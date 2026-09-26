@@ -124,8 +124,15 @@ export class PlanarReflection {
   target: THREE.WebGLRenderTarget;
   /** False when the last frame skipped the pass (camera under water / water not in view). */
   valid = false;
-  /** Vertical field of view scale of the mirror camera relative to the main camera. */
-  fovScale = 1.12;
+  /**
+   * Angular margin (degrees, each side) of the mirror camera beyond the main camera's view. Wave normals bend the
+   * reflected rays by a similar angle whatever the zoom, so the margin is an angle, not a factor of the field of
+   * view: with a factor, a narrow (zoomed) view left the bent rays outside the mirror, where the water fell back to
+   * the sky reflection in screen-aligned patches that jumped as the view turned.
+   */
+  static readonly MARGIN_DEG = 9;
+  /** Largest mirror resolution boost that keeps the texel density of the wider view (see coverage()). */
+  static readonly MAX_BOOST = 1.35;
   private width = 0;
   private height = 0;
   private readonly coverage = new CoverageMeshes();
@@ -183,6 +190,17 @@ export class PlanarReflection {
     this.target = this.createTarget(w, h, anisotropy);
   }
 
+  /** Vertical field of view (degrees) of the mirror camera for a main camera of `fov`. */
+  static mirrorFov(fov: number): number {
+    return Math.min(fov + 2 * PlanarReflection.MARGIN_DEG, 150);
+  }
+
+  /** Resolution factor that keeps the mirror's texels per degree at the centre while it covers the wider view. */
+  static coverage(fov: number): number {
+    const t = (f: number): number => Math.tan((f * Math.PI) / 360);
+    return Math.min(PlanarReflection.MAX_BOOST, t(PlanarReflection.mirrorFov(fov)) / t(fov));
+  }
+
   /** True if any part of the main camera's view could see the water plane from above. */
   static seesWater(camera: THREE.PerspectiveCamera): boolean {
     if (camera.position.y <= 0.02) {
@@ -211,7 +229,7 @@ export class PlanarReflection {
     cam.up.copy(_up);
     _target.copy(cam.position).add(_forward);
     cam.lookAt(_target);
-    cam.fov = Math.min(main.fov * this.fovScale, 150);
+    cam.fov = PlanarReflection.mirrorFov(main.fov);
     cam.aspect = main.aspect;
     cam.near = main.near;
     cam.far = main.far * 2;

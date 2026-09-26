@@ -386,7 +386,9 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
       vec3 planar = (badMirror ? vec3(0.0) : clamp(mirror.rgb, vec3(0.0), vec3(1e4))) + reflection * (1.0 - cover);
       float lum = max(max(planar.r, planar.g), planar.b);
       planar *= lum > 60.0 ? (60.0 + 10.0 * log(lum / 60.0)) / lum : 1.0;
-      vec2 e = smoothstep(vec2(0.0), vec2(0.035), ruv) * smoothstep(vec2(1.0), vec2(0.965), ruv);
+      // Soft towards the mirror's edges (the margin beyond the view, reflection.ts MARGIN_DEG), so a ray bent past it
+      // hands over to the sky reflection gradually.
+      vec2 e = smoothstep(vec2(0.0), vec2(0.08), ruv) * smoothstep(vec2(1.0), vec2(0.92), ruv);
       reflection = mix(reflection, planar, e.x * e.y);
     }
   }
