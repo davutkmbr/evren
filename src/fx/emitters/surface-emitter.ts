@@ -256,7 +256,8 @@ export class SurfaceEmitter {
     }
     this.flapPulse *= Math.exp(-dt / 0.35);
     this.ringCooldown -= dt;
-    if (!dragon) {
+    // Under water nothing skims, sprays or blows: splashes (entry, bubbles, breach) arrive as events.
+    if (!dragon || dragon.mode === 'underwater') {
       return;
     }
     const pos = dragon.position;

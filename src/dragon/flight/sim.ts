@@ -9,9 +9,10 @@ import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
 import { MANEUVER_LABELS, Maneuvers } from './maneuvers';
-import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, HOVER, INERTIA, MASS, PROXIMITY, STAMINA } from './params';
+import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, ENVELOPE, HOVER, INERTIA, MASS, PLUNGE, PROXIMITY, STAMINA } from './params';
 import type { AssistOverrides, PilotCommand, SimEvent, SimOptions, SimWorld } from './types';
 import { createOverrides } from './types';
+import { DiveState, stepUnderwater, updatePlungeLook } from './underwater';
 import { WingBeat } from './wingbeat';
 import { WindField } from './wind';
 
@@ -30,6 +31,8 @@ export class FlightSim {
   readonly controller = new FlightController();
   readonly targets = createControlTargets();
   readonly maneuvers = new Maneuvers();
+  /** Plunge look-ahead and the under-water state (underwater.ts). */
+  readonly dive = new DiveState();
   readonly wing: WingShape = createWingShape();
   readonly overrides: AssistOverrides = createOverrides();
   readonly options: SimOptions = { autoFlap: true, stallProtection: true, turbulence: true, thermals: true, wind: true };
@@ -220,6 +223,7 @@ export class FlightSim {
     this.beat.reset();
     this.controller.reset(0);
     this.maneuvers.reset();
+    this.dive.resetLook();
     this.leapCharge = 0;
     this.runTakeoff = 0;
     this.aheadTimer = 0;
@@ -332,8 +336,11 @@ export class FlightSim {
       stepGrounded(this, cmd, h);
     } else if (this.mode === 'swimming') {
       stepSwimming(this, cmd, h);
+    } else if (this.mode === 'underwater') {
+      stepUnderwater(this, cmd, h);
     } else {
       this.updateLookahead(h);
+      updatePlungeLook(this, cmd, h);
       this.maneuvers.begin(this, cmd, h);
       this.airborneModeTransitions(cmd);
       stepAirborne(this, cmd, h);
@@ -441,7 +448,8 @@ export class FlightSim {
     const e = this.beat.effort;
     const work = Math.max(0, e - 0.25) / 0.75;
     let drain = STAMINA.drain * work * work * (1 + STAMINA.hoverExtra * this.hoverBlend);
-    const wantsFire = cmd.fire && !this.tired && this.stamina > 0.02;
+    // No fire under water.
+    const wantsFire = cmd.fire && !this.tired && this.stamina > 0.02 && this.mode !== 'underwater';
     this.firing = wantsFire;
     if (wantsFire) {
       drain += STAMINA.fire;
@@ -454,6 +462,9 @@ export class FlightSim {
       regen = STAMINA.regenGround;
     } else if (this.mode === 'swimming') {
       regen = STAMINA.regenWater;
+    } else if (this.mode === 'underwater') {
+      // Holding its breath: the air runs down slowly.
+      regen = -PLUNGE.airDrain;
     } else if (e < 0.5) {
       regen = STAMINA.regenAir * (1 - e / 0.5);
     }

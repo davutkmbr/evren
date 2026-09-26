@@ -39,6 +39,9 @@ const GROUND_LINE: RGB = [120, 104, 78];
 const GROUND_TICK: RGB = [176, 162, 132];
 const OUTLINE: RGB = [14, 16, 20];
 const BELOW_GROUND: RGB = [222, 44, 36];
+/** Sea scenarios: the water between the surface and the seabed, and the surface line. */
+const WATER_FILL: RGB = [206, 222, 230];
+const WATER_LINE: RGB = [86, 128, 150];
 
 const LIMB_BONE = /^(thigh|shin|meta|foot|humerus|forearm|hand|thumb|finger)/;
 
@@ -256,7 +259,9 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
   const depth = new Float32Array(W * H).fill(Infinity);
   const part = new Uint8Array(W * H);
   const below = new Uint8Array(W * H);
-  const groundY = rec.surfaceY;
+  // Sea scenarios draw the ground at the seabed (red = through it) and the water above it.
+  const groundY = rec.seabedY ?? rec.surfaceY;
+  const waterY = rec.waterY;
   const { right, up, dir, center, scale } = cam;
   const cx = W / 2;
   const cy = H / 2;
@@ -347,6 +352,7 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
   };
   const edgeOn = Math.abs(dir.y) < 1e-3;
   const gy = cy - (groundY - center.y) * up.y * scale;
+  const wy = waterY === undefined ? -Infinity : cy - (waterY - center.y) * up.y * scale;
   const tick = 2;
   const pxW = 1 / scale;
   for (let py = 0; py < H; py++) {
@@ -357,6 +363,9 @@ export function renderCell(meshes: readonly MeshData[], worlds: readonly Float32
       const a = (px + 0.5 - cx) / scale;
       const b = (cy - (py + 0.5)) / scale;
       if (edgeOn) {
+        if (py + 0.5 > wy && py + 0.5 <= gy) {
+          c = py + 0.5 < wy + 1.5 * ss ? WATER_LINE : WATER_FILL;
+        }
         if (py + 0.5 > gy) {
           c = GROUND_FILL;
           const along = center.x * right.x + center.z * right.z + a;

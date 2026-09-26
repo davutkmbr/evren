@@ -42,6 +42,7 @@ export const FLIGHT_MODE_LABELS: Record<FlightMode, string> = {
   grounded: 'Yerde',
   takeoff: 'Kalkış',
   swimming: 'Suda',
+  underwater: 'Su altında',
 };
 
 export const CAMERA_MODE_LABELS: Record<CameraMode, string> = {

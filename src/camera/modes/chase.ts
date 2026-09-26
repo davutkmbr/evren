@@ -63,6 +63,11 @@ const TUNING = {
   minBoom: 3,
   /** Height kept above terrain/water under the eye (m). */
   groundClearance: 1.8,
+  /**
+   * Under water (until the underwater rendering of phase 21 stage 4): the pivot is held this far below the surface
+   * line above the dragon, so the camera follows its track just above the water with a level horizon.
+   */
+  underwaterPivot: -1,
   pullInOmega: 14,
   releaseOmega: 2.2,
   eyeRadius: 0.9,
@@ -106,6 +111,8 @@ export class ChaseController implements CameraController {
   private readonly floor = new Spring(-1e4);
   /** 0 flying .. 1 grounded/swimming, smoothed so landing and take-off glide the camera. */
   private readonly groundedBlend = new Spring();
+  /** 0 .. 1 while the dragon is under water (the pivot held at the surface line). */
+  private readonly underwaterBlend = new Spring();
   private idle = 99;
 
   /** Current user zoom target (m), exposed for debugging/UI. */
@@ -143,6 +150,7 @@ export class ChaseController implements CameraController {
     this.kick.reset(0);
     this.speedFx.reset(this.speedFxTarget(frame));
     this.groundedBlend.reset(this.isGrounded(frame) ? 1 : 0);
+    this.underwaterBlend.reset(t.mode === 'underwater' ? 1 : 0);
     this.boomLength.reset(1e4);
     this.obstructed = false;
     this.floor.reset(frame.collision.groundHeight(t.position.x, t.position.z) + TUNING.groundClearance);
@@ -178,7 +186,8 @@ export class ChaseController implements CameraController {
     // Follow springs: yaw only follows while there is a meaningful horizontal heading (no spin in vertical dives).
     const yawOmega = TUNING.yawOmega * smoothstep(0.06, 0.35, t.horizontalness);
     this.yaw.update(t.travelYaw, yawOmega, sdt);
-    this.pitch.update(this.pitchTarget(frame), TUNING.pitchOmega, sdt);
+    const under = clamp(this.underwaterBlend.update(t.mode === 'underwater' ? 1 : 0, 10, sdt), 0, 1);
+    this.pitch.update(this.pitchTarget(frame) * (1 - under), TUNING.pitchOmega, sdt);
     this.roll.update(this.rollTarget(frame), TUNING.rollOmega, sdt);
     const fov = this.fov.update(this.fovTarget(frame), 2.2, sdt);
     const g = this.groundedBlend.update(this.isGrounded(frame) ? 1 : 0, 2.5, sdt);
@@ -214,6 +223,10 @@ export class ChaseController implements CameraController {
     _boomUp.set(0, 1, 0).applyQuaternion(_boomQ);
 
     _pivot.copy(t.position).addScaledVector(WORLD_UP, t.riderHeight * 0.55);
+    if (under > 1e-3) {
+      const surfaceLine = frame.collision.groundHeight(t.position.x, t.position.z) + TUNING.underwaterPivot;
+      _pivot.y += under * Math.max(0, surfaceLine - _pivot.y);
+    }
 
     // Acceleration lag (the camera swings outward in turns, falls back when the dragon surges).
     _lagTarget.copy(t.accel).multiplyScalar(-TUNING.accelLag);
@@ -221,7 +234,7 @@ export class ChaseController implements CameraController {
     if (lagLen > TUNING.maxAccelLag) {
       _lagTarget.multiplyScalar(TUNING.maxAccelLag / lagLen);
     }
-    _lagTarget.multiplyScalar(1 - 0.7 * g);
+    _lagTarget.multiplyScalar((1 - 0.7 * g) * (1 - under));
     this.lag.update(_lagTarget, 4.5, sdt);
     _desired.copy(_pivot).add(_offset).add(this.lag.x);
     // Stomach drop: the camera hangs back above while the dragon falls away, and swoops after it on the catch.

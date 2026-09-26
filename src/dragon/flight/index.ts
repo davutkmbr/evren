@@ -157,7 +157,7 @@ export function createFlightSystem(): System {
         case 'impact':
           ctx.events.emit('ground-impact', { position: e.point, speed: e.speed });
           cam?.shake(clamp(e.speed / 18, 0.05, 1.2));
-          if (e.surface !== 'water') {
+          if (e.surface !== 'water' && e.surface !== 'seabed') {
             fx?.dust(e.point, clamp(e.speed / 15, 0.2, 1.5));
           }
           break;
@@ -179,7 +179,10 @@ export function createFlightSystem(): System {
           }
           break;
         case 'maneuver':
-          ctx.events.emit('maneuver', { id: e.id, label: e.label });
+          // Move-end markers (flow hooks) stay inside the flight model.
+          if (!e.ended) {
+            ctx.events.emit('maneuver', { id: e.id, label: e.label });
+          }
           break;
         case 'sound':
           audio?.play(e.name, e.volume);

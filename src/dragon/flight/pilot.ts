@@ -67,7 +67,7 @@ export class Autopilot {
     cmd.brake = false;
     cmd.landPressed = false;
     cmd.rollLeftPressed = cmd.rollRightPressed = cmd.loopPressed = cmd.dropPressed = cmd.urgePressed = false;
-    if (sim.mode === 'grounded' || sim.mode === 'swimming') {
+    if (sim.mode === 'grounded' || sim.mode === 'swimming' || sim.mode === 'underwater') {
       cmd.flapPressed = true;
       return;
     }
