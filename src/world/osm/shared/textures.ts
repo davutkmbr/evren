@@ -23,7 +23,7 @@ export const REPEAT_M: Record<TextureSet, number> = {
 };
 
 export function textureUrl(set: TextureSet, map: TextureMap): string {
-  return `${import.meta.env.BASE_URL}textures/${set}/${map}.jpg`;
+  return `${import.meta.env?.BASE_URL ?? '/'}textures/${set}/${map}.jpg`;
 }
 
 interface SharedEntry {

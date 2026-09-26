@@ -90,7 +90,7 @@ function buildRegions(): OsmRegionDef[] {
         [galataRect],
         OSM_SEAM,
       ),
-      url: `${import.meta.env.BASE_URL}${r.file}`,
+      url: `${import.meta.env?.BASE_URL ?? '/'}${r.file}`,
       fixed: false,
       gzipBytes: r.gzipBytes,
     })),
