@@ -27,6 +27,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'flight', load: () => import('./dragon/flight').then((m) => m.createFlightSystem) },
   { name: 'camera', load: () => import('./camera').then((m) => m.createCameraSystem) },
   { name: 'life', load: () => import('./world/life').then((m) => m.createLifeSystem) },
+  { name: 'activities', load: () => import('./activities').then((m) => m.createActivitySystem) },
   { name: 'fx', load: () => import('./fx').then((m) => m.createFxSystem) },
   { name: 'audio', load: () => import('./audio').then((m) => m.createAudioSystem) },
   { name: 'collider-overlay', load: () => import('./core/collider-overlay').then((m) => m.createColliderOverlaySystem) },
