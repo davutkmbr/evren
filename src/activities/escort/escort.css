@@ -1,0 +1,74 @@
+/* Ferry escort (src/activities/escort/view.ts): the line under the compass and the arrival card. Plain shadowed text
+   over the scene, no box (.docs/design/README.md). The card reuses the discovery card (.hud-dcard). */
+
+/* "Sıradaki iskele: Kadıköy · 1,4 km" and the closeness line: the dot sits at the left end beside the ferry and
+   slides right as the dragon falls behind, reaching the end at the escort radius (200 m). */
+.escort-line-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  color: rgba(246, 241, 231, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.escort-line-detail {
+  color: rgba(246, 241, 231, 0.6);
+}
+
+.escort-line-detail::before {
+  content: '· ';
+}
+
+.escort-line-detail.is-empty {
+  display: none;
+}
+
+.escort-meter {
+  position: relative;
+  width: 52px;
+  height: 8px;
+}
+
+.escort-meter::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 3.5px;
+  height: 1px;
+  background: rgba(246, 241, 231, 0.3);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+.escort-meter-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #e8b872);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.22);
+  transition: transform 400ms var(--ease-out), background-color 400ms var(--ease-out);
+  will-change: transform;
+}
+
+.escort-meter.is-away .escort-meter-dot {
+  background: var(--warn, #ff9168);
+}
+
+.escort-card-routes {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(246, 241, 231, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .escort-meter-dot {
+    transition: none;
+  }
+}
