@@ -61,8 +61,9 @@ function busy(sim: FlightSim): boolean {
 /**
  * Flies the steps. `delay(i)`: seconds of plain flight between the end of step i − 1 and the pre-keys of step i.
  */
-export function flyChain(setup: ChainSetup, steps: ChainStep[], delay: (i: number) => number): ChainResult {
+export function flyChain(setup: ChainSetup, steps: ChainStep[], delay: (i: number) => number, prepare?: (sim: FlightSim) => void): ChainResult {
   const sim = chainSim(setup);
+  prepare?.(sim);
   const p = new KeyPilot();
   let t = fly(sim, p, 1, 0);
   const gestureAt: number[] = [];

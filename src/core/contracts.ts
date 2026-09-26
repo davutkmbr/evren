@@ -345,8 +345,19 @@ export interface DragonState {
   addVelocity?(dx: number, dy: number, dz: number): void;
   /** Flow ("akış", phase 20 stage D) 0..1: harmony of the recent motions, paid back as capped speed. */
   flow?: number;
-  /** A race gate or speed ring was passed; `tightness` 0..1 = how snug the pass was (flow's use of the world). */
-  notePass?(tightness: number): void;
+  /**
+   * A race gate or speed ring was passed; `tightness` 0..1 = how snug the pass was (flow's use of the world). While a
+   * chain is alive a speed ring (and a gate taken tight) is a chain link of its own.
+   */
+  notePass?(tightness: number, kind?: 'gate' | 'ring'): void;
+  /** Chain links in the current chain (flow's chain bursts; 0: no chain). */
+  chain?: number;
+  /** 0..1: the running chain burst's push right now (smooth envelope, 0 without a burst). */
+  burst?: number;
+  /** A race is running (speed effects at full strength, full-size chain bursts). */
+  racing?: boolean;
+  /** The activity system marks a race as running (true) or over (false). */
+  setRacing?(on: boolean): void;
   /** Roars when allowed (not cooling down, not breathing fire); returns true when it roared. */
   requestRoar?(): boolean;
   /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
@@ -965,6 +976,11 @@ export interface GameEvents {
    * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
    */
   maneuver: { id: string; label: string };
+  /**
+   * A chain link landed (flow's chain bursts, phase 20): its number in the chain, the speed push it gives (m/s, 0 when
+   * the push was trimmed away) and why (a motion, a speed ring or a tight gate taken during the chain).
+   */
+  'chain-link': { link: number; dv: number; source: 'motion' | 'ring' | 'gate' };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
   teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
   /**

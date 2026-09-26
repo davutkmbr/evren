@@ -3,6 +3,7 @@ import type { CameraMode } from '../../core/contracts';
 import { AXIS_X, AXIS_Y, AXIS_Z, rotateLocal } from '../math/rotation';
 import { DEG, clamp, lerp, smoothstep } from '../math/scalar';
 import { DampedOscillator, Spring, expAlpha } from '../math/springs';
+import { CAMERA_FEEL, cameraFeel } from '../feel';
 import type { CameraController, CameraFrame, CameraPose } from '../types';
 
 const TUNING = {
@@ -210,9 +211,11 @@ export class PovController implements CameraController {
     rotateLocal(out.quaternion, AXIS_X, torsoPitch + pitch + this.nod + this.leanPitch);
     rotateLocal(out.quaternion, AXIS_Z, this.leanRoll);
 
-    out.fov = this.fov.update(this.fovTarget(frame), 2.2, sdt) + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt);
+    const feel = cameraFeel(t);
+    out.fov = this.fov.update(this.fovTarget(frame), 2.2, sdt) + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt) + CAMERA_FEEL.povKick * feel.feel * Math.sqrt(feel.burst);
     out.near = TUNING.near;
-    out.speedEffect = clamp(this.speedFx.update(0.85 * smoothstep(45, 115, t.speed), 3, sdt), 0, 1);
+    const fx = Math.max(0.85 * smoothstep(45, 115, t.speed), feel.feel * (CAMERA_FEEL.speedFx * feel.speed + CAMERA_FEEL.burstFx * feel.burst));
+    out.speedEffect = clamp(this.speedFx.update(fx, 3, sdt), 0, 1);
     out.shakeTranslation = 0.12;
     out.shakeRotation = 1.15;
   }
@@ -250,6 +253,7 @@ export class PovController implements CameraController {
 
   private fovTarget(frame: CameraFrame): number {
     const t = frame.target;
-    return TUNING.fovBase + TUNING.fovSpeed * smoothstep(35, 105, t.speed) + TUNING.fallFov * t.weightless;
+    const feel = cameraFeel(t);
+    return TUNING.fovBase + TUNING.fovSpeed * smoothstep(35, 105, t.speed) + TUNING.fallFov * t.weightless + CAMERA_FEEL.povFov * feel.feel * feel.speed;
   }
 }

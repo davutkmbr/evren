@@ -8,12 +8,17 @@
  * in steady flight and drops on a stall, on contact and on sustained energy waste. When a harmony term peaks the
  * transition is a "Kusursuz" moment: a small extra flow step and a short caption on the maneuver event.
  *
+ * Chain bursts (burst.ts): a transition that links cleanly to the one before it (and a speed ring or a tight gate taken
+ * while a chain is alive) also gives a short push forward that grows with the chain; the same harmony terms decide, so
+ * a repeated or wasteful move never links.
+ *
  * Adding a move: emit the usual `maneuver` start event (and the `ended` event when the move knows when it ends, with
  * its `clean` verdict). Nothing else — the flow system measures the rest from the state. A move that emits nothing is
  * still a motion as soon as it rotates, loads or dives enough for the automatic segmentation.
  */
 import { clamp } from '../../../core/math/noise';
 import type { FlightSim } from '../sim';
+import { BURST, ChainBurst, isLink, linkDv, type LinkSource } from './burst';
 import { flowDelta, signature, transitionHarmony, type SignatureEntry } from './harmony';
 import { FLOW } from './params';
 import { MotionSegmenter } from './segmenter';
@@ -46,8 +51,12 @@ export class FlowSystem {
   enabled = true;
   /** Flow 0..1. */
   value = 0;
-  /** Off: flow is measured but pays nothing back (headless checks isolating the moves' own cost). */
+  /** Off: flow is measured but pays nothing back, no chain bursts either (headless checks isolating the moves' own cost). */
   payback = true;
+  /** Chain links and their speed bursts. */
+  readonly burst = new ChainBurst();
+  /** Size of the chain bursts (1 in races; the game scales them down in free flight). */
+  burstScale = 1;
   /** Terms of the last transition. */
   readonly terms: HarmonyTerms = createTerms();
   /** Recent transitions, newest last. */
@@ -99,6 +108,7 @@ export class FlowSystem {
     this.touching = false;
     Object.assign(this.terms, createTerms());
     this.segmenter.reset();
+    this.burst.reset();
   }
 
   /** Sets the flow value directly (headless checks). */
@@ -133,10 +143,18 @@ export class FlowSystem {
     }
   }
 
-  /** A gate or speed ring passed (tightness 0..1: how snug the ring is for the dragon). */
-  notePass(sim: FlightSim, tightness: number): void {
-    if (this.enabled) {
-      this.segmenter.notePass(clamp(tightness, 0, 1), sim.time);
+  /**
+   * A gate or speed ring passed (tightness 0..1: how snug the ring is for the dragon). While a chain is alive a speed
+   * ring, or a gate taken tight, is a chain link of its own.
+   */
+  notePass(sim: FlightSim, tightness: number, kind: 'gate' | 'ring' = 'gate'): void {
+    if (!this.enabled) {
+      return;
+    }
+    const tight = clamp(tightness, 0, 1);
+    this.segmenter.notePass(tight, sim.time);
+    if (this.burst.alive(sim.time) && (kind === 'ring' || tight >= BURST.passTightness)) {
+      this.addLink(sim, Math.max(this.terms.total, BURST.linkHarmony), BURST.passShare, kind, null);
     }
   }
 
@@ -152,13 +170,18 @@ export class FlowSystem {
     const stalled = sim.airborne && (sim.mode === 'stalling' || sim.controller.upset);
     if (stalled && !this.stalled) {
       this.value *= FLOW.stallKeep;
+      this.burst.breakChain();
+      this.burst.cancel();
     }
     this.stalled = stalled;
     const touching = sim.airborne && (sim.impact.touched || sim.touchingWater);
     if (touching && !this.touching) {
       this.value *= FLOW.contactKeep;
+      this.burst.breakChain();
+      this.burst.cancel();
     }
     this.touching = touching;
+    this.stepBurst(sim, h);
     // Sustained waste (braking, mushing, fighting the air).
     if (seg.wasteRate > FLOW.wasteFactor * Math.max(-seg.refRate, FLOW.energyRefFloor)) {
       this.value -= FLOW.wasteDrain * h;
@@ -183,13 +206,26 @@ export class FlowSystem {
     const terms = transitionHarmony(prev, d, this.history, this.terms);
     let delta = 0;
     let moment: FlowMoment | null = null;
+    let links = false;
     if (d.contact || d.stalled) {
       // Touched or stalled during the motion (the drop at the moment itself came from step()).
       delta = this.value * (FLOW.uncleanKeep - 1);
+      this.burst.breakChain();
     } else if (!d.clean) {
       // The move's own verdict (cut short, fell short of its trade): no gain, a poor transition still costs.
       delta = Math.min(0, flowDelta(terms));
+      this.burst.breakChain();
     } else {
+      const kind = d.id ?? '~';
+      const clean = isLink(terms);
+      links = clean && this.burst.fresh(kind);
+      if (clean && !links) {
+        // A clean handover into a kind the chain just had: it keeps the chain alive but pays nothing.
+        this.burst.repeat(kind, now);
+      } else if (!clean) {
+        // A poor or lone handover ends the chain; this motion can start the next one.
+        this.burst.begin(kind, now);
+      }
       delta = flowDelta(terms);
       moment = this.moment(d, terms, now);
       if (moment) {
@@ -213,6 +249,57 @@ export class FlowSystem {
       this.lastMoment = now;
       sim.emit({ type: 'maneuver', id: 'flow', label: FLOW_MOMENT_LABELS[moment] });
     }
+    if (links && sim) {
+      this.addLink(sim, terms.total, 1, 'motion', d.id ?? '~');
+    }
+  }
+
+  /** Debug and review captures: lands link number `link` now (a clean motion link at harmony 0.9). */
+  debugLink(sim: FlightSim, link: number): void {
+    this.burst.links = Math.max(0, link - 1);
+    this.burst.lastFed = sim.time;
+    this.addLink(sim, 0.9, 1, 'motion', null);
+  }
+
+  /** A chain link landed: count it, start its burst, tell the game (camera kick, whoosh, HUD counter). */
+  private addLink(sim: FlightSim, harmony: number, share: number, source: LinkSource, kind: string | null): void {
+    const b = this.burst;
+    const scale = this.payback ? this.burstScale : 0;
+    const dv = sim.airborne ? linkDv(b.links + 1, sim.airspeed, harmony, this.value, share) * scale : 0;
+    const link = b.link(sim.time, dv, kind);
+    sim.emit({ type: 'chain', link, dv, source });
+  }
+
+  /** Delivers the running burst along the flight path (outside work for the energy bookkeeping). */
+  private stepBurst(sim: FlightSim, h: number): void {
+    const b = this.burst;
+    if (b.links > 0 && sim.time - b.lastFed > FLOW.maxGap) {
+      b.breakChain();
+    }
+    if (!b.active) {
+      b.rate = 0;
+      return;
+    }
+    const cruising = sim.airborne && (sim.mode === 'flying' || sim.mode === 'gliding' || sim.mode === 'diving');
+    if (!cruising) {
+      b.cancel();
+      return;
+    }
+    const v = sim.body.velocity;
+    const w = sim.wind.velocity;
+    const ax = v.x - w.x;
+    const ay = v.y - w.y;
+    const az = v.z - w.z;
+    const V = Math.hypot(ax, ay, az);
+    const dv = b.step(h, V);
+    if (dv <= 0 || V < 1) {
+      return;
+    }
+    v.x += (ax / V) * dv;
+    v.y += (ay / V) * dv;
+    v.z += (az / V) * dv;
+    // Not the dragon's energy management: book the push as outside work.
+    this.segmenter.external(0.5 * ((V + dv) ** 2 - V * V));
   }
 
   /** The term that peaked on this transition, if any (the most exceptional one). */
@@ -250,6 +337,7 @@ export class FlowSystem {
     const last = this.log[this.log.length - 1];
     return [
       `flow ${f(this.value)}  drag ×${f(this.dragScale)}  thrust ×${f(this.thrustScale)}`,
+      `chain ${this.burst.links}  burst ${this.burst.active ? `${this.burst.total.toFixed(1)} m/s` : '—'}  links ${this.burst.totalLinks}`,
       `motion ${o ? `${o.id ?? '(unnamed)'} ${o.time.toFixed(1)} s` : '—'}  activity ${f(seg.activity)}  proximity ${f(seg.proximityNow)}`,
       `waste ${f(seg.wasteRate)} / ref ${f(-seg.refRate)} J/kg/s`,
       `last ${last ? `${last.motion.id ?? '(unnamed)'} Δ${last.delta >= 0 ? '+' : ''}${last.delta.toFixed(3)}${last.moment ? ` ${last.moment}` : ''}` : '—'}`,
