@@ -1,7 +1,8 @@
 # Evren — Roadmap
 
 An open-world, realistic and "chill" flight simulation where we ride a dragon over Istanbul.
-This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,
+The game as a whole is described in the [GDD](../gdd/README.md) and the UI follows the locked
+[design language](../design/README.md). This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,
 technical approach, dependencies, acceptance criteria and an effort estimate.
 
 ## Vision
