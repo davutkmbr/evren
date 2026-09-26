@@ -237,7 +237,7 @@ interface FlightBuild {
   parcels: OsmBuilding[];
   /**
    * Wall and bottom height (dm) and centroid of every drawn solid, from the layer's own plan (buildings/build.ts
-   * planSolid). Infill parcel ids restart at 2e9 in every region, so solids are listed, not keyed by id.
+   * planSolid). Listed, not keyed by id: the parts of one building share its id.
    */
   heights: { id: number; wallH: number; minH: number; cx: number; cz: number }[];
 }
@@ -380,6 +380,25 @@ console.log('5. Invented content stays out of the real map');
     }
   }
   check(bad.length === 0, `${parcels} infill parcels in ${flightBuilds.size} regions, none in a street area`, bad);
+
+  // One id per parcel everywhere (buildings/infill.ts infillId): never an OSM id, never two places for one id.
+  const seen = new Map<number, { cx: number; cz: number; region: string }>();
+  const dup: string[] = [];
+  for (const [id, fb] of flightBuilds) {
+    for (const p of fb.parcels) {
+      const cx = (p.ring[0] + p.ring[4]) / 2;
+      const cz = (p.ring[1] + p.ring[5]) / 2;
+      if (p.id >= 0) {
+        dup.push(`region ${id}: infill parcel at ${cx.toFixed(0)}, ${cz.toFixed(0)} has a non-negative id ${p.id}`);
+      }
+      const prev = seen.get(p.id);
+      if (prev && Math.hypot(prev.cx - cx, prev.cz - cz) > 1) {
+        dup.push(`id ${p.id}: parcel at ${prev.cx.toFixed(0)}, ${prev.cz.toFixed(0)} (${prev.region}) and at ${cx.toFixed(0)}, ${cz.toFixed(0)} (${id})`);
+      }
+      seen.set(p.id, { cx, cz, region: id });
+    }
+  }
+  check(dup.length === 0, `${seen.size} infill ids: negative, one place each across the regions`, dup);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -406,7 +425,7 @@ console.log('6. Far layer: the city bake draws what the regions draw');
     }
     check(bases.size === 1, `one OSM snapshot for the bake, ${regions.length} regions and ${streetData.size} street areas`, [...bases].map(([b, list]) => `${b}: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` +${list.length - 6}` : ''}`));
 
-    // Baked records by id (a list: infill ids repeat across regions); matched by id and centroid (within 1 m).
+    // Baked records by id (a list: building parts can share one); matched by id and centroid (within 1 m).
     const baked = new Map<number, { cx: number; cz: number; wallH: number; minH: number; used: boolean }[]>();
     for (const f of index.files) {
       const d = decodeBuildings(gunzipSync(readFileSync(resolve(bakeDir, f.file))));

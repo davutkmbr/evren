@@ -23,7 +23,7 @@
  * - wallH, minH (u16, dm): wall height and bottom height (building:part min_height) above the reference ground.
  * - rise (u8, dm): roof rise; roof (u8, RoofClass); arch (u8, buildings/archetypes.ts Arch); floors (u8);
  *   floorH (u8, m x 50); flags (u8, FLAG); tint, roofTint (u16, sRGB 565).
- * - id (i32): OSM id minus the previous record's (parts carry their own id; infill parcels 2e9 + n).
+ * - id (i32): OSM id minus the previous record's (parts carry their own id; infill parcels a negative id from their place, buildings/infill.ts infillId).
  * Street lights (the flight layer's own placement, osm/streets/lamps.ts buildLamps, so the far city lights the same
  * streets as the region does), sorted by 500 m tile (lampTiles): lampXZ (i16 pairs, XY_UNIT m from the block centre),
  * lampY (u16, (height + LAMP_Y0) in dm), lampCol (u8 x 4: sRGB colour, city lamp type 1 street / 2 road).
