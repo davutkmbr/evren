@@ -543,6 +543,11 @@ export interface AudioService {
   readonly masterVolume?: number;
   /** Unlocks the AudioContext; call from a user gesture (start screen). */
   unlock?(): void;
+  /**
+   * Gently lifts the coastal ambience (surf up, city down) by `amount` 0..1 while a calm moment plays (src/moments);
+   * 0 restores the normal mix. The ambience's own smoothing makes the change a slow swell.
+   */
+  setAmbienceLift?(amount: number): void;
 }
 
 /**
@@ -819,6 +824,8 @@ export interface HudZonesService {
   /** Turns a context on or off ('race' while a race is prepared, run or its result is open). */
   setContext(name: string, on: boolean): void;
   isShown(id: string): boolean;
+  /** Is the context on (e.g. 'race')? */
+  hasContext?(name: string): boolean;
 }
 
 /** Typed service map. Use ctx.services.get('geo') etc. */

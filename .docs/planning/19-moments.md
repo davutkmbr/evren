@@ -2,7 +2,9 @@
 
 Milestone: E · Variety · Effort: L · Depends on: 01 (bug fixes), 05 (thermals), 13 (living world)
 
-Status: planned (agreed with the user on 25 September 2026). Nothing is built yet.
+Status: in progress. Planned with the user on 25 September 2026. Built: the record format, the pure trigger evaluator,
+the settings (Ayarlar → Oyun → Anlar) and, since 26 September 2026, the **runtime**: moments play in the game. Only the
+Orhan Veli poem is playable today; every other record waits for its assets (see "Runtime" below).
 
 ## Goal
 
@@ -32,6 +34,61 @@ Data-driven points on the map, one record per moment, so new ones are data, not 
 - **Provenance:** every model, sound and text records its source and licence (CLAUDE.md rules); unapproved content
   cannot be referenced.
 
+## Runtime (built 26 September 2026)
+
+Code: `src/moments/runtime.ts` (pure: playability, pacing, subtitle timeline), `src/moments/system.ts` (the game
+system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (subtitle line and closing card).
+
+- **Context.** Every frame the system reads the dragon (position → coast distance from geo, AGL, ASL, flight mode,
+  grounded), the clock (time of day, day of year), the weather preset and the race context, and hands it to the pure
+  evaluator with the player's settings. Positions stay in world meters; the records' lat/lon are projected with
+  `latLonToLocal()`.
+- **Pacing.** One moment at a time. A moment starts after its trigger held for 1 s; after a moment another may start
+  only after a 180 s gap; records keep their own once-per-session / cooldown rules. Nothing starts or continues during a
+  race, and nothing advances while the game is paused (menus, map, photo mode). The settings gate playback: a category
+  switched off (or Anlar off) never starts and ends a playing moment of that category.
+- **Never takes control.** While a moment plays its conditions are re-checked with a little hysteresis (altitude band
+  ±15 m, shore band ±60 m, flapping allowed during a glide). When they fail for 1.2 s (the dragon climbs out of the
+  band, leaves the shore, lands, rain starts) the line on screen fades out slowly and the rest is skipped. A moment cut
+  short before half of its lines is not spent and may try again after 90 s; one cut later is spent.
+- **Screen.** Subtitle lines go through the HUD zone director in the `lowerCenter` zone (priority 45: below maneuver
+  captions, above flight and start hints; deferred by a race): italic, shadowed, no box, slow fades. The closing card
+  uses the discovery card's look in the `corner` zone ("Yeni an", category, title, text; 9 s). Design language updated.
+- **Sound.** No moment sound exists yet. For a moment whose sound is missing the runtime asks the audio service to lift
+  the existing coastal ambience (`setAmbienceLift`: surf forward, city back), so no new external asset is needed.
+- **Playability decision.** A `ready` record plays. A `draft` record plays only when its content is complete for what
+  it is: a subtitle-only moment (no character, object or animation) whose single need is `sound` plays, because the
+  soft bed is optional there and the ambience lift stands in for it. Anything needing a model, an animation, a video
+  link, a runtime anchor or text approval waits; in dev the console logs each skipped record once with its reason.
+- **Shortcut.** `?moment=<id>` puts the dragon at the record's `start` waypoint (heading for the next waypoint) once
+  the game starts and plays that moment once, whatever the conditions (still not during a race).
+- **Checks.** `tools/headless/moments-runtime-check.ts` flies a scripted low glide along the European shore from
+  Beşiktaş to Bebek on the real geography: the poem fires exactly once, after the dwell, with the record's timeline
+  (4 s lines, 0.5 s gaps) and the card at the end; it does not fire high, inland, in rain or storm, while flapping,
+  during a race or with its category off; pause, hysteresis, fade-out, retry, race / settings cut-off, the global gap
+  and the shortcut are covered; the corridor polygon is verified to cover all of the strait's water and both shores
+  (its north end was extended to the Black Sea mouth, 41.24° N).
+
+### Playable now vs waiting
+
+| Moment | Plays now? | Why |
+|---|---|---|
+| Orhan Veli, "İstanbul'u Dinliyorum" (#14) | yes | subtitle-only; its soft shore bed is replaced by the lifted coastal ambience |
+| Storks over the Bosphorus (#2) | no | needs the stork flock model, animations and sound |
+| Hezarfen Ahmed Çelebi (#3) | no | needs the ghost glider model, animations and sound |
+| Gull and simit on a ferry (#4) | no | needs models, animations, sound and the ferry runtime anchor |
+| Galata Bridge anglers (#4) | no | needs the angler models, animations and sound |
+| Aya Yorgi challenge (#5) | no | needs the knight statue model, animations and sound (and the hilltop point confirmed) |
+| Lagari Hasan Çelebi (#7) | no | needs the rocket model, animations and sound |
+| Ships over land, 1453 (#8) | no | needs the galley model, animations and sound |
+| Kız Kulesi legend (#9) | no | needs the snake model, animations and sound |
+
+**Where to see the poem:** glide (wings still, no flapping) at 20–30 m over the water within ~150 m of the European
+shore, anywhere from Beşiktaş past Ortaköy and Kuruçeşme toward Bebek, in clear, hazy or foggy weather; the first line
+appears after a second of steady low gliding. Once per session. Or open the game with
+`?moment=orhan-veli-istanbulu-dinliyorum`: after the start screen the dragon is placed off Beşiktaş, heading up the
+shore, and the poem plays.
+
 ## Rights
 
 The game is non-commercial, open source on GitHub and played in the browser.
@@ -44,7 +101,8 @@ The game is non-commercial, open source on GitHub and played in the browser.
 
 ## Backlog (in order)
 
-1. **Moments system:** the data format, triggers, subtitles, discovery-card integration, the video panel.
+1. **Moments system:** the data format, triggers, subtitles, discovery-card integration (built), the video panel (not
+   built yet).
 2. **Stork and raptor migration over the Bosphorus** (autumn): flocks circling in thermals the dragon can join
    (brings the thermal lift of phase 05).
 3. **Hezarfen Ahmed Çelebi:** a ghost glider leaving the Galata Tower for Üsküdar; race it across the Bosphorus.
@@ -64,7 +122,7 @@ The game is non-commercial, open source on GitHub and played in the browser.
 12. **Istanbul postcards:** recreate famous views in photo mode to collect them (Kız Kulesi at sunset, the Galata
     skyline, fog under the Bosphorus Bridge).
 13. **Optional audio guide:** short narrated histories of landmarks, our own text.
-14. **Orhan Veli, "İstanbul'u Dinliyorum":** lines appear as subtitles while gliding low along the shore.
+14. **Orhan Veli, "İstanbul'u Dinliyorum":** lines appear as subtitles while gliding low along the shore. (Playable.)
 15. **Days and seasons** (with phase 13): Ramadan cannon and iftar lights, New Year fireworks, lodos waves on the
     Kadıköy shore, foghorns on misty mornings, match-day crowd sounds near stadiums (CC0 recordings, no real chants
     or club symbols).
