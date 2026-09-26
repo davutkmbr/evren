@@ -267,7 +267,7 @@ export class PoseDriver {
     // No walk cycle while floating: the swim stroke drives the rig instead (the take-off run fades the float out).
     pose.walkAmount = follow(pose.walkAmount, onSurface && sim.mode !== 'swimming' ? sim.walkAmount : 0, moves.runOut ? 20 : sim.mode === 'swimming' ? 12 : 6, dt);
     const swimming = sim.mode === 'swimming';
-    const swimTarget = swimming ? 1 - 0.55 * Math.min(1, sim.runTakeoff / SWIM_POSE.runTime) : 0;
+    const swimTarget = swimming ? 1 - 0.55 * Math.min(1, sim.runTakeoff / (sim.runDuration > 0 ? sim.runDuration : SWIM_POSE.runTime)) : 0;
     pose.swim = follow(pose.swim ?? 0, swimTarget, swimTarget > (pose.swim ?? 0) ? SWIM_POSE.blendIn : SWIM_POSE.blendOut, dt);
     pose.swimPhase = sim.swimPhase;
     pose.swimStroke = follow(pose.swimStroke ?? 0, swimming ? sim.swimStroke : 0, 3, dt);
