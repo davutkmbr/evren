@@ -216,15 +216,61 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'land',
-    description: 'L pressed at 22 m/s, 30 m up: approach, flare, touchdown, standing',
+    description: 'L pressed at 22 m/s, 30 m up: approach, flare, touchdown, standing (the seeded variant)',
     setup: fly(30, 22),
     seconds: 18,
     script: pressAt(0.3, 'land'),
-    frames: 24,
+    frames: 32,
     fps: 4,
-    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'grounded', 10) - 4.5),
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'grounded', 10) - 6.5),
     view: 'side',
     camera: 'fixed',
+    span: 40,
+  },
+  {
+    name: 'land-drop',
+    description: 'L at 22 m/s, 45 m up, steep drop-in variant: a steep middle drop with a final turn, a big flare from higher up, backstrokes',
+    setup: fly(45, 22, (sim) => {
+      sim.controller.landingStyle.forceNext = 'drop';
+    }),
+    seconds: 18,
+    script: pressAt(0.3, 'land'),
+    frames: 36,
+    fps: 4,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'grounded', 10) - 7.5),
+    view: 'side',
+    camera: 'fixed',
+    span: 44,
+  },
+  {
+    name: 'land-shallow',
+    description: 'L at 20 m/s, 28 m up, low shallow approach variant: weaving, a check, a lower flare',
+    setup: fly(28, 20, (sim) => {
+      sim.controller.landingStyle.forceNext = 'shallow';
+    }),
+    seconds: 18,
+    script: pressAt(0.3, 'land'),
+    frames: 32,
+    fps: 4,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'grounded', 10) - 7),
+    view: 'side',
+    camera: 'fixed',
+    span: 44,
+  },
+  {
+    name: 'land-tired',
+    description: 'L at 20 m/s, 30 m up with 20 % stamina: the tired landing, sloppier beats and weave',
+    setup: fly(30, 20, (sim) => {
+      sim.stamina = 0.2;
+    }),
+    seconds: 18,
+    script: pressAt(0.3, 'land'),
+    frames: 32,
+    fps: 4,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'grounded', 10) - 7),
+    view: 'side',
+    camera: 'fixed',
+    span: 44,
   },
   {
     name: 'fastland',
@@ -253,6 +299,34 @@ export const SCENARIOS: Scenario[] = [
     camera: 'fixed',
   },
   {
+    name: 'runout-glide',
+    description: 'L at 30 m/s, 8 m up, flat-glide run-out variant: a shallow flare, one backstroke, touchdown fast',
+    setup: fly(8, 30, (sim) => {
+      sim.controller.landingStyle.forceNext = 'glide';
+    }),
+    seconds: 10,
+    script: pressAt(0.2, 'land'),
+    frames: 30,
+    fps: 8,
+    window: (r) => Math.max(0, groundedAt(r) - 2.5),
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'runout-swoop',
+    description: 'L at 30 m/s, 8 m up, swoop run-out variant: a steeper final path, a deeper flare with two backstrokes',
+    setup: fly(8, 30, (sim) => {
+      sim.controller.landingStyle.forceNext = 'swoop';
+    }),
+    seconds: 10,
+    script: pressAt(0.2, 'land'),
+    frames: 30,
+    fps: 8,
+    window: (r) => Math.max(0, groundedAt(r) - 2.5),
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
     name: 'touchgo',
     description: 'L at 30 m/s, 8 m up: run-out, Space 0.8 s after touchdown (touch-and-go)',
     setup: fly(8, 30),
@@ -272,7 +346,7 @@ export const SCENARIOS: Scenario[] = [
     name: 'runout-edge',
     description: 'L at 28 m/s, 8 m up, running out towards an 18 m drop: the dragon leaps on its own',
     setup: fly(8, 28),
-    terrain: cliff(100),
+    terrain: cliff(125),
     seconds: 10,
     script: landThen(0.2, () => undefined),
     frames: 24,

@@ -292,15 +292,15 @@ export const LANDING = {
   pathMax: 0.65,
   /** Pitch rate (rad/s) of the push-over onto the glide slope. */
   approachPitchRate: 0.8,
-  /** The flare starts at flareBase + flarePerSink × sink rate + flarePerSpeed × ground speed (clamped), or when slow. */
+  /**
+   * The flare starts at (flareBase + LANDING_STYLE.flarePerSink × sink rate + flarePerSpeed × ground speed) × the
+   * variant's flareScale, no lower than flareMin (and the variant's own limits), or when slower than flareSpeed.
+   */
   flareBase: 1,
-  flarePerSink: 0.55,
   flarePerSpeed: 0.1,
   flareMin: 6,
-  flareMax: 16,
   flareSpeed: 13,
-  /** Largest nose-up tilt beyond the hover attitude while fast in the flare (rad) and its gain per m/s of excess speed. */
-  flareBackTilt: 0.72,
+  /** Gain per m/s of excess speed of the flare's nose-up tilt (the largest tilt is the variant's flareBackTilt). */
   flareGain: 0.1,
   /** Extra nose-up tilt (rad) while the ground speed is still high a few metres up (tailwind). */
   groundSpeedBackTilt: 0.25,
@@ -310,21 +310,253 @@ export const LANDING = {
   flareTiltFadeSpeed: 9,
   /** Flap effort already running as the flare slows through ~12 m/s. */
   flareEffort: 0.6,
-  /** Settle: sink rate sqrt(touchdownSink² + 2 × settleDecel × clearance), capped at maxSink; forward creep up to touchdownSpeed. */
-  settleDecel: 1.6,
-  touchdownSink: 0.7,
+  /** Deepest sink (m/s) of the flare while high or still fast (the settle profile: LANDING_STYLE.touchdownSink / settleDecel). */
   maxSink: 5,
-  touchdownSpeed: 6,
   /** Above this ground speed the last 2 m stop sinking until the flare has slowed the dragon (the feet run off less). */
   holdSpeed: 12,
-  /** Lift dump in the fast flare: wing spread given up (0..1) once the vertical speed rises to liftDumpVy (m/s). */
-  liftDump: 0.45,
+  /** Lift dump in the fast flare (LANDING_STYLE.liftDump of the spread) once the vertical speed rises to liftDumpVy (m/s). */
   liftDumpVy: 0,
   /** Pitch rate limit (rad/s) while rearing up into the fast flare. */
   flarePitchRate: 1.5,
   /** Mean wind at the dragon (m/s) from which the settle turns into the wind (full turn rate at vaneWindFull). */
   vaneWindMin: 9.5,
   vaneWindFull: 12,
+} as const;
+
+/** Per-variant shape of a landing (landing.ts). */
+export interface LandingVariantParams {
+  /** Approach glide slope × pathScale, clamped to pathMax (rad). Run-out variants: the steepest approach path (rad). */
+  pathScale: number;
+  pathMax: number;
+  /** Flare height × flareScale (the slow landing's flare trigger), clamped to [flareMin, flareMax] (m). */
+  flareScale: number;
+  flareMin: number;
+  flareMax: number;
+  /** Largest nose-up tilt beyond the hover attitude while fast in the flare (rad). */
+  flareBackTilt: number;
+  /** Flap effort held through the backstrokes while the ground speed is still above the touchdown speed. */
+  beatEffort: number;
+  /** Side-to-side weave: bank amplitude (rad) and period range (s). */
+  weave: number;
+  weavePeriod: readonly [number, number];
+  /** A final shallow turn onto the spot: bank (rad) and length (s); 0 = none. */
+  turnBank: number;
+  turnTime: number;
+  /** Braking beats (checks) during the approach: seconds between them (range), 0 = none. */
+  checkEvery: readonly [number, number];
+  /** Sloppiness 0..1: jitter of the beats' effort and timing, looser weave. */
+  sloppy: number;
+  /** Run-out variants: the backstroke is kicked off at the latest this long (s) after the flare began. */
+  kickLate: number;
+}
+
+/**
+ * Landing v2: an approach and flare that read as a big flying animal, not a gliding aeroplane (landing.ts, the landing
+ * laws in controller.ts, pose cues in pose.ts). A variant is picked when L is pressed (by context and a seeded random,
+ * never the same twice in a row): a steep drop-in with a big flare from higher up, a low shallow approach with a weave,
+ * a tired one with sloppier beats at low stamina, and for the run-out a flat glide or a steeper swoop. The speed curve
+ * comes from the flight model: checks (a nose-up pulse, the airbrake and one deep beat) and the flare's backstrokes
+ * (body pitched far back, the stroke force pointing up and back) are real forces.
+ */
+export const LANDING_STYLE = {
+  seed: 4127,
+  /** Stamina below which the tired landing applies. */
+  tiredStamina: 0.3,
+  /** Foot clearance at L from which the steep drop-in applies (m); the shallow approach below shallowMaxHeight. */
+  dropMinHeight: 22,
+  shallowMaxHeight: 45,
+  /**
+   * Approach path shape over the progress p (0 at L, 1 at the flare): the glide slope × a factor rising from shapeStart
+   * to shapePeak at p = peakAt and falling to shapeEnd at the flare (sine / cosine quarter waves) — the drop is steepest
+   * in the middle and rounds out towards the flare.
+   */
+  shapeStart: 0.9,
+  shapePeak: 1.3,
+  shapeEnd: 0.85,
+  peakAt: 0.45,
+  /**
+   * Checks: the path pulled up to checkPath (rad, a slight climb) over checkTime (s) at up to checkPitchRate (rad/s),
+   * airbrake on, one deep beat at checkEffort with the stroke tilted forward (checkHover) once the nose is up.
+   */
+  checkPath: 0.08,
+  checkTime: 1.1,
+  checkEffort: 0.85,
+  checkHover: 1,
+  checkPitchRate: 1.3,
+  /** No checks, weave or turn below this foot clearance (m) or within this clearance of the flare height. */
+  quietBelow: 12,
+  quietAboveFlare: 3,
+  /** The run-out approach flies low from the start: its checks and weave go on down to this foot clearance (m). */
+  runOutQuietBelow: 3.5,
+  /** Wing sweep / spread breathing during the approach (seeded slow waves): amplitude of each. */
+  sweepWave: 0.18,
+  spreadWave: 0.06,
+  /** The slow landing's touchdown ground speed (m/s): the backstrokes nearly stop the dragon (W / S adjust it). */
+  touchdownSpeed: 2.2,
+  /** The slow landing's sink profile: sqrt(touchdownSink² + 2 × settleDecel × clearance) (m/s), gentler than LANDING's. */
+  touchdownSink: 0.25,
+  settleDecel: 1,
+  /** ... and no faster than nearSink + nearSinkPerMetre × clearance: the last metre is nearly a hover (the beat's bob stays small). */
+  nearSink: 0.55,
+  nearSinkPerMetre: 0.7,
+  /** Extra force of the cushioning beats in the last cushionHeight metres (fraction). */
+  cushionBoost: 0.35,
+  cushionHeight: 2.5,
+  /** Largest sink-hold integral (effort) of the hover law in the last metre (it winds up while the flare lags its profile). */
+  nearIntegral: 0.02,
+  /** Deepest sink (m/s) of the slow landing's final descent once the ground speed is down (full LANDING.maxSink from 10 m/s). */
+  slowMaxSink: 3.2,
+  /** The slow flare starts at (LANDING.flareBase + flarePerSink × sink + LANDING.flarePerSpeed × ground speed) × the variant's scale (m). */
+  flarePerSink: 0.65,
+  /**
+   * Flare: the backstrokes start as the body pitches through rearedFrom..rearedFull (rad); until then, still fast, the
+   * effort stays at most rearEffort unless a fast sink needs arresting (the wing's lift does the rest).
+   */
+  rearedFrom: 18 * DEG,
+  rearedFull: 38 * DEG,
+  rearEffort: 0.3,
+  /** The slow flare's lift dump (spread given up while it stops sinking at speed): small, the wings stay forward and open. */
+  liftDump: 0.18,
+  /** While the ground speed is still well above the touchdown speed the flare sinks no faster than this (m/s). */
+  floatSink: 1.4,
+  /** Dust from the downwash of a backstroke below this foot clearance (m) over land. */
+  dustHeight: 9,
+  /** Sink (m/s) below which feet close to the ground count as a touchdown (faster: only on contact, 2 cm). */
+  touchSink: 1.2,
+  /** ... below this ground speed (m/s) ... */
+  touchSpeed: 3,
+  /** ... and how close (m): the legs reach down the rest (the stance's settle takes it without a jump). */
+  touchReach: 0.6,
+  /** Leg flex on contact: the settle starts this much faster downward (m/s) as the wings unload onto the legs. */
+  absorbExtra: 1,
+  /** Run-out flare: from runOutFlareHeight × the variant's flareScale (m) the body pitches back and the wings backstroke. */
+  runOutFlareHeight: 1.7,
+  /** Run-out round-out: sink RUNOUT.touchdownSink + runOutRoundOut × clearance (m/s), earlier than stage A's float. */
+  runOutRoundOut: 0.45,
+  /** Run-out flare sink target: runOutFlareSink + runOutFlareSinkPerMetre × clearance (m/s), and its lift dump (spread given up). */
+  runOutFlareSink: 0.7,
+  runOutFlareSinkPerMetre: 0.45,
+  runOutLiftDump: 0.35,
+  /** The run-out's backstrokes start as the body pitches through these (rad). */
+  runOutRearedFrom: 8 * DEG,
+  runOutRearedFull: 18 * DEG,
+  /** ... at least one: a downstroke kicked off at this share of the way up (or after the variant's kickLate), at full beat effort for runOutKickTime (s). */
+  runOutKickAt: 0.15,
+  runOutKickTime: 0.45,
+  /** The run-out flare pitches back less while fast: runOutPitchPerSpeed (rad per m/s) above runOutPitchSpeed (m/s). */
+  runOutPitchPerSpeed: 1.6 * DEG,
+  runOutPitchSpeed: 14,
+  /** ... and less while it sinks slower than wanted (rad per m/s): a balloon is caught by easing the nose forward. */
+  runOutPitchPerClimb: 0.3,
+  /** The run-out flare may begin this much faster than RUNOUT.maxSpeed (m/s): it bleeds that much itself. */
+  runOutFlareBleed: 2,
+  variants: {
+    drop: {
+      pathScale: 1.3,
+      pathMax: 0.85,
+      flareScale: 1.35,
+      flareMin: 9,
+      flareMax: 12,
+      flareBackTilt: 0.78,
+      beatEffort: 0.8,
+      weave: 0,
+      weavePeriod: [3, 4],
+      turnBank: 24 * DEG,
+      turnTime: 1.8,
+      checkEvery: [2, 2.8],
+      sloppy: 0,
+      kickLate: 0,
+    },
+    shallow: {
+      pathScale: 1,
+      pathMax: 0.55,
+      flareScale: 1,
+      flareMin: 6.5,
+      flareMax: 14,
+      flareBackTilt: 0.62,
+      beatEffort: 0.72,
+      weave: 9 * DEG,
+      weavePeriod: [2.8, 3.8],
+      turnBank: 0,
+      turnTime: 0,
+      checkEvery: [2.6, 3.4],
+      sloppy: 0,
+      kickLate: 0,
+    },
+    tired: {
+      pathScale: 1,
+      pathMax: 0.65,
+      flareScale: 1.1,
+      flareMin: 6.5,
+      flareMax: 16,
+      flareBackTilt: 0.55,
+      beatEffort: 0.7,
+      weave: 6 * DEG,
+      weavePeriod: [2.2, 3.4],
+      turnBank: 0,
+      turnTime: 0,
+      checkEvery: [2.2, 3.4],
+      sloppy: 1,
+      kickLate: 0,
+    },
+    glide: {
+      pathScale: 1,
+      pathMax: 9 * DEG,
+      flareScale: 0.85,
+      flareMin: 0,
+      flareMax: 0,
+      flareBackTilt: 0,
+      beatEffort: 0.6,
+      weave: 3 * DEG,
+      weavePeriod: [3, 4],
+      turnBank: 0,
+      turnTime: 0,
+      checkEvery: [1.2, 1.8],
+      sloppy: 0,
+      kickLate: 0.12,
+    },
+    swoop: {
+      pathScale: 1,
+      pathMax: 13 * DEG,
+      flareScale: 1.2,
+      flareMin: 0,
+      flareMax: 0,
+      flareBackTilt: 0.1,
+      beatEffort: 0.75,
+      weave: 0,
+      weavePeriod: [3, 4],
+      turnBank: 0,
+      turnTime: 0,
+      checkEvery: [1.1, 1.6],
+      sloppy: 0,
+      kickLate: 0.3,
+    },
+  } satisfies Record<string, LandingVariantParams>,
+} as const;
+
+/** Landing v2 pose cues (pose.ts; the rig reads DragonPose.landFlare). Angles in rad. */
+export const LANDING_POSE = {
+  /** Approach: the head looks lookBelowPath under the flight path (clamped), with lookGain of it in the neck, the neck undoing lookPitchCounter of the body pitch. */
+  lookBelowPath: 0.1,
+  lookMin: 0.12,
+  lookMax: 0.95,
+  lookGain: 0.75,
+  lookPitchCounter: 0.7,
+  /** Neck yaw into the weave / final turn per rad of bank. */
+  lookIntoTurn: 0.7,
+  /** Flare: neck pitch neckFlare − neckFlareCounter × body pitch, allowed down to −neckLowFlare. */
+  neckFlare: -0.12,
+  neckFlareCounter: 0.95,
+  neckLowFlare: 0.9,
+  /** Tail: yaw per rad/s of the style's bank rate (steering), a slow wander, lowered by tailBrake × airbrake; the flare's tail pitch. */
+  tailSteer: 0.35,
+  tailWander: 0.06,
+  tailBrake: 0.2,
+  tailFlare: 0.4,
+  /** Legs reach forward from this foot clearance (m) in the flare. */
+  reachFrom: 10,
+  /** Rate (1/s) at which the flare cue fades after the touchdown (the wings fold over ~0.6 s). */
+  flareFade: 3,
 } as const;
 
 export const GROUND = {
