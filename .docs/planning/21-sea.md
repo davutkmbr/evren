@@ -2,10 +2,11 @@
 
 Milestone: B · Chill loop · Effort: L · Depends on: 20 (movement; shares skim, breach and flow), water module, fx
 
-Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test; stage 4 built (the camera follows the dragon under
-water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU review; stage 5 swimming part
-built (a real swimming pose and stroke, the water take-off run, wading at the shore), awaiting the pose-sheet approval
-and the feel test. Stages 1–2 can start in parallel with phase 20 stage B.
+Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 2 built (the sea reacts to low
+flight), awaiting the owner's GPU review; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval
+and the feel test; stage 4 built (underwater camera, look and audio), awaiting the owner's GPU review; stage 5 swimming
+part built, awaiting the pose-sheet approval and the feel test; stage 7b built (vessels as floating rigid bodies),
+awaiting the owner's look in game.
 
 ## Goal
 
@@ -20,13 +21,15 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
   at a fixed depth with a synthetic bob, paddling, splashes; depth is clamped at −2.5 m (no diving). Ground effect
   lift exists below ~60 m.
 - **Rendering** (`src/world/water/`): Gerstner waves plus detail bands on the GPU, sea regimes (poyraz / lodos, swell)
-  computed per frame on the CPU (`sea-state.ts`), planar reflection. Nothing reacts to the dragon except fx splashes.
+  computed per frame on the CPU (`sea-state.ts`), planar reflection. Since stage 2 a disturbance field under a
+  low-flying dragon (downwash, skim wake, vortices, steam) adds ripples, roughness and foam.
 - **Life** (`src/world/life/`): ferries, boats and ships with Kelvin wakes (`wakes/`), gulls.
 - **Mismatch:** the dragon floats and skims on a flat plane while the rendered surface moves with waves up to a few
   metres in lodos.
-- **Canned vessel motion:** ships heave, pitch and roll with fixed sine amplitudes scaled by size (`fleet.ts`), not
-  from the waves they sit in; wakes are parametric ribbons drawn from speed and hull size (`wakes/wake-trails.ts`),
-  not from what the hull does to the water. Nothing reacts to anything else's wake.
+- **Vessel motion** (stage 7b): every vessel is a floating rigid body on the real waves (`vessels/physics/`); wakes
+  are still parametric ribbons drawn from speed and hull size (`wakes/wake-trails.ts`), not from what the hull does
+  to the water (7a). Small hulls feel the wakes of passing ships through an analytic Kelvin pattern until wave
+  particles exist.
 
 ## Strand 1 — One sea for physics and pictures
 
@@ -53,6 +56,80 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
 | **Sound** | A rushing water layer that grows with low speed over the sea, spray hits, the downwash roar | audio |
 
 Ground-effect lift keeps working and becomes the physical basis of **sıyırma** (phase 20).
+
+### Stage 2 as built (GPU review needed)
+
+Downwash, skim wake, wingtip vortex curls, fire steam and their sound. Claw dip and the reactions (gulls, fish, crews)
+are not part of it; they stay open in the table above.
+
+- **One model for pictures, sprays and sound** (`src/world/water/lowflight/low-flight.ts`, service `lowFlight` in
+  `contracts.ts`, owned by the water system, updated after flight and camera): from DragonState (mode, velocity,
+  airspeed, `flapEffort`, `firing`, `touchingWater`), the rig's wingtip and mouth anchors and the water service it works
+  out per frame, against the **local wave height**: `downwash` (hover-like modes or slow flight below ~24 m/s, fading in
+  from 1.5 wingspans up to full at 0.3), `downwashPulse` + a gust ring per downstroke (the flight 'flap' events),
+  `edgeSpray` (a strong hover close to the water), `wake` (the skim: `touchingWater`, or the belly within ~2.5 m of the
+  waves at > 8 m/s; fast attack, 0.35 s release), `tipVortex` / `vortex` (wingtips within 0.45 wingspans of the water at
+  > 18 m/s), tail and wingtip heights over the waves, and `steam` (the fire jet ray-marched against the waves over the
+  fire's 40 m reach; mouth under the surface boils at the mouth). The flight side is only read; the skim physics stays
+  theirs.
+- **Disturbance field on the water** (`disturbance-window.ts`, `disturbance-gpu.ts`, `shaders.glsl.ts`): a square window
+  (medium 128² × 0.8 m, high 192² × 0.6 m, ultra 256² × 0.5 m; off on low) that follows the dragon in whole texels,
+  trailing up to 30 % of its extent behind a fast dragon so more wake stays in view. One half-float RGBA ping-pong pass
+  per fixed 60 Hz step: r/g = a damped wave equation (ripples at 4 m/s, sponge edges), b = roughness (decays, spreads a
+  little), a = foam (decays). The model writes stamps (disks, rings, swept capsules, up to 16 a frame): each downstroke
+  pushes a dent that the wave equation turns into an expanding ripple ring, and its gust ring races out (11 m/s, slowing)
+  as a dark roughened annulus; the downwash keeps a ruffled patch under the wings; the skim leaves a furrow (depression +
+  foam + roughness; the moving trough radiates a narrow V at asin(4 / v)) and a wider roughened strip; wingtip vortices
+  leave roughened streaks, a tip or the tail touching the water a foam line; the fire leaves a boiling foamy patch.
+  Swept stamps are normalised by their overlap, so the amount per pass does not depend on speed or frame rate; frames
+  without a step due run an apply-only pass (no time passes), so ripples keep their speed at any frame rate.
+- **Water shader** (`water-fragment.glsl.ts`): inside one uniform branch (skipped while the field is off) 5 taps of the
+  field: the ripple gradient is added to the surface slope (faded into roughness where finer than a pixel), roughness
+  amplifies the detail bands (up to 3.4×) and widens the GGX lobe, ruffled patches reflect up to 22 % less sky (the
+  darker "cat's paw" look), foam is broken up by the foam texture.
+- **Sprays** (`src/fx/emitters/surface-emitter.ts`, `fire-emitter.ts`): over the sea the service drives the existing
+  downwash mist, droplets, ring and foam; new: spray whipped up at the downwash ring's edge (drops, spray sheets, mist
+  thrown outward and swirled), wingtip vortex curls (faint mist on a helix around each trailing vortex, outboard side
+  rising, top rolling in, plus fine drops), a rooster tail where the tail tip kisses the water, wingtip kisses at the
+  real wave height. Every water emission (splashes included) now spawns on and dies at the local wave surface instead
+  of y = 0. Fire on the sea: a steady steam cloud at the service's steam point plus hissing spurts (tight, fast-rising
+  puffs every 0.1–0.35 s); it keeps steaming for ~1 s after the breath stops.
+- **Sound** (`src/audio/voices/sea.ts`, `audio-engine.ts`, `audio/index.ts`): a new voice, synthesised, on the sfx bus
+  (so it is muffled under water with everything else): downwash buffeting (brown noise AM'd by the buffet signal),
+  a thump + spray patter per downstroke over the water (scheduled once per beat, ~0.08 s after the flap sound), skim
+  tearing (band noise 0.9–2.4 kHz rising with speed, fast AM) and the furrow rush; steam hiss (high-passed white noise
+  sputtered by the crackle buffer) with a low boil, placed at the steam point. The wind voice's airy skim hiss now also
+  follows the wake (a wave-relative contact the agl misses in a swell). Offline analysis cases `sea-downwash`,
+  `sea-skim`, `sea-steam` (first-pass loudness windows, to be balanced by ear).
+- **Off switches:** above ~70 m over the sea, over land, under water, swimming or without a dragon the model costs one
+  isWater query and every value is 0 (sprays and sound skip their work: `active` false, the voice's sources are
+  stopped); the field stops simulating and the water branch is skipped 7 s after the last stamp; "low" has no field
+  (sprays and sound still work); particle counts scale with the quality's particle budget as before.
+- **Performance** (estimates, no GPU here): simulation 192² × 1–3 passes ≈ 0.02–0.04 ms; water shader ≈ 0.05–0.1 ms
+  while the window covers much of the screen (5 bilinear taps in the window only); extra particles within the existing
+  budgets (a full hover adds ~350 drops/s and ~100 volumetric sprays/s, the pass adapts its resolution under heavy
+  overdraw) ≈ 0.1–0.2 ms. Total ≈ 0.2–0.35 ms on "high", 0 when not low over water. CPU: ≤ 6 wave queries a frame
+  while low, well under 0.05 ms.
+- **Checks:** `tools/headless/lowflight-check.ts` (real FlightSim, real sea, real fx emitters on counting pools): hover
+  low / high, a slow low pass, a fast skim then 80 m up, fire at the water / high / over land, hover and fast passes
+  over land; activation, ranges, NaNs, zero activity when high or over land; window scrolling, clears, culling, queue
+  limit, the fixed-step clock at 24 / 60 / 144 fps, lifetime, quality off; structural GLSL checks. The new GLSL (and the
+  whole water fragment) also parses with @shaderfrog/glsl-parser (run from a scratch directory, not a dependency).
+
+**What the owner should look at (GPU):**
+
+1. Hover 5–15 m over calm water (Marmara off Kadıköy, `?wu10=4`): a darker ruffled patch under the wings, a ripple ring
+   and a dark gust ring racing out with every downstroke, spray whipped up at the ring's edge. Tunables:
+   `DISTURBANCE_STAMPS.downwashRough`, `gustRough`, `downstrokeDepth`, `LOW_FLIGHT.gustSpeed`.
+2. Slow low pass (15–20 m/s, 8 m): a lighter ruffled track, no edge spray.
+3. Skim fast and low: a foam furrow and a narrow V of ripples behind, lasting a few seconds; spray from the wingtips
+   and tail where they touch; faint curling spray from the wingtips in a fast low pass. Tunables: `furrow*`,
+   `vortexRough`, `DISTURBANCE_SIM.waveSpeed` (V angle), `foamDecay`.
+4. The window edge: no visible square (the field fades out over the outer 10 % and ripples are absorbed at the edges).
+5. Fire at the water from a hover: a steam cloud and hissing spurts on the waves, a boiling foamy patch, the hiss.
+6. Sound: downwash buffet and gust thumps over water only, skim tearing, steam hiss; nothing when high.
+7. Lodos (`?wu10=16`): sprays and steam sit on the waves (no spray spawned inside a crest), the field rides the swell.
+8. Cost with `?stats=1` on "high" while hovering / skimming (budget ≤ 0.5 ms); "low" shows sprays but no field.
 
 ## Strand 3 — Plunge dive and breach
 
@@ -268,6 +345,105 @@ must not be canned effects; they come from the physics of the moment, and perfor
   bounces; nothing capsizes in lodos (checked).
 - Moored and anchored boats ride the same water on springs (mooring lines / anchor chain), swinging to wind and current.
 
+### Stage 7b as built
+
+**Code** (`src/world/life/vessels/physics/`):
+- `hull-data.ts`: one design record per vessel kind (freeboard, waterplane and vertical prismatic coefficients,
+  design GM, radii of gyration, added mass, damping ratios, quadratic roll damping, propulsion / steering sizing,
+  planing data, double-ender and catamaran flags) and `buildHullBody`, which derives the buoyancy columns (2 per
+  station, 3–6 stations: 6–12 columns on the port / starboard lines that reproduce the waterplane's second moment),
+  mass from the displaced volume at the equilibrium draft (ballast ships: design draft minus their lift), KB, KG
+  (= KM − design GM), GM / GM_L at the actual draft, inertias, stiffnesses, damping and the linear natural periods.
+  Column volume law: A·T·Cvp·(d/T)^(1/Cvp) below the design waterline (so Cvp and KB = T/(1+Cvp) come out right),
+  wall-sided above it, nothing more once the deck edge is under.
+- `rigid-hull.ts`: the body. Heave, roll and pitch from the column forces on the sampled water (plus the KG − KB
+  heeling term, heave damping relative to the water's vertical velocity, linear + quadratic roll damping); surge,
+  sway and yaw in body axes with added masses (Coriolis / Munk coupling), thrust, rudder / thruster yaw moment
+  (rudder authority ∝ speed², thrusters fading out above 1–3 m/s), a rudder side force at the stern, longitudinal
+  drag, lateral drag = slender-body lift ∝ speed × sway plus cross-flow drag (much higher than longitudinal), all
+  through the water (current included). Turning heel (outward; inward once planing), planing lift and bow-up trim,
+  a little squat trim for displacement hulls. The steering controller follows the navigation reference: wanted
+  ground velocity = route speed + a pull onto the reference point, taken through the water (crab into the current,
+  up to 57°), course control with drift compensation (the bow leads by the hull's slip in a turn), thrust from the
+  drag feed-forward, yaw rate from the heading error plus the reference's yaw rate. Alongside, at anchor or paused:
+  a soft, well-damped mooring spring (8–30 s period, damped against the ground) to the reference pose. Impulses
+  (splashes, the dragon) change the heave / roll / pitch / plane / yaw rates.
+- `vessel-physics.ts`: the fleet's physics. Level of detail by camera distance (8 % hysteresis): **full** (≤ 1.5 km:
+  every column; water refreshed at 30 Hz within 600 m and 12 Hz beyond, heights extrapolated with their rate in
+  between), **mid** (≤ 4 km: heave from 3 samples at 6 Hz, roll and pitch settle), **kinematic** beyond. Fixed step
+  1/60 s (at most 8 per frame), water refreshes on the step clock (frame-rate independent) and staggered across the
+  fleet, render poses interpolated between the last two steps. Safety net: a body much nearer the shore than its
+  reference, or beyond its leash (max(60 m, 1.5 L); free-roaming craft max(6 m, 0.3 L)), is eased back onto the
+  reference (free-roaming craft re-plan from where the hull is instead); lane respawns teleport. The navigation
+  waits for a hull that lags behind its reference (a speed cap; the traffic rules' own cap is untouched). A
+  double-ender swaps ends while held. Non-finite states reset the body (never seen in the checks).
+- Interactions: `splash(x, z, strength)` (subscribed to the `splash` event in `life-system.ts`: skims, plunges,
+  breaches, bubbles) lifts the near side of hulls within 6·(1 + strength) m and pushes them away;
+  `contact(pos, vel)` (the dragon, every frame): landing on a small hull (from above, descending) presses it down at
+  the contact point, bumping into one pushes it; momentum exchange with the reduced mass (dragon 1600 kg), 0.8 s
+  cooldown per hull. Passing wakes: moving hulls ≥ 20 m at ≥ 2 m/s add an analytic Kelvin pattern (cusp lines at
+  19.5°, transverse wavelength 2πU²/g, amplitude from length and Froude number, decaying astern) to the water under
+  hulls < 35 m; wave particles replace it in 7a.
+- `fleet.ts`: the behaviours still run first and produce the reference (`vessel.state`, unchanged for the traffic
+  rules); the render pose is the body's (`vessel.x/z/yaw/heave/roll/pitch`), used by the renderer, wakes, lights,
+  gulls and `hull-colliders.ts` (the box follows position, heading and heave; its bottom follows the lowest keel
+  corner of the tilted hull and its centre the tilted underwater middle; the collision world's boxes stay yawed
+  only, `collision.ts` is unchanged). No shader changes.
+
+**Hull table** (design draft; linear natural periods, the free-decay test agrees within 1 %):
+
+| Model | L × B × T (m) | Columns | Mass (t) | KG (m) | GM (m) | Heave (s) | Roll (s) | Pitch (s) |
+|---|---|---|---|---|---|---|---|---|
+| vapur | 72 × 13.2 × 3.1 | 10 | 1740 | 5.34 | 1.60 | 4.3 | 9.2 | 4.5 |
+| ferry (double-ender) | 41.7 × 9.6 × 2.0 | 10 | 473 | 4.03 | 1.35 | 3.5 | 7.3 | 3.6 |
+| seabus (catamaran) | 38.5 × 11.2 × 1.35 | 8 | 204 | 4.76 | 15.5 | 2.5 | 2.8 | 2.4 |
+| tour | 30 × 7.2 × 1.6 | 8 | 193 | 2.92 | 0.95 | 3.1 | 6.5 | 3.2 |
+| tug | 26 × 9.5 × 3.4 | 8 | 494 | 3.03 | 1.50 | 4.5 | 6.8 | 4.6 |
+| pilot | 16 × 4.8 × 1.2 | 6 | 44 | 1.36 | 1.20 | 2.4 | 3.9 | 2.4 |
+| motorboat | 8.5 × 2.8 × 0.55 | 6 | 6.2 | 0.59 | 1.10 | 1.6 | 2.4 | 1.6 |
+| fishing | 9.5 × 3.2 × 0.8 | 6 | 11 | 0.75 | 0.90 | 2.0 | 3.0 | 2.0 |
+| sailboat | 13 × 4.1 × 0.8 | 6 | 17 | 1.00 | 1.60 | 1.9 | 3.3 | 1.9 |
+| seiner | 28 × 7.6 × 2.4 | 8 | 293 | 2.64 | 1.00 | 3.7 | 6.7 | 3.9 |
+| yacht | 24 × 6 × 1.6 | 8 | 110 | 2.01 | 1.20 | 2.8 | 4.8 | 2.9 |
+| tanker-a / b | 183–228 × 32.2 × 11.6–13.2 | 12 | 53 000–75 000 | 11.1 | 2.30 | 9.7–10.3 | 17.4 | 9.2–9.8 |
+| tanker-c | 118 × 19.6 × 7.2 | 12 | 12 900 | 5.83 | 2.30 | 7.6 | 10.6 | 7.3 |
+| container-a / b | 172–222 × 27.4–32.2 × 9.6–11.2 | 12 | 31 000–55 000 | 10.2–12.2 | 1.60 | 8.5–9.2 | 17.8–20.9 | 8.4–9.0 |
+| bulk-a / b | 180 × 30 × 10.4; 146 × 23.6 × 9.1 | 12 | 43 600; 24 300 | 9.7; 7.0 | 2.80 | 9.2; 8.6 | 14.7; 11.6 | 8.7; 8.1 |
+
+**Tunables:** `HULL_DESIGNS` in `hull-data.ts` (per kind: `gm` sets KG and the roll period, `zetaRoll` / `rollQuad`
+how fast rolling dies out and how big it gets in a seaway, `vmax` / `accel` / `yawRate` / `thrusters` the propulsion
+and steering authority, `planing` lift and trim); `VESSEL_PHYSICS` in `vessel-physics.ts` (step, LOD ranges, water
+refresh rates, leashes, dragon mass, splash impulse and reach, wake source / target sizes); `CRAB_MAX` /
+`DRIFT_MAX` in `rigid-hull.ts`.
+
+**Checks** (`tools/headless/vessels-check.ts`, `--quick` for shorter fleet runs): free-decay periods within ±15 % of
+the formulas (they agree within 1 %) and roll periods in range for the size; righting arm positive at every heel to
+30° (GZ at 30° from 0.17 m, tour, to 1.5 m, seabus); equilibrium draft exact (±10 % allowed), ballast drafts too; a
+lodos of U10 18 m/s (beyond the game's 16 m/s cap; Hs 2.2 m): max roll motorboat 25°, fishing 22°, ferry 14°, vapur
+7°, tanker 1.4°, nothing capsizes; the high-preset fleet for 25 simulated minutes with every hull physical:
+route-bound cross-track p95 0.2–3 m (max 8.7 m, vapur / seabus in the current), free-roaming craft within their
+leash, 24 of 24 ferry arrivals alongside (2 m, 3°) after 7.5 s median / 11.5 s max, ≤ 2 m while alongside, no hull
+ever nearer the land than its reference, no resets; a dragon landing on a fishing boat / motorboat / sailboat rocks
+it 6° / 9° / 3° and it settles; a plunge splash 4 m off a motorboat rolls it 5°; a vapur's wake rocks a fishing boat
+80 m off (1.7° rms, 0 in calm water); the ultra fleet (138 vessels) with the camera at Karaköy: physics 0.12 ms avg /
+0.17 ms p95 at 60 fps, 0.26 / 0.36 ms at 24 fps (every hull forced onto the full body: 0.82 ms avg); the same motion
+at dt 1/24, 1/60 and 1/144 (roll within 1.4°, position within 0.25 m after 60 s in a lodos) and no NaNs with
+jittered frame times. Node timings; the browser should be similar (plain JS, no allocations per frame).
+
+**What the owner should look at (GPU, in game):**
+- Ferries crossing to Kadıköy / Üsküdar in a lodos (`?wu10=14`): a slow 7–9 s roll, heave and pitch on the swell, a
+  little outward heel in turns, crabbing against the Bosphorus current; docking (they come alongside and hold on a
+  soft spring) and the double-enders leaving with the other end first.
+- Small boats (fishing, motorboats, sailboats) bobbing quickly (2–3 s) and following the wave slope; a motorboat
+  planing bow-up; fishing boats rocking as a vapur's wake reaches them.
+- Fly low and splash or plunge next to a moored boat, or swim into one: it should rock and settle.
+- Anchored ships swinging slowly with their hulls barely moving; ballast ships riding high.
+- LOD changes 1.5 km / 4 km from the camera: roll and pitch fade in and out there by design; report any pop.
+
+Not built in 7b: wind heel from the superstructure's side area, slamming, moored boats swinging on real mooring-line
+geometry (they sit on a spring at their spot), roll / pitch of the underwater hull boxes (they stay yawed boxes),
+wave particles from hulls (7a replaces the analytic wake push).
+
 ### 7c. Foam and spray from the water's state
 - **Foam** is generated where the simulated surface breaks (steepness / surface compression above a threshold: wave
   crests in lodos, the bow wave, the crest of a wake), where the propeller churns the water (source strength from
@@ -328,7 +504,7 @@ only as the far LOD and as a fallback on "low".
 | Stage | Content | Done when |
 |---|---|---|
 | 1 | Water service with the CPU wave evaluator; dragon floats and skims on real waves; current | Parity test passes; swim/skim checks pass |
-| 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound | Owner GPU review OK; budget met |
+| 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound (built) | Owner GPU review OK; budget met |
 | 3 | Plunge, under-water movement, breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
 | 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company (swimming pose and stroke, take-off run, wading built) | Checks and sheets approved; feel test OK |

@@ -52,7 +52,10 @@ export class LifeSystem implements System {
   private clock = 0;
   private shipCount = -1;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeSplash: (() => void) | null = null;
   private readonly camPos = new THREE.Vector3();
+  /** Hulls the dragon touched this frame (ids, scratch). */
+  private readonly touched: number[] = [];
 
   async init(ctx: EngineContext): Promise<void> {
     this.ctx = ctx;
@@ -85,6 +88,8 @@ export class LifeSystem implements System {
       }
       console.info(`[life] models ${Math.round(t1 - t0)} ms, routes ${Math.round(t2 - t1)} ms, fleet ${Math.round(performance.now() - t2)} ms`);
       this.unsubscribe = ctx.quality.onChange((s) => this.onQuality(s));
+      // Splashes (the dragon's water contacts, plunges, breaches) rock the hulls around them.
+      this.unsubscribeSplash = ctx.events.on('splash', ({ position, strength }) => this.fleet?.physics.splash(position.x, position.z, strength));
     } finally {
       this.jobs--;
     }
@@ -129,7 +134,8 @@ export class LifeSystem implements System {
     const collision = this.ctx?.services.tryGet('collision');
     this.hulls = collision ? new HullColliders(collision) : null;
     this.shipCount = s.shipCount;
-    this.fleet = new Fleet({ geo: this.geo, models: this.models, berths: this.berths, lanes: this.lanes, shipCount: s.shipCount }, this.material);
+    const water = this.ctx?.services.tryGet('water') ?? null;
+    this.fleet = new Fleet({ geo: this.geo, models: this.models, berths: this.berths, lanes: this.lanes, shipCount: s.shipCount, water }, this.material);
     this.root.add(this.fleet.renderer.object);
     if (this.wakes) {
       this.root.remove(this.wakes.mesh);
@@ -157,9 +163,15 @@ export class LifeSystem implements System {
   update(dt: number, ctx: EngineContext): void {
     if (!this.fleet) return;
     this.camPos.setFromMatrixPosition(ctx.camera.matrixWorld);
+    // The water service may register after the fleet was planned.
+    this.fleet.physics.water = ctx.services.tryGet('water') ?? null;
     this.fleet.update(dt, this.camPos);
+    const dragon = ctx.services.tryGet('dragon');
+    if (dragon) {
+      // Landing on or bumping into a small boat rocks it.
+      this.fleet.physics.contact(dragon.position, dragon.velocity, 2, undefined, this.touched);
+    }
     if (this.hulls) {
-      const dragon = ctx.services.tryGet('dragon');
       this.hulls.update(this.fleet.vessels, dragon ? dragon.position : this.camPos);
     }
     this.clock += dt;
@@ -169,7 +181,6 @@ export class LifeSystem implements System {
     }
     this.traffic?.update(dt, time, ctx.time.timeOfDay, this.camPos);
     if (this.flocks) {
-      const dragon = ctx.services.tryGet('dragon');
       this.flocks.update(dt, this.camPos, dragon ? dragon.position : null);
     }
     // Lights only need per-frame work around dusk and at night.
@@ -188,6 +199,7 @@ export class LifeSystem implements System {
 
   dispose(): void {
     this.unsubscribe?.();
+    this.unsubscribeSplash?.();
     this.hulls?.dispose();
     this.hulls = null;
     this.fleet?.dispose();
