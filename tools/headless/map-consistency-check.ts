@@ -50,6 +50,8 @@ import { makeSolids } from '../world-compiler/src/buildings';
 import { landmarkOf, setLandmarkClaims, useDistrict } from '../world-compiler/src/district';
 import { readAreas, ROOT } from '../world-compiler/lib/areas.mjs';
 import { buildHeadlessGeo, readOsmLand } from './geo';
+import { clipWaysToLand } from '../../src/world/osm/shared/land';
+import { openLandmarkPassages } from '../../src/world/osm/shared/landmark-passages';
 import { isOsmCell } from '../../src/world/city/osm/mask';
 import { LandUse } from '../../src/core/contracts';
 import { pointInRing } from '../../src/world/osm/shared/geometry';
@@ -247,6 +249,9 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
     return cached;
   }
   const data = dataOf(r);
+  // osm/index.ts OsmRegion.load: vehicle ways clipped to land, landmark passages opened, before any layer runs.
+  clipWaysToLand(data, (x, z) => geo.coastDistance(x, z));
+  openLandmarkPassages(data, layerClaims);
   // osm/index.ts + shared/foundation.ts buildWorkerBase, without the workers.
   const rect = groundRect(r.rect);
   const base: OsmWorkerBase = {

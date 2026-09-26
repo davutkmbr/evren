@@ -35,7 +35,7 @@ import { gzipSync } from 'node:zlib';
 import * as THREE from 'three';
 import type { WorldBounds } from '../../src/core/contracts';
 import { localToLatLon } from '../../src/core/geo-coords';
-import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, decodeLand, encodeMask, FadeClass, FLAG, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
+import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, decodeLand, encodeMask, FadeClass, FLAG, LAMP_Y0, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
 import { LEVEL_SIZES } from '../../src/world/city/protocol';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { Arch } from '../../src/world/osm/buildings/archetypes';
@@ -50,6 +50,14 @@ import { buildStreetRaster, streetRasterInput } from '../../src/world/osm/shared
 import { StreetSurface } from '../../src/world/osm/shared/street-surface';
 import { streetAreaRects } from '../../src/world/osm/street-areas';
 import { buildGeoWith } from '../../tools/headless/geo';
+import { FootprintIndex } from '../../src/world/osm/shared/footprints';
+import { clipWaysToLand } from '../../src/world/osm/shared/land';
+import { openLandmarkPassages } from '../../src/world/osm/shared/landmark-passages';
+import { osmStandGround } from '../../src/world/osm/shared/stand';
+import { classifyPaths, classifyStreets } from '../../src/world/osm/shared/street-field';
+import { buildLamps } from '../../src/world/osm/streets/lamps';
+import { landPads } from '../../src/world/osm/streets/pads';
+import { PropSink } from '../../src/world/osm/streets/sink';
 import { ROOT } from '../../tools/world-compiler/lib/areas.mjs';
 import { extractSource } from './lib/osm-local.mjs';
 
@@ -370,6 +378,39 @@ function surfaceOver(data: OsmData, rect: WorldBounds, area: WorldBounds): Stree
   return new StreetSurface(base);
 }
 
+/** The changes the game applies to a region's data before its layers see it (osm/index.ts OsmRegion.load). */
+function runtimeData(data: OsmData): OsmData {
+  clipWaysToLand(data, (x, z) => geo.coastDistance(x, z));
+  openLandmarkPassages(data, layerClaims);
+  return data;
+}
+
+interface Lamp {
+  x: number;
+  y: number;
+  z: number;
+  /** sRGB colour and city lamp type (1 street, 2 road), as city/lamps.ts packs it (0xRRGGBBTT). */
+  col: number;
+}
+const srgbByte = (c: number): number => Math.round(255 * Math.min(1, c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055));
+/** The flight layer's street lights (osm/streets/streets.worker.ts buildLamps) over `data`, as city lamp points. */
+function lampsOf(data: OsmData, surface: StreetSurface): Lamp[] {
+  const footprints = new FootprintIndex(data.buildings);
+  const sink = new PropSink(osmStandGround(surface, footprints));
+  const res = buildLamps(classifyStreets(data.roads), classifyPaths(data.roads), data, surface, footprints, sink, landPads(surface.geo, reservedPads(geo)));
+  const out: Lamp[] = [];
+  for (let i = 0; i < res.sprites.length; i += 7) {
+    const sp = res.sprites;
+    const m = Math.max(sp[i + 3], sp[i + 4], sp[i + 5], 1e-6);
+    // Road lights (arm and median lamps) have the larger heads.
+    const type = sp[i + 6] >= 0.4 ? 2 : 1;
+    const col = ((srgbByte(sp[i + 3] / m) << 24) | (srgbByte(sp[i + 4] / m) << 16) | (srgbByte(sp[i + 5] / m) << 8) | type) >>> 0;
+    out.push({ x: sp[i], y: sp[i + 1], z: sp[i + 2], col });
+  }
+  return out;
+}
+const lamps: Lamp[] = [];
+
 // 5. Pass B: region solids (the region layer's own set and infill), then every other block with its own infill.
 const regionRecs: Rec[] = [];
 let regionInfill = 0;
@@ -378,9 +419,15 @@ for (const { def, rect } of regions) {
   if (!existsSync(file)) {
     continue;
   }
-  const data = JSON.parse(readFileSync(file, 'utf8')) as OsmData;
+  const data = runtimeData(JSON.parse(readFileSync(file, 'utf8')) as OsmData);
   const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
-  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetRects }, layerClaims, surfaceOver(data, def.rect, def.area), def.area);
+  const surface = surfaceOver(data, def.rect, def.area);
+  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetRects }, layerClaims, surface, def.area);
+  for (const l of lampsOf(data, surface)) {
+    if (inRect(rect, l.x, l.z)) {
+      lamps.push(l);
+    }
+  }
   regionInfill += infill.parcels.length;
   for (const s of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, rect)) {
     // Half-open ownership: a centroid on the shared edge of two regions belongs to one of them.
@@ -396,13 +443,21 @@ let blockInfill = 0;
 for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
   for (let bi = 0; bi < BAKE_BLOCKS; bi++) {
     const rect = blockRect(bi, bj);
-    const data = JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData;
+    const data = runtimeData(JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData);
     const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
     let extra: OsmBuilding[] = [];
-    if (buildings.length >= INFILL_MIN_BUILDINGS) {
+    const surface = buildings.length >= INFILL_MIN_BUILDINGS || data.roads.length ? surfaceOver(data, rect, rect) : null;
+    if (surface && buildings.length >= INFILL_MIN_BUILDINGS) {
       const keepOut = [...streetRects, ...regions.map((r) => r.rect)].filter((k) => overlaps(k, rect));
-      extra = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, bakeClaims, surfaceOver(data, rect, rect), rect).parcels;
+      extra = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, bakeClaims, surface, rect).parcels;
       blockInfill += extra.length;
+    }
+    if (surface) {
+      for (const l of lampsOf(data, surface)) {
+        if (inRect(rect, l.x, l.z) && !inAnyRegion(l.x, l.z)) {
+          lamps.push(l);
+        }
+      }
     }
     for (const s of collectSolids({ buildings, claims: bakeClaims, extra }, rect)) {
       const r = toRec(s);
@@ -488,7 +543,26 @@ const index: CityBakeIndex = {
   land: { file: 'land.bin.gz', polygons: 0, bytes: 0 },
   stats: {},
 };
+// Street lights in OSM cells only (the procedural city keeps its own elsewhere).
+const lampsByBlock = new Map<string, Lamp[]>();
+let lampCount = 0;
+for (const l of lamps) {
+  const k = cellOf(l.x, l.z);
+  if (k < 0 || !relaxed[k]) {
+    continue;
+  }
+  const key = `${Math.floor((l.x + BAKE_HALF) / BAKE_BLOCK)}_${Math.floor((l.z + BAKE_HALF) / BAKE_BLOCK)}`;
+  let list = lampsByBlock.get(key);
+  if (!list) {
+    lampsByBlock.set(key, (list = []));
+  }
+  list.push(l);
+  lampCount++;
+}
 const byBlock = new Map<string, Out[]>();
+for (const key of lampsByBlock.keys()) {
+  byBlock.set(key, []);
+}
 for (const o of outs) {
   const key = `${Math.floor((o.cx + BAKE_HALF) / BAKE_BLOCK)}_${Math.floor((o.cz + BAKE_HALF) / BAKE_BLOCK)}`;
   let list = byBlock.get(key);
@@ -578,9 +652,29 @@ for (const [key, list] of byBlock) {
     id[k] = d;
     prevId = o.id;
   });
-  const header: Omit<BuildingFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, block: [bi, bj], origin: [ox, oz], count: n, vertices: verts, tiles };
+  const blockLamps = (lampsByBlock.get(key) ?? []).map((l) => ({ l, ti: Math.floor((l.x + BAKE_HALF) / TILE0), tj: Math.floor((l.z + BAKE_HALF) / TILE0) }));
+  blockLamps.sort((a, b) => a.tj - b.tj || a.ti - b.ti || a.l.x - b.l.x || a.l.z - b.l.z);
+  const lampTiles: BuildingFileHeader['lampTiles'] = [];
+  const lampXZ = new Int16Array(blockLamps.length * 2);
+  const lampY = new Uint16Array(blockLamps.length);
+  const lampCol = new Uint8Array(blockLamps.length * 4);
+  blockLamps.forEach(({ l, ti, tj }, i) => {
+    const last = lampTiles[lampTiles.length - 1];
+    if (!last || last.i !== ti || last.j !== tj) {
+      lampTiles.push({ i: ti, j: tj, first: i, count: 0 });
+    }
+    lampTiles[lampTiles.length - 1].count++;
+    lampXZ[i * 2] = Math.round((l.x - ox) / XY_UNIT);
+    lampXZ[i * 2 + 1] = Math.round((l.z - oz) / XY_UNIT);
+    lampY[i] = Math.max(0, Math.min(65535, Math.round((l.y + LAMP_Y0) * 10)));
+    lampCol[i * 4] = (l.col >>> 24) & 255;
+    lampCol[i * 4 + 1] = (l.col >>> 16) & 255;
+    lampCol[i * 4 + 2] = (l.col >>> 8) & 255;
+    lampCol[i * 4 + 3] = l.col & 255;
+  });
+  const header: Omit<BuildingFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, block: [bi, bj], origin: [ox, oz], count: n, vertices: verts, tiles, lampTiles, lamps: blockLamps.length };
   const bytes = gzipSync(
-    packContainer<BuildingFileHeader>(header, { rings, nv, xy: shuffle16(xy), wallH: shuffle16(wallH), minH: shuffle16(minH), rise, roof, arch, floors, floorH, flags, tint: shuffle16(tint), roofTint: shuffle16(roofTint), id }),
+    packContainer<BuildingFileHeader>(header, { rings, nv, xy: shuffle16(xy), wallH: shuffle16(wallH), minH: shuffle16(minH), rise, roof, arch, floors, floorH, flags, tint: shuffle16(tint), roofTint: shuffle16(roofTint), id, lampXZ: shuffle16(lampXZ), lampY: shuffle16(lampY), lampCol }),
     { level: 9 },
   );
   const file = `blocks/${key}.bin.gz`;
@@ -597,6 +691,7 @@ index.stats = {
   infillBlocks: blockInfill,
   droppedProcedural,
   longRings,
+  lamps: lampCount,
   wallOwnedApplied: existsSync(wallsIndex) ? 1 : 0,
   buildingBytes,
   landBytes: index.land.bytes,

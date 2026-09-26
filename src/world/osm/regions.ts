@@ -162,6 +162,25 @@ export function setOsmRegionActive(def: OsmRegionDef, active: boolean): Promise<
   return waits.length ? Promise.all(waits).then((ts) => Math.max(...ts)) : Promise.resolve(performance.now());
 }
 
+type TreesListener = (rect: WorldBounds) => void;
+const treesListeners = new Set<TreesListener>();
+
+/**
+ * The procedural trees over `rect` must follow the active list now (vegetation rebuilds its tiles there): when a
+ * region has faded in (its trees replaced the procedural ones pixel by pixel, OSM_FADE_OUT) or starts to fade out
+ * (the procedural trees come back while the region's fade out). index.ts fires it.
+ */
+export function onOsmTreesChange(fn: TreesListener): () => void {
+  treesListeners.add(fn);
+  return () => treesListeners.delete(fn);
+}
+
+export function notifyOsmTreesChange(rect: WorldBounds): void {
+  for (const fn of treesListeners) {
+    fn(rect);
+  }
+}
+
 /** True when (x, z) lies in one of `rects`. */
 export function inRects(rects: readonly WorldBounds[], x: number, z: number): boolean {
   for (const r of rects) {

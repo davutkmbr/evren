@@ -10,8 +10,11 @@
  *    and the new ones in, and reports the start time.
  * 3. From that time the region fades in over OSM_FADE_SECONDS on its slot (core/uniforms.ts uOsmFadeRect /
  *    uOsmFadeVal), with the city's dither pattern: every pixel shows either the old city chunk or the region.
- * Going away is the same in reverse: the region stays until the city's chunks with its buildings are ready, fades out,
- * and is disposed.
+ * 4. Faded in, the region keeps its slot at 1 while it is loaded: the procedural trees (OSM_FADE_OUT) stay hidden under
+ *    it, the vegetation rebuilds its tiles without them (regions.ts onOsmTreesChange), and the slot is ready for step 5.
+ * 5. Going away is the same in reverse: the region stays until the city's chunks with its buildings are ready, then
+ *    fades out while the procedural trees come back in the pixels it gives up, and is disposed.
+ * Shadows switch at the middle of a fade (city ghosts and the region's casters).
  */
 import type * as THREE from 'three';
 import type { WorldBounds } from '../../core/contracts';

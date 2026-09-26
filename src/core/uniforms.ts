@@ -23,8 +23,8 @@ function defaultStreetFade(): THREE.DataTexture {
  * - sky:    uTimeOfDay, uSunDir, uSunColor, uMoonDir, uAmbient, uNight, uWind, uFog*
  * Modules may ADD their own globals via registerGlobalUniform() (e.g. clouds -> cloud shadow map).
  */
-/** Streamed OSM regions that can fade at once (world/osm/index.ts MAX_LOADED + the fixed slice). */
-export const OSM_FADE_SLOTS = 10;
+/** Streamed OSM regions holding a handover slot at once (world/osm/index.ts MAX_LOADED, plus regions fading out). */
+export const OSM_FADE_SLOTS = 12;
 
 export const globalUniforms: Record<string, THREE.IUniform> = {
   uTime: { value: 0 },
@@ -54,7 +54,8 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   /**
    * Handover of the flight-scale OSM regions (world/osm/fade.ts): per slot a build rect (minX, minZ, maxX, maxZ) and its
    * fade (x) and direction (y: 1 fading out). Materials with the OSM_FADE define (every material of a streamed region)
-   * dither against it, complementary to the city chunks they replace (city/materials/city.glsl.ts CITY_FADE_FRAGMENT).
+   * dither against it, complementary to the city chunks they replace (city/materials/city.glsl.ts CITY_FADE_FRAGMENT);
+   * OSM_FADE_OUT materials (the procedural trees) draw the complementary pixels.
    */
   uOsmFadeRect: { value: Array.from({ length: OSM_FADE_SLOTS }, () => new THREE.Vector4(1e9, 1e9, 1e9, 1e9)) },
   uOsmFadeVal: { value: Array.from({ length: OSM_FADE_SLOTS }, () => new THREE.Vector2(1, 0)) },
@@ -156,7 +157,7 @@ ${SHARED_GLSL}
     uniform float fogNear;
     uniform float fogFar;
   #endif
-  #ifdef OSM_FADE
+  #if defined(OSM_FADE) || defined(OSM_FADE_OUT)
     uniform vec4 uOsmFadeRect[${OSM_FADE_SLOTS}];
     uniform vec2 uOsmFadeVal[${OSM_FADE_SLOTS}];
   #endif
@@ -198,14 +199,20 @@ ${SHARED_GLSL}
    * city chunks' own dither pattern so the two sides fill complementary pixels.
    */
   const osmFadeTest = /* glsl */ `
-#if defined(USE_FOG) && defined(OSM_FADE) && !defined(OSM_FADE_DONE)
+#if defined(USE_FOG) && (defined(OSM_FADE) || defined(OSM_FADE_OUT)) && !defined(OSM_FADE_DONE)
   #define OSM_FADE_DONE
   for (int osmI = 0; osmI < ${OSM_FADE_SLOTS}; osmI++) {
     vec4 osmR = uOsmFadeRect[osmI];
     if (vFogWorldPos.x >= osmR.x && vFogWorldPos.x < osmR.z && vFogWorldPos.z >= osmR.y && vFogWorldPos.z < osmR.w) {
       vec2 osmF = uOsmFadeVal[osmI];
       float osmDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-      if (osmF.y > 0.5 ? osmDither < 1.0 - osmF.x : osmDither >= osmF.x) discard;
+      bool osmShown = osmF.y > 0.5 ? osmDither >= 1.0 - osmF.x : osmDither < osmF.x;
+      #ifdef OSM_FADE_OUT
+      // What the region replaces (the procedural trees): the complementary pixels.
+      if (osmShown) discard;
+      #else
+      if (!osmShown) discard;
+      #endif
       break;
     }
   }
