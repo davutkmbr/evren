@@ -1322,6 +1322,11 @@ export const soulStep: CompileStep = {
   id: 'soul',
   handAuthored: 'soul',
   tiles: 'full',
+  // Area-wide quotas (SoulPlan.left) are used up tile by tile; the totals are the summary's.
+  ordered: {
+    state: (a) => ({ left: soulPlan(a).left, totals: soulPlan(a).totals }),
+    restore: (a, s) => Object.assign(soulPlan(a), structuredClone(s as Pick<SoulPlan, 'left' | 'totals'>)),
+  },
   prepare(a) {
     soulPlan(a);
   },

@@ -460,10 +460,25 @@ export function crowdPlan(a: AreaContext): CrowdPlan {
   return crowdState(a).plan;
 }
 
-/** Browsing people in front of this tile's stalls and shop windows (they need the façade step's placements). */
-function browsers(t: TileContext, st: CrowdState): XYZ[] {
+/**
+ * Browsing people in front of this tile's stalls and shop windows (they need the façade step's placements). They use
+ * a random stream, spacing claims and refs of their own tile on top of the planned crowd (read only here), so a
+ * tile's browsers do not depend on which tiles were compiled before it (worker threads, tile cache).
+ */
+function browsers(t: TileContext, shared: CrowdState): Placement[] {
   const sc = streetContext(t.area);
-  const out: XYZ[] = [];
+  const r = rng(tileSeed(t.id));
+  const claims = new Spacing(4);
+  const people: Placement[] = [];
+  const st = {
+    ...shared,
+    r,
+    taken: { claim: (x: number, z: number, min: number): boolean => shared.taken.free(x, z, min) && claims.claim(x, z, min) },
+    add: (pose: 'standing', x: number, y: number, z: number, yaw: number): void => {
+      const k = Math.floor(r() * PERSON_PALETTES.length);
+      people.push({ prop: 'st_person', variant: `${pose}${k}`, pos: [x, y, z], yaw, scale: 0.92 + r() * 0.16, ref: `crowd/${t.id}/${people.length}`, seed: Math.floor(r() * 1e6) });
+    },
+  };
   const stand = (x: number, z: number, faceX: number, faceZ: number): void => {
     if (!inTile(t, x, z) || st.blocked(x, z) || !st.taken.claim(x, z, 0.6)) {
       return;
@@ -472,7 +487,6 @@ function browsers(t: TileContext, st: CrowdState): XYZ[] {
     st.add('standing', x, sc.groundY(x, z), z, headingYaw(h + (st.r() - 0.5) * 30, '+Z'));
     st.plan.stats.browsing++;
     st.plan.stats.standing--;
-    out.push([x, 0, z]);
   };
   for (const i of t.instances.list) {
     if (!i.asset.startsWith('fac_stall')) {
@@ -500,7 +514,16 @@ function browsers(t: TileContext, st: CrowdState): XYZ[] {
     const dist = 0.7 + 0.35 * st.r();
     stand(d.position[0] + nx * dist - nz * side, d.position[2] + nz * dist + nx * side, -nx, -nz);
   }
-  return out;
+  return people;
+}
+
+/** Seed of a tile's own random stream (FNV-1a of its id). */
+function tileSeed(id: string): number {
+  let h = 2166136261;
+  for (let k = 0; k < id.length; k++) {
+    h = Math.imul(h ^ id.charCodeAt(k), 16777619);
+  }
+  return (h ^ 4711) >>> 0;
 }
 
 export const streetCrowdStep: CompileStep = {
@@ -510,21 +533,24 @@ export const streetCrowdStep: CompileStep = {
   },
   tile(t) {
     const st = crowdState(t.area);
-    const before = st.plan.people.length;
-    browsers(t, st);
+    const local = browsers(t, st);
     const stalls = t.instances.list.filter((i) => i.asset.startsWith('fac_stall')).map((i) => i.position);
     let n = 0;
-    st.plan.people.forEach((p, k) => {
+    st.plan.people.forEach((p) => {
       if (!inTile(t, p.pos[0], p.pos[2])) {
         return;
       }
       // Planned walkers and standers do not stand in a stall (browsers were placed clear of them).
-      if (k < before && !p.variant?.startsWith('sitting') && stalls.some((q) => Math.hypot(q[0] - p.pos[0], q[2] - p.pos[2]) < 1.4)) {
+      if (!p.variant?.startsWith('sitting') && stalls.some((q) => Math.hypot(q[0] - p.pos[0], q[2] - p.pos[2]) < 1.4)) {
         return;
       }
       t.place(p.prop, p.pos, p.yaw, { variant: p.variant, scale: p.scale, ref: p.ref, seed: p.seed });
       n++;
     });
+    for (const p of local) {
+      t.place(p.prop, p.pos, p.yaw, { variant: p.variant, scale: p.scale, ref: p.ref, seed: p.seed });
+      n++;
+    }
     if (n) {
       t.record('streetCrowd', { people: n });
     }

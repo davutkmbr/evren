@@ -8,7 +8,8 @@
  * anything else and every module reads `district()`. Tools that never call `useDistrict` get the generic profile.
  */
 import type { OsmBuilding } from '../../../src/world/osm/data';
-import { DISTRICTS, GENERIC } from '../districts';
+import { DISTRICTS, GENERIC, PROFILES } from '../districts';
+import { readLandingSpot } from '../lib/areas.mjs';
 import type { BalconyMode, SpecRow, Typology } from './facade/plan';
 import type { Bounds2 } from './format';
 import type { MaterialDef } from './materials';
@@ -90,10 +91,38 @@ export interface DistrictProfile {
 
 let active: DistrictProfile | null = null;
 
-/** Selects the profile of `areaId` (or the generic one) for this process and returns it. */
+/**
+ * Selects the profile of `areaId` for this process and returns it: the area's own profile, else the landing spot's
+ * (spotProfile), else the generic one.
+ */
 export function useDistrict(areaId: string): DistrictProfile {
-  active = DISTRICTS[areaId] ?? { ...GENERIC, id: areaId };
+  active = DISTRICTS[areaId] ?? spotProfile(areaId) ?? { ...GENERIC, id: areaId };
   return active;
+}
+
+/**
+ * Profile of a landing spot without an area of its own (districts/landing-spots.json): its base profile with the
+ * spot's id and name, the spot's whole square as the full-detail strip and its place words first in the shop names.
+ */
+function spotProfile(areaId: string): DistrictProfile | null {
+  const spot = readLandingSpot(areaId);
+  if (!spot || spot.area) {
+    return null;
+  }
+  const base = PROFILES[spot.profile];
+  if (!base) {
+    throw new Error(`landing spot '${spot.id}': unknown profile '${spot.profile}' (known: ${Object.keys(PROFILES).join(', ')})`);
+  }
+  return {
+    ...base,
+    id: spot.id,
+    label: spot.name,
+    strip: { rect: spot.rect },
+    cameras: null,
+    handAuthored: { heroes: false, soul: false, precinct: false, interiors: false },
+    buildings: { ...base.buildings, spec: {}, heroIds: new Set(), heroHeights: {}, landmarkIds: new Set(), shuttered: new Set() },
+    shops: { ...base.shops, firstWords: [...spot.placeWords, ...GENERIC.shops.firstWords] },
+  };
 }
 
 /** The active district profile (generic until useDistrict is called). */

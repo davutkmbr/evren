@@ -31,7 +31,7 @@
     "preview": "vite preview",
     "snap": "node scripts/snap.mjs",
     "walk-test": "node scripts/walk-test.mjs",
-    "compile:world": "tsx tools/world-compiler/src/cli.ts",
+    "compile:world": "node tools/world-compiler/run.mjs",
     "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",
     "blender": "node scripts/blender-run.mjs"
   },
@@ -47,6 +47,7 @@
     "gltf-validator": "^2.0.0-dev.3.10",
     "meshoptimizer": "^1.2.0",
     "playwright-core": "^1.63.0",
+    "sharp": "^0.35.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
