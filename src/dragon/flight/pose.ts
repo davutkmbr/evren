@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE } from './params';
+import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE, SWIM_SEA } from './params';
 import type { FlightSim } from './sim';
+import { surfShare } from './locomotion';
 import { tailPitchForClearance } from './skim';
 import type { PilotCommand } from './types';
 
@@ -194,7 +195,8 @@ export class PoseDriver {
     if (sim.mode === 'swimming') {
       // Floating: the neck raised out of the water, head forward (it pushes forward a little with a strong stroke);
       // at rest it looks around now and then.
-      neckPitch = SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * sim.swimStroke - sim.pitch * 0.4;
+      // Riding a wave it stretches its neck forward and down the face.
+      neckPitch = SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * sim.swimStroke - sim.pitch * 0.4 + SWIM_SEA.surfNeck * surfShare(sim);
       neckYaw += this.swimLook(sim, dt);
     } else if (onSurface) {
       neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount - 0.22 * moves.crouch + 0.12 * moves.skid;
@@ -255,7 +257,7 @@ export class PoseDriver {
       }
       tailPitch =
         sim.mode === 'swimming'
-          ? SWIM_POSE.tailPitch
+          ? SWIM_POSE.tailPitch + SWIM_SEA.surfTail * surfShare(sim)
           : 0.06 +
             0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount * (1 - gallop) -
             0.08 * gallop * Math.sin(sim.walkPhase - 2.2) * sim.walkAmount -
@@ -332,6 +334,10 @@ export class PoseDriver {
       jaw = Math.max(jaw, 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(time * 5.5)));
     }
     jaw = Math.max(jaw, roar * (0.92 + 0.05 * Math.sin(time * 17)));
+    // Riding a wave: the jaw a little open in delight.
+    if (sim.mode === 'swimming') {
+      jaw = Math.max(jaw, SWIM_SEA.surfJaw * surfShare(sim));
+    }
     // A hard landing's impact: jaw open in surprise while the wings flail.
     jaw = Math.max(jaw, tumbling ? 0.5 * hard.flail : 0);
     pose.jawOpen = follow(pose.jawOpen, clamp(jaw, 0, 1), 14, dt);
