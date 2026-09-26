@@ -726,8 +726,9 @@ export const LEAP = {
 export const SWIM = {
   /** Depth of the centre of mass below the body-averaged wave surface (m): the waterline runs along the back. */
   floatDepth: 0.6,
-  paddleSpeed: 2.6,
-  fastSpeed: 4.5,
+  /** Swim speeds (m/s): W and W + Shift. The wings row a big body: brisker than a swan, a pedal boat at full stroke. */
+  paddleSpeed: 5,
+  fastSpeed: 8.5,
   turnRate: 0.6,
   leapUp: 4.5,
   leapForward: 2,
@@ -743,8 +744,8 @@ export const SWIM = {
 export const SWIM_POSE = {
   /** Stroke cycle frequency (one wave of body and tail, one stroke of each wing): idle + per m/s; Shift multiplies it. */
   freqIdle: 0.2,
-  freqPerSpeed: 0.15,
-  fastFreq: 1.2,
+  freqPerSpeed: 0.07,
+  fastFreq: 1.05,
   /** Stroke strength 0..1: the idle sway, the strength at paddle speed, and with Shift. */
   strokeIdle: 0.22,
   strokePaddle: 0.7,
@@ -756,7 +757,7 @@ export const SWIM_POSE = {
    * swim speed (± amplitude, two surges per cycle, zero mean: the average speed is unchanged). surgePhase is the stroke
    * phase (rad) of the left wing's peak thrust (its mid power stroke); the right wing's comes half a cycle later.
    */
-  surge: 0.1,
+  surge: 0.14,
   surgePhase: 1.35,
   /** Rate (1/s) at which the swim posture blends in (a landing settles into the float) and out. */
   blendIn: 2.2,
@@ -768,6 +769,12 @@ export const SWIM_POSE = {
   settleTime: 1.5,
   settleSink: 2,
   settleAlign: 1.6,
+  /**
+   * Riding the bow wave: with speed (0 at rest, 1 at SWIM.fastSpeed) the body rises this far (m) in the water and trims
+   * this much nose-up (rad), like a duck pushing on.
+   */
+  speedRise: 0.12,
+  speedTrim: 0.035,
   /** Neck raise (pose neckPitch, + = up) while floating, and extra with the stroke (the head pushes forward). */
   neckRaise: 0.55,
   neckStroke: -0.1,
@@ -785,7 +792,7 @@ export const SWIM_POSE = {
    * beating and slapping the water (a splash at each wingtip per downstroke), then leaps into the air.
    */
   runTime: 1.2,
-  runSpeed: 8,
+  runSpeed: 11,
   runAccel: 7,
   runEffort: 0.95,
   /** Stroke amplitude limit through the run: the downstrokes slap the surface instead of plunging deep. */

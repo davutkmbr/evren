@@ -286,7 +286,10 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   }
   // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave. The
   // take-off run lifts the body onto the surface.
-  const depth = SWIM.floatDepth + (SWIM_POSE.runRiseDepth - SWIM.floatDepth) * run * run * (3 - 2 * run);
+  // Swimming on, the chest rides up on its bow wave.
+  const speedK = smoothstep(0, SWIM.fastSpeed, Math.abs(sim.groundSpeed));
+  const swimDepth = SWIM.floatDepth - SWIM_POSE.speedRise * speedK;
+  const depth = swimDepth + (SWIM_POSE.runRiseDepth - swimDepth) * run * run * (3 - 2 * run);
   const floatY = float.height - depth;
   const vDrag = 1 - Math.exp(-h * (4 + 0.4 * Math.abs(v.y - float.vy)));
   v.y += 10 * (floatY - p.y) * h;
@@ -321,7 +324,7 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const tp = Math.tan(sim.seaPitch);
   const tr = Math.tan(sim.seaRoll);
   _up.set(-tp * fx + tr * fz, 1, -tp * fz - tr * fx).normalize();
-  alignBody(sim, _up, 0.06 + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : SWIM_SEA.alignRate, h);
+  alignBody(sim, _up, 0.06 + SWIM_POSE.speedTrim * speedK + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : SWIM_SEA.alignRate, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   const collision = sim.world.collision;
