@@ -7,7 +7,7 @@ import { createMasterBus, type MasterBus } from './master-bus';
 import { playIgnition } from './sfx/fire';
 import { playFlap } from './sfx/flap';
 import { playBubbles } from './sfx/bubbles';
-import { playLand, playSplash, playStep } from './sfx/impacts';
+import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
@@ -22,6 +22,7 @@ import { SkidVoice } from './voices/skid';
 import { FireVoice } from './voices/fire';
 import { RainVoice } from './voices/rain';
 import { UnderwaterVoice } from './voices/underwater';
+import { SeaVoice } from './voices/sea';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
 
 export type SoundName = AudioOneShot;
@@ -48,6 +49,15 @@ export interface DragonAudioState {
   wingspan: number;
   /** 0..1 skimming low over water. */
   skim: number;
+  /**
+   * The sea reacting to low flight (lowFlight service, phase 21 stage 2): 0..1 downwash on the water, skim wake and
+   * fire steam, the water point under the dragon and the steam point.
+   */
+  downwash: number;
+  wake: number;
+  steam: number;
+  seaPoint: Vec3;
+  steamPoint: Vec3;
   /** Standing, walking or swimming (breathing audible, footsteps). */
   grounded: boolean;
   /** 0..1 exertion (rig pose `breath`). */
@@ -104,6 +114,11 @@ export function createAudioFrame(): AudioFrame {
       firing: false,
       wingspan: 18,
       skim: 0,
+      downwash: 0,
+      wake: 0,
+      steam: 0,
+      seaPoint: v3(),
+      steamPoint: v3(),
       grounded: false,
       exertion: 0.2,
       skid: 0,
@@ -122,10 +137,17 @@ export function createAudioFrame(): AudioFrame {
  * Per-sound mix trims (linear), balanced against the POV cruise wind with the offline analysis in sandbox/audio.ts
  * (pre-dynamics loudness). The absolute level into the master dynamics is set by master-bus INPUT_TRIM_DB.
  */
+/** Splashes below this strength are light touches and play as a soft spray (playSpray). */
+const SPRAY_MAX = 0.5;
+/** Shortest gap between two sprays (s): a skim's spray events come several per second. */
+const SPRAY_SPACING = 0.22;
+
 export const MIX = {
   flap: 1.1,
   roar: 0.5,
   splash: 1.5,
+  /** Light water touches (playSpray). */
+  spray: 0.55,
   land: 1.55,
   ignition: 0.9,
   fire: 0.72,
@@ -144,6 +166,9 @@ export const MIX = {
   purr: 1.1,
   /** Nostril bubbles under water: quiet, they repeat every half second. */
   bubbles: 0.45,
+  /** Low flight over the sea: downwash buffeting, gust thumps and skim tearing (one channel), fire steam hiss. */
+  sea: 1.0,
+  steam: 0.8,
 } as const;
 
 /** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
@@ -215,6 +240,9 @@ const FLAP_DUCK_DB = 3;
 const FLAP_DUCK_RIDER_DB = 2.5;
 const DRAGON_MOUTH: PlaceOptions = { refDistance: 30, reverb: 0.2, size: 8, backCutoffFactor: 0.28, delayAbove: 120 };
 const WORLD_POINT: PlaceOptions = { refDistance: 30, reverb: 0.18, size: 12, delayAbove: 80 };
+/** The water under the dragon (downwash patch, wake) and the steam cloud: broad sources on the surface. */
+const SEA_SURFACE: PlaceOptions = { refDistance: 28, reverb: 0.15, size: 24, delayAbove: 120 };
+const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delayAbove: 120 };
 
 export interface AudioEngineOptions {
   destination?: AudioNode;
@@ -242,6 +270,7 @@ export class AudioEngine {
   readonly skid: SkidVoice;
   readonly rain: RainVoice;
   readonly underwater: UnderwaterVoice;
+  readonly sea: SeaVoice;
   readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
@@ -251,6 +280,7 @@ export class AudioEngine {
   private readonly water: SfxEnv;
   private underwaterLevel = 0;
   private lastBubbles = -1e9;
+  private lastSpray = -1e9;
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
   private readonly lastPlayed: Record<SoundName, number> = {
@@ -277,6 +307,8 @@ export class AudioEngine {
   private readonly firePlace: Placement = placement();
   private readonly breathPlace: Placement = placement();
   private readonly skidPlace: Placement = placement();
+  private readonly seaPlace: Placement = placement();
+  private readonly steamPlace: Placement = placement();
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
   private pov = 0;
@@ -312,6 +344,7 @@ export class AudioEngine {
     this.skid = new SkidVoice(ctx, this.noise, this.bus.sfx, (rng() * 1e6) | 0);
     this.rain = new RainVoice(ctx, this.noise, this.bus.ambience, rng, this.samples);
     this.underwater = new UnderwaterVoice(ctx, this.noise, this.bus.underwater, rng);
+    this.sea = new SeaVoice(ctx, this.noise, this.bus.sfx, rng);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -377,6 +410,19 @@ export class AudioEngine {
     this.creature.update(d.present && d.grounded && !this.fire.active && now > this.roarUntil, clamp01(d.exertion), bp.gain * MIX.breath, bp.pan, bp.cutoff, now);
     const sp = placeSource(frame.listener, d.position, WORLD_POINT, this.skidPlace);
     this.skid.update(d.present && d.grounded && !this.paused ? d.skid : 0, d.groundSpeed, sp.gain * MIX.skid, sp.pan, sp.cutoff, now);
+
+    // The sea under a low-flying dragon (both channels silent and stopped while nothing is low over water).
+    const seaOn = d.present && !this.paused;
+    placeSource(frame.listener, d.seaPoint, SEA_SURFACE, this.seaPlace);
+    placeSource(frame.listener, d.steamPoint, STEAM_POINT, this.steamPlace);
+    this.sea.update(
+      { downwash: seaOn ? finiteOr(d.downwash, 0) : 0, wake: seaOn ? finiteOr(d.wake, 0) : 0, speed: d.groundSpeed, steam: seaOn ? finiteOr(d.steam, 0) : 0 },
+      this.seaPlace,
+      this.steamPlace,
+      MIX.sea,
+      MIX.steam,
+      now,
+    );
 
     const roarDuck = now < this.roarUntil ? 1 : 0;
     const fireDuck = this.fire.active ? 1 : 0;
@@ -521,10 +567,16 @@ export class AudioEngine {
 
   splashAt(position: Vec3, strength: number): void {
     const now = this.now;
-    // Wading steps are small and frequent; only big splashes need the long merge window.
-    if (strength < 0.5 && now - this.lastPlayed.splash > 0.12) {
-      this.lastPlayed.splash = now;
-      this.splashNow(position, strength, now);
+    // Light touches (skim spray, wingtip and tail kisses, swimming strokes) are frequent: a soft spray, spaced and
+    // thinned out, never the full splash (a fast series of those sounded like slaps on concrete).
+    if (strength < SPRAY_MAX) {
+      if (now - this.lastSpray < SPRAY_SPACING || this.stats.active > this.maxVoices) {
+        return;
+      }
+      this.lastSpray = now;
+      const pl = placeSource(this.frame.listener, position, WORLD_POINT, this.place);
+      pl.gain *= MIX.spray;
+      playSpray(this.sfx, now, strength, pl);
     } else if (this.ready('splash', now)) {
       this.splashNow(position, strength, now);
     }
@@ -578,6 +630,10 @@ export class AudioEngine {
     pl.width = Math.max(pl.width, 0.35 + 0.65 * this.pov);
     playFlap(this.sfx, now, s, pl);
     this.duckWind(now + pl.delay, clamp01(s) * (FLAP_DUCK_DB + FLAP_DUCK_RIDER_DB * close));
+    // Over the water the beat's gust slaps the surface a moment later (the air takes ~0.1 s to get down there).
+    if (this.sea.downwash > 0.05) {
+      this.sea.gust(clamp01(strength) * this.sea.downwash, now + this.seaPlace.delay + 0.08);
+    }
   }
 
   /** Dips the wind bed by `db` for ~250 ms: the beat's own air push momentarily masks the airstream noise. */
@@ -639,6 +695,7 @@ export class AudioEngine {
     this.skid.dispose();
     this.rain.dispose(this.ctx.currentTime);
     this.underwater.dispose(this.ctx.currentTime);
+    this.sea.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();

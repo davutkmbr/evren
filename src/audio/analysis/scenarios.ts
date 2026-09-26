@@ -353,6 +353,36 @@ export const CASES: RenderCase[] = [
     f.dragon.airspeed = 6;
     f.dragon.stall = 0.25;
   }),
+  // Phase 21 stage 2: the sea reacting to low flight (first-pass windows, to be balanced by ear on the owner's machine).
+  {
+    id: 'sea-downwash',
+    label: 'Su üstünde asılı kalma, kanat çırpışları (3. şahıs)',
+    seconds: 6,
+    measure: 'integrated',
+    target: [-34, -20],
+    camera: 'third',
+    repeatMax: REPEAT_MAX,
+    step: (t, prev, f, e) => {
+      f.dragon.airspeed = 6;
+      f.dragon.stall = 0.25;
+      f.dragon.downwash = Math.min(1, t / 1.2) * 0.85;
+      Object.assign(f.probe, { agl: 12, altitude: 12, urban: 0, foliage: 0, water: 1, coast: 0, strait: 0 });
+      for (let k = 0.5; k < 6; k += 0.75) {
+        if (crossed(t, prev, k)) e.flap(0.8);
+      }
+    },
+  },
+  windCase('sea-skim', 'Su yüzeyini sıyırma, iz ve yırtılma 32 m/s (3. şahıs)', 'third', [-32, -22], (t, f) => {
+    f.dragon.airspeed = 32;
+    f.dragon.groundSpeed = 32;
+    f.dragon.skim = Math.min(1, t / 1.5);
+    f.dragon.wake = Math.min(1, t / 1.5);
+  }),
+  windCase('sea-steam', 'Ateş suya değiyor: buhar tıslaması (3. şahıs)', 'third', [-28, -14], (t, f) => {
+    f.dragon.airspeed = 10;
+    f.dragon.steam = t > 0.5 && t < 4.5 ? 1 : 0;
+    f.dragon.steamPoint.z = -25;
+  }),
   {
     id: 'amb-city',
     label: 'Şehir alçak irtifa (60 m)',

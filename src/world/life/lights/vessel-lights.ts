@@ -40,8 +40,8 @@ export class VesselLights {
     const pool = this.pool;
     for (const v of this.vessels) {
       if (v.lightBase < 0) continue;
-      const fx = -Math.sin(v.state.yaw);
-      const fz = -Math.cos(v.state.yaw);
+      const fx = -Math.sin(v.yaw);
+      const fz = -Math.cos(v.yaw);
       const mode = v.state.mode;
       const passenger = PASSENGER.has(v.model.kind);
       const lights = v.model.lights;

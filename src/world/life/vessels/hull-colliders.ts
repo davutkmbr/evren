@@ -6,7 +6,8 @@
  * included), the beam and the length shrunk a little for the tapered bow and stern. The top stays just below the sea
  * surface, so the boxes never become a floor to land on, change the surface under anything flying or swimming, or
  * block the camera; everything above the water is untouched. Registered in the collision world with the tag 'vessel'
- * and re-placed every frame with CollisionWorld.move() while the vessel is within `range` of the focus point.
+ * and re-placed every frame with CollisionWorld.move() while the vessel is within `range` of the focus point, following
+ * the floating body's pose (position, heading, heave, and the roll / pitch through the keel depth; stage 7b).
  */
 import * as THREE from 'three';
 import type { Collider, CollisionWorld } from '../../../core/collision';
@@ -30,16 +31,28 @@ const MIN_DEPTH = 0.3;
 
 /**
  * Writes the underwater box of a hull at (x, z) with heading `yaw` (Object3D.rotation.y) whose design waterline
- * rides at `waterline` m (heave + ballast lift) into `out`. Returns false when too little of the hull is submerged.
+ * rides at `waterline` m (heave, ballast lift included) into `out`. `roll` / `pitch` (the floating body's, rad) tilt
+ * the hull: the box stays yawed only (the collision world's boxes turn about +Y), but its bottom follows the lowest
+ * keel corner of the tilted hull and its centre the tilted hull's underwater middle. Returns false when too little of
+ * the hull is submerged.
  */
-export function hullBox(size: HullSize, x: number, z: number, yaw: number, waterline: number, out: BoxCollider): boolean {
-  const bottom = waterline - size.draft;
+export function hullBox(size: HullSize, x: number, z: number, yaw: number, waterline: number, out: BoxCollider, roll = 0, pitch = 0): boolean {
+  const halfBeam = 0.5 * size.beam * BEAM_SHARE;
+  const halfLength = 0.5 * size.length * LENGTH_SHARE;
+  const sr = Math.sin(roll);
+  const sp = Math.sin(pitch);
+  const bottom = waterline - size.draft * Math.cos(roll) * Math.cos(pitch) - halfBeam * Math.abs(sr) - halfLength * Math.abs(sp);
   const top = Math.min(waterline, 0) - TOP_BELOW;
   if (top - bottom < MIN_DEPTH) {
     return false;
   }
-  out.center.set(x, 0.5 * (top + bottom), z);
-  out.halfSize.set(0.5 * size.beam * BEAM_SHARE, 0.5 * (top - bottom), 0.5 * size.length * LENGTH_SHARE);
+  // The middle of the submerged hull swings sideways / fore and aft with the tilt (half draft below the waterline).
+  const lat = 0.5 * size.draft * sr;
+  const lon = -0.5 * size.draft * sp;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  out.center.set(x + lat * cy + lon * sy, 0.5 * (top + bottom), z - lat * sy + lon * cy);
+  out.halfSize.set(halfBeam, 0.5 * (top - bottom), halfLength);
   out.yaw = yaw;
   return true;
 }
@@ -48,13 +61,17 @@ export function createHullBox(): BoxCollider {
   return { kind: 'box', center: new THREE.Vector3(), halfSize: new THREE.Vector3(), yaw: 0 };
 }
 
-/** What the registry needs of a vessel. */
+/** What the registry needs of a vessel: its hull and the floating body's pose. */
 export interface HullSource {
   readonly id: number;
   readonly model: HullSize;
-  readonly state: { x: number; z: number; yaw: number };
+  x: number;
+  z: number;
+  yaw: number;
+  /** Heave of the design waterline (ballast lift included), roll, pitch. */
   heave: number;
-  lift: number;
+  roll: number;
+  pitch: number;
 }
 
 interface Slot {
@@ -81,16 +98,15 @@ export class HullColliders {
     const seen = this.seen;
     seen.clear();
     for (const v of vessels) {
-      const st = v.state;
       const reach = this.range + 0.5 * v.model.length;
-      const dx = st.x - focus.x;
-      const dz = st.z - focus.z;
+      const dx = v.x - focus.x;
+      const dz = v.z - focus.z;
       if (dx * dx + dz * dz > reach * reach) {
         continue;
       }
       const slot = this.slots.get(v.id);
       const box = slot ? slot.box : this.scratch;
-      if (!hullBox(v.model, st.x, st.z, st.yaw, v.heave + v.lift, box)) {
+      if (!hullBox(v.model, v.x, v.z, v.yaw, v.heave, box, v.roll, v.pitch)) {
         continue;
       }
       seen.add(v.id);
