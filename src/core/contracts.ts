@@ -595,8 +595,11 @@ export interface AudioService {
   setMomentBed?(amount: number): void;
 }
 
-/** Positional sound cues of moment creatures (synthesised, src/audio/sfx/storks.ts). */
-export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass';
+/**
+ * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
+ * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit).
+ */
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).
@@ -967,6 +970,47 @@ export interface HudZonesService {
   hasContext?(name: string): boolean;
 }
 
+/**
+ * Pose of one vessel of the living world (world/life), for systems that anchor to moving boats (src/moments: gulls
+ * behind a ferry). Model space: -Z is the bow, +Z the stern; `yaw` is Object3D.rotation.y.
+ */
+export interface VesselPose {
+  id: number;
+  /** Design kind ('vapur', 'ferry', 'seabus', 'tour', ...). */
+  kind: string;
+  x: number;
+  z: number;
+  yaw: number;
+  /** Height of the design waterline (m). */
+  heave: number;
+  /** Speed through the water (m/s), negative while going astern. */
+  speed: number;
+  /** Underway on its route (not anchored, moored or alongside a pier). */
+  underway: boolean;
+  length: number;
+  beam: number;
+  draft: number;
+  /** Highest point above the waterline (m). */
+  airDraft: number;
+}
+
+/**
+ * The living world's vessels and flocks for other systems. Provided by world/life as 'life' once its fleet exists.
+ */
+export interface LifeService {
+  /** Poses of the vessels of these kinds, written into `out` (entries reused, length set). */
+  vessels(kinds: readonly string[], out: VesselPose[]): VesselPose[];
+  /** Current pose of vessel `id` into `out`, or null when it no longer exists (fleet rebuilt). */
+  vessel(id: number, out: VesselPose): VesselPose | null;
+  /**
+   * Hands over the ambient gulls trailing vessel `id` (their positions and velocities, flat x,y,z,vx,vy,vz) and keeps
+   * that flock dormant until `returnGulls`. Returns the number of birds written.
+   */
+  borrowGulls?(id: number, out: Float32Array): number;
+  /** Gives the vessel's ambient flock back, continuing from `count` bird states (flat as in borrowGulls). */
+  returnGulls?(id: number, states: Float32Array, count: number): void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -986,6 +1030,7 @@ export interface Services {
   underwater: UnderwaterView;
   lowFlight: LowFlightView;
   hudZones: HudZonesService;
+  life: LifeService;
 }
 
 /* ------------------------------------------------------------------ */

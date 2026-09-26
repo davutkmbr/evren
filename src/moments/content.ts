@@ -1,6 +1,7 @@
 /**
  * Procedural content that moment records may reference (pure ids, no three.js): every actor, animation and sound listed
- * here is built in code (no external asset), so a record whose ids all resolve here needs no model, animation or sound
+ * here is built in code (no external asset beyond the already approved CC0 recordings the game ships, e.g. the gull
+ * calls), so a record whose ids all resolve here needs no model, animation or sound
  * from outside. moments-check verifies that every 'ready' record's ids resolve; the runtime treats the sounds as
  * available (no ambience fallback); the game system (./system.ts) maps actor ids to their implementations
  * (./actors.ts).
@@ -9,6 +10,7 @@
 /** Procedural actors (models + behaviour), by id → where they live. */
 export const PROCEDURAL_ACTORS: Readonly<Record<string, string>> = {
   'moments/white-stork-flock': 'src/moments/storks (instanced white storks, kettle / glide flock simulation)',
+  'moments/ferry-gull-flock': 'src/moments/gull-simit (instanced gulls and simit pieces behind a ferry in service, stern flock simulation)',
 };
 
 /** Procedural animations (vertex-shader wing poses driven by the flock simulation). */
@@ -20,6 +22,7 @@ export const PROCEDURAL_ANIMATIONS: Readonly<Record<string, string>> = {
 /** Procedural (synthesised) sounds. */
 export const PROCEDURAL_SOUNDS: Readonly<Record<string, string>> = {
   'moments/stork-bill-clatter': 'src/audio/sfx/storks.ts: bill clatter, soft wing beats and air rush of passing storks; src/audio/voices/moment.ts: soft wind bed',
+  'moments/gull-call': "the approved CC0 gull calls (public/audio/gull/calls, already in the game's ambience) and src/audio/sfx/bird-flap.ts: soft gull wing beats",
 };
 
 export const AVAILABLE_MOMENT_SOUNDS: ReadonlySet<string> = new Set(Object.keys(PROCEDURAL_SOUNDS));
