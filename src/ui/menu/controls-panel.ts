@@ -1,10 +1,13 @@
-import { CONTROL_HELP } from '../../core/input';
+import { CONTROL_HELP, type ControlGroup } from '../../core/input';
 import { el } from '../dom';
 
-const GROUPS: Array<{ title: string; match: RegExp }> = [
-  { title: 'Uçuş', match: /^(W \/ S|A \/ D|Q \/ E|Space|Shift|Ctrl|F|R|L)\b/ },
-  { title: 'Kamera ve zaman', match: /^(Fare|C|\[)/ },
-  { title: 'Arayüz', match: /.*/ },
+/** Group order and titles; the hover block goes right after flight (it is how the brake key is used). */
+const GROUPS: ReadonlyArray<{ id: ControlGroup; title: string }> = [
+  { id: 'flight', title: 'Uçuş' },
+  { id: 'tricks', title: 'Hız ve figürler' },
+  { id: 'dragon', title: 'Ejderha ve binici' },
+  { id: 'camera', title: 'Kamera, zaman ve hava' },
+  { id: 'game', title: 'Oyun ve arayüz' },
 ];
 
 const KEY_NAMES: Record<string, string> = {
@@ -53,15 +56,14 @@ const row = (entry: { keys: string; action: string }): HTMLElement => el('li', '
 
 /** Grouped key bindings (used by the pause menu and the H overlay). */
 export function buildControlsList(): HTMLElement {
-  const buckets = GROUPS.map(() => [] as HTMLElement[]);
-  for (const entry of CONTROL_HELP) {
-    const index = GROUPS.findIndex((g) => g.match.test(entry.keys));
-    buckets[index].push(row(entry));
-  }
   const group = (title: string, rows: HTMLElement[]): HTMLElement | null =>
     rows.length ? el('section', 'ctl-group', [el('h3', 'ejd-caps ctl-heading', title), el('ul', 'ctl-list', rows)]) : null;
-  const sections = GROUPS.map((g, i) => group(g.title, buckets[i]));
-  // After the camera keys: the two-column layout then balances (flight + camera | hover + interface).
-  sections.splice(2, 0, group('Havada asılı kalma', HOVER_HELP.map(row)));
+  const sections: Array<HTMLElement | null> = [];
+  for (const g of GROUPS) {
+    sections.push(group(g.title, CONTROL_HELP.filter((entry) => entry.group === g.id).map(row)));
+    if (g.id === 'flight') {
+      sections.push(group('Havada asılı kalma', HOVER_HELP.map(row)));
+    }
+  }
   return el('div', 'ctl-groups', sections);
 }
