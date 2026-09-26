@@ -279,3 +279,220 @@
 .ui-ladder [hidden] {
   display: none;
 }
+
+/* ================================================================== */
+/* Map and canvas view pieces (layer-toggle, hover-card, zoom-cluster, */
+/* scale-bar, hint-line)                                               */
+/* ================================================================== */
+
+/* Layer toggle rows in a small dark panel */
+
+.ui-layer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 230px;
+  box-sizing: border-box;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(12, 14, 18, 0.82);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.085));
+}
+
+.ui-layer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 9px;
+  text-align: left;
+  color: var(--ink, #f3eee5);
+  transition: background-color 140ms;
+}
+
+.ui-layer:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ui-layer:focus-visible {
+  outline: 2px solid var(--accent, #e8b872);
+  outline-offset: -2px;
+}
+
+.ui-layer-swatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--layer-color);
+  opacity: 0.3;
+  transition: opacity 140ms;
+}
+
+.ui-layer-ring .ui-layer-swatch {
+  background: transparent;
+  border: 2px solid var(--layer-color);
+}
+
+.ui-layer-halo .ui-layer-swatch {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--layer-color) 35%, transparent);
+}
+
+.ui-layer.is-on .ui-layer-swatch {
+  opacity: 1;
+}
+
+.ui-layer-label {
+  flex-grow: 1;
+  font-size: 13.5px;
+  color: rgba(243, 238, 229, 0.62);
+  transition: color 140ms;
+}
+
+.ui-layer.is-on .ui-layer-label {
+  color: var(--ink, #f3eee5);
+}
+
+.ui-layer-count {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hover card beside a pin or point */
+
+.ui-hovercard {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(12, 14, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ui-hovercard[hidden],
+.ui-hovercard [hidden] {
+  display: none;
+}
+
+.ui-hovercard-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink, #f3eee5);
+}
+
+.ui-hovercard-meta {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.65);
+}
+
+.ui-hovercard-action {
+  font-size: 12.5px;
+  color: var(--accent, #e8b872);
+}
+
+/* Zoom cluster: +, −, back to my position */
+
+.ui-zoom {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(12, 14, 18, 0.82);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.085));
+}
+
+.ui-zoom-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: rgba(243, 238, 229, 0.86);
+  transition: background-color 140ms, color 140ms;
+}
+
+.ui-zoom-btn + .ui-zoom-btn {
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.085));
+}
+
+.ui-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink, #f3eee5);
+}
+
+.ui-zoom-btn:focus-visible {
+  outline: 2px solid var(--accent, #e8b872);
+  outline-offset: -2px;
+}
+
+.ui-zoom-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Scale bar with attribution */
+
+.ui-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.ui-scale-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.ui-scale-bar {
+  display: block;
+  height: 6px;
+  border: 1.5px solid rgba(243, 238, 229, 0.7);
+  border-top: 0;
+  transition: width 120ms ease-out;
+}
+
+.ui-scale-label {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink, #f3eee5);
+}
+
+.ui-scale-attrib {
+  font-size: 11px;
+  color: rgba(243, 238, 229, 0.45);
+}
+
+/* Pointer hint line */
+
+.ui-hint {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 8px;
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.6);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.ui-hint b {
+  font-weight: 500;
+  color: rgba(243, 238, 229, 0.78);
+}
+
+.ui-hint-sep {
+  color: rgba(243, 238, 229, 0.35);
+}
