@@ -18,7 +18,7 @@
  * 6. Sıyırma: drag area measurably lower than the plain ground effect at the same height (land and water), never
  *    touching (feet, wings and tail over land; feet and wings over water), the assist clearance still holding, no
  *    skim when slow.
- * 7. Stage C reversals: the wingover exits on the reverse heading ±15° with ≥ 90 % of the entry's specific energy
+ * 7. Stage C reversals: the wingover (entries 28–66 m/s) exits on the reverse heading ±15° with ≥ 90 % of the entry's specific energy (from 40 m/s down to 72 % at 62 m/s)
  *    (½V² + g·Δh, height from the entry), slow over the top and past knife-edge; the Immelmann ends upright on the
  *    reverse heading ±15°, higher (early, middle and late presses in the loop's top window); the Split-S ends upright on
  *    the reverse heading ±15°, lower and faster (also from a folded Shift dive); the key held through its half roll spins
@@ -31,7 +31,7 @@ import * as THREE from 'three';
 import { AxisPress, DoubleTapRecognizer, DOUBLE_TAP_MS, inImmelmannWindow, resolvePitchUpDoubleTap, resolveRollDoubleTap } from '../../src/core/gestures';
 import type { Input } from '../../src/core/input';
 import { airDensity } from '../../src/dragon/flight/aero';
-import { slipDistance } from '../../src/dragon/flight/maneuvers';
+import { slipDistance, wingoverCleanEnergy } from '../../src/dragon/flight/maneuvers';
 import { DART, FLAP, IMMELMANN, POWER_STROKE, SKIM, SPLIT_S, WINGOVER } from '../../src/dragon/flight/params';
 import { readPilotInput } from '../../src/dragon/flight/pilot';
 import type { FlightSim } from '../../src/dragon/flight/sim';
@@ -771,8 +771,12 @@ async function reversals(): Promise<void> {
     [28, 1],
     [32, -1],
     [38, 1],
+    [44, 1],
+    [50, -1],
+    [58, 1],
+    [66, 1],
   ] as const) {
-    const run = await simulate({ height: 250, speed }, 14, bankedS(dir, 1.5, 1.6));
+    const run = await simulate({ height: 250, speed }, 20, bankedS(dir, 1.5, 1.6));
     const rec = lastMove(run, 'wingover');
     const ev = moveEvents(run, 'wingover');
     const loops = run.records.some((r) => r.trick === 'loop');
@@ -797,7 +801,8 @@ async function reversals(): Promise<void> {
     reversalRow(`wingover ${speed}`, rec, run, ev.find((e) => e.ended)?.clean);
     check(!loops && ev.length === 2 && !ev[0].ended && ev[1].ended && ev[1].clean === true, `wingover at ${speed} m/s: S ×2 while banked starts the wingover (no loop), announced, ends clean on the maneuver event`);
     check(offReverse(turnEnd) <= 15 && offReverse(turnAfter) <= 15 && upright, `wingover at ${speed} m/s: exits on the reverse heading ±15° (${f1(offReverse(turnEnd))}° off at the end, ${f1(offReverse(turnAfter))}° rolled out), upright`);
-    check(rec.energyRatio >= 0.9, `wingover at ${speed} m/s: keeps ≥ 90 % of the entry energy (×${f2(rec.energyRatio)})`);
+    const keep = wingoverCleanEnergy(rec.entrySpeed);
+    check(rec.energyRatio >= keep, `wingover at ${speed} m/s: keeps ≥ ${Math.round(keep * 100)} % of the entry energy (×${f2(rec.energyRatio)})`);
     check(!rec.stalled && !rec.contact && !contact && top.airspeed < rec.entrySpeed - 4 && maxBank > 90, `wingover at ${speed} m/s: no stall or contact, slow over the top (${f1(top.airspeed)} m/s), pivots past knife-edge (${f1(maxBank)}°)`);
   }
 

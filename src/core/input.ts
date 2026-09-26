@@ -27,6 +27,7 @@
  * (the recogniser and the gesture collisions are documented in core/gestures.ts).
  */
 import { AxisPress, DOUBLE_TAP_MS, DoubleTapRecognizer } from './gestures';
+import { padLayoutOf, type PadLayout } from './pad-keys';
 
 export { DOUBLE_TAP_MS };
 
@@ -210,6 +211,8 @@ export class Input {
   /** Set false to route keys to UI (e.g. while a text field has focus). */
   enabled = true;
   lastDevice: 'keyboard' | 'gamepad' = 'keyboard';
+  /** Button names of the last pad seen (from its id): the key hints name its buttons. */
+  padLayout: PadLayout = 'xbox';
   /** User preferences (UI writes, flight/camera read). Pitch inversion is already applied to axis('pitch'). */
   readonly settings = { invertPitch: false, mouseSensitivity: 1, invertMouseY: false };
 
@@ -233,6 +236,7 @@ export class Input {
   private gamepadButtonsPrev: boolean[] = [];
   /** Pad buttons (and triggers) held last frame, by the button they press; the left stick's up / down flicks. */
   private readonly padHeldPrev = new Set<ButtonName>();
+  private readonly pressTimes = new Map<ButtonName, number>();
   private readonly padPitchFlick = new AxisPress(0.6, 0.25);
   private canvas: HTMLElement;
 
@@ -312,6 +316,11 @@ export class Input {
   }
 
   /** True for one frame after the second press of a double tap (gamepad D-pad left/right count as one). */
+  /** performance.now() of the last fresh press of a button (a key or a pad button), -Infinity if never. */
+  pressTime(name: ButtonName): number {
+    return this.pressTimes.get(name) ?? -Infinity;
+  }
+
   wasDoubleTapped(name: ButtonName): boolean {
     return this.doubleNow.has(name);
   }
@@ -380,6 +389,7 @@ export class Input {
     if (!gp) {
       return null;
     }
+    this.padLayout = padLayoutOf(gp.id ?? '');
     const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88);
     const b = (i: number) => !!gp.buttons[i]?.pressed;
     const val = (i: number) => gp.buttons[i]?.value ?? 0;
@@ -439,6 +449,7 @@ export class Input {
     for (const [name, now] of padDown) {
       if (now && !this.padHeldPrev.has(name)) {
         this.pressedNow.add(name);
+        this.pressTimes.set(name, t);
         if (this.doubleTaps.press(name, t)) {
           this.doubleNow.add(name);
         }
@@ -494,6 +505,7 @@ export class Input {
       const b = KEY_BUTTONS[e.code];
       if (b) {
         this.pressedQueue.add(b);
+        this.pressTimes.set(b, performance.now());
         if (this.doubleTaps.press(b, performance.now())) {
           this.doubleQueue.add(b);
         }
