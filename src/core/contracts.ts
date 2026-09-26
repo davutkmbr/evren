@@ -714,8 +714,8 @@ export interface WaterSeaState {
 export interface WaterService {
   /**
    * Water surface height (m) at world (x, z), solved at the displaced surface point (Gerstner waves move water
-   * horizontally too). Stage 1 returns the ambient waves; the dynamic part (wave particles from hulls, the dragon
-   * and splashes, phase 21 strand 7) will be added to this sum later, so every caller floats on the same water.
+   * horizontally too): the ambient waves plus the dynamic part (wave particles from hulls, the dragon and splashes,
+   * phase 21 stage 7a), so every caller floats on the same water, wakes included.
    */
   heightAt(x: number, z: number): number;
   /** Unit surface normal at (x, z). */
@@ -725,6 +725,49 @@ export interface WaterService {
   /** Horizontal surface current at (x, z) (m/s, y = 0): the Bosphorus flow, zero in still water. */
   currentAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
   readonly seaState: Readonly<WaterSeaState>;
+  /**
+   * Wave particles (phase 21 stage 7a): the interactive part of the sea (hull wakes, the dragon, splashes), already
+   * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
+   */
+  readonly dynamic?: WaterDynamics;
+}
+
+/** The dynamic part of the water at one point (wave particles only). */
+export interface WaterDynamicSample {
+  /** Height (m) and its horizontal gradient. */
+  height: number;
+  slopeX: number;
+  slopeZ: number;
+  /** Orbital velocity of the surface water (m/s). */
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
+/**
+ * Wave particles of the sea (phase 21 stage 7a), owned by the water module and reached through `water.dynamic`.
+ * Sources emit wave fronts that travel with the deep-water group speed, spread, subdivide and fade; moving hulls get
+ * a bow and stern wave whose Kelvin pattern emerges from the dispersion relation. Source ids: vessels use their
+ * non-negative vessel id; negative ids are reserved (WATER_SOURCE in the water module).
+ */
+export interface WaterDynamics {
+  /** Live particles. */
+  readonly count: number;
+  /**
+   * Particles of this source are skipped by every query (heightAt included) while set; -1 = none. A hull sets its own
+   * id while sampling its buoyancy (it does not ride its own bow wave) and resets it afterwards.
+   */
+  exclude: number;
+  /** The particle field alone at (x, z) (allocation-free, result in `out`). */
+  sample(x: number, z: number, out: WaterDynamicSample): WaterDynamicSample;
+  /**
+   * A moving hull (call every frame while it moves): position of its centre, unit heading of its motion through the
+   * water, speed through the water (m/s) and its waterline length, beam and draft (m). Emission cadence, level of
+   * detail and the pool budget are handled inside.
+   */
+  hull(source: number, x: number, z: number, headingX: number, headingZ: number, speed: number, length: number, beam: number, draft: number): void;
+  /** A circular wave train (splash, plunge, stroke): amplitude (m) of the first ring and its wavelength (m). */
+  ring(source: number, x: number, z: number, amplitude: number, wavelength: number): void;
 }
 
 /**

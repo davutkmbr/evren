@@ -2,21 +2,27 @@
  * Per-frame sea state: smooths the wind into a sea regime (poyraz/lodos) and wind speed, and fills the wave uniforms
  * (Gerstner set, detail-band phase coefficients, flow-map phases). All phases are computed in double precision on the
  * CPU relative to the shading origin, so the GPU only sees small arguments.
+ *
+ * Since stage 7a the Gerstner amplitudes come from the wind-wave spectrum (spectrum.ts): each slot of the fixed
+ * lattice gets the energy of its frequency bin of the fetch-limited JONSWAP spectrum of its group, so the sea state
+ * follows U10 and fetch physically. Wavelengths and directions never change (phase continuity); only amplitudes do.
  */
 import * as THREE from 'three';
 import {
   BANDS,
   CAPILLARY_MS_SLOPE,
   FLOW_PERIOD,
-  GERSTNER_WAVES,
   GRAVITY,
   LODOS_DOWNWIND_DEG,
+  LODOS_SWELL_HEADING_DEG,
   MAX_WAVES,
   POYRAZ_DOWNWIND_DEG,
+  SEA_SPECTRUM,
   SWELL_HEADING_DEG,
   WaveGroup,
   type GerstnerSpec,
 } from './config';
+import { computeSeaSpectra, createSeaSpectra, slotAmplitude, SWELL_SLOTS, WIND_SEA_SLOTS, type SeaSpectra, type SpectrumSlot } from './spectrum';
 
 const DEG = Math.PI / 180;
 const TWO_PI = Math.PI * 2;
@@ -42,6 +48,7 @@ export interface SeaStateUniforms {
 
 interface WaveSlot {
   spec: GerstnerSpec;
+  bin: SpectrumSlot;
   dirX: number;
   dirZ: number;
   k: number;
@@ -70,20 +77,26 @@ export class SeaState {
   lodos = 0;
   /** Debug override of the 10 m wind speed (?wu10=12), null = follow the environment wind. */
   forcedU10: number | null = null;
+  /** Continuous spectra of the current U10 (per group / regime; diagnostics and checks). */
+  readonly spectra: SeaSpectra = createSeaSpectra();
   private readonly slots: WaveSlot[] = [];
   private initialised = false;
   private readonly windDir = new THREE.Vector2(...headingDir(POYRAZ_DOWNWIND_DEG));
+  private readonly slotAmp = new Float64Array(MAX_WAVES);
   private readonly gustDrift = new THREE.Vector2();
 
   constructor() {
-    for (const spec of GERSTNER_WAVES) {
-      const heading = spec.group === WaveGroup.Swell ? SWELL_HEADING_DEG + spec.dirOffsetDeg : POYRAZ_DOWNWIND_DEG + spec.dirOffsetDeg;
-      this.slots.push(this.makeSlot(spec, heading, false));
+    for (const bin of WIND_SEA_SLOTS) {
+      this.slots.push(this.makeSlot(bin, POYRAZ_DOWNWIND_DEG + bin.spec.dirOffsetDeg, false));
     }
-    for (const spec of GERSTNER_WAVES) {
-      if (spec.group !== WaveGroup.Swell) {
-        this.slots.push(this.makeSlot(spec, LODOS_DOWNWIND_DEG + spec.dirOffsetDeg, true));
-      }
+    for (const bin of SWELL_SLOTS.poyraz) {
+      this.slots.push(this.makeSlot(bin, SWELL_HEADING_DEG + bin.spec.dirOffsetDeg, false));
+    }
+    for (const bin of WIND_SEA_SLOTS) {
+      this.slots.push(this.makeSlot(bin, LODOS_DOWNWIND_DEG + bin.spec.dirOffsetDeg, true));
+    }
+    for (const bin of SWELL_SLOTS.lodos) {
+      this.slots.push(this.makeSlot(bin, LODOS_SWELL_HEADING_DEG + bin.spec.dirOffsetDeg, true));
     }
     if (this.slots.length > MAX_WAVES) {
       throw new Error('water: too many Gerstner waves');
@@ -111,10 +124,10 @@ export class SeaState {
     return this.slots.length;
   }
 
-  private makeSlot(spec: GerstnerSpec, headingDeg: number, lodos: boolean): WaveSlot {
+  private makeSlot(bin: SpectrumSlot, headingDeg: number, lodos: boolean): WaveSlot {
     const [dirX, dirZ] = headingDir(headingDeg);
-    const k = TWO_PI / spec.lambda;
-    return { spec, dirX, dirZ, k, omega: Math.sqrt(GRAVITY * k), lodos };
+    const k = TWO_PI / bin.spec.lambda;
+    return { spec: bin.spec, bin, dirX, dirZ, k, omega: Math.sqrt(GRAVITY * k), lodos };
   }
 
   /**
@@ -147,19 +160,21 @@ export class SeaState {
     }
 
     const ratio = this.u10 / REF_U10;
-    const groupFactor = [
-      THREE.MathUtils.clamp(ratio ** 1.1, 0.25, 2.0),
-      THREE.MathUtils.clamp(ratio ** 1.5, 0.15, 2.4),
-      1 + 0.12 * Math.sin(time * 0.0021),
-    ];
+    computeSeaSpectra(this.u10, this.spectra);
+    // Swell comes and goes over tens of minutes.
+    const swellMod = 1 + 0.12 * Math.sin(time * 0.0021);
     this.uniforms.uSeaRegime.value.x = this.lodos;
     const wP = Math.cos(this.lodos * Math.PI * 0.5);
     const wL = Math.sin(this.lodos * Math.PI * 0.5);
 
+    const amp = this.slotAmp;
     let steepSum = 0;
-    for (const s of this.slots) {
-      const regime = s.spec.group === WaveGroup.Swell ? 1 : s.lodos ? wL : wP;
-      steepSum += s.spec.steepness * groupFactor[s.spec.group] * regime;
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = this.slots[i];
+      const regime = s.lodos ? wL : wP;
+      const a = regime > 1e-6 ? slotAmplitude(s.bin, this.spectra, s.lodos) * regime * (s.spec.group === WaveGroup.Swell ? swellMod : 1) : 0;
+      amp[i] = a;
+      steepSum += SEA_SPECTRUM.crest[s.spec.group] * s.k * a;
     }
     const steepScale = steepSum > MAX_TOTAL_STEEPNESS ? MAX_TOTAL_STEEPNESS / steepSum : 1;
 
@@ -167,14 +182,15 @@ export class SeaState {
     const amps = this.uniforms.uWaveAmp.value;
     for (let i = 0; i < MAX_WAVES; i++) {
       const s = this.slots[i];
-      if (!s) {
-        amps[i].set(0, 0, 0, 0);
+      if (!s || !(amp[i] > 1e-5)) {
+        amps[i].set(0, 0, 0, s ? s.spec.group : 0);
+        if (s) {
+          dirs[i].set(s.dirX, s.dirZ, s.k, s.spec.lambda);
+        }
         continue;
       }
-      const regime = s.spec.group === WaveGroup.Swell ? 1 : s.lodos ? wL : wP;
-      const f = groupFactor[s.spec.group] * regime;
       const phase = fract((s.k * (s.dirX * originX + s.dirZ * originZ) + s.spec.phase - s.omega * time) / TWO_PI) * TWO_PI;
-      amps[i].set(s.spec.amplitude * f, s.spec.steepness * f * steepScale, phase, s.spec.group);
+      amps[i].set(amp[i], SEA_SPECTRUM.crest[s.spec.group] * s.k * amp[i] * steepScale, phase, s.spec.group);
       dirs[i].set(s.dirX, s.dirZ, s.k, s.spec.lambda);
     }
 

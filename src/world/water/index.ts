@@ -2,7 +2,9 @@
  * Sea, Bosphorus, Golden Horn and lakes: one camera-centred radial surface at y = 0 with Gerstner swell + FFT-band
  * detail normals, current-advected ripples, PBR water optics and (high/ultra) planar reflections.
  * Draw calls: 1 for the surface + the planar reflection pass.
- * Provides the `water` service: the same waves evaluated on the CPU (wave-query.ts) plus the baked surface current.
+ * Provides the `water` service: the same waves evaluated on the CPU (wave-query.ts) plus the baked surface current,
+ * with the wave particles (particles/: hull wakes, the dragon's waves, splash rings; phase 21 stage 7a) on top, which
+ * the surface also draws from a splat window around the camera.
  */
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
@@ -21,6 +23,10 @@ import { createBandTexture, createFlowTexture, createFoamTexture, createPlacehol
 import { UnderwaterController } from './underwater';
 import { LowFlightController } from './lowflight';
 import { decodeRegionMaps, WaveQuery } from './wave-query';
+import { waveParticleQualityFor, type WaveParticleQuality } from './particles/config';
+import { DragonWaves } from './particles/dragon-waves';
+import { createWaveSplatUniforms, WaveSplatGpu } from './particles/splat-gpu';
+import { WaveParticles } from './particles/wave-particles';
 
 /** Debug handle (sandbox / console): window.__water */
 export interface WaterDebug {
@@ -33,6 +39,10 @@ export interface WaterDebug {
   quality: () => WaterQuality;
   /** Low flight over the sea (phase 21 stage 2): model (the `lowFlight` service) and disturbance window. */
   lowFlight: LowFlightController;
+  /** Wave particles (phase 21 stage 7a): the pool behind `water.dynamic`, its splat pass and quality tier. */
+  particles: WaveParticles;
+  splat: WaveSplatGpu;
+  particleQuality: () => WaveParticleQuality;
   regionStats: () => RegionBakeResult['stats'] | null;
 }
 
@@ -63,6 +73,14 @@ export function createWaterSystem(): System {
   const waves = new WaveQuery();
   const underwater = new UnderwaterController();
   const lowFlight = new LowFlightController();
+  let particleQuality = waveParticleQualityFor('high');
+  const particles = new WaveParticles(particleQuality);
+  waves.dynamic = particles;
+  const dragonWaves = new DragonWaves(particles);
+  const splatPlaceholder = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+  splatPlaceholder.needsUpdate = true;
+  const splat = new WaveSplatGpu(createWaveSplatUniforms(splatPlaceholder));
+  let unsubscribeSplash: (() => void) | null = null;
   let geoRef: GeoQuery | null = null;
   const placeholders = createPlaceholders();
   const origin = new THREE.Vector2();
@@ -122,6 +140,8 @@ export function createWaterSystem(): System {
       material.needsUpdate = true;
     }
     quality = next;
+    particleQuality = waveParticleQualityFor(settings.preset);
+    particles.setQuality(particleQuality);
     if (!quality.planar && uniforms) {
       uniforms.uReflParams.value.x = 0;
     }
@@ -143,7 +163,12 @@ export function createWaterSystem(): System {
       const geo = await ctx.services.when('geo');
       owner = ctx;
       waves.setCoast((x, z) => geo.coastDistance(x, z));
+      particles.coast = (x, z) => geo.coastDistance(x, z);
+      particleQuality = waveParticleQualityFor(ctx.quality.settings.preset);
+      particles.setQuality(particleQuality);
       ctx.services.provide('water', waves);
+      // Splashes (skim contacts, plunges, breaches, strokes) start wave rings.
+      unsubscribeSplash = ctx.events.on('splash', ({ position, strength }) => dragonWaves.splash(position.x, position.z, strength, ctx.services.tryGet('dragon')));
       geoRef = geo;
       underwater.init(ctx);
       lowFlight.init(ctx);
@@ -167,6 +192,7 @@ export function createWaterSystem(): System {
         },
         new THREE.Vector4(b.minX, b.minZ, 1 / (b.maxX - b.minX), 1 / (b.maxZ - b.minZ)),
         lowFlight.uniforms,
+        splat.uniforms,
       );
       const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan'];
       material = createWaterMaterial(uniforms, quality.bands, Math.max(0, debugViews.indexOf(ctx.debug.params.get('wdebug') ?? 'off')));
@@ -201,6 +227,9 @@ export function createWaterSystem(): System {
         reflection,
         quality: () => quality,
         lowFlight,
+        particles,
+        splat,
+        particleQuality: () => particleQuality,
         regionStats: () => regionStats,
       };
     },
@@ -219,6 +248,15 @@ export function createWaterSystem(): System {
       underwater.update(ctx, waves, geoRef);
       uniforms.uCamUnder.value = underwater.state.under ? 1 : 0;
       lowFlight.update(ctx, waves, geoRef);
+      // Wave particles: the dragon's waves (after the low-flight model of this frame), then one step of the pool.
+      const dragon = ctx.services.tryGet('dragon');
+      if (dragon) {
+        particles.setFocus(cam.position.x, cam.position.z, dragon.position.x, dragon.position.z);
+      } else {
+        particles.setFocus(cam.position.x, cam.position.z);
+      }
+      dragonWaves.update(dragon, lowFlight.model, waves);
+      particles.update(dt);
     },
 
     preRender(ctx: EngineContext) {
@@ -232,6 +270,8 @@ export function createWaterSystem(): System {
       uniforms.uGridCenter.value.set(cam.position.x - origin.x, cam.position.z - origin.y);
       // The disturbance field under a low-flying dragon (nothing drawn while it is not alive).
       lowFlight.preRender(ctx, origin.x, origin.y);
+      // Wave particles near the camera into the splat window (off on "low" and while none is near).
+      splat.update(ctx.renderer, particles, cam.position.x, cam.position.z, origin.x, origin.y, particleQuality.splatSize, particleQuality.splatTexel);
 
       // The mirror pass reuses the main camera's shadow map; until it exists (first frame, after a shadow-quality
       // change) lit materials would sample an unbound shadow sampler, so the pass waits a frame.
@@ -264,6 +304,10 @@ export function createWaterSystem(): System {
         owner.services.withdraw('water');
       }
       unsubscribeQuality?.();
+      unsubscribeSplash?.();
+      splat.dispose();
+      splatPlaceholder.dispose();
+      particles.clear();
       underwater.dispose();
       lowFlight.dispose();
       client.dispose();
