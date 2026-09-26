@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import type { CollisionWorld } from '../../core/collision';
-import type { EnvironmentState, GeoQuery } from '../../core/contracts';
+import type { EnvironmentState, GeoQuery, WaterService } from '../../core/contracts';
 
 /** Pilot intent for one frame (keyboard/gamepad, autopilot or test injection). */
 export interface PilotCommand {
@@ -48,6 +48,8 @@ export interface SimWorld {
   collision: CollisionWorld | undefined;
   geo: GeoQuery | undefined;
   env: EnvironmentState | undefined;
+  /** Wave surface of the sea; undefined = a flat sea at y = 0 (sandboxes, headless checks without water). */
+  water?: WaterService | undefined;
 }
 
 /** Maneuver ids announced to the game ('maneuver' event); 'hint' explains a refused trick. */
