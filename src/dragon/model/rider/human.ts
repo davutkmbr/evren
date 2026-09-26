@@ -1,7 +1,8 @@
 /**
- * The rider built by the Blender pipeline (tools/humans/build_rider.py): a skinned glTF in the riding pose (bind pose),
- * Mixamo-named skeleton, facing +Z with the feet at the origin (glTF / MakeHuman convention). It is turned to face the
- * dragon's -Z and its hips placed on the seat, under the dragon's chest bone so it rides with the body.
+ * The rider built by the Blender pipeline (tools/humans/build_rider.py): a skinned glTF bound in the neutral standing
+ * pose, Mixamo-named skeleton, facing +Z with the feet at the origin (glTF / MakeHuman convention), with pose clips
+ * ("stand", "ride"). On the dragon it plays "ride", is turned to face the dragon's -Z and its hips placed on the seat,
+ * under the dragon's chest bone so it rides with the body. The same skin takes any Mixamo clip (glide, land, walk, run).
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -14,6 +15,8 @@ export interface HumanRider {
   root: THREE.Object3D;
   meshes: THREE.SkinnedMesh[];
   bones: Map<string, THREE.Bone>;
+  mixer: THREE.AnimationMixer;
+  clips: Map<string, THREE.AnimationClip>;
 }
 
 export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchorRest: THREE.Vector3): Promise<HumanRider> {
@@ -45,6 +48,13 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
       bones.set(b.name.replace(/^mixamorig:?/, ''), b);
     }
   });
+  const mixer = new THREE.AnimationMixer(root);
+  const clips = new Map(gltf.animations.map((c) => [c.name, c]));
+  const ride = clips.get('ride');
+  if (ride) {
+    mixer.clipAction(ride).play();
+    mixer.update(0);
+  }
   const hips = bones.get('Hips');
   root.updateMatrixWorld(true);
   const hipsPos = hips ? hips.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, 1.1, 0);
@@ -53,7 +63,7 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   const turned = hipsPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   root.position.copy(SEAT_HIPS).sub(turned).sub(anchorRest);
   anchor.add(root);
-  const rider = { root, meshes, bones };
+  const rider = { root, meshes, bones, mixer, clips };
   applyGarmentMaterials(rider);
   return rider;
 }
@@ -70,6 +80,7 @@ const SETS: Record<string, ClothSet> = {
   leather: { base: 'brown_leather', size: 0.4, ao: true },
   satin: { base: 'crepe_satin', size: 0.27, ao: true },
   mail: { base: 'chainmail002', size: 0.12, ao: false },
+  steel: { base: 'metal038', size: 0.35, ao: false },
 };
 
 /** Which set and look each exported material id gets. */
@@ -81,9 +92,11 @@ const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number;
   leather: { set: 'leather' },
   darkLeather: { set: 'leather', tint: 0.4 },
   mail: { set: 'mail', metal: 1 },
-  iron: { metal: 1, rough: 0.32 },
-  metal: { metal: 1, rough: 0.35 },
+  // Worn steel (hammered, scratched, smudged) and the same scan tinted for the gilt fittings.
+  iron: { set: 'steel', metal: 1, rough: 1 },
+  metal: { set: 'steel', metal: 1, rough: 0.8 },
   fur: { sheen: 1, sheenRough: 0.8, rough: 0.95 },
+  feather: { set: 'linen', sheen: 0.8, sheenRough: 0.5, rough: 0.9 },
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -139,7 +152,7 @@ vec3 gdNormalDelta() {
 `;
 
 /** Game material for a garment part exported as rider_<id>: scanned cloth / leather / mail with sheen. */
-function garmentMaterial(src: THREE.MeshStandardMaterial): THREE.Material {
+function garmentMaterial(src: THREE.MeshStandardMaterial, ao: boolean): THREE.Material {
   const id = src.name.replace(/^rider_/, '');
   const look = LOOKS[id] ?? {};
   const set = look.set ? SETS[look.set] : undefined;
@@ -152,6 +165,7 @@ function garmentMaterial(src: THREE.MeshStandardMaterial): THREE.Material {
     sheenColor: src.color.clone().lerp(new THREE.Color(1, 1, 1), 0.35),
     side: THREE.DoubleSide,
     alphaTest: id === 'mail' ? 0.4 : 0,
+    vertexColors: ao,
   });
   m.name = src.name;
   const uniforms = {
@@ -164,8 +178,13 @@ function garmentMaterial(src: THREE.MeshStandardMaterial): THREE.Material {
     uGdHasAO: { value: set && set.ao ? 1 : 0 },
     uGdTintScale: { value: 1 },
   };
-  patchMaterial(m, `rider-garment-${set ? set.base : 'plain'}`, (shader) => {
+  patchMaterial(m, `rider-garment-${set ? set.base : 'plain'}${ao ? '-ao' : ''}`, (shader) => {
     Object.assign(shader.uniforms, uniforms);
+    // Baked ambient occlusion (vertex colour 'ao'): folds, the gaps under the sash and the vest, the inside of the collar.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      '#if defined( USE_COLOR )\n  float gdBakedAO = vColor.r;\n  diffuseColor.rgb *= mix(0.25, 1.0, gdBakedAO);\n#endif',
+    );
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGdPos;\nvarying vec3 vGdNrm;\nvarying vec3 vGdRx;\nvarying vec3 vGdRy;\nvarying vec3 vGdRz;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGdPos = position;\nvGdNrm = objectNormal;\nvGdRx = normalMatrix[0];\nvGdRy = normalMatrix[1];\nvGdRz = normalMatrix[2];');
@@ -204,10 +223,12 @@ export function applyGarmentMaterials(rider: HumanRider): void {
     if (!src || Array.isArray(src) || !src.name.startsWith('rider_')) {
       continue;
     }
-    let m = cache.get(src.name);
+    const ao = mesh.geometry.hasAttribute('color');
+    const key = `${src.name}|${ao}`;
+    let m = cache.get(key);
     if (!m) {
-      m = garmentMaterial(src);
-      cache.set(src.name, m);
+      m = garmentMaterial(src, ao);
+      cache.set(key, m);
     }
     mesh.material = m;
   }
