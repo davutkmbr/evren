@@ -1,16 +1,31 @@
 /**
- * Course picker (Y): the built-in courses, the player's own courses and a "+ Yeni parkur" row, with length, best
- * time, best medal and medal targets. Arrow keys or the mouse choose, Enter or a click starts (or opens the editor on
- * the new-course row), Y / Esc close. On a custom course E edits, Delete / Backspace deletes (press twice), K copies
- * its share code; I opens the paste field for a code (Enter imports, Esc cancels).
+ * Course picker (Y), race UI v2: a sheet like the pause menu. Header "Halka yarışları" with the course and medal
+ * counts and Kapat [Y]; on the left the course list (selection = gold bar), Yeni parkur [N] and the share code field
+ * [I]; on the right the selected course: name and description, Düzenle [E] / Kodu kopyala [K] / Sil [Del] on custom
+ * courses, the route on a mini map, four stats, the medal ladder, and Yarışa başla [Enter] with the Hayalet [H] switch.
  *
- * It pauses nothing; the activity system routes only the picker's keys to it (and only while it is open). The paste
- * field reports focus through onTyping so game input is disabled while typing. Rows are rebuilt on every open.
+ * Arrow keys or a click choose, Enter or a double click starts, Y / Esc close. Delete needs a second press. It pauses
+ * nothing; the activity system routes only the picker's keys to it (capture listener, only while it is open), which is
+ * how N (weather) and H (help) are borrowed here. The code field reports focus through onTyping so game input is off
+ * while typing. Rows are rebuilt on every open.
  */
+import {
+  listRow,
+  medalDot,
+  medalLadder,
+  optionSwitch,
+  prompt,
+  routeMap,
+  stat,
+  textField,
+  type ListRow,
+  type Prompt,
+  type RoutePoint,
+  type WaterSampler,
+} from '../../ui/components';
 import type { Medal, MedalTimes } from '../courses';
-import { MEDAL_ORDER } from '../courses';
-import { MEDAL_NAME, RACE_TEXT, formatCourseLength, formatRaceTime, formatTargetTime } from '../text';
-import { h, show, toggle } from './dom';
+import { RACE_TEXT, formatCourseLength, formatRaceTime, formatTargetTime } from '../text';
+import { h, noFocus, show } from './dom';
 
 export interface PickerEntry {
   id: string;
@@ -18,10 +33,16 @@ export interface PickerEntry {
   description: string;
   lengthM: number;
   gates: number;
+  rings: number;
   best?: number;
   medal?: Medal | null;
   medals: MedalTimes;
+  runs: number;
   custom?: boolean;
+  /** A ghost of the best run exists. */
+  hasGhost: boolean;
+  /** Map-plane route (world x, z): the gates in order and the speed rings. */
+  route: { gates: RoutePoint[]; rings: RoutePoint[] };
 }
 
 export interface PickerHandlers {
@@ -34,24 +55,50 @@ export interface PickerHandlers {
   onCopy: (id: string) => void;
   /** Returns an error text to show, or null when the code was imported (the caller reopens the list). */
   onImport: (code: string) => string | null;
-  /** The paste field gained (true) or lost (false) keyboard focus. */
+  /** The code field gained (true) or lost (false) keyboard focus. */
   onTyping: (typing: boolean) => void;
+  /** The ghost switch changed (remembered per player by the caller). */
+  onGhost: (on: boolean) => void;
 }
 
-/** Id of the synthetic "new course" row. */
-const NEW_ROW = '\u0000new';
+/** Smallest map span (m), so a short course is not blown up. */
+const MAP_MIN_SPAN = 2400;
+
+/** Ladder labels: whole seconds as targets ("4:08"), a best time with hundredths. */
+function ladderTime(s: number): string {
+  return Number.isInteger(s) ? formatTargetTime(s) : formatRaceTime(s);
+}
 
 export class CoursePicker {
-  readonly root = h('div', 'race-picker ejd-glass ejd-interactive');
-  private readonly list = h('div', 'race-picker-list');
-  private readonly importRow = h('div', 'race-picker-import');
-  private readonly importInput = h('input', 'race-picker-import-input');
-  private readonly importMsg = h('div', 'race-picker-import-msg');
-  private rows: HTMLElement[] = [];
+  readonly root = h('div', 'race-picker');
+  private readonly sheet = h('section', 'race-sheet ejd-interactive');
+  private readonly counts = h('span', 'race-sheet-counts');
+  private readonly list = h('div', 'race-list-rows');
+  private readonly field = textField(RACE_TEXT.picker.importCode, { key: 'I', placeholder: RACE_TEXT.picker.importPlaceholder });
+  private readonly name = h('span', 'race-detail-name');
+  private readonly desc = h('span', 'race-detail-desc');
+  private readonly customActions = h('div', 'race-detail-actions');
+  private readonly removePrompt: Prompt;
+  private readonly map = routeMap({
+    legend: [
+      { label: RACE_TEXT.picker.legendGate, color: '#e8b872' },
+      { label: RACE_TEXT.picker.legendRing, color: '#7fd1c0', swatch: 'ring' },
+      { label: RACE_TEXT.picker.legendStart, color: '#f3eee5' },
+    ],
+    minSpan: MAP_MIN_SPAN,
+  });
+  private readonly lengthStat = stat(RACE_TEXT.picker.length, '');
+  private readonly gatesStat = stat(RACE_TEXT.picker.gatesRings, '');
+  private readonly bestStat = stat(RACE_TEXT.picker.best, '');
+  private readonly runsStat = stat(RACE_TEXT.picker.runs, '');
+  private readonly ladder = medalLadder(ladderTime);
+  private readonly ghostSwitch: ReturnType<typeof optionSwitch>;
+  private rows: ListRow[] = [];
   private entries: PickerEntry[] = [];
   private selected = 0;
   private opened = false;
   private armedDelete: string | null = null;
+  private ghostOn = true;
 
   constructor(
     parent: HTMLElement,
@@ -59,50 +106,59 @@ export class CoursePicker {
   ) {
     const t = RACE_TEXT.picker;
     this.root.setAttribute('role', 'dialog');
-    this.importInput.type = 'text';
-    this.importInput.spellcheck = false;
-    this.importInput.autocomplete = 'off';
-    this.importInput.placeholder = t.importPlaceholder;
-    this.importInput.setAttribute('aria-label', t.importCode);
-    this.importInput.addEventListener('focus', () => this.handlers.onTyping(true));
-    this.importInput.addEventListener('blur', () => this.handlers.onTyping(false));
-    this.importInput.addEventListener('keydown', (e) => {
+    this.root.setAttribute('aria-label', t.title);
+    const input = this.field.input;
+    input.addEventListener('focus', () => {
+      this.field.setMessage(t.importHint);
+      this.handlers.onTyping(true);
+    });
+    input.addEventListener('blur', () => this.handlers.onTyping(false));
+    input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.code === 'Enter' || e.code === 'NumpadEnter') {
         e.preventDefault();
-        const err = this.handlers.onImport(this.importInput.value);
+        const err = this.handlers.onImport(input.value);
         if (err) {
-          this.importMsg.textContent = err;
+          this.field.setMessage(err, 'warn');
         }
       } else if (e.code === 'Escape') {
         e.preventDefault();
         this.closeImport();
       }
     });
-    this.importRow.append(this.importInput, this.importMsg);
-    this.importRow.hidden = true;
-    const action = (label: string, key: string, fn: () => void): HTMLElement => {
-      const b = h('button', 'race-picker-action', [h('kbd', undefined, key), ` ${label}`]);
-      b.type = 'button';
-      b.tabIndex = -1;
-      b.addEventListener('mousedown', (ev) => ev.preventDefault());
-      b.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        fn();
-      });
-      return b;
-    };
-    this.root.append(
-      h('div', 'race-picker-head', [h('div', 'race-picker-title', t.title), h('div', 'race-picker-sub ejd-caps', t.subtitle)]),
+
+    const closePrompt = noFocus(prompt(t.close, 'Y', 'secondary', () => this.handlers.onClose()).root);
+    const header = h('header', 'race-sheet-head', [h('div', 'race-sheet-titles', [h('span', 'race-sheet-title', t.title), this.counts]), closePrompt]);
+
+    const newPrompt = noFocus(prompt(t.newCourse, 'N', 'secondary', () => this.handlers.onNew()).root);
+    const listCol = h('div', 'race-list', [
+      h('span', 'race-list-cap', t.list),
       this.list,
-      this.importRow,
-      h('div', 'race-picker-foot', [
-        h('span', undefined, [h('kbd', undefined, '↑'), h('kbd', undefined, '↓'), ` ${t.choose}`]),
-        h('span', undefined, [h('kbd', undefined, 'Enter'), ` ${t.start}`]),
-        h('span', undefined, [h('kbd', undefined, 'Y'), h('kbd', undefined, 'Esc'), ` ${t.close}`]),
-      ]),
-      h('div', 'race-picker-foot race-picker-foot-custom', [action(t.importCode, 'I', () => this.openImport())]),
+      h('i', 'race-list-rule'),
+      h('div', 'race-list-new', [newPrompt]),
+      h('div', 'race-list-code', [this.field.root]),
+    ]);
+
+    this.removePrompt = prompt(t.remove, 'Del', 'danger', () => this.withSelected((e) => this.requestDelete(e.id)));
+    this.customActions.append(
+      noFocus(prompt(t.edit, 'E', 'secondary', () => this.withSelected((e) => this.handlers.onEdit(e.id))).root),
+      noFocus(prompt(t.copyCode, 'K', 'secondary', () => this.withSelected((e) => this.handlers.onCopy(e.id))).root),
+      noFocus(this.removePrompt.root),
     );
+    this.ghostSwitch = optionSwitch(t.ghost, 'H', true, '#b39cf0', (on) => this.setGhost(on));
+    noFocus(this.ghostSwitch.root);
+    const startPrompt = noFocus(prompt(t.start, 'Enter', 'primary', () => this.withSelected((e) => this.handlers.onStart(e.id))).root);
+    this.map.root.classList.add('race-detail-map');
+    const detail = h('div', 'race-detail', [
+      h('div', 'race-detail-head', [h('div', 'race-detail-titles', [this.name, this.desc]), this.customActions]),
+      this.map.root,
+      h('div', 'race-detail-stats', [this.lengthStat.root, this.gatesStat.root, this.bestStat.root, this.runsStat.root]),
+      h('div', 'race-detail-ladder', [this.ladder.root]),
+      h('i', 'race-detail-spacer'),
+      h('div', 'race-detail-foot', [startPrompt, this.ghostSwitch.root, h('span', 'race-detail-note', t.note)]),
+    ]);
+    this.sheet.append(header, h('div', 'race-sheet-body', [listCol, detail]));
+    this.root.append(h('div', 'race-picker-shade'), this.sheet);
     this.root.hidden = true;
     parent.append(this.root);
   }
@@ -111,19 +167,39 @@ export class CoursePicker {
     return this.opened;
   }
 
-  /** Opens with these entries; `selectId` picks the row (default: the first). */
-  open(entries: PickerEntry[], selectId?: string): void {
+  /** Land / water sampler for the route map background (null until the world is loaded). */
+  setWater(sampler: WaterSampler | null): void {
+    this.map.setWater(sampler);
+  }
+
+  /** Opens with these entries; `selectId` picks the row (default: the first). `ghostOn`: the player's ghost choice. */
+  open(entries: PickerEntry[], selectId: string | undefined, ghostOn: boolean): void {
+    const t = RACE_TEXT.picker;
     this.entries = entries;
     this.armedDelete = null;
-    const ids = [...entries.map((e) => e.id), NEW_ROW];
-    const at = selectId ? ids.indexOf(selectId) : -1;
+    this.ghostOn = ghostOn;
+    const at = selectId ? entries.findIndex((e) => e.id === selectId) : -1;
     this.selected = at >= 0 ? at : 0;
-    this.rows = [...entries.map((e, i) => this.buildRow(e, i)), this.buildNewRow(entries.length)];
-    this.list.replaceChildren(...this.rows);
+    this.rows = entries.map((e, i) => {
+      const row = listRow(
+        { label: e.name, sub: t.rowSub(!!e.custom, formatCourseLength(e.lengthM), e.gates), value: e.best !== undefined ? formatRaceTime(e.best) : '—' },
+        () => this.select(i),
+        undefined,
+      );
+      row.setMarker(medalDot(e.medal ?? null).root);
+      // A click selects (the detail shows the course); a double click starts it.
+      row.root.addEventListener('dblclick', (ev) => {
+        ev.preventDefault();
+        this.handlers.onStart(e.id);
+      });
+      return row;
+    });
+    this.list.replaceChildren(...this.rows.map((r) => r.root));
+    this.counts.textContent = t.counts(entries.length, entries.filter((e) => !!e.medal).length);
+    this.field.setMessage('');
     this.opened = true;
     show(this.root, true);
-    this.highlight();
-    this.rows[this.selected]?.scrollIntoView?.({ block: 'nearest' });
+    this.paint();
   }
 
   close(): void {
@@ -135,11 +211,11 @@ export class CoursePicker {
     show(this.root, false);
   }
 
-  /** Shows a code in the paste field, selected, so the player can copy it by hand (clipboard unavailable). */
+  /** Shows a code in the share field, selected, so the player can copy it by hand (clipboard unavailable). */
   showCode(code: string): void {
     this.openImport();
-    this.importInput.value = code;
-    this.importInput.select();
+    this.field.input.value = code;
+    this.field.input.select();
   }
 
   /** Keyboard while open. Returns true when the key was the picker's (the caller swallows it). */
@@ -159,11 +235,21 @@ export class CoursePicker {
         return true;
       case 'Enter':
       case 'NumpadEnter':
-        this.choose(this.selected);
+        if (e) {
+          this.handlers.onStart(e.id);
+        }
         return true;
       case 'Escape':
       case 'KeyY':
         this.handlers.onClose();
+        return true;
+      case 'KeyN':
+        this.handlers.onNew();
+        return true;
+      case 'KeyH':
+        if (e?.hasGhost) {
+          this.setGhost(!this.ghostOn);
+        }
         return true;
       case 'KeyE':
         if (e?.custom) {
@@ -189,6 +275,19 @@ export class CoursePicker {
     }
   }
 
+  private withSelected(fn: (e: PickerEntry) => void): void {
+    const e = this.entries[this.selected];
+    if (e) {
+      fn(e);
+    }
+  }
+
+  private setGhost(on: boolean): void {
+    this.ghostOn = on;
+    this.ghostSwitch.set(on);
+    this.handlers.onGhost(on);
+  }
+
   private requestDelete(id: string): void {
     if (this.armedDelete === id) {
       this.armedDelete = null;
@@ -196,136 +295,63 @@ export class CoursePicker {
       return;
     }
     this.armedDelete = id;
-    this.highlight();
+    this.removePrompt.setLabel(RACE_TEXT.picker.removeConfirm);
   }
 
   private openImport(): void {
-    this.importRow.hidden = false;
-    this.importMsg.textContent = RACE_TEXT.picker.importHint;
-    this.importInput.value = '';
-    this.importInput.focus({ preventScroll: true });
+    this.field.setMessage(RACE_TEXT.picker.importHint);
+    this.field.input.value = '';
+    this.field.input.focus({ preventScroll: true });
   }
 
   private closeImport(): void {
-    if (this.importRow.hidden) {
+    const input = this.field.input;
+    if (document.activeElement === input) {
+      input.blur();
+    }
+    input.value = '';
+    this.field.setMessage('');
+  }
+
+  private select(i: number): void {
+    if (i === this.selected || !this.entries[i]) {
       return;
     }
-    this.importInput.blur();
-    this.importRow.hidden = true;
-    this.importInput.value = '';
+    this.selected = i;
+    this.armedDelete = null;
+    this.paint();
+    this.handlers.onMove();
   }
 
   private move(step: number): void {
     const n = this.rows.length;
-    if (n === 0) {
+    if (n > 0) {
+      this.select((this.selected + step + n) % n);
+    }
+  }
+
+  /** Selection bar and the detail column for the selected course. */
+  private paint(): void {
+    const t = RACE_TEXT.picker;
+    this.rows.forEach((r, i) => r.setSelected(i === this.selected));
+    this.rows[this.selected]?.root.scrollIntoView?.({ block: 'nearest' });
+    const e = this.entries[this.selected];
+    if (!e) {
       return;
     }
-    this.selected = (this.selected + step + n) % n;
-    this.armedDelete = null;
-    this.highlight();
-    this.rows[this.selected]?.scrollIntoView?.({ block: 'nearest' });
-    this.handlers.onMove();
-  }
-
-  private choose(i: number): void {
-    if (i === this.entries.length) {
-      this.handlers.onNew();
-      return;
-    }
-    const e = this.entries[i];
-    if (e) {
-      this.handlers.onStart(e.id);
-    }
-  }
-
-  private highlight(): void {
-    this.rows.forEach((r, i) => {
-      const on = i === this.selected;
-      toggle(r, 'is-on', on);
-      r.setAttribute('aria-selected', String(on));
-      const e = this.entries[i];
-      toggle(r, 'is-armed', !!e && e.id === this.armedDelete);
-    });
-  }
-
-  private hover(row: HTMLElement, i: number): void {
-    row.addEventListener('mouseenter', () => {
-      if (this.selected !== i) {
-        this.selected = i;
-        this.armedDelete = null;
-        this.highlight();
-      }
-    });
-  }
-
-  private buildNewRow(i: number): HTMLElement {
-    const t = RACE_TEXT.picker;
-    const row = h('button', 'race-picker-row race-picker-new', [h('span', 'race-picker-name', t.newCourse), h('span', 'race-picker-desc', t.newCourseDesc)]);
-    row.type = 'button';
-    row.tabIndex = -1;
-    row.setAttribute('role', 'option');
-    this.hover(row, i);
-    row.addEventListener('mousedown', (ev) => ev.preventDefault());
-    row.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      this.choose(i);
-    });
-    return row;
-  }
-
-  private buildRow(e: PickerEntry, i: number): HTMLElement {
-    const t = RACE_TEXT.picker;
-    const best = e.best !== undefined
-      ? h('span', 'race-picker-best ejd-num', [
-          e.medal ? h('i', `race-medal-dot is-${e.medal}`) : null,
-          `${t.best} ${formatRaceTime(e.best)}`,
-          e.medal ? h('span', 'race-picker-medal', ` · ${MEDAL_NAME[e.medal]}`) : null,
-        ])
-      : h('span', 'race-picker-best is-empty', t.noBest);
-    const targets = h(
-      'span',
-      'race-picker-targets ejd-num',
-      MEDAL_ORDER.map((m) => h('span', `race-target is-${m}`, [h('i', 'race-medal-dot'), formatTargetTime(e.medals[m])])),
-    );
-    const actions = e.custom
-      ? h('span', 'race-picker-row-actions', [
-          this.rowAction(t.edit, 'E', () => this.handlers.onEdit(e.id)),
-          this.rowAction(t.copyCode, 'K', () => this.handlers.onCopy(e.id)),
-          h('span', 'race-picker-del', [
-            this.rowAction(t.remove, 'Del', () => this.requestDelete(e.id)),
-            h('span', 'race-picker-del-confirm', ` · ${t.removeConfirm}`),
-          ]),
-        ])
-      : null;
-    const row = h('button', `race-picker-row${e.custom ? ' is-custom' : ''}`, [
-      h('span', 'race-picker-row-top', [h('span', 'race-picker-name', e.name), h('span', 'race-picker-len ejd-num', `${formatCourseLength(e.lengthM)} · ${t.gates(e.gates)}`)]),
-      h('span', 'race-picker-desc', e.description),
-      h('span', 'race-picker-row-bottom', [best, targets]),
-      actions,
-    ]);
-    row.type = 'button';
-    row.tabIndex = -1;
-    row.setAttribute('role', 'option');
-    this.hover(row, i);
-    // No focus on click: a focused button would be "clicked" again by Space (flap) after the picker closes.
-    row.addEventListener('mousedown', (ev) => ev.preventDefault());
-    row.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      this.choose(i);
-    });
-    return row;
-  }
-
-  private rowAction(label: string, key: string, fn: () => void): HTMLElement {
-    const a = h('span', 'race-picker-row-action', [h('kbd', undefined, key), ` ${label}`]);
-    a.setAttribute('role', 'button');
-    a.addEventListener('mousedown', (ev) => ev.preventDefault());
-    a.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      fn();
-    });
-    return a;
+    this.name.textContent = e.name;
+    this.desc.textContent = e.description;
+    show(this.customActions, !!e.custom);
+    this.removePrompt.setLabel(t.remove);
+    this.map.root.setAttribute('aria-label', t.mapLabel(e.name));
+    this.map.set({ key: e.id, path: e.route.gates, stops: e.route.gates, rings: e.route.rings });
+    this.lengthStat.set(formatCourseLength(e.lengthM));
+    this.gatesStat.set(`${e.gates} · ${e.rings}`);
+    this.bestStat.set(e.best !== undefined ? formatRaceTime(e.best) : '—');
+    this.runsStat.set(String(e.runs));
+    this.ladder.set([e.medals.gold, e.medals.silver, e.medals.bronze], e.best ?? null);
+    this.ghostSwitch.setDisabled(!e.hasGhost, t.ghostNone);
+    this.ghostSwitch.set(this.ghostOn);
   }
 
   dispose(): void {
