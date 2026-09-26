@@ -91,6 +91,9 @@ export function createWeatherSystem(): System {
     get flash() {
       return lightning.flash;
     },
+    get seaFog() {
+      return seaFog.active ? seaFog.amount : 0;
+    },
     setPreset(p: WeatherPreset) {
       const values = WEATHER_PRESETS[p];
       settings.fog = values.fog;
