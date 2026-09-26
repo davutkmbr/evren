@@ -145,6 +145,11 @@ export interface MomentContent {
   animationIds?: readonly string[];
   /** Placeholder id of the sound cue (not yet recorded or approved). */
   soundId?: string;
+  /**
+   * Id of an approved music set (public/audio/music/manifest.json) that plays as the moment's own bed; without it
+   * (or while that set does not exist) the adaptive music only ducks under the moment.
+   */
+  musicId?: string;
   subtitles: readonly SubtitleLine[];
   camera?: CameraHint;
   card?: DiscoveryCard;
