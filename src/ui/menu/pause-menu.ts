@@ -1,5 +1,7 @@
 import { el, TextSlot } from '../dom';
 import { ICONS } from '../icons';
+import { BRAND } from '../brand';
+import { titleLogoSvg } from '../brand-logo';
 
 export type MenuTab = 'settings' | 'teleport' | 'controls';
 
@@ -62,7 +64,7 @@ export class PauseMenu {
 
     const sheet = el('div', 'menu-sheet ejd-glass', [
       el('nav', 'menu-nav', [
-        el('div', 'menu-brand', [el('p', 'ejd-caps menu-state', 'Duraklatıldı'), el('p', 'menu-name', 'Evren')]),
+        this.brand(),
         this.resumeButton,
         el('i', 'nav-sep'),
         ...navItems,
@@ -80,6 +82,12 @@ export class PauseMenu {
         this.options.onResume();
       }
     });
+  }
+
+  private brand(): HTMLElement {
+    const logo = el('p', 'menu-logo', undefined, { lang: 'en', 'aria-label': BRAND.name });
+    logo.innerHTML = titleLogoSvg({ id: 'menu-logo', crest: false });
+    return el('div', 'menu-brand', [el('p', 'ejd-caps menu-state', 'Duraklatıldı'), logo]);
   }
 
   get opened(): boolean {

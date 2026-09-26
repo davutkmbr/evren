@@ -1,4 +1,4 @@
-# Evren — Roadmap
+# Seventeen Skies — Roadmap
 
 An open-world, realistic and "chill" flight simulation where we ride a dragon over Istanbul.
 This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,

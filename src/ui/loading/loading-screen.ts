@@ -1,6 +1,8 @@
 import { el, setVisible, TextSlot } from '../dom';
 import { LOADING_TIPS, loadingLabel } from '../labels';
 import { SkylineBackdrop } from './skyline-backdrop';
+import { BRAND } from '../brand';
+import { titleLogoSvg } from '../brand-logo';
 
 export interface LoadingScreenOptions {
   /** Screenshot/debug runs: remove the screen as soon as loading is done, no start prompt. */
@@ -76,23 +78,27 @@ export class LoadingScreen {
     this.root = el('section', 'ejd-loading ejd-interactive', [
       this.backdrop.canvas,
       el('div', 'ld-scrim'),
-      el('header', 'ld-title', [
-        el('p', 'ld-eyebrow', 'İstanbul üzerinde serbest uçuş'),
-        el('h1', 'ld-name', 'Evren'),
-      ]),
+      this.title(),
       this.progressBlock,
       this.startBlock,
       el('p', 'ld-credit', [
-        'Şehir, gökyüzü, ejderha ve sesler tarayıcıda, kodla üretilir.',
+        'Şehir, gökyüzü, yaratıklar ve sesler tarayıcıda, kodla üretilir.',
         el('br'),
         'Harita verisi © OpenStreetMap katkıcıları (ODbL) · Yükseklik: NASA SRTM',
       ]),
-    ], { 'aria-label': 'Evren yükleniyor' });
+    ], { 'aria-label': `${BRAND.name} yükleniyor` });
     this.root.addEventListener('click', () => this.start());
     parent.append(this.root);
     this.backdrop.start();
     this.tipTimer = window.setInterval(() => this.nextTip(), TIP_INTERVAL_MS);
     window.addEventListener('keydown', this.onKey);
+  }
+
+  /** The title logo (drawn as SVG, see brand-logo.ts) with the brand line under it. */
+  private title(): HTMLElement {
+    const logo = el('h1', 'ld-logo', undefined, { lang: 'en', 'aria-label': BRAND.name });
+    logo.innerHTML = titleLogoSvg({ id: 'ld-logo' });
+    return el('header', 'ld-title', [logo, el('p', 'ld-line', BRAND.lineTr)]);
   }
 
   get visible(): boolean {

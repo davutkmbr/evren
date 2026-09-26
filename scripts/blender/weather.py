@@ -1,5 +1,5 @@
 """
-Weathering blend of compiled Evren materials (world compiler format 1.1; tools/world-compiler/README.md,
+Weathering blend of compiled materials (world compiler format 1.1; tools/world-compiler/README.md,
 "Format 1.1 - weathering").
 
 A material whose glTF extras carry `weather` gets one shared node group, "evren_weather", between its own maps and its

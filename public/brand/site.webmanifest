@@ -1,0 +1,29 @@
+{
+  "name": "Seventeen Skies",
+  "short_name": "Seventeen Skies",
+  "description": "Türk mitolojisinin uçan yaratıklarıyla gerçek İstanbul üzerinde serbest uçuş. Tarayıcıda, kodla üretilmiş bir dünya.",
+  "lang": "tr",
+  "start_url": "../",
+  "scope": "../",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#070a12",
+  "theme_color": "#070a12",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -69,7 +69,7 @@ quoted from the linked source.
 
 **Export formats**
 
-| Route | What you get | Use for Evren |
+| Route | What you get | Use for Seventeen Skies |
 |---|---|---|
 | DCC Export (5.8 Export tool) | `head.dna` and `body.dna` (meshes for all LODs, joints, skin weights, blend shapes, RigLogic and RBF data) plus textures (head and body colour, normal, SMRF, animated-map masks). **No clothing, no grooms.** | **Main route**, into Blender via Character DNA |
 | MetaHuman for Maya / Houdini | Epic's official DCC plugins (DNA plus RigLogic; Maya 2026 supported). Paid DCCs. | Not needed |
@@ -123,7 +123,7 @@ quoted from the linked source.
   output, and head movement.
 - Epic's documentation names **no supported languages**, so **Turkish quality is unverified**. Test it in the POC.
 - **macOS in 5.8:** "Offline and real-time facial MetaHuman Animator functionality available on Linux and macOS".
-  The body solve and markerless mocap are Windows-only; Evren does not need them.
+  The body solve and markerless mocap are Windows-only; Seventeen Skies does not need them.
 
 **Playing it in Godot or three.js**
 
@@ -151,7 +151,7 @@ quoted from the linked source.
 - Batch work runs from Python with `IKRetargetBatchOperation.duplicate_and_retarget()` and `IKRetargeterController`.
   Export the result as FBX.
 - Import each Mixamo clip against one "with skin" Mixamo character (for example X Bot), which serves as the source
-  mesh. Use "In Place" for locomotion, because Evren uses a kinematic controller.
+  mesh. Use "In Place" for locomotion, because the game uses a kinematic controller.
 - Cost: free, part of UE.
 
 **Free Blender options**

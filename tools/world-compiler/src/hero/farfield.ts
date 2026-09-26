@@ -6,7 +6,7 @@
  * and the landmark silhouettes that make the skyline readable — Hagia Sophia, the Blue Mosque, Süleymaniye, Yeni
  * Cami, Topkapı's tower, Galata Tower, Kız Kulesi, the Selimiye barracks and Haydarpaşa station with its breakwater.
  *
- * Positions are latitude / longitude of the landmarks and shore points converted with the Evren frame
+ * Positions are latitude / longitude of the landmarks and shore points converted with the world frame
  * (src/core/geo-coords.ts); accuracy is tens of metres, enough at these distances. This is a stopgap until
  * neighbouring areas are compiled (then their LOD2 tiles replace it).
  */

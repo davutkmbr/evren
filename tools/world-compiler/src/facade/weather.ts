@@ -131,7 +131,7 @@ export function wallWeather(w: WallInfo, r: number, y: number): Weather {
 
 /** Sun-exposure of a face (x, z normal): 1 facing south-south-west (Istanbul's afternoon sun), 0 facing north. */
 export function sunExposure(nx: number, nz: number): number {
-  // Evren frame: +X east, +Z south. SSW = (-0.45, 0.89).
+  // World frame: +X east, +Z south. SSW = (-0.45, 0.89).
   return clamp01(nx * -0.45 + nz * 0.89);
 }
 

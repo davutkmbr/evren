@@ -1,6 +1,6 @@
 {
  "format": "s1-cameras/1",
- "frame": "Evren local metres (src/core/geo-coords.ts): +X east, +Y up, +Z south, origin 41.045 N 29.02 E, y = 0 at sea level",
+ "frame": "world-local metres (src/core/geo-coords.ts): +X east, +Y up, +Z south, origin 41.045 N 29.02 E, y = 0 at sea level",
  "conventions": {
   "fovDeg": "vertical field of view of the whole reference photo; render at width/height = aspect",
   "position": "camera centre; for eye-level cameras y = groundYFormat0 + eyeHeight (re-snap to the compiled ground and move target by the same dy when the ground changes)",
