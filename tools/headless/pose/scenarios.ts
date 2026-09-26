@@ -2,6 +2,7 @@
  * Scripted pose-strip scenarios: pilot commands and presses delivered through the same path as the game's input
  * (the flight system's frame command + edge latch), on flat open land GROUND_Y m high.
  */
+import { DEG } from '../../../src/dragon/flight/params';
 import type { FlightSim } from '../../../src/dragon/flight/sim';
 import type { View } from './raster';
 import type { FrameRecord, FrameScript, PoseRuntime, Terrain } from './runtime';
@@ -30,6 +31,8 @@ export interface Scenario {
   terrain?: Terrain;
   /** Mean wind (m/s at 100 m, world x / z); default still air. */
   wind?: readonly [number, number];
+  /** Open sea with the seabed this deep (m) instead of flat land (the surface at y = 0, flat calm). */
+  sea?: number;
 }
 
 /** Time of the first record matching `pred`, or `fallback`. */
@@ -94,6 +97,35 @@ export function fly(height: number, speed: number, prep?: (sim: FlightSim) => vo
   return (rt) => {
     rt.teleport(0, GROUND_Y + height, 0, 0, speed);
     prep?.(rt.sim);
+  };
+}
+
+/** Sea scenarios: a folded dive at `pathDeg` (Shift held) starting `height` m above the water. */
+function plungeFrom(height: number, speed: number, pathDeg: number): (rt: PoseRuntime) => void {
+  return (rt) => {
+    rt.teleport(0, height, 0, 0, speed, pathDeg);
+    const path = pathDeg * DEG;
+    rt.sim.body.velocity.set(0, Math.sin(path) * speed, -Math.cos(path) * speed);
+    rt.sim.spread = 0.08;
+    rt.sim.sweep = 1;
+  };
+}
+
+/** The dive path held with Shift until the entry, then `after` (seconds since the entry). */
+function plungeScript(pathDeg: number, after: (under: number, sim: FlightSim, input: Parameters<FrameScript>[2]) => void): () => FrameScript {
+  return () => {
+    let entered = -1;
+    return (t, sim, input) => {
+      if (entered < 0 && sim.mode === 'underwater') {
+        entered = t;
+      }
+      if (entered < 0) {
+        input.cmd.dive = true;
+        input.pathDeg = pathDeg;
+        return;
+      }
+      after(t - entered, sim, input);
+    };
   };
 }
 
@@ -392,6 +424,54 @@ export const SCENARIOS: Scenario[] = [
     window: (r) => firstTime(r, (x) => x.mode === 'hovering', 2) + 2,
     view: 'side',
     camera: 'fixed',
+  },
+  {
+    name: 'plunge',
+    description: 'folded dive at -60°, 45 m/s, Shift held into deep water: the entry and the first metres',
+    sea: 30,
+    setup: plungeFrom(22, 45, -60),
+    seconds: 5,
+    script: plungeScript(-60, () => undefined),
+    frames: 18,
+    fps: 12,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'underwater', 1) - 0.35),
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'underwater',
+    description: 'under water after a plunge: S to level out, then Space held (strokes), A held at the end (turn)',
+    sea: 30,
+    setup: plungeFrom(22, 45, -60),
+    seconds: 9,
+    script: plungeScript(-60, (under, sim, input) => {
+      input.cmd.pitch = sim.dive.pitch < -8 * DEG ? -1 : sim.dive.pitch > 0 ? 0.6 : 0;
+      const depth = -sim.body.position.y;
+      input.cmd.flap = under > 0.8 && depth > 3.5;
+      input.cmd.roll = under > 4 ? -0.6 : 0;
+    }),
+    frames: 18,
+    fps: 4,
+    window: (r) => firstTime(r, (x) => x.mode === 'underwater', 1) + 0.5,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'breach',
+    description: 'plunge at -50°, 60 m/s, then S held: the J-turn, the breach (wings snap open) and the climb-out',
+    sea: 30,
+    setup: plungeFrom(22, 60, -50),
+    seconds: 7,
+    script: plungeScript(-50, (under, sim, input) => {
+      input.cmd.pitch = sim.mode === 'underwater' ? -1 : 0;
+      void under;
+    }),
+    frames: 18,
+    fps: 10,
+    window: (r) => Math.max(0, firstTime(r, (x) => x.mode === 'takeoff' && x.time > 0.5, 2) - 0.8),
+    view: 'side',
+    camera: 'fixed',
+    span: 40,
   },
   {
     name: 'turn',

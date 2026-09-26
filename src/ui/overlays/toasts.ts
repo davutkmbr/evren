@@ -1,25 +1,32 @@
 import { keyText } from '../components';
 import { el } from '../dom';
+import { HUD_PRIORITY, ZONE_CLASS, type HudDirector } from '../zones';
 
-const MAX_TOASTS = 3;
-const TOAST_MS = 3600;
+const TOAST_S = 3.6;
+/** A toast that could not show within this many seconds (another one was up) is dropped. */
+const TOAST_WAIT_S = 2.5;
 
-interface KeyedToast {
-  node: HTMLElement;
-  text: HTMLElement;
-  timer: number;
+interface ToastContent {
+  text: string;
+  kind: 'info' | 'warn';
 }
 
 /**
- * Stacked transient messages (top centre) fed by the 'toast' event. Plain text with a soft shadow on a faint pill.
- * Keys named as "[L]" in the text are drawn as key caps.
- * A toast pushed with a `key` replaces the live toast with the same key (camera, clock) instead of stacking.
+ * Transient messages fed by the 'toast' event, one at a time in the toast slot (top left; top centre over a menu).
+ * Plain text with a soft shadow on a faint pill; keys named as "[L]" in the text are drawn as key caps.
+ * The newest toast replaces the current one in place; a toast pushed with a `key` (camera, clock) updates its own
+ * entry instead of queueing a second one. The director (lowest priority, toast zone) decides when each one shows.
  */
 export class Toasts {
-  readonly root = el('div', 'hud-toasts', undefined, { role: 'status', 'aria-live': 'polite' });
+  private readonly text = el('span', 'toast-text');
+  private readonly node = el('div', 'toast', [el('i', 'toast-dot'), this.text]);
+  readonly root = el('div', `${ZONE_CLASS.toast} hud-toasts`, [this.node], { role: 'status', 'aria-live': 'polite' });
+  private readonly content = new Map<string, ToastContent>();
   private lastText = '';
   private lastAt = 0;
-  private readonly keyed = new Map<string, KeyedToast>();
+  private seq = 0;
+
+  constructor(private readonly zones: HudDirector) {}
 
   push(text: string, kind: 'info' | 'warn' = 'info', key?: string): void {
     const now = performance.now();
@@ -28,37 +35,31 @@ export class Toasts {
     }
     this.lastText = text;
     this.lastAt = now;
-    const live = key ? this.keyed.get(key) : undefined;
-    if (live && live.node.isConnected && !live.node.classList.contains('is-leaving')) {
-      live.text.replaceChildren(...keyText(text));
-      live.node.className = `toast is-${kind} is-in`;
-      window.clearTimeout(live.timer);
-      live.timer = this.scheduleLeave(live.node, key);
-      return;
-    }
-    const textNode = el('span', 'toast-text', keyText(text));
-    const toast = el('div', `toast is-${kind}`, [el('i', 'toast-dot'), textNode]);
-    this.root.append(toast);
-    while (this.root.childElementCount > MAX_TOASTS) {
-      this.root.firstElementChild?.remove();
-    }
-    requestAnimationFrame(() => toast.classList.add('is-in'));
-    const timer = this.scheduleLeave(toast, key);
-    if (key) {
-      this.keyed.set(key, { node: toast, text: textNode, timer });
+    const id = `toast.${key ?? ++this.seq}`;
+    this.content.set(id, { text, kind });
+    this.zones.request({
+      id,
+      zone: 'toast',
+      priority: HUD_PRIORITY.toast,
+      duration: TOAST_S,
+      maxWait: TOAST_WAIT_S,
+      onShow: () => this.render(id),
+      onHide: () => this.node.classList.remove('is-in'),
+    });
+    // Forget toasts that finished or were dropped as stale.
+    for (const k of this.content.keys()) {
+      if (!this.zones.has(k)) {
+        this.content.delete(k);
+      }
     }
   }
 
-  private scheduleLeave(toast: HTMLElement, key: string | undefined): number {
-    return window.setTimeout(() => {
-      toast.classList.remove('is-in');
-      toast.classList.add('is-leaving');
-      window.setTimeout(() => {
-        toast.remove();
-        if (key && this.keyed.get(key)?.node === toast) {
-          this.keyed.delete(key);
-        }
-      }, 320);
-    }, TOAST_MS);
+  private render(id: string): void {
+    const c = this.content.get(id);
+    if (!c) {
+      return;
+    }
+    this.text.replaceChildren(...keyText(c.text));
+    this.node.className = `toast is-${c.kind} is-in`;
   }
 }

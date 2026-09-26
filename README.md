@@ -1,12 +1,13 @@
 <div align="center">
 
-# Evren
+<img src=".docs/brand/kit/social/banner-1500x500.jpg" alt="Seventeen Skies" width="900">
 
-**Ride a dragon over Istanbul.**
-A realistic, open-world flight simulation that runs in the browser. Every building, cloud, wave, sound and even the
-dragon itself is generated in code at runtime; there are no downloaded 3D models or textures.
+**The sky has seventeen layers. The first is Istanbul.**
+A realistic, open-world flight game in the browser: ride the flying creatures of Turkic myth over a real, living
+Istanbul. Every building, cloud, wave, sound and even the dragon itself is generated in code at runtime.
 
 [**▶ Play the live demo**](https://davutkmbr.github.io/evren/) ·
+[seventeenskies.com](https://seventeenskies.com) ·
 [Roadmap](.docs/planning/README.md) ·
 [Architecture](#architecture) ·
 [Run locally](#getting-started)
@@ -30,8 +31,11 @@ peninsula, the Golden Horn, both shores of the Bosphorus, the Princes' Islands a
 coastline, hills and landmark positions follow the real city; the sun and moon move along their real paths for
 Istanbul's latitude, so the light at 18:00 in late September looks like it does there.
 
-The name comes from Turkic mythology, where **Evren** is the great dragon; in modern Turkish the same word means
-"the universe".
+**Why "Seventeen Skies"?** In old Turkic belief the sky (*gök*) has seventeen layers, each home to its own spirits,
+with Ülgen on his golden throne at the top. A *kam* (shaman) rode the spirit of a mount up through them, layer by
+layer. That is the game: you ride a mythic flyer into the sky, and Istanbul is the first layer. The dragon you fly
+today is named **Evren** (in Turkic myth the great dragon; in modern Turkish, "the universe"); more flying creatures
+of Turkic myth will join it. The brand, logo and their rules are in [.docs/brand](.docs/brand/README.md).
 
 It is meant to be a calm experience: no fail state, forgiving flight assistance, and a city that keeps revealing
 landmarks, ferries, gulls and night lights as you explore.
@@ -293,3 +297,4 @@ Before opening a pull request, run `npm run build` and check the affected views 
   © OpenStreetMap contributors, available under the [ODbL](https://opendatacommons.org/licenses/odbl/1-0/)
   (see [its licence note](src/world/geo/data/LICENSE.md)). Elevation checks use NASA SRTM data (public domain).
 - Built with [three.js](https://threejs.org/).
+- The Seventeen Skies name and logo are the project's brand; see [.docs/brand](.docs/brand/README.md) for usage.

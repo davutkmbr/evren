@@ -992,11 +992,15 @@ export function createActivitySystem(): System {
         pendingUrlCourse = raceParam;
       }
 
-      hud = new RaceHud(c.uiRoot, {
-        onRetry: () => finishKey('Enter'),
-        onCourses: () => finishKey(RACE_KEY),
-        onClose: () => finishKey('Escape'),
-      });
+      hud = new RaceHud(
+        c.uiRoot,
+        {
+          onRetry: () => finishKey('Enter'),
+          onCourses: () => finishKey(RACE_KEY),
+          onClose: () => finishKey('Escape'),
+        },
+        () => c.services.tryGet('hudZones'),
+      );
       pickerRoot = document.createElement('div');
       pickerRoot.className = 'ejd race-ui race-ui-picker';
       pickerRoot.setAttribute('lang', 'tr');
@@ -1076,6 +1080,9 @@ export function createActivitySystem(): System {
         // A menu, the map or photo mode took over: the picker steps aside.
         closePicker();
       }
+      // While a race is prepared, run, aborting or its result is open, the HUD zones defer the area title and the
+      // compass landmark label (the next gate is the target).
+      c.services.tryGet('hudZones')?.setContext('race', !!session?.active || !!hud?.holdsScreen);
       if (hud?.busy) {
         const on = hudVisible();
         hud.setVisible(on);

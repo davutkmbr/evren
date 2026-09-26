@@ -1,4 +1,5 @@
 import { el } from '../dom';
+import { interactive } from './interaction';
 import { keyCap } from './keycap';
 
 export interface TextFieldOptions {
@@ -19,13 +20,16 @@ export interface TextField {
 
 /** A labelled single-line text input (a name, a share code), without spellcheck or autocomplete. */
 export function textField(label: string, opts: TextFieldOptions = {}): TextField {
-  const input = el('input', 'ui-field-input', undefined, {
-    type: 'text',
-    spellcheck: 'false',
-    autocomplete: 'off',
-    placeholder: opts.placeholder,
-    'aria-label': label,
-  });
+  const input = interactive(
+    el('input', 'ui-field-input', undefined, {
+      type: 'text',
+      spellcheck: 'false',
+      autocomplete: 'off',
+      placeholder: opts.placeholder,
+      'aria-label': label,
+    }),
+    'control',
+  );
   if (opts.maxLength) {
     input.maxLength = opts.maxLength;
   }

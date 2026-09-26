@@ -1,8 +1,9 @@
 import { el } from '../dom';
 import type { DiscoveryCard } from '../discovery/discovery-card';
 import type { Minimap } from '../map/minimap';
-import type { FlightHints, HoverHints, ShotCaption } from '../overlays/hints';
+import type { HoverHints, ShotCaption } from '../overlays/hints';
 import type { FlightSnapshot } from '../types';
+import { HintLineView, HUD_PRIORITY, type HudDirector } from '../zones';
 import { AreaTitle } from './area-title';
 import { CompassTape } from './compass-tape';
 import { AltitudeReadout, SpeedReadout } from './flight-readout';
@@ -11,11 +12,14 @@ import { ManeuverCaption } from './maneuver-caption';
 import { StaminaWings } from './stamina-wings';
 
 const TEXT_INTERVAL_S = 1 / 12;
+/** The compass landmark label: a persistent low-priority item of the top zone, deferred while racing. */
+const COMPASS_LABEL_ID = 'compass.landmark';
 
 /**
- * In-flight HUD: compass tape (top centre), area title (upper third), the bottom-centre cluster (speed · stamina
- * wings + hotbar · altitude), the minimap (bottom right), plus the discovery card, key hints and captions. Readouts
- * are plain text with a soft shadow; nothing sits in a box.
+ * In-flight HUD, composed by screen zones (src/ui/zones): compass tape and its second line (top), area title (title),
+ * the shared hint line, hover hints and captions (lowerCenter), the static bottom-centre cluster (speed · stamina
+ * wings + hotbar · altitude), the minimap (bottom right) and the discovery card (corner). Every transient piece asks
+ * the zone director for its zone; nothing positions itself. Readouts are plain text with a soft shadow.
  */
 export class Hud {
   readonly root: HTMLElement;
@@ -25,17 +29,23 @@ export class Hud {
   readonly altitude = new AltitudeReadout();
   readonly stamina = new StaminaWings();
   readonly hotbar = new Hotbar();
-  readonly maneuver = new ManeuverCaption();
+  readonly maneuver: ManeuverCaption;
+  private readonly hintLine: HintLineView;
   private textTimer = 0;
 
   constructor(
     readonly minimap: Minimap,
     card: DiscoveryCard,
-    hints: FlightHints,
     hoverHints: HoverHints,
     shotCaption: ShotCaption,
+    private readonly zones: HudDirector,
   ) {
+    this.maneuver = new ManeuverCaption(zones);
+    this.hintLine = new HintLineView(zones);
+    card.setZones(zones);
     this.compass.focus = () => card.showing;
+    zones.request({ id: COMPASS_LABEL_ID, zone: 'top', priority: HUD_PRIORITY.startHint, deferIn: ['race'] });
+    this.compass.labelAllowed = () => zones.isShown(COMPASS_LABEL_ID);
     this.root = el('div', 'ejd-hud', [
       this.compass.root,
       this.area.root,
@@ -46,7 +56,7 @@ export class Hud {
       ]),
       this.minimap.root,
       card.root,
-      hints.root,
+      this.hintLine.root,
       hoverHints.root,
       this.maneuver.root,
       shotCaption.root,
@@ -64,7 +74,7 @@ export class Hud {
     this.minimap.update(s, realDt);
     this.stamina.update(s.stamina, realDt);
     this.hotbar.render();
-    this.area.update(s, realDt);
+    this.area.update(s, realDt, this.zones);
     this.textTimer -= realDt;
     if (this.textTimer > 0) {
       return;
@@ -76,6 +86,7 @@ export class Hud {
 
   dispose(): void {
     this.hotbar.dispose();
-    this.area.dispose();
+    this.hintLine.dispose();
+    this.zones.release(COMPASS_LABEL_ID);
   }
 }

@@ -1,5 +1,6 @@
 import '../styles/components.css';
 import { el } from '../dom';
+import { interactive } from './interaction';
 import type { Control } from './segmented';
 
 export interface SliderOptions {
@@ -16,13 +17,16 @@ export interface SliderOptions {
 
 /** A range slider with a gold fill up to the thumb and its value written out on the right (tabular). */
 export function slider(opts: SliderOptions): Control<number> {
-  const input = el('input', 'ui-slider-input', undefined, {
-    type: 'range',
-    min: opts.min,
-    max: opts.max,
-    step: opts.step,
-    'aria-label': opts.label,
-  });
+  const input = interactive(
+    el('input', 'ui-slider-input', undefined, {
+      type: 'range',
+      min: opts.min,
+      max: opts.max,
+      step: opts.step,
+      'aria-label': opts.label,
+    }),
+    'control',
+  );
   const readout = el('output', 'ui-slider-value ejd-num');
   const root = el('div', 'ui-slider', [input, readout]);
   const paint = (value: number): void => {

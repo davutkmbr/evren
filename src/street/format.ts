@@ -4,7 +4,7 @@ import type { ModulesRef, SlotsRef } from './modules/format';
 /**
  * The subset of the street formats (tools/world-compiler/README.md) that the sandbox loader reads. The compiler's
  * `tools/world-compiler/src/format.ts` is the source of truth; these types only mirror the fields used here.
- * Frame: Evren local metres, +X east, +Y up, +Z south, sea level y = 0.
+ * Frame: world-local metres, +X east, +Y up, +Z south, sea level y = 0.
  * Format 0: greybox, one glb per tile. Format 1: LOD glbs with distance bands, shared external textures, prop
  * instances and a light list per tile.
  */

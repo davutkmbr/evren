@@ -1,6 +1,6 @@
 import type { PerchPoint } from '../../core/contracts';
 import type { ViewPreset } from '../../core/debug';
-import { keyText, prompt } from '../components';
+import { interactive, keyText, prompt } from '../components';
 import { el } from '../dom';
 import { formatClock } from '../format';
 import type { MapRaster } from '../map/map-raster';
@@ -191,10 +191,13 @@ export class TeleportPanel {
         if (count === 0 && f.id !== 'all') {
           return [];
         }
-        const chip = el('button', 'tp-chip', [el('span', undefined, f.label), el('span', 'tp-chip-count ejd-num', String(count))], {
-          type: 'button',
-          'aria-pressed': String(f.id === this.filter),
-        });
+        const chip = interactive(
+          el('button', 'tp-chip', [el('span', undefined, f.label), el('span', 'tp-chip-count ejd-num', String(count))], {
+            type: 'button',
+            'aria-pressed': String(f.id === this.filter),
+          }),
+          'segment',
+        );
         chip.classList.toggle('is-on', f.id === this.filter);
         chip.addEventListener('click', () => {
           this.filter = f.id;
@@ -210,19 +213,22 @@ export class TeleportPanel {
         const kind = el('span', p.perch ? 'tp-kind is-perch' : 'tp-kind');
         kind.innerHTML = KIND_ICONS[p.kind];
         const time = p.view.time !== undefined ? el('span', 'tp-time ejd-num', formatClock(p.view.time)) : null;
-        const row = el(
-          'button',
-          'tp-row',
-          [
-            kind,
-            el('span', 'tp-row-text', [
-              el('span', 'tp-row-name', p.name),
-              el('span', 'tp-row-sub', regionTitle(p.region) + (p.perch ? ' · konulabilir' : '')),
-            ]),
-            time,
-            p.perch ? el('i', 'tp-dot tp-dot-perch', undefined, { 'aria-hidden': 'true' }) : null,
-          ],
-          { type: 'button', role: 'option', 'aria-selected': 'false' },
+        const row = interactive(
+          el(
+            'button',
+            'tp-row',
+            [
+              kind,
+              el('span', 'tp-row-text', [
+                el('span', 'tp-row-name', p.name),
+                el('span', 'tp-row-sub', regionTitle(p.region) + (p.perch ? ' · konulabilir' : '')),
+              ]),
+              time,
+              p.perch ? el('i', 'tp-dot tp-dot-perch', undefined, { 'aria-hidden': 'true' }) : null,
+            ],
+            { type: 'button', role: 'option', 'aria-selected': 'false' },
+          ),
+          'surface',
         );
         row.addEventListener('click', () => this.select(p.id, false));
         row.addEventListener('dblclick', () => this.teleport());

@@ -1,5 +1,6 @@
 import '../styles/components.css';
 import { el } from '../dom';
+import { interactive } from './interaction';
 import { keyCombo } from './keycap';
 
 let uid = 0;
@@ -45,11 +46,14 @@ export function settingDisclosure(label: string, rows: HTMLElement[]): HTMLEleme
   const id = nextId('more');
   const body = el('div', 'ui-setting-more-body', rows, { id });
   body.hidden = true;
-  const button = el('button', 'ui-setting-more', [el('span', undefined, label), el('i', 'ui-setting-more-chev')], {
-    type: 'button',
-    'aria-expanded': 'false',
-    'aria-controls': id,
-  });
+  const button = interactive(
+    el('button', 'ui-setting-more', [el('span', undefined, label), el('i', 'ui-setting-more-chev')], {
+      type: 'button',
+      'aria-expanded': 'false',
+      'aria-controls': id,
+    }),
+    'surface',
+  );
   button.addEventListener('click', () => {
     body.hidden = !body.hidden;
     button.setAttribute('aria-expanded', String(!body.hidden));
@@ -57,10 +61,18 @@ export function settingDisclosure(label: string, rows: HTMLElement[]): HTMLEleme
   return el('div', 'ui-setting-more-wrap', [button, body]);
 }
 
-/** Enables or greys out rows whose option depends on another switch. */
-export function setRowsEnabled(rows: readonly HTMLElement[], enabled: boolean): void {
+/**
+ * Enables or greys out rows whose option depends on another switch; `reason` (optional) is shown as the greyed rows'
+ * tooltip ("Önce Anlar'ı aç").
+ */
+export function setRowsEnabled(rows: readonly HTMLElement[], enabled: boolean, reason?: string): void {
   for (const row of rows) {
     row.classList.toggle('is-disabled', !enabled);
+    if (!enabled && reason) {
+      row.title = reason;
+    } else {
+      row.removeAttribute('title');
+    }
     row.querySelectorAll('button, input').forEach((c) => ((c as HTMLButtonElement | HTMLInputElement).disabled = !enabled));
   }
 }

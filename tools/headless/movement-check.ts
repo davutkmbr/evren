@@ -55,7 +55,7 @@ interface Run {
 
 async function simulate(setup: (rt: PoseRuntime) => void, seconds: number, script: FrameScript, terrain?: Terrain): Promise<Run> {
   const rig = await buildRig();
-  const rt = new PoseRuntime(rig, GROUND_Y, terrain, null);
+  const rt = new PoseRuntime(rig, GROUND_Y, false, terrain, null);
   setup(rt);
   const records = rt.run({ seconds, renderFps: FPS, script });
   const boneNames = rig.skel.bones.map((b) => b.name);
@@ -436,7 +436,7 @@ async function hoverBank(): Promise<void> {
   console.log('\nHover bank without roll input (brake held at 18 m/s, 60 m up)');
   for (const wind of [null, [4, 2] as const]) {
     const rig = await buildRig();
-    const rt = new PoseRuntime(rig, GROUND_Y, undefined, wind);
+    const rt = new PoseRuntime(rig, GROUND_Y, false, undefined, wind);
     rt.teleport(0, GROUND_Y + 60, 0, 0, 18);
     const recs = rt.run({
       seconds: 9,

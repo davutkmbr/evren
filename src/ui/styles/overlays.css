@@ -1,24 +1,13 @@
 /* ---------------- toasts ---------------- */
 
+/* Position: the toast slot of the HUD zones (src/ui/zones/zones.css); one toast at a time. */
 .hud-toasts {
-  position: absolute;
-  top: calc(var(--gutter) + 88px);
-  left: 50%;
   z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  transform: translateX(-50%);
 }
 
 .ejd.is-nohud .hud-toasts,
 .ejd.is-prestart .hud-toasts {
   display: none;
-}
-
-.ejd.is-modal .hud-toasts {
-  top: var(--gutter);
 }
 
 /* Plain shadowed text on a very faint pill (legible over bright sky without reading as a box). */
@@ -45,9 +34,15 @@
   transform: none;
 }
 
-.toast.is-leaving {
-  opacity: 0;
-  transform: translateY(-4px);
+/* A long toast wraps inside the slot instead of running under the compass. */
+.hud-toasts .toast {
+  max-width: 100%;
+  min-height: 30px;
+  height: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  border-radius: 15px;
+  white-space: normal;
 }
 
 .toast-dot {

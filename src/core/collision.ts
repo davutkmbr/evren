@@ -4,7 +4,8 @@ import type { GeoQuery } from './contracts';
 /**
  * Simple static collision world: terrain/water from geo + primitive colliders in a spatial hash.
  * Landmarks and city chunks register colliders; flight and camera query it.
- * All colliders are static (moving objects like ships are not registered).
+ * Colliders are static, except the underwater hull boxes of vessels near the dragon, which life re-places every frame
+ * with move().
  */
 export type Collider =
   /** Box rotated around +Y by `yaw` (radians, same as Object3D.rotation.y). `center` is the box center. */
@@ -118,6 +119,25 @@ export class CollisionWorld {
     });
   }
 
+  /** Re-places an existing collider (same id, tag and source) with new geometry: moving hulls. */
+  move(id: number, collider: Collider): void {
+    const old = this.entries.get(id);
+    if (!old) {
+      return;
+    }
+    this.remove(id);
+    const e = this.makeEntry(id, collider, old.tag, old.source);
+    this.entries.set(id, e);
+    this.forCells(e, (key) => {
+      let list = this.cells.get(key);
+      if (!list) {
+        list = [];
+        this.cells.set(key, list);
+      }
+      list.push(id);
+    });
+  }
+
   removeMany(ids: number[]): void {
     ids.forEach((id) => this.remove(id));
   }
@@ -198,15 +218,16 @@ export class CollisionWorld {
   }
 
   /**
-   * Sphere vs world. Returns the deepest contact (push-out normal and depth) or null.
+   * Sphere vs world. Returns the deepest contact (push-out normal and depth) or null. `includeGround` false tests the
+   * colliders only (no terrain / water floor: bodies under water).
    */
-  resolveSphere(center: THREE.Vector3, radius: number, out?: ContactResult): ContactResult | null {
+  resolveSphere(center: THREE.Vector3, radius: number, out?: ContactResult, includeGround = true): ContactResult | null {
     const res = out ?? { normal: new THREE.Vector3(), depth: 0, surface: '' };
     let best = 0;
 
     const tH = this.terrainHeight(center.x, center.z);
     const gH = Math.max(tH, 0);
-    const dGround = gH + radius - center.y;
+    const dGround = includeGround ? gH + radius - center.y : 0;
     if (dGround > best) {
       best = dGround;
       if (tH >= 0 && this.geo) {

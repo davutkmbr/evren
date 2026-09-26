@@ -137,7 +137,7 @@ export class PoseDriver {
       neckYaw += 0.06 * Math.sin(time * 0.37) * (1 - sim.walkAmount);
     } else if (sim.mode === 'landing' || sim.mode === 'hovering') {
       neckPitch = -0.18 - sim.pitch * 0.55;
-    } else if (sim.mode === 'diving') {
+    } else if (sim.mode === 'diving' || sim.mode === 'underwater') {
       neckPitch = -sim.pitch * 0.15 - 0.05;
     } else if (sim.mode === 'takeoff' && moves.takeoffVariant !== null) {
       // Neck stretched forward through the first strokes.
@@ -170,6 +170,10 @@ export class PoseDriver {
             0.22 * running -
             0.12 * moves.skid +
             0.22 * moves.crouch;
+    } else if (sim.mode === 'underwater') {
+      // Streamlined, with a slow side-to-side sweep of the tail.
+      tailYaw += 0.18 * Math.sin(time * 2.4);
+      tailPitch = 0.03 * Math.sin(time * 2.4 + 1.1);
     } else {
       const nearGround = 1 - smoothstep(4, 14, sim.footClearance);
       tailPitch =
@@ -237,7 +241,8 @@ export class PoseDriver {
     } else {
       _groundN.set(0, 1, 0);
     }
-    pose.groundY = sim.surfaceY;
+    // Floating or under water the legs paddle in the rig's own frame (no ground plane to stand on).
+    pose.groundY = sim.mode === 'swimming' || sim.mode === 'underwater' ? Number.NaN : sim.surfaceY;
     pose.groundNx = _groundN.x;
     pose.groundNz = _groundN.z;
     pose.gait = onGround ? m.gait : 0;
@@ -268,7 +273,8 @@ export class PoseDriver {
    * tail points down by θ; an even curl c along it turns its chord up by c / 2.
    */
   private tailClearCurl(sim: FlightSim): number {
-    if (sim.mode === 'swimming') {
+    // Over the sea the tail may dip (spray is the water model's business); swimming or under water it streamlines.
+    if (sim.overWater || sim.mode === 'swimming' || sim.mode === 'underwater') {
       return 0;
     }
     // Lead the pitch a little (a push-off or a flare rears up faster than the tail can follow).
@@ -308,7 +314,8 @@ export class PoseDriver {
     right += both;
     let tuck = airborne ? smoothstep(45, 85, sim.airspeed) * 0.45 : 0;
 
-    const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6);
+    // Under water the rider lies flat on the neck and holds on, like in a fall.
+    const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6) || sim.mode === 'underwater';
     if (falling) {
       // Folded wings: flat on the neck, reins given all the way.
       left = right = -1;

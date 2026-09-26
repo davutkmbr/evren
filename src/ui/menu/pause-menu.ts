@@ -1,4 +1,5 @@
-import { prompt, stat } from '../components';
+import { interactive, prompt, stat } from '../components';
+import { BRAND } from '../brand';
 import { el } from '../dom';
 
 export type MenuTab = 'teleport' | 'controls' | 'settings';
@@ -49,7 +50,10 @@ export class PauseMenu {
       'div',
       'menu-tabs',
       TABS.map((t) => {
-        const button = el('button', 'menu-tab', t.title, { type: 'button', role: 'tab', 'aria-selected': 'false', 'aria-controls': 'ejd-menu-body' });
+        const button = interactive(
+          el('button', 'menu-tab', t.title, { type: 'button', role: 'tab', 'aria-selected': 'false', 'aria-controls': 'ejd-menu-body' }),
+          'segment',
+        );
         button.addEventListener('click', () => {
           this.options.onClick?.();
           this.show(t.id);
@@ -79,7 +83,7 @@ export class PauseMenu {
       'menu-sheet',
       [
         el('header', 'menu-top', [
-          el('div', 'menu-brand', [el('span', 'menu-state', 'Duraklatıldı'), el('span', 'menu-name', 'Evren')]),
+          el('div', 'menu-brand', [el('span', 'menu-state', 'Duraklatıldı'), el('span', 'menu-name', BRAND.name, { lang: 'en' })]),
           el('nav', 'menu-tabs-wrap', [tablist], { 'aria-label': 'Menü bölümleri' }),
           el('div', 'menu-top-end', [
             el('div', 'menu-progress', [

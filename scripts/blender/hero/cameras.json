@@ -1,6 +1,6 @@
 {
  "format": "hero-cameras/1",
- "note": "Extra preview cameras of the hero lane (Evren local metres, eye height 1.6 m above the compiled ground). fovDeg is vertical.",
+ "note": "Extra preview cameras of the hero lane (world-local metres, eye height 1.6 m above the compiled ground). fovDeg is vertical.",
  "cameras": [
   {
    "id": "h01-pier-apron",

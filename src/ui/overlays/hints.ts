@@ -1,42 +1,42 @@
-import { keyHint, keyText } from '../components';
+import { keyText } from '../components';
 import { el } from '../dom';
+import { fadeBinding, hintRow, HUD_PRIORITY, ZONE_CLASS, type HudDirector } from '../zones';
 
-/** A row of key hints; `keys` in keyCombo syntax ("Ctrl + W / S"). */
-function hintRow(items: Array<[keys: string, label: string]>): HTMLElement {
-  return el(
-    'ul',
-    'hint-row',
-    items.map(([keys, label]) => el('li', 'hint-item', [keyHint(keys, label).root])),
-  );
-}
-
-/** Bottom-centre key reminder shown for a while after take-off. */
+/** Start-of-game key reminder: an item of the shared hint line, shown once nothing more important is on it. */
 export class FlightHints {
-  readonly root = el('div', 'hud-hints ejd-fade is-out', [
-    hintRow([
-      ['M', 'Harita'],
-      ['H', 'Yardım'],
-      ['O', 'Fotoğraf'],
-      ['Esc', 'Menü'],
-    ]),
-  ]);
-  private timer = 0;
+  static readonly ID = 'hints.start';
+
+  constructor(private readonly zones: HudDirector) {}
 
   show(durationMs: number): void {
-    this.root.classList.remove('is-out');
-    window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => this.hide(), durationMs);
+    this.zones.request({
+      id: FlightHints.ID,
+      zone: 'lowerCenter',
+      priority: HUD_PRIORITY.startHint,
+      duration: durationMs / 1000,
+      // Waits out a race countdown or a burst of captions; after half a minute it is no longer "the start".
+      maxWait: 30,
+      hints: [
+        ['M', 'Harita'],
+        ['H', 'Yardım'],
+        ['O', 'Fotoğraf'],
+        ['Esc', 'Menü'],
+      ],
+    });
   }
 
   hide(): void {
-    window.clearTimeout(this.timer);
-    this.root.classList.add('is-out');
+    this.zones.release(FlightHints.ID);
   }
 }
 
-/** Hover controls, shown on entering a hover: full length for the first few hovers of a session, then briefly. */
+/**
+ * Hover controls (lowerCenter, growing upwards), shown on entering a hover: full length for the first few hovers of a
+ * session, then briefly.
+ */
 export class HoverHints {
-  readonly root = el('div', 'hud-hints hud-hints-hover ejd-fade is-out', [
+  static readonly ID = 'hints.hover';
+  readonly root = el('div', `${ZONE_CLASS.lowerCenter} hud-hints hud-hints-hover`, [
     el('p', 'hint-caps', 'Havada asılı'),
     // Two short rows: one long row would crowd the bottom-centre cluster on narrower screens.
     el('div', 'hint-panel', [
@@ -52,28 +52,37 @@ export class HoverHints {
     ]),
     el('p', 'hint-exit', keyText('Uçuşa dönmek için freni bırak, [W] tuşuna bas')),
   ]);
-  private timer = 0;
+  private readonly binding = fadeBinding(this.root);
   private shown = 0;
+
+  constructor(private readonly zones: HudDirector) {}
 
   show(): void {
     this.shown++;
-    this.root.classList.remove('is-out');
-    window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => this.hide(), this.shown <= 3 ? 9000 : 4500);
+    this.zones.request({
+      id: HoverHints.ID,
+      zone: 'lowerCenter',
+      priority: HUD_PRIORITY.flightHint,
+      duration: this.shown <= 3 ? 9 : 4.5,
+      maxWait: 4,
+      ...this.binding,
+    });
   }
 
   hide(): void {
-    window.clearTimeout(this.timer);
-    this.root.classList.add('is-out');
+    this.zones.release(HoverHints.ID);
   }
 }
 
 /** Subtle caption of the running cinematic shot (a landmark's name, or the kind of shot); fades after a few seconds. */
 export class ShotCaption {
+  static readonly ID = 'caption.shot';
   private readonly label = el('span', 'shot-label');
-  readonly root = el('div', 'hud-shot ejd-fade is-out', [el('span', 'shot-caps', 'Sinematik'), this.label], { 'aria-live': 'polite' });
+  readonly root = el('div', `${ZONE_CLASS.lowerCenter} hud-shot`, [el('span', 'shot-caps', 'Sinematik'), this.label], { 'aria-live': 'polite' });
+  private readonly binding = fadeBinding(this.root);
   private current = '';
-  private timer = 0;
+
+  constructor(private readonly zones: HudDirector) {}
 
   /** Called every frame with the camera's shot label ('' outside cinematic mode). */
   update(label: string): void {
@@ -81,18 +90,16 @@ export class ShotCaption {
       return;
     }
     this.current = label;
-    window.clearTimeout(this.timer);
     if (!label) {
-      this.root.classList.add('is-out');
+      this.zones.release(ShotCaption.ID);
       return;
     }
     this.label.textContent = label;
-    this.root.classList.remove('is-out');
-    this.timer = window.setTimeout(() => this.root.classList.add('is-out'), 4200);
+    this.zones.request({ id: ShotCaption.ID, zone: 'lowerCenter', priority: HUD_PRIORITY.flightHint, duration: 4.2, maxWait: 2, ...this.binding });
   }
 }
 
-/** Photo mode caption with the free-camera controls; fades to a whisper after a few seconds. */
+/** Photo mode caption with the free-camera controls; fades to a whisper after a few seconds (HUD hidden: no zone). */
 export class PhotoHint {
   readonly root = el('div', 'ejd-photo-hint ejd-fade is-out', [
     el('p', 'photo-caps', 'Fotoğraf modu'),

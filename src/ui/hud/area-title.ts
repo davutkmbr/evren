@@ -1,15 +1,17 @@
-import type { District, GameEvents, GeoQuery } from '../../core/contracts';
-import type { EventBus } from '../../core/events';
+import type { District, GeoQuery } from '../../core/contracts';
 import { el, TextSlot } from '../dom';
 import type { FlightSnapshot } from '../types';
+import { fadeBinding, HUD_PRIORITY, ZONE_CLASS, type HudDirector } from '../zones';
 
 const CHECK_INTERVAL_S = 0.5;
 /** The dragon must stay in a new area this long before its title shows (no flicker along coasts and borders). */
 const SETTLE_S = 1.5;
 /** The same area does not announce itself again within this window (ms). */
 const REPEAT_MS = 60_000;
-/** Visible time before the fade out starts (ms); the fades add ~1.2 s. */
-const HOLD_MS = 2800;
+/** Visible time before the fade out starts (s); the fades add ~1.2 s. */
+const HOLD_S = 2.8;
+/** A title that could not show within this many seconds (a race, a discovery) is stale and dropped. */
+const MAX_WAIT_S = 8;
 
 const SIDE_LABELS: Record<District['side'], string> = { europe: 'Avrupa Yakası', asia: 'Anadolu Yakası', island: 'Adalar' };
 
@@ -23,9 +25,11 @@ const WATER_SUBTITLES: Record<string, string> = {
 
 /**
  * Large light title in the upper third when the dragon enters a new named area: a district (geo.districtAt) over
- * land, the water body (geo.waterNameAt) over water. Fades in and out over ~4 s; never while racing.
+ * land, the water body (geo.waterNameAt) over water. Fades in and out over ~4 s. It asks the zone director for the
+ * title zone: a race (context 'race') defers it until the race ends, and it is dropped when it gets stale.
  */
 export class AreaTitle {
+  static readonly ID = 'area.title';
   private readonly title: TextSlot;
   private readonly subtitle: TextSlot;
   private readonly subtitleNode: HTMLElement;
@@ -36,8 +40,7 @@ export class AreaTitle {
   private candidate = '';
   private candidateSub = '';
   private candidateFor = 0;
-  private racing = false;
-  private hideTimer = 0;
+  private readonly binding: { onShow: () => void; onHide: () => void };
   private readonly lastShown = new Map<string, number>();
 
   constructor() {
@@ -45,25 +48,16 @@ export class AreaTitle {
     this.subtitleNode = el('span', 'at-sub');
     this.title = new TextSlot(titleNode);
     this.subtitle = new TextSlot(this.subtitleNode);
-    this.root = el('div', 'hud-area ejd-fade is-out', [titleNode, el('i', 'at-rule'), this.subtitleNode], { role: 'status', 'aria-live': 'polite' });
+    this.root = el('div', `${ZONE_CLASS.title} hud-area`, [titleNode, el('i', 'at-rule'), this.subtitleNode], { role: 'status', 'aria-live': 'polite' });
+    this.binding = fadeBinding(this.root);
   }
 
   setGeo(geo: GeoQuery): void {
     this.geo = geo;
   }
 
-  /** Races start/stop through 'activity' events; a race hides the title at once. */
-  connect(events: EventBus<GameEvents>): () => void {
-    return events.on('activity', ({ state }) => {
-      this.racing = state === 'started' || state === 'checkpoint';
-      if (this.racing) {
-        this.hide();
-      }
-    });
-  }
-
   /** Called while the HUD is visible (so never in menus or photo mode). */
-  update(s: FlightSnapshot, realDt: number): void {
+  update(s: FlightSnapshot, realDt: number, zones: HudDirector): void {
     this.timer -= realDt;
     if (this.timer > 0 || !this.geo) {
       return;
@@ -92,28 +86,26 @@ export class AreaTitle {
     }
     this.current = name;
     const now = performance.now();
-    if (this.racing || now - (this.lastShown.get(name) ?? -Infinity) < REPEAT_MS) {
+    if (now - (this.lastShown.get(name) ?? -Infinity) < REPEAT_MS) {
       return;
     }
     this.lastShown.set(name, now);
-    this.show(name, this.candidateSub);
-  }
-
-  private show(name: string, sub: string): void {
-    this.title.set(name);
-    this.subtitle.set(sub);
-    this.subtitleNode.hidden = !sub;
-    this.root.classList.remove('is-out');
-    window.clearTimeout(this.hideTimer);
-    this.hideTimer = window.setTimeout(() => this.hide(), HOLD_MS);
-  }
-
-  hide(): void {
-    window.clearTimeout(this.hideTimer);
-    this.root.classList.add('is-out');
-  }
-
-  dispose(): void {
-    window.clearTimeout(this.hideTimer);
+    const subtitle = this.candidateSub;
+    zones.request({
+      id: AreaTitle.ID,
+      zone: 'title',
+      priority: HUD_PRIORITY.areaTitle,
+      duration: HOLD_S,
+      maxWait: MAX_WAIT_S,
+      deferIn: ['race'],
+      onShow: () => {
+        // Filled when it appears (a newer area may have replaced a deferred one).
+        this.title.set(name);
+        this.subtitle.set(subtitle);
+        this.subtitleNode.hidden = !subtitle;
+        this.binding.onShow();
+      },
+      onHide: this.binding.onHide,
+    });
   }
 }

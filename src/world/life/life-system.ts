@@ -5,6 +5,7 @@ import type { QualitySettings } from '../../core/quality';
 import { createLifeMaterial } from './render/life-material';
 import { buildCatalog } from './vessels/catalog';
 import { Fleet } from './vessels/fleet';
+import { HullColliders } from './vessels/hull-colliders';
 import type { VesselModel } from './vessels/model-types';
 import { WakeTrails } from './wakes/wake-trails';
 import { LightPoints, Sector } from './lights/nav-lights';
@@ -34,6 +35,8 @@ export class LifeSystem implements System {
   berths: Map<string, Berth[]> | null = null;
   lanes: StraitLanes | null = null;
   fleet: Fleet | null = null;
+  /** Underwater hull boxes of the vessels near the dragon (collision tag 'vessel'). */
+  hulls: HullColliders | null = null;
   wakes: WakeTrails | null = null;
   lights: LightPoints | null = null;
   private vesselLights: VesselLights | null = null;
@@ -122,6 +125,9 @@ export class LifeSystem implements System {
       this.root.remove(this.fleet.renderer.object);
       this.fleet.dispose();
     }
+    this.hulls?.dispose();
+    const collision = this.ctx?.services.tryGet('collision');
+    this.hulls = collision ? new HullColliders(collision) : null;
     this.shipCount = s.shipCount;
     this.fleet = new Fleet({ geo: this.geo, models: this.models, berths: this.berths, lanes: this.lanes, shipCount: s.shipCount }, this.material);
     this.root.add(this.fleet.renderer.object);
@@ -152,6 +158,10 @@ export class LifeSystem implements System {
     if (!this.fleet) return;
     this.camPos.setFromMatrixPosition(ctx.camera.matrixWorld);
     this.fleet.update(dt, this.camPos);
+    if (this.hulls) {
+      const dragon = ctx.services.tryGet('dragon');
+      this.hulls.update(this.fleet.vessels, dragon ? dragon.position : this.camPos);
+    }
     this.clock += dt;
     const time = this.clock;
     if (this.wakes) {
@@ -178,6 +188,8 @@ export class LifeSystem implements System {
 
   dispose(): void {
     this.unsubscribe?.();
+    this.hulls?.dispose();
+    this.hulls = null;
     this.fleet?.dispose();
     this.wakes?.dispose();
     this.lights?.dispose();

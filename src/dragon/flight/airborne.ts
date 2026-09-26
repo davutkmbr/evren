@@ -14,6 +14,7 @@ import {
 import { integrateOrientation } from './body';
 import { enterRunOut } from './ground-moves';
 import { enterGrounded, enterSwimming } from './locomotion';
+import { tryPlunge } from './underwater';
 import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
@@ -31,6 +32,9 @@ const _angMomentum = new THREE.Vector3();
 const _gyro = new THREE.Vector3();
 const _desired = new THREE.Vector3();
 const _splashPoint = new THREE.Vector3();
+const _waterNormal = new THREE.Vector3();
+const _waterVelocity = new THREE.Vector3();
+const _relative = new THREE.Vector3();
 
 function approach(current: number, target: number, rate: number, h: number): number {
   const d = target - current;
@@ -237,29 +241,56 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
   checkTouchdown(sim, h);
 }
 
-/** Feet/belly/tail skimming the sea surface: hydrodynamic drag, planing lift, splashes, or plunging in. */
+/**
+ * Feet/belly/tail skimming the sea surface: hydrodynamic drag, planing lift, splashes, or plunging in. Works on the
+ * wave surface of the water service (immersion below the local wave height, drag and planing from the velocity
+ * relative to the moving water, planing lift along the surface normal); a flat sea at y = 0 without one.
+ */
 function applyWaterSkim(sim: FlightSim, h: number): boolean {
-  if (!sim.overWater) {
+  // A breaching body is leaving the water, not skimming it (underwater.ts).
+  if (!sim.overWater || sim.dive.exitGrace > 0) {
     return false;
   }
   const p = sim.body.position;
   const v = sim.body.velocity;
-  const immersion = sim.footDepth() - p.y;
+  // sampleSurface put the wave height under the body into surfaceY, so agl is the height above the local water.
+  const immersion = sim.footDepth() - sim.agl;
   if (immersion <= 0) {
     // Primed: the first contact of a skim always throws spray.
     sim.splashDistance = 1e3;
     return false;
   }
+  // A steep folded dive into fit water plunges in instead of skimming (underwater.ts).
+  if (tryPlunge(sim)) {
+    return true;
+  }
   sim.touchingWater = true;
-  const speed = v.length();
+  const water = sim.world.water;
+  if (water) {
+    water.normalAt(p.x, p.z, _waterNormal);
+    water.velocityAt(p.x, p.z, _waterVelocity);
+  } else {
+    _waterNormal.set(0, 1, 0);
+    _waterVelocity.set(0, 0, 0);
+  }
+  const n = _waterNormal;
+  _relative.copy(v).sub(_waterVelocity);
+  const speed = _relative.length();
   const depth = Math.min(immersion, 1.5);
   const area = 0.04 + 0.5 * depth * depth;
   const dragMag = 0.5 * WATER_DENSITY * speed * speed * area * 0.35;
   if (speed > 0.1) {
-    _force.addScaledVector(v, -dragMag / speed);
+    _force.addScaledVector(_relative, -dragMag / speed);
   }
   const planing = 0.5 * WATER_DENSITY * speed * speed * 0.012 * depth;
-  _force.y += MASS * GRAVITY * Math.min(depth * 1.1, 2.2) + planing - v.y * MASS * 1.5;
+  _force.addScaledVector(n, planing);
+  // Rate at which the body sinks deeper into the moving, sloping surface (kinematic surface condition): the vertical
+  // speed relative to the water minus the rise of the surface under the horizontal motion (flat calm sea: v.y).
+  const sinkRate = _relative.dot(n) / Math.max(n.y, 0.3);
+  // Slamming: a wave face (or a steep entry) pushing up against the belly adds a quadratic impact force, so a skim
+  // bounces off a crest instead of cutting into it.
+  const slam = sinkRate < 0 ? 0.5 * WATER_DENSITY * sinkRate * sinkRate * (4 + 8 * depth) : 0;
+  _force.y += MASS * GRAVITY * Math.min(depth * 1.1, 2.2) - sinkRate * MASS * 1.5 + slam;
 
   // Spray spaced by distance travelled; its size grows with immersion depth and speed², so light skims leave a
   // thin trail and only deep, fast contacts throw big bursts.
@@ -268,7 +299,7 @@ function applyWaterSkim(sim: FlightSim, h: number): boolean {
   if (sim.splashDistance > spacing && sim.splashTimer > 0.12 && speed > 3) {
     sim.splashDistance = 0;
     sim.splashTimer = 0;
-    _splashPoint.set(p.x, 0, p.z).addScaledVector(v, -0.06);
+    _splashPoint.set(p.x, sim.waterY, p.z).addScaledVector(v, -0.06);
     const strength = clamp(0.06 + 0.85 * depth * (speed / 28) ** 2, 0.06, 1.1);
     sim.emit({ type: 'splash', point: _splashPoint.clone(), strength });
   }
@@ -277,7 +308,7 @@ function applyWaterSkim(sim: FlightSim, h: number): boolean {
   // Hovering or landing onto the sea: settle into swimming as soon as the feet are wet.
   const settling = (sim.mode === 'landing' || sim.mode === 'hovering') && horizontal < 9 && immersion > 0.05;
   if (!grace && (settling || (horizontal < 9 && immersion > 0.3) || immersion > 1.8)) {
-    const point = new THREE.Vector3(p.x, 0, p.z);
+    const point = new THREE.Vector3(p.x, sim.waterY, p.z);
     sim.emit({ type: 'splash', point, strength: clamp(0.3 + speed / 12, 0.4, 2) });
     if (speed > 8) {
       sim.emit({ type: 'impact', point: point.clone(), speed, surface: 'water' });
@@ -294,9 +325,9 @@ function checkTouchdown(sim: FlightSim, h: number): void {
     return;
   }
   sim.sampleSurface();
-  // The feet meet the ground: footDepth() uses the stance geometry the rig stands with, so the stance takes over
-  // from here without a jump (a settling landing touches within a few centimetres; the wing-beat bob no longer
-  // keeps it hanging because the settle sinks steadily).
+  // The feet meet the ground: footDepth() uses the stance geometry the rig stands with. A settling landing touches
+  // down within a foot of the ground (the wing-beat bob would otherwise keep it hanging); the stance's settle takes
+  // the rest without a jump.
   const touch = sim.mode === 'landing' && sim.body.velocity.y < 0.6 ? 0.3 : 0.02;
   // Settling onto a slope, the hips can meet the rising ground behind before the feet below the centre of mass do:
   // the body resting on the ground counts as the touchdown too.

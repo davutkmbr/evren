@@ -15,6 +15,18 @@ const _basis = new THREE.Matrix4();
 const _targetQ = new THREE.Quaternion();
 const _extraQ = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _column = { floor: 0, ceiling: Infinity };
+const _waterVelocity = new THREE.Vector3();
+const _float = { height: 0, slopeForward: 0, slopeRight: 0, vx: 0, vy: 0, vz: 0 };
+
+/** Where the floating body samples the water, as fractions of the rig length: forward, right. */
+const FLOAT_POINTS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [0.3, 0],
+  [-0.3, 0],
+  [0, 0.12],
+  [0, -0.12],
+];
 
 function approach(current: number, target: number, rate: number, h: number): number {
   const d = target - current;
@@ -125,14 +137,71 @@ export function stepGrounded(sim: FlightSim, cmd: PilotCommand, h: number): void
   stepStance(sim, cmd, h);
 }
 
-/** Floating and paddling on the sea (W/S paddle, A/D turn, Space/L take off with a splash). */
+/**
+ * The water under a floating body of the dragon's size: the surface height and water velocity averaged over five
+ * points (chest, head end, tail end, both flanks; a low-pass over the body, so chop much shorter than the dragon
+ * rocks it little) and the surface slopes along and across the heading. Flat still water without a water service.
+ */
+function sampleFloat(sim: FlightSim, fx: number, fz: number): typeof _float {
+  const f = _float;
+  const water = sim.world.water;
+  const p = sim.body.position;
+  if (!water) {
+    f.height = 0;
+    f.slopeForward = 0;
+    f.slopeRight = 0;
+    f.vx = 0;
+    f.vy = 0;
+    f.vz = 0;
+    return f;
+  }
+  // Right of the heading is (-fz, fx).
+  const L = sim.rigLength;
+  let hSum = 0;
+  let vx = 0;
+  let vy = 0;
+  let vz = 0;
+  let front = 0;
+  let back = 0;
+  let right = 0;
+  let left = 0;
+  for (let i = 0; i < FLOAT_POINTS.length; i++) {
+    const a = FLOAT_POINTS[i][0] * L;
+    const r = FLOAT_POINTS[i][1] * L;
+    const x = p.x + fx * a - fz * r;
+    const z = p.z + fz * a + fx * r;
+    const height = water.heightAt(x, z);
+    water.velocityAt(x, z, _waterVelocity);
+    hSum += height;
+    vx += _waterVelocity.x;
+    vy += _waterVelocity.y;
+    vz += _waterVelocity.z;
+    if (i === 1) front = height;
+    else if (i === 2) back = height;
+    else if (i === 3) right = height;
+    else if (i === 4) left = height;
+  }
+  const n = FLOAT_POINTS.length;
+  f.height = hSum / n;
+  f.vx = vx / n;
+  f.vy = vy / n;
+  f.vz = vz / n;
+  f.slopeForward = (front - back) / (2 * FLOAT_POINTS[1][0] * L);
+  f.slopeRight = (right - left) / (2 * FLOAT_POINTS[3][1] * L);
+  return f;
+}
+
+/**
+ * Floating and paddling on the sea (W/S paddle, A/D turn, Space/L take off with a splash). The body floats on the
+ * wave surface of the water service, pitches and rolls with it and is carried by the orbital motion and the current.
+ */
 export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const b = sim.body;
   const p = b.position;
   const v = b.velocity;
   const urged = cmd.urgePressed && sim.maneuvers.tryUrge(sim);
   if (urged || cmd.flapPressed || cmd.flap || cmd.landPressed) {
-    sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, 0, p.z), strength: 1.2 });
+    sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, sim.waterY, p.z), strength: 1.2 });
     leap(sim, SWIM.leapUp, SWIM.leapForward);
     return;
   }
@@ -145,20 +214,22 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   sim.groundYaw += sim.groundYawRate * h;
   const fx = -Math.sin(sim.groundYaw);
   const fz = -Math.cos(sim.groundYaw);
+  const float = sampleFloat(sim, fx, fz);
 
-  // Paddling toward the target velocity; quadratic hydrodynamic drag bleeds a fast plunge in ~0.4 s.
-  const dx = fx * sim.groundSpeed - v.x;
-  const dz = fz * sim.groundSpeed - v.z;
+  // Paddling toward the target velocity through the water (which itself moves: orbital motion + current); quadratic
+  // hydrodynamic drag bleeds a fast plunge in ~0.4 s.
+  const dx = fx * sim.groundSpeed + float.vx - v.x;
+  const dz = fz * sim.groundSpeed + float.vz - v.z;
   const drag = 1 - Math.exp(-h * (1.6 + 0.15 * Math.hypot(dx, dz)));
   v.x += dx * drag;
   v.z += dz * drag;
-  const bob = 0.12 * Math.sin(sim.time * 1.35) + 0.05 * Math.sin(sim.time * 2.9 + 1.3);
-  const floatY = -SWIM.floatDepth + bob;
-  const vDrag = 1 - Math.exp(-h * (4 + 0.4 * Math.abs(v.y)));
+  // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave.
+  const floatY = float.height - SWIM.floatDepth;
+  const vDrag = 1 - Math.exp(-h * (4 + 0.4 * Math.abs(v.y - float.vy)));
   v.y += 10 * (floatY - p.y) * h;
-  v.y -= v.y * vDrag;
+  v.y -= (v.y - float.vy) * vDrag;
   p.addScaledVector(v, h);
-  p.y = Math.max(p.y, -2.5);
+  p.y = Math.max(p.y, float.height - 2.5);
 
   sim.sampleSurface();
   if (!sim.overWater && sim.terrainY > -0.6) {
@@ -166,8 +237,9 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     return;
   }
 
-  _up.set(0, 1, 0);
-  alignBody(sim, _up, 0.06 + 0.035 * Math.sin(sim.time * 1.35 + 0.8), 0.045 * Math.sin(sim.time * 0.95), 5, h);
+  // Attitude: the plane through the sampled surface, a slight head-up trim.
+  _up.set(-float.slopeForward * fx + float.slopeRight * fz, 1, -float.slopeForward * fz - float.slopeRight * fx).normalize();
+  alignBody(sim, _up, 0.06, 0, 5, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   const collision = sim.world.collision;
@@ -180,7 +252,9 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   sim.walkAmount += (clamp(0.35 + speed / 3, 0, 1) - sim.walkAmount) * (1 - Math.exp(-h * 4));
   if (speed > 1.5 && sim.splashTimer > 0.7) {
     sim.splashTimer = 0;
-    sim.emit({ type: 'splash', point: new THREE.Vector3(p.x + fx * 3, 0, p.z + fz * 3), strength: 0.12 + speed * 0.03 });
+    const sx = p.x + fx * 3;
+    const sz = p.z + fz * 3;
+    sim.emit({ type: 'splash', point: new THREE.Vector3(sx, sim.waterHeight(sx, sz), sz), strength: 0.12 + speed * 0.03 });
   }
   sim.touchingWater = speed > 1.5;
 

@@ -4,7 +4,7 @@ export interface StreetRoute {
   id: string;
   /** Turkish label (shown in the sandbox readout). */
   label: string;
-  /** Waypoints in Evren local metres; each snaps to the walk graph and legs follow the shortest walkable path. */
+  /** Waypoints in world-local metres; each snaps to the walk graph and legs follow the shortest walkable path. */
   waypoints: Waypoint[];
 }
 
