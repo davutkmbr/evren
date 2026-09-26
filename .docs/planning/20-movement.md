@@ -773,8 +773,25 @@ few times until the move is used), quietly and key first, on the shared hint lin
   rows ("Henüz denemediğin hareket"); the H overlay's compact list is unmarked.
 - **Checks:** `tools/headless/tutorial-check.ts` (every entry fires in its situation, pacing, hold, cooldown, max
   shows, tried / learned, relevance, gates, one at a time, persistence round trip, sense).
-- **Not yet:** gamepad key names in the hints (the hints name keyboard keys, like `CONTROL_HELP`); the plunge,
-  breach and swimming rows in `CONTROL_HELP`.
+- **Water rows and gamepad names** (added 26 Sep, owner request):
+  - `CONTROL_HELP` has a "Suda" group (Kontroller, after "Yerde"): the plunge (Shift, steep toward deep water),
+    swimming (W / S, Shift + W fast, A / D turn), the take-off from the water (Space / L), under water (W / S pitch,
+    Space stroke, near the surface the breach). The plunge, breach and water take-off hints mark these rows.
+  - Every trick now works on a gamepad: pad buttons press and double-tap like the keys (`core/input.ts`): A / RT =
+    Space (power stroke A ×2; A also counts as a press now, so the touch-and-go, the water take-off and the breach
+    work from the pad), LT = Shift (dart LT ×2), LB / RB = Q / E (slip), a left-stick flick up / down = S / W (loop
+    and wingover: two flicks, `AxisPress` 0.6 / 0.25), the D-pad ◀ / ▶ stays the roll's one-press double tap.
+  - `core/pad-keys.ts` translates the key syntax to pad names ("Space ×2" → "A ×2", "A / D ×2" → "D-pad ◀ / D-pad
+    ▶", "S ×2" → "LS ▲ ×2", conditions kept); keys without a pad binding keep the keyboard name. While the player uses
+    a pad (`Input.lastDevice`), every hint row (the hint line: move hints, the lesson, the next-move hint, the start
+    and hover hints) shows the pad's buttons (`ui/zones/key-device.ts`); Kontroller and the H overlay show each row's
+    pad buttons in small quiet caps under the action.
+  - Check: `tools/headless/pad-keys-check.ts` (the translations, every move hint and every flight / ground / water /
+    trick row has a pad name, the catalogue's Kontroller rows exist, and a stub gamepad through `Input`: A, RT, LT,
+    LB / RB and stick flicks double-tap, the D-pad rolls, a held button is one press, slow or far-apart presses are
+    not double taps).
+- **Not yet:** the pad names in the game (feel test; no gamepad in the container); the hover panel's sentence "[W]
+  tuşuna bas" stays in keyboard terms; PlayStation button names.
 
 ## Controls summary (additions)
 

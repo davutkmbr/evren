@@ -129,6 +129,7 @@ export const TUTORIAL_HINTS: readonly TutorialHintDef[] = [
     hold: 0,
     cooldown: 90,
     learn: onStart('breach'),
+    control: { group: 'water', keys: 'Space' },
   },
   {
     id: 'water-takeoff',
@@ -139,6 +140,7 @@ export const TUTORIAL_HINTS: readonly TutorialHintDef[] = [
     hold: 0,
     cooldown: 120,
     learn: (e, m) => (e.kind === 'start' && e.id === 'takeoff' && m.wasMode('swimming', 3) ? 'learned' : null),
+    control: { group: 'water', keys: 'Space / L' },
   },
   {
     id: 'touchgo',
@@ -161,6 +163,7 @@ export const TUTORIAL_HINTS: readonly TutorialHintDef[] = [
     hold: 0.4,
     cooldown: 120,
     learn: onCleanEnd('plunge'),
+    control: { group: 'water', keys: 'Shift' },
   },
   {
     id: 'splits',
