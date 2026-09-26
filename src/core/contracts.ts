@@ -202,6 +202,8 @@ export type LandmarkKind =
   | 'barracks'
   | 'other';
 
+export type LandmarkFootprint = 'pad' | 'cluster' | 'line' | 'polygon' | 'slope' | 'none';
+
 export interface Vec2Like {
   x: number;
   z: number;
@@ -229,6 +231,12 @@ export interface LandmarkDef {
   height: number;
   /** Extra key points in local meters (bridge tower bases, wall polyline, cluster tower spots...). */
   anchors?: Vec2Like[];
+  /** How the site claims its ground (geo/types.ts LandmarkData.footprint); default 'pad'. */
+  footprint?: LandmarkFootprint;
+  /** Corridor half width ('line') or per-anchor pad radius ('cluster'), m. */
+  footprintWidth?: number;
+  /** Full width (m) of the modelled body of a 'line' landmark (aqueduct piers); OSM buildings touching it are dropped. */
+  bodyWidth?: number;
   /**
    * Full extent radius (m) of extended landmarks (bridges, walls, aqueduct, tower clusters).
    * `radius` is only the small pad reserved from the procedural city.

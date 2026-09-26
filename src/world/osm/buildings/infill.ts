@@ -14,6 +14,7 @@ import { LandUse } from '../../../core/contracts';
 import type { OsmArea, OsmBuilding, OsmRail, OsmRoad } from '../data';
 import { hash } from '../shared/geometry';
 import { Ground, type StreetSurface } from '../shared/street-surface';
+import { LINE_STRIDE, type LandmarkClaims } from '../../landmarks/claim-shapes';
 
 /** Open-space area kinds that must stay free. */
 const OPEN = /^(leisure=(park|garden|pitch|playground|sports_centre|track|dog_park|common)|landuse=(grass|forest|cemetery|construction|railway|religious|military|meadow|recreation_ground|village_green|harbour|brownfield|greenfield)|amenity=(parking|ferry_terminal|fountain|bus_station|taxi|marketplace|grave_yard)|place=square|highway=pedestrian|railway=platform|man_made=(pier|bridge)|natural=.*|area:highway=.*)/;
@@ -120,7 +121,7 @@ export interface InfillResult {
   stats: Record<string, number>;
 }
 
-export function findInfill(buildings: readonly OsmBuilding[], data: { roads: readonly OsmRoad[]; areas: readonly OsmArea[]; rails: readonly OsmRail[] }, pads: Float32Array, surface: StreetSurface, area: WorldBounds): InfillResult {
+export function findInfill(buildings: readonly OsmBuilding[], data: { roads: readonly OsmRoad[]; areas: readonly OsmArea[]; rails: readonly OsmRail[] }, claims: LandmarkClaims, surface: StreetSurface, area: WorldBounds): InfillResult {
   const geo = surface.geo;
   const grid = new Grid(area.minX, area.minZ, area.maxX, area.maxZ);
   const built = new Grid(area.minX, area.minZ, area.maxX, area.maxZ);
@@ -172,9 +173,15 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
       grid.line(r.pts, r.embedded ? 2.5 : 4.5, 1);
     }
   }
+  const pads = claims.pads;
   for (let k = 0; k < pads.length; k += 3) {
     const r = pads[k + 2];
     grid.line([pads[k], pads[k + 1], pads[k] + 0.01, pads[k + 1]], r, 1);
+  }
+  // Line landmarks (aqueduct): their whole corridor stays free of synthetic parcels.
+  const lines = claims.lines;
+  for (let k = 0; k < lines.length; k += LINE_STRIDE) {
+    grid.line([lines[k], lines[k + 1], lines[k + 2], lines[k + 3]], lines[k + 5], 1);
   }
 
   const freeAfterMasks = free(cells);

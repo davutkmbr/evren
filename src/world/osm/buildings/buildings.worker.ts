@@ -11,9 +11,9 @@ import { PROP_KINDS, type PropKind } from './roofs';
 serveWorker<BuildingsRequest, BuildingsResult>((req) => {
   const t0 = performance.now();
   const surface = new StreetSurface(req.base);
-  const infill = req.infill ? findInfill(req.buildings, req.infill, req.pads, surface, req.base.area) : { parcels: [], stats: {} };
+  const infill = req.infill ? findInfill(req.buildings, req.infill, req.claims, surface, req.base.area) : { parcels: [], stats: {} };
   const t1 = performance.now();
-  const b = buildBuildings({ buildings: req.buildings, pois: req.pois, pads: req.pads, extra: infill.parcels, passages: req.passages }, surface, req.base.rect);
+  const b = buildBuildings({ buildings: req.buildings, pois: req.pois, claims: req.claims, extra: infill.parcels, passages: req.passages }, surface, req.base.rect);
   const details = b.details.take();
   const props = Object.fromEntries(PROP_KINDS.map((k) => [k, b.props[k].take()])) as Record<PropKind, Float32Array>;
   const facade = b.facade.take();

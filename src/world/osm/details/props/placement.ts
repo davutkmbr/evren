@@ -13,12 +13,15 @@ import { CoverChannel, isGreenArea, isPathRoad, streetClearance, type CoverBuild
 import { Pose } from '../protocol';
 import { decodeSdf } from '../raster';
 import type { PropStamper } from './stamp';
+import { onLineBody } from '../../../landmarks/claim-shapes';
 
 export interface PlaceContext {
   surface: StreetSurface;
   cover: CoverBuild;
   area: { minX: number; maxX: number; minZ: number; maxZ: number };
   pads: readonly number[];
+  /** Line landmark bodies (landmarks/claim-shapes.ts). */
+  lines: readonly number[];
   poi: (x: number, z: number) => number;
 }
 
@@ -60,6 +63,9 @@ export class Placer {
   }
 
   onPad(x: number, z: number, k = 0.8): boolean {
+    if (onLineBody(this.ctx.lines, x, z, 0.5)) {
+      return true;
+    }
     const p = this.ctx.pads;
     for (let i = 0; i < p.length; i += 3) {
       const r = p[i + 2] * k;
