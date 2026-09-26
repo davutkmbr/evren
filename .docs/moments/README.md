@@ -53,6 +53,13 @@ id). The context is plain data: dragon position in local metres (`{ x, z }`), `a
 never mutates its inputs; `markFired(session, id)` returns the next session state. Only `ready` moments are returned
 unless `includeDrafts` is set. `rejectReason()` names the first failing condition (for tests and debug overlays).
 
+## Player settings
+
+Every record has a `category` (`legend`, `city-life`, `poem`). Players switch moments off in Ayarlar → Oyun → Anlar: a
+master switch plus one switch per category, stored per viewer (`src/moments/prefs.ts`, key `evren.moments.prefs.v1`).
+The runtime passes them to the evaluator (`evaluate(..., { prefs: loadMomentPrefs() })`), which rejects switched-off
+moments with the reason `disabled`.
+
 ## Adding a moment
 
 1. Pick the backlog item and write the record in the matching `src/moments/data/*.ts` file (or a new file added to
@@ -93,16 +100,15 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 | 7 | `lagari-sarayburnu-rocket` | Lagari Hasan Çelebi | draft | Rocket + rider model, launch/wings/splash animations, fuse and whoosh sound; chase gameplay |
 | 8 | `ships-over-land-1453` | Karadan Yürüyen Gemiler | draft | Translucent galley model, slide/fade animations, wood-creak sound |
 | 9 | `kiz-kulesi-legend` | Kız Kulesi Efsanesi | draft | Small snake character and fruit basket, idle/peek/hide animations, night-sea sound |
-| 14 | `orhan-veli-istanbulu-dinliyorum` | İstanbul'u Dinliyorum | draft | The poem's text (placeholders now; wording to verify, US status to decide), soft shore ambience |
+| 14 | `orhan-veli-istanbulu-dinliyorum` | İstanbul'u Dinliyorum | draft | Soft shore ambience (first stanza in place) |
 
 No record uses `media`; film and series items (backlog 6 and 11) wait for the user's choices and official links.
 
 ## Open questions for the user
 
-- **Orhan Veli.** Public domain in Turkey since 1 January 2021 (died 14 November 1950; FSEK life + 70). In the United
-  States a Turkish work that was still protected in Turkey on 1 January 1996 can have a restored term of 95 years from
-  publication (for a poem from the 1940s, into the 2040s). The poem's lines are therefore placeholders; decide whether
-  to include the full text, a few lines, or only the title, and confirm the wording against a reliable edition.
+- **Orhan Veli (decided 2026-09-26).** Public domain in Turkey since 1 January 2021 (died 14 November 1950; FSEK life +
+  70). Because a restored US term may still apply and the repository is hosted in the US, only the first stanza (7
+  lines) is used. Check the punctuation against your edition.
 - **Hezarfen and Lagari** rest only on Evliya Çelebi's Seyahatname; the game says so ("rivayete göre", "Evliya Çelebi
   anlatıyor"). Hezarfen's year is not given by Evliya, so the game names only the reign of Murad IV.
 - **Ships over land**: sources differ on the number (67–80) and the route (from Tophane or Dolmabahçe over the hills

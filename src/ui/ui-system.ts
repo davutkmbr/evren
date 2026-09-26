@@ -101,6 +101,7 @@ export class UiSystem implements System {
         this.tracker.reset();
         this.toasts.push('Keşif ilerlemesi sıfırlandı');
       },
+      onShowControls: () => this.pauseMenu.show('controls'),
     });
     const teleportPanel = new TeleportPanel((_name, preset) => {
       if (preset.time !== undefined) {

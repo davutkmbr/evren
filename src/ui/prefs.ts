@@ -11,6 +11,8 @@ export interface UiPrefs {
   volume?: number;
   quality?: QualityPreset;
   hudHidden?: boolean;
+  /** Last opened page of the settings panel. */
+  settingsPage?: string;
 }
 
 function read(key: string): string | null {

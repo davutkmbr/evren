@@ -3,7 +3,25 @@ import type { QualityPreset } from '../../core/quality';
 import { el } from '../dom';
 import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
-import { segmented, settingRow, settingSection, slider, toggle, type Control } from './controls';
+import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
+import type { MomentCategory } from '../../moments/types';
+import { segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from './controls';
+
+type SettingsPage = 'display' | 'world' | 'controls' | 'sound' | 'game';
+
+const PAGES: ReadonlyArray<{ id: SettingsPage; label: string }> = [
+  { id: 'display', label: 'Görüntü' },
+  { id: 'world', label: 'Hava ve zaman' },
+  { id: 'controls', label: 'Kontrol' },
+  { id: 'sound', label: 'Ses' },
+  { id: 'game', label: 'Oyun' },
+];
+
+const MOMENT_ROWS: ReadonlyArray<{ category: MomentCategory; title: string; desc: string }> = [
+  { category: 'legend', title: 'Efsaneler', desc: 'Hezarfen, Lagari, Kız Kulesi gibi şehir efsaneleri' },
+  { category: 'city-life', title: 'Şehir hayatı', desc: 'Martılar, vapurlar, oltacılar, leylek göçü' },
+  { category: 'poem', title: 'Şiir altyazıları', desc: 'Kıyıda alçaktan süzülürken şiir dizeleri' },
+];
 
 const percentFormat = new Intl.NumberFormat('tr-TR', { style: 'percent', maximumFractionDigits: 0 });
 
@@ -12,9 +30,14 @@ export interface SettingsPanelOptions {
   prefs: UiPrefs;
   savePrefs(): void;
   onResetDiscoveries(): void;
+  /** Opens the key bindings (the pause menu's Kontroller tab). */
+  onShowControls?(): void;
 }
 
-/** Ayarlar: quality preset, controls, volume, time of day / speed, camera mode. */
+/**
+ * Ayarlar, split into pages (Görüntü · Hava ve zaman · Kontrol · Ses · Oyun) behind a tab bar so each page stays short;
+ * the last page is remembered. Advanced weather sliders sit under a disclosure.
+ */
 export class SettingsPanel {
   readonly root: HTMLElement;
   private readonly quality: Control<QualityPreset>;
@@ -27,6 +50,12 @@ export class SettingsPanel {
   private readonly camera: Control<CameraMode>;
   private readonly weatherPreset: Control<WeatherPreset | 'custom'>;
   private readonly weatherSliders: Record<keyof WeatherSettings, Control<number>>;
+  private readonly momentPrefs: MomentPrefs = loadMomentPrefs();
+  private readonly momentMaster: Control<boolean>;
+  private readonly momentToggles: Record<MomentCategory, Control<boolean>>;
+  private readonly pages = new Map<SettingsPage, HTMLElement>();
+  private readonly tabs = new Map<SettingsPage, HTMLButtonElement>();
+  private page: SettingsPage = 'display';
 
   constructor(private readonly options: SettingsPanelOptions) {
     const { ctx, prefs } = options;
@@ -178,30 +207,120 @@ export class SettingsPanel {
       options.onResetDiscoveries();
     });
 
-    this.root = el('div', 'menu-settings', [
-      settingSection('Görüntü', [
-        settingRow('Grafik kalitesi', 'Gölge, bulut, yansıma ve çizim mesafesi', this.quality.root),
-        settingRow('Kamera', 'C tuşuyla da değiştirilebilir', this.camera.root),
-        settingRow('Uzak bulanıklık', 'Uzaktaki şehri havanın yaptığı gibi yumuşatır', this.weatherSliders.farBlur.root),
-      ]),
-      settingSection('Hava', [
-        settingRow('Hava durumu', 'N tuşuyla da değiştirilebilir', this.weatherPreset.root),
-        settingRow('Sis', 'Yerde sis bankları, kalın pus', this.weatherSliders.fog.root),
-        settingRow('Yağmur', 'Yağmur, kapalı gökyüzü, yağmur sesi', this.weatherSliders.rain.root),
-        settingRow('Fırtına', 'Şimşek ve gök gürültüsü', this.weatherSliders.storm.root),
-      ]),
-      settingSection('Zaman', [
-        settingRow('Günün saati', '[ ve ] tuşlarıyla yarım saat ileri, geri', this.timeOfDay.root),
-        settingRow('Zaman akışı', 'Gerçek saniye başına oyun dakikası', this.timeSpeed.root),
-      ]),
-      settingSection('Kontrol', [
-        settingRow('Fare hassasiyeti', undefined, this.sensitivity.root),
-        settingRow('Fare Y eksenini ters çevir', 'Bakış yönünde yukarı, aşağı', this.invertMouse.root),
-        settingRow('W/S eksenini ters çevir', 'Açıkken W burnu yukarı kaldırır', this.invertPitch.root),
-      ]),
-      settingSection('Ses', [settingRow('Ana ses', undefined, this.volume.root)]),
-      settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', resetButton)]),
-    ]);
+    // Oyun → Anlar: a master switch and one switch per category (the dependent rows grey out when it is off).
+    const saveMoments = (): void => saveMomentPrefs(this.momentPrefs);
+    const momentSubRows: HTMLElement[] = [];
+    this.momentToggles = {} as Record<MomentCategory, Control<boolean>>;
+    for (const m of MOMENT_ROWS) {
+      const control = toggle(m.title, this.momentPrefs.categories[m.category], (v) => {
+        this.momentPrefs.categories[m.category] = v;
+        saveMoments();
+      });
+      this.momentToggles[m.category] = control;
+      momentSubRows.push(settingRow(m.title, m.desc, control.root, { sub: true }));
+    }
+    this.momentMaster = toggle('Anlar', this.momentPrefs.enabled, (v) => {
+      this.momentPrefs.enabled = v;
+      saveMoments();
+      setRowsEnabled(momentSubRows, v);
+    });
+    setRowsEnabled(momentSubRows, this.momentPrefs.enabled);
+
+    const controlsLink = el('button', 'btn-quiet', 'Tuş listesi', { type: 'button' });
+    controlsLink.addEventListener('click', () => options.onShowControls?.());
+
+    const pageContent: Record<SettingsPage, HTMLElement[]> = {
+      display: [
+        settingSection('Görüntü', [
+          settingRow('Grafik kalitesi', 'Gölge, bulut, yansıma ve çizim mesafesi', this.quality.root),
+          settingRow('Kamera', undefined, this.camera.root, { keys: 'C' }),
+          settingRow('Uzak bulanıklık', 'Uzaktaki şehri havanın yaptığı gibi yumuşatır', this.weatherSliders.farBlur.root),
+        ]),
+      ],
+      world: [
+        settingSection('Hava', [
+          settingRow('Hava durumu', undefined, this.weatherPreset.root, { keys: 'N' }),
+          settingDisclosure('Ayrıntılı ayarla', [
+            settingRow('Sis', 'Yerde sis bankları, kalın pus', this.weatherSliders.fog.root, { sub: true }),
+            settingRow('Yağmur', 'Yağmur, kapalı gökyüzü, yağmur sesi', this.weatherSliders.rain.root, { sub: true }),
+            settingRow('Fırtına', 'Şimşek ve gök gürültüsü', this.weatherSliders.storm.root, { sub: true }),
+          ]),
+        ]),
+        settingSection('Zaman', [
+          settingRow('Günün saati', 'Yarım saat ileri, geri', this.timeOfDay.root, { keys: '[ / ]' }),
+          settingRow('Zaman akışı', 'Gerçek saniye başına oyun dakikası', this.timeSpeed.root),
+        ]),
+      ],
+      controls: [
+        settingSection('Fare', [
+          settingRow('Fare hassasiyeti', undefined, this.sensitivity.root),
+          settingRow('Fare Y eksenini ters çevir', 'Bakış yönünde yukarı, aşağı', this.invertMouse.root),
+        ]),
+        settingSection('Klavye', [
+          settingRow('W/S eksenini ters çevir', 'Açıkken W burnu yukarı kaldırır', this.invertPitch.root),
+          settingRow('Tüm tuşlar', 'Uçuş, kamera ve arayüz kısayolları', controlsLink),
+        ]),
+      ],
+      sound: [settingSection('Ses', [settingRow('Ana ses', undefined, this.volume.root)])],
+      game: [
+        settingSection(
+          'Anlar',
+          [settingRow('Anlar', 'Haritaya serpiştirilmiş küçük sürprizler', this.momentMaster.root), ...momentSubRows],
+          'Uçarken karşına çıkan kısa sahneler ve altyazılar. İstemediklerini kapatabilirsin.',
+        ),
+        settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', resetButton)]),
+      ],
+    };
+
+    const tabBar = el(
+      'div',
+      'set-tabs',
+      PAGES.map((p) => {
+        const button = el('button', 'set-tab', p.label, { type: 'button', role: 'tab', 'aria-selected': 'false' });
+        button.addEventListener('click', () => this.showPage(p.id, true));
+        this.tabs.set(p.id, button);
+        return button;
+      }),
+      { role: 'tablist', 'aria-label': 'Ayar bölümleri' },
+    );
+    tabBar.addEventListener('keydown', (e) => {
+      if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      const i = PAGES.findIndex((p) => p.id === this.page);
+      const next = PAGES[(i + (e.code === 'ArrowRight' ? 1 : PAGES.length - 1)) % PAGES.length].id;
+      this.showPage(next, true);
+      this.tabs.get(next)?.focus();
+    });
+    const pageNodes = PAGES.map((p) => {
+      const node = el('div', 'set-page', pageContent[p.id], { role: 'tabpanel' });
+      this.pages.set(p.id, node);
+      return node;
+    });
+
+    this.root = el('div', 'menu-settings', [tabBar, ...pageNodes]);
+    const saved = prefs.settingsPage as SettingsPage | undefined;
+    this.showPage(saved && this.pages.has(saved) ? saved : 'display', false);
+  }
+
+  private showPage(page: SettingsPage, remember: boolean): void {
+    this.page = page;
+    for (const [id, node] of this.pages) {
+      node.hidden = id !== page;
+    }
+    for (const [id, tab] of this.tabs) {
+      const on = id === page;
+      tab.classList.toggle('is-on', on);
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+    }
+    this.root?.parentElement?.scrollTo({ top: 0 });
+    if (remember) {
+      this.options.prefs.settingsPage = page;
+      this.options.savePrefs();
+    }
   }
 
   /** Re-read live values (time of day moves, camera may have been switched with C...). */
@@ -217,6 +336,10 @@ export class SettingsPanel {
     const mode = ctx.services.tryGet('cameraRig')?.mode;
     this.camera.set(mode === 'free' || !mode ? 'third' : mode);
     this.refreshWeather();
+    this.momentMaster.set(this.momentPrefs.enabled);
+    for (const m of MOMENT_ROWS) {
+      this.momentToggles[m.category].set(this.momentPrefs.categories[m.category]);
+    }
   }
 
   /** Weather changes from the N key or a preset: re-read every weather control. */

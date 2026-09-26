@@ -104,13 +104,65 @@ export function toggle(label: string, value: boolean, onChange: (value: boolean)
   return { root: button, set };
 }
 
-export function settingRow(title: string, description: string | undefined, control: HTMLElement): HTMLElement {
+/**
+ * One setting: title, optional description, the control on the right. `keys` shows the keyboard shortcut as key caps
+ * next to the title ("N", "[ / ]"); `sub` indents the row under the one above (a dependent option).
+ */
+export function settingRow(
+  title: string,
+  description: string | undefined,
+  control: HTMLElement,
+  opts: { keys?: string; sub?: boolean } = {},
+): HTMLElement {
   const id = nextId('set');
-  const text = el('div', 'set-text', [el('span', 'set-title', title, { id }), description ? el('span', 'set-desc', description) : null]);
+  const keys = opts.keys
+    ? el(
+        'span',
+        'set-keys',
+        opts.keys.split('/').flatMap((k, i) => (i > 0 ? [el('span', 'kc-sep', '/'), el('kbd', undefined, k.trim())] : [el('kbd', undefined, k.trim())])),
+        { 'aria-label': `Kısayol: ${opts.keys}` },
+      )
+    : null;
+  const text = el('div', 'set-text', [
+    el('span', 'set-title-line', [el('span', 'set-title', title, { id }), keys]),
+    description ? el('span', 'set-desc', description) : null,
+  ]);
   control.setAttribute('aria-labelledby', id);
-  return el('div', 'set-row', [text, el('div', 'set-control', [control])]);
+  return el('div', opts.sub ? 'set-row set-row-sub' : 'set-row', [text, el('div', 'set-control', [control])]);
 }
 
-export function settingSection(title: string, rows: HTMLElement[]): HTMLElement {
-  return el('section', 'set-section', [el('h3', 'ejd-caps set-heading', title), el('div', 'set-rows', rows)]);
+export function settingSection(title: string, rows: HTMLElement[], lede?: string): HTMLElement {
+  return el('section', 'set-section', [
+    el('h3', 'ejd-caps set-heading', title),
+    lede ? el('p', 'set-lede', lede) : null,
+    el('div', 'set-rows', rows),
+  ]);
+}
+
+/**
+ * A collapsed group of rows under a "show more" button (advanced options). The rows stay in the DOM, hidden, so their
+ * controls keep their live values.
+ */
+export function settingDisclosure(label: string, rows: HTMLElement[]): HTMLElement {
+  const id = nextId('more');
+  const body = el('div', 'set-more-body', rows, { id });
+  body.hidden = true;
+  const button = el('button', 'set-more', [el('span', undefined, label), el('i', 'set-more-chev')], {
+    type: 'button',
+    'aria-expanded': 'false',
+    'aria-controls': id,
+  });
+  button.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    button.setAttribute('aria-expanded', String(!body.hidden));
+  });
+  return el('div', 'set-more-wrap', [button, body]);
+}
+
+/** Enables or greys out rows whose option depends on another switch. */
+export function setRowsEnabled(rows: readonly HTMLElement[], enabled: boolean): void {
+  for (const row of rows) {
+    row.classList.toggle('is-disabled', !enabled);
+    row.querySelectorAll('button, input').forEach((c) => ((c as HTMLButtonElement | HTMLInputElement).disabled = !enabled));
+  }
 }
