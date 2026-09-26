@@ -10,7 +10,11 @@
  */
 import type { FlightMode, WeatherPreset } from '../core/contracts';
 
-/** 'draft' until every referenced model, animation and sound exists and is approved; only 'ready' moments play. */
+/**
+ * 'draft' until every referenced model, animation and sound exists and is approved. 'ready' moments play; a 'draft'
+ * moment plays only when its content is complete for what it is: a subtitle-only moment whose single need is its
+ * (optional) sound plays over the lifted coastal ambience (see momentPlayability in ./runtime.ts).
+ */
 export type MomentStatus = 'draft' | 'ready';
 
 /** Player-facing groups; each can be switched off in the settings (see prefs.ts). */

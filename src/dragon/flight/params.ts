@@ -577,6 +577,21 @@ export const SWIM_POSE = {
    */
   wadeMargin: 0.3,
   floatMargin: 0.45,
+  /*
+   * Visible spray of the stroke (no sound events): the catch beside the shoulder, the lift-out behind it, the tail's
+   * churn at a fast swim. Positions in rig lengths (lateral, forward); strengths scale with the stroke.
+   */
+  sprayMinStroke: 0.3,
+  /** End of a wing's power stroke after its catch (rad): the rig's SWIM_RIG.paddlePower share of the cycle. */
+  paddlePowerPhase: 0.42 * Math.PI * 2,
+  sprayCatch: 0.45,
+  sprayCatchOut: 0.3,
+  sprayCatchForward: 0.08,
+  sprayLift: 0.3,
+  sprayLiftOut: 0.24,
+  sprayLiftForward: -0.12,
+  sprayTail: 0.35,
+  sprayTailBack: 0.85,
 } as const;
 
 /** Body collision spheres as fractions of the rig length (x, y, z, radius). */
