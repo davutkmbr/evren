@@ -1,5 +1,6 @@
 import type { HotbarService, HotbarSlot, HotbarSlotState } from '../../core/contracts';
 import { HOTBAR_BUTTONS, type Input } from '../../core/input';
+import { keyCap, setKeyCapState } from '../components';
 import { el, TextSlot, toggleClass, TransformSlot } from '../dom';
 import { HOTBAR_ICONS } from './hotbar-icons';
 
@@ -9,6 +10,7 @@ const CAPTION_MS = 2600;
 
 interface SlotView {
   root: HTMLElement;
+  key: HTMLElement;
   icon: HTMLElement;
   count: TextSlot;
   countNode: HTMLElement;
@@ -41,11 +43,14 @@ export class Hotbar implements HotbarService {
       const icon = el('span', 'hb-icon');
       const countNode = el('span', 'hb-count ejd-num');
       const cooldownNode = el('i', 'hb-cooldown');
-      const root = el('div', 'hb-slot is-empty', [el('span', 'hb-key', String(i + 1)), icon, countNode, cooldownNode]);
+      const key = keyCap(String(i + 1), 'quiet', { size: 's', state: 'dim' });
+      key.classList.add('hb-key');
+      const root = el('div', 'hb-slot is-empty', [key, icon, countNode, cooldownNode]);
       root.addEventListener('click', () => this.trigger(i));
       row.append(root);
       this.views.push({
         root,
+        key,
         icon,
         count: new TextSlot(countNode),
         countNode,
@@ -146,6 +151,7 @@ export class Hotbar implements HotbarService {
     }
     const cooldown = slot ? Math.min(1, Math.max(0, slot.cooldown ?? 0)) : 0;
     toggleClass(view.root, 'is-empty', !slot);
+    setKeyCapState(view.key, slot ? null : 'dim');
     toggleClass(view.root, 'is-filled', !!slot);
     toggleClass(view.root, 'is-active', !!slot?.active);
     toggleClass(view.root, 'is-disabled', !!slot && slot.enabled === false);
@@ -173,7 +179,7 @@ export class Hotbar implements HotbarService {
   }
 
   private showCaption(slot: HotbarSlot): void {
-    this.captionNode.textContent = slot.hotkey ? `${slot.label} · ${slot.hotkey}` : slot.label;
+    this.captionNode.replaceChildren(slot.label, ...(slot.hotkey ? [' ', keyCap(slot.hotkey, 'ink', { size: 's' })] : []));
     this.captionNode.classList.remove('is-out');
     window.clearTimeout(this.captionTimer);
     this.captionTimer = window.setTimeout(() => this.captionNode.classList.add('is-out'), CAPTION_MS);

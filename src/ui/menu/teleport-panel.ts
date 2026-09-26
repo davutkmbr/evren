@@ -1,5 +1,6 @@
 import type { PerchPoint } from '../../core/contracts';
 import type { ViewPreset } from '../../core/debug';
+import { keyText, prompt } from '../components';
 import { el } from '../dom';
 import { formatClock } from '../format';
 import type { MapRaster } from '../map/map-raster';
@@ -89,16 +90,14 @@ export class TeleportPanel {
 
     this.chips = el('div', 'tp-chips', undefined, { role: 'group', 'aria-label': 'Süzgeç' });
     this.list = el('div', 'tp-list', undefined, { role: 'listbox', 'aria-label': 'Yerler' });
-    this.empty = el('p', 'tp-empty', 'Bu isimde bir yer yok. Haritada istediğin noktayı seçebilirsin (M).');
+    this.empty = el('p', 'tp-empty', keyText('Bu isimde bir yer yok. Haritada istediğin noktayı seçebilirsin [M]'));
     this.empty.hidden = true;
 
     this.detailName = el('span', 'tp-detail-name');
     this.detailRegion = el('span', 'tp-detail-region');
     this.detailInfo = el('p', 'tp-detail-info');
-    const go = el('button', 'tp-go', [el('span', undefined, 'Işınlan'), el('kbd', undefined, 'Enter')], { type: 'button' });
-    go.addEventListener('click', () => this.teleport());
-    this.perchButton = el('button', 'tp-perch', 'Oraya kon ve izle', { type: 'button' });
-    this.perchButton.addEventListener('click', () => this.perch());
+    const go = prompt('Işınlan', 'Enter', 'primary', () => this.teleport());
+    this.perchButton = prompt('Oraya kon ve izle', '', 'secondary', () => this.perch()).root;
 
     this.root = el('div', 'menu-teleport', [
       el('div', 'tp-map-col', [this.map.root]),
@@ -109,7 +108,7 @@ export class TeleportPanel {
         el('div', 'tp-detail', [
           el('div', 'tp-detail-head', [this.detailName, this.detailRegion]),
           this.detailInfo,
-          el('div', 'tp-detail-actions', [go, this.perchButton]),
+          el('div', 'tp-detail-actions', [go.root, this.perchButton]),
         ]),
       ]),
     ]);

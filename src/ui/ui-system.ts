@@ -388,7 +388,7 @@ export class UiSystem implements System {
       this.setPhoto(!this.photo);
     } else if (input.wasPressed('hud') && !this.photo) {
       this.hudOff = !this.hudOff;
-      this.toasts.push(this.hudOff ? 'Arayüz gizlendi · geri getirmek için U' : 'Arayüz gösteriliyor');
+      this.toasts.push(this.hudOff ? 'Arayüz gizlendi · geri getirmek için [U]' : 'Arayüz gösteriliyor');
     }
     if (!this.photo) {
       this.hud.hotbar.poll(input);

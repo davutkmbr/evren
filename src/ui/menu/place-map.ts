@@ -1,3 +1,4 @@
+import { prompt } from '../components';
 import { el } from '../dom';
 import type { MapRaster } from '../map/map-raster';
 import type { Place } from './places';
@@ -54,10 +55,8 @@ export class PlaceMap {
       el('span', undefined, [el('i', 'tp-dot tp-dot-perch'), 'Konulabilir']),
       el('span', undefined, [el('i', 'tp-dot tp-dot-view'), 'Manzara']),
     ]);
-    const mapLink = el('button', 'tp-map-link', [el('span', undefined, 'Haritada herhangi bir yere'), el('kbd', undefined, 'M')], {
-      type: 'button',
-    });
-    mapLink.addEventListener('click', () => options.onOpenMap());
+    const mapLink = prompt('Haritada herhangi bir yere', 'M', 'secondary', () => options.onOpenMap()).root;
+    mapLink.classList.add('tp-map-link');
 
     this.root = el('div', 'tp-map', [this.canvas, this.label, legend, mapLink]);
 
