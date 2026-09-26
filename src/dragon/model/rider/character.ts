@@ -70,7 +70,8 @@ export class RiderCharacter {
     this.mesh.bind(skel.skeleton, new THREE.Matrix4());
     this.mesh.frustumCulled = false;
     this.opts.meshParent.add(this.mesh);
-    if (this.opts.outline !== false) {
+    const noOutline = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('outline') === '0';
+    if (this.opts.outline !== false && !noOutline) {
       this.outline = new THREE.SkinnedMesh(geo, this.outlineMaterial);
       this.outline.name = 'rider-outline';
       this.outline.bind(skel.skeleton, new THREE.Matrix4());
