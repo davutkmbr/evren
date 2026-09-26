@@ -10,6 +10,7 @@ import { noise1, type CurtainParams, type EndStyle, type GateParams, type SeaFou
 import type { Footprint, Footprints } from './buildings';
 import { bandHits, CLEAR, fitRun, outlineBlocked, thicknessOver, thicknessSteps, towerOutline, wallOverlaps, type Displace, type Fit, type OverlapReport } from './fit';
 import { at, chaikin, dedupe, flat, inRing, lengths, project, resample, ringDist, simplify, slice, tangent, type V2 } from './poly';
+import { WALL_CORRIDOR_GROW } from '../../../../src/world/landmarks/walls/data/bodies';
 
 /** World queries the plan needs (the flight world's geo, see cli.ts). */
 export interface Site {
@@ -112,9 +113,10 @@ const SEA_REACH = 8;
 const SEA_LOW = 2.2;
 /**
  * Land-use corridor growth (m) beyond the wall faces / tower outlines: the procedural city samples a lot's corners
- * on the ~11.7 m land-use grid, so the reservation reaches about one cell past the faces.
+ * on the ~11.7 m land-use grid, so the reservation reaches about one cell past the faces. Shared with the runtime
+ * body test (walls/data/bodies.ts), which subtracts it again.
  */
-const CORRIDOR_GROW = 9;
+const CORRIDOR_GROW = WALL_CORRIDOR_GROW;
 
 interface Anchor {
   /** Opening end points (lines) or centre + half width (areas). */
