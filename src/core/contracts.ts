@@ -765,6 +765,54 @@ export interface WaterService {
    * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
    */
   readonly dynamic?: WaterDynamics;
+  /**
+   * Foam and spray (phase 21 stage 7c): hull foam sources, splashes, and the spray sources fx turns into particles.
+   * Optional: simple stand-ins leave it out.
+   */
+  readonly foam?: WaterFoam;
+}
+
+/** One spray source of the frame (phase 21 stage 7c), read by fx from `water.foam.sprays`. */
+export interface WaterSpraySource {
+  /** Spindrift torn off a breaking crest by the wind, a bow throwing spray in chop, a propeller's rooster tail. */
+  kind: 'spindrift' | 'bow' | 'prop';
+  /** Where the spray leaves the water (m). */
+  x: number;
+  y: number;
+  z: number;
+  /** Velocity of the source (the hull's, or the wind at the crest for spindrift; m/s). */
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Horizontal unit direction the spray is thrown toward (outward from the bow, astern, downwind). */
+  dirX: number;
+  dirZ: number;
+  /** 0..1 strength (particle rate and speed) and a size scale (m: the crest length, the beam). */
+  strength: number;
+  size: number;
+}
+
+/**
+ * Foam of the sea (phase 21 stage 7c), owned by the water module and reached through `water.foam`: an advected foam
+ * field around the camera fed by breaking crests (from the wind-wave spectrum), breaking wake crests, surf, hulls, the
+ * dragon and splashes; plus the frame's spray sources.
+ */
+export interface WaterFoam {
+  /**
+   * A moving hull (call every frame while it moves): centre, unit forward axis of the hull, speed through the water
+   * (m/s), waterline length, beam and draft (m), thrust as a share of the maximum (0..1), planing (0..1) and the bow's
+   * vertical speed (m/s, heave + pitch; slamming throws bow spray).
+   */
+  hull(source: number, x: number, z: number, forwardX: number, forwardZ: number, speed: number, length: number, beam: number, draft: number, thrust: number, planing: number, bowHeave: number): void;
+  /** A splash at (x, z) (fx strength units: ~0.05 a stroke, ~1 a skim contact, ~3 a plunge). */
+  splash(x: number, z: number, strength: number): void;
+  /** Spray sources of this frame (the first `sprayCount`). */
+  readonly sprays: readonly WaterSpraySource[];
+  readonly sprayCount: number;
+  /** The foam field's square window: centre and half side (m); halfExtent 0 while the field is off ("low"). */
+  readonly window: { readonly x: number; readonly z: number; readonly halfExtent: number };
+  /** Whitecap coverage of the open sea at the current wind (0..1, Monahan). */
+  readonly coverage: number;
 }
 
 /** The dynamic part of the water at one point (wave particles only). */

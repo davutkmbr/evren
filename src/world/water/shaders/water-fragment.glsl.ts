@@ -1,6 +1,7 @@
 import { SHARED_GLSL } from '../../../render/shaders';
 import { BAND_COUNT, WATER_IOR } from '../config';
 import { DISTURBANCE_WATER_SAMPLE_GLSL, DISTURBANCE_WATER_UNIFORMS_GLSL } from '../lowflight/shaders.glsl';
+import { FOAM_BREAK_GLSL, FOAM_WATER_GLSL } from '../foam/shaders.glsl';
 import { WATER_COMMON_GLSL } from './water-common.glsl';
 import { WATER_SKY_GLSL } from './water-sky.glsl';
 
@@ -14,7 +15,10 @@ const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
  * - exact dielectric Fresnel (n = 1.333), sky reflection via skyRadiance() or the planar reflection (looked up along
  *   the true reflected ray, anisotropically blurred by the unresolved roughness)
  * - water body from regional remote-sensing reflectance and attenuation, sea floor in shallow water
- * - whitecaps (Gerstner crest compression x wind), shore break/lapping foam, current slicks
+ * - foam (phase 21 stage 7c): the advected foam field around the camera (whitecaps, hull wakes, surf, the dragon,
+ *   splashes) drawn as lace that thins and streaks as it ages, bubbles glowing under fresh foam, glassy slicks behind
+ *   hulls; beyond the field (and on "low") whitecaps on the breaking crests of the spectrum and their statistical
+ *   brightening further out; shore break/lapping foam, current slicks; seen from below, foam darkens Snell's window
  * - underside with Snell's window when the camera is below the surface
  * - the disturbance field under a low-flying dragon (phase 21 stage 2): ripple slopes, ruffled darker patches, foam
  * - wave particles (phase 21 stage 7a): hull wakes, the dragon's waves and splash rings from the splat window
@@ -37,7 +41,7 @@ uniform vec4 uBandA[${BAND_COUNT}];   // xy = time coefficients * rms slope, z =
 uniform vec4 uBandB[${BAND_COUNT}];   // xy = tile offset of uOrigin, z = wavelength
 uniform vec4 uFlowPhase;              // x, y = flow-map time of phase A/B (s), z, w = weights
 uniform vec4 uFlowJump;               // per-cycle uv jumps of phase A/B (m)
-uniform vec4 uSeaParams;              // U10, capillary mean square slope, whitecap threshold, whitecap strength
+uniform vec4 uSeaParams;              // U10, capillary mean square slope (z, w: unused since the stage 7c whitecap model)
 uniform vec4 uWindParams;             // downwind dir, gust drift (m)
 uniform vec4 uFoamOffset;
 uniform sampler2D uFoamTex;
@@ -52,6 +56,8 @@ uniform vec3 uFloorAlbedo[5];
 uniform float uRoughness[5];
 uniform float uCamUnder;              // 1 while the camera is under the water (underwater service)
 ${DISTURBANCE_WATER_UNIFORMS_GLSL}
+${FOAM_BREAK_GLSL}
+${FOAM_WATER_GLSL}
 
 varying vec3 vWorld;
 varying vec4 vLagr;
@@ -152,6 +158,11 @@ void main() {
   // Low flight (disturbance field): the downwash and the wake ruffle the detail waves (a darker "cat's paw" patch).
 ${DISTURBANCE_WATER_SAMPLE_GLSL}
   roughMul *= 1.0 + 1.2 * min(distRough, 2.0);
+  // The foam field (stage 7c); its slick channel (the smooth track behind a hull) damps the small waves.
+  float foamEdgeW;
+  vec4 foamField = foamFieldAt(xo, foamEdgeW);
+  float fieldCover = clamp(foamField.r + foamField.g, 0.0, 1.0);
+  roughMul *= 1.0 - 0.45 * clamp(foamField.a, 0.0, 1.0);
   float r2 = roughMul * roughMul;
 
   // Pixel footprint in metres (anisotropy capped at 5:1 like the texture hardware).
@@ -170,6 +181,12 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   vec2 flowDir = flowMag > 1e-4 ? U / flowMag : vec2(0.0, 1.0);
   vec2 slickUv = vec2(dot(world0, flowDir) / 1500.0 - uTime * flowMag / 1500.0, dot(world0, vec2(flowDir.y, -flowDir.x)) / 120.0);
   float slickLines = texture(uFoamTex, slickUv).b;
+  // Aged foam is drawn out into streaks along its drift (current + wind drift).
+  vec2 foamDrift = U + wd * uFoamParams.z;
+  float foamDriftMag = length(foamDrift);
+  vec2 fdir = foamDriftMag > 1e-3 ? foamDrift / foamDriftMag : wd;
+  vec2 streakUv = vec2(dot(world0, fdir) / 26.0 - uTime * foamDriftMag / 26.0, dot(world0, vec2(-fdir.y, fdir.x)) / 3.2);
+  float foamStreak = texture(uFoamTex, streakUv).b;
   float wFlat;
   vec2 flatUv = projectRefl(vec3(P.x, 0.0, P.z), wFlat);
   vec2 flatDx = dFdx(flatUv);
@@ -182,6 +199,11 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   float lostVar = 0.0;
   float capTotal = 0.0;
   float capResolved = 0.0;
+  // Whitecap statistics of the resolved slots (whitecaps.ts): sum q^2, sum q^4, and the energy / mean frequency.
+  float capQ2 = 0.0;
+  float capQ4 = 0.0;
+  float capVar = 0.0;
+  float capM1 = 0.0;
   for (int i = 0; i < WAVE_COUNT; i++) {
     vec4 amp = uWaveAmp[i];
     if (amp.x <= 0.0) continue;
@@ -194,9 +216,14 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
     float breakingWave = abs(amp.w - 2.0) > 0.5 ? wa * wa : 0.0;
     capTotal += breakingWave;
     capResolved += breakingWave * fade;
+    float capA = amp.x * g;
+    capVar += capA * capA;
+    capM1 += capA * capA * sqrt(9.81 * dir.z);
     if (fade <= 0.0) continue;
     wa *= fade;
     float q = amp.y * g * fade;
+    capQ2 += q * q;
+    capQ4 += q * q * q * q;
     float ph = dir.z * dot(dir.xy, xo) + amp.z;
     float s = sin(ph);
     float c = cos(ph);
@@ -293,6 +320,9 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
       float shimmer = 0.5 + clamp(0.5 + 8.0 * (N.x - N.z), 0.0, 1.0);
       sky += vec3(1.0, 0.68, 0.38) * (0.004 * uNight * (0.25 + 2.0 * rim) * shimmer);
     }
+    // Foam seen from below: it blocks and scatters the light of the window (dark patches, a little glow outside it).
+    sky *= 1.0 - 0.82 * fieldCover;
+    scatterUp *= 1.0 + 0.6 * fieldCover;
     vec3 under = sky * (1.0 - Fu) + scatterUp * Fu;
     gl_FragColor = vec4(badFloat3(under) > 0.0 ? vec3(0.0) : min(under, vec3(6e4)), 1.0);
     return;
@@ -373,6 +403,8 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   vec3 floorL = floorAlbedo * (0.7 + 0.6 * ripple) * (0.5 / PI);
   vec3 body = (rrs * (1.0 - Tfloor) + floorL * Tfloor) * Ed;
   body *= (1.0 - fresnel) / 0.98;
+  // Bubble clouds under fresh foam scatter light back up: a bright aquamarine patch.
+  body += vec3(0.02, 0.075, 0.068) * (1.0 / PI) * Ed * clamp(foamField.b, 0.0, 1.0) * (1.0 - fresnel);
 
   // Light transmitted through thin wave crests toward a low sun (teal glow on the lee side of crests).
   float crest = clamp(vLagr.z * 3.0, 0.0, 1.0) * max(groups.x, groups.w);
@@ -385,20 +417,25 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
 
   // ---- Foam ----
   float breakup = foamTex.a;
-  // Whitecaps (Monahan coverage ~ U^3.4: none below ~4 m/s, a few % in a 12 m/s poyraz), gusty patches only.
-  float capMask = smoothstep(0.35, 0.8, gust + breakup * 0.4) * (groups.x + groups.y) * 0.8 * uSeaParams.w;
-  // Where the wind sea is resolved, caps sit on strongly compressed Gerstner crests; further out the waves are
-  // filtered away, so drifting, evolving crest-shaped patches (elongated crosswind) keep the same coverage.
-  float capJ = smoothstep(uSeaParams.z, uSeaParams.z - 0.22, jacobian);
-  vec2 capP = gq * vec2(1.0 / 6.5, 1.0 / 12.0);
-  float capNoise = vnoise3(vec3(capP, uTime * 0.16)) * 0.62 + vnoise3(vec3(capP * 2.7 + 5.3, uTime * 0.37)) * 0.38;
-  float capThreshold = mix(0.9, 0.72, uSeaParams.w);
-  float capN = smoothstep(capThreshold, capThreshold + 0.05, capNoise);
+  // Whitecaps from the spectrum (whitecaps.ts): the steepest crests break per cell with the local probability. Inside
+  // the foam field the field carries them (with their foam trails); this is the "low" tier and the sea beyond it.
+  float capSig = sqrt(0.5 * capQ2);
+  float capOmega = capVar > 0.0 ? capM1 / capVar : 0.0;
+  float capJ = 0.0;
+  if (uFoamCaps.x > 0.0 && capSig > 1e-5 && capOmega > 0.0) {
+    float capTh = 1.0 - foamCrestZ(capQ2 * capQ2 / max(capQ4, 1e-20)) * capSig;
+    float capE = foamCrestEdge(uFoamCaps.y, capSig);
+    float crestMask = 1.0 - smoothstep(capTh - capE, capTh + capE, jacobian);
+    if (crestMask > 0.0) {
+      capJ = crestMask * foamBreakCell(world0, uFoamCaps.w, wd, 9.81 / capOmega, foamBreakProb(uFoamCaps.x, uFoamCaps.z, capOmega));
+    }
+  }
   float capRes = capTotal > 1e-8 ? capResolved / capTotal : 1.0;
   float farBlend = smoothstep(1.5, 6.0, fp);
-  float capFoam = mix(capN, capJ, capRes) * capMask * clamp(foamTex.r * 1.6 + fineFoam * 0.5, 0.0, 1.0) * (1.0 - farBlend);
-  // Sub-pixel whitecaps brighten the sea statistically.
-  float farCaps = uSeaParams.w * uSeaParams.w * 0.05 * (groups.x + groups.y) * farBlend;
+  float capFoam = capJ * clamp(foamTex.r * 1.6 + fineFoam * 0.5, 0.0, 1.0) * (1.0 - farBlend) * (1.0 - foamEdgeW);
+  // Unresolved (filtered) breaking waves brighten the sea statistically with the local coverage W x dev.
+  float capDev = capOmega > 0.0 ? foamBreakProb(1.0, uFoamCaps.z, capOmega) : 0.0;
+  float farCaps = uFoamParams.w * capDev * clamp(groups.x + groups.y + groups.w * 0.5, 0.0, 1.0) * max(1.0 - capRes, farBlend) * (1.0 - foamEdgeW);
 
   // Shore: surf only on gently shelving, exposed beaches (Kilyos, Florya, Caddebostan...); quays and rocky banks get a
   // thin lapping line. Bed slope from the geo depth: beaches ~1:30, Bosphorus quays drop 10+ m within 30 m.
@@ -410,7 +447,8 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
   breaker *= smoothstep(0.3, 0.6, surfNoise + breakup * 0.3) * (1.0 - smoothstep(8.0, 60.0, offshore)) * beach;
   float lapWidth = 0.8 + 1.6 * breakup + 5.0 * beach;
   float lap = (1.0 - smoothstep(0.0, lapWidth, offshore)) * smoothstep(-2.5, 0.0, offshore);
-  float shoreFoam = clamp(breaker * 0.9 + lap * mix(0.55, 1.0, beach), 0.0, 1.0) * clamp(foamTex.r * 1.5 + fineFoam * 0.6, 0.0, 1.0);
+  // (Inside the foam field the surf is simulated: its breakers come from the field.)
+  float shoreFoam = clamp(breaker * 0.9 * (1.0 - foamEdgeW) + lap * mix(0.55, 1.0, beach), 0.0, 1.0) * clamp(foamTex.r * 1.5 + fineFoam * 0.6, 0.0, 1.0);
 
   // Current slicks: foam lines drawn out along the Bosphorus current.
   float slicks = smoothstep(0.6, 0.95, slickLines) * smoothstep(0.8, 2.2, flowMag) * smoothstep(0.62, 0.9, breakup + gust * 0.3);
@@ -418,7 +456,20 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
 
   // Wake furrow, tip kisses and boiling under the fire breath (disturbance field), broken up by the foam texture.
   float dragonFoam = distFoam * clamp(foamTex.r * 1.6 + fineFoam * 0.6, 0.0, 1.0) * (1.0 - smoothstep(1.5, 5.0, fp));
-  float foam = clamp(capFoam + shoreFoam + slicks + dragonFoam, 0.0, 1.0);
+  // The advected foam field: its coverage shapes a lace pattern (bubble web where fresh, streaks along the drift as it
+  // ages) that thins out as the foam decays; beyond a couple of metres per pixel only the coverage is left.
+  float fieldFoam = 0.0;
+  if (fieldCover > 0.003) {
+    float fresh = clamp(foamField.r / max(fieldCover, 1e-3), 0.0, 1.0);
+    float web = foamTex.r * 0.6 + fineFoam * 0.4;
+    float pattern = mix(foamStreak * 0.65 + web * 0.35, web, fresh);
+    pattern = clamp(pattern * 0.85 + breakup * 0.15, 0.0, 1.0);
+    float soft = 0.1 + 0.2 * fresh;
+    float lace = smoothstep(1.0 - fieldCover - soft, 1.0 - fieldCover + soft, pattern);
+    lace = max(lace, smoothstep(0.7, 1.0, foamField.r));
+    fieldFoam = mix(lace, fieldCover * 0.9, smoothstep(0.8, 3.0, fp));
+  }
+  float foam = clamp(capFoam + shoreFoam + slicks + dragonFoam + fieldFoam, 0.0, 1.0);
   vec3 foamL = vec3(0.78, 0.8, 0.8) * (1.0 / PI) * Ed;
   color = mix(color, foamL + specular * 0.05, foam);
   color += vec3(0.7) * (1.0 / PI) * Ed * farCaps;
@@ -434,6 +485,8 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
       color = vec3(roughMul * 0.25, alpha, groups.x * 0.5) * 0.5;
     #elif WATER_DEBUG == 5
       color = vec3(fetch, beach, shoreFoam) * 0.5;
+    #elif WATER_DEBUG == 7
+      color = vec3(foamField.r, foamField.g, foamField.b) * 0.5 + vec3(0.0, 0.0, foamField.a * 0.25) + vec3(capJ, 0.0, capJ) * 0.5;
     #elif WATER_DEBUG == 6
       vec3 finalProbe = applyAtmosphere(color, P);
       color = vec3(badFloat3(reflection), badFloat3(specular), badFloat3(body)) + vec3(badFloat(foam)) * vec3(1.0, 0.0, 1.0) + vec3(badFloat3(color), badFloat3(finalProbe), 0.0) * 0.5;

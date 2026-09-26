@@ -4,7 +4,8 @@
  * Draw calls: 1 for the surface + the planar reflection pass.
  * Provides the `water` service: the same waves evaluated on the CPU (wave-query.ts) plus the baked surface current,
  * with the wave particles (particles/: hull wakes, the dragon's waves, splash rings; phase 21 stage 7a) on top, which
- * the surface also draws from a splat window around the camera.
+ * the surface also draws from a splat window around the camera, and the foam (foam/: an advected foam field around the
+ * camera fed by breaking crests, wakes, surf, hulls, the dragon and splashes, plus spray sources for fx; stage 7c).
  */
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
@@ -27,6 +28,7 @@ import { waveParticleQualityFor, type WaveParticleQuality } from './particles/co
 import { DragonWaves } from './particles/dragon-waves';
 import { createWaveSplatUniforms, WaveSplatGpu } from './particles/splat-gpu';
 import { WaveParticles } from './particles/wave-particles';
+import { FoamController, foamQualityFor } from './foam';
 
 /** Debug handle (sandbox / console): window.__water */
 export interface WaterDebug {
@@ -43,6 +45,8 @@ export interface WaterDebug {
   particles: WaveParticles;
   splat: WaveSplatGpu;
   particleQuality: () => WaveParticleQuality;
+  /** Foam and spray (phase 21 stage 7c): whitecap model, field window, sources, GPU passes. */
+  foam: FoamController;
   regionStats: () => RegionBakeResult['stats'] | null;
 }
 
@@ -80,6 +84,8 @@ export function createWaterSystem(): System {
   const splatPlaceholder = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
   splatPlaceholder.needsUpdate = true;
   const splat = new WaveSplatGpu(createWaveSplatUniforms(splatPlaceholder));
+  const foam = new FoamController();
+  waves.foam = foam.sources;
   let unsubscribeSplash: (() => void) | null = null;
   let geoRef: GeoQuery | null = null;
   const placeholders = createPlaceholders();
@@ -142,6 +148,7 @@ export function createWaterSystem(): System {
     quality = next;
     particleQuality = waveParticleQualityFor(settings.preset);
     particles.setQuality(particleQuality);
+    foam.setQuality(foamQualityFor(settings.preset));
     if (!quality.planar && uniforms) {
       uniforms.uReflParams.value.x = 0;
     }
@@ -166,9 +173,17 @@ export function createWaterSystem(): System {
       particles.coast = (x, z) => geo.coastDistance(x, z);
       particleQuality = waveParticleQualityFor(ctx.quality.settings.preset);
       particles.setQuality(particleQuality);
+      foam.setQuality(foamQualityFor(ctx.quality.settings.preset));
       ctx.services.provide('water', waves);
-      // Splashes (skim contacts, plunges, breaches, strokes) start wave rings.
-      unsubscribeSplash = ctx.events.on('splash', ({ position, strength }) => dragonWaves.splash(position.x, position.z, strength, ctx.services.tryGet('dragon')));
+      // Splashes (skim contacts, plunges, breaches, strokes) start wave rings and leave foam (the nostril bubbles under
+      // water do neither).
+      unsubscribeSplash = ctx.events.on('splash', ({ position, strength }) => {
+        const dragon = ctx.services.tryGet('dragon');
+        dragonWaves.splash(position.x, position.z, strength, dragon);
+        if (!(dragon && dragon.mode === 'underwater' && strength <= 0.08)) {
+          foam.sources.splash(position.x, position.z, strength);
+        }
+      });
       geoRef = geo;
       underwater.init(ctx);
       lowFlight.init(ctx);
@@ -193,8 +208,10 @@ export function createWaterSystem(): System {
         new THREE.Vector4(b.minX, b.minZ, 1 / (b.maxX - b.minX), 1 / (b.maxZ - b.minZ)),
         lowFlight.uniforms,
         splat.uniforms,
+        foam.uniforms,
       );
-      const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan'];
+      foam.attach(uniforms);
+      const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan', 'foam'];
       material = createWaterMaterial(uniforms, quality.bands, Math.max(0, debugViews.indexOf(ctx.debug.params.get('wdebug') ?? 'off')));
       mesh = new THREE.Mesh(buildRadialGrid(quality.segments, GRID_INNER_RADIUS, GRID_EXTENT), material);
       mesh.name = 'water-surface';
@@ -230,6 +247,7 @@ export function createWaterSystem(): System {
         particles,
         splat,
         particleQuality: () => particleQuality,
+        foam,
         regionStats: () => regionStats,
       };
     },
@@ -257,6 +275,8 @@ export function createWaterSystem(): System {
       }
       dragonWaves.update(dragon, lowFlight.model, waves);
       particles.update(dt);
+      // Foam: whitecap statistics, the field's clock and window, spray sources.
+      foam.update(ctx, sea, waves);
     },
 
     preRender(ctx: EngineContext) {
@@ -272,6 +292,8 @@ export function createWaterSystem(): System {
       lowFlight.preRender(ctx, origin.x, origin.y);
       // Wave particles near the camera into the splat window (off on "low" and while none is near).
       splat.update(ctx.renderer, particles, cam.position.x, cam.position.z, origin.x, origin.y, particleQuality.splatSize, particleQuality.splatTexel);
+      // The foam field (reads this frame's splat): stamps from hulls, splashes and the dragon, then its steps.
+      foam.preRender(ctx, origin.x, origin.y);
 
       // The mirror pass reuses the main camera's shadow map; until it exists (first frame, after a shadow-quality
       // change) lit materials would sample an unbound shadow sampler, so the pass waits a frame.
@@ -307,6 +329,7 @@ export function createWaterSystem(): System {
       unsubscribeSplash?.();
       splat.dispose();
       splatPlaceholder.dispose();
+      foam.dispose();
       particles.clear();
       underwater.dispose();
       lowFlight.dispose();
