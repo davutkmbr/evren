@@ -6,6 +6,7 @@
  *   node scripts/perch-audit.mjs                                   # every perch, orbit/fixed/rider at 16:00
  *   node scripts/perch-audit.mjs --hours 16,19.5 --modes orbit,fixed --perch galata-kulesi,kiz-kulesi
  *   node scripts/perch-audit.mjs --out .shots/perches/audit/after --sheet-only
+ *   EVREN_CHROME=<chromium> node scripts/perch-audit.mjs --timeout 420000   # software rendering (no GPU)
  *
  * Writes <out>/<perch>-<mode>-<hour>.jpg + .json, <out>/audit.md (table) and <out>/sheet-<hour>.jpg (contact sheet:
  * one row per perch, one column per camera). Perch ids come from src/world/perches/data.ts unless given.
@@ -21,6 +22,8 @@ const opt = (name, def) => (args.includes(`--${name}`) ? args[args.indexOf(`--${
 const OUT = resolve(opt('out', '.shots/perches/audit/latest'));
 const HOURS = opt('hours', '16').split(',').map(Number);
 const MODES = opt('modes', 'orbit,fixed,rider').split(',');
+/** Page load timeout (ms): raise it on slow software rendering (EVREN_CHROME / SwiftShader loads take minutes). */
+const TIMEOUT = Number(opt('timeout', '90000'));
 /**
  * In-game thresholds: dragon hidden, camera view blocked within 60 m, perch clearance over its rendered neighbours
  * (-1: parts of the perch's own structure level with the grip, such as the other leg of a bridge tower, are fine).
@@ -44,7 +47,7 @@ function runShots(ids) {
     for (const h of HOURS) {
       for (const m of MODES) {
         const base = join(OUT, `${id}-${m}-${h}`);
-        jobs.push({ url: `/?autostart=1&t=${h}`, w: 1280, h: 720, settle: 700, timeout: 90000, eval: `(${fn})(${JSON.stringify(id)}, ${JSON.stringify(m)}, ${h})`, out: `${base}.jpg`, result: `${base}.json` });
+        jobs.push({ url: `/?autostart=1&t=${h}`, w: 1280, h: 720, settle: 700, timeout: TIMEOUT, eval: `(${fn})(${JSON.stringify(id)}, ${JSON.stringify(m)}, ${h})`, out: `${base}.jpg`, result: `${base}.json` });
       }
     }
   }
