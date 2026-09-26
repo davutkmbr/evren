@@ -309,6 +309,73 @@ with no ground plane, so the rig walked its legs on its default standing plane u
   `land-on-water`, `water-takeoff`, `wade`; sea sheets now tint what is under the surface in every view and draw the
   water plane in the three-quarter and top views.
 
+### Stage 5 v2 as built: swimming like a big animal
+
+The owner, after playing: "While swimming in the sea the swimming animation is weak, bad, and so is its sound." Measured
+before: tail tip ±0.25 / ±0.46 / ±0.90 m (floating / W / W + Shift) on an 18.5 m dragon, the body otherwise static,
+the wings folded flat (wrists moving 1–3 cm), the hind legs kicking out of sight; the only sound a quiet splash at each
+tail reversal. The swim is now a whole-body stroke, readable from the chase camera, and sounds like water, not slaps.
+
+- **One stroke cycle** (`sim.swimPhase`, frequency 0.2 Hz + 0.15 Hz per m/s, × 1.2 fast: 0.20 / 0.59 / 1.04 Hz) drives
+  everything; the left wing's catch is at phase 0, the right one's at pi. Shape numbers live in `SWIM_RIG`
+  (animator.ts), feel and timing in `SWIM_POSE` (params.ts).
+- **Travelling body wave:** root, lumbar and pelvis yaw one after another into a wave down the tail (`tailLag` 0.18 rad
+  per bone, about 0.7 of a wavelength over body and tail). The swim wave now sits on top of the tail springs instead of
+  being filtered by them (at 1 Hz the soft tip springs cut it by half and shifted it ~130°, so the old "travelling wave"
+  mostly cancelled). Tail tip ±1.17 / ±2.48 / ±3.25 m; the chest and neck undo the body's swing, so the head keeps to
+  the course; the body rolls ±0.07 rad into each wing's power stroke. The tail is carried slightly lifted
+  (`tailPitch` -0.02) so its sweep shows at the waterline.
+- **Wings as paddles** (fore limbs of a dragon are its wings), alternating like a crawl: IK drives the wrist around a
+  loop beside the shoulder (`paddleCenter`, `paddleReach`, `paddleLow` / `paddleHigh`, `paddleOut`). The catch is
+  forward and out, the power stroke sweeps back along the waterline (the hand out, back and just under the surface, the
+  fan half open and facing back: the membrane pushes water), then the recovery lifts the wing up and in, folded
+  edge-on, and swings it forward through the air. A smooth phase warp gives the power stroke 42 % of the cycle and makes
+  it fastest in the middle. The loop grows with the stroke strength; floating idle it shrinks to a lazy, half-folded
+  scull (`paddleIdle`, `paddleIdleOpen`). Wrists at W 0.13–1.43 m above the water, at W + Shift -0.06–1.65 m, floating
+  0.60–0.93 m; wing membranes no deeper than 2 m.
+- **Surge and bob:** each power stroke pushes the body on (`SWIM_POSE.surge` 0.1: a zero-mean thrust in
+  `stepSwimming`, two per cycle, peaking at the left wing's mid stroke `surgePhase` and half a cycle later): the speed
+  swings ±0.25 m/s at 2.57 m/s and ±0.45 m/s at 4.45 m/s, the mean unchanged. The rig follows: the chest lifts (`bob`
+  0.09 m) and the nose rises a little at each power stroke, the lower neck rises (`neckSurge`) with the head countering
+  it; floating, the body breathes (`breathBob` 0.05 m at 0.2 Hz) and the tail drifts slowly (`tailDrift`).
+- **Hind legs:** the fast swim trails them further back toward the surface (`thighFast`, `shinFast`) and kicks harder
+  (`thighKickFast`).
+- **Turning:** the body curves into the turn (`turnCurve` on chest, lumbar and pelvis, `SWIM_POSE.tailTurn` on the
+  tail), the outer wing's loop grows and the inner one's shrinks (`turnBoost` 0.45: in a right turn the left wrist
+  spans 1.82 m, the right 0.74 m).
+- **Rider:** stays above the water (torso ≥ 0.63 m); its head moves ≤ 0.29 m up-down and ≤ 0.47 m sideways at the
+  fast swim (the bob and surge pitch were trimmed for this).
+- **Sound** (all synthesised, no assets):
+  - *Water bed* (`voices/swim.ts`, `MIX.swimBed`): a continuous layer at the swimming body: low lapping (brown noise
+    around 300 Hz breathing with the slow gust signal), a mid slosh whose band wanders (pink, ~650 Hz), the bow wave's
+    fizz rising with speed (1.4–4.2 kHz), and single wavelets clucking against the flanks at random 0.25–1.3 s
+    intervals (scheduled envelopes, more often with speed). Louder with speed; sources run only while swimming.
+  - *Wing strokes* (`sfx/swim.ts` `playPaddle`, `MIX.paddle`): at each wing's catch (the audio system reads the rig's
+    swim phase, as it does the walk phase for footsteps) a soft swoosh of the membrane pushing water (pink noise band
+    sweeping ~260 → ~650 Hz, 40–80 ms swell, a decay as long as the power stroke) with a low push and a few bubble
+    blips, then a trickle of droplets and a thin hiss as the wing lifts out on the recovery. Placed beside that
+    shoulder, strength = stroke strength, varied every time; the lazy idle sculls are faint.
+  - *Snorts* (`playSnort`, `MIX.snort`): every 7–16 s while swimming a breathy nasal blow-out with a chest rumble and a
+    fine spray, on top of the existing breathing (the creature voice keeps breathing while swimming).
+  - The tail-reversal splash events are gone: swimming emits no splash events any more (no spray and no splash sound
+    per stroke).
+  - Offline audio report case `swim` (sandbox/audio.html): floating → swim → fast swim from the chase camera, target
+    window -34..-22 LUFS integrated as a first pass; it has to be rendered and balanced by ear in a browser (the
+    headless container has no WebAudio).
+- **Checks** (`movement-check.ts --swim`): per case no NaNs, no walk cycle, rider and head above the water (head
+  ≥ 0.8 m), back top within 0.25..0.9 m, wings never deeper than 2.2 m, rider head motion < 0.32 m up-down and < 0.55 m
+  sideways, tail tip sweep envelopes (floating 0.3..1.4, swim 1.5..2.5, fast > swim + 0.3 and < 4 m) at the stroke
+  frequency; swim and fast: both wrists paddle at the surface (lowest -0.5..0.45 m) and recover above it (> 1.2 m,
+  range > 1 m), the mean speed within 4 % of the swim speed and the surge ±(0.6..1.4) × `surge` × speed; floating: the
+  wrists move (lazy sculls) but stay folded (top < 1.3 m); the wing strokes grow with speed; the new `swim-turn`
+  scenario (W, then D): the outer wing's loop > 1.15 × the inner one's. The earlier landing, take-off and shore checks
+  are unchanged and pass.
+- **Pose sheets:** a `chase` view (from behind, a little right and above, like the chase camera) joins side, front,
+  top and three-quarter; the new `swim-turn` scenario. The clearest sheets: `swim-fast-chase`, `swim-fast-top`,
+  `swim-top` and `swim-turn-top`.
+- Not yet: visual water from the strokes (a churn of foam and droplets at each paddle and the tail); the swim is
+  still unaffected by waves beyond the float (strand 6).
+
 ## Strand 6 — Weather and the sea
 
 - Lodos: big waves, spray blown off crests, harder water take-offs, the dragon rocks more while swimming.

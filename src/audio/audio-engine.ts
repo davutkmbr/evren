@@ -2,11 +2,12 @@ import type { AudioOneShot, CameraMode } from '../core/contracts';
 import { clamp, clamp01, finiteOr, lerp, smoothstep } from './dsp/math';
 import { createNoiseBank, type NoiseBank } from './dsp/noise';
 import { SmoothParam } from './dsp/param';
-import { mulberry32 } from './dsp/rng';
+import { mulberry32, randRange } from './dsp/rng';
 import { createMasterBus, type MasterBus } from './master-bus';
 import { playIgnition } from './sfx/fire';
 import { playFlap } from './sfx/flap';
 import { playBubbles } from './sfx/bubbles';
+import { playPaddle, playSnort } from './sfx/swim';
 import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
@@ -23,6 +24,7 @@ import { FireVoice } from './voices/fire';
 import { RainVoice } from './voices/rain';
 import { UnderwaterVoice } from './voices/underwater';
 import { SeaVoice } from './voices/sea';
+import { SwimVoice } from './voices/swim';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
 
 export type SoundName = AudioOneShot;
@@ -66,6 +68,8 @@ export interface DragonAudioState {
   skid: number;
   /** Ground speed (m/s). */
   groundSpeed: number;
+  /** 0..1 floating posture while swimming (rig pose `swim`): the water bed around the body, strokes and snorts. */
+  swimming: number;
 }
 
 /** Everything the audio engine needs for one frame. Filled in place by the system glue (no allocations). */
@@ -123,6 +127,7 @@ export function createAudioFrame(): AudioFrame {
       exertion: 0.2,
       skid: 0,
       groundSpeed: 0,
+      swimming: 0,
     },
     ambientWind: 4,
     rain: 0,
@@ -169,6 +174,13 @@ export const MIX = {
   /** Low flight over the sea: downwash buffeting, gust thumps and skim tearing (one channel), fire steam hiss. */
   sea: 1.0,
   steam: 0.8,
+  /**
+   * Swimming (phase 21 stage 5 v2, first-pass levels for the offline `swim` case): the water bed around the body, each
+   * wing stroke's swoosh and trickle, the occasional snort.
+   */
+  swimBed: 0.9,
+  paddle: 0.85,
+  snort: 0.6,
 } as const;
 
 /** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
@@ -243,6 +255,13 @@ const WORLD_POINT: PlaceOptions = { refDistance: 30, reverb: 0.18, size: 12, del
 /** The water under the dragon (downwash patch, wake) and the steam cloud: broad sources on the surface. */
 const SEA_SURFACE: PlaceOptions = { refDistance: 28, reverb: 0.15, size: 24, delayAbove: 120 };
 const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delayAbove: 120 };
+/** The water around the swimming body (a broad source) and one wing's paddle (beside the shoulder). */
+const SWIM_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 16, delayAbove: 120 };
+const PADDLE_POINT: PlaceOptions = { refDistance: 26, reverb: 0.15, size: 6, delayAbove: 120 };
+/** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
+const PADDLE_OFFSET = 4;
+/** Seconds between two snorts while swimming (random within). */
+const SNORT_EVERY: readonly [number, number] = [7, 16];
 
 export interface AudioEngineOptions {
   destination?: AudioNode;
@@ -271,6 +290,7 @@ export class AudioEngine {
   readonly rain: RainVoice;
   readonly underwater: UnderwaterVoice;
   readonly sea: SeaVoice;
+  readonly swim: SwimVoice;
   readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
@@ -309,6 +329,10 @@ export class AudioEngine {
   private readonly skidPlace: Placement = placement();
   private readonly seaPlace: Placement = placement();
   private readonly steamPlace: Placement = placement();
+  private readonly swimPlace: Placement = placement();
+  private readonly paddlePos: Vec3 = { x: 0, y: 0, z: 0 };
+  private lastPaddle = -1e9;
+  private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
   private pov = 0;
@@ -345,6 +369,7 @@ export class AudioEngine {
     this.rain = new RainVoice(ctx, this.noise, this.bus.ambience, rng, this.samples);
     this.underwater = new UnderwaterVoice(ctx, this.noise, this.bus.underwater, rng);
     this.sea = new SeaVoice(ctx, this.noise, this.bus.sfx, rng);
+    this.swim = new SwimVoice(ctx, this.noise, this.bus.sfx, rng);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -423,6 +448,22 @@ export class AudioEngine {
       MIX.steam,
       now,
     );
+
+    // Swimming: the water bed around the body, and now and then a snort (not while roaring or breathing fire).
+    const swimming = d.present && !this.paused ? clamp01(finiteOr(d.swimming, 0)) : 0;
+    placeSource(frame.listener, d.position, SWIM_BODY, this.swimPlace);
+    this.swim.update({ swim: swimming, speed: d.groundSpeed }, this.swimPlace, MIX.swimBed, now);
+    if (swimming < 0.5) {
+      this.nextSnort = now + randRange(this.sfx.rng, 2.5, SNORT_EVERY[0]);
+    } else if (now >= this.nextSnort) {
+      this.nextSnort = now + randRange(this.sfx.rng, SNORT_EVERY[0], SNORT_EVERY[1]);
+      if (!this.fire.active && now > this.roarUntil && this.stats.active <= this.maxVoices) {
+        const pl = placeSource(frame.listener, d.mouth, this.mouthOpts, this.place);
+        pl.gain *= MIX.snort;
+        pl.closeness = this.bodyCloseness();
+        playSnort(this.sfx, now, 0.7 + 0.5 * clamp01(d.exertion), pl);
+      }
+    }
 
     const roarDuck = now < this.roarUntil ? 1 : 0;
     const fireDuck = this.fire.active ? 1 : 0;
@@ -583,6 +624,32 @@ export class AudioEngine {
   }
 
   /**
+   * One wing stroke of the swimming dragon (from the rig's swim phase): the membrane's soft swoosh through the water and
+   * the trickle as the wing lifts out. `strength` 0..1 (stroke strength), `side` -1 left / 1 right wing, `power` the
+   * power stroke's length (s). Never the splash.
+   */
+  swimStroke(strength: number, side: number, power: number): void {
+    const now = this.now;
+    const f = this.frame;
+    const s = clamp(finiteOr(strength, 0), 0, 1.2);
+    if (!f.dragon.present || s < 0.05 || now - this.lastPaddle < 0.12 || this.stats.active > this.maxVoices) {
+      return;
+    }
+    this.lastPaddle = now;
+    const d = f.dragon;
+    // Beside the shoulder on that side (right of the heading is (-forward.z, forward.x)).
+    const fl = Math.hypot(d.forward.x, d.forward.z) || 1;
+    const sd = side < 0 ? -1 : 1;
+    this.paddlePos.x = d.position.x + (-d.forward.z / fl) * PADDLE_OFFSET * sd + (d.forward.x / fl) * 1.5;
+    this.paddlePos.y = d.position.y + 0.6;
+    this.paddlePos.z = d.position.z + (d.forward.x / fl) * PADDLE_OFFSET * sd + (d.forward.z / fl) * 1.5;
+    const pl = placeSource(f.listener, this.paddlePos, PADDLE_POINT, this.place);
+    pl.gain *= MIX.paddle;
+    pl.closeness = Math.max(pl.closeness, this.bodyCloseness() * 0.6);
+    playPaddle(this.sfx, now, s, pl, finiteOr(power, 0.6));
+  }
+
+  /**
    * Nostril bubbles of the dragon under water (replaces the stage 3 surface splash cue): quiet, varied bloops; heard
    * in full with the listener under water, faint pops at the surface from above.
    */
@@ -696,6 +763,7 @@ export class AudioEngine {
     this.rain.dispose(this.ctx.currentTime);
     this.underwater.dispose(this.ctx.currentTime);
     this.sea.dispose(this.ctx.currentTime);
+    this.swim.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();
