@@ -1,4 +1,4 @@
-import type { DistrictStyle, LandUse, LandmarkBuilder, LandmarkKind, RoadKind } from '../../core/contracts';
+import type { DistrictStyle, LandUse, LandmarkBuilder, LandmarkFootprint, LandmarkKind, RoadKind } from '../../core/contracts';
 
 /** A closed ring of lat/lon pairs. Land rings are counter-clockwise in map view (north up). */
 export interface CoastRing {
@@ -84,9 +84,14 @@ export interface LandmarkData {
    * - 'slope': reserve a disc of `radius` but keep the natural hillside (fortresses climbing a slope)
    * - 'none': no terrain or land-use changes (bridges)
    */
-  footprint?: 'pad' | 'cluster' | 'line' | 'polygon' | 'slope' | 'none';
+  footprint?: LandmarkFootprint;
   /** Corridor half width for 'line' footprints, pad radius per anchor for 'cluster' (m). */
   footprintWidth?: number;
+  /**
+   * Full width (m) of the modelled body of a 'line' landmark (e.g. the aqueduct piers). The OSM building layer drops
+   * every building whose outline comes within half of it (plus a clearance) of the line.
+   */
+  bodyWidth?: number;
 }
 
 export interface RoadData {

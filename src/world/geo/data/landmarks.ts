@@ -258,8 +258,13 @@ const HERITAGE: LandmarkData[] = [
   },
   {
     id: 'bozdogan-kemeri', name: 'Bozdoğan Kemeri', kind: 'monument', builder: 'heritage', lat: 41.01615, lon: 28.95518, headingDeg: 125, radius: 60, height: 29, year: 375,
-    footprint: 'line', footprintWidth: 10,
-    anchors: [41.01769, 28.9523, 41.01719, 28.95327, 41.01668, 28.95423, 41.01618, 28.95519, 41.01567, 28.95615, 41.01515, 28.9571, 41.01462, 28.95805],
+    // Centre line of the OSM outline (way 23276526, man_made=bridge + bridge=aqueduct, 5-7 m wide), west to east.
+    footprint: 'line', footprintWidth: 10, bodyWidth: 5.6,
+    anchors: [
+      41.017681, 28.95232, 41.017433, 28.952801, 41.017184, 28.953283, 41.016932, 28.953761, 41.016679, 28.954238, 41.016427, 28.954715,
+      41.016173, 28.955192, 41.01592, 28.955668, 41.015669, 28.956147, 41.015418, 28.956626, 41.015138, 28.957078, 41.014881, 28.957551,
+      41.014625, 28.958025,
+    ],
     info: "Roma İmparatoru Valens döneminde 4. yüzyılda tamamlanan su kemeri; Atatürk Bulvarı'nın üzerinden geçerek üçüncü ve dördüncü tepeleri birleştirir.",
   },
   {

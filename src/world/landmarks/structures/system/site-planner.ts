@@ -5,8 +5,7 @@
 import type { GeoQuery, LandmarkDef } from '../../../../core/contracts';
 import { samplePatch, type PatchSpec } from '../build/height-sampler';
 import type { SiteDef, SiteInput } from '../types';
-import { inRects, osmStaticExclusion } from '../../../osm/regions';
-import { osmGroundHeight, QUAY_EDGE } from '../../../osm/shared/street-surface';
+import { visibleGround } from '../../visible-ground';
 
 function squarePatch(x: number, z: number, half: number, cell: number): PatchSpec {
   return { ox: x, oz: z, ux: 1, uz: 0, u0: -half, lenU: half * 2, v0: -half, lenV: half * 2, cell };
@@ -32,23 +31,6 @@ export function planPatches(def: LandmarkDef): PatchSpec[] {
     return anchors.map((p) => squarePatch(p.x, p.z, 130, 4));
   }
   return [squarePatch(def.x, def.z, Math.max(def.radius, 30) + 60, 2)];
-}
-
-/**
- * The ground a structure stands on: the OSM street ground inside the OSM regions (quays raised, ground lift), the geo
- * terrain elsewhere, so abutments and bases meet the drawn surface exactly.
- */
-function visibleGround(geo: GeoQuery): (x: number, z: number) => number {
-  const rects = osmStaticExclusion();
-  return (x, z) => {
-    const h = geo.heightAt(x, z);
-    if (!inRects(rects, x, z)) {
-      return h;
-    }
-    // The OSM ground ends in the quay wall (QUAY_EDGE): seaward of it the sea floor stays.
-    const c = geo.coastDistance(x, z);
-    return c > QUAY_EDGE ? osmGroundHeight(h, c) : h;
-  };
 }
 
 export function prepareSite(def: LandmarkDef, geo: GeoQuery): SiteInput {
