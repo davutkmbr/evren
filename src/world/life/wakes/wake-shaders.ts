@@ -13,6 +13,10 @@ import { SHARED_GLSL } from '../../../render/shaders';
  *   - churned propeller wash that streaks, breaks up and spreads, then a long smooth slick,
  *   - planing hulls: wider spray along the hull, foam along the (narrow) cusp lines, wider wash.
  * Foam noise is sampled in world space (it stays put while the vessel moves on) and decays with distance and age.
+ *
+ * Since phase 21 stage 7c the ribbons are the far level of detail (and the "low" tier's wake): inside the water's
+ * foam field window (uNearFade: centre, inner and outer half side) the simulated foam and the wave particles draw the
+ * wake, so the ribbon fades out there.
  */
 export const WAKE_VERTEX = /* glsl */ `
 ${SHARED_GLSL}
@@ -102,6 +106,7 @@ void main() {
 
 export const WAKE_FRAGMENT = /* glsl */ `
 ${SHARED_GLSL}
+uniform vec4 uNearFade;   // xy = foam field window centre, z / w = inner / outer half side (m); w = 0: no fade
 varying float vD;
 varying float vLat;
 varying float vAge;
@@ -239,6 +244,10 @@ void main() {
   wkLayer(acc, bubbleC, bubbles * 0.42 * (0.6 + 0.4 * nB) * strength);
   float foam = clamp(wash + bow + quarter + armFoam, 0.0, 1.0) * strength;
   wkLayer(acc, foamC, foam * 0.95);
+  if (uNearFade.w > 0.0) {
+    vec2 off = abs(vWorld.xz - uNearFade.xy);
+    acc.a *= smoothstep(uNearFade.z, uNearFade.w, max(off.x, off.y));
+  }
   if (acc.a < 0.003) discard;
   gl_FragColor = vec4(applyAtmosphere(acc.rgb / acc.a, vWorld), acc.a);
 }

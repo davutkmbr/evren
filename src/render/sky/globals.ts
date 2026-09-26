@@ -57,7 +57,13 @@ function coreUniformsReady(): boolean {
 }
 
 export function registerAtmosphereGlobals(): void {
-  if (registered || !coreUniformsReady()) {
+  try {
+    if (registered || !coreUniformsReady()) {
+      return;
+    }
+  } catch {
+    // Called by core/uniforms while this module is still waiting to be evaluated (`registered` in its temporal dead
+    // zone): this module's own load-time call below registers them.
     return;
   }
   registered = true;
@@ -78,8 +84,8 @@ export function registerAtmosphereGlobals(): void {
   }
 }
 
-// Synchronous registration at load time. In the cycle case above it runs as soon as the module graph has finished
-// evaluating (a microtask), which is before any code can create a renderer and compile a program.
+// Synchronous registration at load time. In the cycle case above (core/uniforms loaded first) core/uniforms calls
+// registerAtmosphereGlobals() itself at the end of its evaluation, still synchronously; the microtask is a last resort.
 registerAtmosphereGlobals();
 if (!registered) {
   queueMicrotask(registerAtmosphereGlobals);

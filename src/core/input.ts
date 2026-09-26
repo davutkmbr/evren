@@ -12,9 +12,9 @@
  *   fire    F / LMB      gamepad X          (fire breath)
  *   look    RMB held, or always in POV (mouse look)
  * Buttons (pressed this frame):
- *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U
+ *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U, source I (a moment's sources)
  * Rider and maneuvers:
- *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
+ *   pet G held / D-pad down, stand T, weather N (V and gamepad D-pad up are unbound: reserved for the bond phase)
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
  *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap
@@ -43,10 +43,10 @@ export type ButtonName =
   | 'hud'
   | 'roar'
   | 'land'
-  | 'urge'
   | 'pet'
   | 'stand'
   | 'weather'
+  | 'source'
   | 'rollLeft'
   | 'rollRight'
   | 'pitchUp'
@@ -63,7 +63,7 @@ export type ButtonName =
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', ...HOTBAR_BUTTONS]);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -84,10 +84,10 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyU: 'hud',
   KeyR: 'roar',
   KeyL: 'land',
-  KeyV: 'urge',
   KeyG: 'pet',
   KeyT: 'stand',
   KeyN: 'weather',
+  KeyI: 'source',
   KeyA: 'rollLeft',
   ArrowLeft: 'rollLeft',
   KeyD: 'rollRight',
@@ -136,10 +136,9 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Shift + W', action: 'Koş', group: 'ground' },
   { keys: 'A / D', action: 'Dön', group: 'ground' },
   { keys: 'Space / L', action: 'Sıçrayarak kalk (çatı kenarında: boşluğa atıl)', group: 'ground' },
-  { keys: 'V', action: 'Dörtnala koşup kalk', group: 'ground' },
+  { keys: 'Space / L', action: 'Koşarken (Shift + W): koşu hızıyla sıçrayıp havalan', group: 'ground' },
   { keys: 'Ctrl / X', action: 'Koşarak inerken: fren yap, kayarak dur', group: 'ground' },
   { keys: 'Space', action: 'Koşarak inerken: dokun-kalk, hızını koruyarak uçuşa dön', group: 'ground' },
-  { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
   { keys: 'Space ×2', action: 'Güç vuruşu: iki derin kanat çırpışıyla hızlan (dayanıklılık harcar)', group: 'tricks' },
@@ -173,6 +172,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Backspace', action: 'Parkur editöründe: son halkayı sil', group: 'game' },
   { keys: 'K / J', action: 'Parkur editöründe: kapı ↔ hız halkası / kapı boyutu', group: 'game' },
   { keys: 'Enter', action: 'Parkur editöründe: kaydet', group: 'game' },
+  { keys: 'I', action: 'Bir an sırasında ve biraz sonrasında: kaynağa bak (şiirin, hikâyenin aslı)', group: 'game' },
   { keys: 'M', action: 'Harita', group: 'game' },
   { keys: 'U', action: 'Arayüzü gizle', group: 'game' },
   { keys: 'H', action: 'Yardım', group: 'game' },
@@ -334,7 +334,6 @@ export class Input {
       [8, 'map', true],
       [10, 'roar', true],
       [11, 'land', true],
-      [12, 'urge', true],
       [13, 'pet', false],
       [14, 'rollLeft', true],
       [15, 'rollRight', true],

@@ -129,6 +129,38 @@ vec3 speedSample(vec2 uv, float jitter) {
   return wsum > 0.5 ? acc / wsum : base;
 }
 
+/*
+ * Wind streaks at the screen edges (perceived speed, phase 20): thin radial dashes flying outward, a few per angle
+ * cell, faster and more numerous with uSpeed. They brighten the scene toward its own luminance (no fixed colour, so
+ * they read at dawn and at noon alike) and never cross near geometry (farWeight) or the middle of the screen.
+ */
+float streakHash(float n) {
+  return fract(sin(n * 91.3458) * 47453.5453);
+}
+
+float windStreaks(vec2 uv) {
+  vec2 d = (uv - 0.5) * vec2(uAspect, 1.0);
+  float r = length(d);
+  float edge = smoothstep(0.34, 0.78, r) * smoothstep(0.02, 0.35, uSpeed);
+  if (edge <= 0.0) {
+    return 0.0;
+  }
+  float a = (atan(d.y, d.x) / 6.2831853 + 0.5) * 140.0;
+  float id = floor(a);
+  float h = streakHash(id);
+  float h2 = streakHash(id + 31.7);
+  // Only some cells carry a streak; more of them at speed.
+  if (h2 > 0.18 + 0.4 * uSpeed) {
+    return 0.0;
+  }
+  float line = 1.0 - smoothstep(0.04 + 0.05 * h, 0.12 + 0.08 * h, abs(fract(a) - 0.5));
+  // A dash running outward along the radius.
+  float rate = (0.9 + 1.4 * h) * (0.6 + 1.6 * uSpeed);
+  float phase = fract(r * (1.1 + h) - uTime * rate + h * 7.0);
+  float dash = smoothstep(0.0, 0.1, phase) * (1.0 - smoothstep(0.22, 0.42, phase));
+  return edge * line * dash * (0.5 + 0.5 * h);
+}
+
 float hexDist(vec2 p) {
   p = abs(p);
   return max(p.x * 0.866025 + p.y * 0.5, p.y);
@@ -308,6 +340,13 @@ void main() {
   }
   vec3 col = uSpeed > 0.001 ? speedSample(uv, jitter) : textureLod(tColor, uv, 0.0).rgb;
   col = sanitizeHdr(col);
+  if (uSpeed > 0.02) {
+    float ws = windStreaks(uv);
+    if (ws > 0.001) {
+      ws *= 0.3 * farWeight(uv);
+      col = mix(col, vec3(postLuma(col) * 1.8 + 1e-4), ws);
+    }
+  }
 
   if (uBloomStrength > 0.0) {
     col = mix(col, sampleBloom(uv) * uBloomNorm, uBloomStrength);

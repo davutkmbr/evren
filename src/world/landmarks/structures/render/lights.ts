@@ -119,6 +119,9 @@ export class LightRenderer {
   setData(data: Float32Array): void {
     const n = Math.floor(data.length / LIGHT_STRIDE);
     const buffer = new THREE.InstancedInterleavedBuffer(data, LIGHT_STRIDE, 1);
+    // Rebuilds (joint refinement) replace the instance buffer: dispose() frees the GPU buffers of the old one (deleting
+    // the attributes alone left them allocated); the geometry uploads again on its next draw.
+    this.geometry.dispose();
     for (const name of ['iPos', 'iColor', 'iMode', 'iP', 'iAux']) {
       this.geometry.deleteAttribute(name);
     }

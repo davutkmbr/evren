@@ -29,6 +29,7 @@ import { TREE_SPECIES } from './trees/species';
 import { GalataDeck, placeAnglers, standerArray } from './waterfront/bridge';
 import { createFlags } from './waterfront/flags';
 import { createPigeons } from './waterfront/pigeons';
+import { isModelled, landmarkClaims } from '../../landmarks/claims';
 
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
@@ -38,25 +39,8 @@ const DECK_TIMEOUT = 40;
 function mosquePads(geo: GeoQuery): number[] {
   const out: number[] = [];
   for (const l of geo.landmarks) {
-    if (l.kind === 'mosque') {
+    if (l.kind === 'mosque' && isModelled(l)) {
       out.push(l.x, l.z, l.radius + 10);
-    }
-  }
-  for (const m of geo.smallMosqueSites) {
-    out.push(m.x, m.z, m.radius);
-  }
-  return out;
-}
-
-/**
- * Landmark pads (bridges and walls excluded: they are linear) grown by `grow` m, and neighbourhood mosque pads, as
- * x, z, radius triples. grow = 0 matches the pads the buildings layer gives its infill (buildings/index.ts).
- */
-function landmarkPads(geo: GeoQuery, grow: number): number[] {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind !== 'bridge' && l.kind !== 'walls') {
-      out.push(l.x, l.z, l.radius + grow);
     }
   }
   for (const m of geo.smallMosqueSites) {
@@ -97,13 +81,17 @@ class DetailsLayer extends LayerBase {
     this.onDispose(() => this.propMaterial.dispose());
     this.deck = GalataDeck.fromGeo(ctx.geo);
     const worker = new Worker(new URL('./details.worker.ts', import.meta.url), { type: 'module', name: 'osm-details' });
+    // Modelled landmarks' ground (landmarks/claims.ts); pads grown by 10 m for trees, furniture and walkers.
+    const claims = landmarkClaims(ctx.geo);
+    const grown = landmarkClaims(ctx.geo, 10);
     const request: DetailsRequest = {
       base: ctx.base,
       data: { points: data.points, lines: data.lines, areas: data.areas, buildings: data.buildings, roads: data.roads, rails: data.rails },
       crowdScale: CROWD_SCALE[ctx.engine.quality.settings.preset] ?? 1,
       deck: this.deck?.frame ?? null,
-      pads: landmarkPads(ctx.geo, 10),
-      infillPads: landmarkPads(ctx.geo, 0),
+      pads: Array.from(grown.pads),
+      lines: Array.from(claims.lines),
+      infillClaims: claims,
       mosques: mosquePads(ctx.geo),
     };
     const job = runWorker<DetailsRequest, DetailsResult>(worker, request);

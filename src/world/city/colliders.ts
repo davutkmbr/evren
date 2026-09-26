@@ -24,7 +24,9 @@ export interface ColliderRequester {
 export class CityColliders {
   private readonly tiles = new Map<number, ColliderTile>();
   private readonly removals: number[][] = [];
-  private readonly scratchCenter = new THREE.Vector3();
+  /** Per-call scratch (update() runs every frame): wanted keys and the missing tiles, nearest first. */
+  private readonly want = new Set<number>();
+  private readonly candidates: [number, number, number][] = [];
   private radius = 2800;
 
   constructor(
@@ -43,8 +45,10 @@ export class CityColliders {
     const i1 = Math.min(TILES - 1, Math.floor((center.x + r + WORLD_HALF) / TILE));
     const j0 = Math.max(0, Math.floor((center.z - r + WORLD_HALF) / TILE));
     const j1 = Math.min(TILES - 1, Math.floor((center.z + r + WORLD_HALF) / TILE));
-    const want = new Set<number>();
-    const candidates: [number, number, number][] = [];
+    const want = this.want;
+    const candidates = this.candidates;
+    want.clear();
+    candidates.length = 0;
     for (let j = j0; j <= j1; j++) {
       for (let i = i0; i <= i1; i++) {
         const cx = -WORLD_HALF + (i + 0.5) * TILE;
@@ -108,7 +112,6 @@ export class CityColliders {
       const b = tile.boxes;
       while (tile.cursor < b.length) {
         const k = tile.cursor;
-        this.scratchCenter.set(b[k], b[k + 1], b[k + 2]);
         tile.ids.push(
           this.world.add(
             {

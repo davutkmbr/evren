@@ -137,6 +137,9 @@ export function buildLandmarkDefs(): LandmarkDef[] {
       radius: l.radius,
       height: l.height,
       anchors,
+      footprint: l.footprint ?? 'pad',
+      footprintWidth: l.footprintWidth,
+      bodyWidth: l.bodyWidth,
       info: l.info,
       year: l.year,
     };

@@ -4,6 +4,7 @@ import { AXIS_X, AXIS_Y, AXIS_Z, WORLD_UP, lookRotation, rotateLocal } from '../
 import { DEG, clamp, lerp, smoothstep, wrapAngle } from '../math/scalar';
 import { AngleSpring, Spring, VecSpring } from '../math/springs';
 import type { CameraController, CameraFrame, CameraPose } from '../types';
+import { CAMERA_FEEL, cameraFeel } from '../feel';
 
 export const CHASE_MIN_DISTANCE = 12;
 export const CHASE_MAX_DISTANCE = 90;
@@ -295,7 +296,10 @@ export class ChaseController implements CameraController {
     rotateLocal(out.quaternion, AXIS_X, framing + lead);
     rotateLocal(out.quaternion, AXIS_Z, -this.roll.x * alongBoom);
 
-    out.fov = fov + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt);
+    // Perceived speed: a chain burst kicks the FOV open along its push envelope (fast attack via the square root, smooth
+    // release).
+    const feel = cameraFeel(t);
+    out.fov = fov + this.kick.update(-TUNING.onsetKick * smoothstep(3, 9, t.loadOnset), 10, sdt) + CAMERA_FEEL.kick * feel.feel * Math.sqrt(feel.burst);
     out.near = TUNING.near;
     out.speedEffect = clamp(this.speedFx.update(this.speedFxTarget(frame), 3, sdt), 0, 1);
     out.shakeTranslation = 1;
@@ -331,11 +335,13 @@ export class ChaseController implements CameraController {
   private fovTarget(frame: CameraFrame): number {
     const t = frame.target;
     const dive = t.mode === 'diving' ? 3 : 0;
-    return TUNING.fovMin + (TUNING.fovMax - TUNING.fovMin) * smoothstep(25, 100, t.speed) + dive + TUNING.fallFov * t.weightless;
+    const feel = cameraFeel(t);
+    return TUNING.fovMin + (TUNING.fovMax - TUNING.fovMin) * smoothstep(25, 100, t.speed) + dive + TUNING.fallFov * t.weightless + CAMERA_FEEL.fov * feel.feel * feel.speed;
   }
 
   private speedFxTarget(frame: CameraFrame): number {
-    return smoothstep(45, 115, frame.target.speed);
+    const feel = cameraFeel(frame.target);
+    return Math.max(smoothstep(45, 115, frame.target.speed), feel.feel * (CAMERA_FEEL.speedFx * feel.speed + CAMERA_FEEL.burstFx * feel.burst));
   }
 }
 

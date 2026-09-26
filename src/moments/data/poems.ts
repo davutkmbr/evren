@@ -9,6 +9,7 @@
 import type { Moment } from '../types';
 import { BOSPHORUS_CORRIDOR } from './city-life';
 import { original } from './provenance';
+import { ISTANBULU_DINLIYORUM_SOURCES } from './sources';
 
 /** The first stanza, one subtitle per line. */
 const FIRST_STANZA = [
@@ -62,6 +63,7 @@ export const istanbuluDinliyorum: Moment = {
     original('card'),
   ],
   needs: ['sound'],
+  sources: ISTANBULU_DINLIYORUM_SOURCES,
   notes:
     'No character: just subtitles over a soft shore ambience while gliding low. Lines should fade with the glide, not force pacing. ' +
     "Plays while still 'draft': its only need is the sound, which is optional for a subtitle-only moment (the runtime lifts " +

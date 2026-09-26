@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DragonRig, DragonState } from '../core/contracts';
-import { finiteOr, isFiniteVec, smoothstep } from './dsp/math';
+import { feelContext, speedAmount } from '../core/speed-feel';
+import { clamp01, finiteOr, isFiniteVec, smoothstep } from './dsp/math';
 import type { DragonAudioState } from './audio-engine';
 import type { ListenerPose } from './spatial';
 
@@ -55,6 +56,9 @@ export class DragonProbe {
     this.stall += (stallTarget - this.stall) * k;
     out.diving = this.diving;
     out.stall = this.stall;
+    // Perceived speed (phase 20): race speeds and chain bursts in their context (full in a race and at high flow).
+    const context = feelContext(!!dragon.racing, finiteOr(dragon.flow ?? 0, 0));
+    out.surge = offAir ? 0 : context * clamp01(0.45 * speedAmount(airspeed) + 0.8 * finiteOr(dragon.burst ?? 0, 0));
 
     const reach = rig ? rig.dimensions.length * 0.5 : 9;
     let mouthOk = false;

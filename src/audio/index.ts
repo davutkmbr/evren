@@ -1,5 +1,6 @@
 import type { AudioService, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import { feelContext } from '../core/speed-feel';
 import { AudioEngine, createAudioFrame, type SoundName } from './audio-engine';
 import { AudioAssetLoader, type AudioAssets } from './assets';
 import { DragonProbe, readListener } from './dragon-probe';
@@ -170,6 +171,12 @@ export function createAudioSystem(): System {
     setAmbienceLift(amount: number): void {
       ambienceLift = clamp01(finiteOr(amount, 0));
     },
+    momentCue(cue, position, vol, panFrom): void {
+      engine?.momentCue(cue, position, vol, panFrom);
+    },
+    setMomentBed(amount: number): void {
+      engine?.setMomentBed(amount);
+    },
   };
 
   const debugHandle: AudioDebugHandle = {
@@ -224,6 +231,10 @@ export function createAudioSystem(): System {
           eventFiring = false;
         }),
         ev.on('landmark-discovered', () => engine?.play('discover')),
+        ev.on('chain-link', ({ link, dv }) => {
+          const d = ctx.services.tryGet('dragon');
+          engine?.chainLink(link, dv, feelContext(!!d?.racing, d?.flow ?? 0));
+        }),
         ev.on('pause', ({ paused: p }) => {
           paused = p;
           engine?.setPaused(p);

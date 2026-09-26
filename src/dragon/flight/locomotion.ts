@@ -210,7 +210,7 @@ function wadesHere(sim: FlightSim): boolean {
 const SLAP_PHASE = TWO_PI * FLAP.downstrokeFraction * 0.85;
 
 /**
- * Floating and swimming on the sea (W/S swim, Shift fast, A/D turn, Space/L the take-off run, V an instant leap).
+ * Floating and swimming on the sea (W/S swim, Shift fast, A/D turn, Space/L the take-off run into the leap).
  * The body floats on the wave surface of the water service, pitches and rolls with it and is carried by the orbital
  * motion and the current. The stroke (swimPhase / swimStroke) is the whole-body swim of the rig (the wave down the body
  * and tail, the paddling wings, the kicking hind legs); its frequency and strength follow the speed through the water,
@@ -220,12 +220,6 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const b = sim.body;
   const p = b.position;
   const v = b.velocity;
-  const urged = cmd.urgePressed && sim.maneuvers.tryUrge(sim);
-  if (urged) {
-    sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, sim.waterY, p.z), strength: 1.2 });
-    leap(sim, SWIM.leapUp, SWIM.leapForward);
-    return;
-  }
   // Space / L: the take-off run on the surface (wings beating the water), then the leap.
   if (sim.runTakeoff <= 0 && (cmd.flapPressed || cmd.flap || cmd.landPressed)) {
     sim.runTakeoff = h;
