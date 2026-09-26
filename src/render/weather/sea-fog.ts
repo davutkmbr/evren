@@ -5,6 +5,10 @@
  * clears it. The weather pass draws it as a second exponential fog layer (scale height ~16 m) with drifting banks;
  * while it is off the pass skips its branch (zero cost).
  *
+ * Not every calm morning is foggy: a "foggy morning" is drawn once per game day (a hash of the day of year, so the same
+ * day always gives the same answer and a reload does not reroll it); about a third of the days get one, each with its
+ * own thickness. Fog weather and humid air still make fog on the other days.
+ *
  * `seaFogTarget` is the pure activation logic; `SeaFogModel` smooths it and switches the layer on and off with
  * hysteresis so it never flickers at the threshold.
  */
@@ -38,6 +42,10 @@ export const SEA_FOG = {
   humidLo: 0.72,
   humidHi: 0.86,
   humidMax: 0.6,
+  /** Share of game days that get a foggy morning on their own, and the range of its amount. */
+  morningChance: 0.3,
+  morningMin: 0.45,
+  morningMax: 0.85,
   /** A lodos clears it (regime blend), and so do a strong wind (U10, m/s) and rain. */
   lodosLo: 0.35,
   lodosHi: 0.65,
@@ -70,6 +78,25 @@ export interface SeaFogInputs {
   u10: number;
   /** Near-ground relative humidity 0..1 (env.humidity). */
   humidity: number;
+  /** Game day of year (time.dayOfYear): picks the foggy mornings. */
+  day: number;
+}
+
+/** Deterministic hash of an integer to [0, 1). */
+function hash01(n: number, salt: number): number {
+  let h = (Math.imul(n | 0, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca77)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Amount 0..1 of the day's own foggy morning (0 on the days without one). */
+export function seaFogDayAmount(day: number): number {
+  const d = Math.round(finite(day, 1));
+  if (hash01(d, 1) >= SEA_FOG.morningChance) {
+    return 0;
+  }
+  return SEA_FOG.morningMin + (SEA_FOG.morningMax - SEA_FOG.morningMin) * hash01(d, 2);
 }
 
 /** Morning factor 0..1: forming before dawn, full through the early morning, lifting as the day warms. */
@@ -89,8 +116,9 @@ export function seaFogTarget(i: Readonly<SeaFogInputs>): number {
   const fogK = smoothstep(SEA_FOG.fogLo, SEA_FOG.fogHi, finite(i.fog, 0));
   const humidK = SEA_FOG.humidMax * smoothstep(SEA_FOG.humidLo, SEA_FOG.humidHi, finite(i.humidity, 0));
   const morning = seaFogMorning(i.hours);
-  // Fog weather: a morning bank plus a thinner one all day; humid air alone: morning only.
-  const time = Math.max(fogK * (SEA_FOG.allDayShare + (1 - SEA_FOG.allDayShare) * morning), humidK * morning);
+  const dayK = seaFogDayAmount(i.day);
+  // Fog weather: a morning bank plus a thinner one all day; humid air or the day's foggy morning: morning only.
+  const time = Math.max(fogK * (SEA_FOG.allDayShare + (1 - SEA_FOG.allDayShare) * morning), Math.max(humidK, dayK) * morning);
   const regime = 1 - smoothstep(SEA_FOG.lodosLo, SEA_FOG.lodosHi, finite(i.lodos, 0));
   const wind = 1 - smoothstep(SEA_FOG.windLo, SEA_FOG.windHi, finite(i.u10, 0));
   const rain = 1 - smoothstep(SEA_FOG.rainLo, SEA_FOG.rainHi, finite(i.rain, 0));
