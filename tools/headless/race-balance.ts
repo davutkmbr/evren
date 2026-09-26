@@ -9,8 +9,9 @@
  *
  * Three racers: plain (no moves), some chaining (chains on every other leg: SOME_PILOT) and chained (chains on every
  * leg; flies both skilled lines, with and without the low line over the water, as a practising player tries lines).
- * Rules: every run finishes; plain earns bronze but not silver; some chaining earns silver but not gold; the best
- * chained run earns gold and is 15–25 % faster than the plain run.
+ * Rules (owner decision 26 Sep: finishing earns bronze, clean flying silver, flow gold): every run finishes; plain
+ * earns silver with a margin (a run 10 % slower still earns silver, one 1.4× slower still earns bronze); some chaining
+ * earns silver but not gold; the best chained run earns gold and is 15–25 % faster than the plain run.
  */
 import { COURSES, compileCourse, LESSON_COURSE, medalFor, type MedalTimes } from '../../src/activities/courses';
 import { LESSON_STEPS, LessonRunner } from '../../src/activities/lesson';
@@ -112,7 +113,9 @@ console.log('');
 for (const r of results) {
   const gap = gapOf(r.plain, r.chained);
   check(r.plain.finished && r.some.finished && r.chained.finished, `${r.course}: every run finishes (${r.plain.splits.length} / ${r.some.splits.length} / ${r.chained.splits.length} gates)`);
-  check(medalFor(r.plain.time, r.medals) === 'bronze', `${r.course}: the plain run earns bronze, not silver (${fmt(r.plain.time)} s vs bronze ${r.medals.bronze} s, silver ${r.medals.silver} s)`);
+  check(medalFor(r.plain.time, r.medals) === 'silver', `${r.course}: the plain run earns silver, not gold (${fmt(r.plain.time)} s vs silver ${r.medals.silver} s, gold ${r.medals.gold} s)`);
+  check(medalFor(r.plain.time * 1.1, r.medals) === 'silver', `${r.course}: a plain run 10 % slower still earns silver (${fmt(r.plain.time * 1.1)} s vs ${r.medals.silver} s)`);
+  check(medalFor(r.plain.time * 1.4, r.medals) === 'bronze', `${r.course}: a slow, wandering finish (1.4× plain) still earns bronze (${fmt(r.plain.time * 1.4)} s vs ${r.medals.bronze} s)`);
   check(medalFor(r.some.time, r.medals) === 'silver', `${r.course}: some chaining earns silver, not gold (${fmt(r.some.time)} s vs silver ${r.medals.silver} s, gold ${r.medals.gold} s)`);
   check(medalFor(r.chained.time, r.medals) === 'gold', `${r.course}: sustained chaining earns gold (${fmt(r.chained.time)} s vs ${r.medals.gold} s)`);
   check(gap >= GAP_MIN && gap <= GAP_MAX, `${r.course}: the chained run is ${GAP_MIN * 100}–${GAP_MAX * 100} % faster than plain (${(gap * 100).toFixed(1)} %)`);
