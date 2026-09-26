@@ -17,8 +17,9 @@ The game has two music styles ("Müzik tarzı" in the settings):
 In both styles a moment (a poem, a quotation, a historical memory) can have its own emotional **moment piece** under its
 subtitles; see [Moment music](#moment-music).
 
-No music is approved yet: `public/audio/music/manifest.json` is empty, so the game is silent musically until the owner
-adds sets or phrases. To hear the system now, use the procedural DEV test sets and phrases (below).
+No loop sets or sprinkle phrases are approved yet. The first **moment pieces** are: restored excerpts of historic 78 rpm
+records (approved 2026-09-26), see [Historic 78 rpm recordings](#historic-78-rpm-recordings-archive-and-variants).
+To hear the loops and sprinkles now, use the procedural DEV test sets and phrases (below).
 
 ## Hear it now
 
@@ -50,13 +51,17 @@ moment starts after a few seconds and the test piece (chosen by the category `po
 fades out. Without a moment at hand: `__evrenMusic.moment({ category: 'poem', mood: ['sea'] })`, then
 `__evrenMusic.endMoment()`.
 
+**The real moment pieces (78 rpm records):** open the moment without `test`, e.g.
+`http://localhost:5199/?music=debug&moment=nedim-bu-sehr-i-sitanbul`; add `raw` (`?music=raw,debug&moment=…`) for
+the crackly original or `denoised` for the restored version, whatever the piece's default. The list of links is in
+[Historic 78 rpm recordings](#historic-78-rpm-recordings-archive-and-variants).
+
 **Moment sources** (see [Moment music sources](#moment-music-sources)), each with `?music=test,debug&moment=<id>`:
 
 | Kind | Open | What to listen for |
 | --- | --- | --- |
 | `venue` | `katibim-uskudar-yagmur` | a muffled coffeehouse on the Üsküdar shore road; the music starts before the subtitles, opens a little when they begin, stays in the world afterwards |
-| `live` | `karagoz-sehzadebasi` | the Karagöz tent on Şehzadebaşı Caddesi: warmer, wider, a light room |
-| `gramophone` | `fikret-yagmur-asiyan`, `huseyin-rahmi-kuyrukluyildiz` | a narrow, slightly metallic horn at a window of Aşiyan / the Heybeliada house |
+| `gramophone` | `karagoz-sehzadebasi`, `fikret-yagmur-asiyan`, `huseyin-rahmi-kuyrukluyildiz` | a narrow, slightly metallic horn at a coffeehouse window on Şehzadebaşı Caddesi / a window of Aşiyan / the Heybeliada house |
 | `ferry` | `ferry-gull-simit` | a small deck radio that moves with the ferry (the shortcut waits for a ferry in service) |
 | `memory` | `nedim-bu-sehr-i-sitanbul`, `prokopios-gokten-asili-kubbe`, `orhan-veli-istanbulu-dinliyorum` | airy and far, from the palace / the dome, or centred for Orhan Veli |
 
@@ -271,13 +276,91 @@ Rules (checked by `moments-check`): a world kind has exactly one of `at` / `anch
 reaches the moment's place; `expect` and `nearLandmark` are verified against the geography. Pick a real, plausible
 spot near the moment's place (a street-level window ≈ 3 m, a first-floor balcony ≈ 6 m) and say where it is in `note`.
 
-Current records: Kâtibim `venue` (Üsküdar shore road), Karagöz `live` (Şehzadebaşı Caddesi), Kuyrukluyıldız
+Current records: Kâtibim `venue` (Üsküdar shore road), Karagöz `gramophone` (a coffeehouse window on Şehzadebaşı
+Caddesi, playing Felek Bana), Kuyrukluyıldız
 `gramophone` (Hüseyin Rahmi's house on Heybeliada, reachScale 1.8), Yağmur `gramophone` (Aşiyan), gull and simit
 `ferry`; memories: Orhan Veli (centred), Nedim and De Amicis (from Topkapı / Sarayburnu), Prokopios (the Hagia Sophia
 dome), Sinan (his tomb), the legends (from their landmark); every other record defaults to a centred memory.
 
 Real 78 rpm transfers get no added crackle; keep their own surface noise faint in the master. Only the synthesized test
 pieces carry a very faint crackle.
+
+## Historic 78 rpm recordings: archive and variants
+
+The owner approved on 2026-09-26 ([decision](../assets/candidates/moment-music.md#decision-2026-09-26)) that every 78 rpm
+candidate is **archived in its original form** with its source, and that the first picks become moment pieces.
+
+**Archive (originals).** Each recording is an entry of kind `recording` in `tools/assets/approved.json`: archive page,
+title, performers, label and catalogue / matrix numbers, year, licence and rights reasoning (`risk`: `clean` or
+`us-risky`), and the exact original files with their format, size and **sha256**.
+`node scripts/data/fetch-assets.mjs --kind=recording --no-docs` downloads them into the gitignored
+`assets-src/audio/78rpm/<id>/` on any machine and verifies every hash (`--write-sha` fills in a missing one). Raw WAVs
+are never committed; small clean originals from fragile sources are also kept byte for byte in `data/archive/78rpm/`.
+The catalogue with full provenance is generated: `python3 scripts/data/archive-78rpm-doc.py` →
+[`.docs/assets/archive-78rpm.md`](../assets/archive-78rpm.md). Open, copy or trim the originals; never overwrite them.
+
+**Moment pieces.** `tools/assets/moment-pieces.json` lists each piece: the recording and side, the segment (seconds of
+the side), fades, the noise region, tags, credit, the moments it is for, and its target (`public` or `private`).
+`python3 scripts/audio/prep-moment-music.py [--id=…]` (numpy, scipy, soundfile, noisereduce, pyloudnorm and an ffmpeg
+with libopus: `FFMPEG=/path/to/ffmpeg`, a static build works) makes **two versions of the same cut**:
+
+- `denoised` (`<id>.opus` / `.m4a`): 70 Hz rumble high-pass, a hum notch only when the groove shows a mains peak,
+  declick (impulses in a short-term LPC residual beyond 9 robust sigmas, gaps of up to 2.5 ms re-synthesised by
+  least-squares AR interpolation), and a gentle stationary spectral gate (noisereduce, profile from the lead-in groove
+  or a named groove-only pause, at most 50 % reduction) that leaves a thin even hiss rather than risk "underwater" or
+  "metallic" artefacts (`scripts/audio/restore78.py`);
+- `raw` (`<id>.raw.opus` / `.raw.m4a`): only a 30 Hz subsonic high-pass: the record's own crackle.
+
+Both get the fades and are normalised to −18 LUFS integrated with a −1 dBTP true-peak ceiling (a crackly record often
+stops at the ceiling below −18: the measured value goes into `lufs` and the player corrects the rest), then encoded to
+Opus 96 kbps and AAC 128 kbps, 48 kHz mono. Nobody can listen in the build container, so the script **measures**:
+SNR (music p70 minus groove), clicks per second, spectral flatness of the quietest frames, the groove's
+power-spectrum kurtosis ratio (musical noise), and the change of the music's own power in 300 Hz–3 kHz and 3–6 kHz
+after the dehiss stage. The default version is `denoised` only when the SNR gain is at least 3 dB, the kurtosis ratio
+stays under 1, the music band moves less than 1.5 dB and the 3–6 kHz band loses less than 3 dB; otherwise `raw`
+(a piece may force one with `"variant"`). The numbers go to `tools/assets/moment-pieces.report.json` and the table in
+`archive-78rpm.md`, and the script writes the manifest entry.
+
+**Choosing by ear.** The manifest entry holds the default in `src` / `lufs` / `variant` and both versions in
+`variants`. `?music=raw` or `?music=denoised` plays that version of every restored piece for the session, so the
+owner can A/B them; to change a default, set `"variant"` in `moment-pieces.json` and rerun the script.
+
+**Public and private.** Clean recordings (published in the US before 1926, in Turkey before 1956, composer or
+improviser dead before 1956) go to `public/audio/music/moments/` and `public/audio/music/manifest.json` with licence
+`public-domain`. US-risky recordings (free in Turkey, not yet in the US) use licence `public-domain-tr` and go to the
+gitignored `private-assets/audio/moments/` with their own `manifest.json` (paths `private/…`); `vite.config.ts` serves
+that folder at `audio/music/private/` in dev and copies it into builds, and the game merges its phrases
+([private-assets.md](../assets/private-assets.md)). The public manifest rejects `public-domain-tr` pieces and
+`private/` paths. A moment naming a private piece falls back to the mood choice where the private files are absent.
+
+| Piece | Moment(s) | Hear it | Default |
+| --- | --- | --- | --- |
+| `kagithane-semaisi-1916` | Nedim, the storks | `?music=debug&moment=nedim-bu-sehr-i-sitanbul`, `?music=debug&moment=storks-bosphorus-migration` | denoised |
+| `felek-bana-1916` | Karagöz (street gramophone) | `?music=debug&moment=karagoz-sehzadebasi` | denoised |
+| `aya-yorgi-apolitikiyonu-nafpliotis` | Aya Yorgi (draft: waits for its model) | console: `__evrenMusic.moment({ musicId: 'aya-yorgi-apolitikiyonu-nafpliotis' })` | raw (the transfer is already clean) |
+| `katibim-safiye-ayla-1949` (private) | Kâtibim (coffeehouse venue) | `?music=debug&moment=katibim-uskudar-yagmur` | raw |
+| `huseyni-taksim-hafiz-kemal` (private) | Sinan (draft: text approval) | console: `__evrenMusic.moment({ musicId: 'huseyni-taksim-hafiz-kemal' })` | denoised |
+| `huzzam-taksim-resad-bey` (private) | Haşim (draft: text approval), Kız Kulesi (draft: model) | console: `__evrenMusic.moment({ musicId: 'huzzam-taksim-resad-bey' })` | raw |
+
+**Pending (Commons originals not fetched yet):** the Isfahan gazel with Tanburi Cemil Bey (`isfahan-gazeli-cemil-bey`,
+De Amicis) and the Reşadiye Marşı (`resadiye-marsi-1910`, Kuyrukluyıldız). upload.wikimedia.org rate-limited the build
+container, so their `approved.json` files say "sha256 pending" and the two moments keep the mood choice (no `musicId`).
+On a machine that can reach Commons:
+
+```sh
+node scripts/data/fetch-assets.mjs --kind=recording --no-docs --write-sha   # originals + sha256 into approved.json
+FFMPEG=/path/to/ffmpeg python3 scripts/audio/prep-moment-music.py --id=isfahan-gazeli-cemil-bey,resadiye-marsi-1910
+python3 scripts/data/archive-78rpm-doc.py
+```
+
+`prep-moment-music.py` runs the `scripts/audio/restore78.py` chain and writes both variants and the manifest entries.
+Then set `musicId` on `de-amicis-sis-kalkinca` and `huseyin-rahmi-kuyrukluyildiz`, add `MUSIC_ISFAHAN_GAZEL` /
+`MUSIC_RESADIYE` (`src/moments/data/music-sources.ts`) to their `sources`, add their rows to
+`public/audio/music/LICENSES.md` and run the music check.
+
+A draft moment that cannot play yet cannot be forced with `?moment=` either; the console call plays its piece as a centred memory (`.endMoment()` stops it; put `raw` or `denoised` in `?music=` first). Credits: every piece carries `credit.attribution` (performer,
+label, year, archive), and each moment lists its recording in the source sheet ("Kaynağa bak" → "Müzik: …",
+`src/moments/data/music-sources.ts`).
 
 ## The stems
 
@@ -407,7 +490,7 @@ manifest entry with the credit and `approvedOn`, `public/audio/music/LICENSES.md
 | `tags` | what the rules choose by: `day`, `night`, `dawn`, `dusk`, `calm`, `flight`, `perch`, `water`, `race`, `storm`, `fog`, `moment` |
 | `stems.<role>` | `src` (fallback order, relative to `public/audio/music/`), `gain` 0..2 trim, `durationSec` measured |
 | `stingers.<kind>` | `intro`, `outro`, `go`, `finish`: `src`, `bars` (grid length, default 1), `gain` |
-| `credit` | `title`, `author`, `licence` (`original`, `CC0-1.0`, `CC-BY-4.0`, `CC-BY-3.0`), `sourceUrl` (required for CC), `attribution` (required for CC-BY) |
+| `credit` | `title`, `author`, `licence` (`original`, `CC0-1.0`, `CC-BY-4.0`, `CC-BY-3.0`, `public-domain`, `public-domain-tr`), `sourceUrl` (required for CC and public domain), `attribution` (required for CC-BY and public domain; historic records: performer, label, year, archive) |
 | `approvedOn` | the owner's approval date (required) |
 | `gain` | overall set trim 0..2 |
 | `momentOnly` | plays only as a moment's own bed (`MomentContent.musicId`), never in the rotation |
@@ -465,7 +548,8 @@ manifest entry with the credit and `approvedOn`, `public/audio/music/LICENSES.md
 | `tags` | sprinkles: `day`, `night`, `dawn`, `dusk` (restrict), `water`, `perch`, `flight`, `calm`, `fog`, `storm` (weight); moment pieces: category and mood tags |
 | `lufs` | measured integrated loudness (−40..−6); the player corrects to −18 LUFS |
 | `gain` | trim 0..2 on top of the loudness correction |
-| `credit`, `approvedOn` | exactly as for sets (licence, `sourceUrl` for CC, `attribution` for CC-BY, approval date) |
+| `credit`, `approvedOn` | exactly as for sets (licence, `sourceUrl` for CC and public domain, `attribution` for CC-BY and public domain, approval date) |
+| `variant`, `variants` | restored historic recordings: `variants.denoised` / `variants.raw` = `{ src, lufs }` of each version, `variant` = the default one, whose files `src` must equal; `?music=raw` / `?music=denoised` swaps (`applyPhraseVariant`) |
 
 Phrases are validated as strictly as sets: an invalid phrase (a missing licence, credit or approval date, a bad path, a
 missing file in the check, no family, a length out of range) is dropped with a console warning; valid sets and phrases
@@ -570,6 +654,12 @@ bad ones, the shipped manifest with files on disk, the test sets), bar-grid math
 hysteresis, no flicker, dwell, smoothing, adaptive off), and the director (an hour of play / silence, endings on
 phrase boundaries, decode waits, perch, preference changes on phrases, race countdown sync and stingers, moment sets
 on the next bar, holds, pause shift).
+
+The music check also covers the historic recordings: the shipped manifest has no US-risky piece and no `private/`
+path, every restored piece ships both variants with their measured loudness and `raw` swaps to the raw files, the
+private manifest validates with its files when this machine has it and merges without conflicts, every moment's
+`musicId` names a piece (a private one only notes its absence), and the licence / variant / merge rules reject bad
+examples.
 
 `npx tsx tools/headless/music-sprinkle-check.ts` (Node only, fake clock, seeded RNG): phrase validation (good sprinkles
 and moment pieces, 20+ bad ones incl. a missing licence, advice warnings, the test phrases with their silent head and

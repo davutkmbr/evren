@@ -1,5 +1,5 @@
 {
- "$comment": "External assets approved by the user. scripts/data/fetch-assets.mjs downloads the 'api' entries into assets-src/<kind>/<id>/ and lists the 'manual' ones in .docs/assets/manual-downloads.md. repeat_m is the real-world size of one texture tile or decal [width, height] in metres (null when the source does not state it). resolution is the requested download resolution (null when the source fixes it). Freesound sounds are fetched from their public 'hq-preview' (OGG, about 192 kbps) at download_url, because the originals need a login.",
+ "$comment": "External assets approved by the user. scripts/data/fetch-assets.mjs downloads the 'api' entries into assets-src/<kind>/<id>/ and lists the 'manual' ones in .docs/assets/manual-downloads.md. repeat_m is the real-world size of one texture tile or decal [width, height] in metres (null when the source does not state it). resolution is the requested download resolution (null when the source fixes it). Freesound sounds are fetched from their public 'hq-preview' (OGG, about 192 kbps) at download_url, because the originals need a login. Kind 'recording' (the historic 78 rpm archive, approved 2026-09-26, .docs/assets/archive-78rpm.md) lists the exact original files with their sha256 and is cached in assets-src/audio/78rpm/<id>/; risk 'us-risky' entries are public domain in Turkey but not yet in the US and may reach builds only from private-assets/.",
  "approved": "2026-09-24",
  "decisions": [
   ".docs/assets/candidates/street-materials.md#decision-2026-09-24",
@@ -7,7 +7,8 @@
   ".docs/assets/candidates/sounds.md#decision-2026-09-24",
   ".docs/assets/candidates/gulls.md#decision-2026-09-24",
   ".docs/assets/candidates/sea-walls-data.md#decision-2026-09-26",
-  ".docs/assets/candidates/wall-scans.md#decision-2026-09-26"
+  ".docs/assets/candidates/wall-scans.md#decision-2026-09-26",
+  ".docs/assets/candidates/moment-music.md#decision-2026-09-26"
  ],
  "assets": [
   {
@@ -1602,6 +1603,2076 @@
    "download": "api",
    "shortlist": ".docs/assets/candidates/wall-scans.md",
    "conditions": []
+  },
+  {
+   "id": "loc-victor-69173-kagithane-semaisi",
+   "name": "Kâğıthane Semaisi (Käkidhana zemany), Victor 69173, 1916",
+   "source": "loc",
+   "source_id": "jukebox-20789",
+   "url": "https://www.loc.gov/item/jukebox-20789/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute)",
+   "attribution": "Kâğıthane Semaisi — Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute), Victor 69173 (1916). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Moment piece for Nedim and the storks (instrumental intro 0:08-1:03)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H1",
+   "risk": "clean",
+   "recording": {
+    "title": "Käkidhana zemany",
+    "title_tr": "Kâğıthane Semaisi",
+    "performers": "Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute)",
+    "label": "Victor",
+    "catalogue": "Victor 69173",
+    "matrix": "B-18808/2",
+    "recorded": "1916-12-06",
+    "published": "1916",
+    "place": "New York",
+    "summary": "Male vocal solo with violin, flute and kanun; also titled \"Ooshak canto\". Instrumental introduction 0:01.5-1:04.",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Traditional or unnamed composer (not on the label); check the lyrics against a şarkı index.",
+     "note": "Tier A (clean now)."
+    }
+   },
+   "files": [
+    {
+     "name": "jvm_victor_69173_01_b18808_02.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/jvm_victor_69173_01_b18808_02/jvm_victor_69173_01_b18808_02.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 38455248,
+     "sha256": "9faf484a6d78198f395d91a9dbf320f3aa54df9238eb36e924d70ce19e35f395"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-69175-felek-bana",
+   "name": "Felek Bana (Felek bana), Victor 69175, 1916",
+   "source": "loc",
+   "source_id": "jukebox-20790",
+   "url": "https://www.loc.gov/item/jukebox-20790/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute)",
+   "attribution": "Felek Bana — Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute), Victor 69175 (1916). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Moment piece for Karagöz (a distant street gramophone)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H2",
+   "risk": "clean",
+   "recording": {
+    "title": "Felek bana",
+    "title_tr": "Felek Bana",
+    "performers": "Karekin Proodian (tenor), Kemani Minas (violin), \"Morene Eff.\" (kanun), Hagop (flute)",
+    "label": "Victor",
+    "catalogue": "Victor 69175",
+    "matrix": "B-18809/1",
+    "recorded": "1916-12-06",
+    "published": "1916",
+    "place": "New York",
+    "summary": "Male vocal solo with violin, flute and kanun. Intro 0:05-0:38, voice from about 0:40.",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Traditional or unnamed composer (not on the label); check the lyrics against a şarkı index.",
+     "note": "Tier A (clean now)."
+    }
+   },
+   "files": [
+    {
+     "name": "jvm_victor_69175_01_b18809_01.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/jvm_victor_69175_01_b18809_01/jvm_victor_69175_01_b18809_01.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 36505240,
+     "sha256": "5d86080e6c1f94a66ff2f08906ae7c88f0cc4da3fcc9db586dd1f4e6ca40c9a9"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-69178-ciftetelli-gazel",
+   "name": "Çiftetelli gazel (Chifta telly gazel), Victor 69178, 1916",
+   "source": "loc",
+   "source_id": "jukebox-20795",
+   "url": "https://www.loc.gov/item/jukebox-20795/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Kemani Minas (voice, violin), with oud",
+   "attribution": "Çiftetelli gazel — Kemani Minas (voice, violin), with oud, Victor 69178 (1916). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H3",
+   "risk": "clean",
+   "recording": {
+    "title": "Chifta telly gazel",
+    "title_tr": "Çiftetelli gazel",
+    "performers": "Kemani Minas (voice, violin), with oud",
+    "label": "Victor",
+    "catalogue": "Victor 69178",
+    "matrix": "B-18814/1",
+    "recorded": "1916-12-06",
+    "published": "1916",
+    "place": "New York",
+    "summary": "Gazel with violin and oud; hissy transfer.",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Improvised (the performer is the author); Kemani Minas's death date is unknown.",
+     "note": "Tier A, flagged: a gazel is an improvisation by the performer, whose death date is unknown."
+    }
+   },
+   "files": [
+    {
+     "name": "jvm_victor_69178_01_b18814_01.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/jvm_victor_69178_01_b18814_01/jvm_victor_69178_01_b18814_01.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 33315624,
+     "sha256": "b693adf221d36ec12119e1b1d095da24a002934a846af6349f43caaaa015e7be"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-72865-huseyni-uzeri-saba",
+   "name": "Hüseyni üzeri Saba (gazel) (Husseiny uzery saba), Victor 72865, 1919",
+   "source": "loc",
+   "source_id": "jukebox-191460",
+   "url": "https://www.loc.gov/item/jukebox-191460/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Jemal Bey \"Oody\" (voice, oud)",
+   "attribution": "Hüseyni üzeri Saba (gazel) — Jemal Bey \"Oody\" (voice, oud), Victor 72865 (1919). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Orhan Veli)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H4",
+   "risk": "clean",
+   "recording": {
+    "title": "Husseiny uzery saba",
+    "title_tr": "Hüseyni üzeri Saba (gazel)",
+    "performers": "Jemal Bey \"Oody\" (voice, oud)",
+    "label": "Victor",
+    "catalogue": "Victor 72865",
+    "matrix": "B-22491/1",
+    "recorded": "1919-10-08",
+    "published": "1919",
+    "place": "New York",
+    "summary": "Gazel with oud; oud alone about 0:00-0:19 and 1:25-1:48; many clicks.",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Improvised (the performer is the author); Jemal Bey's death date is unknown.",
+     "note": "Tier A, flagged: improvisation by a performer whose death date is unknown."
+    }
+   },
+   "files": [
+    {
+     "name": "jvm_victor_72865_01_b22491_01.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/jvm_victor_72865_01_b22491_01/jvm_victor_72865_01_b22491_01.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 30515492,
+     "sha256": "0cfd8d1499213fdb04e0f28b8b6e00e02a32e2897ef4a5614eb985708ca3c4e6"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-72526-rast-gazel",
+   "name": "Rast gazel (Rast gazel), Victor 72526, 1919",
+   "source": "loc",
+   "source_id": "jukebox-34204",
+   "url": "https://www.loc.gov/item/jukebox-34204/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Jemal Bey (voice) with oud, kanun and kemençe",
+   "attribution": "Rast gazel — Jemal Bey (voice) with oud, kanun and kemençe, Victor 72526 (1919). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Archive only (candidate for the Galata Bridge anglers)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H5",
+   "risk": "clean",
+   "recording": {
+    "title": "Rast gazel",
+    "title_tr": "Rast gazel",
+    "performers": "Jemal Bey (voice) with oud, kanun and kemençe",
+    "label": "Victor",
+    "catalogue": "Victor 72526",
+    "matrix": "B-23339/1",
+    "recorded": "1919-11-18",
+    "published": "1919",
+    "place": "New York",
+    "summary": "Gazel with ensemble; interludes about 0:35, 1:10, 1:45-1:53.",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Improvised; the Jukebox credits Jemal Bey as composer; death date unknown.",
+     "note": "Tier A, flagged: improvisation by a performer whose death date is unknown."
+    }
+   },
+   "files": [
+    {
+     "name": "jvm_victor_72526_01_b23339_01.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/jvm_victor_72526_01_b23339_01/jvm_victor_72526_01_b23339_01.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 32150160,
+     "sha256": "abc4df5f73deb8e42739df2f12b4a8cc5d4622dc21d94268cc6bc895f83d0f83"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-67988-turkish-medley",
+   "name": "Türk melodileri potpurisi (Medley of Turkish melodies), Victor 67988, 1916",
+   "source": "loc",
+   "source_id": "jukebox-17072",
+   "url": "https://www.loc.gov/item/jukebox-17072/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Joseph Moskowitz (cimbalom), Max Yussim (piano)",
+   "attribution": "Türk melodileri potpurisi — Joseph Moskowitz (cimbalom), Max Yussim (piano), Victor 67988 (1916). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Atı Alan and the ferry)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H6",
+   "risk": "clean",
+   "recording": {
+    "title": "Medley of Turkish melodies",
+    "title_tr": "Türk melodileri potpurisi",
+    "performers": "Joseph Moskowitz (cimbalom), Max Yussim (piano)",
+    "label": "Victor",
+    "catalogue": "Victor 67988",
+    "matrix": "B-17394/1",
+    "recorded": "1916-03-27",
+    "published": "1916",
+    "place": "New York",
+    "summary": "Instrumental throughout; the cimbalom was recorded quietly (S/N about 9 dB).",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Traditional melodies arranged by Moskowitz (d. 1954): free in Turkey since 2025.",
+     "note": "Tier A (clean now)."
+    }
+   },
+   "files": [
+    {
+     "name": "ucsb_victor_67988_01_b17394_01.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/ucsb_victor_67988_01_b17394_01/ucsb_victor_67988_01_b17394_01.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 31448964,
+     "sha256": "624817d9d58fe78bb5fb5d2fd366f73eedfc3ce26af75b7bda1155ea1ab848b5"
+    }
+   ]
+  },
+  {
+   "id": "loc-victor-67988-chasen-senem",
+   "name": "Hasan senem (?) (Chasen senem), Victor 67988, 1916",
+   "source": "loc",
+   "source_id": "jukebox-19027",
+   "url": "https://www.loc.gov/item/jukebox-19027/",
+   "licence": "public-domain",
+   "licence_url": "https://www.loc.gov/free-to-use/",
+   "author": "Joseph Moskowitz (cimbalom), Max Yussim (piano)",
+   "attribution": "Hasan senem (?) — Joseph Moskowitz (cimbalom), Max Yussim (piano), Victor 67988 (1916). Library of Congress, National Jukebox.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Fikret's rain)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H7",
+   "risk": "clean",
+   "recording": {
+    "title": "Chasen senem",
+    "title_tr": "Hasan senem (?)",
+    "performers": "Joseph Moskowitz (cimbalom), Max Yussim (piano)",
+    "label": "Victor",
+    "catalogue": "Victor 67988",
+    "matrix": "B-18204/2",
+    "recorded": "1916-07-19",
+    "published": "1916",
+    "place": "New York",
+    "summary": "Instrumental throughout; noisy (S/N about 7 dB).",
+    "transfer": "Library of Congress National Jukebox master (Johnson Victrola Museum disc), 44.1 kHz 16-bit stereo WAV",
+    "rights": {
+     "us": "Public domain: published before 1923, so free in the US since 1 Jan 2022 (the Jukebox rights advisory about Sony/EMI streaming concerns the old streaming deal, not copyright).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Traditional melody arranged by Moskowitz (d. 1954): free in Turkey since 2025.",
+     "note": "Tier A (clean now)."
+    }
+   },
+   "files": [
+    {
+     "name": "ucsb_victor_67988_01_b18204_02.wav",
+     "url": "https://tile.loc.gov/storage-services/master/mbrsrs/mbrsjukebox/ucsb_victor_67988_01_b18204_02/ucsb_victor_67988_01_b18204_02.wav",
+     "format": "WAV (PCM 16-bit, 44.1 kHz, stereo)",
+     "bytes": 32540868,
+     "sha256": "7e5e93781996dea31285da4ccd95125a391a8f8b9e3eda6c54c393e8297d1d56"
+    }
+   ]
+  },
+  {
+   "id": "commons-isfahan-gazel-cemil-bey",
+   "name": "Dil verme gönül, Isfahan gazeli, Istanbul 78 rpm (label not given), c. 1912",
+   "source": "commons",
+   "source_id": "File:ملا_عثمان_الموصلي_-_غزل_اصفهان_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:ملا_عثمان_الموصلي_-_غزل_اصفهان_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Mulla Osman al-Mawsili (voice, 1854-1923), Tanburi Cemil Bey (tanbur, 1873-1916)",
+   "attribution": "Dil verme gönül, Isfahan gazeli — Mulla Osman al-Mawsili (voice, 1854-1923), Tanburi Cemil Bey (tanbur, 1873-1916), Istanbul 78 rpm (label not given) (c. 1912). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Moment piece for De Amicis (distant)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H8",
+   "risk": "clean",
+   "recording": {
+    "title": "Dil verme gönül, Isfahan gazeli",
+    "title_tr": "Dil verme gönül, Isfahan gazeli",
+    "performers": "Mulla Osman al-Mawsili (voice, 1854-1923), Tanburi Cemil Bey (tanbur, 1873-1916)",
+    "label": "Istanbul 78 rpm (label not given)",
+    "catalogue": "",
+    "published": "c. 1912",
+    "place": "Istanbul",
+    "summary": "Gazel in makam Isfahan with tanbur fills.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Improvised gazel and tanbur fills; both performers died before 1956 (1923, 1916).",
+     "note": "Tier A. Weak provenance: the Commons file came from a YouTube upload, so the transfer is second-hand."
+    }
+   },
+   "files": [
+    {
+     "name": "ملا_عثمان_الموصلي_-_غزل_اصفهان_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/%D9%85%D9%84%D8%A7_%D8%B9%D8%AB%D9%85%D8%A7%D9%86_%D8%A7%D9%84%D9%85%D9%88%D8%B5%D9%84%D9%8A_-_%D8%BA%D8%B2%D9%84_%D8%A7%D8%B5%D9%81%D9%87%D8%A7%D9%86_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-odeon-54745-resadiye-marsi",
+   "name": "Reşadiye Marşı, Odeon 54745, 1910",
+   "source": "commons",
+   "source_id": "File:Marche_de_sa_Majesté_Impériale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Marche_de_sa_Majesté_Impériale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Odeon Orchestra (Italo Selvelli, composer)",
+   "attribution": "Reşadiye Marşı — Odeon Orchestra (Italo Selvelli, composer), Odeon 54745 (1910). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Moment piece for Hüseyin Rahmi's Kuyrukluyıldız",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H9",
+   "risk": "clean",
+   "recording": {
+    "title": "Reşadiye Marşı",
+    "title_tr": "Reşadiye Marşı",
+    "performers": "Odeon Orchestra (Italo Selvelli, composer)",
+    "label": "Odeon",
+    "catalogue": "54745",
+    "published": "1910",
+    "place": "Istanbul",
+    "summary": "March of Sultan Mehmed V, orchestra, no vocals.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Italo Selvelli (1863-1918).",
+     "note": "Tier A."
+    }
+   },
+   "files": [
+    {
+     "name": "Marche_de_sa_Majesté_Impériale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-odeon-54142-hamidiye-marsi",
+   "name": "Hamidiye Marşı, Odeon 54142, c. 1905-1908",
+   "source": "commons",
+   "source_id": "File:Hamidiye_March_by_Nedjib_Pasha.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Hamidiye_March_by_Nedjib_Pasha.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "band (Necip Paşa, composer)",
+   "attribution": "Hamidiye Marşı — band (Necip Paşa, composer), Odeon 54142 (c. 1905-1908). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Hezarfen)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H10",
+   "risk": "clean",
+   "recording": {
+    "title": "Hamidiye Marşı",
+    "title_tr": "Hamidiye Marşı",
+    "performers": "band (Necip Paşa, composer)",
+    "label": "Odeon",
+    "catalogue": "54142",
+    "published": "c. 1905-1908",
+    "place": "Istanbul",
+    "summary": "Band, no vocals.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Necip Paşa (d. 1883).",
+     "note": "Tier A."
+    }
+   },
+   "files": [
+    {
+     "name": "Hamidiye_March_by_Nedjib_Pasha.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/d/df/Hamidiye_March_by_Nedjib_Pasha.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-zonophone-x100025-hamidiye-marsi",
+   "name": "Hamidiye Marşı (second transfer), Zonophone X-100025, c. 1905",
+   "source": "commons",
+   "source_id": "File:Marche_de_sa_Majesté_Impériale_Le_Sultan_Abdul-Hamid-Han_II._par_S._E._Nédjib_Pacha.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Marche_de_sa_Majesté_Impériale_Le_Sultan_Abdul-Hamid-Han_II._par_S._E._Nédjib_Pacha.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "band (Necip Paşa, composer)",
+   "attribution": "Hamidiye Marşı (second transfer) — band (Necip Paşa, composer), Zonophone X-100025 (c. 1905). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H10b",
+   "risk": "clean",
+   "recording": {
+    "title": "Hamidiye Marşı (second transfer)",
+    "title_tr": "Hamidiye Marşı (second transfer)",
+    "performers": "band (Necip Paşa, composer)",
+    "label": "Zonophone",
+    "catalogue": "X-100025",
+    "published": "c. 1905",
+    "place": "Istanbul",
+    "summary": "Band, no vocals, 2:22.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Necip Paşa (d. 1883).",
+     "note": "Tier A."
+    }
+   },
+   "files": [
+    {
+     "name": "Marche_de_sa_Majesté_Impériale_Le_Sultan_Abdul-Hamid-Han_II._par_S._E._Nédjib_Pacha.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/4/49/Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Abdul-Hamid-Han_II._par_S._E._N%C3%A9djib_Pacha.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-favorite-sivastopol",
+   "name": "Sivastopol Önünde Yatar Gemiler, Favorite Record, 1910",
+   "source": "commons",
+   "source_id": "File:Sivastopol_Önünde_Yatar_Gemiler.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Sivastopol_Önünde_Yatar_Gemiler.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Hafız Yaşar Bey (voice)",
+   "attribution": "Sivastopol Önünde Yatar Gemiler — Hafız Yaşar Bey (voice), Favorite Record (1910). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only (alternative for the ships over land)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H11",
+   "risk": "clean",
+   "recording": {
+    "title": "Sivastopol Önünde Yatar Gemiler",
+    "title_tr": "Sivastopol Önünde Yatar Gemiler",
+    "performers": "Hafız Yaşar Bey (voice)",
+    "label": "Favorite Record",
+    "catalogue": "",
+    "published": "1910",
+    "place": "Istanbul",
+    "summary": "Sung march.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Rıfat Bey (19th century); the performer is not an author of a composed song.",
+     "note": "Tier A."
+    }
+   },
+   "files": [
+    {
+     "name": "Sivastopol_Önünde_Yatar_Gemiler.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/6/60/Sivastopol_%C3%96n%C3%BCnde_Yatar_Gemiler.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-gramophone-plevne-marsi",
+   "name": "Plevne Marşı, Gramophone (recorded by F. Gaisberg), 1910",
+   "source": "commons",
+   "source_id": "File:Plevna_March.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Plevna_March.ogg",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Hafız Yaşar Bey (voice)",
+   "attribution": "Plevne Marşı — Hafız Yaşar Bey (voice), Gramophone (recorded by F. Gaisberg) (1910). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Lagari)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H12",
+   "risk": "clean",
+   "recording": {
+    "title": "Plevne Marşı",
+    "title_tr": "Plevne Marşı",
+    "performers": "Hafız Yaşar Bey (voice)",
+    "label": "Gramophone (recorded by F. Gaisberg)",
+    "catalogue": "",
+    "published": "1910",
+    "place": "Istanbul",
+    "summary": "Sung march.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Public domain: published before 1926 (17 U.S.C. §1401).",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "1877 march, composer attributed to 19th-century authors.",
+     "note": "Tier A."
+    }
+   },
+   "files": [
+    {
+     "name": "Plevna_March.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Plevna_March.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-pathe-huseyni-saz-semaisi",
+   "name": "Hüseyni Saz Semaisi, Pathé N 11017, c. 1927-1928",
+   "source": "commons",
+   "source_id": "File:Husseyni_Saz_Semayissi_.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Husseyni_Saz_Semayissi_.ogg",
+   "licence": "public-domain-tr",
+   "licence_url": null,
+   "author": "Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud)",
+   "attribution": "Hüseyni Saz Semaisi — Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud), Pathé N 11017 (c. 1927-1928). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only (the Gallica transfer is used for processing)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H15 (Commons mirror)",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hüseyni Saz Semaisi",
+    "title_tr": "Hüseyni Saz Semaisi",
+    "performers": "Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud)",
+    "label": "Pathé",
+    "catalogue": "N 11017",
+    "published": "c. 1927-1928",
+    "place": "Istanbul",
+    "summary": "Kemençe and ud, instrumental.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956; composed piece (19th century or earlier) played by performers who died before 1956.",
+     "composition": "Saz semai (composed, pre-1900).",
+     "note": "Tier B. Same recording as the saz semai side of the Gallica disc bpt6k1310275k."
+    }
+   },
+   "files": [
+    {
+     "name": "Husseyni_Saz_Semayissi_.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/d/d3/Husseyni_Saz_Semayissi_.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": 2605735,
+     "sha256": "e085cc319c0c0b12e13a02855e448b2871d30b696967357377b78d12b55a6553"
+    }
+   ]
+  },
+  {
+   "id": "commons-turku-uskudara-gider-iken",
+   "name": "Üsküdar'a Gider İken, Alleys of Istanbul (album, Free Music Archive), modern",
+   "source": "commons",
+   "source_id": "File:Turku_Nomads_of_the_Silk_Road_-_01_-_-Uskudara_Gideriken.ogg",
+   "url": "https://commons.wikimedia.org/wiki/File:Turku_Nomads_of_the_Silk_Road_-_01_-_-Uskudara_Gideriken.ogg",
+   "licence": "CC-BY-4.0",
+   "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+   "author": "Turku, Nomads of the Silk Road",
+   "attribution": "Üsküdar'a Gider İken — Turku, Nomads of the Silk Road (CC BY 4.0)",
+   "kind": "recording",
+   "use": "Archive only (Kâtibim alternative)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "M1",
+   "risk": "clean",
+   "recording": {
+    "title": "Üsküdar'a Gider İken",
+    "title_tr": "Üsküdar'a Gider İken",
+    "performers": "Turku, Nomads of the Silk Road",
+    "label": "Alleys of Istanbul (album, Free Music Archive)",
+    "catalogue": "",
+    "published": "modern",
+    "place": "Istanbul",
+    "summary": "Modern ensemble recording of Kâtibim, probably sung.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "CC BY 4.0 (open licence, attribution required).",
+     "tr": "CC BY 4.0.",
+     "composition": "Traditional tune.",
+     "note": "Tier C: modern open-licence recording, not a 78."
+    }
+   },
+   "files": [
+    {
+     "name": "Turku_Nomads_of_the_Silk_Road_-_01_-_-Uskudara_Gideriken.ogg",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/4/41/Turku_Nomads_of_the_Silk_Road_-_01_-_-Uskudara_Gideriken.ogg",
+     "format": "Ogg Vorbis",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "commons-katibim-score-rendering",
+   "name": "Kâtibim (score rendering), computer rendering, modern",
+   "source": "commons",
+   "source_id": "File:Kâtibim.mp3",
+   "url": "https://commons.wikimedia.org/wiki/File:Kâtibim.mp3",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Commons user Baba66",
+   "attribution": "Kâtibim (score rendering) — Commons user Baba66, computer rendering (modern). Wikimedia Commons.",
+   "kind": "recording",
+   "use": "Archive only (melody reference)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "M2",
+   "risk": "clean",
+   "recording": {
+    "title": "Kâtibim (score rendering)",
+    "title_tr": "Kâtibim (score rendering)",
+    "performers": "Commons user Baba66",
+    "label": "computer rendering",
+    "catalogue": "",
+    "published": "modern",
+    "place": "Istanbul",
+    "summary": "Synthesised score playback, 1:13.",
+    "transfer": "Wikimedia Commons upload (Ogg Vorbis)",
+    "rights": {
+     "us": "Released into the public domain by the uploader.",
+     "tr": "Public domain.",
+     "composition": "Traditional tune.",
+     "note": "Not a performance: a synthesised score playback, a melody reference only."
+    }
+   },
+   "files": [
+    {
+     "name": "Kâtibim.mp3",
+     "url": "https://upload.wikimedia.org/wikipedia/commons/0/00/K%C3%A2tibim.mp3",
+     "format": "MP3",
+     "bytes": null,
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
+    }
+   ]
+  },
+  {
+   "id": "analogion-nafpliotis-apolytikion-agios-georgios",
+   "name": "Aya Yorgi apolitikiyonu (Os ton ehmaloton eleftherotis), Iakovos Nafpliotis, Orfeon, 1913-1918",
+   "source": "analogion",
+   "source_id": "Apolytikion-AgGeorgiou-INafpliotis.mp3",
+   "url": "https://analogion.com/site/html/Nafpliotis.html",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Iakovos Nafpliotis (1864-1942), Archon Protopsaltis of the Ecumenical Patriarchate",
+   "attribution": "Aya Yorgi apolitikiyonu (Os ton ehmaloton eleftherotis) — Iakovos Nafpliotis, Orfeon (Constantinople, 1913-1918). analogion.com.",
+   "kind": "recording",
+   "use": "Moment piece for Aya Yorgi",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H13",
+   "risk": "clean",
+   "recording": {
+    "title": "Os ton echmaloton eleftherotis",
+    "title_tr": "Aya Yorgi apolitikiyonu (Os ton ehmaloton eleftherotis)",
+    "performers": "Iakovos Nafpliotis (chant)",
+    "label": "Orfeon",
+    "catalogue": "",
+    "published": "1913-1918",
+    "place": "Constantinople",
+    "summary": "Apolytikion of St George, 4th mode (chromatic), 1:15; \"offered by B. Stavropoulos\"; processed transfer (no clicks, band-limited to about 5 kHz).",
+    "transfer": "analogion.com MP3 transfer",
+    "rights": {
+     "us": "Public domain: published before 1926.",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Byzantine chant: traditional.",
+     "note": "Tier A only as a raw transfer: the site says the isokratema (ison drone) on some Nafpliotis tracks was overdubbed later by Konstantinos Katsoulis; an overdub would carry its own rights. Checked per file in .docs/assets/archive-78rpm.md."
+    }
+   },
+   "files": [
+    {
+     "name": "Apolytikion-AgGeorgiou-INafpliotis.mp3",
+     "url": "https://analogion.com/site/mp3/Apolytikion-AgGeorgiou-INafpliotis.mp3",
+     "format": "MP3",
+     "bytes": 1203809,
+     "sha256": "c769852bd9a952f4556657372213e042be59c711e2355161784e6ac5b287a61d"
+    }
+   ]
+  },
+  {
+   "id": "analogion-nafpliotis-trisagion",
+   "name": "Trisagion (Dynamis), Iakovos Nafpliotis, Orfeon, 1913-1918",
+   "source": "analogion",
+   "source_id": "IakovosNafpliotis052_TrisagiosHymnosSynithismenon.mp3",
+   "url": "https://analogion.com/site/html/Nafpliotis.html",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Iakovos Nafpliotis (1864-1942), Archon Protopsaltis of the Ecumenical Patriarchate",
+   "attribution": "Trisagion (Dynamis) — Iakovos Nafpliotis, Orfeon (Constantinople, 1913-1918). analogion.com.",
+   "kind": "recording",
+   "use": "Archive only (candidate for Prokopios)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H14",
+   "risk": "clean",
+   "recording": {
+    "title": "Trisagios Hymnos (Dynamis), Synithismenon",
+    "title_tr": "Trisagion (Dynamis)",
+    "performers": "Iakovos Nafpliotis (chant)",
+    "label": "Orfeon",
+    "catalogue": "",
+    "published": "1913-1918",
+    "place": "Constantinople",
+    "summary": "Trisagion, 2nd mode, 3:06; low-bandwidth MP3.",
+    "transfer": "analogion.com MP3 transfer",
+    "rights": {
+     "us": "Public domain: published before 1926.",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Byzantine chant: traditional.",
+     "note": "Tier A only as a raw transfer: the site says the isokratema (ison drone) on some Nafpliotis tracks was overdubbed later by Konstantinos Katsoulis; an overdub would carry its own rights. Checked per file in .docs/assets/archive-78rpm.md."
+    }
+   },
+   "files": [
+    {
+     "name": "IakovosNafpliotis052_TrisagiosHymnosSynithismenon.mp3",
+     "url": "https://analogion.com/site/mp3/Nafpliotis/IakovosNafpliotis052_TrisagiosHymnosSynithismenon.mp3",
+     "format": "MP3",
+     "bytes": 556802,
+     "sha256": "91bd8bcbfca693959f5030a27c430187f481a5f388b800b7642770d37b00e039"
+    }
+   ]
+  },
+  {
+   "id": "analogion-nafpliotis-tin-oraiotita",
+   "name": "Tin oraiotita, Iakovos Nafpliotis, Orfeon, 1913-1918",
+   "source": "analogion",
+   "source_id": "IakovosNafpliotis009a_TinOraiotita.mp3",
+   "url": "https://analogion.com/site/html/Nafpliotis.html",
+   "licence": "public-domain",
+   "licence_url": null,
+   "author": "Iakovos Nafpliotis (1864-1942), Archon Protopsaltis of the Ecumenical Patriarchate",
+   "attribution": "Tin oraiotita — Iakovos Nafpliotis, Orfeon (Constantinople, 1913-1918). analogion.com.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [],
+   "candidate": "H14b",
+   "risk": "clean",
+   "recording": {
+    "title": "Tin oraiotita",
+    "title_tr": "Tin oraiotita",
+    "performers": "Iakovos Nafpliotis (chant)",
+    "label": "Orfeon",
+    "catalogue": "",
+    "published": "1913-1918",
+    "place": "Constantinople",
+    "summary": "Chant, 3:46; low-bandwidth MP3.",
+    "transfer": "analogion.com MP3 transfer",
+    "rights": {
+     "us": "Public domain: published before 1926.",
+     "tr": "Public domain: published more than 70 years ago (FSEK related rights, 70 years).",
+     "composition": "Byzantine chant: traditional.",
+     "note": "Tier A only as a raw transfer: the site says the isokratema (ison drone) on some Nafpliotis tracks was overdubbed later by Konstantinos Katsoulis; an overdub would carry its own rights. Checked per file in .docs/assets/archive-78rpm.md."
+    }
+   },
+   "files": [
+    {
+     "name": "IakovosNafpliotis009a_TinOraiotita.mp3",
+     "url": "https://analogion.com/site/mp3/Nafpliotis/IakovosNafpliotis009a_TinOraiotita.mp3",
+     "format": "MP3",
+     "bytes": 676860,
+     "sha256": "c947be31fee892bdb66d6b69eb84f222e6493dbcf17c59ff016d66f78ffb1fc1"
+    }
+   ]
+  },
+  {
+   "id": "ia-safiye-ayla-katibim-1949",
+   "name": "Kâtibim (Üsküdar'a Gider İken), Safiye Ayla (voice), with violin, kanun, ud and clarinet, 1949",
+   "source": "internet-archive",
+   "source_id": "KatibimuskudaraGiderIken-SafiyeAyla",
+   "url": "https://archive.org/details/KatibimuskudaraGiderIken-SafiyeAyla",
+   "licence": "public-domain-tr",
+   "licence_url": null,
+   "author": "Safiye Ayla (voice), with violin, kanun, ud and clarinet",
+   "attribution": "Kâtibim (Üsküdar'a Gider İken) — Safiye Ayla (voice), with violin, kanun, ud and clarinet (1949). Internet Archive, 78 RPMs and Cylinder Recordings.",
+   "kind": "recording",
+   "use": "Private moment piece for Kâtibim (distant coffeehouse gramophone)",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "X (Safiye Ayla)",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Kâtibim (Üsküdar'a Gider İken)",
+    "title_tr": "Kâtibim (Üsküdar'a Gider İken)",
+    "performers": "Safiye Ayla (voice), with violin, kanun, ud and clarinet",
+    "label": "not stated by the uploader",
+    "catalogue": "",
+    "published": "1949",
+    "place": "Istanbul",
+    "summary": "The famous recording; quiet introduction 0:00-0:16, voice from about 0:16.",
+    "transfer": "Internet Archive upload (uploader fidika, 2008; tagged public domain by the uploader), VBR MP3 original",
+    "rights": {
+     "us": "Protected in the US until 1 Jan 2060 (published 1949: 110 years under 17 U.S.C. §1401(a)(2)(B)).",
+     "tr": "Public domain in Turkey since 1 Jan 2020 (published 1949, related rights 70 years).",
+     "composition": "Traditional folk song (anonymous).",
+     "note": "Owner accepts the US risk (2026-09-26). Year per Wikipedia; the upload names no label."
+    }
+   },
+   "files": [
+    {
+     "name": "KatibimUskudaraGiderIken-SafiyeAyla.mp3",
+     "url": "https://archive.org/download/KatibimuskudaraGiderIken-SafiyeAyla/KatibimUskudaraGiderIken-SafiyeAyla.mp3",
+     "format": "MP3 (VBR)",
+     "bytes": 4028416,
+     "sha256": "f9e3bc41f4aba68a57f12e58035807b62e9d03710a184ba21462aee84c275c2a"
+    }
+   ]
+  },
+  {
+   "id": "ia-hafiz-burhan-kadifeden-kesesi",
+   "name": "Kadifeden Kesesi (with gazel), Hafız Burhan (Burhan Sesyılmaz, 1897-1943), c. 1920s-1930s (undated)",
+   "source": "internet-archive",
+   "source_id": "KadifedenKesesi-HafizBurhan",
+   "url": "https://archive.org/details/KadifedenKesesi-HafizBurhan",
+   "licence": "public-domain-tr",
+   "licence_url": null,
+   "author": "Hafız Burhan (Burhan Sesyılmaz, 1897-1943)",
+   "attribution": "Kadifeden Kesesi (with gazel) — Hafız Burhan (Burhan Sesyılmaz, 1897-1943) (c. 1920s-1930s (undated)). Internet Archive, 78 RPMs and Cylinder Recordings.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "X (Hafız Burhan)",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Kadifeden Kesesi (with gazel)",
+    "title_tr": "Kadifeden Kesesi (with gazel)",
+    "performers": "Hafız Burhan (Burhan Sesyılmaz, 1897-1943)",
+    "label": "not stated by the uploader",
+    "catalogue": "",
+    "published": "c. 1920s-1930s (undated)",
+    "place": "Istanbul",
+    "summary": "Sung, with gazel.",
+    "transfer": "Internet Archive upload (uploader fidika, 2008; tagged public domain by the uploader), VBR MP3 original",
+    "rights": {
+     "us": "Unknown: no label or date, so the US status cannot be shown (Hafız Burhan recorded from the 1910s to the 1930s).",
+     "tr": "Public domain in Turkey: published before 1956; the gazel improviser died in 1943.",
+     "composition": "Traditional folk song; the gazel is improvised by Hafız Burhan (d. 1943).",
+     "note": "Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "KadifedenKesesi-HafizBurhanSesyilmaz.mp3",
+     "url": "https://archive.org/download/KadifedenKesesi-HafizBurhan/KadifedenKesesi-HafizBurhanSesyilmaz.mp3",
+     "format": "MP3 (VBR)",
+     "bytes": 2832512,
+     "sha256": "5e2da6e2ef8568f1355c12cc08da2c69ef5ce1acc42be94f3ec74f33ad295b42"
+    }
+   ]
+  },
+  {
+   "id": "ia-hafiz-burhan-ben-yemenimi",
+   "name": "Ben Yemenimi Al İsterim (with gazel), Hafız Burhan (Burhan Sesyılmaz, 1897-1943), c. 1920s-1930s (undated)",
+   "source": "internet-archive",
+   "source_id": "BenYemenimiAlIsterim-HafizBurhan",
+   "url": "https://archive.org/details/BenYemenimiAlIsterim-HafizBurhan",
+   "licence": "public-domain-tr",
+   "licence_url": null,
+   "author": "Hafız Burhan (Burhan Sesyılmaz, 1897-1943)",
+   "attribution": "Ben Yemenimi Al İsterim (with gazel) — Hafız Burhan (Burhan Sesyılmaz, 1897-1943) (c. 1920s-1930s (undated)). Internet Archive, 78 RPMs and Cylinder Recordings.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "X (Hafız Burhan)",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Ben Yemenimi Al İsterim (with gazel)",
+    "title_tr": "Ben Yemenimi Al İsterim (with gazel)",
+    "performers": "Hafız Burhan (Burhan Sesyılmaz, 1897-1943)",
+    "label": "not stated by the uploader",
+    "catalogue": "",
+    "published": "c. 1920s-1930s (undated)",
+    "place": "Istanbul",
+    "summary": "Sung, with gazel.",
+    "transfer": "Internet Archive upload (uploader fidika, 2008; tagged public domain by the uploader), VBR MP3 original",
+    "rights": {
+     "us": "Unknown: no label or date, so the US status cannot be shown.",
+     "tr": "Public domain in Turkey: published before 1956; the gazel improviser died in 1943.",
+     "composition": "Traditional folk song (Marmara); gazel improvised by Hafız Burhan (d. 1943).",
+     "note": "Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "BenYemenimiAlIsterim-HafizBurhanSesyilmaz.mp3",
+     "url": "https://archive.org/download/BenYemenimiAlIsterim-HafizBurhan/BenYemenimiAlIsterim-HafizBurhanSesyilmaz.mp3",
+     "format": "MP3 (VBR)",
+     "bytes": 3214524,
+     "sha256": "9cff240f6a1fff2d76753b7bb569151c137f74637314c057287dd0eb92ca1f51"
+    }
+   ]
+  },
+  {
+   "id": "ia-darulelhan-turnalar-turnalar",
+   "name": "Turnalar Turnalar, Denizkızı Eftalya (voice, d. 1939), with violin; Darülelhan folk-song series, 1926-1929",
+   "source": "internet-archive",
+   "source_id": "TurnalarTurnalar-DarulelhanHeyeti",
+   "url": "https://archive.org/details/TurnalarTurnalar-DarulelhanHeyeti",
+   "licence": "public-domain-tr",
+   "licence_url": null,
+   "author": "Denizkızı Eftalya (voice, d. 1939), with violin; Darülelhan folk-song series",
+   "attribution": "Turnalar Turnalar — Denizkızı Eftalya (voice, d. 1939), with violin; Darülelhan folk-song series (1926-1929). Internet Archive, 78 RPMs and Cylinder Recordings.",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "X (Darülelhan)",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Turnalar Turnalar",
+    "title_tr": "Turnalar Turnalar",
+    "performers": "Denizkızı Eftalya (voice, d. 1939), with violin; Darülelhan folk-song series",
+    "label": "not stated by the uploader",
+    "catalogue": "",
+    "published": "1926-1929",
+    "place": "Istanbul",
+    "summary": "Sung, with violin.",
+    "transfer": "Internet Archive upload (uploader fidika, 2008; tagged public domain by the uploader), VBR MP3 original",
+    "rights": {
+     "us": "US-protected until 1 Jan 2027-2030 (Darülelhan series published 1926-1929; the disc date is not known).",
+     "tr": "Public domain in Turkey: published before 1956.",
+     "composition": "Traditional Central Anatolian folk song.",
+     "note": "Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "TurnalarTurnalar-DarulelhanHeyeti.mp3",
+     "url": "https://archive.org/download/TurnalarTurnalar-DarulelhanHeyeti/TurnalarTurnalar-DarulelhanHeyeti.mp3",
+     "format": "MP3 (VBR)",
+     "bytes": 3268764,
+     "sha256": "30e77ae41829f07a38a666d99c6d1b28b56df53613a87170a28473d21ba039e6"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-huseyni-taksim-saz-semaisi",
+   "name": "Hüseyni Taksim / Hüseyni Saz Semaisi, Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud), Pathé [no number] (N 11016 / N 11017), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310275k",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310275k",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud)",
+   "attribution": "Hüseyni Taksim / Hüseyni Saz Semaisi — Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud), Pathé [no number], matrices N 11016 / N 11017 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3029).",
+   "kind": "recording",
+   "use": "Private moment piece (the taksim side) for Sinan",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H15",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hüseyni Taksim / Hüseyni Saz Semaisi",
+    "title_tr": "Hüseyni Taksim / Hüseyni Saz Semaisi",
+    "performers": "Hafız Kemal Bey (kemençe, 1884-1939), Hayriye Hanım (ud)",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11016 / N 11017",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Hüseyni Taksim (kemençe solo)",
+     "Hüseyni Saz Semaisi (kemençe, ud)"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42415946n",
+    "shelfmark": "BnF, département Audiovisuel, AP-3029",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Taksim improvised by Hafız Kemal Bey (d. 1939); the saz semai is a composed pre-1900 piece.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310275k-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310275k/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hüseyni Taksim (kemençe solo)",
+     "bytes": 7258026,
+     "sha256": "7b7dd7483ffb22bf388b893a5e0fa88138bce34eb2d58c071825d099726710b6"
+    },
+    {
+     "name": "bpt6k1310275k-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310275k/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hüseyni Saz Semaisi (kemençe, ud)",
+     "bytes": 7571226,
+     "sha256": "8b203686b78457b8546e8f16bcc0facdd7a2f1cac399e8a5ae08fad9d98c7240"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-sehnaz-pesrevi-isfahan-taksim",
+   "name": "Şehnaz Peşrevi / İsfahan Taksim, Hafız Kemal Bey (kemençe), Hayriye Hanım (ud), Pathé [no number] (N 11019 / N 11039), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13102760",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102760",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Hafız Kemal Bey (kemençe), Hayriye Hanım (ud)",
+   "attribution": "Şehnaz Peşrevi / İsfahan Taksim — Hafız Kemal Bey (kemençe), Hayriye Hanım (ud), Pathé [no number], matrices N 11019 / N 11039 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3030).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H16",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Şehnaz Peşrevi / İsfahan Taksim",
+    "title_tr": "Şehnaz Peşrevi / İsfahan Taksim",
+    "performers": "Hafız Kemal Bey (kemençe), Hayriye Hanım (ud)",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11019 / N 11039",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Şehnaz Peşrevi",
+     "İsfahan Taksim"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42415974w",
+    "shelfmark": "BnF, département Audiovisuel, AP-3030",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed peşrev (pre-1900); taksim improvised by Hafız Kemal Bey (d. 1939).",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13102760-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102760/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Şehnaz Peşrevi",
+     "bytes": 7332150,
+     "sha256": "c4fb9da5219eb69bdbdd789789cf918125927c856dfd7809a0c3c0562240df83"
+    },
+    {
+     "name": "bpt6k13102760-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102760/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "İsfahan Taksim",
+     "bytes": 7642218,
+     "sha256": "8c2d06439d2f5d078504bdae60e31f66a4ce406ea37065ed53d8da24040225d6"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-tahir-buselik",
+   "name": "Tahir Buselik (4 parts), Hafız Kemal Bey (kemençe), Hayriye Hanım (ud), Pathé [no number] (N 11037 / N 11038), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310282q",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310282q",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Hafız Kemal Bey (kemençe), Hayriye Hanım (ud)",
+   "attribution": "Tahir Buselik (4 parts) — Hafız Kemal Bey (kemençe), Hayriye Hanım (ud), Pathé [no number], matrices N 11037 / N 11038 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3037).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H17",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Tahir Buselik (4 parts)",
+    "title_tr": "Tahir Buselik (4 parts)",
+    "performers": "Hafız Kemal Bey (kemençe), Hayriye Hanım (ud)",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11037 / N 11038",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Tahir Buselik, parts 1-2",
+     "Tahir Buselik, parts 3-4"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb424162537",
+    "shelfmark": "BnF, département Audiovisuel, AP-3037",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed piece (pre-1900) per the candidates doc.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310282q-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310282q/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Tahir Buselik, parts 1-2",
+     "bytes": 7143186,
+     "sha256": "308a95334fc8decb193974763279c37d17224af01e2e20377d96662673a9a398"
+    },
+    {
+     "name": "bpt6k1310282q-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310282q/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Tahir Buselik, parts 3-4",
+     "bytes": 7154670,
+     "sha256": "c17ac786730225578baf1618628012fc0c95536b48184aa961266e27d0f1598d"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-huseyni-huzzam-taksim",
+   "name": "Hüseyni Taksim / Hüzzam Taksim, Reşad Bey (violin), Pathé [no number] (N 11135 / N 11136), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13102426",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102426",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin)",
+   "attribution": "Hüseyni Taksim / Hüzzam Taksim — Reşad Bey (violin), Pathé [no number], matrices N 11135 / N 11136 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-2995).",
+   "kind": "recording",
+   "use": "Private moment piece (the Hüzzam side) for Haşim and Kız Kulesi",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hüseyni Taksim / Hüzzam Taksim",
+    "title_tr": "Hüseyni Taksim / Hüzzam Taksim",
+    "performers": "Reşad Bey (violin)",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11135 / N 11136",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Hüseyni Taksim",
+     "Hüzzam Taksim"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42413851g",
+    "shelfmark": "BnF, département Audiovisuel, AP-2995",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Improvised by Reşad Bey (per the candidates doc he died before 1956; identity to confirm).",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13102426-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102426/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hüseyni Taksim",
+     "bytes": 6744378,
+     "sha256": "72d018d7f8f65ccd47d5e37bb4eb5376ecc671572f686faafda096b78dc2f376"
+    },
+    {
+     "name": "bpt6k13102426-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102426/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hüzzam Taksim",
+     "bytes": 6993894,
+     "sha256": "7f7511dc375138bc9bf82e782736bbc254c3f218a95475cb491b76af7c3e46e9"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-nihavend-sarki-taksim",
+   "name": "Nihavend şarkı \"Aşkınla\" / Nihavend Taksim, Reşad Bey (violin, piano acc.), Nüzhet Hanım (voice), Pathé 76218 (N 11525 / N 11526), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310356k",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310356k",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.), Nüzhet Hanım (voice)",
+   "attribution": "Nihavend şarkı \"Aşkınla\" / Nihavend Taksim — Reşad Bey (violin, piano acc.), Nüzhet Hanım (voice), Pathé 76218, matrices N 11525 / N 11526 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3111).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Nihavend şarkı \"Aşkınla\" / Nihavend Taksim",
+    "title_tr": "Nihavend şarkı \"Aşkınla\" / Nihavend Taksim",
+    "performers": "Reşad Bey (violin, piano acc.), Nüzhet Hanım (voice)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76218",
+    "matrix": "N 11525 / N 11526",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Nihavend şarkı \"Aşkınla\" (Nüzhet Hanım, voice)",
+     "Nihavend Taksim"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb424185766",
+    "shelfmark": "BnF, département Audiovisuel, AP-3111",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Şarkı composer not stated (check); taksim improvised by Reşad Bey.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310356k-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310356k/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Nihavend şarkı \"Aşkınla\" (Nüzhet Hanım, voice)",
+     "bytes": 6111714,
+     "sha256": "c1a02c74a8b4195e97480bc1af7f0fd04973ad443f1d60cdbe27644ad6be9ec7"
+    },
+    {
+     "name": "bpt6k1310356k-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310356k/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Nihavend Taksim",
+     "bytes": 7234014,
+     "sha256": "df9da0ccee5b6c2d8044ec19ea91d17394971b5ff29a0721f9e8df7d5fb8dd63"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-hicaz-saz-semaisi-taksim",
+   "name": "Hicaz Saz Semaisi / Hicaz Taksim, Reşad Bey (violin, piano acc.), Pathé 76217 (N 11522 / N 11530), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13103555",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103555",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.)",
+   "attribution": "Hicaz Saz Semaisi / Hicaz Taksim — Reşad Bey (violin, piano acc.), Pathé 76217, matrices N 11522 / N 11530 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3110).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hicaz Saz Semaisi / Hicaz Taksim",
+    "title_tr": "Hicaz Saz Semaisi / Hicaz Taksim",
+    "performers": "Reşad Bey (violin, piano acc.)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76217",
+    "matrix": "N 11522 / N 11530",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Hicaz Saz Semaisi",
+     "Hicaz Taksim"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42418574h",
+    "shelfmark": "BnF, département Audiovisuel, AP-3110",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed saz semai; taksim improvised by Reşad Bey.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13103555-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103555/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicaz Saz Semaisi",
+     "bytes": 7431330,
+     "sha256": "15042bf578e406ed5fd1dd9065ebb69fc058cd93b94ff71250011329045585b3"
+    },
+    {
+     "name": "bpt6k13103555-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103555/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicaz Taksim",
+     "bytes": 7435506,
+     "sha256": "16c4d0318bed393a640c9cfd53aedd8dd0c88a93ac6189386543dc00913f7a88"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-neveser-pesrevi-taksim",
+   "name": "Neveser Peşrevi / Neveser Taksim, Reşad Bey (violin, piano acc.), Pathé 76220 (N 11532 / N 11533), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13102975",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102975",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.)",
+   "attribution": "Neveser Peşrevi / Neveser Taksim — Reşad Bey (violin, piano acc.), Pathé 76220, matrices N 11532 / N 11533 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3052).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Neveser Peşrevi / Neveser Taksim",
+    "title_tr": "Neveser Peşrevi / Neveser Taksim",
+    "performers": "Reşad Bey (violin, piano acc.)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76220",
+    "matrix": "N 11532 / N 11533",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Neveser Peşrevi",
+     "Neveser Taksim"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42417139n",
+    "shelfmark": "BnF, département Audiovisuel, AP-3052",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed peşrev; taksim improvised by Reşad Bey.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13102975-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102975/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Neveser Peşrevi",
+     "bytes": 7623426,
+     "sha256": "db34d15e919f0671c0f88e44c6ceedea8c228e2399d5149df38f6c251081545e"
+    },
+    {
+     "name": "bpt6k13102975-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102975/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Neveser Taksim",
+     "bytes": 6973014,
+     "sha256": "16577aecc6ba0b5345f1f11393decf1e9f75c966cc1c12a322b127fd2a7451f2"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-acemasiran-saz-semaisi",
+   "name": "Acemaşiran Saz Semaisi (4 parts), Reşad Bey (violin, piano acc.), Pathé [no number] (N 11083 / N 11084), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310234n",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310234n",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.)",
+   "attribution": "Acemaşiran Saz Semaisi (4 parts) — Reşad Bey (violin, piano acc.), Pathé [no number], matrices N 11083 / N 11084 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-2987).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Acemaşiran Saz Semaisi (4 parts)",
+    "title_tr": "Acemaşiran Saz Semaisi (4 parts)",
+    "performers": "Reşad Bey (violin, piano acc.)",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11083 / N 11084",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Acemaşiran Saz Semaisi, parts 1-2",
+     "Acemaşiran Saz Semaisi, parts 3-4"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42413442d",
+    "shelfmark": "BnF, département Audiovisuel, AP-2987",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed saz semai.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310234n-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310234n/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Acemaşiran Saz Semaisi, parts 1-2",
+     "bytes": 7122306,
+     "sha256": "176d57c967529a16a0390cef27063022a173b9427b7e838a7bc928bc497612db"
+    },
+    {
+     "name": "bpt6k1310234n-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310234n/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Acemaşiran Saz Semaisi, parts 3-4",
+     "bytes": 7354074,
+     "sha256": "279c422b7a173e7576144268f02f1ddf9cc718079b42231584797eccb0e3109d"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-hicaz-humayun-pesrevi",
+   "name": "Hicaz Hümayun Peşrevi (2 parts), Reşad Bey (violin, piano acc.), Pathé 76219 (N 11528 / N 11529), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310336t",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310336t",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.)",
+   "attribution": "Hicaz Hümayun Peşrevi (2 parts) — Reşad Bey (violin, piano acc.), Pathé 76219, matrices N 11528 / N 11529 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3091).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hicaz Hümayun Peşrevi (2 parts)",
+    "title_tr": "Hicaz Hümayun Peşrevi (2 parts)",
+    "performers": "Reşad Bey (violin, piano acc.)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76219",
+    "matrix": "N 11528 / N 11529",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Hicaz Hümayun Peşrevi 1",
+     "Hicaz Hümayun Peşrevi 2"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb424181016",
+    "shelfmark": "BnF, département Audiovisuel, AP-3091",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed peşrev.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310336t-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310336t/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicaz Hümayun Peşrevi 1",
+     "bytes": 6458322,
+     "sha256": "59e090e1c3d58c313b35adea4c1c50666c820b711a93aac12bc17f3d140c0000"
+    },
+    {
+     "name": "bpt6k1310336t-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310336t/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicaz Hümayun Peşrevi 2",
+     "bytes": 6226554,
+     "sha256": "4693ac92506c8571e1796dadf31d04c6a3879d456a7b02d5170b56efd5b2abb9"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-hicazkar-pesrevi",
+   "name": "Hicazkâr Peşrevi (2 parts), Reşad Bey (violin, piano acc.), Pathé 76216 (N 11520 / N 11521), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310335d",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310335d",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Reşad Bey (violin, piano acc.)",
+   "attribution": "Hicazkâr Peşrevi (2 parts) — Reşad Bey (violin, piano acc.), Pathé 76216, matrices N 11520 / N 11521 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3090).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H18",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Hicazkâr Peşrevi (2 parts)",
+    "title_tr": "Hicazkâr Peşrevi (2 parts)",
+    "performers": "Reşad Bey (violin, piano acc.)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76216",
+    "matrix": "N 11520 / N 11521",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Hicazkâr Peşrevi 1",
+     "Hicazkâr Peşrevi 2"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42418093d",
+    "shelfmark": "BnF, département Audiovisuel, AP-3090",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed peşrev.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310335d-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310335d/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicazkâr Peşrevi 1",
+     "bytes": 7029390,
+     "sha256": "0ffe3b997c5b8a963b17be7bf20ade15c7d7e1cf1696dfcc64a81ddc9ccf97bc"
+    },
+    {
+     "name": "bpt6k1310335d-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310335d/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Hicazkâr Peşrevi 2",
+     "bytes": 6905154,
+     "sha256": "af5a5a79d5570240ef899c88ccd3ece71498e98c4d6e1d50c3374e3acf558256"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-mahur-saz-semaisi",
+   "name": "Mahur Saz Semaisi / Evlerinin Önü Yonca, Sedad Bey (ud), Mesut Cemil Bey (kemençe); Hadiye Hanım (voice) on side 2, Pathé [no number] (N 11075 / N 11081), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13102834",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102834",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Sedad Bey (ud), Mesut Cemil Bey (kemençe); Hadiye Hanım (voice) on side 2",
+   "attribution": "Mahur Saz Semaisi / Evlerinin Önü Yonca — Sedad Bey (ud), Mesut Cemil Bey (kemençe); Hadiye Hanım (voice) on side 2, Pathé [no number], matrices N 11075 / N 11081 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3038).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H19",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Mahur Saz Semaisi / Evlerinin Önü Yonca",
+    "title_tr": "Mahur Saz Semaisi / Evlerinin Önü Yonca",
+    "performers": "Sedad Bey (ud), Mesut Cemil Bey (kemençe); Hadiye Hanım (voice) on side 2",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11075 / N 11081",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Mahur Saz Semaisi (ud, kemençe)",
+     "Evlerinin Önü Yonca (Hadiye Hanım, voice; Sedad Bey, ud)"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42416329n",
+    "shelfmark": "BnF, département Audiovisuel, AP-3038",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed saz semai (Mesut Cemil, d. 1963, only performs); folk song on side 2.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13102834-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102834/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Mahur Saz Semaisi (ud, kemençe)",
+     "bytes": 7169286,
+     "sha256": "d448341d2240e8dee4a2951561a558c7ccd337c02cf6f7e0fa85adce282686cc"
+    },
+    {
+     "name": "bpt6k13102834-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13102834/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Evlerinin Önü Yonca (Hadiye Hanım, voice; Sedad Bey, ud)",
+     "bytes": 7529466,
+     "sha256": "c97a21295b6646c9029bb38b8bef810240d49d16834ccc2766062ad5b975aa42"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-refik-bey-saz-semaisi",
+   "name": "Saz Semaisi (2 parts), Tanburi Refik Bey (tanbur), Madame Neva (kemençe), Pathé 76232 (N 11452 / N 11453), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k13103414",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103414",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Tanburi Refik Bey (tanbur), Madame Neva (kemençe)",
+   "attribution": "Saz Semaisi (2 parts) — Tanburi Refik Bey (tanbur), Madame Neva (kemençe), Pathé 76232, matrices N 11452 / N 11453 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3096).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H20",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Saz Semaisi (2 parts)",
+    "title_tr": "Saz Semaisi (2 parts)",
+    "performers": "Tanburi Refik Bey (tanbur), Madame Neva (kemençe)",
+    "label": "Pathé",
+    "catalogue": "Pathé 76232",
+    "matrix": "N 11452 / N 11453",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Saz Semaisi 1",
+     "Saz Semaisi 2"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42418279d",
+    "shelfmark": "BnF, département Audiovisuel, AP-3096",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composer not stated: if this is Refik (Fersan) Bey's own saz semai (he died in 1965), Turkey protects the composition until the end of 2035. Check before any use.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k13103414-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103414/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Saz Semaisi 1",
+     "bytes": 6160782,
+     "sha256": "0e35b94533f42e881e4b611c9cc6c0c8e9498900d44bc6e6e79b37953221855b"
+    },
+    {
+     "name": "bpt6k13103414-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k13103414/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Saz Semaisi 2",
+     "bytes": 6887406,
+     "sha256": "26d79212b96d1e67a79d15f313c51bad8fad33e4d1fe97230d81d16094673fa5"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-ussak-taksim",
+   "name": "Uşşak Taksim / Uşşak şarkı \"Afv eyle günahım\", Udi Nevres Bey (ud, 1873-1937); a Hanım (voice) on side 2, Pathé [no number] (N 11126 / N 11127), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310241s",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310241s",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Udi Nevres Bey (ud, 1873-1937); a Hanım (voice) on side 2",
+   "attribution": "Uşşak Taksim / Uşşak şarkı \"Afv eyle günahım\" — Udi Nevres Bey (ud, 1873-1937); a Hanım (voice) on side 2, Pathé [no number], matrices N 11126 / N 11127 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-2994).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H21",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Uşşak Taksim / Uşşak şarkı \"Afv eyle günahım\"",
+    "title_tr": "Uşşak Taksim / Uşşak şarkı \"Afv eyle günahım\"",
+    "performers": "Udi Nevres Bey (ud, 1873-1937); a Hanım (voice) on side 2",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11126 / N 11127",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Uşşak Taksim",
+     "Uşşak şarkı \"Afv eyle günahım\""
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42413833j",
+    "shelfmark": "BnF, département Audiovisuel, AP-2994",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Taksim improvised by Udi Nevres (d. 1937); şarkı composer not stated.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310241s-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310241s/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Uşşak Taksim",
+     "bytes": 7607766,
+     "sha256": "5391c406c89a351f9b1d95ce31791cf4caf4d10f16827d8428493a7d94cea1b0"
+    },
+    {
+     "name": "bpt6k1310241s-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310241s/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Uşşak şarkı \"Afv eyle günahım\"",
+     "bytes": 7151538,
+     "sha256": "352d7014621d1654d40df8f4f413c6627920ec988ef492078807478f491cd711"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-aksaray-kantosu",
+   "name": "Sinan Oğlu / Aksaray Kantosu, Aksaraylı Hafız Yaşar Bey (voice), with instruments, Pathé 76225 (N 11495 / N 11496), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310338n",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310338n",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Aksaraylı Hafız Yaşar Bey (voice), with instruments",
+   "attribution": "Sinan Oğlu / Aksaray Kantosu — Aksaraylı Hafız Yaşar Bey (voice), with instruments, Pathé 76225, matrices N 11495 / N 11496 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3093).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H22",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Sinan Oğlu / Aksaray Kantosu",
+    "title_tr": "Sinan Oğlu / Aksaray Kantosu",
+    "performers": "Aksaraylı Hafız Yaşar Bey (voice), with instruments",
+    "label": "Pathé",
+    "catalogue": "Pathé 76225",
+    "matrix": "N 11495 / N 11496",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Sinan Oğlu",
+     "Aksaray Kantosu"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42418132g",
+    "shelfmark": "BnF, département Audiovisuel, AP-3093",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed kantos (composers not stated; check); Hafız Yaşar (d. 1966) only performs.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310338n-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310338n/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Sinan Oğlu",
+     "bytes": 7409406,
+     "sha256": "ccc08c43462850d9259b87025c73b3faa3ecd0f22f3375d2e7a38847f5ef50ab"
+    },
+    {
+     "name": "bpt6k1310338n-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310338n/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Aksaray Kantosu",
+     "bytes": 7629690,
+     "sha256": "a734f66fa508e759330b092c30a4a27de2b4796bc1d8163ea0a63e2d2259b2d2"
+    }
+   ]
+  },
+  {
+   "id": "gallica-pathe-dolayci-beyoglu-kantosu",
+   "name": "Dolaycı Kantosu / Beyoğlu Kantosu, Aksaraylı Hafız Yaşar Bey (voice), with instruments, Pathé [no number] (N 11121 / N 11125), c. 1927-1928",
+   "source": "gallica",
+   "source_id": "bpt6k1310285z",
+   "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310285z",
+   "licence": "public-domain-tr",
+   "licence_url": "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+   "author": "Aksaraylı Hafız Yaşar Bey (voice), with instruments",
+   "attribution": "Dolaycı Kantosu / Beyoğlu Kantosu — Aksaraylı Hafız Yaşar Bey (voice), with instruments, Pathé [no number], matrices N 11121 / N 11125 (Istanbul, c. 1927-1928). Source gallica.bnf.fr / BnF (Archives de la Parole, AP-3040).",
+   "kind": "recording",
+   "use": "Archive only",
+   "repeat_m": null,
+   "resolution": null,
+   "download": "api",
+   "shortlist": ".docs/assets/candidates/moment-music.md",
+   "conditions": [
+    "US-risky: never in public/ or git; builds only from private-assets/ (see .docs/assets/private-assets.md)",
+    "Full attribution with the takedown contact <contact-email>"
+   ],
+   "candidate": "H22",
+   "risk": "us-risky",
+   "recording": {
+    "title": "Dolaycı Kantosu / Beyoğlu Kantosu",
+    "title_tr": "Dolaycı Kantosu / Beyoğlu Kantosu",
+    "performers": "Aksaraylı Hafız Yaşar Bey (voice), with instruments",
+    "label": "Pathé",
+    "catalogue": "Pathé [no number]",
+    "matrix": "N 11121 / N 11125",
+    "published": "c. 1927-1928 (BnF: \"192.\" / \"19..\")",
+    "place": "Istanbul",
+    "sides": [
+     "Dolaycı Kantosu",
+     "Beyoğlu Kantosu"
+    ],
+    "catalogue_record": "https://catalogue.bnf.fr/ark:/12148/cb42416420t",
+    "shelfmark": "BnF, département Audiovisuel, AP-3040",
+    "summary": "Pathé disc donated to the Archives de la Parole (BnF).",
+    "transfer": "Gallica streaming files (MP3 320 kbps, 44.1 kHz), one per side",
+    "rights": {
+     "us": "Published by Pathé in Istanbul c. 1927-1928 (the catalogue dates it \"192.\" / \"19..\"; the sister discs Pathé 76136 and 76147 are 1928 and these matrices are a few hundred below them): US-protected until 1 Jan 2028 or 2029 (17 U.S.C. §1401, 100 years from publication).",
+     "tr": "Public domain: published before 1956 (FSEK related rights, 70 years).",
+     "composition": "Composed kantos (composers not stated; check); Hafız Yaşar (d. 1966) only performs.",
+     "note": "Tier B. Gallica marks the item \"domaine public\"; the BnF reuse conditions for its files apply (non-commercial reuse free with the credit \"Source gallica.bnf.fr / BnF\"; commercial reuse needs a BnF licence). Owner accepts the US risk (2026-09-26)."
+    }
+   },
+   "files": [
+    {
+     "name": "bpt6k1310285z-f1.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310285z/f1.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Dolaycı Kantosu",
+     "bytes": 7274730,
+     "sha256": "6fa2cfda74c68a38878ec57aee060a4cfd6bb1a497141958233cafd411cab2a5"
+    },
+    {
+     "name": "bpt6k1310285z-f2.mp3",
+     "url": "https://gallica.bnf.fr/ark:/12148/bpt6k1310285z/f2.audio",
+     "format": "MP3 (320 kbps, 44.1 kHz)",
+     "side": "Beyoğlu Kantosu",
+     "bytes": 7201650,
+     "sha256": "4542e07d868a82f34c9d8707d79470d9359694c12898d90f94c624ae6e5c985d"
+    }
+   ]
   }
  ]
 }

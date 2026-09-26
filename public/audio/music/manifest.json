@@ -1,4 +1,134 @@
 {
   "version": 1,
-  "sets": []
+  "sets": [],
+  "phrases": [
+    {
+      "id": "kagithane-semaisi-1916",
+      "role": "moment",
+      "src": [
+        "moments/kagithane-semaisi-1916.opus",
+        "moments/kagithane-semaisi-1916.m4a"
+      ],
+      "durationSec": 56.0,
+      "family": "fasil",
+      "tags": [
+        "poem",
+        "city-life",
+        "history",
+        "solemn",
+        "tender",
+        "day"
+      ],
+      "lufs": -21.6,
+      "variant": "denoised",
+      "variants": {
+        "denoised": {
+          "src": [
+            "moments/kagithane-semaisi-1916.opus",
+            "moments/kagithane-semaisi-1916.m4a"
+          ],
+          "lufs": -21.6
+        },
+        "raw": {
+          "src": [
+            "moments/kagithane-semaisi-1916.raw.opus",
+            "moments/kagithane-semaisi-1916.raw.m4a"
+          ],
+          "lufs": -24.0
+        }
+      },
+      "credit": {
+        "title": "Kâğıthane Semaisi",
+        "author": "Karekin Proodian, Kemani Minas ve topluluğu",
+        "licence": "public-domain",
+        "sourceUrl": "https://www.loc.gov/item/jukebox-20789/",
+        "attribution": "Kâğıthane Semaisi (giriş sazı) — Karekin Proodian, Kemani Minas ve topluluğu, Victor 69173 (New York, 1916), Library of Congress National Jukebox"
+      },
+      "approvedOn": "2026-09-26"
+    },
+    {
+      "id": "felek-bana-1916",
+      "role": "moment",
+      "src": [
+        "moments/felek-bana-1916.opus",
+        "moments/felek-bana-1916.m4a"
+      ],
+      "durationSec": 115.5,
+      "family": "fasil",
+      "tags": [
+        "poem",
+        "history",
+        "joyful",
+        "night"
+      ],
+      "lufs": -20.5,
+      "variant": "denoised",
+      "variants": {
+        "denoised": {
+          "src": [
+            "moments/felek-bana-1916.opus",
+            "moments/felek-bana-1916.m4a"
+          ],
+          "lufs": -20.5
+        },
+        "raw": {
+          "src": [
+            "moments/felek-bana-1916.raw.opus",
+            "moments/felek-bana-1916.raw.m4a"
+          ],
+          "lufs": -20.6
+        }
+      },
+      "credit": {
+        "title": "Felek Bana",
+        "author": "Karekin Proodian, Kemani Minas ve topluluğu",
+        "licence": "public-domain",
+        "sourceUrl": "https://www.loc.gov/item/jukebox-20790/",
+        "attribution": "Felek Bana — Karekin Proodian, Kemani Minas ve topluluğu, Victor 69175 (New York, 1916), Library of Congress National Jukebox"
+      },
+      "approvedOn": "2026-09-26"
+    },
+    {
+      "id": "aya-yorgi-apolitikiyonu-nafpliotis",
+      "role": "moment",
+      "src": [
+        "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.opus",
+        "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.m4a"
+      ],
+      "durationSec": 75.0,
+      "family": "chant",
+      "tags": [
+        "legend",
+        "mystic",
+        "solemn",
+        "history"
+      ],
+      "lufs": -18.0,
+      "variant": "raw",
+      "variants": {
+        "denoised": {
+          "src": [
+            "moments/aya-yorgi-apolitikiyonu-nafpliotis.opus",
+            "moments/aya-yorgi-apolitikiyonu-nafpliotis.m4a"
+          ],
+          "lufs": -18.3
+        },
+        "raw": {
+          "src": [
+            "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.opus",
+            "moments/aya-yorgi-apolitikiyonu-nafpliotis.raw.m4a"
+          ],
+          "lufs": -18.0
+        }
+      },
+      "credit": {
+        "title": "Aya Yorgi apolitikiyonu (Os ton ehmaloton eleftherotis)",
+        "author": "Iakovos Nafpliotis",
+        "licence": "public-domain",
+        "sourceUrl": "https://analogion.com/site/html/Nafpliotis.html",
+        "attribution": "Aya Yorgi apolitikiyonu — Iakovos Nafpliotis (Patrikhane baş psaltisi), Orfeon (İstanbul, 1913–1918), analogion.com"
+      },
+      "approvedOn": "2026-09-26"
+    }
+  ]
 }

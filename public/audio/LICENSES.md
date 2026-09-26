@@ -30,3 +30,9 @@ the credits are kept anyway.
 | `gull/calls.m4a` | [Seagulls on the top of Princes Island (Turkey)](https://freesound.org/people/felix.blume/sounds/167129/) | felix.blume | CC0 1.0 |
 | `gull/calls.m4a` | [Herring Gull passing over roof](https://freesound.org/people/genghisattenborough/sounds/744592/) | genghisattenborough | CC0 1.0 |
 | `gull/bed.m4a` | [Seagulls in a quiet street, 6AM, Harbour City](https://freesound.org/people/etienne.leplumey/sounds/450529/) | etienne.leplumey | CC0 1.0 |
+
+## Music
+
+Music sets, phrases and the moment pieces restored from historic 78 rpm records (public domain, approved by the owner on
+2026-09-26) are listed in [`music/LICENSES.md`](music/LICENSES.md), with their provenance in
+[`.docs/assets/archive-78rpm.md`](../../.docs/assets/archive-78rpm.md). Rights holders' requests: `<contact-email>`.
