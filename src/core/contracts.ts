@@ -379,6 +379,32 @@ export interface DragonPose {
   riderLeanRoll: number;
 
   /*
+   * Ground contact and gait (optional; written by dragon/flight/pose.ts). Without them the rig stands on a plane
+   * STANDING_ROOT_HEIGHT below its origin and walks with its default gait.
+   */
+  /**
+   * World height (m) of the ground under the dragon and the ground normal's world x / z. The rig turns them into a
+   * plane in its own frame with the rendered transform (NaN / missing: the default standing plane).
+   */
+  groundY?: number;
+  groundNx?: number;
+  groundNz?: number;
+  /** Gait blend: 0 walk, 1 trot, 2 gallop. */
+  gait?: number;
+  /** Distance covered per gait cycle (m): the rig plants each foot for a sweep that matches it (no foot skate). */
+  stride?: number;
+  /** 0..1 the wing wrists are fore feet (0: the wings are wings, e.g. the first strides of a run-out). */
+  foreGround?: number;
+  /** 0..1 hands and fingers raised high and back while the wrists stand (the crouch before a leap). */
+  wingRaise?: number;
+  /** 0..1 push-off: heels up, toes pushing. */
+  heelLift?: number;
+  /** Legs clear of the ground: -1 trailing back (after the push), +1 reaching forward (touchdown). */
+  legReach?: number;
+  /** 0..1 braking skid: hind feet braced forward, claws dug in. */
+  skid?: number;
+
+  /*
    * Rider cues and dragon attention (optional, 0 = neutral). Every command the player gives shows on the rider.
    * Written by flight (dragon/flight/pose.ts): riderReinLeft/Right, riderTuck, riderUrge, riderPoint, riderCheer.
    * Written by the rider behaviour (dragon/model): riderPet, riderStand, gazeRider.

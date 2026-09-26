@@ -12,8 +12,9 @@ import {
   staticAttachment,
 } from './aero';
 import { integrateOrientation } from './body';
+import { enterRunOut } from './ground-moves';
 import { enterGrounded, enterSwimming } from './locomotion';
-import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
+import { BODY, ENVELOPE, FLAP, GRAVITY, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { maxAmplitudeForClearance } from './wingtip';
@@ -293,9 +294,14 @@ function checkTouchdown(sim: FlightSim, h: number): void {
     return;
   }
   sim.sampleSurface();
-  // A settling landing touches down within a foot of the ground (the wing-beat bob would otherwise keep it hanging).
+  // The feet meet the ground: footDepth() uses the stance geometry the rig stands with, so the stance takes over
+  // from here without a jump (a settling landing touches within a few centimetres; the wing-beat bob no longer
+  // keeps it hanging because the settle sinks steadily).
   const touch = sim.mode === 'landing' && sim.body.velocity.y < 0.6 ? 0.3 : 0.02;
-  if (sim.footClearance > touch) {
+  // Settling onto a slope, the hips can meet the rising ground behind before the feet below the centre of mass do:
+  // the body resting on the ground counts as the touchdown too.
+  const bodyDown = sim.mode === 'landing' && sim.impact.touched && sim.impact.surface === 'ground' && sim.body.velocity.y < 0.6 && Math.hypot(sim.body.velocity.x, sim.body.velocity.z) < 4.5;
+  if (sim.footClearance > touch && !bodyDown) {
     return;
   }
   const b = sim.body;
@@ -304,12 +310,18 @@ function checkTouchdown(sim: FlightSim, h: number): void {
   if (v.y < -9) {
     return;
   }
-  if (horizontal < 8) {
+  if (horizontal < RUNOUT.minSpeed) {
     sim.emit({ type: 'landed', point: new THREE.Vector3(b.position.x, sim.surfaceY, b.position.z), speed: Math.max(-v.y, 0), water: false });
     enterGrounded(sim);
     return;
   }
-  // Running touchdown: the hind feet take the weight and skid/run the speed off.
+  if (horizontal <= RUNOUT.maxSpeed && v.y > -RUNOUT.maxSink) {
+    // Fast and shallow: the hind feet take the weight and the landing is run out.
+    sim.emit({ type: 'landed', point: new THREE.Vector3(b.position.x, sim.surfaceY, b.position.z), speed: Math.max(-v.y, 0), water: false });
+    enterRunOut(sim);
+    return;
+  }
+  // Too fast for the legs: the hind feet skid the speed off until a run-out can take over.
   b.position.y -= sim.footClearance;
   if (v.y < -3 && sim.impactCooldown <= 0) {
     sim.impactCooldown = 0.3;

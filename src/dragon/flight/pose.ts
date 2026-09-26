@@ -16,6 +16,16 @@ const ROAR_CHEER = 1.5;
 const _omegaWorld = new THREE.Vector3();
 const _accelBody = new THREE.Vector3();
 const _invQ = new THREE.Quaternion();
+const _groundN = new THREE.Vector3();
+/** Tail root behind / above the centre of mass (rig frame) and the tail's length (m) for the ground clearance. */
+const TAIL_ROOT_Z = 2.7;
+const TAIL_ROOT_Y = 0.35;
+const TAIL_LENGTH = 8.5;
+/** Height the tail tip keeps above the ground near it (m) and the most it curls up for that (rad). */
+const TAIL_CLEARANCE = 1.2;
+const TAIL_MAX_CURL = 1.6;
+/** Rate (1/s) of the ground cues (they are already continuous; this only rounds the corners). */
+const CUE_RATE = 14;
 
 /** Optional look target for the head (POV camera direction), angles relative to the body. */
 export interface LookTarget {
@@ -50,6 +60,16 @@ export class PoseDriver {
     walkPhase: 0,
     walkAmount: 0,
     breath: 0.3,
+    groundY: Number.NaN,
+    groundNx: 0,
+    groundNz: 0,
+    gait: 0,
+    stride: 0,
+    foreGround: 1,
+    wingRaise: 0,
+    heelLift: 0,
+    legReach: 0,
+    skid: 0,
     riderLeanPitch: 0,
     riderLeanRoll: 0,
     riderReinLeft: 0,
@@ -111,13 +131,17 @@ export class PoseDriver {
     // Neck: look into turns, keep the head nearer the horizon (bird-like stabilization), look down to land.
     let neckYaw = clamp(turnRate * 0.55 + sim.beta * 0.6, -0.55, 0.55);
     let neckPitch: number;
+    const moves = sim.moves;
     if (onSurface) {
-      neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount;
+      neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount - 0.22 * moves.crouch + 0.12 * moves.skid;
       neckYaw += 0.06 * Math.sin(time * 0.37) * (1 - sim.walkAmount);
     } else if (sim.mode === 'landing' || sim.mode === 'hovering') {
       neckPitch = -0.18 - sim.pitch * 0.55;
     } else if (sim.mode === 'diving') {
       neckPitch = -sim.pitch * 0.15 - 0.05;
+    } else if (sim.mode === 'takeoff' && moves.takeoffVariant !== null) {
+      // Neck stretched forward through the first strokes.
+      neckPitch = -sim.pitch * 0.5 - 0.08;
     } else {
       neckPitch = -sim.pitch * 0.38 + 0.05;
     }
@@ -133,8 +157,19 @@ export class PoseDriver {
     let tailYaw = clamp(-turnRate * 0.5 - sim.beta * 0.8, -0.6, 0.6);
     let tailPitch: number;
     if (onSurface) {
-      tailYaw += 0.16 * Math.sin(sim.walkPhase + 0.9) * sim.walkAmount + 0.07 * Math.sin(time * 0.6);
-      tailPitch = sim.mode === 'swimming' ? -0.08 : 0.06 + 0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount;
+      // Gallop: the tail swings less and counterbalances the bound; a run-out holds it up; a crouch lowers it.
+      const gallop = clamp(moves.gait - 1, 0, 1);
+      const running = moves.runOut ? smoothstep(3, 10, sim.groundSpeed) : 0;
+      tailYaw += 0.16 * Math.sin(sim.walkPhase + 0.9) * sim.walkAmount * (1 - 0.5 * gallop) + 0.07 * Math.sin(time * 0.6);
+      tailPitch =
+        sim.mode === 'swimming'
+          ? -0.08
+          : 0.06 +
+            0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount * (1 - gallop) -
+            0.08 * gallop * Math.sin(sim.walkPhase - 2.2) * sim.walkAmount -
+            0.22 * running -
+            0.12 * moves.skid +
+            0.22 * moves.crouch;
     } else {
       const nearGround = 1 - smoothstep(4, 14, sim.footClearance);
       tailPitch =
@@ -145,11 +180,14 @@ export class PoseDriver {
       tailYaw += 0.05 * Math.sin(time * 1.3) * (1 - sim.beat.amplitude);
       tailPitch += 0.05 * Math.sin(sim.beat.phase + 2.2) * sim.beat.amplitude;
     }
+    // Near the ground the tail curls up enough to keep its tip clear (a flare pitched 50° would drag it).
+    tailPitch = Math.min(clamp(tailPitch, -0.5, 0.5), -this.tailClearCurl(sim));
     pose.tailYaw = follow(pose.tailYaw, clamp(tailYaw, -0.7, 0.7), 2.5, dt);
-    pose.tailPitch = follow(pose.tailPitch, clamp(tailPitch, -0.5, 0.5), 2.5, dt);
+    pose.tailPitch = follow(pose.tailPitch, tailPitch, tailPitch < pose.tailPitch ? 6 : 2.5, dt);
 
     pose.walkPhase = sim.walkPhase;
-    pose.walkAmount = follow(pose.walkAmount, onSurface ? sim.walkAmount : 0, 6, dt);
+    pose.walkAmount = follow(pose.walkAmount, onSurface ? sim.walkAmount : 0, moves.runOut ? 20 : 6, dt);
+    this.updateGroundCues(sim, dt);
 
     // Exertion drives breathing and panting.
     const exertionTarget = clamp(sim.beat.effort * sim.beat.effort * 0.9 + (sim.tired ? 0.6 : 0) + (1 - sim.stamina) * 0.35, 0, 1);
@@ -184,6 +222,63 @@ export class PoseDriver {
     pose.riderLeanRoll = clamp(pose.riderLeanRoll + this.leanRollVel * h, -0.5, 0.5);
     this.updateRiderCues(sim, dt, cmd);
     return pose;
+  }
+
+  /**
+   * Ground plane in the body frame (the rig plants its feet on it), gait and stance cues of the ground moves, and
+   * the legs' reach while they are clear of the ground.
+   */
+  private updateGroundCues(sim: FlightSim, dt: number): void {
+    const pose = this.pose;
+    const m = sim.moves;
+    const onGround = sim.mode === 'grounded';
+    if (onGround) {
+      _groundN.copy(m.groundNormal);
+    } else {
+      _groundN.set(0, 1, 0);
+    }
+    pose.groundY = sim.surfaceY;
+    pose.groundNx = _groundN.x;
+    pose.groundNz = _groundN.z;
+    pose.gait = onGround ? m.gait : 0;
+    pose.stride = onGround ? m.stride : 0;
+    // Legs clear of the ground: trailing back after a push-off, reaching forward low over the ground before a
+    // touchdown.
+    let reach = 0;
+    if (!onGround) {
+      const trail = 1 - smoothstep(0.25, 0.9, m.sinceLiftOff);
+      const descending = sim.body.velocity.y < 0.5 && (sim.mode === 'landing' || sim.mode === 'flying' || sim.mode === 'gliding') ? 1 : 0;
+      reach = descending * smoothstep(6, 1.5, sim.footClearance) - trail;
+    }
+    const heel = onGround ? m.heelLift : 1 - smoothstep(0, 0.35, m.sinceLiftOff);
+    const k = 1 - Math.exp(-CUE_RATE * dt);
+    const ease = (current: number | undefined, target: number, rate = k): number => (current ?? target) + (target - (current ?? target)) * rate;
+    // Off the ground both fade slowly: the rig's wing spread lags the flight model's, and until it has caught up the
+    // folded part of the wing keeps to the raised pose instead of dropping to the flank.
+    const airFade = 1 - Math.exp(-4 * dt);
+    pose.foreGround = ease(pose.foreGround, onGround ? m.foreGround : 0, onGround ? k : airFade);
+    pose.wingRaise = ease(pose.wingRaise, onGround ? m.wingRaise : 0, onGround ? k : airFade);
+    pose.heelLift = ease(pose.heelLift, heel);
+    pose.legReach = ease(pose.legReach, reach, k * 0.5);
+    pose.skid = ease(pose.skid, onGround ? m.skid : 0);
+  }
+
+  /**
+   * Tail curl (rad, upward) that keeps the tip TAIL_CLEARANCE above the ground: with the body pitched θ nose-up the
+   * tail points down by θ; an even curl c along it turns its chord up by c / 2.
+   */
+  private tailClearCurl(sim: FlightSim): number {
+    if (sim.mode === 'swimming') {
+      return 0;
+    }
+    // Lead the pitch a little (a push-off or a flare rears up faster than the tail can follow).
+    const theta = sim.pitch + clamp(sim.body.angularVelocity.x, -1, 3) * 0.3;
+    const height = sim.agl + Math.min(sim.body.velocity.y, 0) * 0.5;
+    const root = height + TAIL_ROOT_Y * Math.cos(theta) - TAIL_ROOT_Z * Math.sin(theta);
+    const room = clamp((root - TAIL_CLEARANCE) / TAIL_LENGTH, -1, 1);
+    // The tail hangs a little below the body line at rest (about 0.05 rad).
+    const need = 2 * (theta + 0.05 - Math.asin(room));
+    return clamp(need, 0, TAIL_MAX_CURL);
   }
 
   /**

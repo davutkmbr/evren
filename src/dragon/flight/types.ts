@@ -51,7 +51,7 @@ export interface SimWorld {
 }
 
 /** Maneuver ids announced to the game ('maneuver' event); 'hint' explains a refused trick. */
-export type ManeuverId = 'roll' | 'loop' | 'freefall' | 'catch' | 'urge' | 'takeoff' | 'land' | 'hint';
+export type ManeuverId = 'roll' | 'loop' | 'freefall' | 'catch' | 'urge' | 'takeoff' | 'land' | 'runout' | 'touchgo' | 'hint';
 
 /** One-shot sounds requested by the flight model (AudioService one-shots). */
 export type FlightSound = 'wing-snap' | 'whoosh';

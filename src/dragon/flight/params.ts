@@ -340,6 +340,154 @@ export const GROUND = {
   runTakeoffSpeed: 12,
   runTakeoffTime: 1.3,
   runTakeoffAccel: 7,
+  /**
+   * Stance geometry shared with the rig: fore-aft distance (m) of the hind feet behind and of the fore feet (the
+   * wing wrists) ahead of the centre of mass. A body pitched nose-up stands on its hind feet, nose-down on its fore
+   * feet, so the centre of mass sits standHeight·cos θ + z·|sin θ| above the ground.
+   */
+  hindFootZ: 1.85,
+  foreFootZ: 2.55,
+  /** Touchdown settle: spring (1/s, damping ratio) that brings the landing pitch and sink into the stance. */
+  settleOmega: 6.5,
+  settleZeta: 0.95,
+  /** Deepest the legs give on a touchdown (m below the standing height). */
+  settleCompress: 0.45,
+} as const;
+
+/**
+ * Ground gaits. The stride frequency follows the speed (table, linear in between); the rig plants each foot for a
+ * sweep its legs can reach, so the stance time shrinks with speed. Gait blend: 0 walk (lateral sequence), 1 trot,
+ * 2 gallop (hind pair, then the fore pair, with suspension phases at speed).
+ */
+export const GAIT = {
+  cadenceSpeeds: [0, 3.5, 6, 9, 14, 22] as readonly number[],
+  cadenceHz: [0.6, 1.05, 1.3, 1.45, 1.6, 1.8] as readonly number[],
+  trotFrom: 4.3,
+  trotTo: 5.5,
+  gallopFrom: 7,
+  gallopTo: 8.5,
+} as const;
+
+/**
+ * Run-out landing ("koşarak iniş"): a shallow, fast touchdown on walkable ground turns into a decelerating run
+ * that stops (Ctrl/X brakes harder), steers (A/D) or flies out again (Space, or W pressed with speed: touch-and-go).
+ * Speeds m/s, decelerations m/s², heights m (foot clearance), times s.
+ */
+export const RUNOUT = {
+  /** Touchdown ground speed from which the dragon runs the landing out (slower: the normal settle). */
+  minSpeed: 8,
+  /** Fastest touchdown the legs take; faster contacts skid until below it. */
+  maxSpeed: 22,
+  /** Hardest sink (m/s) a running touchdown takes. */
+  maxSink: 6,
+  /* Approach: L pressed fast and low over land flies a shallow approach instead of the steep braked one + flare. */
+  approachMinSpeed: 14,
+  approachMaxHeight: 25,
+  /** Steepest glide path of the approach (rad). */
+  approachPath: 10 * DEG,
+  /** Airbrake speed schedule: touchdownSpeed + clearance × approachSpeedPerMetre. */
+  touchdownSpeed: 17,
+  approachSpeedPerMetre: 0.9,
+  /** Sink-rate profile of the round-out: touchdownSink + roundOutGain × clearance (m/s). */
+  touchdownSink: 0.9,
+  roundOutGain: 0.5,
+  /** Still faster than maxSpeed this low: float at this clearance until the airbrake has taken the speed out. */
+  floatHeight: 1.2,
+  /* The run. */
+  decel: 3.2,
+  /** Drag of the half-open wings and body: extra deceleration per (m/s)². */
+  dragPerV2: 0.004,
+  /** Ctrl/X: skid, claws dig, wings flared as air brakes; the skid comes in at skidRate (1/s), sat back skidPitch. */
+  brakeDecel: 7.5,
+  skidRate: 5,
+  skidPitch: 6 * DEG,
+  /** The run-out ends (ordinary walking / running) below this speed or the pilot's own target speed. */
+  endSpeed: 3,
+  turnRate: 0.75,
+  /** Lean into a turn at speed (rad at full A/D). */
+  lean: 9 * DEG,
+  /** Nose-up of the first, hind-legged strides (rad), and how long they last at least (s). */
+  pitchUp: 7 * DEG,
+  foreDelay: 0.35,
+  /** Wings: half open for balance above openSpeed, folded (fore feet down) below foldSpeed. */
+  openSpeed: 15,
+  foldSpeed: 10,
+  /* Fly-out (touch-and-go): a two-beat run-up and a leap straight back into flight. */
+  flyOutMinSpeed: 8,
+  flyOutGather: 0.32,
+  flyOutPush: 0.12,
+  flyOutUp: 4.5,
+  /** Gather of the fly-out: a slight dip (m) and the pitch through it and at lift-off (rad). */
+  flyOutDepth: 0.12,
+  flyOutCrouchPitch: 3 * DEG,
+  flyOutPushPitch: 11 * DEG,
+  /** Fraction of the ground speed kept through the leap. */
+  flyOutKeep: 0.97,
+  /* The path ahead (edge, water, obstacle): looked at lookTime × speed + lookMin m ahead; leaps on its own. */
+  lookTime: 0.7,
+  lookMin: 4,
+  autoLeapMinSpeed: 6,
+  autoGather: 0.14,
+} as const;
+
+/**
+ * Leaping take-off ("sıçrayarak kalkış"): a crouch (chest low, wings raised high and back, tail down), a push-off
+ * that ramps the velocity up through the legs (hind first, the fore legs a beat later), then full downstrokes from
+ * lift-off with the legs tucked only after tuckBeats strokes. Variants are picked by context and never repeat when
+ * several apply. Times s, speeds m/s, depths m, angles rad.
+ */
+export const LEAP = {
+  /* Standing: straight up. */
+  crouch: 0.42,
+  crouchDepth: 0.5,
+  crouchPitch: -6 * DEG,
+  push: 0.16,
+  pushPitch: 16 * DEG,
+  up: 7.5,
+  forward: 4,
+  /* Standing: a forward bound. */
+  boundCrouch: 0.36,
+  boundDepth: 0.4,
+  boundPush: 0.15,
+  boundUp: 6.2,
+  boundForward: 7,
+  boundPitch: 12 * DEG,
+  /* From a walk or run: blends into the stride. */
+  runMinSpeed: 2.5,
+  runCrouch: 0.16,
+  runDepth: 0.2,
+  runPush: 0.13,
+  runUp: 6.5,
+  runForward: 2.5,
+  runCrouchPitch: -2 * DEG,
+  runPushPitch: 12 * DEG,
+  /* Off an edge or a roof: a short hop, the wings snap open, a dive to gain speed. */
+  dropMin: 5,
+  dropLook: [3, 5.5, 8] as readonly number[],
+  dropCrouch: 0.26,
+  dropDepth: 0.3,
+  dropPush: 0.14,
+  dropUp: 2.5,
+  dropForward: 6,
+  dropCrouchPitch: -7 * DEG,
+  dropPushPitch: 4 * DEG,
+  dropDive: -20 * DEG,
+  dropTime: 0.8,
+  /* Tired (low stamina): slower, weaker, an extra stroke before the legs tuck. */
+  tiredCrouch: 0.55,
+  tiredDepth: 0.55,
+  tiredPush: 0.22,
+  tiredUp: 5.5,
+  tiredForward: 3,
+  tiredPushPitch: 12 * DEG,
+  tiredEffort: 0.75,
+  tiredBoostTime: 2.2,
+  /** Downstrokes before the legs tuck (tired: one more). */
+  tuckBeats: 2,
+  /** Forward-reaching stroke of the first beats (wing sweep): full amplitude with the tips clear of the ground. */
+  strokeSweep: -0.6,
+  /** Seed of the variant picker. */
+  seed: 2027,
 } as const;
 
 export const SWIM = {

@@ -51,11 +51,17 @@ export async function buildRig(): Promise<DragonRigImpl> {
 /* Flat test ground                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Flat open land at `height` m everywhere (no water, no buildings, no thermals worth mentioning). */
-export function flatGeo(height: number): GeoQuery {
+/** Height of the test ground at (x, z) (m). */
+export type Terrain = (x: number, z: number) => number;
+
+/**
+ * Open land at `height` m everywhere (no water, no buildings, no thermals worth mentioning), or shaped by `terrain`
+ * (an edge to drop from, a cliff to run towards).
+ */
+export function flatGeo(height: number, terrain?: Terrain): GeoQuery {
   const geo = {
     bounds: { minX: -20000, maxX: 20000, minZ: -20000, maxZ: 20000 },
-    heightAt: () => height,
+    heightAt: terrain ?? (() => height),
     normalAt: (_x: number, _z: number, out: THREE.Vector3) => out.set(0, 1, 0),
     isWater: () => false,
     coastDistance: () => 5000,
@@ -141,17 +147,31 @@ export class PoseRuntime {
   private readonly boneInverses: THREE.Matrix4[];
   private readonly tmp = new THREE.Matrix4();
 
+  /**
+   * `terrain` shapes the ground (default: flat at groundY). `wind` is the mean wind (m/s at 100 m, world x / z);
+   * the default is still air without gusts or thermals, so nothing but the controls moves the dragon.
+   */
   constructor(
     readonly rig: DragonRigImpl,
     readonly groundY: number,
+    terrain?: Terrain,
+    wind: readonly [number, number] | null = null,
   ) {
     const collision = new CollisionWorld();
-    const geo = flatGeo(groundY);
+    const geo = flatGeo(groundY, terrain);
     collision.setGeo(geo);
     this.sim.world.collision = collision;
     this.sim.world.geo = geo;
     this.sim.world.env = undefined;
     this.sim.queueEvents = false;
+    if (wind) {
+      this.sim.wind.override = new THREE.Vector3(wind[0], 0, wind[1]);
+    } else {
+      // Without an environment the wind model falls back to a 4.5 m/s default wind (plus gusts): still air here.
+      this.sim.wind.override = new THREE.Vector3(0, 0, 0);
+      this.sim.options.turbulence = false;
+      this.sim.options.thermals = false;
+    }
     // configureRig() of the flight system.
     const dims = rig.dimensions;
     const length = dims.length > 1 ? dims.length : DEFAULT_RIG_LENGTH;
