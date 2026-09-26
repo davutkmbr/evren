@@ -215,7 +215,7 @@ procedural city.
 
 ## Status (2026-09-26)
 
-S0–S3 are implemented. None of it has been looked at on a GPU yet: the cloud session had no browser that could run
+S0–S3 and S5 are implemented. None of it has been looked at on a GPU yet: the cloud session had no browser that could run
 the game. Owner checks are listed below.
 
 **S1 bake.** `npm run bake:city` takes about 8 min on 4 cores with the extract and block cache present.
@@ -246,6 +246,11 @@ Land use:
   `core/uniforms.ts`).
 - Leaving is the reverse.
 
+**S5 night.** `render/shaders/night-lights.glsl.ts` holds the city's window-light model: lights-on curve, occupancy by
+hour for homes and offices, the far-field cell colour and strength. The procedural city and the far OSM layer use it,
+and so do the OSM facades now: their occupancy curve and far cells follow it. Busy streets still light more windows
+up close, as before.
+
 **Known limits:**
 - Level 0 outside the regions draws the compact geometry: real footprints and roofs, but not the procedural near
   detail (balconies, rooftop clutter).
@@ -256,7 +261,7 @@ Land use:
 
 **Owner checks on the reference machine:**
 - Fly from 9 km into a landing region and out again, by day and by night. There should be no pop, and the window
-  light must match (S5 is still open).
+  light should match (S5).
 - `node scripts/snap.mjs --perf` on `?view=levent`, `camlica` and `yuksek`, with and without `?osmfar=0`.
 - The first frames of a handover: shader compiles for the `OSM_FADE` variants.
 
