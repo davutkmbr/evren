@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GeoQuery } from '../../../core/contracts';
+import type { GeoQuery, WaterService } from '../../../core/contracts';
 import { latLonToLocal } from '../../../core/geo-coords';
 import { createRng } from '../../../core/math/noise';
 import { SMALL_CRAFT_ZONES } from '../data/places';
@@ -16,6 +16,7 @@ import { KeepOut } from './nav/keep-out';
 import { TrafficRules } from './nav/traffic-rules';
 import { anchorageSpots, bridgeKeepOut, buildTourLoop, mooringSpots, type Berth, type StraitLanes } from './routes';
 import { WakeTrails } from '../wakes/wake-trails';
+import { VesselPhysics } from './physics/vessel-physics';
 
 const PLANING = new Set(['seabus', 'motorboat', 'pilot', 'yacht']);
 
@@ -41,6 +42,8 @@ export interface FleetPlanInput {
   berths: Map<string, Berth[]>;
   lanes: StraitLanes;
   shipCount: number;
+  /** The sea surface (heights, current); flat still water until it is set. */
+  water?: WaterService | null;
 }
 
 /** Palette seed: palette index in [0, 8) + weathering fraction, packed as the instance alpha. */
@@ -61,19 +64,20 @@ const PRIORITY: Record<string, Priority> = {
 };
 
 /**
- * Owns every vessel: plans the fleet from routes and quality, runs the traffic rules, advances behaviours and computes
- * per-vessel transforms (heave / roll / pitch in the waves, heel in turns, squat and trim when planing).
+ * Owns every vessel: plans the fleet from routes and quality, runs the traffic rules, advances the navigation
+ * behaviours (the reference pose each vessel steers for) and runs the floating rigid bodies (physics/): heave, roll
+ * and pitch on the real waves, thrust, rudder and drag in the plane, heel in turns, squat and planing trim.
  */
 export class Fleet {
   readonly vessels: Vessel[] = [];
   readonly renderer: FleetRenderer;
   readonly services: ServicePlan[] = [];
   readonly rules: TrafficRules;
+  readonly physics: VesselPhysics;
   private readonly q = new THREE.Quaternion();
   private readonly e = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly p = new THREE.Vector3();
   private readonly one = new THREE.Vector3(1, 1, 1);
-  private time = 0;
   tourLoop: Path2 | null = null;
 
   constructor(
@@ -88,6 +92,8 @@ export class Fleet {
       this.vessels.push(v);
     }
     this.rules = new TrafficRules(this.vessels);
+    this.physics = new VesselPhysics(this.vessels, input.geo);
+    this.physics.water = input.water ?? null;
   }
 
   private plan(): Vessel[] {
@@ -249,35 +255,21 @@ export class Fleet {
   }
 
   update(dt: number, camPos: THREE.Vector3): void {
-    this.time += dt;
     this.rules.update();
-    const t = this.time;
+    const physics = this.physics;
     for (const v of this.vessels) {
-      v.behaviour.update(dt, v.state);
-      const L = v.model.length;
+      // The navigation waits for a hull that lags behind its reference (the traffic rules' cap is kept as it was).
       const st = v.state;
-      const kind = v.model.kind;
-      // Motion in the waves: small hulls roll and pitch visibly, big ones hardly at all.
-      const sizeK = Math.pow(30 / L, 0.75);
-      const calm = st.mode === 'moored' ? 0.45 : 1;
-      const rollAmp = THREE.MathUtils.degToRad(Math.min(3.2, 0.9 * sizeK)) * calm;
-      const pitchAmp = THREE.MathUtils.degToRad(Math.min(1.6, 0.35 * sizeK)) * calm;
-      const heaveAmp = Math.min(0.28, 0.1 * Math.pow(30 / L, 0.5)) * calm;
-      const rollPeriod = 3.2 + v.model.beam * 0.42;
-      const w = (Math.PI * 2) / rollPeriod;
-      v.roll = rollAmp * (Math.sin(t * w + v.phase) * 0.8 + Math.sin(t * w * 1.63 + v.phase * 2.1) * 0.2);
-      // Heel in turns (outwards for displacement hulls).
-      v.roll += THREE.MathUtils.clamp(-st.yawRate * st.speed * (L < 40 ? 0.06 : 0.12), -0.09, 0.09);
-      const planes = kind === 'yacht' || kind === 'seabus' || kind === 'motorboat' || kind === 'pilot';
-      const planing = planes ? THREE.MathUtils.smoothstep(st.speed, 3, 10) : 0;
-      const trim = kind === 'motorboat' ? 4.5 : kind === 'yacht' ? 2.2 : kind === 'pilot' ? 2.8 : 0.8;
-      // Displacement hulls squat a little by the stern at speed.
-      const squat = planes ? 0 : THREE.MathUtils.smoothstep(st.speed, 2, 8) * THREE.MathUtils.degToRad(0.25);
-      v.pitch = pitchAmp * Math.sin(t * w * 1.37 + v.phase * 1.7) + planing * THREE.MathUtils.degToRad(trim) + squat;
-      v.heave = heaveAmp * Math.sin(t * w * 1.1 + v.phase * 0.7) + planing * (kind === 'motorboat' ? 0.25 : 0.15);
-      this.e.set(v.pitch, st.yaw, v.roll, 'YXZ');
+      const cap = st.cap;
+      st.cap = Math.min(cap, physics.lagCap(v));
+      v.behaviour.update(dt, st);
+      st.cap = cap;
+    }
+    physics.update(dt, camPos);
+    for (const v of this.vessels) {
+      this.e.set(v.pitch, v.yaw, v.roll, 'YXZ');
       this.q.setFromEuler(this.e);
-      this.p.set(st.x, v.heave + v.lift, st.z);
+      this.p.set(v.x, v.heave, v.z);
       v.matrix.compose(this.p, this.q, this.one);
       this.renderer.update(v.handle as FleetHandle, v.matrix, camPos);
     }
@@ -303,13 +295,13 @@ export class Fleet {
         v.wakeBroken = true;
         continue;
       }
-      if (v.wakeBroken || Math.abs(Math.atan2(Math.sin(st.yaw - v.wakeYaw), Math.cos(st.yaw - v.wakeYaw))) > 1.2) {
+      if (v.wakeBroken || Math.abs(Math.atan2(Math.sin(v.yaw - v.wakeYaw), Math.cos(v.yaw - v.wakeYaw))) > 1.2) {
         wakes.restart(v.wake);
         v.wakeBroken = false;
       }
-      v.wakeYaw = st.yaw;
+      v.wakeYaw = v.yaw;
       const half = v.model.length * 0.485;
-      wakes.feed(v.wake, st.x - Math.sin(st.yaw) * half, st.z - Math.cos(st.yaw) * half, time);
+      wakes.feed(v.wake, v.x - Math.sin(v.yaw) * half, v.z - Math.cos(v.yaw) * half, time);
     }
     wakes.commit(time);
   }
