@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { keepThroughOccluderFade } from '../../../core/occluder-fade';
 import { patchMaterial } from '../../../core/uniforms';
 import type { ScaleTextures } from './scale-textures';
 
@@ -151,6 +152,7 @@ export function createBodyMaterial(tex: ScaleTextures): {
     iridescenceThicknessRange: [260, 480],
     specularIntensity: 0.9,
   });
+  keepThroughOccluderFade(material);
   patchMaterial(material, 'dragon-body-v2', (shader) => {
     shader.uniforms.uBreath = uniforms.uBreath;
     shader.vertexShader = shader.vertexShader

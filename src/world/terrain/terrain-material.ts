@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { keepThroughOccluderFade } from '../../core/occluder-fade';
 import { patchMaterial, streetHole } from '../../core/uniforms';
 import { LOD_COUNT, type TerrainTierId } from './config';
 import { FRAGMENT_MAIN_GLSL, FRAGMENT_PARS_GLSL } from './glsl/fragment.glsl';
@@ -102,6 +103,7 @@ function lightsChunkWithDirectScale(): string {
 export function createTerrainMaterial(uniforms: TerrainUniforms, tier: TerrainTierId): THREE.MeshStandardMaterial {
   const material = streetHole(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, name: `terrain-tier${tier}` }));
   material.defines = { TERRAIN_TIER: tier };
+  keepThroughOccluderFade(material);
   patchMaterial(material, `terrain-cdlod-3-tier${tier}`, (shader) => {
     for (const key of Object.keys(uniforms)) {
       shader.uniforms[key] = uniforms[key];
