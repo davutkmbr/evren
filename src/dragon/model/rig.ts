@@ -21,6 +21,7 @@ import { buildTack } from './geometry/tack';
 import { createRiderMaterial, type RiderUniforms } from './materials/rider-material';
 import { RiderCharacter } from './rider/character';
 import { loadHumanRider, type HumanRider } from './rider/human';
+import { RiderRetarget } from './rider/retarget';
 import type { RiderAppearance } from './rider/appearance';
 
 export interface RigBuildOptions {
@@ -112,6 +113,8 @@ export class DragonRigImpl implements DragonRig {
   /** The Blender-pipeline rider while / after it loads. */
   humanLoading?: Promise<HumanRider>;
   human?: HumanRider;
+  /** Drives the human rider from the procedural rider bones. */
+  riderRetarget?: RiderRetarget;
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
@@ -182,6 +185,9 @@ export class DragonRigImpl implements DragonRig {
       this.humanLoading = loadHumanRider(opts.humanRider, this.skel.bone('chest'), LANDMARKS.chest).then((h) => {
         console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes, ${h.wind.chains.length} wind chains`);
         this.human = h;
+        this.root.updateMatrixWorld(true);
+        this.riderRetarget = new RiderRetarget(this.skel, h.bones, this.root, h.bindLocal);
+        this.riderRetarget.setFirstPerson(this.firstPerson);
         return h;
       });
     }
@@ -256,6 +262,7 @@ export class DragonRigImpl implements DragonRig {
     this.firstPerson = enabled;
     this.riderUniforms.uFirstPerson.value = enabled ? 1 : 0;
     this.animator.setFirstPerson(enabled);
+    this.riderRetarget?.setFirstPerson(enabled);
   }
 
   get isFirstPerson(): boolean {
@@ -291,6 +298,7 @@ export class DragonRigImpl implements DragonRig {
     this.riderUniforms.uAirspeed.value = o.airspeed;
     this.riderUniforms.uAirflow.value.copy(o.airflow);
     if (this.human) {
+      this.riderRetarget?.update();
       _airflowWorld.copy(o.airflow).transformDirection(this.root.matrixWorld);
       this.human.wind.update(dt, o.airspeed, _airflowWorld);
     }

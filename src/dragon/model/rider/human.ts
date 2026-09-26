@@ -16,6 +16,8 @@ export interface HumanRider {
   root: THREE.Object3D;
   meshes: THREE.SkinnedMesh[];
   bones: Map<string, THREE.Bone>;
+  /** Local rotations of the bind (standing) pose. */
+  bindLocal: Map<THREE.Bone, THREE.Quaternion>;
   mixer: THREE.AnimationMixer;
   clips: Map<string, THREE.AnimationClip>;
   /** Skirt panels and sash ends in the wind. */
@@ -51,6 +53,10 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
       bones.set(b.name.replace(/^mixamorig:?/, ''), b);
     }
   });
+  const bindLocal = new Map<THREE.Bone, THREE.Quaternion>();
+  for (const b of bones.values()) {
+    bindLocal.set(b, b.quaternion.clone());
+  }
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
   const ride = clips.get('ride');
@@ -66,7 +72,7 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   const turned = hipsPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   root.position.copy(SEAT_HIPS).sub(turned).sub(anchorRest);
   anchor.add(root);
-  const rider = { root, meshes, bones, mixer, clips, wind: new WindBones(bones) };
+  const rider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones) };
   applyGarmentMaterials(rider);
   return rider;
 }
