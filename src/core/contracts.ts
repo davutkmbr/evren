@@ -580,6 +580,54 @@ export interface PerchService {
   nearest(x: number, z: number, maxDistance?: number): { point: PerchPoint; distance: number } | null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Hotbar: abilities and items (owned by ui) — service key: 'hotbar'    */
+/* ------------------------------------------------------------------ */
+
+/** Icon ids the HUD can draw for hotbar slots (add new ones together with their drawing in src/ui/hud). */
+export type HotbarIcon = 'fire' | 'roar' | 'potion' | 'feather' | 'lantern' | 'gift' | 'unknown';
+
+/**
+ * One slot of the bottom-centre hotbar. Abilities (fire, roar, later special powers) and items (inventory) register
+ * here; the HUD draws them and, when the slot's number key (1..size) is pressed, calls `activate`.
+ */
+export interface HotbarSlot {
+  /** Stable id, e.g. "fire", "roar", "item:simit". */
+  id: string;
+  kind: 'ability' | 'item';
+  /** Turkish name shown under the hotbar while selected/used. */
+  label: string;
+  icon: HotbarIcon;
+  /** Extra shortcut shown next to the name (e.g. "F" for fire, which also works from its own key). */
+  hotkey?: string;
+  /** Items: stack size (hidden when undefined). */
+  count?: number;
+  /** Remaining cooldown as a fraction 0..1 (0 = ready). The owner updates it. */
+  cooldown?: number;
+  /** In use right now (held fire, a running power). */
+  active?: boolean;
+  /** False greys the slot out (not usable right now, e.g. no stamina). Default true. */
+  enabled?: boolean;
+  /** Called when the player presses the slot's number key (or clicks it while the pointer is free). */
+  activate?(): void;
+}
+
+export type HotbarSlotState = Partial<Pick<HotbarSlot, 'label' | 'count' | 'cooldown' | 'active' | 'enabled'>>;
+
+export interface HotbarService {
+  /** Number of slots (number keys 1..size). */
+  readonly size: number;
+  readonly slots: readonly (HotbarSlot | null)[];
+  /** Puts a slot at `index` (0-based), or clears it with null. */
+  set(index: number, slot: HotbarSlot | null): void;
+  /** First free index, or -1. */
+  firstFree(): number;
+  /** Updates the live state of the slot with `id` (cheap; call every frame if needed). */
+  update(id: string, state: HotbarSlotState): void;
+  /** Removes the slot with `id` wherever it is. */
+  remove(id: string): void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -593,6 +641,7 @@ export interface Services {
   roadSurface: RoadSurfaceService;
   weather: WeatherService;
   perches: PerchService;
+  hotbar: HotbarService;
 }
 
 /* ------------------------------------------------------------------ */
