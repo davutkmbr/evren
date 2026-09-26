@@ -5,7 +5,9 @@ import type { QualityPreset } from '../core/quality';
 import { QUALITY_PRESETS } from '../core/quality';
 import { DiscoveryTracker } from './discovery/discovery-tracker';
 import { el } from './dom';
+import { DragonAbilities } from './hud/abilities';
 import { Hud } from './hud/hud';
+import { StatusToasts } from './hud/status-toasts';
 import { LoadingScreen } from './loading/loading-screen';
 import { FullMap, type TeleportTarget } from './map/full-map';
 import { MapRaster } from './map/map-raster';
@@ -55,6 +57,8 @@ export class UiSystem implements System {
   private loading: LoadingScreen | null = null;
   private tracker!: DiscoveryTracker;
   private hud!: Hud;
+  private abilities!: DragonAbilities;
+  private statusToasts!: StatusToasts;
   private fullMap!: FullMap;
   private pauseMenu!: PauseMenu;
   private settings!: SettingsPanel;
@@ -89,6 +93,9 @@ export class UiSystem implements System {
 
     this.tracker = new DiscoveryTracker(ctx);
     this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints, this.hoverHints, this.shotCaption);
+    ctx.services.provide('hotbar', this.hud.hotbar);
+    this.abilities = new DragonAbilities(this.hud.hotbar, (text) => this.toasts.push(text, 'info', 'hotbar'));
+    this.statusToasts = new StatusToasts(this.toasts);
     this.fullMap = new FullMap(this.raster, {
       onTeleport: (target) => this.teleport(target),
       onClose: () => this.closeModal(),
@@ -131,8 +138,7 @@ export class UiSystem implements System {
     }
     this.hud.root.hidden = true;
 
-    this.tracker.onChange((isNew) => {
-      this.hud.counter.set(this.tracker.count, this.tracker.total, isNew);
+    this.tracker.onChange(() => {
       this.pauseMenu.setProgress(this.tracker.count, this.tracker.total);
     });
 
@@ -141,8 +147,8 @@ export class UiSystem implements System {
       events.on('loading-progress', ({ label, progress }) => this.loading?.setProgress(label, progress)),
       events.on('loading-done', () => this.onLoadingDone()),
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
-      events.on('camera-mode', ({ mode }) => this.hud.instruments.setCameraMode(mode)),
       this.hud.maneuver.connect(events),
+      this.hud.area.connect(events),
     );
 
     void services.when('geo').then((geo) => {
@@ -150,9 +156,9 @@ export class UiSystem implements System {
       this.tracker.setGeo(geo);
       this.hud.compass.setLandmarks(geo.landmarks, this.tracker.discovered);
       this.hud.minimap.setGeo(geo, this.tracker.discovered);
+      this.hud.area.setGeo(geo);
       this.fullMap.setGeo(geo, this.tracker.discovered);
     });
-    void services.when('cameraRig').then((rig) => this.hud.instruments.setCameraMode(rig.mode));
     void services.when('audio').then((audio) => {
       // Older audio services do not keep the volume themselves: restore the UI's saved value into them.
       if (audio.masterVolume === undefined && this.prefs.volume !== undefined) {
@@ -182,7 +188,7 @@ export class UiSystem implements System {
     }
   }
 
-  update(_dt: number, ctx: EngineContext): void {
+  update(dt: number, ctx: EngineContext): void {
     const realDt = ctx.time.realDt;
     if (this.reenableInputFrame >= 0 && ctx.time.frame >= this.reenableInputFrame) {
       this.reenableInputFrame = -1;
@@ -195,6 +201,8 @@ export class UiSystem implements System {
     this.fillSnapshot(ctx);
     this.handleInput(ctx);
     this.updateContextHints(ctx);
+    this.abilities.update(dt, ctx);
+    this.statusToasts.update(ctx, this.modal === 'none' && !this.photo);
 
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
@@ -205,9 +213,7 @@ export class UiSystem implements System {
       }
     }
     if (hudVisible && this.snapshot.valid) {
-      const env = ctx.services.tryGet('env');
-      const sunElevation = env ? Math.asin(Math.max(-1, Math.min(1, env.sunDirection.y))) * RAD : 30;
-      this.hud.update(this.snapshot, realDt, ctx.time.timeOfDay, sunElevation);
+      this.hud.update(this.snapshot, realDt);
     }
     this.tracker.update(this.snapshot, realDt, hudVisible);
   }
@@ -229,6 +235,8 @@ export class UiSystem implements System {
     }
     this.loading?.dispose();
     this.tracker?.dispose();
+    this.hud?.dispose();
+    this.ctx?.services.withdraw('hotbar');
     this.fullMap?.dispose();
     this.raster.dispose();
     this.root?.remove();
@@ -362,6 +370,9 @@ export class UiSystem implements System {
     } else if (input.wasPressed('hud') && !this.photo) {
       this.hudOff = !this.hudOff;
       this.toasts.push(this.hudOff ? 'Arayüz gizlendi · geri getirmek için U' : 'Arayüz gösteriliyor');
+    }
+    if (!this.photo) {
+      this.hud.hotbar.poll(input);
     }
   }
 

@@ -17,6 +17,7 @@
  *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
+ * Hotbar: slot1..slot5 = Digit1..Digit5 (and the numpad digits); the digit keys are reserved for the hotbar.
  * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS.
  */
 export type AxisName = 'pitch' | 'roll' | 'yaw';
@@ -43,13 +44,21 @@ export type ButtonName =
   | 'rollLeft'
   | 'rollRight'
   | 'pitchUp'
-  | 'pitchDown';
+  | 'pitchDown'
+  | 'slot1'
+  | 'slot2'
+  | 'slot3'
+  | 'slot4'
+  | 'slot5';
+
+/** Hotbar slot buttons in slot order (number keys 1..5). */
+export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Two presses of the same button within this window count as a double tap (ms). */
 export const DOUBLE_TAP_MS = 300;
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather']);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -82,6 +91,16 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   ArrowDown: 'pitchUp',
   KeyW: 'pitchDown',
   ArrowUp: 'pitchDown',
+  Digit1: 'slot1',
+  Digit2: 'slot2',
+  Digit3: 'slot3',
+  Digit4: 'slot4',
+  Digit5: 'slot5',
+  Numpad1: 'slot1',
+  Numpad2: 'slot2',
+  Numpad3: 'slot3',
+  Numpad4: 'slot4',
+  Numpad5: 'slot5',
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
@@ -108,6 +127,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
   { keys: '[ / ]', action: 'Günün saatini değiştir', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
+  { keys: '1–5', action: 'Hotbar: yetenek / eşya kullan', group: 'game' },
   { keys: 'Y', action: 'Halka yarışı: parkur seç, parkur editörü (yarışta: iptal et, editörde: çık)', group: 'game' },
   { keys: 'B', action: 'Parkur editöründe: halka koy', group: 'game' },
   { keys: 'Backspace', action: 'Parkur editöründe: son halkayı sil', group: 'game' },
