@@ -243,8 +243,56 @@ export function buildLandUse(input: BuildInput, coast: Float32Array, noise: { fi
       }
     });
   }
+  markVerges(input, out);
   markReserved(input, out);
   return out;
+}
+
+/** Green verge (m) beyond a highway's corridor, and the reach (m) within which two highways enclose a junction pocket. */
+const VERGE = 28;
+const POCKET = 140;
+/** Built-up uses a verge or a junction pocket replaces (industrial, historic, forest ... stay as they are). */
+const VERGE_REPLACES = new Set<number>([LandUse.Urban, LandUse.Suburban]);
+
+/**
+ * Motorway verges and junction pockets: built-up land within VERGE m of a highway corridor, and every built-up cell
+ * within POCKET m of two different highways (the land between the carriageways and ramps of an interchange), become
+ * park land: grass with scattered trees (vegetation plants park stands there, the procedural city builds nothing).
+ */
+function markVerges(input: BuildInput, out: Uint8Array): void {
+  const g = LANDUSE_GRID;
+  const highways = input.roads.filter((r) => r.highway && !r.overWater);
+  if (highways.length === 0) {
+    return;
+  }
+  // Per cell: the first highway whose pocket reach covers it, and whether a second, different one does too (sections of
+  // one highway share its name, so their joints are no pockets).
+  const names = [...new Set(highways.map((r) => r.highway))];
+  const first = new Int16Array(g.size * g.size).fill(-1);
+  const pocket = new Uint8Array(g.size * g.size);
+  highways.forEach((r) => {
+    const id = names.indexOf(r.highway);
+    stampPolyline(r.pts, r.halfWidth + POCKET, g, (k) => {
+      if (first[k] < 0) {
+        first[k] = id;
+      } else if (first[k] !== id) {
+        pocket[k] = 1;
+      }
+    });
+  });
+  const green = (k: number): void => {
+    if (VERGE_REPLACES.has(out[k])) {
+      out[k] = LandUse.Park;
+    }
+  };
+  for (const r of highways) {
+    stampPolyline(r.pts, r.halfWidth + VERGE, g, green);
+  }
+  for (let k = 0; k < pocket.length; k++) {
+    if (pocket[k]) {
+      green(k);
+    }
+  }
 }
 
 function markReserved(input: BuildInput, out: Uint8Array): void {
