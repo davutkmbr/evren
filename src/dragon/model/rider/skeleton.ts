@@ -76,12 +76,13 @@ export function proportions(a: RiderAppearance): Proportions {
     s,
     shape,
     build: a.build,
-    shoulderHalf: (THREE.MathUtils.lerp(0.17, 0.205, shape) + 0.01 * a.build) * s,
+    shoulderHalf: (THREE.MathUtils.lerp(0.172, 0.208, shape) + 0.01 * a.build) * s,
     hipHalf: THREE.MathUtils.lerp(0.092, 0.086, shape) * s,
     // Stylized: slightly large hands and head.
-    handScale: THREE.MathUtils.lerp(1.1, 1.22, shape) * s,
+    handScale: THREE.MathUtils.lerp(1.0, 1.08, shape) * s,
     // Heads vary less than bodies with height.
-    headScale: THREE.MathUtils.lerp(1.26, 1.3, shape) * (0.6 + 0.4 * s),
+    // Heroic proportions: a head a little small for the body.
+    headScale: THREE.MathUtils.lerp(1.0, 1.02, shape) * (0.6 + 0.4 * s),
     upperArm: 0.183 * height,
     forearm: 0.146 * height,
     thigh: 0.245 * height,
@@ -160,11 +161,11 @@ export function buildRiderLayout(a: RiderAppearance): RiderSkeletonLayout {
   const hips = v(0, SEAT_Y + 0.1 * s, SEAT_Z);
   const seg = (from: THREE.Vector3, len: number, leanDeg: number): THREE.Vector3 =>
     from.clone().add(v(0, Math.cos(deg(leanDeg)), -Math.sin(deg(leanDeg))).multiplyScalar(len));
-  const spine = seg(hips, 0.095 * s, 2);
-  const spine1 = seg(spine, 0.095 * s, 7);
-  const spine2 = seg(spine1, 0.105 * s, 10);
-  const neck = seg(spine2, 0.18 * s, 8);
-  const headJ = seg(neck, 0.075 * s, 16);
+  const spine = seg(hips, 0.105 * s, 2);
+  const spine1 = seg(spine, 0.11 * s, 5);
+  const spine2 = seg(spine1, 0.12 * s, 4);
+  const neck = seg(spine2, 0.19 * s, 3);
+  const headJ = seg(neck, 0.085 * s, 8);
   add('Hips', null, hips);
   add('Spine', 'Hips', spine);
   add('Spine1', 'Spine', spine1);
@@ -177,14 +178,14 @@ export function buildRiderLayout(a: RiderAppearance): RiderSkeletonLayout {
   const pitch = deg(6);
   const headFrame = new Frame(headJ.clone(), v(1, 0, 0), v(0, Math.cos(pitch), -Math.sin(pitch)), v(0, -Math.sin(pitch), -Math.cos(pitch)));
   const hp = (x: number, y: number, z: number): THREE.Vector3 => headFrame.p(x * hs, y * hs, z * hs);
-  add('Jaw', 'Head', hp(0, 0.03, 0.035));
-  const eyeY = 0.062;
-  const eyeZ = 0.071;
+  add('Jaw', 'Head', hp(0, 0.028, 0.03));
+  const eyeY = 0.066;
+  const eyeZ = 0.068;
   for (const side of RSIDES) {
     const sg = rsign(side);
     add(`${side}Eye`, 'Head', hp(0.032 * sg, eyeY, eyeZ));
     add(`${side}Eyelid`, 'Head', hp(0.032 * sg, eyeY, eyeZ));
-    add(`${side}Mouth`, 'Head', hp(0.022 * sg, 0.004, 0.086));
+    add(`${side}Mouth`, 'Head', hp(0.022 * sg, 0.008, 0.09));
   }
   // Hair chain: from the back of the head down the nape (ponytail / braid anchor; used by those styles only).
   const hair = [hp(0, 0.1, -0.09), hp(0, 0.02, -0.125), hp(0, -0.09, -0.135), hp(0, -0.2, -0.13)];

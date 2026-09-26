@@ -8,8 +8,8 @@ export const FACE_SHAPES = ['oval', 'square', 'round', 'long', 'heart'] as const
 export const NOSE_SHAPES = ['straight', 'aquiline', 'button', 'broad'] as const;
 export const HAIR_STYLES = ['buzz', 'short', 'swept', 'ponytail', 'braid', 'bun', 'long'] as const;
 export const FACIAL_HAIR = ['none', 'stubble', 'moustache', 'goatee', 'short', 'full'] as const;
-export const OUTFITS = ['traveller', 'pilot', 'kaftan', 'steppe'] as const;
-export const HEADWEAR = ['none', 'hood', 'cap', 'bork', 'headband'] as const;
+export const OUTFITS = ['akinci', 'traveller', 'pilot', 'kaftan', 'steppe'] as const;
+export const HEADWEAR = ['none', 'cicak', 'hood', 'cap', 'bork', 'headband'] as const;
 export const GOGGLES = ['none', 'brow', 'eyes'] as const;
 export const METALS = ['iron', 'brass', 'silver'] as const;
 
@@ -59,8 +59,8 @@ export const HAIR_COLOURS: readonly RGB[] = [
 
 /** Natural dyes: madder, indigo, saffron, walnut, olive, pomegranate, teal, charcoal, undyed wool, oxblood, slate, moss. */
 export const CLOTH_COLOURS: readonly RGB[] = [
-  [0.55, 0.12, 0.09],
-  [0.14, 0.2, 0.38],
+  [0.48, 0.08, 0.07],
+  [0.12, 0.16, 0.32],
   [0.78, 0.55, 0.2],
   [0.33, 0.22, 0.14],
   [0.36, 0.38, 0.2],
@@ -116,31 +116,32 @@ export interface RiderAppearance {
 }
 
 /** The rider the game shipped with, rebuilt: hooded red cloak, goggles, scarf, leather cuirass. */
+/** The default rider: an akıncı in a crimson dolama, mail and mirror plate, a plumed çiçak, pala bıyık. */
 export const DEFAULT_APPEARANCE: RiderAppearance = {
   v: 1,
-  shape: 0.8,
-  build: 0.45,
-  height: 0.5,
-  face: 'oval',
-  nose: 'straight',
-  jaw: 0.55,
-  age: 0.3,
-  skin: 2,
-  eyes: 1,
+  shape: 0.85,
+  build: 0.5,
+  height: 0.55,
+  face: 'square',
+  nose: 'aquiline',
+  jaw: 0.6,
+  age: 0.35,
+  skin: 3,
+  eyes: 0,
   hair: 'short',
-  hairColour: 1,
-  facialHair: 'stubble',
-  outfit: 'traveller',
+  hairColour: 0,
+  facialHair: 'moustache',
+  outfit: 'akinci',
   primary: 0,
-  secondary: 3,
+  secondary: 7,
   accent: 2,
   leather: 1,
   metal: 'brass',
-  headwear: 'hood',
-  goggles: 'eyes',
-  cloak: true,
-  scarf: true,
-  pauldrons: true,
+  headwear: 'cicak',
+  goggles: 'none',
+  cloak: false,
+  scarf: false,
+  pauldrons: false,
   gloves: true,
   earrings: false,
   amulet: false,

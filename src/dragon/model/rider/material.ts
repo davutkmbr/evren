@@ -83,6 +83,18 @@ uniform vec3 uMetal;
 uniform float uAge;
 float rdHeight = 0.0;
 float rdScatter = 0.0;
+// Çintemani: three pearls over two waves, on a staggered grid (cell coordinates in 0..1).
+float rdCintemani(vec2 q) {
+  vec2 id = floor(q);
+  vec2 c = fract(q + vec2(mod(id.y, 2.0) * 0.5, 0.0)) - 0.5;
+  float aa = fwidth(q.x) * 1.5;
+  float d = min(min(length(c - vec2(-0.16, 0.14)), length(c - vec2(0.16, 0.14))), length(c - vec2(0.0, -0.1)));
+  float pearls = 1.0 - smoothstep(0.1 - aa, 0.1 + aa, d);
+  float w1 = abs(c.y + 0.3 - 0.05 * sin(c.x * 14.0)) - 0.025;
+  float w2 = abs(c.y + 0.4 - 0.05 * sin(c.x * 14.0 + 0.6)) - 0.02;
+  float waves = (1.0 - smoothstep(-aa, aa, min(w1, w2))) * (1.0 - smoothstep(0.3, 0.42, abs(c.x)));
+  return max(pearls, waves) * (1.0 - smoothstep(0.35, 0.9, aa * 4.0));
+}
 vec3 rdPerturb(vec3 surfPos, vec3 n, float h) {
   vec3 dpdx = dFdx(surfPos);
   vec3 dpdy = dFdy(surfPos);
@@ -159,9 +171,13 @@ float rdAO = vRData.w <= 0.0 ? clamp(-vRData.w, 0.0, 1.0) : 1.0;
       // Cloak: sun-faded toward the hem.
       c = mix(c, c * vec3(1.2, 1.25, 1.2) + vec3(0.02), smoothstep(0.35, 1.0, vRData.y) * 0.35);
     } else if (vRData.y > 0.01) {
-      // Woven border bands (ch0 on cloth).
-      float band = step(0.5, fract(vRData.y * 3.0 + 0.25));
-      c = mix(c, mix(uAccent, uSecondary, band), clamp(vRData.y * 4.0, 0.0, 1.0));
+      // Woven border (ch0 on cloth): accent ground with a gilt çintemani.
+      float motif = rdCintemani(vec2(p.x + p.z, p.y) * 34.0);
+      vec3 ground = uAccent * (0.85 + 0.2 * mid);
+      c = mix(c, mix(ground, uMetal * 0.9 + vec3(0.05), motif), clamp(vRData.y * 4.0, 0.0, 1.0));
+    } else if (rdMat < 3.5) {
+      // Primary cloth: a faint tone-on-tone çintemani damask.
+      c *= 1.0 - 0.14 * rdCintemani(vec2(p.x + p.z, p.y) * 11.0);
     }
     rdRough = 0.88;
     rdHeight = weave * 0.2 + fine * (0.2 + 0.3 * felt);
@@ -177,7 +193,7 @@ float rdAO = vRData.w <= 0.0 ? clamp(-vRData.w, 0.0, 1.0) : 1.0;
     rdHeight = grain * 0.5 * (1.0 - 0.6 * wear);
   } else if (rdMat < 10.5) {
     // Iron (9) and the chosen metal (10): brushed, darker in the recesses.
-    vec3 base = rdMat < 9.5 ? vec3(0.42, 0.42, 0.44) : uMetal;
+    vec3 base = rdMat < 9.5 ? vec3(0.34, 0.34, 0.36) : uMetal;
     c = base * (0.8 + 0.3 * mid);
     rdMetal = 1.0;
     rdRough = 0.32 + 0.2 * mid;
@@ -185,7 +201,7 @@ float rdAO = vRData.w <= 0.0 ? clamp(-vRData.w, 0.0, 1.0) : 1.0;
   } else if (rdMat < 11.5) {
     // Fur trim: soft, clumpy, light tips.
     float tufts = vnoise3(p * 320.0);
-    c = mix(vec3(0.16, 0.12, 0.09), vec3(0.42, 0.36, 0.3), tufts) * (0.85 + 0.3 * mid);
+    c = mix(vec3(0.07, 0.045, 0.03), vec3(0.3, 0.22, 0.15), tufts) * (0.85 + 0.3 * mid);
     rdRough = 0.95;
     rdHeight = tufts * 1.2;
   } else if (rdMat < 12.5) {
@@ -196,6 +212,18 @@ float rdAO = vRData.w <= 0.0 ? clamp(-vRData.w, 0.0, 1.0) : 1.0;
     // Nail.
     c = uSkin * vec3(1.08, 0.92, 0.9) + vec3(0.05);
     rdRough = 0.3;
+  } else if (rdMat > 16.5) {
+    // Chain mail: staggered riveted rings, dark steel with bright ring tops.
+    vec2 q = vec2(p.x + p.z, p.y) * 310.0;
+    vec2 id = floor(q);
+    vec2 cell = fract(q + vec2(mod(id.y, 2.0) * 0.5, 0.0)) - 0.5;
+    float aa = fwidth(q.x);
+    float ring = 1.0 - smoothstep(0.08 - aa, 0.08 + aa, abs(length(cell) - 0.33));
+    float fade = 1.0 - smoothstep(0.3, 0.8, aa);
+    c = mix(vec3(0.05, 0.05, 0.055), vec3(0.32, 0.32, 0.33), mix(0.35, ring, fade)) * (0.8 + 0.3 * mid);
+    rdMetal = 1.0;
+    rdRough = 0.45;
+    rdHeight = ring * fade * 0.8;
   } else {
     // Mouth interior with a hint of upper teeth.
     float teeth = smoothstep(0.0, 1.0, vRExtra.x) * 0.0;

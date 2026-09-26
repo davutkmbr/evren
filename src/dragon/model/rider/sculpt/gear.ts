@@ -18,6 +18,46 @@ export function sculptHeadwear(c: SculptContext): void {
   const head = id('Head');
   const layer = L.headwear;
   switch (a.headwear) {
+    case 'cicak': {
+      // Çiçak: a steel dome rising to a gilt finial, a short peak, a sliding nasal, cheek plates, a mail curtain over
+      // the nape and a plume (sorguç) at the front.
+      const steel = { layer, bone: head, k: 0.006, mat: RM.iron };
+      const gilt = { layer, bone: head, k: 0.003, mat: RM.metal };
+      sc.ellipsoid(steel, p(0, 0.122, -0.014), R(0.083, 0.078, 0.097), basis(rotated(hf, 0.06, 0, 0)));
+      sc.cone({ ...steel, k: 0.03 }, p(0, 0.17, -0.016), p(0, 0.232, -0.028), 0.05 * hs, 0.006 * hs);
+      sc.cone(gilt, p(0, 0.225, -0.027), p(0, 0.262, -0.034), 0.007 * hs, 0.002 * hs);
+      sc.sphere(gilt, p(0, 0.226, -0.027), 0.009 * hs);
+      // Gilt band around the rim and a gilt ridge up the front.
+      sc.torus(gilt, p(0, 0.088, -0.012), 0.084 * hs, 0.005 * hs, basis(rotated(hf, 0.1, 0, 0)), 1.0, 1.15);
+      // Peak over the brow.
+      sc.ellipsoid(steel, p(0, 0.09, 0.09), R(0.05, 0.0045, 0.026), basis(rotated(hf, -0.15, 0, 0)));
+      // Nasal: a bar down over the nose bridge, with a leaf-shaped end.
+      sc.box(steel, p(0, 0.074, 0.103), R(0.0035, 0.024, 0.0025), 0.0015 * hs, basis(rotated(hf, 0.12, 0, 0)));
+      sc.ellipsoid(gilt, p(0, 0.051, 0.106), R(0.006, 0.008, 0.0025), basis(rotated(hf, 0.12, 0, 0)));
+      sc.ellipsoid(gilt, p(0, 0.104, 0.1), R(0.006, 0.01, 0.004), B);
+      for (const side of RSIDES) {
+        const sg = rsign(side);
+        // Cheek plates hanging from the rim in front of the ears.
+        sc.ellipsoid(steel, p(0.07 * sg, 0.042, 0.026), R(0.007, 0.042, 0.028), basis(rotated(hf, 0, 0.35 * sg, 0.12 * sg)));
+      }
+      // Mail curtain: a shell around the back and sides of the neck.
+      const aventail = { layer, bone: id('Neck'), bone1: head, ramp: [0.2, 0.8] as [number, number], k: 0.01, mat: RM.mail };
+      sc.ellipsoid(aventail, p(0, 0.02, -0.03), R(0.094, 0.085, 0.092), B);
+      sc.ellipsoid({ layer, op: PrimOp.Subtract, bone: head, k: 0.006 }, p(0, 0.03, -0.028), R(0.084, 0.09, 0.083), B);
+      sc.box({ layer, op: PrimOp.Subtract, bone: head, k: 0.01 }, p(0, 0.0, 0.1), R(0.15, 0.2, 0.09), 0.01, B);
+      sc.box({ layer, op: PrimOp.Subtract, bone: head, k: 0.004 }, p(0, -0.16, 0.0), R(0.2, 0.09, 0.2), 0.01, B);
+      // Plume (sorguç): a gilt holder and a tall feather sweeping back.
+      const q0 = p(0, 0.16, 0.058);
+      const q1 = p(0, 0.23, 0.05);
+      const q2 = p(0, 0.3, 0.0);
+      const q3 = p(0, 0.33, -0.07);
+      sc.cone(gilt, p(0, 0.13, 0.078), q0, 0.007 * hs, 0.005 * hs);
+      const plume = { layer, bone: head, k: 0.008, mat: RM.accent, own: true, noise: { amp: 0.002, freq: 120 } };
+      sc.cone(plume, q0, q1, 0.006 * hs, 0.014 * hs, { sx: 0.35, hint: hf.x });
+      sc.cone(plume, q1, q2, 0.014 * hs, 0.016 * hs, { sx: 0.35, hint: hf.x });
+      sc.cone(plume, q2, q3, 0.016 * hs, 0.004 * hs, { sx: 0.35, hint: hf.x });
+      break;
+    }
     case 'hood': {
       // A roomy hood: a soft shell well clear of the head with a peak at the back, the face opening framed by a
       // turned-back rim, the cowl falling onto the shoulders.
@@ -75,6 +115,33 @@ export function sculptGear(c: SculptContext): void {
   const gear = L.gear;
   const hp = (x: number, y: number, z: number): THREE.Vector3 => hf.p(x * hs, y * hs, z * hs);
 
+  if (a.outfit === 'akinci') {
+    // A pelt thrown over the left shoulder, tied across the chest, its tail hanging down the back.
+    const sh = lay.j.LeftArm;
+    const fur = { layer: gear, bone: id('LeftShoulder'), bone1: id('Spine2'), ramp: [0.4, 1] as [number, number], k: 0.02, mat: RM.fur, noise: { amp: 0.004, freq: 45 } };
+    sc.ellipsoid(fur, sh.clone().add(v3(0.01 * s, 0.035 * s, 0.01 * s)), v3(0.1, 0.045, 0.11).multiplyScalar(s), basis(rotated(cf, 0, 0, 0.35)));
+    sc.ellipsoid(fur, cf.p(-0.07 * s, 0.14 * s, -0.1 * s), v3(0.1, 0.14, 0.03).multiplyScalar(s), basis(rotated(cf, 0.1, 0, 0.25)));
+    sc.cone(fur, cf.p(-0.11 * s, 0.02 * s, -0.12 * s), cf.p(-0.13 * s, -0.25 * s, -0.16 * s), 0.035 * s, 0.018 * s);
+    sc.cone({ layer: gear, bone: id('Spine2'), k: 0.004, mat: RM.darkLeather }, sh.clone().add(v3(0.0, 0.03 * s, 0.06 * s)), cf.p(0.1 * s, 0.02 * s, 0.14 * s), 0.008 * s, 0.008 * s);
+    // Kılıç in its scabbard on the left hip: a gentle curve back and down, gilt fittings, the hilt forward.
+    const pf = lay.pelvis;
+    const hip = pf.p(-0.21 * s, 0.03 * s, 0.06 * s);
+    const k1 = pf.p(-0.25 * s, -0.04 * s, -0.12 * s);
+    const k2 = pf.p(-0.27 * s, -0.08 * s, -0.36 * s);
+    const k3 = pf.p(-0.28 * s, -0.06 * s, -0.58 * s);
+    const sheath = { layer: gear, bone: id('Hips'), k: 0.006, mat: RM.darkLeather };
+    sc.cone(sheath, hip, k1, 0.018 * s, 0.017 * s, { sx: 0.5, hint: v3(0, 1, 0) });
+    sc.cone(sheath, k1, k2, 0.017 * s, 0.016 * s, { sx: 0.5, hint: v3(0, 1, 0) });
+    sc.cone(sheath, k2, k3, 0.016 * s, 0.012 * s, { sx: 0.5, hint: v3(0, 1, 0) });
+    sc.sphere({ ...sheath, mat: RM.metal }, k3, 0.014 * s);
+    sc.torus({ ...sheath, mat: RM.metal }, hip.clone().lerp(k1, 0.15), 0.02 * s, 0.004 * s, basis(limbFrame(hip, k1, v3(0, 1, 0))), 0.55, 1.0);
+    const guard = hip.clone().addScaledVector(hip.clone().sub(k1).normalize(), 0.015 * s);
+    const grip = hip.clone().addScaledVector(hip.clone().sub(k1).normalize(), 0.12 * s).add(v3(0, 0.02 * s, 0));
+    sc.box({ ...sheath, mat: RM.metal }, guard, v3(0.012, 0.006, 0.05).multiplyScalar(s), 0.003 * s, basis(limbFrame(guard, grip, v3(0, 1, 0))));
+    sc.cone({ ...sheath, mat: RM.darkLeather }, guard, grip, 0.011 * s, 0.012 * s);
+    sc.sphere({ ...sheath, mat: RM.metal }, grip, 0.016 * s);
+  }
+
   if (a.pauldrons) {
     // Three overlapping leather lames over each shoulder.
     for (const side of RSIDES) {
@@ -99,14 +166,14 @@ export function sculptGear(c: SculptContext): void {
     const scarf = { layer: gear, bone: id('Neck'), bone1: id('Spine2'), ramp: [0.4, 0.0] as [number, number], k: 0.014, mat: RM.accent, noise: { amp: 0.0025, freq: 55 } };
     sc.torus({ ...scarf, ramp: [0.0, 1.0] }, mid.clone().addScaledVector(nf.z, 0.012 * s), 0.058 * s, 0.022 * s, basis(rotated(nf, 0.15, 0, 0.05)), 1.08, 1.15);
     sc.torus({ ...scarf, ramp: [0.0, 1.0] }, neck.clone().addScaledVector(nf.y, 0.01 * s).addScaledVector(nf.z, 0.018 * s), 0.07 * s, 0.022 * s, basis(rotated(nf, -0.1, 0, -0.08)), 1.1, 1.18);
-    sc.cone({ layer: gear, bone: id('Spine2'), k: 0.012, mat: RM.accent, noise: { amp: 0.002, freq: 55 } }, cf.p(0.03 * s, 0.26 * s, 0.1 * s), cf.p(0.05 * s, 0.1 * s, 0.13 * s), 0.024 * s, 0.028 * s, { sz: 0.45, hint: cf.z });
+    sc.cone({ layer: gear, bone: id('Spine2'), k: 0.012, mat: RM.accent, noise: { amp: 0.002, freq: 55 } }, lay.j.Neck.clone().addScaledVector(cf.z, 0.09 * s).addScaledVector(cf.x, 0.03 * s), cf.p(0.05 * s, 0.1 * s, 0.13 * s), 0.024 * s, 0.028 * s, { sz: 0.45, hint: cf.z });
   }
 
   if (a.goggles !== 'none') {
     // Brass-rimmed goggles on the eyes or pushed up on the brow, with a strap around the head.
     const onEyes = a.goggles === 'eyes';
     const gf = onEyes ? hf : rotated(hf, -0.5, 0, 0);
-    const base = onEyes ? hp(0, 0.062, 0.094) : hp(0, 0.14, 0.078);
+    const base = onEyes ? hp(0, 0.066, 0.092) : hp(0, 0.14, 0.078);
     for (const side of RSIDES) {
       const sg = rsign(side);
       const cpos = base.clone().addScaledVector(gf.x, 0.033 * sg * hs);

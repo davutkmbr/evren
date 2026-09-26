@@ -22,7 +22,12 @@ export const RM = {
   felt: 14,
   nail: 15,
   teeth: 16,
+  /** Chain mail (riveted rings). */
+  mail: 17,
 } as const;
 
 /** Paint channel indices. */
 export const CH = { wear: 0, lip: 1, brow: 2, beard: 3 } as const;
+
+/** ch0 values on cloth: woven border band with the çintemani motif (the field of the primary cloth carries a faint damask). */
+export const BAND = 0.35;

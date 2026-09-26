@@ -139,8 +139,8 @@ const VIEWS: Record<string, { pos: [number, number, number]; target: [number, nu
   // Near-orthographic turnaround (long lens): whole body and head, front and side.
   ofront: { pos: [0, 1.3, -30], target: [0, 1.3, -0.3] },
   oside: { pos: [30, 1.3, -0.3], target: [0, 1.3, -0.3] },
-  ohead: { pos: [0, 1.68, -30], target: [0, 1.68, -0.3] },
-  ohside: { pos: [30, 1.68, -0.3], target: [0, 1.68, -0.3] },
+  ohead: { pos: [0, 1.72, -30], target: [0, 1.72, -0.3] },
+  ohside: { pos: [30, 1.72, -0.1], target: [0, 1.72, -0.1] },
 };
 const view = VIEWS[viewName] ?? VIEWS.full;
 
@@ -193,7 +193,7 @@ const driver: System = {
         l.shadow.camera.updateProjectionMatrix();
       }
     });
-    ctx.camera.fov = viewName.startsWith('o') ? (viewName.startsWith('oh') ? 0.75 : 3.3) : 30;
+    ctx.camera.fov = viewName.startsWith('o') ? (viewName.startsWith("oh") ? 0.62 : 3.3) : 30;
     ctx.camera.far = 100;
     ctx.camera.near = 0.02;
     ctx.camera.updateProjectionMatrix();

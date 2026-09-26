@@ -28,7 +28,7 @@ export function garmentLayers(c: { sc: import('../sdf/sculpt').Sculpt; skin: num
   const loose = sc.addLayer({ mat: RM.primary, visible: false, offsetOf: skin, thickness: 0.01, maskK: 0 });
   const tunicMat = c.outfit === 'pilot' ? RM.leather : RM.primary;
   const tunic = sc.addLayer({ mat: tunicMat, offsetOf: loose, thickness: c.outfit === 'pilot' ? 0.004 : 0.0, maskK: 0.006, ...folds(c.outfit === 'pilot' ? 0.0028 : 0.004, 20) });
-  const outer = sc.addLayer({ mat: RM.leather, offsetOf: tunic, thickness: 0.009, maskK: 0.004, ...folds(0.0006, 60) });
+  const outer = sc.addLayer({ mat: c.outfit === 'akinci' ? RM.mail : RM.leather, offsetOf: tunic, thickness: c.outfit === 'akinci' ? 0.006 : 0.009, maskK: 0.004, ...folds(0.0006, 60) });
   const boots = sc.addLayer({ mat: c.outfit === 'steppe' ? RM.felt : RM.darkLeather, offsetOf: skin, thickness: 0.016, maskK: 0.004, ...folds(0.0015, 30) });
   const gloves = sc.addLayer({ mat: RM.leather, offsetOf: skin, thickness: 0.0035, maskK: 0.003, ...folds(0.0006, 90) });
   return { under, loose, tunic, outer, boots, gloves };
@@ -212,6 +212,9 @@ export function sculptOutfit(c: SculptContext, G: GarmentLayers): void {
   }
 
   switch (a.outfit) {
+    case 'akinci':
+      akinci(c, G);
+      break;
     case 'traveller':
       traveller(c, G);
       break;
@@ -358,4 +361,60 @@ function steppe(c: SculptContext, G: GarmentLayers): void {
   sc.torus({ layer: G.outer, bone: id('Spine2'), bone1: id('Neck'), ramp: [0.3, 0.9], k: 0.01, mat: RM.fur }, lay.j.Neck.clone().addScaledVector(cf.y, -0.005 * s).addScaledVector(cf.z, 0.03 * s), 0.066 * s, 0.018 * s, basis(cf), 1.12, 1.08);
   neckline(c, G.tunic, 0.01, 1.0);
   belt(c, G.outer, -0.01, 0.05, RM.leather, true);
+}
+
+/**
+ * Akıncı: Ottoman frontier cavalry, reimagined. A crimson dolama to the knees with elbow sleeves and çintemani
+ * borders, a mail vest over it with a round mirror plate (ayna zırh) on the chest, mail sleeves under engraved steel
+ * vambraces, a wide knotted sash and tall boots. The helmet (çiçak), pelt and sword are gear.
+ */
+function akinci(c: SculptContext, G: GarmentLayers): void {
+  const { lay, sc, id, P } = c;
+  const s = P.s;
+  const cf = lay.chest;
+  const pf = lay.pelvis;
+  // Dolama.
+  maskTorso(c, G.tunic, -0.16 * s, neckTop(c));
+  for (const side of RSIDES) {
+    maskArm(c, G.tunic, side, 1.06, 0.09);
+    maskLeg(c, G.tunic, side, 0, 0.86, 0.17);
+    const sh = lay.j[`${side}Arm`];
+    const el = lay.j[`${side}ForeArm`];
+    band(c, G.tunic, sh.clone().lerp(el, 1.0), el.clone().sub(sh).normalize(), 0.11, 0.035 * s);
+    const hip = lay.j[`${side}UpLeg`];
+    const knee = lay.j[`${side}Leg`];
+    band(c, G.tunic, hip.clone().lerp(knee, 0.8), knee.clone().sub(hip).normalize(), 0.16, 0.06 * s);
+    // Mail sleeves on the forearms (the under layer, painted mail) and steel vambraces over them.
+    const wr = lay.j[`${side}Hand`];
+    sc.cylinder({ layer: G.under, op: PrimOp.Paint, bone: 0, paintMat: RM.mail, feather: 0.003 }, sh, wr, 0.1);
+    const ff = limbFrame(el, wr, v3(0, 1, 0));
+    sc.cone({ layer: G.outer, bone: id(`${side}ForeArm`), bone1: id(`${side}ForeArmTwist`), ramp: [0.3, 0.9], k: 0.004, mat: RM.iron }, el.clone().lerp(wr, 0.3), el.clone().lerp(wr, 0.93), 0.042 * s, 0.033 * s, { sz: 1.12, hint: ff.z });
+    sc.torus({ layer: G.outer, bone: id(`${side}ForeArmTwist`), k: 0.003, mat: RM.metal }, el.clone().lerp(wr, 0.93), 0.034 * s, 0.0045 * s, basis(ff), 0.9, 1.1);
+    sc.torus({ layer: G.outer, bone: id(`${side}ForeArm`), k: 0.003, mat: RM.metal }, el.clone().lerp(wr, 0.3), 0.043 * s, 0.0045 * s, basis(ff), 0.9, 1.1);
+  }
+  // Front edge band down the chest and a standing collar.
+  sc.box({ layer: G.tunic, op: PrimOp.Paint, bone: 0, channels: [0.35], feather: 0.002 }, cf.p(0, 0.05 * s, 0.2 * s), v3(0.022 * s, 0.4 * s, 0.12 * s), 0.002, basis(cf));
+  sc.torus({ layer: G.tunic, bone: id('Neck'), bone1: id('Spine2'), ramp: [0.2, 0.9], k: 0.008, mat: RM.accent }, lay.j.Neck.clone().addScaledVector(cf.y, 0.012 * s).addScaledVector(cf.z, 0.028 * s), 0.056 * s, 0.011 * s, basis(cf), 1.1, 1.15);
+  neckline(c, G.tunic, 0.0, 1.0);
+  // Mail vest over the dolama.
+  sc.ellipsoid(mask(G.outer, id('Spine2'), 0.01), cf.p(0, 0.06 * s, 0.03 * s), v3(P.shoulderHalf * 1.02, 0.23 * s, 0.24 * s), basis(cf));
+  armHoles(c, G.outer, 0.07 * s);
+  neckline(c, G.outer, 0.03, 1.2);
+  // Mirror plate on the chest (steel disc, gilt rim) and two smaller plates on the flanks.
+  const front = cf.p(0, 0.09 * s, 0.0).addScaledVector(cf.z, (0.155 + 0.02 * P.build) * s);
+  const plate = limbFrame(front, front.clone().add(cf.z), cf.y);
+  sc.cylinder({ layer: G.outer, bone: id('Spine2'), k: 0.006, mat: RM.iron }, front.clone().addScaledVector(cf.z, -0.01 * s), front.clone().addScaledVector(cf.z, 0.008 * s), 0.07 * s);
+  sc.torus({ layer: G.outer, bone: id('Spine2'), k: 0.003, mat: RM.metal }, front.clone().addScaledVector(cf.z, 0.008 * s), 0.07 * s, 0.006 * s, basis(plate));
+  sc.sphere({ layer: G.outer, bone: id('Spine2'), k: 0.004, mat: RM.metal }, front.clone().addScaledVector(cf.z, 0.012 * s), 0.014 * s);
+  for (const side of RSIDES) {
+    const sg = rsign(side);
+    const f2 = cf.p(0.125 * sg * s, 0.0, 0.0).addScaledVector(cf.z, 0.1 * s);
+    const n2 = cf.z.clone().multiplyScalar(0.6).addScaledVector(cf.x, 0.8 * sg).normalize();
+    sc.cylinder({ layer: G.outer, bone: id('Spine1'), k: 0.005, mat: RM.iron }, f2.clone().addScaledVector(n2, -0.01 * s), f2.clone().addScaledVector(n2, 0.007 * s), 0.045 * s);
+    sc.torus({ layer: G.outer, bone: id('Spine1'), k: 0.003, mat: RM.metal }, f2.clone().addScaledVector(n2, 0.007 * s), 0.045 * s, 0.0045 * s, basis(limbFrame(f2, f2.clone().add(n2), cf.y)));
+  }
+  // Wide knotted sash.
+  belt(c, G.outer, 0.02, 0.09, RM.accent, false);
+  sc.ellipsoid({ layer: G.outer, bone: id('Hips'), k: 0.012, mat: RM.accent }, pf.p(-0.13 * s, 0.02 * s, 0.07 * s), v3(0.028, 0.032, 0.024).multiplyScalar(s), basis(pf));
+  sc.cone({ layer: G.outer, bone: id('Hips'), k: 0.01, mat: RM.accent }, pf.p(-0.14 * s, 0.0, 0.08 * s), pf.p(-0.17 * s, -0.17 * s, 0.1 * s), 0.02 * s, 0.03 * s, { sz: 0.4, hint: pf.z });
 }
