@@ -55,6 +55,8 @@ class SkyEnvironmentState implements EnvironmentState {
   readonly ambientColor = new THREE.Color(0.3, 0.35, 0.45);
   readonly wind = new THREE.Vector3();
   night = 0;
+  /** Relative humidity 0..1 near the ground (EnvironmentState.humidity), see updateHumidity(). */
+  humidity = 0.65;
   constructor(
     readonly light: THREE.Light,
     private readonly setTime: (hours: number) => void,
@@ -172,6 +174,18 @@ export function createSkySystem(): System {
         ctx.scene.environment = environment.captureNow();
       }
     }
+  }
+
+  /**
+   * Near-ground relative humidity: dry north-easterly poyraz air ~0.6, the humid south-westerly lodos ~0.85, higher
+   * around dawn (the same morning bump the haze uses) and with fog or rain. Smoothed like the haze.
+   */
+  function updateHumidity(realDt: number): void {
+    const morning = Math.exp(-(((clock.hours - 6.5) / 2.2) ** 2));
+    const weather = ctx?.services.tryGet('weather');
+    const wet = weather ? Math.max(weather.current.fog, weather.current.rain) : 0;
+    const target = THREE.MathUtils.clamp(THREE.MathUtils.lerp(0.6, 0.85, wind.lodos) + 0.1 * morning + 0.35 * wet, 0, 1);
+    state.humidity += (target - state.humidity) * (realDt > 0 ? Math.min(1, realDt * 0.6) : 1);
   }
 
   function targetHaze(): number {
@@ -472,6 +486,7 @@ export function createSkySystem(): System {
       wind.update(c.time.elapsed);
       state.wind.copy(wind.vector);
       hazeMul = targetHaze();
+      updateHumidity(0);
       updateCelestialAndLights(c);
       writeGlobals(c);
       updateDomeAndStars();
@@ -500,6 +515,7 @@ export function createSkySystem(): System {
       wind.update(c.time.elapsed);
       state.wind.copy(wind.vector);
       hazeMul += (targetHaze() - hazeMul) * Math.min(1, c.time.realDt * 0.6);
+      updateHumidity(c.time.realDt);
 
       updateCelestialAndLights(c);
       writeGlobals(c);
