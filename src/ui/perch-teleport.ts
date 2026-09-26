@@ -8,7 +8,7 @@ import type { ViewPreset } from '../core/debug';
 import { perchView } from './menu/places';
 
 /** Toast shown after a perch teleport. */
-export const PERCH_TOAST = 'Konmak için L';
+export const PERCH_TOAST = 'Konmak için [L]';
 
 /** ~30 m behind and above the grip point, facing the perch's view. */
 export function perchTeleportView(perch: PerchPoint): ViewPreset {

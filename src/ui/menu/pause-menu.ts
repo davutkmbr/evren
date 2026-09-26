@@ -1,4 +1,5 @@
-import { el, TextSlot } from '../dom';
+import { prompt, stat } from '../components';
+import { el } from '../dom';
 
 export type MenuTab = 'teleport' | 'controls' | 'settings';
 
@@ -22,9 +23,6 @@ const TABS: ReadonlyArray<{ id: MenuTab; title: string }> = [
   { id: 'settings', title: 'Ayarlar' },
 ];
 
-const PLAY_ICON =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l12 8-12 8z"/></svg>';
-
 /**
  * Pause menu (Esc / P): a top bar (state, the three tabs, discovery progress, Devam) over one tab's content:
  * Işınlan (map + places), Kontroller (key groups + keyboard) or Ayarlar (settings pages).
@@ -34,18 +32,18 @@ export class PauseMenu {
   private readonly sheet: HTMLElement;
   private readonly body: HTMLElement;
   private readonly tabButtons = new Map<MenuTab, HTMLButtonElement>();
-  private readonly progressText: TextSlot;
+  private readonly progress = stat('Keşifler', '0/0');
+  private progressLast = '0/0';
   private readonly progressFill: HTMLElement;
   private tab: MenuTab = 'teleport';
   private isOpen = false;
 
   constructor(private readonly options: PauseMenuOptions) {
-    const resume = el('button', 'menu-resume', undefined, { type: 'button' });
-    resume.innerHTML = `${PLAY_ICON}<span>Devam</span><kbd>Esc</kbd>`;
-    resume.addEventListener('click', () => {
+    const resume = prompt('Devam', 'Esc', 'primary', () => {
       this.options.onClick?.();
       this.options.onResume();
     });
+    resume.root.classList.add('menu-resume');
 
     const tablist = el(
       'div',
@@ -73,8 +71,6 @@ export class PauseMenu {
       this.tabButtons.get(next)?.focus();
     });
 
-    const progressTextNode = el('span', 'menu-progress-val ejd-num', '0/0');
-    this.progressText = new TextSlot(progressTextNode);
     this.progressFill = el('i', 'menu-progress-fill');
 
     this.body = el('div', 'menu-body', undefined, { id: 'ejd-menu-body', role: 'tabpanel' });
@@ -87,10 +83,10 @@ export class PauseMenu {
           el('nav', 'menu-tabs-wrap', [tablist], { 'aria-label': 'Menü bölümleri' }),
           el('div', 'menu-top-end', [
             el('div', 'menu-progress', [
-              el('div', 'menu-progress-row', [el('span', undefined, 'Keşifler'), progressTextNode]),
+              this.progress.root,
               el('div', 'menu-progress-track', [this.progressFill]),
             ], { title: 'Keşfedilen simge yapılar' }),
-            resume,
+            resume.root,
           ]),
         ]),
         this.body,
@@ -111,7 +107,11 @@ export class PauseMenu {
   }
 
   setProgress(count: number, total: number): void {
-    this.progressText.set(`${count}/${total}`);
+    const text = `${count}/${total}`;
+    if (text !== this.progressLast) {
+      this.progressLast = text;
+      this.progress.set(text);
+    }
     this.progressFill.style.transform = `scaleX(${total > 0 ? (count / total).toFixed(3) : '0'})`;
   }
 

@@ -1,3 +1,4 @@
+import { keyText } from '../components';
 import { el } from '../dom';
 
 const MAX_TOASTS = 3;
@@ -11,6 +12,7 @@ interface KeyedToast {
 
 /**
  * Stacked transient messages (top centre) fed by the 'toast' event. Plain text with a soft shadow on a faint pill.
+ * Keys named as "[L]" in the text are drawn as key caps.
  * A toast pushed with a `key` replaces the live toast with the same key (camera, clock) instead of stacking.
  */
 export class Toasts {
@@ -28,13 +30,13 @@ export class Toasts {
     this.lastAt = now;
     const live = key ? this.keyed.get(key) : undefined;
     if (live && live.node.isConnected && !live.node.classList.contains('is-leaving')) {
-      live.text.textContent = text;
+      live.text.replaceChildren(...keyText(text));
       live.node.className = `toast is-${kind} is-in`;
       window.clearTimeout(live.timer);
       live.timer = this.scheduleLeave(live.node, key);
       return;
     }
-    const textNode = el('span', 'toast-text', text);
+    const textNode = el('span', 'toast-text', keyText(text));
     const toast = el('div', `toast is-${kind}`, [el('i', 'toast-dot'), textNode]);
     this.root.append(toast);
     while (this.root.childElementCount > MAX_TOASTS) {

@@ -5,7 +5,7 @@ import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
 import type { MomentCategory } from '../../moments/types';
-import { segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from './controls';
+import { prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
 
 type SettingsPage = 'display' | 'world' | 'controls' | 'sound' | 'game';
 
@@ -189,22 +189,26 @@ export class SettingsPanel {
       farBlur: weatherSlider('farBlur', 'Uzak bulanıklık', 0.6),
     };
 
-    const resetButton = el('button', 'btn-quiet', 'Sıfırla', { type: 'button' });
+    // Two clicks: the first arms the reset (danger label), the second within 3.5 s clears the discoveries.
+    let confirming = false;
     let confirmTimer = 0;
-    resetButton.addEventListener('click', () => {
-      if (!resetButton.classList.contains('is-confirm')) {
-        resetButton.classList.add('is-confirm');
-        resetButton.textContent = 'Emin misin? Tekrar tıkla';
+    const reset = prompt('Sıfırla', '', 'danger', () => {
+      if (!confirming) {
+        confirming = true;
+        reset.root.classList.add('is-confirm');
+        reset.setLabel('Emin misin? Tekrar tıkla');
         window.clearTimeout(confirmTimer);
         confirmTimer = window.setTimeout(() => {
-          resetButton.classList.remove('is-confirm');
-          resetButton.textContent = 'Sıfırla';
+          confirming = false;
+          reset.root.classList.remove('is-confirm');
+          reset.setLabel('Sıfırla');
         }, 3500);
         return;
       }
       window.clearTimeout(confirmTimer);
-      resetButton.classList.remove('is-confirm');
-      resetButton.textContent = 'Sıfırlandı';
+      confirming = false;
+      reset.root.classList.remove('is-confirm');
+      reset.setLabel('Sıfırlandı');
       options.onResetDiscoveries();
     });
 
@@ -227,8 +231,7 @@ export class SettingsPanel {
     });
     setRowsEnabled(momentSubRows, this.momentPrefs.enabled);
 
-    const controlsLink = el('button', 'btn-quiet', 'Kontroller', { type: 'button' });
-    controlsLink.addEventListener('click', () => options.onShowControls?.());
+    const controlsLink = prompt('Kontroller', '', 'secondary', () => options.onShowControls?.());
 
     const pageContent: Record<SettingsPage, HTMLElement[]> = {
       display: [
@@ -259,7 +262,7 @@ export class SettingsPanel {
         ]),
         settingSection('Klavye', [
           settingRow('W/S eksenini ters çevir', 'Açıkken W burnu yukarı kaldırır', this.invertPitch.root),
-          settingRow('Tüm tuşlar', 'Uçuş, kamera ve arayüz kısayolları', controlsLink),
+          settingRow('Tüm tuşlar', 'Uçuş, kamera ve arayüz kısayolları', controlsLink.root),
         ]),
       ],
       sound: [settingSection('Ses', [settingRow('Ana ses', undefined, this.volume.root)])],
@@ -269,7 +272,7 @@ export class SettingsPanel {
           [settingRow('Anlar', 'Haritaya serpiştirilmiş küçük sürprizler', this.momentMaster.root), ...momentSubRows],
           'Uçarken karşına çıkan kısa sahneler ve altyazılar. İstemediklerini kapatabilirsin.',
         ),
-        settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', resetButton)]),
+        settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', reset.root)]),
       ],
     };
 
