@@ -1,50 +1,45 @@
 /**
- * Chain bursts (phase 20 stage D, owner feedback on races): every clean chain link gives a short, felt push forward, the
- * way a mini-turbo or a launch does, on top of the slow flow payback.
+ * Chain bursts (phase 20, owner feedback on races and on stage D v2): chaining different moves gives an instant, felt
+ * push forward, the way a mini-turbo or a launch does, on top of the slow flow payback.
  *
- * A link is a finished motion that hands over well from the one before it (chain factor, harmony, novelty and energy
- * stewardship all high: the same harmony terms flow is built from, so a wasteful move never links) and is not the same
- * kind of motion as either of the chain's last two (a move repeated back to back, or two moves alternated, never pay:
- * such a clean handover keeps the chain alive but adds no link; unnamed hand-flown manoeuvring counts as one kind),
- * or a speed ring / a tight gate taken while a chain is alive. Links count up while they keep coming; the push grows
- * with the count (link 1 small, link 3 and on the full size) and with flow (half size without flow, full in sustained
- * flow) and is capped in m/s and by a speed ceiling under the dive envelope. The push is delivered over BURST.time with a smooth sin² rate (no jerk at either end) along the flight
- * path. Pure state: FlowSystem decides when a link lands and applies the speed.
+ * One visible rule (owner feedback 26 Sep: the first version's hidden harmony thresholds made combos hard to read):
+ * when a move ends cleanly (no contact, no stall, the move's own verdict), a window of BURST.window seconds opens; a
+ * *different* move started inside it is a chain link, and the link lands at once, when that move starts (the push is
+ * felt the moment you press). A move started while another one still runs links the same way. A speed ring (and a gate
+ * taken tight) while the chain is open is a link too. The window running out, an unclean end, a stall or a contact
+ * break the chain.
+ *
+ * Variety: a move of the same kind as either of the chain's last two different kinds never pays (a move repeated back
+ * to back, or two moves alternated): it keeps the chain open but adds no link. The kind history survives a broken chain
+ * for BURST.kindMemory seconds.
+ *
+ * The push grows with the chain (link 1 / 2 / 3+ = +15 / 20 / 25 % of the airspeed), is capped in m/s and by a speed
+ * ceiling under the dive envelope, and is delivered over BURST.time with a smooth sin² rate along the flight path.
+ * Harmony and flow no longer decide links; they still build flow and its payback. Pure state: FlowSystem feeds the
+ * move events and applies the speed.
  */
-import { clamp, smoothstep } from '../../../core/math/noise';
-import type { HarmonyTerms } from './types';
+import { clamp } from '../../../core/math/noise';
 
 export const BURST = {
-  /** A motion links when its transition has at least this chain factor, harmony, novelty and energy score. */
-  linkChain: 0.45,
-  linkHarmony: 0.6,
-  linkNovelty: 0.5,
-  linkEnergy: 0.6,
-  /** Push × lerp(flowFloor, 1, flow): full size only in sustained flow, half without it. */
-  flowFloor: 0.5,
+  /** Seconds after a clean move end in which a different move links (the HUD shows it draining). */
+  window: 2.5,
   /**
-   * Push as a fraction of the airspeed by link count (index = link − 1, the last entry for every longer chain), before
-   * the quality factor: link 1 small, link 3 and on the full size.
+   * Push as a fraction of the airspeed by link count (index = link − 1, the last entry for every longer chain): link 1
+   * small, link 3 and on the full size.
    */
   fraction: [0.15, 0.2, 0.25] as readonly number[],
-  /** Quality factor lerp(qualityMin, 1, smoothstep(linkHarmony, qualityFull, H)): a better handover pushes harder. */
-  qualityMin: 0.75,
-  qualityFull: 0.85,
   /** Largest push of one burst (m/s) and the airspeed a burst never pushes past (under the folded-wing dive envelope). */
-  maxDv: 12,
+  maxDv: 11,
   speedCap: 74,
   /** Seconds the push is spread over (sin² rate). */
   time: 1.2,
-  /** A chain is alive this long (s) after its last link or motion end: a ring or a tight gate in that time links. */
-  alive: 2.6,
+  /** A move without an end event of its own ends once the maneuver system has been idle this long (s). */
+  idleEnd: 0.15,
   /** A gate counts as a link when passed at least this tight (speed rings always do). */
   passTightness: 0.7,
-  /**
-   * The chain's recent kinds are remembered this long (s) after it was last fed, across breaks: a pattern of long
-   * moves (a wingover and its roll-out, repeated) cannot relink after every pause.
-   */
+  /** The chain's recent kinds are remembered this long (s) after the chain was last fed, across breaks. */
   kindMemory: 20,
-  /** A ring or gate link pushes this fraction of a motion link of the same count. */
+  /** A ring or gate link pushes this fraction of a move link of the same count. */
   passShare: 0.8,
   /** No speed push below this airspeed (m/s): slow flight, hover, the ground. */
   minSpeed: 14,
@@ -52,8 +47,14 @@ export const BURST = {
   freeFlightScale: 0.6,
 } as const;
 
+/** Moves that never take part in chains: hints, the plain take-off, flow's own captions, the automatic wing catch. */
+export const CHAIN_IGNORED: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow', 'catch']);
+
 /** Why a link landed. */
 export type LinkSource = 'motion' | 'ring' | 'gate';
+
+/** What a move's start does to the chain. */
+export type ChainStart = 'link' | 'repeat' | 'begin';
 
 /** Fraction of the push delivered by time t (0..1): the integral of a sin² rate over [0, duration]. */
 export function burstProgress(t: number, duration: number): number {
@@ -67,31 +68,21 @@ export function burstProgress(t: number, duration: number): number {
   return u - Math.sin(2 * Math.PI * u) / (2 * Math.PI);
 }
 
-/** True when a transition's terms make it a clean chain link. */
-export function isLink(t: HarmonyTerms): boolean {
-  return t.chain >= BURST.linkChain && t.total >= BURST.linkHarmony && t.novelty >= BURST.linkNovelty && t.energy >= BURST.linkEnergy;
-}
-
-/**
- * Push (m/s) of link number `link` at airspeed `speed` with harmony `harmony` and flow `flow` (before the game's scale),
- * capped at BURST.maxDv.
- */
-export function linkDv(link: number, speed: number, harmony: number, flow = 1, share = 1): number {
+/** Push (m/s) of link number `link` at airspeed `speed` (before the game's scale), capped at BURST.maxDv. */
+export function linkDv(link: number, speed: number, share = 1): number {
   if (link < 1 || !Number.isFinite(speed) || speed < BURST.minSpeed) {
     return 0;
   }
   const f = BURST.fraction[Math.min(link, BURST.fraction.length) - 1];
-  const q = BURST.qualityMin + (1 - BURST.qualityMin) * smoothstep(BURST.linkHarmony, BURST.qualityFull, harmony);
-  const w = BURST.flowFloor + (1 - BURST.flowFloor) * clamp(flow, 0, 1);
-  return Math.min(BURST.maxDv, speed * f * q * w * share);
+  return Math.min(BURST.maxDv, speed * f * share);
 }
 
 export class ChainBurst {
   /** Links in the current chain (0: no chain). */
   links = 0;
-  /** Kinds of motion (maneuver id, '~' unnamed) in the current chain, oldest first: its first motion and each link. */
+  /** Recent different kinds of move in the chain (maneuver ids), oldest first. */
   readonly kinds: string[] = [];
-  /** Sim time the chain was last fed (a link or a motion end). */
+  /** Sim time the chain was last fed (a move start or end). */
   lastFed = -Infinity;
   /** Links and bursts since the reset, and the longest chain (headless checks). */
   totalLinks = 0;
@@ -109,6 +100,9 @@ export class ChainBurst {
     this.links = 0;
     this.kinds.length = 0;
     this.lastFed = -Infinity;
+    this.current = null;
+    this.windowStart = -Infinity;
+    this.broke = false;
     this.totalLinks = 0;
     this.bestChain = 0;
     this.totalDv = 0;
@@ -131,31 +125,95 @@ export class ChainBurst {
     return this.active ? clamp(this.t / BURST.time, 0, 1) : 1;
   }
 
-  /**
-   * The chain breaks (a poor handover, a stall, contact). The recent kinds are kept: a chain restarted right away
-   * still cannot link a kind it just had (two moves alternated never pay, broken or not).
-   */
-  breakChain(): void {
-    this.links = 0;
+  /** The running move (its kind), or null. */
+  current: string | null = null;
+  /** Sim time the last move ended cleanly (the window runs from here), -Infinity when closed. */
+  windowStart = -Infinity;
+  /** True for one tick after the chain broke with links in it (the HUD's "koptu"). */
+  broke = false;
+
+  /** The chain is open: a move runs, or the window after a clean end is still running. */
+  open(now: number): boolean {
+    return this.current !== null || now - this.windowStart <= BURST.window;
   }
 
-  /** A long pause (BURST.kindMemory): the chain and its recent kinds are forgotten. */
-  forget(): void {
+  /** 0..1 of the window left after a clean move end (1 just after it), -1 while a move runs or no window is open. */
+  windowLeft(now: number): number {
+    if (this.current !== null || !Number.isFinite(this.windowStart)) {
+      return -1;
+    }
+    const left = 1 - (now - this.windowStart) / BURST.window;
+    return left > 0 ? left : -1;
+  }
+
+  /** The chain breaks (window over, an unclean end, a stall, contact). The recent kinds are kept (BURST.kindMemory). */
+  breakChain(): void {
+    if (this.links > 0) {
+      this.broke = true;
+    }
     this.links = 0;
+    this.windowStart = -Infinity;
+  }
+
+  /** A long pause (BURST.kindMemory): the recent kinds are forgotten. */
+  forget(): void {
     this.kinds.length = 0;
   }
 
-  /** A motion that did not link starts a new chain (the next motion may link to it). */
-  begin(kind: string, now: number): void {
-    this.breakChain();
-    this.pushKind(kind);
+  /** A move starts: what it does to the chain (the caller lands a link with link() on 'link'). */
+  start(kind: string, now: number): ChainStart {
+    const open = this.open(now);
+    const fresh = this.fresh(kind);
+    let what: ChainStart;
+    if (open && fresh) {
+      what = 'link';
+    } else if (open) {
+      what = 'repeat';
+      this.pushKind(kind);
+    } else {
+      what = 'begin';
+      this.links = 0;
+      this.pushKind(kind);
+    }
+    this.current = kind;
+    this.windowStart = -Infinity;
     this.lastFed = now;
+    return what;
   }
 
-  /** A clean handover into a kind the chain just had: keeps the chain alive, pays nothing. */
-  repeat(kind: string, now: number): void {
-    this.pushKind(kind);
+  /** The running move ended (`clean`: its own verdict); returns false when that broke the chain. */
+  end(kind: string, clean: boolean, now: number): boolean {
+    if (this.current !== kind) {
+      return true;
+    }
+    this.current = null;
     this.lastFed = now;
+    if (!clean) {
+      this.breakChain();
+      return false;
+    }
+    this.windowStart = now;
+    return true;
+  }
+
+  /**
+   * A stall or a contact: the chain breaks now, and the running move no longer counts (its end opens no window), so the
+   * next move starts a new chain.
+   */
+  spoil(): void {
+    this.current = null;
+    this.breakChain();
+  }
+
+  /** Every step: the window running out breaks the chain; a long pause forgets the kinds. */
+  tick(now: number): void {
+    this.broke = false;
+    if (this.current === null && Number.isFinite(this.windowStart) && now - this.windowStart > BURST.window) {
+      this.breakChain();
+    }
+    if (this.current === null && now - this.lastFed > BURST.kindMemory && this.kinds.length > 0) {
+      this.forget();
+    }
   }
 
   /** Records a kind; a repeat of the last one is one entry (the last two kinds are the last two different ones). */
@@ -169,14 +227,10 @@ export class ChainBurst {
     }
   }
 
-  /** True when a motion of this kind adds variety to the chain (not one of its last two different kinds). */
+  /** True when a move of this kind adds variety to the chain (not one of its last two different kinds). */
   fresh(kind: string): boolean {
     const n = this.kinds.length;
     return this.kinds[n - 1] !== kind && this.kinds[n - 2] !== kind;
-  }
-
-  alive(now: number): boolean {
-    return this.links > 0 && now - this.lastFed <= BURST.alive;
   }
 
   /** A link landed: counts it and starts its burst (dv m/s, already scaled). Returns the new link count. */

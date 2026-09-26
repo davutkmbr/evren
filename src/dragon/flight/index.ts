@@ -52,6 +52,8 @@ export function createFlightSystem(): System {
     roarCooldown: 0,
     chain: 0,
     burst: 0,
+    chainWindow: -1,
+    chainNext: [],
     racing: false,
     setRacing(on) {
       state.racing = on;
@@ -77,6 +79,7 @@ export function createFlightSystem(): System {
     perch: sim.perch,
   };
 
+  const chainNext: string[] = [];
   let sprayDistance = 0;
   const sprayPoint = new THREE.Vector3();
   const previous = new BodyState();
@@ -298,6 +301,8 @@ export function createFlightSystem(): System {
     state.flow = sim.flow.value;
     state.chain = sim.flow.burst.links;
     state.burst = sim.flow.burst.rate / 2;
+    state.chainWindow = sim.flow.burst.windowLeft(sim.time);
+    state.chainNext = sim.flow.linkable(sim, chainNext);
     state.flapEffort = sim.beat.effort;
     state.firing = sim.firing;
     state.roarCooldown = roarCooldown / ROAR_COOLDOWN;

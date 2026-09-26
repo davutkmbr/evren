@@ -86,9 +86,9 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   contact or wasted energy. As built: stage D below.
 - **Payback:** flow lowers drag slightly (up to −8 %) and raises the power stroke's surge; the effective top cruise
   speed rises by up to ~5 m/s at full flow. Capped, so it rewards execution without breaking the energy model.
-- **Chain bursts** (stage D v2): every clean chain link gives an instant, felt push forward (+15 / 20 / 25 % of the
-  airspeed for link 1 / 2 / 3 and on, over 1.2 s, capped), so chaining the right moves pays in the moment, not only
-  through the slow payback. As built: stage D v2 below.
+- **Chain bursts** (stage D v2, rule simplified in v3): a different move started within 2.5 s after a move ended
+  cleanly is a chain link and gives an instant, felt push forward (+15 / 20 / 25 % of the airspeed for link 1 / 2 / 3
+  and on, over 1.2 s, capped), so chaining the right moves pays in the moment. As built: stage D v2 and v3 below.
 - **Timing bonuses ("Kusursuz"):** generic: when a harmony term peaks (near-perfect energy stewardship, a move
   started exactly on the beat, a seamless handover, a clean pass at the lowest safe clearance or through a snug ring)
   a small extra flow step and a short caption.
@@ -533,6 +533,53 @@ removal above)
 - **Not yet / known:** the spray and the HUD counter are not in the sandbox captures (no FX or HUD there); the feel
   in the game (FOV and shake amounts, streak density, the tones' level) is for the owner's feel test. The balance
   numbers move with any flight-model change: rerun `race-balance.ts` after one.
+
+### Stage D v3 as built: combos you can read (owner feedback 26 Sep, awaiting the feel test)
+
+Owner feedback on stage D v2: "Landing the combinations was very hard; I can't pull off ×-combos, it's hard to do what
+I want, instinctively it is very hard to understand what to do." The v2 link was decided by five hidden conditions
+(the chain factor's ~2.3 s gap, harmony, energy, novelty and the kind rule), measured from the moment flow's segmenter
+closed the previous motion (~0.4 s after it settled), and the push landed only when the *new* move had finished; the
+first links were half size at low flow. Nothing on screen said when to act or what would link.
+
+- **One rule** (`burst.ts`, `ChainBurst.start / end / tick`): when a move ends cleanly (no contact, no stall, the move's
+  own verdict) a 2.5 s window opens; a *different* move started inside it is a link, and the link lands at once, when
+  that move starts. A different move started while one still runs links too. A speed ring (80 % push), or a gate at
+  pass tightness ≥ 0.7, taken while the chain is open (a move runs or the window runs) is a link. The window running
+  out, an unclean end, a stall or a contact break the chain (a spoiled move opens no window). Moves without an end event
+  of their own (roll, loop, free fall...) end once the maneuver system has been idle for 0.15 s. Ignored: hints, the
+  plain take-off, flow's captions and the automatic wing catch.
+- **Variety** unchanged: a kind among the chain's last two different kinds never pays (it keeps the chain open), the
+  kind history lasts 20 s across breaks.
+- **Harmony no longer decides links**; it still builds flow and its payback. The flow factor on the push is gone:
+  link 1 is always +15 % (capped at +11 m/s and 74 m/s; 0.6× in free flight).
+- **The window on screen** (`ui/hud/chain-counter.ts`): a 34 px gold bar under the "×3" counter fills when a move
+  ends cleanly and drains over the 2.5 s ("start a different move now"); a link brightens the counter; a break dims it
+  with "koptu" and it fades out. `DragonState.chainWindow` (0..1 left, −1 none).
+- **Next-move hint** (`ui/hud/chain-hint.ts`): during a race, while the chain is open, up to two moves that would link
+  now as key hints on the shared hint line, e.g. "[Shift ×2] Ok gibi · [Space ×2] Güç vuruşu" (dart, power stroke,
+  roll, side-slip, in that order; only kinds that add variety and that the dragon can fly now: dart ≥ 30 m/s, the
+  power stroke with stamina, roll and slip ≥ 16 m/s). A joinable item (`HUD_PRIORITY.flightHint`): it rides along on
+  the race's own hint line. `FlowSystem.linkable`, `DragonState.chainNext`.
+- **Races retuned** (the pilot no longer rolls on the way down to the low line; one seed had dived into the sea):
+
+  | Course | v2: plain / some / chained | v3: plain / some / chained | chained spread over seeds |
+  |---|---|---|---|
+  | Boğaz turu | 275.9 / 258.5 (6.3 %) / 227.9 (17.4 %) | 275.9 / 253.8 (8.0 %) / 231.4 (16.1 %) | 3.5–16.1 % |
+  | Haliç kıvrımı | 126.6 / 115.7 (8.6 %) / 97.3 (23.1 %) | 126.6 / 107.0 (15.5 %) / 98.1 (22.5 %) | 15.4–22.5 % |
+  | Adalar turu | 379.7 / 347.7 (8.4 %) / 319.6 (15.8 %) | 379.7 / 347.8 (8.4 %) / 289.5 (23.8 %) | 7.7–23.8 % |
+
+  Medals (gold = best chained + 3 %): Boğaz turu 3:58 / 4:28 / 5:09, Haliç kıvrımı 1:41 / 2:03 / 2:22, Adalar turu
+  4:58 / 6:08 / 7:05; default paces gold 49 / silver 41 / bronze 36 m/s. Plain bronze, some chaining silver, chained
+  gold on every course.
+- **Checks:** `flow-check.ts` section 5 now tests the rule step by step (begin, link in the window, a repeat, a kind
+  among the last two, a third kind; the window running out, an unclean end and a contact breaking the chain; a move
+  started during another linking); the fuzz: repeated gesture macros keep a longest chain of 1 (worst 7.6 m/s of
+  bursts in 120 s) and their flow unchanged (worst mean 0.061), random gestures earn 14 / 35 m/s of bursts a minute at
+  p50 / p90 against the chained racer's ~60; `race-balance`, `races-check`, `speed-feel-check`, `hud-zones-check`,
+  `air-moves`, `movement`, `lowflight` pass.
+- **Not yet:** the window bar and the hint in the game (the feel test); a guided practice course and a single
+  context "flow key" were offered as next steps.
 
 ### Landing v2 as built (owner feedback 26 Sep, awaiting the feel test)
 

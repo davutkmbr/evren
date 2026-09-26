@@ -10,6 +10,7 @@ import { AltitudeReadout, SpeedReadout } from './flight-readout';
 import { Hotbar } from './hotbar';
 import { ManeuverCaption } from './maneuver-caption';
 import { ChainCounter } from './chain-counter';
+import { ChainHint } from './chain-hint';
 import { FlowLine } from './flow-line';
 import { StaminaWings } from './stamina-wings';
 
@@ -32,6 +33,7 @@ export class Hud {
   readonly stamina = new StaminaWings();
   readonly flow = new FlowLine();
   readonly chain = new ChainCounter();
+  private readonly chainHint: ChainHint;
   readonly hotbar = new Hotbar();
   readonly maneuver: ManeuverCaption;
   private readonly hintLine: HintLineView;
@@ -45,6 +47,7 @@ export class Hud {
     private readonly zones: HudDirector,
   ) {
     this.maneuver = new ManeuverCaption(zones);
+    this.chainHint = new ChainHint(zones);
     this.hintLine = new HintLineView(zones);
     card.setZones(zones);
     this.compass.focus = () => card.showing;
@@ -78,7 +81,8 @@ export class Hud {
     this.minimap.update(s, realDt);
     this.stamina.update(s.stamina, realDt);
     this.flow.update(s.flow, realDt);
-    this.chain.update(s.chain, realDt);
+    this.chain.update(s.chain, s.chainWindow, realDt);
+    this.chainHint.update(s.racing && s.valid, s.chainNext);
     this.hotbar.render();
     this.area.update(s, realDt, this.zones);
     this.textTimer -= realDt;
@@ -94,5 +98,6 @@ export class Hud {
     this.hotbar.dispose();
     this.hintLine.dispose();
     this.zones.release(COMPASS_LABEL_ID);
+    this.chainHint.dispose();
   }
 }
