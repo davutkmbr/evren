@@ -172,6 +172,9 @@ export function createFlightSystem(): System {
           fx?.splash(e.point, e.strength);
           ctx.events.emit('splash', { position: e.point, strength: e.strength });
           break;
+        case 'spray':
+          fx?.splash(e.point, e.strength);
+          break;
         case 'dust':
           fx?.dust(e.point, e.strength);
           break;

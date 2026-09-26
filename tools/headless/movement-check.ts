@@ -715,6 +715,14 @@ async function swimming(): Promise<void> {
     note(`swim.${name}.speedMean`, st.speedMean);
     note(`swim.${name}.surgeAmp`, st.surgeAmp);
     check(st.finite, `${label}: no NaN or infinite values in the body state or the skinning`);
+    // Visible stroke spray (no sound events): the catch and lift-out of each wing, and the tail churn when fast.
+    const sprays = (run.rt.sim as unknown as { eventCounts: Record<string, number> }).eventCounts.spray ?? 0;
+    const splashes = (run.rt.sim as unknown as { eventCounts: Record<string, number> }).eventCounts.splash ?? 0;
+    console.log(`    stroke spray events ${sprays}, splash events ${splashes}`);
+    note(`swim.${name}.sprays`, sprays);
+    if (target > 0) {
+      check(sprays >= 8, `${label}: the wing strokes throw visible spray (${sprays} spray events >= 8)`);
+    }
     check(st.allSwimming && st.walkMax < 0.01, `${label}: swimming, no walk cycle (walkAmount max ${f2(st.walkMax)} < 0.01)`);
     check(st.riderLow > 0.05, `${label}: rider's torso and head above the water (lowest ${f2(st.riderLow)} m > 0.05)`);
     check(st.headLow > 0.8, `${label}: head above the water (lowest ${f2(st.headLow)} m > 0.8)`);
