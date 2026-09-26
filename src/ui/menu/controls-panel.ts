@@ -1,5 +1,5 @@
 import { CONTROL_HELP, type ControlGroup } from '../../core/input';
-import { keyCap, setKeyCapState } from '../components';
+import { interactive, keyCap, setKeyCapState } from '../components';
 import { el } from '../dom';
 
 /** Group order and titles (the hover block right after flight: it is how the brake key is used). */
@@ -128,11 +128,14 @@ export class ControlsView {
       'nav',
       'menu-cats',
       GROUPS.map((g) => {
-        const button = el(
-          'button',
-          'menu-cat',
-          [el('span', undefined, g.title), el('span', 'menu-cat-count ejd-num', String(entriesOf(g.id).length))],
-          { type: 'button', 'aria-pressed': 'false' },
+        const button = interactive(
+          el(
+            'button',
+            'menu-cat',
+            [el('span', undefined, g.title), el('span', 'menu-cat-count ejd-num', String(entriesOf(g.id).length))],
+            { type: 'button', 'aria-pressed': 'false' },
+          ),
+          'surface',
         );
         button.addEventListener('click', () => this.show(g.id));
         this.navButtons.set(g.id, button);

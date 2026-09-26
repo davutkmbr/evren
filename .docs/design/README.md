@@ -92,19 +92,19 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 | Key cap | `keyCap(label, tone, { size, state })`, `keyCombo('Ctrl + W / S', tone, { size })`, `setKeyCapState(cap, state)` | a raised key; tones `gold` (main action), `ink`, `quiet`, `warn`; sizes `s` (inline, small slots), `m`, `l` (keyboard drawing, `--key` × `--w`); states `dim` / `lit` / `hot` for caps that light up |
 | Key text | `keyText('Konmak için [L]')` | a sentence whose `[X]` parts become small key caps (toasts, hint sentences) |
 | Key hint | `keyHint(keys, label, tone)` | a key and what it does as plain text, not a button (key strips, HUD and loading hints) |
-| Prompt | `prompt(label, key, variant, onPress)` | key + verb, the only action button; variants `primary` (gold key), `secondary`, `danger`; key `''` for a pointer-only action (verb alone) |
+| Prompt | `prompt(label, key, variant, onPress)`, `.setDisabled(on, reason)` | key + verb, the only action button; variants `primary` (gold key), `secondary`, `danger`; key `''` for a pointer-only action (verb alone) |
 | Option switch | `optionSwitch(label, key, on, accent, onToggle)` | key, name, written state "açık/kapalı" with a coloured dot |
 | Stat | `stat(label, value, size)` | a value under its name, tabular |
 | Medal ladder | `medalLadder(format).set(targets, best)` | medal targets on a time line with the best time as a marker |
 | Medal dot / disc | `medalDot(medal, size)`, `medalDisc(medal)` | a small dot in a medal's colour (ring when none); the big result-screen disc with a star |
 | Pill | `pill(text, tone)` | a short status tag ("Yeni rekor"), `gold` or `quiet` |
 | Legend | `legend(items, className)` | colour keys for a chart or map: swatch (`dot`, `ring`, `square`) + label |
-| List row | `listRow(content, onPick, onHover)` | a selectable list entry: name, quieter second line, value and marker; selection is a gold bar on the left edge |
+| List row | `listRow(content, onPick, onHover, { focusable })` | a selectable list entry: name, quieter second line, value and marker; selection is a gold bar on the left edge; `focusable` puts it in the tab order (Enter / Space pick it) |
 | Text field | `textField(label, { key, placeholder, maxLength, size })` | a labelled single-line input with an optional focus key and a message line |
 | Segmented control | `segmented(label, options, current, onChange)` | one of a few options as equal segments; a radio group driven by ArrowLeft / ArrowRight |
 | Slider | `slider({ label, min, max, step, value, format, onInput })` | a range slider with a gold fill and its value written out on the right |
 | Toggle | `toggle(label, value, onChange)` | an on/off switch for a setting row (for an option with its own key use the option switch) |
-| Setting row | `settingRow(title, desc, control, { keys, sub })`, `settingSection(title, rows, lede)`, `settingDisclosure(label, rows)`, `setRowsEnabled(rows, on)` | a setting's title, description, shortcut caps and control; titled groups of rows; a "show more" group; greying out dependent rows |
+| Setting row | `settingRow(title, desc, control, { keys, sub })`, `settingSection(title, rows, lede)`, `settingDisclosure(label, rows)`, `setRowsEnabled(rows, on, reason)` | a setting's title, description, shortcut caps and control; titled groups of rows; a "show more" group; greying out dependent rows |
 | Layer toggle | `layerToggle(label, { color, mark, count, on, onToggle })`, `layerGroup(label, toggles)` | a legend row that shows or hides a map layer (swatch, name, count); rows grouped in a small dark panel |
 | Hover card | `hoverCard().set(title, meta, action)`, `.showAt(x, y, w, h)` | a small card beside the thing under the pointer, flipped to stay inside the view |
 | Zoom cluster | `zoomCluster({ onZoomIn, onZoomOut, onRecenter })` | stacked +, − and back-to-my-position buttons for a zoomable view |
@@ -113,8 +113,26 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 | Route map | `routeMap({ aspect, minSpan, legend, label }).set(data)`, `.setWater(sampler)`, `frameRoute(points, aspect)` | a route on a small map card: land and water, dashed gold line, stops and side targets, framed to fit |
 | Diverging bars | `divergingBars({ negativeColor, positiveColor, label, maxHeight }).set(rows)` | per-item bars left or right of a neutral zero line with ink value labels and hover cards (the race result chart) |
 
+| Interaction states | `interactive(node, family)`, `bindKeyPress(node, key)`, `flashPressed(node)` | the shared hover / pressed / focus / disabled states (families `cap`, `surface`, `segment`, `control`); a bound key held on the keyboard presses the visible component that names it |
+
 Additions go into the library first (with a line in this table), then into screens. A component never hard-codes
 screen copy.
+
+### Interaction states
+
+One system for every interactive component (`components/interaction.ts`, "Interaction states" in `components.css`),
+built on tokens: `--ui-hover-surface` (white 5 %), `--ui-selected-surface` (8 %), `--ui-press-surface` +
+`--ui-press-shadow`, `--ui-focus-ring` (2 px `--accent`) with `--ui-focus-offset` 3 px (`-inset` −2 px, `-tight`
+1 px), `--ui-disabled-opacity` .45, `--ui-motion-fast` 140 ms, `--ui-motion-press` 90 ms, `--ui-ease-out`.
+
+- **Key cap = physical key.** Hover: the cap rises 1 px, its edge a touch deeper, the face brighter (gold adds a warm
+  glow), the verb goes to full ink, no underline. Pressed (pointer, or the bound key held while the prompt is shown):
+  the cap sinks 1 px with a thin edge; gold darkens slightly.
+- **Rows, toggles, segments:** hover lifts the surface and the label to full ink; selected keeps the gold bar and a
+  stronger surface; pressed is a darker surface with a 1 px inset shadow.
+- **Focus** is keyboard only (`:focus-visible`): the gold ring outside prompts, switches and toggles, inside rows,
+  tight around a segment, on a slider's thumb. **Disabled:** 45 % opacity, no hover or press, a reason as tooltip.
+- **Motion:** 140 ms ease-out in, 90 ms press, no bounce; with reduced motion only colours change.
 
 ## 5. Data display
 

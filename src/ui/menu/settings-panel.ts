@@ -5,7 +5,7 @@ import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
 import type { MomentCategory } from '../../moments/types';
-import { prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
+import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
 
 type SettingsPage = 'display' | 'world' | 'controls' | 'sound' | 'game';
 
@@ -16,6 +16,9 @@ const PAGES: ReadonlyArray<{ id: SettingsPage; label: string }> = [
   { id: 'sound', label: 'Ses' },
   { id: 'game', label: 'Oyun' },
 ];
+
+/** Tooltip on the moment category rows while the Anlar master switch is off. */
+const MOMENTS_OFF = 'Önce Anlar’ı aç';
 
 const MOMENT_ROWS: ReadonlyArray<{ category: MomentCategory; title: string; desc: string }> = [
   { category: 'legend', title: 'Efsaneler', desc: 'Hezarfen, Lagari, Kız Kulesi gibi şehir efsaneleri' },
@@ -227,9 +230,9 @@ export class SettingsPanel {
     this.momentMaster = toggle('Anlar', this.momentPrefs.enabled, (v) => {
       this.momentPrefs.enabled = v;
       saveMoments();
-      setRowsEnabled(momentSubRows, v);
+      setRowsEnabled(momentSubRows, v, MOMENTS_OFF);
     });
-    setRowsEnabled(momentSubRows, this.momentPrefs.enabled);
+    setRowsEnabled(momentSubRows, this.momentPrefs.enabled, MOMENTS_OFF);
 
     const controlsLink = prompt('Kontroller', '', 'secondary', () => options.onShowControls?.());
 
@@ -280,7 +283,7 @@ export class SettingsPanel {
       'nav',
       'menu-cats',
       PAGES.map((p) => {
-        const button = el('button', 'menu-cat', p.label, { type: 'button', role: 'tab', 'aria-selected': 'false' });
+        const button = interactive(el('button', 'menu-cat', p.label, { type: 'button', role: 'tab', 'aria-selected': 'false' }), 'surface');
         button.addEventListener('click', () => this.showPage(p.id, true));
         this.tabs.set(p.id, button);
         return button;

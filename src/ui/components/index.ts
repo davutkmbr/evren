@@ -6,6 +6,7 @@ import '../styles/components.css';
 
 export { keyCap, keyCombo, type KeyCapTone } from './keycap';
 export { prompt, type Prompt, type PromptVariant } from './prompt';
+export { interactive, bindKeyPress, flashPressed, keyToken, type InteractionFamily } from './interaction';
 export { optionSwitch, type OptionSwitch } from './switch';
 export { stat, type Stat } from './stat';
 export { medalLadder, type Medal, type MedalLadder } from './medal-ladder';
@@ -20,7 +21,7 @@ export { keyHint, type KeyHint } from './key-hint';
 export { medalDot, medalDisc, type MedalMark } from './medal';
 export { pill, type Pill, type PillTone } from './pill';
 export { legend, type LegendItem, type LegendSwatch } from './legend';
-export { listRow, type ListRow, type ListRowContent } from './list-row';
+export { listRow, type ListRow, type ListRowContent, type ListRowOptions } from './list-row';
 export { textField, type TextField, type TextFieldOptions } from './text-field';
 export { routeMap, frameRoute, type RouteMap, type RouteMapData, type RouteMapOptions, type RoutePoint, type RouteFrame, type WaterSampler } from './route-map';
 export { divergingBars, divergingBar, divergingExtent, divergingRowHeight, type DivergingBars, type DivergingBarsOptions, type DivergingRow } from './diverging-bars';

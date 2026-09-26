@@ -1,4 +1,4 @@
-import { prompt, stat } from '../components';
+import { interactive, prompt, stat } from '../components';
 import { BRAND } from '../brand';
 import { el } from '../dom';
 
@@ -50,7 +50,10 @@ export class PauseMenu {
       'div',
       'menu-tabs',
       TABS.map((t) => {
-        const button = el('button', 'menu-tab', t.title, { type: 'button', role: 'tab', 'aria-selected': 'false', 'aria-controls': 'ejd-menu-body' });
+        const button = interactive(
+          el('button', 'menu-tab', t.title, { type: 'button', role: 'tab', 'aria-selected': 'false', 'aria-controls': 'ejd-menu-body' }),
+          'segment',
+        );
         button.addEventListener('click', () => {
           this.options.onClick?.();
           this.show(t.id);
