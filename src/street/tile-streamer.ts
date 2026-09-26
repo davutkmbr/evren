@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTFParser } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { fetchJson, GROUND_MATERIALS, type LightRec, SHADOW_CASTER_MATERIALS, type StreetIndex, type StreetTileManifest, type StreetTileRef } from './format';
+import { fetchJson, fetchStats, GROUND_MATERIALS, loadGlb, type LightRec, SHADOW_CASTER_MATERIALS, type StreetIndex, type StreetTileManifest, type StreetTileRef } from './format';
 import { type PropDistances, PropBatches, type PropStats } from './props';
-import { batchCounters, type TilePart, TileBatches } from './tile-batches';
+import { ModuleExpander } from './modules/expander';
+import type { FadeTable } from './fade';
+import { batchCounters, textureBudget, textureBytes, textureReady, textureUploaded, type TilePart, TileBatches, uploadTexture } from './tile-batches';
 
 export interface TileStreamerOptions {
   /** URL of the area folder that holds index.json (e.g. "/world/kadikoy/"). */
@@ -39,6 +41,11 @@ export interface TileStreamerOptions {
   gate?: (ref: StreetTileRef, slot: number) => boolean;
   /** Main-thread time (ms) per update spent copying loaded tiles into the draw batches. */
   workBudgetMs?: number;
+  /**
+   * Uploads a texture ahead of its first use (e.g. `(t) => renderer.initTexture(t)`): shared textures are uploaded one
+   * per update as they load, instead of several at once (with their mipmaps) in the frame their tiles or props appear.
+   */
+  initTexture?: (texture: THREE.Texture) => void;
   /** Object layer of the tile batches that draw small detail (see TileBatches) and of the props; default 0. */
   detailLayer?: number;
   /**
@@ -46,6 +53,25 @@ export interface TileStreamerOptions {
    * each emissive material's intensity itself (emissiveMaterials()) needs them apart.
    */
   mergeEmissive?: boolean;
+  /**
+   * Fade table shared with other streamers: their tiles then draw from one slot space, so a host can key one hole mask
+   * by slot across several areas. Default: the streamer's own.
+   */
+  fade?: FadeTable;
+  /**
+   * Texture cache shared with other streamers (URL -> texture): areas that reference the same files (the web profile's
+   * shared store) then decode and upload each texture once. The owner of a shared cache disposes its textures.
+   */
+  textureCache?: Map<string, Promise<THREE.Texture | null>>;
+  /**
+   * Draw batches shared with other streamers (areas of one compiler run use the same material names): a new area then
+   * fills the free ranges of pages already on the GPU instead of creating, compiling and uploading its own. The owner
+   * adds `group` to the scene, calls `work()` once per frame and disposes them; `fade` is theirs (the option above is
+   * ignored).
+   */
+  batches?: TileBatches;
+  /** Materials by name shared with other streamers (see `batches`); the owner disposes them. */
+  materials?: Map<string, THREE.Material>;
 }
 
 interface LoadedLod {
@@ -67,6 +93,8 @@ export interface LiveTile {
   fade: number;
   /** Fading out before it is dropped. */
   retiring: boolean;
+  /** Drawn (fade > 0 and in the batches). */
+  shown: boolean;
 }
 
 interface TileSlot {
@@ -139,12 +167,14 @@ export interface StreamerStats {
 // Decode the meshopt-compressed tiles and props off the main thread (a tile is ~1 MB; decoding it stalls a frame).
 MeshoptDecoder.useWorkers(2);
 
+
 /** Backoff after the n-th failed load of a file (ms). */
 const retryDelay = (attempts: number): number => Math.min(30000, 1000 * 2 ** attempts);
 
 /**
  * GLTFLoader plugin: textures with an external URI are loaded once per URL and shared by every tile and prop (the
- * compiler writes them once to <area>/textures/). Anisotropic filtering is set on them.
+ * compiler writes them once, to <area>/textures/ or, web profile, to the store all areas share). Anisotropic filtering
+ * is set on them.
  */
 class SharedTextures {
   readonly name = 'EVREN_shared_textures';
@@ -152,6 +182,7 @@ class SharedTextures {
     private readonly parser: GLTFParser,
     private readonly cache: Map<string, Promise<THREE.Texture | null>>,
     private readonly anisotropy: number,
+    private readonly onTexture?: (t: THREE.Texture) => void,
   ) {}
 
   loadTexture(textureIndex: number): Promise<THREE.Texture | null> | null {
@@ -161,13 +192,15 @@ class SharedTextures {
     if (!uri || uri.startsWith('data:')) {
       return null;
     }
-    const url = THREE.LoaderUtils.resolveURL(uri, (this.parser.options as { path: string }).path);
+    // Normalized, so every area's relative path to a shared file gives one key.
+    const url = new URL(uri, new URL((this.parser.options as { path: string }).path, window.location.href)).href;
     let p = this.cache.get(url);
     if (!p) {
       const parser = this.parser as unknown as { loadTextureImage(t: number, s: number, loader: unknown): Promise<THREE.Texture | null>; textureLoader: unknown };
       p = parser.loadTextureImage(textureIndex, source, parser.textureLoader).then((t) => {
         if (t) {
           t.anisotropy = this.anisotropy;
+          this.onTexture?.(t);
         } else {
           // Failed (e.g. the compiler is rewriting textures/): the next tile or prop that uses it tries again.
           this.cache.delete(url);
@@ -194,14 +227,17 @@ export class TileStreamer {
   private readonly slots = new Map<string, TileSlot>();
   /** Compiled glbs are meshopt-compressed and quantized (tools/world-compiler/src/compress.ts). */
   private readonly loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  private readonly materials = new Map<string, THREE.Material>();
+  private readonly materials: Map<string, THREE.Material>;
   private readonly emissive = new Set<THREE.Material>();
-  private readonly textureCache = new Map<string, Promise<THREE.Texture | null>>();
+  private readonly textureCache: Map<string, Promise<THREE.Texture | null>>;
   private readonly excluded: ReadonlySet<string>;
   readonly props: PropBatches | null;
   /** Draw batches of the tiles' meshes (per material) and their shadow proxies. */
   readonly batches: TileBatches;
   private lastUpdate = NaN;
+  /** Loaded shared textures not yet uploaded (see TileStreamerOptions.initTexture). */
+  private readonly textureQueue: THREE.Texture[] = [];
+  private readonly initWaits = new WeakMap<THREE.Texture, number>();
   private keySeq = 0;
   private radius: number;
   private readonly unloadMargin: number;
@@ -222,12 +258,16 @@ export class TileStreamer {
   /** Bumped when tiles enter or leave the scene (the sandbox re-renders the shadow map then). */
   version = 0;
   readonly format: number;
+  /** Format 1.2: assembles the tiles' façade module slots off the main thread (modules/). */
+  private readonly modules: ModuleExpander | null;
 
   constructor(private readonly opts: TileStreamerOptions) {
     this.root.name = `street:${opts.index.area}`;
     // Debug access from the page (e.g. scene.getObjectByName('street:eminonu').userData.streamer.stats()).
     this.root.userData.streamer = this;
     this.root.userData.batchCounters = batchCounters;
+    this.root.userData.fetchStats = fetchStats;
+    this.textureCache = opts.textureCache ?? new Map();
     this.radius = opts.radius ?? 300;
     this.unloadMargin = opts.unloadMargin ?? 40;
     this.maxInFlight = opts.maxInFlight ?? 4;
@@ -237,16 +277,21 @@ export class TileStreamer {
     this.format = opts.index.format;
     this.excluded = new Set(opts.excludeAssets ?? []);
     const aniso = opts.anisotropy ?? 8;
-    this.loader.register((parser) => new SharedTextures(parser, this.textureCache, aniso) as never);
-    this.batches = new TileBatches(this.shadows, opts.compile, opts.detailLayer, opts.mergeEmissive);
-    this.root.add(this.batches.group);
+    this.loader.register((parser) => new SharedTextures(parser, this.textureCache, aniso, (t) => this.textureQueue.push(t)) as never);
+    this.materials = opts.materials ?? new Map();
+    this.batches = opts.batches ?? new TileBatches(this.shadows, opts.compile, opts.detailLayer, opts.mergeEmissive, opts.fade, opts.initTexture);
+    if (!opts.batches) {
+      this.root.add(this.batches.group);
+    }
     this.props = opts.index.props
-      ? new PropBatches(opts.baseUrl, opts.index.props, this.loader, opts.propDistances, this.shadows, (m) => this.noteMaterial(m), opts.compile)
+      ? new PropBatches(opts.baseUrl, opts.index.props, this.loader, opts.propDistances, this.shadows, (m) => this.noteMaterial(m), opts.compile, opts.initTexture)
       : null;
     if (this.props) {
       this.props.layer = opts.detailLayer ?? 0;
       this.root.add(this.props.group);
     }
+    this.modules = opts.index.modules ? new ModuleExpander(opts.baseUrl, opts.index.modules, this.loader) : null;
+    this.root.userData.moduleStats = this.modules?.stats;
     for (const ref of opts.index.tiles) {
       this.slots.set(ref.id, {
         ref,
@@ -333,6 +378,10 @@ export class TileStreamer {
         }
         continue;
       }
+      // A tile fading out comes back only well inside the radius, so a focus moving along the edge never cycles fades.
+      if (slot.retiring && d > this.radius) {
+        continue;
+      }
       slot.retiring = false;
       const level = this.wantedLevel(slot, d);
       const glb = this.glbOf(slot, level);
@@ -349,7 +398,8 @@ export class TileStreamer {
       } else if (now >= slot.retryAt && (d <= this.radius || slot.live)) {
         wanted.push({ slot, level, glb, d });
       }
-      if (slot.live && slot.fade > 0 && this.format >= 1) {
+      if (slot.live && this.format >= 1) {
+        // Props load with the tile (hidden until it fades in), so their batches and uploads are ready by then.
         this.ensureProps(slot, now);
       }
     }
@@ -379,14 +429,36 @@ export class TileStreamer {
         slot.fadeSlot = fading ? this.batches.fade.acquire() : 0;
         slot.fade = 0;
       }
-      const key = `${slot.ref.id}#${this.keySeq++}`;
+      const key = `${this.opts.index.area}:${slot.ref.id}#${this.keySeq++}`;
       this.batches.addTile(key, loaded.parts, slot.fadeSlot);
       const format = this.format;
       slot.committing = { level: loaded.level, glb: loaded.glb, key, ground: loaded.parts.filter((p) => isGround(p.material, format)) };
       slot.pending = null;
       this.addedLastUpdate++;
     }
-    this.batches.work(this.opts.workBudgetMs ?? 3);
+    // Texture uploads within the per-frame byte budget shared with the other streamers and the batches' page
+    // admissions (textureBudget). The loop counts the queue it started with: textures still decoding go back to its
+    // end and are not revisited in this update.
+    for (let n = this.textureQueue.length; n > 0 && this.opts.initTexture; n--) {
+      const texture = this.textureQueue.shift()!;
+      if (textureReady(texture)) {
+        // Already uploaded (shared with another area's streamer, or with a page admitted by the batches): skipped.
+        if (!textureUploaded(texture)) {
+          if (!textureBudget.fits(textureBytes(texture))) {
+            this.textureQueue.unshift(texture);
+            break;
+          }
+          uploadTexture(texture, this.opts.initTexture);
+        }
+      } else if ((this.initWaits.get(texture) ?? 0) < 600) {
+        // Image still decoding: try again later (it uploads on first use anyway).
+        this.initWaits.set(texture, (this.initWaits.get(texture) ?? 0) + 1);
+        this.textureQueue.push(texture);
+      }
+    }
+    if (!this.opts.batches) {
+      this.batches.work(this.opts.workBudgetMs ?? 3);
+    }
     for (const slot of this.slots.values()) {
       if (slot.committing && this.batches.isComplete(slot.committing.key)) {
         if (slot.live) {
@@ -412,6 +484,7 @@ export class TileStreamer {
         slot.fade = target > slot.fade ? Math.min(target, slot.fade + step) : Math.max(target, slot.fade - step);
       }
       this.batches.fade.set(slot.fadeSlot, slot.fade);
+      this.props?.setTileVisible(slot.ref.id, slot.fade > 0);
       this.batches.setShown(slot.live.key, slot.fadeSlot ? slot.fade : target);
       if (slot.retiring && slot.fade <= 0) {
         this.unload(slot);
@@ -426,10 +499,13 @@ export class TileStreamer {
     slot.requestedAt = performance.now();
     this.inFlight++;
     const url = new URL(glb, new URL(this.opts.baseUrl, window.location.href)).href;
-    this.loader
-      .loadAsync(url)
-      .then((gltf) => {
+    // LOD0 of a full-detail tile also gets its façade modules, expanded in a worker while the glb loads.
+    Promise.all([loadGlb(this.loader, url), level === 0 ? this.modules?.expand(slot.ref) : null])
+      .then(([gltf, modules]) => {
         const parts = this.prepare(gltf.scene);
+        if (modules) {
+          parts.push(...this.prepare(modules));
+        }
         this.inFlight--;
         slot.attempts = 0;
         if (slot.pending && slot.pending.glb === glb) {
@@ -481,6 +557,12 @@ export class TileStreamer {
 
   private noteMaterial(m: THREE.Material): void {
     this.opts.adaptMaterial?.(m);
+    // Its textures (shared or embedded in a prop) are uploaded ahead too, one per update.
+    for (const v of Object.values(m)) {
+      if ((v as THREE.Texture | null)?.isTexture && !this.textureQueue.includes(v as THREE.Texture)) {
+        this.textureQueue.push(v as THREE.Texture);
+      }
+    }
     if (m.userData.emissive) {
       this.emissive.add(m);
     }
@@ -570,7 +652,8 @@ export class TileStreamer {
         continue;
       }
       const wantGlb = this.glbOf(slot, this.wantedLevel(slot, slot.distance));
-      if (!slot.live || slot.live.glb !== wantGlb || slot.pending || slot.committing || slot.fade < 1) {
+      const fading = slot.live && slot.fade < 1 && (!this.opts.gate || this.opts.gate(slot.ref, slot.fadeSlot));
+      if (!slot.live || slot.live.glb !== wantGlb || slot.pending || slot.committing || fading) {
         n++;
       } else if (this.format >= 1 && this.props && slot.manifestState !== 'failed' && (!slot.propsAdded || this.props.isPending(slot.ref.id))) {
         n++;
@@ -639,7 +722,7 @@ export class TileStreamer {
     const out: LiveTile[] = [];
     for (const slot of this.slots.values()) {
       if (slot.live || slot.committing) {
-        out.push({ ref: slot.ref, manifest: slot.manifest, slot: slot.fadeSlot, fade: slot.live ? slot.fade : 0, retiring: slot.retiring });
+        out.push({ ref: slot.ref, manifest: slot.manifest, slot: slot.fadeSlot, fade: slot.live ? slot.fade : 0, retiring: slot.retiring, shown: !!slot.live && this.batches.isShown(slot.live.key) });
       }
     }
     return out;
@@ -723,15 +806,21 @@ export class TileStreamer {
         this.unload(slot);
       }
     }
-    this.batches.dispose();
-    for (const m of this.materials.values()) {
-      m.dispose();
+    if (!this.opts.batches) {
+      this.batches.dispose();
     }
-    this.materials.clear();
-    for (const p of this.textureCache.values()) {
-      void p.then((t) => t?.dispose());
+    if (!this.opts.materials) {
+      for (const m of this.materials.values()) {
+        m.dispose();
+      }
+      this.materials.clear();
     }
-    this.textureCache.clear();
+    if (!this.opts.textureCache) {
+      for (const p of this.textureCache.values()) {
+        void p.then((t) => t?.dispose());
+      }
+      this.textureCache.clear();
+    }
     this.props?.dispose();
   }
 }
