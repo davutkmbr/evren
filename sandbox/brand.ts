@@ -80,7 +80,6 @@ if (show === 'og') {
         ${titleLogoSvg({ width: 320, id: 'c', crest: false })}
         ${titleLogoSvg({ width: 160, id: 'd', crest: false })}
       </div>
-      <div class="panel light">${titleLogoSvg({ width: 420, id: 'e' })}</div>
       <div class="panel dark">
         ${monogramSvg({ size: 256, id: 'm1' })}${monogramSvg({ size: 128, id: 'm2' })}${monogramSvg({ size: 64, id: 'm3' })}
         ${monogramSvg({ size: 32, id: 'm4' })}${monogramSvg({ size: 16, id: 'm5' })}
