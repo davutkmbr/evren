@@ -109,6 +109,7 @@ export class PhotoHint {
       ['Shift', 'Hızlı'],
       ['Sağ tık', 'Bak'],
       ['Tekerlek', 'Odak uzaklığı'],
+      ['Enter', 'Çek'],
       ['O', 'Çık'],
     ]),
   ]);

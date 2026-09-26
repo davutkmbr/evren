@@ -23,6 +23,7 @@ import {
   type GerstnerSpec,
 } from './config';
 import { computeSeaSpectra, createSeaSpectra, slotAmplitude, SWELL_SLOTS, WIND_SEA_SLOTS, type SeaSpectra, type SpectrumSlot } from './spectrum';
+import { rainRingParams, seaWindU10 } from './weather/sea-weather';
 
 const DEG = Math.PI / 180;
 const TWO_PI = Math.PI * 2;
@@ -44,6 +45,14 @@ export interface SeaStateUniforms {
   uFoamOffset: { value: THREE.Vector4 };
   /** x = lodos weight of the sea (fetch map selection). */
   uSeaRegime: { value: THREE.Vector4 };
+  /** Rain on the water (phase 21 stage 6, weather/sea-weather.ts rainRingParams): drop density, clock, band damping, unresolved slope. */
+  uRainParams: { value: THREE.Vector4 };
+}
+
+/** The weather the sea feels (phase 21 stage 6): the weather service's smoothed rain and storm, 0..1. */
+export interface SeaWeatherInput {
+  rain: number;
+  storm: number;
 }
 
 interface WaveSlot {
@@ -75,8 +84,13 @@ export class SeaState {
   u10 = REF_U10;
   /** 0 = poyraz sea, 1 = lodos sea. */
   lodos = 0;
-  /** Debug override of the 10 m wind speed (?wu10=12), null = follow the environment wind. */
+  /** Debug override of the 10 m wind speed (?wu10=12), null = follow the environment wind (and the weather). */
   forcedU10: number | null = null;
+  /**
+   * The weather over the sea (set by the water system each frame): a storm holds U10 up at SEA_WEATHER.stormU10, rain
+   * gusts it a little and draws drop rings (uRainParams).
+   */
+  readonly weather: SeaWeatherInput = { rain: 0, storm: 0 };
   /** Continuous spectra of the current U10 (per group / regime; diagnostics and checks). */
   readonly spectra: SeaSpectra = createSeaSpectra();
   private readonly slots: WaveSlot[] = [];
@@ -113,6 +127,7 @@ export class SeaState {
       uWindParams: { value: new THREE.Vector4(this.windDir.x, this.windDir.y, 0, 0) },
       uFoamOffset: { value: new THREE.Vector4() },
       uSeaRegime: { value: new THREE.Vector4() },
+      uRainParams: { value: new THREE.Vector4(0, 0, 1, 0) },
     };
     for (let i = 0; i < this.slots.length; i++) {
       const s = this.slots[i];
@@ -137,7 +152,8 @@ export class SeaState {
    */
   update(wind: THREE.Vector3, time: number, dt: number, originX: number, originZ: number): void {
     const speed100 = Math.hypot(wind.x, wind.z);
-    const targetU10 = this.forcedU10 ?? THREE.MathUtils.clamp(speed100 * 0.78, 1.5, 16);
+    const windU10 = THREE.MathUtils.clamp(speed100 * 0.78, 1.5, 16);
+    const targetU10 = this.forcedU10 ?? seaWindU10(windU10, this.weather.rain, this.weather.storm);
     const [px, pz] = headingDir(POYRAZ_DOWNWIND_DEG);
     const along = speed100 > 0.1 ? (wind.x * px + wind.z * pz) / speed100 : 1;
     const targetLodos = THREE.MathUtils.smoothstep(-along, -0.35, 0.35);
@@ -226,5 +242,6 @@ export class SeaState {
     this.gustDrift.y = (this.gustDrift.y + this.windDir.y * this.u10 * 0.4 * dt) % 40000;
     this.uniforms.uWindParams.value.set(this.windDir.x, this.windDir.y, this.gustDrift.x, this.gustDrift.y);
     this.uniforms.uFoamOffset.value.set(fract(originX / 9), fract(originZ / 9), fract(originX / 23), fract(originZ / 23));
+    rainRingParams(this.weather.rain, time, this.uniforms.uRainParams.value);
   }
 }

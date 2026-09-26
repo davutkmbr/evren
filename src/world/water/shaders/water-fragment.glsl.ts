@@ -2,6 +2,7 @@ import { SHARED_GLSL } from '../../../render/shaders';
 import { BAND_COUNT, WATER_IOR } from '../config';
 import { DISTURBANCE_WATER_SAMPLE_GLSL, DISTURBANCE_WATER_UNIFORMS_GLSL } from '../lowflight/shaders.glsl';
 import { FOAM_BREAK_GLSL, FOAM_WATER_GLSL } from '../foam/shaders.glsl';
+import { RAIN_RING_GLSL } from '../weather/shaders.glsl';
 import { WATER_COMMON_GLSL } from './water-common.glsl';
 import { WATER_SKY_GLSL } from './water-sky.glsl';
 
@@ -22,6 +23,7 @@ const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
  * - underside with Snell's window when the camera is below the surface
  * - the disturbance field under a low-flying dragon (phase 21 stage 2): ripple slopes, ruffled darker patches, foam
  * - wave particles (phase 21 stage 7a): hull wakes, the dragon's waves and splash rings from the splat window
+ * - rain (phase 21 stage 6): drop rings (a procedural ripple normal, roughness where unresolved), damped short waves
  */
 export const WATER_FRAGMENT_GLSL = /* glsl */ `
 #include <common>
@@ -58,6 +60,7 @@ uniform float uCamUnder;              // 1 while the camera is under the water (
 ${DISTURBANCE_WATER_UNIFORMS_GLSL}
 ${FOAM_BREAK_GLSL}
 ${FOAM_WATER_GLSL}
+${RAIN_RING_GLSL}
 
 varying vec3 vWorld;
 varying vec4 vLagr;
@@ -264,7 +267,8 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
     }
     bandSlope += vec2(dot(t.xy, A.xy), dot(t.zw, A.xy)) * fade;
   }
-  bandSlope *= roughMul;
+  // Rain damps the short waves a little (uRainParams.z = 1 without rain).
+  bandSlope *= roughMul * uRainParams.z;
   slope += bandSlope;
   // Bands skipped by the quality setting count as unresolved roughness.
   for (int b = WATER_BANDS; b < ${BAND_COUNT}; b++) {
@@ -282,6 +286,15 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
     float wpFade = 1.0 - smoothstep(2.0, 6.0, fp / uWaveRect.w);
     slope += wpSlope * wpFade;
     lostVar += dot(wpSlope, wpSlope) * (1.0 - wpFade * wpFade) * 0.5;
+  }
+
+  // Rain (phase 21 stage 6): drop rings; finer than the pixel footprint they turn into roughness (a dull, pitted sea).
+  if (uRainParams.x > 0.0) {
+    float ringFade = 1.0 - smoothstep(RAIN_WIDTH * RAIN_FADE_START, RAIN_WIDTH * RAIN_FADE_END, fp);
+    if (ringFade > 0.0) {
+      slope += rainRingSlope(xo, uRainParams.y, uRainParams.x) * ringFade;
+    }
+    lostVar += uRainParams.w * (1.0 - ringFade * ringFade);
   }
 
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));

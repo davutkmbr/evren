@@ -145,6 +145,15 @@ export const RACE_TEXT = {
     counts: (gates: number, rings: number) => (rings > 0 ? `${gates} kapı · ${rings} hız halkası` : `${gates} kapı`),
     ghost: (best: string) => `Hayalet: rekorun ${best}`,
     cancel: 'iptal',
+    lesson: 'Süre tutulmaz, adım adım',
+  },
+  /** Guided chain practice (lesson.ts). */
+  lesson: {
+    step: (n: number, total: number) => `Adım ${n}/${total}`,
+    finished: (done: number, total: number) => (done >= total ? 'Antrenman tamamlandı' : `Antrenman bitti · ${done}/${total} adım`),
+    rowSub: (length: string, steps: number) => `Antrenman · ${length} · ${steps} adım`,
+    start: 'Antrenmana başla',
+    note: 'Başlangıca ışınlanır · süre ve madalya yok',
   },
   hud: {
     gate: (passed: number, total: number) => `Kapı ${passed}/${total}`,

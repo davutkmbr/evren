@@ -5,6 +5,10 @@ import type { ScaleTextures } from './scale-textures';
 
 export interface BodyMaterialUniforms {
   uBreath: THREE.IUniform<number>;
+  /** Bond (phase 06): eyelids 0 open .. 1 closed, pupil 0 slit .. 1 wide, neck plates 0 flat .. 1 raised. */
+  uEyeLid: THREE.IUniform<number>;
+  uPupil: THREE.IUniform<number>;
+  uPlates: THREE.IUniform<number>;
 }
 
 const VERTEX_PARS = /* glsl */ `
@@ -12,10 +16,24 @@ attribute vec4 aData;
 varying vec4 vData;
 flat varying float vMatId;
 uniform float uBreath;
+uniform float uPlates;
+`;
+
+/**
+ * Neck plates (aData.w = 2 on the dorsal thorns of the neck): raising swings each thorn's tip up and forward (toward
+ * the head) in bind space, before skinning. aData.y runs 0 at the base to 1 at the tip.
+ */
+const PLATES_VERTEX = /* glsl */ `
+if (aData.w > 1.5) {
+  float plateT = aData.y * aData.y * uPlates;
+  transformed += vec3(0.0, 0.035, -0.055) * plateT;
+}
 `;
 
 const FRAGMENT_PARS = /* glsl */ `
 varying vec4 vData;
+uniform float uEyeLid;
+uniform float uPupil;
 float dgLimbSkin = 0.0;
 flat varying float vMatId;
 float dgHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -95,7 +113,8 @@ vec3 dgEmissive = vec3(0.0);
     float fibres = dgNoise(vec2(ang * 9.0, r * 5.0)) * 0.6 + dgNoise(vec2(ang * 31.0, r * 14.0)) * 0.4;
     vec3 iris = mix(vec3(0.95, 0.52, 0.06), vec3(0.42, 0.12, 0.01), smoothstep(0.1, 0.72, r));
     iris *= 0.6 + 0.8 * fibres;
-    float slitW = 0.085 * sqrt(max(1.0 - pow(e.y / 0.62, 2.0), 0.0));
+    // The slit narrows in bright light and opens toward a round pupil in the dark or when excited (uPupil).
+    float slitW = 0.085 * mix(0.45, 3.6, uPupil * uPupil) * sqrt(max(1.0 - pow(e.y / 0.62, 2.0), 0.0));
     float pupil = 1.0 - smoothstep(slitW - 0.02, slitW + 0.02, abs(e.x));
     pupil *= 1.0 - smoothstep(0.6, 0.66, abs(e.y));
     float limbus = smoothstep(0.62, 0.8, r);
@@ -105,6 +124,23 @@ vec3 dgEmissive = vec3(0.0);
     dgCoat = 1.0;
     dgCoatRough = 0.02;
     dgEmissive = iris * (1.0 - pupil) * (1.0 - limbus) * (0.12 + 2.2 * uNight);
+    // Eyelids (uEyeLid): the upper lid comes down, the lower one up, meeting a little below the middle along a
+    // curved line; the lid is scaled skin, matte and dark.
+    float lidTop = mix(1.06, -0.28, uEyeLid) - 0.22 * e.x * e.x * (1.0 - uEyeLid);
+    float lidBottom = mix(-1.06, -0.3, uEyeLid) + 0.12 * e.x * e.x * (1.0 - uEyeLid);
+    // Fixed edge width: derivatives are undefined inside this per-material branch.
+    float lidW = 0.035;
+    float lidCover = max(smoothstep(lidTop - lidW, lidTop + lidW, e.y), 1.0 - smoothstep(lidBottom - lidW, lidBottom + lidW, e.y));
+    if (lidCover > 0.0) {
+      float scales = dgNoise(e * vec2(34.0, 22.0)) * 0.6 + dgNoise(e * vec2(80.0, 60.0)) * 0.4;
+      vec3 lidC = vec3(0.045, 0.034, 0.027) * (0.7 + 0.6 * scales);
+      float crease = 1.0 - 0.5 * smoothstep(lidW * 4.0, 0.0, abs(e.y - lidTop));
+      diffuseColor.rgb = mix(diffuseColor.rgb, lidC * crease, lidCover);
+      dgRough = mix(dgRough, 0.55, lidCover);
+      dgCoat = mix(dgCoat, 0.1, lidCover);
+      dgCoatRough = mix(dgCoatRough, 0.4, lidCover);
+      dgEmissive *= 1.0 - lidCover;
+    }
   } else if (dgMat > 3.5 && dgMat < 4.5 || dgMat > 5.5 || dgMouth > 0.0) {
     // Mouth interior / tongue: wet dark flesh with soft, low-frequency wetness variation. On the head and jaw skin
     // it is blended in by the mouth coverage.
@@ -133,7 +169,7 @@ export function createBodyMaterial(tex: ScaleTextures): {
   depthMaterial: THREE.MeshDepthMaterial;
   uniforms: BodyMaterialUniforms;
 } {
-  const uniforms: BodyMaterialUniforms = { uBreath: { value: 0 } };
+  const uniforms: BodyMaterialUniforms = { uBreath: { value: 0 }, uEyeLid: { value: 0 }, uPupil: { value: 0.3 }, uPlates: { value: 0 } };
   const material = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     map: tex.albedo,
@@ -153,11 +189,14 @@ export function createBodyMaterial(tex: ScaleTextures): {
     specularIntensity: 0.9,
   });
   keepThroughOccluderFade(material);
-  patchMaterial(material, 'dragon-body-v2', (shader) => {
+  patchMaterial(material, 'dragon-body-v3', (shader) => {
     shader.uniforms.uBreath = uniforms.uBreath;
+    shader.uniforms.uEyeLid = uniforms.uEyeLid;
+    shader.uniforms.uPupil = uniforms.uPupil;
+    shader.uniforms.uPlates = uniforms.uPlates;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${VERTEX_PARS}`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvData = aData;\nvMatId = aData.x;\ntransformed += normal * (aData.z * uBreath);`);
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvData = aData;\nvMatId = aData.x;\ntransformed += normal * (aData.z * uBreath);\n${PLATES_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAGMENT_MATERIAL}`)
@@ -191,11 +230,12 @@ export function createBodyMaterial(tex: ScaleTextures): {
       );
   });
   const depthMaterial = new THREE.MeshDepthMaterial();
-  patchMaterial(depthMaterial, 'dragon-body-depth-v1', (shader) => {
+  patchMaterial(depthMaterial, 'dragon-body-depth-v2', (shader) => {
     shader.uniforms.uBreath = uniforms.uBreath;
+    shader.uniforms.uPlates = uniforms.uPlates;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\nattribute vec4 aData;\nuniform float uBreath;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>\ntransformed += normal * (aData.z * uBreath);`);
+      .replace('#include <common>', `#include <common>\nattribute vec4 aData;\nuniform float uBreath;\nuniform float uPlates;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\ntransformed += normal * (aData.z * uBreath);\n${PLATES_VERTEX}`);
   });
   return { material, depthMaterial, uniforms };
 }

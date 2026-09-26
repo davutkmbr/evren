@@ -7,6 +7,8 @@ import type { SampleBank } from '../samples';
 
 /** Recorded wash level (same loop RMS as the noise): ~4 LU under the synthesized wash, which drowned the calm mix. */
 const RECORDED_WASH = 0.39;
+/** Rain-on-water hiss at full rain right over the sea (first pass, to be balanced by ear with the `rain` analysis case). */
+const RAIN_ON_SEA = 0.16;
 
 /**
  * Rain bed (weather). Two layers, started only while audible:
@@ -15,6 +17,9 @@ const RECORDED_WASH = 0.39;
  *          band-limited to 350 Hz - 6 kHz, L/R decorrelated, while the recordings are unavailable
  *  patter  drops hitting the dragon, the saddle and the rider's hood: sparse crackle grains through a bright
  *          band-pass; loudest in first person, thinned out at speed where the airstream masks it
+ *  sea     rain on open water close below (phase 21 stage 6): the soft, bright hiss of countless drops on the sea
+ *          (pink noise band-passed around 5 kHz, L/R decorrelated) on top of the wash, while the listener is low over
+ *          the water
  */
 export class RainVoice {
   private readonly washGain: SmoothParam;
@@ -24,6 +29,8 @@ export class RainVoice {
   private readonly recCut: SmoothParam;
   private readonly washGate: SourceGate;
   private readonly patterGate: SourceGate;
+  private readonly seaGain: SmoothParam;
+  private readonly seaGate: SourceGate;
   private readonly nodes: AudioNode[] = [];
   /** The running wash plays the recordings. */
   private recorded = false;
@@ -104,10 +111,41 @@ export class RainVoice {
       b.connect(bp);
       return [a, b];
     }, 3);
+
+    const seaOut = node(ctx.createGain());
+    seaOut.gain.value = 0;
+    seaOut.connect(destination);
+    this.seaGain = new SmoothParam(seaOut.gain, 0, 1.2);
+    const seaInputs: AudioNode[] = [];
+    for (let side = -1; side <= 1; side += 2) {
+      const hp = node(ctx.createBiquadFilter());
+      hp.type = 'highpass';
+      hp.frequency.value = 1800;
+      const band = node(ctx.createBiquadFilter());
+      band.type = 'bandpass';
+      band.frequency.value = side < 0 ? 4600 : 5400;
+      band.Q.value = 0.45;
+      const pan = node(ctx.createStereoPanner());
+      pan.pan.value = side * 0.6;
+      hp.connect(band).connect(pan).connect(seaOut);
+      seaInputs.push(hp);
+    }
+    this.seaGate = new SourceGate(
+      (t) =>
+        seaInputs.map((input, i) => {
+          const s = loopSource(ctx, noise.pink, t, 1.07 + 0.09 * i, rng);
+          s.connect(input);
+          return s;
+        }),
+      3,
+    );
   }
 
-  /** `rain` 0..1, `pov` 0..1 (first-person blend), `airspeed` m/s of the listener's airflow. */
-  update(rain: number, pov: number, airspeed: number, now: number): void {
+  /**
+   * `rain` 0..1, `pov` 0..1 (first-person blend), `airspeed` m/s of the listener's airflow, `sea` 0..1 open water close
+   * below the listener (the rain-on-water hiss).
+   */
+  update(rain: number, pov: number, airspeed: number, now: number, sea = 0): void {
     const r = clamp01(rain);
     const masked = 1 / (1 + (Math.max(airspeed, 0) / 45) ** 2);
     // While the recordings decode (a fraction of a second after the rain starts) the wash waits instead of synthesizing.
@@ -124,11 +162,15 @@ export class RainVoice {
     this.patterGain.set(patter, now);
     this.washGate.update(wash > 1e-3, now);
     this.patterGate.update(patter > 1e-3, now);
+    const seaHiss = RAIN_ON_SEA * Math.pow(r, 0.9) * clamp01(sea) * (0.5 + 0.5 * masked);
+    this.seaGain.set(seaHiss, now);
+    this.seaGate.update(seaHiss > 1e-3, now);
   }
 
   dispose(now: number): void {
     this.washGate.dispose(now);
     this.patterGate.dispose(now);
+    this.seaGate.dispose(now);
     for (const n of this.nodes) {
       n.disconnect();
     }

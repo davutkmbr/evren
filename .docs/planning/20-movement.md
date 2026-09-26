@@ -2,8 +2,9 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: stages A, B, C and D built, and landing v2 (the approach and flare, after the owner's stage A feedback); all
-awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
+Status: stages A, B, C and D built, and landing v2 (the approach and flare, after the owner's stage A feedback); stage
+D v2 (chain bursts and perceived speed, after the owner's stage D and race feedback) built; all awaiting the owner's
+feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -85,15 +86,18 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   contact or wasted energy. As built: stage D below.
 - **Payback:** flow lowers drag slightly (up to −8 %) and raises the power stroke's surge; the effective top cruise
   speed rises by up to ~5 m/s at full flow. Capped, so it rewards execution without breaking the energy model.
+- **Chain bursts** (stage D v2, rule simplified in v3): a different move started within 2.5 s after a move ended
+  cleanly is a chain link and gives an instant, felt push forward (+15 / 20 / 25 % of the airspeed for link 1 / 2 / 3
+  and on, over 1.2 s, capped), so chaining the right moves pays in the moment. As built: stage D v2 and v3 below.
 - **Timing bonuses ("Kusursuz"):** generic: when a harmony term peaks (near-perfect energy stewardship, a move
   started exactly on the beat, a seamless handover, a clean pass at the lowest safe clearance or through a snug ring)
   a small extra flow step and a short caption.
 - **Readability:** the HUD shows flow as a thin line under the stamina wings (same visual family, the design
-  language's contextual reveal: only while a chain is alive); chain captions reuse the maneuver caption. No score
-  numbers flying around.
-- **Races:** speed rings, gates under bridges and skim-friendly legs are placed so chains pay off. Medal targets:
-  bronze and silver reachable with plain flying; gold needs flow (target: a skilled chained run ≈ 6–10 % faster
-  than a clean unchained run on each built-in course).
+  language's contextual reveal: only while a chain is alive) and the chain length as a small "×3" at its right end;
+  chain captions reuse the maneuver caption. No score numbers flying around.
+- **Races:** speed rings, gates under bridges and skim-friendly legs are placed so chains pay off. Medal targets
+  (stage D v2): bronze reachable with plain flying, silver needs some chaining, gold needs sustained flow (target: a
+  skilled chained run 15–25 % faster than a clean unchained run on each built-in course; stage D had 6–10 %).
 
 ## Tooling and verification (no GPU needed for most of it)
 
@@ -409,6 +413,212 @@ rider–dragon interaction in the bond phase.
   0.59). The race-balance pilot is chaotic: small option changes move single courses by several percent, so rerun it
   after any flight-model change.
 
+### Stage D v2 as built: chain bursts and perceived speed (owner feedback 26 Sep, awaiting the feel test)
+
+Owner feedback on stage D and the races: "The chained-vs-plain gap (6.5–8.4 %) is too small to feel. A race should give
+visible, felt speed gains when I chain the right moves." Loops, wingovers, Immelmann and Split-S may cost time in a race;
+the race-useful chains (dart on descents, dive to a skim and zoom back to the gate, power stroke on the beat, speed
+rings, inside lines) must pay off clearly. Three parts: instant chain bursts, the races retuned around them, and the
+same speed made to feel faster.
+
+**1. Chain bursts** (`src/dragon/flight/flow/burst.ts`, `ChainBurst` and `BURST`; applied by `FlowSystem`)
+
+- **A link** is a finished motion whose transition from the one before it is clean by the same harmony terms flow is
+  built from: chain factor ≥ 0.45 (gap ≲ 2.3 s), harmony H ≥ 0.6, novelty ≥ 0.5, energy ≥ 0.6, the move's own verdict
+  clean, no contact or stall. A speed ring (and a gate at pass tightness ≥ 0.7, the inside line) taken while a chain
+  is alive (≤ 2.6 s since its last link or motion) is a link too (80 % push). No per-move or per-pair numbers.
+- **Variety:** a motion of the same kind as either of the chain's last two different kinds (maneuver id; unnamed
+  hand-flown motions are one kind) never pays: a clean handover of that kind keeps the chain alive but adds no link,
+  so a move repeated back to back, or two moves alternated, earns nothing, while a third kind links again. The kind
+  history survives a broken chain and is forgotten only after 20 s without a motion (`kindMemory`), so a pattern of
+  long moves (a wingover and its roll-out, over and over) cannot relink after every pause.
+- **The push:** link 1 / 2 / 3+ = +15 / 20 / 25 % of the airspeed × a quality factor (0.75 at H 0.6 → 1 at H 0.85) ×
+  a flow factor (0.5 without flow → 1 at full flow: full size only in sustained flow), capped at +12 m/s per burst and
+  never past 74 m/s (under the folded dive envelope; speed rings stop at 78). Delivered along the air path over 1.2 s
+  with a sin² rate (no jerk at either end); a new link takes over what is left of the running burst (never stacks).
+  Only in cruising modes (flying, gliding, diving); a stall or a contact breaks the chain and cancels the burst.
+  Bursts are 0.6× in free flight (the game's calm direction; the activity system sets 1 during a race through
+  `DragonState.setRacing`), and off with `flow.payback` off.
+- **Energy bookkeeping:** a burst is outside work, not the dragon's energy management: the segmenter's energy
+  integration is offset by exactly the burst's kinetic energy (`MotionSegmenter.external`). (The first version
+  re-based it every substep, which dropped one substep of drag loss each time; the fuzz caught it as "free energy".)
+- **Events:** the sim emits `{ type: 'chain', link, dv, source }`; the game gets `chain-link` (camera, audio, HUD).
+  `DragonState.chain` (links in the current chain) and `.burst` (the push right now, 0..1) are written every frame.
+  `?flowdebug=1` shows the chain, the running burst and the link count. `__flightTest.chainLink(n)` lands link n now
+  (review captures).
+
+**2. Races retuned** (`tools/headless/race-balance.ts`, `tools/headless/flow/race-pilot.ts`; on top of the urge
+removal above)
+
+- **Three racers:** plain (no moves, beats as stamina allows), some chaining (`SOME_PILOT`: the chained racer on every
+  other leg, plain on the legs between) and chained (every leg; flies both skilled lines, with and without the low
+  line over the water, best of 3 seeds each).
+- **Pilot upgrades** (a skilled player's habits, needed once the bursts made the dragon fast enough to overshoot):
+  climb-rate lead near a gate (the path lags its target by ~0.8 s; a fast zoom overshot gates by 14–18 m), the inside
+  line only once the turn is settled and leaving room for the height still to correct, a go-around after a miss
+  (fly out to a point in front of the gate, then take it through the centre: a gate only counts crossed in its
+  direction), an orbit breaker, a clearance floor on the low line (5 m foot clearance, the skim engages below 6 m),
+  a stamina reserve for the beats and variety by kind (it remembers the move it started until flow has closed its
+  motion). Moves: power stroke, dart (on any fast straight), barrel roll (≥ 500 m before a gate); the side-slip onto
+  the racing line is available but made the scripted line miss gates at burst speeds.
+- **Payback unchanged** (drag −8 %, beat thrust +20 % at full flow): a stronger payback was tried while the urge was
+  still in (drag −12 %, thrust +30 %), but without the urge the plain racer is slow enough that bursts alone reach the
+  target band.
+- **Before / after** (calm noon air, real terrain; seconds, gap to plain):
+
+  | Course | Stage D (urge removed): plain → chained | Stage D v2: plain / some / chained | Mean flow some / chained | V plain / chained |
+  |---|---|---|---|---|
+  | Boğaz turu | 275.8 → 252.6 (8.4 %) | 275.9 / 258.5 (6.3 %) / 227.9 (17.4 %) | 0.16 / 0.63 | 39.7 / 48.3 m/s |
+  | Haliç kıvrımı | 126.5 → 116.0 (8.4 %) | 126.6 / 115.7 (8.6 %) / 97.3 (23.1 %) | 0.16 / 0.51 | 42.0 / 54.3 m/s |
+  | Adalar turu | 379.7 → 346.1 (8.9 %) | 379.7 / 347.7 (8.4 %) / 319.6 (15.8 %) | 0.19 / 0.45 | 40.3 / 47.5 m/s |
+
+  (With the urge still in, the first version of this stage measured 15.7 / 16.6 / 19.9 %.) The chained racer lands
+  17–27 links per Boğaz run (longest chains 2–10, +77–172 m/s of bursts in total, ~40 m/s a minute at ~6.5 m/s a
+  link).
+- **Medals** (gold = best chained run + 3 %, silver = plain − 3 %, bronze = plain + 12 %): Boğaz turu 3:55 / 4:28 / 5:09
+  (was 4:22 / 4:47 / 5:41), Haliç kıvrımı 1:40 / 2:03 / 2:22 (was 2:01 / 2:19 / 2:45), Adalar turu 5:29 / 6:08 / 7:05
+  (was 6:01 / 6:39 / 7:53). Default paces for custom courses gold 48 / silver 41 / bronze 36 m/s (were 42 / 38 / 32).
+  Results: plain bronze, some chaining silver, chained gold on every course; all runs finish with no missed gate.
+
+**3. Perceived speed** (one factor for all of it: `src/core/speed-feel.ts`)
+
+- **Speed feel** = the player's setting × the context. Setting: Ayarlar → Görüntü → **Hareket efektleri** Tam (1) /
+  Azaltılmış (0.4) / Kapalı (0), stored per viewer (`evren.ui.motion.v1`), for motion sensitivity. Context: 1 in a race
+  (countdown included) and at high flow; free flight 0.35, growing to 1 between flow 0.5 and 0.95. Speed ramp 32 → 72
+  m/s.
+- **Camera** (`src/camera/feel.ts`): chase +6° FOV (rider +4°) with speed, a +5° kick (rider +3.5°) following each
+  burst's push (fast attack, smooth release), a light high-speed shake (+0.035, +0.03 at a burst's peak), and the post
+  speed effect raised (0.75 × speed + 0.35 × burst, on top of the existing one from 45 m/s). Captured in the flight
+  sandbox at link 3 in a race: FOV 68.0° → 72.6° at the push peak and back, 51.8 → 61.3 m/s, streaks at the edges;
+  the same link in free flight at flow 0.2: FOV 65.8° → 67.1°, 51.5 → 53.2 m/s, no visible streaks.
+- **Wind streaks** (`render/post/shaders/composite.glsl.ts`, `windStreaks`): thin radial dashes flying outward at the
+  screen edges, more and faster with the speed effect, brightening the scene toward its own luminance (no fixed
+  colour), never over the dragon (the speed mask) or the middle of the screen.
+- **Spray and wake** (`dragon/flight/index.ts`, `burstSpray`): while a burst pushes below 9 m over water, spray under
+  both wingtips and a wake behind the tail every 5 m, scaled by push × feel × height × speed (FX only).
+- **Audio:** the airflow bed gets a *surge* (race speeds and bursts in their context): up to +2.5 dB, +8 % loop rate,
+  a brighter hiss; each link plays a burst rush (a fast bright noise sweep with a low thump, `playBurstRush`) when it
+  pushes and a soft struck tone a pentatonic step higher per link (D5 E5 F♯5 A5 B5, `playChainCue`), so a growing chain
+  is heard as a rising line. The audio accents follow the context only (the setting is about visual motion).
+- **HUD** (`src/ui/hud/chain-counter.ts`): the chain length as "×3" at the right end of the flow line, gold, text only
+  with the HUD's shadow; each link brightens it briefly (no bounce), it dims when the chain breaks and fades out 1.2 s
+  later.
+
+**Checks**
+
+- `race-balance.ts`: 15 rules pass (every run finishes; plain bronze not silver; some chaining silver not gold;
+  chained gold; chained 15–25 % faster than plain). The rules use each racer's best run; the script also prints the
+  spread of the gap over every seed and line. With `--seeds 5` (26 Sep): chained Boğaz mean 9.7 ± 5.6 % (median
+  12.6, range 0.5–17.4), Haliç 18.1 ± 3.6 % (median 19.7, 13.0–23.1), Adalar 13.7 ± 3.3 % (median 15.3, 9.0–19.5);
+  some chaining 4.2 ± 2.0 / 7.7 ± 1.2 / 8.0 ± 0.9 %. The spread is the scripted pilot's hit rate, not the model: with
+  the same number of moves (~40 per Boğaz run) the links landed range 9–27 and the time follows them almost linearly
+  (a missed link window pays nothing). The 15–25 % band is what a player who chains reliably earns; an unreliable
+  chainer lands between plain and gold, which is the intended skill curve.
+- `flow-check.ts`: all pass, with a new section "5. Chain bursts": size by link (+6 / 8 / 10 m/s at 40 m/s and full
+  flow), the cap, the flow factor, the envelope (sums to the push, peak twice the mean), the speed cap, variety, the
+  link test, a varied chain through the real sim (dart → power → slip → roll → power: 3 links, longest 3; spaced 4 s
+  apart: none), bursts booked as outside work, payback off → no push. Fuzz (2000 random runs of 60 s): every gesture
+  macro repeated back to back stays at a longest chain of 1 (worst 2.6 m/s of bursts in 120 s; worst mean flow 0.06,
+  as without bursts); random gestures (half of them chained at the best timing) do link, 3 / 6 links a minute at p50 /
+  p90, but build little flow, so their links are small (3.3 m/s on average against the racer's ~6.5) and they push
+  9.9 / 22.6 m/s a minute at p50 / p90, about half of the chained racer's ~40; the muscle-free energy never rises
+  (max −35 J/kg over 3 s; −37 with full flow forced); top speed 82.3 m/s; flow p50 0.06, p90 0.19, max 0.66.
+- `speed-feel-check.ts` (new): race full strength, free flight subtle and growing with flow, the setting scaling (off
+  removes every effect), the speed ramp, camera additions bounded, free-flight bursts smaller.
+- `races-check`, `air-moves-check`, `movement-check`, `lowflight-check`, `plunge-check`, `perch-landing-check`,
+  `hud-zones-check`, `lift-check`: pass.
+- Review sheets: `node tools/review/burst-review.mjs` (flight sandbox via `scripts/snap.mjs`; a race and free flight
+  at low flow, one contact sheet each under `.shots/speed-feel/`). `SNAP_CHROME=<chromium>` runs snap.mjs with a given
+  Chromium on SwiftShader (Linux containers).
+- **Not yet / known:** the spray and the HUD counter are not in the sandbox captures (no FX or HUD there); the feel
+  in the game (FOV and shake amounts, streak density, the tones' level) is for the owner's feel test. The balance
+  numbers move with any flight-model change: rerun `race-balance.ts` after one.
+
+### Stage D v3 as built: combos you can read (owner feedback 26 Sep, awaiting the feel test)
+
+Owner feedback on stage D v2: "Landing the combinations was very hard; I can't pull off ×-combos, it's hard to do what
+I want, instinctively it is very hard to understand what to do." The v2 link was decided by five hidden conditions
+(the chain factor's ~2.3 s gap, harmony, energy, novelty and the kind rule), measured from the moment flow's segmenter
+closed the previous motion (~0.4 s after it settled), and the push landed only when the *new* move had finished; the
+first links were half size at low flow. Nothing on screen said when to act or what would link.
+
+- **One rule** (`burst.ts`, `ChainBurst.start / end / tick`): when a move ends cleanly (no contact, no stall, the move's
+  own verdict) a 2.5 s window opens; a *different* move started inside it is a link, and the link lands at once, when
+  that move starts. A different move started while one still runs links too. A speed ring (80 % push), or a gate at
+  pass tightness ≥ 0.7, taken while the chain is open (a move runs or the window runs) is a link. The window running
+  out, an unclean end, a stall or a contact break the chain (a spoiled move opens no window). Moves without an end event
+  of their own (roll, loop, free fall...) end once the maneuver system has been idle for 0.15 s. Ignored: hints, the
+  plain take-off, flow's captions and the automatic wing catch.
+- **Variety** unchanged: a kind among the chain's last two different kinds never pays (it keeps the chain open), the
+  kind history lasts 20 s across breaks.
+- **Harmony no longer decides links**; it still builds flow and its payback. The flow factor on the push is gone:
+  link 1 is always +15 % (capped at +11 m/s and 74 m/s; 0.6× in free flight).
+- **The window on screen** (`ui/hud/chain-counter.ts`): a 34 px gold bar under the "×3" counter fills when a move
+  ends cleanly and drains over the 2.5 s ("start a different move now"); a link brightens the counter; a break dims it
+  with "koptu" and it fades out. `DragonState.chainWindow` (0..1 left, −1 none).
+- **Next-move hint** (`ui/hud/chain-hint.ts`): during a race, while the chain is open, up to two moves that would link
+  now as key hints on the shared hint line, e.g. "[Shift ×2] Ok gibi · [Space ×2] Güç vuruşu" (dart, power stroke,
+  roll, side-slip, in that order; only kinds that add variety and that the dragon can fly now: dart ≥ 30 m/s, the
+  power stroke with stamina, roll and slip ≥ 16 m/s). A joinable item (`HUD_PRIORITY.flightHint`): it rides along on
+  the race's own hint line. `FlowSystem.linkable`, `DragonState.chainNext`.
+- **Races retuned** (the pilot no longer rolls on the way down to the low line; one seed had dived into the sea):
+
+  | Course | v2: plain / some / chained | v3: plain / some / chained | chained spread over seeds |
+  |---|---|---|---|
+  | Boğaz turu | 275.9 / 258.5 (6.3 %) / 227.9 (17.4 %) | 275.9 / 253.8 (8.0 %) / 231.4 (16.1 %) | 3.5–16.1 % |
+  | Haliç kıvrımı | 126.6 / 115.7 (8.6 %) / 97.3 (23.1 %) | 126.6 / 107.0 (15.5 %) / 98.1 (22.5 %) | 15.4–22.5 % |
+  | Adalar turu | 379.7 / 347.7 (8.4 %) / 319.6 (15.8 %) | 379.7 / 347.8 (8.4 %) / 289.5 (23.8 %) | 7.7–23.8 % |
+
+  Medals (gold = best chained + 3 %): Boğaz turu 3:58 / 4:28 / 5:09, Haliç kıvrımı 1:41 / 2:03 / 2:22, Adalar turu
+  4:58 / 6:08 / 7:05; default paces gold 49 / silver 41 / bronze 36 m/s. Plain bronze, some chaining silver, chained
+  gold on every course.
+- **Checks:** `flow-check.ts` section 5 now tests the rule step by step (begin, link in the window, a repeat, a kind
+  among the last two, a third kind; the window running out, an unclean end and a contact breaking the chain; a move
+  started during another linking); the fuzz: repeated gesture macros keep a longest chain of 1 (worst 7.6 m/s of
+  bursts in 120 s) and their flow unchanged (worst mean 0.061), random gestures earn 14 / 35 m/s of bursts a minute at
+  p50 / p90 against the chained racer's ~60; `race-balance`, `races-check`, `speed-feel-check`, `hud-zones-check`,
+  `air-moves`, `movement`, `lowflight` pass.
+- **Not yet:** the window bar and the hint in the game (the feel test). The guided practice course offered as a next
+  step is stage D v4 below.
+- **Declined: a single context "flow key"** (one key that picks and flies the move that would link now). Owner
+  decision 26 Sep: when the game goes online it would act like an aid players race against, so every player keeps
+  the same manual controls. The readability aids stay informative only (the window bar, the next-move hint, the
+  practice course): they show what to do, the player still flies every move.
+
+### Stage D v4 as built: guided chain practice (owner request 26 Sep, awaiting the feel test)
+
+After v3 the owner asked for the guided practice course offered there. "Zincir antrenmanı" is a course over open sea
+south of Kadıköy (`LESSON_COURSE` in `activities/courses.ts`: 10 gates, 11.1 km, speed rings on legs 2, 4, 6 and 8,
+ring-free legs between them for the skim). It runs as a race (gates, rings, the countdown, full-strength bursts and
+speed effects) but keeps no time, medal, record or ghost. Instead of the clock the readout shows "Adım 2/7", and the
+shared hint line carries the current step's instruction and keys (`HUD_PRIORITY.lesson` 47: only maneuver captions
+briefly cover it). A step moves on only when the player has done it; each one ends with a short gold praise in the
+title zone and a chime.
+
+| # | Instruction (hint line) | Keys | Done when |
+|---|---|---|---|
+| 1 | Hızlanınca ok gibi atıl | Shift ×2 | a dart starts |
+| 2 | Sayacın altındaki çubuk boşalmadan farklı bir hareket yap | Space ×2 | any chain link |
+| 3 | Zinciri sürdür: üçüncü, farklı bir hareket | A / D ×2 | a chain of 2 |
+| 4 | Aynı hareket saymaz. Farklı hareketlerle 3 halka kur | Shift, Space, A / D ×2 | a chain of 3 |
+| 5 | Zincir açıkken turkuaz hız halkasından geç | Shift ×2 | a link from a speed ring |
+| 6 | Suya alçal ve yüzeyi sıyırarak uç | W | a skim starts |
+| 7 | Serbest: 4 halkalık zincir kur | Shift, Space, A / D, Q / E ×2 | a chain of 4 |
+
+- **Code:** `activities/lesson.ts` (`LESSON_STEPS`, `LessonRunner`: pure, fed the flight's `maneuver` and `chain-link`
+  events while the race runs; moves during the countdown do not count); the activity system shows the steps
+  (`RaceHud.lessonStep`, `lessonPraise`), skips the result screen and the records at the finish (a closing line,
+  "Antrenman tamamlandı" or "Antrenman bitti · 5/7 adım"), and sets the zones' `lesson` context so the race
+  next-move hint (`ui/hud/chain-hint.ts`) steps aside. The picker lists it after the races as "Antrenman · 11,1 km ·
+  7 adım" without the medal ladder and the ghost switch, started with "Antrenmana başla".
+- **Checks:** `races-check.ts` validates the course like the races (clearance, spacing, turns, 2–4 speed rings) and
+  drives the runner with a script (7 steps in order, 5 wrong actions ignored, the texts' lengths, the course kept out of
+  `COURSES`). `race-balance.ts` flies the course with the chained racer and feeds a runner from the real sim's events:
+  7/7 steps in 2 of 3 seeds (steps 1–3 within 8–20 s; the third seed reaches step 5 before the finish). Rule: the best
+  seed completes every step.
+- **Not yet:** the lesson in the game (the feel test): whether the instructions read well and the pace suits a first
+  try; it is not captured on screen here (the full game is too heavy for the container's software renderer).
+
 ### Landing v2 as built (owner feedback 26 Sep, awaiting the feel test)
 
 Owner feedback on stage A: "On L landings the dragon comes down like an aeroplane, rigid and steady; after it lands
@@ -483,6 +693,60 @@ as a big flying animal (raptor / swan / bat); the settle, run-out and touch-and-
 - **Known:** a slow landing is up to ~1.5 s longer than v1 from high up (the float and the near-hover last metre);
   the pure hover descent from 60 m takes ~16 s (v1 13 s). Perch landings can drive the approach through
   `overrides.bankTarget` (it wins over the weave) and `landingStyle.forceNext`.
+
+## Discoverability: contextual move hints (built, awaiting the owner's feel test)
+
+Owner request (26 Sep): the many moves should be discoverable in play, each hint at the right moment, once (or a
+few times until the move is used), quietly and key first, on the shared hint line through the zones director.
+
+- **Code:** `src/ui/tutorial/` — `hints-data.ts` (the catalogue: id, key caps, Turkish text, trigger predicate over a
+  `TutorialFrame`, hold, cooldown, max shows, learn rule, optional prerequisites and the Kontroller row), `engine.ts`
+  (pure, deterministic: pacing, gates, one zone item `hint.tutorial`), `store.ts` (localStorage
+  `ejderha.ui.tutorial.v1`, every access guarded), `sense.ts` (the frame from `DragonState`, geo and the zones),
+  `index.ts` (`TutorialHints`, owned by the UI system). The flight now emits `maneuver-end` `{ id, clean }` for the
+  moves that report their end, and `maneuver` carries the breach's `clean`.
+- **Catalogue** (order = precedence when several hold at once):
+
+  | Id | Hint | Trigger | Learned when |
+  |---|---|---|---|
+  | breach | [Space] Sudan fırla | under water ≥ 1 s | a breach (clean) |
+  | water-takeoff | [Space / L] Sudan havalan | swimming ≥ 4 s | a take-off while swimming |
+  | touchgo | [Space] Dokun-kalk | running out a fast landing, ≥ 10 m/s | a touch-and-go |
+  | plunge | [Shift] Dal: suya gir | path < −20° toward water ≥ 12 m deep, coast ≥ 40 m, 30–300 m up, ≥ 18 m/s | a clean plunge |
+  | splits | [A / D ×2] Split-S | dive steeper than 32°, ≥ 190 m up, ≥ 24 m/s | a clean Split-S |
+  | wingover | [S ×2] Kanat üstü dönüş | bank 48–100°, ≥ 26 m/s, ≥ 45 m up, path within ±30° | a clean wingover |
+  | immelmann | [A / D] Looping tepesinde: Immelmann | 2–10 s after a loop, upright, ≥ 40 m up | a clean Immelmann |
+  | runout | [L] Koşarak in | 14–34 m/s, 3–30 m over flat open land, path within ±15°, 1 s | a run-out |
+  | skim | Suya yakın uç: sıyırma | ≥ 20 m/s, 6–35 m over water, wings and path level, 1.5 s | a skim |
+  | dart | [Shift ×2] Ok gibi süzül | level flight > 30 m/s, ≥ 20 m up, 1 s | a clean dart |
+  | power | [Space ×2] Güç vuruşu | level flight at 12–22 m/s, ≥ 15 m up, stamina ≥ 45 %, 2 s | a clean power stroke |
+  | flow | Hareketleri zincirle: akış | flow first rises (≥ 0.12); shown once, stays its full time | a chain of two links |
+  | dive | [Shift] Kanatları kapat: dal | cruising ≥ 150 m up, 4 s | a free fall or a dive |
+  | roll | [A / D ×2] Takla at | calm level flight ≥ 60 m up, ≥ 20 m/s, 5 s; after the power hint | a roll |
+  | loop | [S ×2] Looping | calm level flight ≥ 80 m up, ≥ 24 m/s, 5 s; after the roll hint | a loop |
+  | slip | [Q / E ×2] Kayış | steady level flight at 18–34 m/s, ≥ 15 m up, 5 s; after the dart hint | a clean slip |
+  | land | [L] Yere in | < 17 m/s, < 40 m over flat open land, 3 s | a landing |
+
+  Not duplicated: "[L] Kon" near a perch (the perch prompt), "[I] Kaynağa bak" (the moments), the hover controls and
+  the start-of-game keys.
+- **Pacing** (`TUTORIAL_PACING`, seconds of play; paused time, menus and photo mode do not count): evaluated 4 times a
+  second; nothing in the first 45 s or while the start hints are requested; the hint line, the title and the corner
+  free for 3 s; one new hint per 60 s; at most 12 per session; a hint shows 6 s and is dropped if the line is not free
+  within 1 s; a non-sticky hint leaves 1.5 s after its trigger stops holding; displaced by any other message it does
+  not come back. Per hint: 3 shows in total (persisted), 240 s cooldown (90–120 s for the fleeting situations); once
+  the move was tried at most 2 shows and a doubled cooldown; learned (clean) = never again; performing the move while
+  its hint shows removes it at once.
+- **Gates:** a race (the `race` zone context or `DragonState.racing`), a landing approach (`landing` mode), perching
+  (a perch offer, approach, perched viewing, the leap off), no dragon, a busy hint line (moments' subtitle lines and
+  cards, captions, perch prompts, hover hints); the UI suspends the engine while a menu, the map, photo mode or a
+  hidden HUD is up. Priority `HUD_PRIORITY.tutorialHint` (20): below the start hints, above toasts.
+- **Settings:** Ayarlar → Oyun → İpuçları: the "İpuçları" switch (on by default) and "İpuçlarını sıfırla".
+- **Pause menu:** Kontroller marks the rows of moves not yet tried with a small gold dot, explained once under the
+  rows ("Henüz denemediğin hareket"); the H overlay's compact list is unmarked.
+- **Checks:** `tools/headless/tutorial-check.ts` (every entry fires in its situation, pacing, hold, cooldown, max
+  shows, tried / learned, relevance, gates, one at a time, persistence round trip, sense).
+- **Not yet:** gamepad key names in the hints (the hints name keyboard keys, like `CONTROL_HELP`); the plunge,
+  breach and swimming rows in `CONTROL_HELP`.
 
 ## Controls summary (additions)
 

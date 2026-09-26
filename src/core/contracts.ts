@@ -353,8 +353,23 @@ export interface DragonState {
   addVelocity?(dx: number, dy: number, dz: number): void;
   /** Flow ("akış", phase 20 stage D) 0..1: harmony of the recent motions, paid back as capped speed. */
   flow?: number;
-  /** A race gate or speed ring was passed; `tightness` 0..1 = how snug the pass was (flow's use of the world). */
-  notePass?(tightness: number): void;
+  /**
+   * A race gate or speed ring was passed; `tightness` 0..1 = how snug the pass was (flow's use of the world). While a
+   * chain is alive a speed ring (and a gate taken tight) is a chain link of its own.
+   */
+  notePass?(tightness: number, kind?: 'gate' | 'ring'): void;
+  /** Chain links in the current chain (flow's chain bursts; 0: no chain). */
+  chain?: number;
+  /** 0..1: the running chain burst's push right now (smooth envelope, 0 without a burst). */
+  burst?: number;
+  /** 0..1: the chain window left after a clean move end (a different move started now links); -1 when none runs. */
+  chainWindow?: number;
+  /** Everyday race moves that would link if started now (maneuver ids: 'dart', 'power', 'roll', 'slip'). */
+  chainNext?: readonly string[];
+  /** A race is running (speed effects at full strength, full-size chain bursts). */
+  racing?: boolean;
+  /** The activity system marks a race as running (true) or over (false). */
+  setRacing?(on: boolean): void;
   /** Roars when allowed (not cooling down, not breathing fire); returns true when it roared. */
   requestRoar?(): boolean;
   /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
@@ -479,6 +494,34 @@ export interface DragonPose {
   riderStand?: number;
   /** 0..1 the dragon turns its head back to look at the rider (blends over neckYaw/neckPitch). */
   gazeRider?: number;
+
+  /*
+   * Bond (phase 06, optional, 0 = neutral). Written by the bond behaviour (dragon/model/behavior/bond) on top of the
+   * flight pose: eyes, the neck plates and the small self-driven behaviours (head shake, happy rock, tail curl), plus
+   * the rider cues that go with them.
+   */
+  /** 0 = eyes open, 1 = lids closed (blinks, half-closed while petted, dozing). */
+  eyeLid?: number;
+  /** 0 = narrow slit (bright light), 1 = wide round pupil (dark, excited). */
+  pupil?: number;
+  /** 0..1 the small plates along the top of the neck stand up (petted, excited). */
+  neckPlates?: number;
+  /** Head roll (rad, + = tilts the crown to the dragon's left): a curious or affectionate tilt. */
+  headRoll?: number;
+  /** Fast head / upper-neck yaw (rad) applied past the neck springs: head shakes, a sneeze's jerk. */
+  neckShake?: number;
+  /** Visual body roll of the rig (rad, + = left side down): a happy rock or a shake-off; never the flight body. */
+  bodyRoll?: number;
+  /** 0..1 extra slow curl of the tail tip (contentment). */
+  tailCurl?: number;
+  /** 0..1 rider laughs (shoulders bob, head back a little). */
+  riderLaugh?: number;
+  /** 0..1 rider's right arm points at what the dragon looks at; direction in body-relative yaw / pitch (rad). */
+  riderShow?: number;
+  riderShowYaw?: number;
+  riderShowPitch?: number;
+  /** 0..1 rider pats the dragon's neck (the V "encourage" interaction): quick taps with the flat hand. */
+  riderPat?: number;
 }
 
 export interface DragonRig {
@@ -583,6 +626,12 @@ export type AudioOneShot =
   /** Bond (dragon/model): one purr phrase (~2 s) while being petted. */
   | 'purr';
 
+/**
+ * Bond sounds of the dragon (phase 06, synthesised): a purr phrase with depth (petting), a content chirp, a curious
+ * rising trill, a tired grumble, a yawn, a sneeze, a jaw snap at a gull, a nasal huff and a short happy roar.
+ */
+export type BondAudioCue = 'purr-deep' | 'chirp' | 'trill' | 'grumble' | 'yawn' | 'sneeze' | 'snap' | 'huff' | 'roar-short';
+
 export interface AudioService {
   /** Plays a synthesized one-shot. */
   play(name: AudioOneShot, volume?: number): void;
@@ -601,6 +650,19 @@ export interface AudioService {
   momentCue?(cue: MomentAudioCue, position: { x: number; y: number; z: number }, volume?: number, panFrom?: number): void;
   /** Soft open-air wind bed while a moment plays high over the city, 0..1 (swells in and out slowly). */
   setMomentBed?(amount: number): void;
+  /** Adaptive music (src/audio/music): its own volume 0..1 (persisted, like the master volume). */
+  setMusicVolume?(v: number): void;
+  readonly musicVolume?: number;
+  /** "Uyarlanabilir müzik": on = the stems follow the flight; off = the plain full mix (persisted). */
+  setAdaptiveMusic?(on: boolean): void;
+  readonly adaptiveMusic?: boolean;
+  /**
+   * A moment started / ended (src/moments): the music ducks strongly while it plays, or swaps to the moment's own
+   * music set when `musicId` (MomentContent.musicId) names one in the music manifest; restored afterwards.
+   */
+  setMomentMusic?(active: boolean, musicId?: string): void;
+  /** A bond sound of the dragon at its head (phase 06); `volume` 0..1.5 also sets its intensity. */
+  bondCue?(cue: BondAudioCue, volume?: number): void;
 }
 
 /**
@@ -784,6 +846,12 @@ export interface WaterService {
   /** Horizontal surface current at (x, z) (m/s, y = 0): the Bosphorus flow, zero in still water. */
   currentAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
   readonly seaState: Readonly<WaterSeaState>;
+  /**
+   * Local significant wave height of the ambient waves at (x, z) (m; the spectrum with the local fetch weights, no
+   * wave particles). Phase 21 stage 6: the swimming dragon's rocking and its water take-off read it. Optional: simple
+   * stand-ins (flat water) leave it out, which reads as calm.
+   */
+  significantHeightAt?(x: number, z: number): number;
   /**
    * Wave particles (phase 21 stage 7a): the interactive part of the sea (hull wakes, the dragon, splashes), already
    * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
@@ -1017,6 +1085,33 @@ export interface LifeService {
   borrowGulls?(id: number, out: Float32Array): number;
   /** Gives the vessel's ambient flock back, continuing from `count` bird states (flat as in borrowGulls). */
   returnGulls?(id: number, states: Float32Array, count: number): void;
+  /**
+   * Closest ambient bird (gull or pigeon) to (x, y, z) within `maxDistance` m: its position into `out`, the distance
+   * as the result, or -1 when none (the dragon's attention, phase 06).
+   */
+  nearestBird?(x: number, y: number, z: number, maxDistance: number, out: THREE.Vector3): number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Bond with the dragon (phase 06) — service key: 'bond'                */
+/* ------------------------------------------------------------------ */
+
+/** The dragon's mood (no meter on screen; it shows in pose and sound, and as one quiet line in the pause menu). */
+export type DragonMood = 'content' | 'curious' | 'playful' | 'tired' | 'excited';
+
+/** Read-only state of the bond behaviour, provided by dragon/model as 'bond'. */
+export interface DragonBondState {
+  readonly mood: DragonMood;
+  /** 0..1 how strongly the mood holds. */
+  readonly moodLevel: number;
+  /** One quiet Turkish line about the mood (pause menu). */
+  readonly moodLine: string;
+  /** 0..1 visible breath steam from the nostrils (cold or humid air); fx scales it by `exhale`. */
+  readonly nostrilSteam: number;
+  /** 0..1 the exhale of the current breath (steam leaves the nostrils on it). */
+  readonly exhale: number;
+  /** Id of the self-driven behaviour playing now ("yawn:flame"), or null. */
+  readonly behavior: string | null;
 }
 
 /** Typed service map. Use ctx.services.get('geo') etc. */
@@ -1039,6 +1134,7 @@ export interface Services {
   lowFlight: LowFlightView;
   hudZones: HudZonesService;
   life: LifeService;
+  bond: DragonBondState;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1067,9 +1163,31 @@ export interface GameEvents {
   perch: { id: string; state: 'perched' | 'left'; first: boolean };
   /**
    * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, takeoff, land...; the rider
-   * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
+   * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly; `clean` only where the
+   * start already tells (the breach).
    */
-  maneuver: { id: string; label: string };
+  maneuver: { id: string; label: string; clean?: boolean };
+  /**
+   * A move that reports its end finished (phase 20 stage B / C moves, the plunge): `clean` = no contact, no stall, not
+   * cut short and the move's trade kept. Not a caption; the tutorial hints (src/ui/tutorial) read it as "learned".
+   */
+  'maneuver-end': { id: string; clean: boolean };
+  /**
+   * A chain link landed (flow's chain bursts, phase 20): its number in the chain, the speed push it gives (m/s, 0 when
+   * the push was trimmed away) and why (a motion, a speed ring or a tight gate taken during the chain).
+   */
+  'chain-link': { link: number; dv: number; source: 'motion' | 'ring' | 'gate' };
+  /**
+   * A puff from the dragon's nostrils or mouth (phase 06 bond behaviours): smoke on a sneeze, a small flame at the end
+   * of a yawn, a steam huff, water drops flung off by a shake. Purely visual; fx spawns it at the mouth anchor (the
+   * drops around the head and neck).
+   */
+  'dragon-puff': { kind: 'smoke' | 'flame' | 'steam' | 'droplets'; strength: number };
+  /**
+   * Something worth a look for the dragon (phase 06 attention): a ferry horn, a flock, a stork kettle. World point;
+   * `strength` 0..1 ranks it. Any system may emit it; the bond behaviour turns the head there when it is safe.
+   */
+  'dragon-attention': { x: number; y: number; z: number; kind: 'horn' | 'bird' | 'stork' | 'ferry' | 'sound'; strength: number };
   /** The player asked for a moment's sources ("[I] Kaynağa bak", src/moments): the UI opens the source sheet. */
   'moment-source': { id: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */

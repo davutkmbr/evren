@@ -3,7 +3,9 @@ import type { QualityPreset } from '../../core/quality';
 import { el } from '../dom';
 import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
+import { motionEffects, setMotionEffects, type MotionEffects } from '../../core/speed-feel';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
+import { loadAdaptiveMusic, loadMusicVolume } from '../../audio/music/settings';
 import type { MomentCategory } from '../../moments/types';
 import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
 
@@ -35,6 +37,8 @@ export interface SettingsPanelOptions {
   onResetDiscoveries(): void;
   /** Opens the key bindings (the pause menu's Kontroller tab). */
   onShowControls?(): void;
+  /** Oyun → İpuçları: the contextual move hints (src/ui/tutorial). */
+  tutorial?: { enabled(): boolean; setEnabled(on: boolean): void; reset(): void };
 }
 
 /**
@@ -49,14 +53,18 @@ export class SettingsPanel {
   private readonly invertMouse: Control<boolean>;
   private readonly invertPitch: Control<boolean>;
   private readonly volume: Control<number>;
+  private readonly musicVolume: Control<number>;
+  private readonly adaptiveMusic: Control<boolean>;
   private readonly timeOfDay: Control<number>;
   private readonly timeSpeed: Control<number>;
   private readonly camera: Control<CameraMode>;
+  private readonly motion: Control<MotionEffects>;
   private readonly weatherPreset: Control<WeatherPreset | 'custom'>;
   private readonly weatherSliders: Record<keyof WeatherSettings, Control<number>>;
   private readonly momentPrefs: MomentPrefs = loadMomentPrefs();
   private readonly momentMaster: Control<boolean>;
   private readonly momentToggles: Record<MomentCategory, Control<boolean>>;
+  private readonly tips: Control<boolean> | null = null;
   private readonly pages = new Map<SettingsPage, HTMLElement>();
   private readonly tabs = new Map<SettingsPage, HTMLButtonElement>();
   private page: SettingsPage = 'display';
@@ -91,6 +99,17 @@ export class SettingsPanel {
       ],
       'third',
       (mode) => ctx.services.tryGet('cameraRig')?.setMode(mode),
+    );
+
+    this.motion = segmented<MotionEffects>(
+      'Hareket efektleri',
+      [
+        { value: 'full', label: 'Tam' },
+        { value: 'reduced', label: 'Azaltılmış' },
+        { value: 'off', label: 'Kapalı' },
+      ],
+      motionEffects(),
+      (v) => setMotionEffects(v),
     );
 
     this.sensitivity = slider({
@@ -130,6 +149,20 @@ export class SettingsPanel {
         save();
       },
     });
+
+    // Music (src/audio/music): the audio service persists both.
+    this.musicVolume = slider({
+      label: 'Müzik',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      value: ctx.services.tryGet('audio')?.musicVolume ?? loadMusicVolume(),
+      format: (v) => percentFormat.format(v),
+      onInput: (v) => ctx.services.tryGet('audio')?.setMusicVolume?.(v),
+    });
+    this.adaptiveMusic = toggle('Uyarlanabilir müzik', ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic(), (v) =>
+      ctx.services.tryGet('audio')?.setAdaptiveMusic?.(v),
+    );
 
     this.timeOfDay = slider({
       label: 'Günün saati',
@@ -234,6 +267,26 @@ export class SettingsPanel {
     });
     setRowsEnabled(momentSubRows, this.momentPrefs.enabled, MOMENTS_OFF);
 
+    // Oyun → İpuçları: the switch and a reset that lets every move hint show again.
+    const tutorial = options.tutorial;
+    let tipsSection: HTMLElement[] = [];
+    if (tutorial) {
+      this.tips = toggle('İpuçları', tutorial.enabled(), (v) => tutorial.setEnabled(v));
+      let resetTimer = 0;
+      const resetTips = prompt('Sıfırla', '', 'secondary', () => {
+        tutorial.reset();
+        resetTips.setLabel('Sıfırlandı');
+        window.clearTimeout(resetTimer);
+        resetTimer = window.setTimeout(() => resetTips.setLabel('Sıfırla'), 2500);
+      });
+      tipsSection = [
+        settingSection('İpuçları', [
+          settingRow('İpuçları', 'Yeni hareketleri doğru anda, kısaca gösterir; bir hareketi temiz yapınca o ipucu bir daha çıkmaz', this.tips.root),
+          settingRow('İpuçlarını sıfırla', 'Gösterilen ve öğrenilen ipuçlarını baştan alır', resetTips.root),
+        ]),
+      ];
+    }
+
     const controlsLink = prompt('Kontroller', '', 'secondary', () => options.onShowControls?.());
 
     const pageContent: Record<SettingsPage, HTMLElement[]> = {
@@ -241,6 +294,7 @@ export class SettingsPanel {
         settingSection('Görüntü', [
           settingRow('Grafik kalitesi', 'Gölge, bulut, yansıma ve çizim mesafesi', this.quality.root),
           settingRow('Kamera', undefined, this.camera.root, { keys: 'C' }),
+          settingRow('Hareket efektleri', 'Hızda görüş açısı, sarsıntı ve rüzgâr çizgileri; hareket hassasiyetinde azalt', this.motion.root),
           settingRow('Uzak bulanıklık', 'Uzaktaki şehri havanın yaptığı gibi yumuşatır', this.weatherSliders.farBlur.root),
         ]),
       ],
@@ -268,13 +322,20 @@ export class SettingsPanel {
           settingRow('Tüm tuşlar', 'Uçuş, kamera ve arayüz kısayolları', controlsLink.root),
         ]),
       ],
-      sound: [settingSection('Ses', [settingRow('Ana ses', undefined, this.volume.root)])],
+      sound: [
+        settingSection('Ses', [
+          settingRow('Ana ses', undefined, this.volume.root),
+          settingRow('Müzik', undefined, this.musicVolume.root),
+          settingRow('Uyarlanabilir müzik', 'Müzik uçuşuna göre katman katman değişir; kapalıyken parçalar tam haliyle çalar', this.adaptiveMusic.root),
+        ]),
+      ],
       game: [
         settingSection(
           'Anlar',
           [settingRow('Anlar', 'Haritaya serpiştirilmiş küçük sürprizler', this.momentMaster.root), ...momentSubRows],
           'Uçarken karşına çıkan kısa sahneler ve altyazılar. İstemediklerini kapatabilirsin.',
         ),
+        ...tipsSection,
         settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', reset.root)]),
       ],
     };
@@ -335,16 +396,22 @@ export class SettingsPanel {
   refresh(): void {
     const { ctx } = this.options;
     this.quality.set(ctx.quality.settings.preset);
+    this.motion.set(motionEffects());
     this.sensitivity.set(ctx.input.settings.mouseSensitivity);
     this.invertMouse.set(ctx.input.settings.invertMouseY);
     this.invertPitch.set(ctx.input.settings.invertPitch);
     this.volume.set(ctx.services.tryGet('audio')?.masterVolume ?? this.options.prefs.volume ?? 1);
+    this.musicVolume.set(ctx.services.tryGet('audio')?.musicVolume ?? loadMusicVolume());
+    this.adaptiveMusic.set(ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic());
     this.timeOfDay.set(Math.round(ctx.time.timeOfDay * 4) / 4);
     this.timeSpeed.set(ctx.time.dayTimeScale);
     const mode = ctx.services.tryGet('cameraRig')?.mode;
     this.camera.set(mode === 'free' || !mode ? 'third' : mode);
     this.refreshWeather();
     this.momentMaster.set(this.momentPrefs.enabled);
+    if (this.tips && this.options.tutorial) {
+      this.tips.set(this.options.tutorial.enabled());
+    }
     for (const m of MOMENT_ROWS) {
       this.momentToggles[m.category].set(this.momentPrefs.categories[m.category]);
     }

@@ -171,6 +171,15 @@ export class MotionSegmenter {
     this.energy = 0.5 * V2 + GRAVITY * sim.body.position.y;
   }
 
+  /**
+   * Books a known outside push (J/kg of kinetic energy, a chain burst) as not the dragon's: the energy integration is
+   * offset by exactly that amount, keeping its one-substep lag (the airspeed is sampled at the start of a substep), so
+   * the physics' own losses over the push stay in the books.
+   */
+  external(dE: number): void {
+    this.energy += dE;
+  }
+
   /** A gate or speed ring pass (tightness 0..1) at the current time. */
   notePass(tightness: number, t: number): void {
     this.passTight = Math.max(tightness, t - this.passT < FLOW.passHold ? this.passTight : 0);
@@ -193,7 +202,7 @@ export class MotionSegmenter {
   }
 
   /** True while the maneuver system or a ground / water move is running something. */
-  private busy(sim: FlightSim): boolean {
+  busy(sim: FlightSim): boolean {
     const m = sim.maneuvers;
     return (
       m.active ||

@@ -50,15 +50,15 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Tricks: barrel roll, loop, free fall with a wing-snap catch; air moves (phase 20 stage B): power
   stroke (güç vuruşu), dart, side-slip (kayış) and the automatic surface skim (sıyırma), each reporting a clean or
   unclean end for the flow system to come. There is no speed button: speed comes from the wing beats, the power
-  stroke, the air and flow (the rider's "dehh" urge on V was removed on 26 Sep; V is reserved for a rider–dragon
-  interaction in the bond phase).
+  stroke, the air and flow (the rider's "dehh" urge on V was removed on 26 Sep; V is now the bond's "encourage", which
+  has no effect on speed, see 5.1.1).
 - Assisted hands-off flight: the dragon holds a safe clearance, climbs over what it cannot pass, **passes under**
   bridges and overhangs that leave room, and with a speed-scaled look-ahead (150–600 m) climbs over or turns away
   from towers. Player input always wins.
 - Wind field: environment wind, gusts, **thermals** (sun, land use, slopes, summits) and **ridge lift**
   (poyraz and lodos on the Bosphorus slopes).
-- Rider: every command shows on the rider; petting, standing, the dragon's gaze back. Humans are MetaHuman +
-  Mixamo (private asset store).
+- Rider: every command shows on the rider; petting, standing, patting (V), laughing, pointing at what the dragon
+  looks at, the dragon's gaze back. Humans are MetaHuman + Mixamo (private asset store).
 - Hooks for other systems: `addVelocity` (speed rings, powers), `requestRoar`, `fireBurst`.
 - Phase 20: run-out landings and touch-and-go, leaping take-offs, the stage B air moves and the reversals (wingover,
   Immelmann, Split-S) are built, and **flow ("akış")**: consecutive motions that harmonise physically (energy kept
@@ -69,6 +69,28 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
   when a harmony peaks — the skill ceiling for races.
 - Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
   dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
+
+#### 5.1.1 The bond — phase 06 (`src/dragon/model/behavior/bond/`)
+The dragon is a companion: it looks at you, reacts to your hand and has moods of its own, and none of it ever takes
+control or costs speed.
+- **Gaze:** it turns its head right round to meet the rider's eyes while petted, when the rider's POV rests on its
+  neck for 3 s, after a trick, and now and then while gliding, perched or resting — only when nothing asks for its eyes
+  (not low, not fast, not near an obstacle ahead, not in a trick, race or landing). It blinks, gives a slow blink on
+  eye contact, its pupils follow the light and its mood, and in cold or humid air its breath steams from the nostrils.
+  It glances at the landmark when a discovery card opens (the rider points), at a passing vapur, gulls and a stork
+  kettle, and at anything that calls for attention (`dragon-attention` event, e.g. a future ferry horn).
+- **Petting (G held, POV and chase):** the rider's palm strokes the neck (IK on the skin, ±3 cm); the dragon purrs
+  deeper the fonder it is, half closes its eyes, leans into the hand, raises its neck plates and slowly curls its tail
+  tip; a light rumble on gamepads.
+- **Mood:** content, curious, playful, tired or excited, from flight time, stamina, the hour, petting, discoveries and
+  flow, with hysteresis and decay. It shows only in pose and sound (and one quiet line in the pause menu); no meters.
+- **Self-driven behaviours** (rare, about one a minute, never in a race, landing or tight moment, each in variants that
+  never repeat back to back): looking around, snapping at a gull, a yawn (sometimes with a small flame), a sneeze with
+  smoke, a happy rock, stretching the wings after a long flight, shaking off water after a swim, a head shake, dozing,
+  grooming.
+- **Encourage (V):** the rider pats the neck and calls; the answer depends on the mood (tired: a grumble and a slow nod;
+  content: a chirp; curious: a trill; playful: two chirps; excited: a joyful wing beat and a short roar).
+- Planned: the bond level and what it unlocks (needs an owner decision: an indicator would break contextual reveal).
 
 ### 5.2 The world (`src/world/`, `tools/world-compiler/`)
 - Real relief (SRTM-based), coastline and land use; OSM streets, buildings, traffic and pedestrians (the
@@ -125,12 +147,39 @@ Five slots on keys 1–5 (HUD, bottom centre). Today: fire (1) and roar (2). Ite
 the `hotbar` service (icon, count, cooldown, active state, activate). The inventory is planned on top of it.
 
 ### 5.7 Discovery and progression
-50 landmarks to discover (discovery card, map, pause menu counter). Medals and records per course. Planned: photo
-album and "golden hour" badges, bond level with the dragon, unlocks (saddles, armour, dragon variants — phase 12).
+50 landmarks to discover (discovery card, map, pause menu counter). Medals and records per course.
+
+**Photo album (built, `src/ui/album`).** In photo mode (O) [Enter] takes a photo of the frame as rendered (no HUD),
+copied right after the render and encoded to WebP (JPEG where WebP encoding is missing) in a worker, with a 400 px
+thumbnail; a short white flash and one quiet toast confirm it. Photos live only in the browser (IndexedDB, no network)
+with their metadata: real date and time, in-game time of day and day, weather, camera position and angles, the named
+place (a landmark in frame, else the perch, a landmark within 250 m, the district, the water body, "İstanbul"), the
+camera mode before photo mode, what the dragon was doing (perched, flying, on the ground, in the water) and the sun
+elevation. Storage policy: at most 60 photos and 150 MB, and never beyond 80 % of the origin's quota; when a photo does
+not fit, the toast asks first ("Albüm dolu … yine [Enter]") and the oldest photos are deleted (badge photos last)
+only after the new one is written. Quality (Yüksek / Dengeli / Küçük) is chosen in the album. Pause menu → **Albüm**:
+a thumbnail grid (newest first, arrow keys or the mouse), one photo large with a calm caption ("Galata Kulesi · 18:42 ·
+açık hava" and a quieter date line), "[Enter] İndir" (`seventeen-skies-<place>-<date>.webp`, ASCII file name),
+"[Del] Sil" with a confirmation, "[Esc] Geri", ← / → for the neighbours.
+
+**Golden-hour badges ("Altın saat", built).** A photo taken while the sun is between −4° and +6° (sunrise or sunset)
+with one of 12 iconic places in the picture earns that place's badge: Galata Kulesi, Kız Kulesi, Süleymaniye, Ayasofya,
+Sultanahmet, Sarayburnu (Topkapı), Galata Köprüsü, Ortaköy, 15 Temmuz Şehitler Köprüsü, Rumeli Hisarı, Fatih Sultan
+Mehmet Köprüsü and Çamlıca. "In the picture" = the camera within the place's radius (1–3 km) and the landmark (or a
+bridge tower) inside the view frustum; occlusion is not tested. The data (radii, aim height, anchors) is a list in
+`src/ui/album/badges.ts`. Earned badges are kept locally even if the photo is deleted; the album shows "Altın saat
+3/12" with a dot per place and a small gold mark on the photo that earned one; the toast names the new badge.
+
+Planned: bond level with the dragon (the mood system of 5.1.1 is built; the level is not), unlocks (saddles, armour, dragon variants — phase 12).
 
 ### 5.8 Audio and music
-Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Regional, layered music is planned
-(phase 07); licences recorded per track.
+Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Adaptive music (phase 07, system built,
+pieces pending the owner's approval): each piece is a set of equal-length stems (piano, strings, light motion, an
+Istanbul colour instrument, pads) that a small rules table fades with the flight — sparse on the ground and perched,
+fuller cruising, a pulse when fast or diving, the colour low over the water, a swell in thermals, softer at night —
+with silences between sets, a race set synced to "Başla!", strong ducking under moments and a muffle under water.
+Settings: Müzik volume, Uyarlanabilir müzik on / off. Owner guide: `.docs/audio/music-system.md`. Regional sets
+come later as tags; licences recorded per set.
 
 ### 5.9 On foot and beyond (phases 16–17, 14–15)
 Walkable Kadıköy: land, walk, enter cafés, talk to NPCs, drive (street track S3–S8). Co-op moving game "Hamallar".
@@ -143,8 +192,8 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 | Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off (running: the running leap); in a run-out Ctrl/X skid to a stop, Space touch-and-go |
 | Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
-| Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
-| Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |
+| Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up, V encourage (pat and call) |
+| Camera and world | right mouse look, C camera, O photo mode (Enter takes a photo for the album), [ ] time of day, N weather |
 | Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
 
 ## 7. Interface

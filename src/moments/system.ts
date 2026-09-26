@@ -50,6 +50,7 @@ export function createMomentSystem(): System {
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
     startMoment: (m, forced, anchorId) => {
+      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(true, m.content.musicId);
       if (!ctxRef || !m.content.actorId) {
         return;
       }
@@ -64,7 +65,10 @@ export function createMomentSystem(): System {
       }
       actor.start(m, ctxRef, forced, anchorId);
     },
-    endMoment: (m, reason) => actors.get(m.id)?.end(reason),
+    endMoment: (m, reason) => {
+      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(false);
+      actors.get(m.id)?.end(reason);
+    },
   };
   const runner = new MomentRunner(ALL_MOMENTS, sink);
   const sources = new SourcePromptController();
@@ -226,6 +230,7 @@ export function createMomentSystem(): System {
         fn();
       }
       ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(0);
+      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(false);
       for (const actor of actors.values()) {
         actor.dispose();
       }

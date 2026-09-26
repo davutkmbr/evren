@@ -192,6 +192,26 @@ const rainCase = (id: string, label: string, rain: number, airspeed: number, cam
 });
 
 /**
+ * Phase 21 stage 6: rain on the sea, hovering 8 m over open water in the chase camera: the wash plus the rain-on-water
+ * hiss. First-pass window, to be balanced by ear.
+ */
+const rainSeaCase = (): RenderCase => ({
+  id: 'rain-sea',
+  label: 'Denizde yağmur (0.8), suyun 8 m üstünde (3. şahıs)',
+  seconds: 10,
+  measure: 'integrated',
+  target: [-28, -20],
+  camera: 'third',
+  repeatMax: REPEAT_MAX,
+  step: (_t, _p, f) => {
+    f.rain = 0.8;
+    f.dragon.airspeed = 0;
+    f.dragon.grounded = false;
+    Object.assign(f.probe, { agl: 8, altitude: 8, urban: 0, foliage: 0, water: 1, coast: 0.2, strait: 0.5 });
+  },
+});
+
+/**
  * Phase 21 stage 5 v2: swimming, from the chase camera. Floating (0-3 s), swimming at 2.6 m/s (3-6.5 s), the fast
  * swim at 4.5 m/s (6.5-10 s): the water bed around the body, each wing's stroke at the rig's rhythm (left catch at
  * phase 0, right at pi, as strong as the stroke, as long as its power stroke), the breathing and the snorts. First-pass
@@ -363,6 +383,7 @@ export const CASES: RenderCase[] = [
   rainCase('rain-light', 'Hafif yağmur (0.35), yerde (3. şahıs)', 0.35, 0, 'third', [-33, -27]),
   rainCase('rain-heavy', 'Sağanak (1.0), yerde (POV)', 1, 0, 'pov', [-26, -20]),
   rainCase('rain-flight', 'Yağmurda seyir (0.8), 32 m/s (3. şahıs)', 0.8, 32, 'third', [-24, -18]),
+  rainSeaCase(),
   windCase('wind-cruise-third', 'Rüzgâr seyir 40 m/s (3. şahıs)', 'third', [-31, -25], (_t, f) => {
     f.dragon.airspeed = 40;
   }),

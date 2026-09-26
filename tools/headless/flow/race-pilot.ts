@@ -10,7 +10,7 @@
  *            side-slip onto the racing line or a barrel roll when enabled), started on the beat when the wings are
  *            beating. Flow then pays back as less drag and stronger beats.
  */
-import { clamp } from '../../../src/core/math/noise';
+import { clamp, smoothstep } from '../../../src/core/math/noise';
 import { type CompiledCourse, type SpeedRing } from '../../../src/activities/courses';
 import { passTightness, RaceSession, type Vec3 } from '../../../src/activities/race';
 import { BoostEnvelope } from '../../../src/activities/speed-boost';
@@ -32,6 +32,12 @@ export interface RaceRun {
   moves: Record<string, number>;
   rings: number;
   moments: number;
+  /** Gates flown past without crossing (the pilot came round again). */
+  misses: number;
+  /** Chain links (flow/burst.ts), the longest chain and the total burst push (m/s). */
+  links: number;
+  bestChain: number;
+  burstDv: number;
   meanSpeed: number;
   staminaMin: number;
   /** Per motion id ('~' unnamed): count, mean harmony, mean novelty, total flow change. */
@@ -41,6 +47,10 @@ export interface RaceRun {
 export type MoveName = 'power' | 'dart' | 'slipL' | 'slipR' | 'roll';
 
 const TWO_PI = Math.PI * 2;
+
+/** The maneuver id (flow's kind of motion) each pilot move starts. */
+const MOVE_KIND: Record<MoveName, string> = { power: 'power', dart: 'dart', slipL: 'slip', slipR: 'slip', roll: 'roll' };
+
 
 function wrap(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -65,6 +75,15 @@ export interface PilotOptions {
   slipOffset: number;
   /** Wing beats (Space held) resume above this stamina (they stop below 0.3). */
   flapResume: number;
+  /** Chained pilot: chain on every leg (1) or only on every n-th leg, flying the others plainly (some chaining). */
+  chainEvery: number;
+  /** Chained pilot: barrel rolls only this far (m) or more before the next gate. */
+  rollGateDistance: number;
+  /** Chained pilot: stamina kept in reserve for the wing beats (no power stroke below it). */
+  moveStamina: number;
+  /** Chained pilot: moves only this far (m) or more before the next gate and with the target at most moveTurn off. */
+  moveGateDistance: number;
+  moveTurn: number;
   /** Chained pilot: aim this fraction of the gate radius toward the inside of the turn (the racing line). */
   apex: number;
   /** Headless experiments: print a timeline line every this many seconds (0: off). */
@@ -88,10 +107,14 @@ interface LegPlan {
 }
 
 /** The low line: foot clearance over the sea (m), water needed either side of the leg (m), descent and zoom angles. */
-const SKIM_CLEARANCE = 8;
+const SKIM_CLEARANCE = 5;
 const SKIM_MARGIN = 25;
 const DESCENT = 11 * DEG;
 const ZOOM = 13 * DEG;
+/** Lag (s) of the flight path behind the pilot's path target, led near a gate so a fast zoom does not overshoot. */
+const PATH_LAG = 0.8;
+/** The zoom reaches the gate's height this far (m) before the gate, so a fast zoom settles before the ring. */
+const ZOOM_FINISH = 150;
 
 /** Plans a low line on a leg: the longest stretch that is water on the line and SKIM_MARGIN either side, with room to descend and zoom. */
 function planLeg(geo: FlightSim['world']['geo'], from: Vec3, to: Vec3, skimY: number): LegPlan | null {
@@ -137,7 +160,7 @@ function planLeg(geo: FlightSim['world']['geo'], from: Vec3, to: Vec3, skimY: nu
     const descLen = (from.y - skimY) / Math.tan(DESCENT * k);
     const zoomLen = (to.y - skimY) / Math.tan(ZOOM * k);
     const a = Math.max(best[0] + descLen, 150 + descLen);
-    const b = Math.min(best[1], length - 60) - zoomLen;
+    const b = Math.min(best[1], length - ZOOM_FINISH) - zoomLen;
     if (b - a >= 120) {
       return { from, to, length, a, b, c: b + zoomLen, waterStart: a - descLen };
     }
@@ -164,19 +187,24 @@ function legHeight(plan: LegPlan, u: number, skimY: number): number {
 }
 
 /**
- * Balance pilot (race-balance.ts). Without the urge the chained pilot strings three kinds of moves (power stroke, dart,
- * side-slip onto the racing line) with short pauses and takes the gates half-way to the inside of the turn.
+ * Balance pilot (race-balance.ts): strings power strokes, darts and barrel rolls (variety by kind; side-slips onto the
+ * racing line are available but made the scripted line miss gates at burst speeds), dives to the low line over the water legs and takes the gates on the inside once the turn settles.
  */
 export const DEFAULT_PILOT: PilotOptions = {
-  moves: ['power', 'dart', 'slipL', 'slipR'],
+  moves: ['power', 'dart', 'roll'],
   pauseMin: 0.1,
   pauseSpread: 1,
   noPayback: false,
   skimLine: true,
-  dartDescentOnly: true,
+  dartDescentOnly: false,
   slipOffset: 15,
   flapResume: 0.55,
-  apex: 0.5,
+  apex: 0.7,
+  moveGateDistance: 260,
+  moveTurn: 40 * DEG,
+  moveStamina: 0.25,
+  rollGateDistance: 500,
+  chainEvery: 1,
 };
 
 export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyle, seed = 1, maxSeconds = 600, opts: PilotOptions = DEFAULT_PILOT): RaceRun {
@@ -228,7 +256,7 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
         const r = course.speedRings[e.index];
         used.add(e.index);
         boost.start(sim.airspeed);
-        sim.flow.notePass(sim, passTightness(r.radius, Math.hypot(p.x - r.x, p.y - r.y, p.z - r.z)));
+        sim.flow.notePass(sim, passTightness(r.radius, Math.hypot(p.x - r.x, p.y - r.y, p.z - r.z)), 'ring');
       }
     }
     const dv = boost.step(frameDt, sim.airspeed);
@@ -248,9 +276,11 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     }
     // Target: the next gate, or a speed ring still ahead on the current leg.
     const gi = Math.min(session.next, course.gates.length - 1);
+    // Some chaining: only every chainEvery-th leg is flown with the skilled line and moves, the others plainly.
+    const legChained = style === 'chained' && gi % opts.chainEvery === 0;
     const gate = course.gates[gi];
     let target: Vec3 & { r: number } = { x: gate.x, y: gate.y, z: gate.z, r: gate.radius };
-    if (style === 'chained' && opts.apex > 0 && gi + 1 < course.gates.length) {
+    if (legChained && opts.apex > 0 && gi + 1 < course.gates.length && missed !== gi) {
       // Racing line: pass the gate on the inside of the turn toward the next one (horizontally, within the ring).
       const nx = course.gates[gi + 1];
       const ax = nx.x - gate.x;
@@ -261,12 +291,30 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
       const sx = -gate.nz / n;
       const sz = gate.nx / n;
       const side = (ax / al) * sx + (az / al) * sz;
-      const off = opts.apex * gate.radius * clamp(side * 3, -1, 1);
+      // Inside the ring: the lateral offset leaves room for the height still to be corrected.
+      const vErr = Math.min(Math.abs(gate.y - p.y), gate.radius);
+      // Still turning onto the gate (hard bank): less of the inside line, the arc is not settled yet.
+      const settled = clamp(1.5 - Math.abs(sim.bank) / (40 * DEG), 0, 1);
+      const off = Math.sqrt(Math.max(0, (opts.apex * gate.radius) ** 2 - vErr * vErr)) * clamp(side * 3, -1, 1) * settled;
       target = { x: gate.x + sx * off, y: gate.y, z: gate.z + sz * off, r: gate.radius };
+    }
+    // Go-around after a miss: a gate only counts crossed in its direction, so first fly back out to a point in front
+    // of it, then take it again through the centre.
+    if (missed === gi && goAround) {
+      const turnR = (sim.airspeed * sim.airspeed) / (9.81 * Math.tan(62 * DEG));
+      const back = Math.max(300, 3 * turnR);
+      const bx = gate.x - gate.nx * back;
+      const bz = gate.z - gate.nz * back;
+      if (Math.hypot(bx - p.x, bz - p.z) < turnR) {
+        // Out far enough: turn in and take the gate (latched until it is passed or missed again).
+        goAround = false;
+      } else {
+        target = { x: bx, y: gate.y, z: bz, r: gate.radius };
+      }
     }
     const from: Vec3 = gi > 0 ? course.gates[gi - 1] : course.start;
     let ringLeg = false;
-    for (let k = 0; k < course.speedRings.length; k++) {
+    for (let k = 0; k < course.speedRings.length && !goAround; k++) {
       const ring: SpeedRing = course.speedRings[k];
       if (used.has(k)) {
         continue;
@@ -290,11 +338,30 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     const want = Math.atan2(dx, -dz);
     const track = Math.atan2(v.x, -v.z);
     const err = wrap(want - track);
+    // Flew past the gate without crossing it: take it through the centre on the next try.
+    const beyond = (p.x - gate.x) * gate.nx + (p.y - gate.y) * gate.ny + (p.z - gate.z) * gate.nz;
+    if (!ringLeg && beyond > 5 && Math.hypot(gate.x - p.x, gate.z - p.z) < 60 && !goAround && (missed !== gi || tt - missedT > 5)) {
+      missed = gi;
+      missedT = tt;
+      goAround = true;
+      misses++;
+    }
+    if (opts.trace && Math.floor(tt / opts.trace) !== Math.floor((tt - frameDt) / opts.trace)) {
+      console.log(`      target d ${horiz.toFixed(0)} dy ${(target.y - p.y).toFixed(0)} err ${(err / DEG).toFixed(0)}° ${extending ? 'extend' : ''}${ringLeg ? ' ring' : ''}`);
+    }
     const ov = sim.overrides;
-    ov.bankTarget = clamp(err * 2.2, -62 * DEG, 62 * DEG);
+    // A target inside the turn circle and well off the nose cannot be reached by turning harder (the pursuit orbits
+    // it): extend straight out to two turn radii, then turn back in.
+    const turnR = (sim.airspeed * sim.airspeed) / (9.81 * Math.tan(62 * DEG));
+    if (!extending && Math.abs(err) > 70 * DEG && horiz < 1.6 * turnR) {
+      extending = true;
+    } else if (extending && (horiz > 2.4 * turnR || Math.abs(err) < 30 * DEG)) {
+      extending = false;
+    }
+    ov.bankTarget = extending ? 0 : clamp(err * 2.2, -62 * DEG, 62 * DEG);
     let dy = target.y - p.y;
     let run = Math.max(horiz, 1);
-    if (style === 'chained' && opts.skimLine && !ringLeg) {
+    if (legChained && opts.skimLine && !ringLeg && !goAround) {
       if (!plans.has(gi)) {
         plans.set(gi, planLeg(sim.world.geo, from, gate, skimY()));
       }
@@ -308,11 +375,18 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
       }
     }
     descending = dy < -8 && run < horiz - 1;
-    if (!(style === 'chained' && opts.skimLine && !ringLeg)) {
+    if (!(legChained && opts.skimLine && !ringLeg)) {
       descending = gate.y < p.y - 15;
     }
     const tau = clamp(run / Math.max(sim.airspeed, 10), 0.5, 30);
+    // The path follows its target with a lag: lead the height error by the climb (or sink) still to come.
+    dy -= v.y * PATH_LAG * smoothstep(3 * sim.airspeed, sim.airspeed, run);
     ov.pathTarget = clamp(Math.atan2(dy, run) + (dy / Math.max(tau, 1)) * 0.01, -0.35, 0.3);
+    // Never let a fast low line touch the surface: level off (and climb a little) below the floor.
+    const floor = SKIM_CLEARANCE * 0.5;
+    if (sim.footClearance < floor) {
+      ov.pathTarget = Math.max(ov.pathTarget, 0.04 * (floor - sim.footClearance));
+    }
     ov.airspeedTarget = null;
     // Stamina-managed wing beats.
     const st = sim.stamina;
@@ -328,7 +402,9 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     } else if (!wantFlap && pilot.isHeld('Space') && !pendingSpace(tt)) {
       pilot.up('Space', tt);
     }
-    if (style !== 'chained') {
+    const toGate = Math.hypot(gate.x - p.x, gate.z - p.z);
+    const legOk = toGate > opts.moveGateDistance && tt - lastGateT > 1 && Math.abs(err) < opts.moveTurn && sim.mode !== 'landing';
+    if (!legChained) {
       return;
     }
     // Chained: string moves together on the legs.
@@ -337,8 +413,6 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
       lastMoveEnd = tt;
     }
     wasBusy = b;
-    const toGate = Math.hypot(gate.x - p.x, gate.z - p.z);
-    const legOk = toGate > 260 && tt - lastGateT > 1.5 && Math.abs(err) < 25 * DEG && sim.mode !== 'landing';
     if (b || !legOk) {
       pending = null;
       return;
@@ -363,6 +437,7 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     pause = opts.pauseMin + random() * opts.pauseSpread;
     lastUsed[m] = tt;
     moves[m] = (moves[m] ?? 0) + 1;
+    started.push(MOVE_KIND[m]);
     const key: Key = m === 'power' ? 'Space' : m === 'dart' ? 'Shift' : m === 'slipL' ? 'Q' : m === 'slipR' ? 'E' : random() < 0.5 ? 'A' : 'D';
     if (key === 'Space') {
       // Release a held Space first, so both taps are fresh presses.
@@ -375,6 +450,13 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
   };
 
   let spaceUntil = -1;
+  let extending = false;
+  let missed = -1;
+  let goAround = false;
+  let missedT = -99;
+  /** Kinds of the moves this pilot started, oldest first (flow only learns a motion's kind once it has settled). */
+  const started: string[] = [];
+  let misses = 0;
   let descending = false;
   let pause = opts.pauseMin;
   const pendingSpace = (tt: number): boolean => tt < spaceUntil;
@@ -389,7 +471,7 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     if (V > 31 && Math.abs(sim_.gamma) < 18 * DEG && Math.abs(sim_.bank) < 20 * DEG && clearance > 40 && dartLine && toGate > 350) {
       fits.push('dart');
     }
-    if (sim_.stamina > 0.25 && !sim_.tired && V < 62) {
+    if (sim_.stamina > opts.moveStamina && !sim_.tired && V < 62) {
       fits.push('power');
     }
     // Side of the racing line (the straight leg to the gate).
@@ -401,11 +483,15 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
       // side > 0: the dragon is left of the line (x right of travel is (-lz, lx)); slip right.
       fits.push(side > 0 ? 'slipR' : 'slipL');
     }
-    if (V > 26 && clearance > 40 && Math.abs(sim_.bank) < 25 * DEG) {
+    // Never roll on the way down to the low line (a roll costs height the dive does not have).
+    if (V > 26 && clearance > 40 && !descending && Math.abs(sim_.bank) < 25 * DEG && toGate > opts.rollGateDistance) {
       fits.push('roll');
     }
+    // Variety: never one of the chain's last two kinds of motion (a repeat keeps the chain but pays nothing); flow only
+    // learns a motion's kind once it settles, so the pilot also remembers the move it started last.
+    const recent = [...sim_.flow.burst.kinds.slice(-2), ...started.slice(-1)];
     for (let i = fits.length - 1; i >= 0; i--) {
-      if (!opts.moves.includes(fits[i])) {
+      if (!opts.moves.includes(fits[i]) || recent.includes(MOVE_KIND[fits[i]])) {
         fits.splice(i, 1);
       }
     }
@@ -461,8 +547,18 @@ export function flyRace(sim: FlightSim, course: CompiledCourse, style: PilotStyl
     moves,
     rings: used.size,
     moments: sim.flow.moments,
+    misses,
+    links: sim.flow.burst.totalLinks,
+    bestChain: sim.flow.burst.bestChain,
+    burstDv: sim.flow.burst.totalDv,
     meanSpeed: speedSum / Math.max(flowN, 1),
     staminaMin,
     motions: Object.fromEntries(Object.entries(motions).map(([k, m]) => [k, { n: m.n, h: m.h / m.n, novelty: m.novelty / m.n, delta: m.delta }])),
   };
 }
+
+/**
+ * Some chaining: the middle racer of the balance (silver). It flies every other leg like the chained racer (the skilled
+ * line and chained moves) and the legs in between plainly, so flow and chains have to be rebuilt leg after leg.
+ */
+export const SOME_PILOT: PilotOptions = { ...DEFAULT_PILOT, chainEvery: 2 };
