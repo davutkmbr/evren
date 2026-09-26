@@ -102,6 +102,12 @@ const TOWER_REACH = 25;
 /** A mapped gate within this distance (m) of a road opening narrower than GATE_MAX_GAP turns it into a gate. */
 const GATE_REACH = 20;
 const GATE_MAX_GAP = 10;
+/**
+ * Wider road / rail openings at a mapped gate are the modern breaches beside or through the old gate (Topkapı,
+ * Edirnekapı, ...): a tower stands at each end of the breach, as the gate towers do there, instead of two crumbled
+ * wall ends. The gate counts when it is within GATE_REACH of the breach's nearer end.
+ */
+const BREACH_TOWER_MAX_GAP = 60;
 /** Paths narrower than this (m) pass through a gate passage. */
 const PATH_GATE_MAX = 6;
 /** Generated towers keep this far (m) from openings. */
@@ -974,6 +980,49 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
         });
         if (placed) {
           outTowers.add(m.t.id);
+        }
+      }
+      // Towers flanking the wide breaches at mapped gates.
+      for (let k = 0; k + 1 < spans.length; k++) {
+        const A = spans[k];
+        const B = spans[k + 1];
+        const gap = B.a - A.b;
+        const o = openings.find((q) => Math.abs(q.s0 - A.b) < 0.01);
+        if (!o || (o.kind !== Opening.Road && o.kind !== Opening.Rail) || gap < GATE_MAX_GAP || gap > BREACH_TOWER_MAX_GAP || r.cls === 'castle') {
+          continue;
+        }
+        const ends = [at(r.pts, r.cum, A.b).p, at(r.pts, r.cum, B.a).p];
+        const gated = data.gates.some((g) => ends.some((e) => Math.hypot(g.x - e[0], g.z - e[1]) < GATE_REACH)) || r.towers.some((t) => t.t.gate && ends.some((e) => Math.hypot(t.t.x - e[0], t.t.z - e[1]) < GATE_REACH));
+        if (!gated) {
+          continue;
+        }
+        const tw = spec.tower;
+        for (const [side, span] of [[-1, A], [1, B]] as const) {
+          const w = tw.width;
+          const st = side < 0 ? A.b - w / 2 - 0.5 : B.a + w / 2 + 0.5;
+          if (span.b - span.a < w + 2 || towersAt.some((q) => Math.abs(q.s - st) < w + 4)) {
+            continue;
+          }
+          if (placeTower(st, {
+            kind: 'tower',
+            src: r.id,
+            at: at(r.pts, r.cum, st).p,
+            dir: tangent(r.pts, r.cum, st),
+            mapped: false,
+            p: {
+              plan: 'square',
+              width: w,
+              projection: tw.projection,
+              height: height + tw.above,
+              wallThickness: tAt(st),
+              ruin: Math.min(0.9, ruin * 0.8),
+              style,
+              weather: 0.8,
+              seed: seed + 7000 + Math.round(st),
+            },
+          })) {
+            addL('towers.breachFlank', 1);
+          }
         }
       }
       if (spec.spacing > 0) {
