@@ -109,6 +109,8 @@ export type SimEvent =
   | { type: 'flap'; strength: number }
   | { type: 'impact'; point: THREE.Vector3; speed: number; surface: string }
   | { type: 'splash'; point: THREE.Vector3; strength: number }
+  /** Water thrown up with no sound of its own (swimming strokes: their sounds come from the audio's stroke model). */
+  | { type: 'spray'; point: THREE.Vector3; strength: number }
   | { type: 'dust'; point: THREE.Vector3; strength: number }
   | { type: 'landed'; point: THREE.Vector3; speed: number; water: boolean }
   /** Counted only (mode changes are read from the state). */

@@ -4,12 +4,17 @@
 import type { LatLon, Moment } from '../types';
 import { original } from './provenance';
 
-/** Rough corridor over the Bosphorus from Sarayburnu to the Black Sea mouth (shared with the shore poem). */
+/**
+ * Rough corridor over the Bosphorus from Sarayburnu to the Black Sea mouth, both shores included (shared with the shore
+ * poem). moments-runtime-check verifies that it covers the strait's water in world coordinates.
+ */
 export const BOSPHORUS_CORRIDOR: readonly LatLon[] = [
   { lat: 41.0, lon: 28.97 },
   { lat: 41.0, lon: 29.05 },
   { lat: 41.075, lon: 29.085 },
   { lat: 41.21, lon: 29.16 },
+  { lat: 41.24, lon: 29.17 },
+  { lat: 41.24, lon: 29.07 },
   { lat: 41.21, lon: 29.05 },
   { lat: 41.07, lon: 29.0 },
 ];

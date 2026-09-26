@@ -52,10 +52,22 @@ export function loadMomentPrefs(): MomentPrefs {
   return prefs;
 }
 
+const listeners = new Set<(prefs: MomentPrefs) => void>();
+
+/** Called with a copy of the prefs whenever the settings save them (the runtime gates playback on it). */
+export function onMomentPrefsChange(fn: (prefs: MomentPrefs) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function saveMomentPrefs(prefs: MomentPrefs): void {
   try {
     window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable (private window, blocked site data) */
+  }
+  // Notified even when storage failed: the switches still apply for this session.
+  for (const fn of listeners) {
+    fn({ enabled: prefs.enabled, categories: { ...prefs.categories } });
   }
 }
