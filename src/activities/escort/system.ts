@@ -2,14 +2,14 @@
  * Ferry escort system ("Vapur eşliği", phase 13 activities): escort a vapur or city ferry from one pier to the next.
  * A chill activity: no timer, no fail state, no medals.
  *
- * Flying beside a ferry in service (within 120 m, heading its way, no race) offers "[Z] Vapura eşlik et" on the hint
- * line; Z starts the escort. While escorting, the line under the compass reads "Sıradaki iskele: Kadıköy · 1,4 km"
+ * Flying beside a ferry in service (within 120 m, heading its way, no race) offers "[L] Vapura eşlik et" on the hint
+ * line; L starts the escort (the escort claims the land key while the offer shows). While escorting, the line under the compass reads "Sıradaki iskele: Kadıköy · 1,4 km"
  * with a small closeness line, the ferry's gull flock (src/moments/gull-simit, shared with the gull-and-simit moment)
  * follows the ferry and the dragon glances at it now and then (a 'dragon-attention' hint). Drifting beyond 200 m shows
  * "Vapurdan uzaklaşıyorsun"; after 30 s away the escort ends quietly. When the ferry comes alongside, a soft horn
  * sounds at the ferry and the arrival card appears in the corner ("Vapur eşliği · Eminönü → Kadıköy", the time, a warm
  * line, "Eşlik edilen hatlar 3/24"); the leg is recorded (./records.ts). Staying along, the escort carries on with
- * the next leg when the ferry leaves. Z stops it any time. A race ends it; moments keep playing; pause and photo mode
+ * the next leg when the ferry leaves. L stops it while drifting away; landing ends it. A race ends it; moments keep playing; pause and photo mode
  * freeze it (dt 0).
  *
  * Debug: ?escort=1 puts the dragon beside a ferry mid-crossing (the offer shows), ?escort=start also starts the
@@ -301,15 +301,21 @@ export function createEscortSystem(): System {
       input.dragon = d ? dragonIn : null;
       input.racing = !!d?.racing || !!zones?.hasContext?.('race');
       input.airborne = !!d && !GROUND_MODES.has(d.mode) && (d.perch?.phase ?? 'free') === 'free';
-      if (c.input.enabled && c.input.wasPressed('escort')) {
+      // L (land) doubles as the escort key while the offer or the drifting note shows: the escort claims it (set at
+      // the end of the previous frame, before the flight read it), so that press starts / stops the escort instead of
+      // landing. Otherwise L lands as usual, and landing ends a running escort.
+      if (c.input.enabled && c.input.wasClaimedPress('land')) {
         // Starting queues the 'started' event for this frame's update.
         if (tracker.active) {
           stop('player');
         } else {
           tracker.start();
         }
+      } else if (tracker.active && !input.airborne) {
+        stop('player');
       }
       handle(c, tracker.update(dt, input));
+      c.input.claim('land', (!tracker.active && tracker.offer >= 0) || tracker.drifting);
       p?.sync(tracker);
       if (tracker.active) {
         glanceIn -= dt;
@@ -333,6 +339,7 @@ export function createEscortSystem(): System {
       for (const fn of disposers.splice(0)) {
         fn();
       }
+      ctx?.input.claim('land', false);
       gulls?.release();
       gulls = null;
       for (const h of winding.splice(0)) {
