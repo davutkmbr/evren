@@ -129,6 +129,17 @@ function airHeading(sim: FlightSim): number {
  * Wingover path shape over the progress p (0..1): sin(2πp) (climb, level through the top at p = 0.5, dive), eased in
  * and out so the path starts and ends level without a jerk. Peaks near ±1 at p = 0.25 / 0.75.
  */
+/** Share of the entry energy a clean wingover keeps at entry airspeed `v` (WINGOVER.cleanEnergy … cleanEnergyFast). */
+export function wingoverCleanEnergy(v: number): number {
+  const u = clamp((v - WINGOVER.loadSpeed) / (WINGOVER.cleanFastSpeed - WINGOVER.loadSpeed), 0, 1);
+  return lerp(WINGOVER.cleanEnergy, WINGOVER.cleanEnergyFast, u);
+}
+
+/** Scale of the wingover's turn loads at entry airspeed `v` (WINGOVER.loadSpeed, maxLoadScale). */
+function wingoverLoadScale(v: number): number {
+  return clamp((v / WINGOVER.loadSpeed) ** 2, 1, WINGOVER.maxLoadScale);
+}
+
 function wingoverShape(p: number): number {
   return Math.sin(TWO_PI * p) * smoothstep(0, WINGOVER.easeIn, p) * (1 - smoothstep(1 - WINGOVER.easeOut, 1, p));
 }
@@ -278,6 +289,8 @@ export class Maneuvers {
   private woTurned = 0;
   private woPrevHeading = 0;
   private woStartLoad = 1;
+  /** The wingover's turn loads × this (fast entries turn tighter, WINGOVER.loadSpeed). */
+  private woLoadScale = 1;
   private woDiveDepth = 1;
   private revRolled = 0;
   private revRate = 0;
@@ -1155,7 +1168,7 @@ export class Maneuvers {
     const upright = sim.axes.up.y > 0.5;
     const traded =
       id === 'wingover'
-        ? rec.energyRatio >= WINGOVER.cleanEnergy
+        ? rec.energyRatio >= wingoverCleanEnergy(rec.entrySpeed)
         : id === 'immelmann'
           ? rec.heightChange > 0 && rec.energyRatio >= IMMELMANN.cleanEnergy
           : rec.heightChange < 0 && rec.exitSpeed >= rec.entrySpeed - SPLIT_S.cleanTolerance;
@@ -1244,7 +1257,7 @@ export class Maneuvers {
     const fz = -Math.cos(heading);
     const rx = Math.cos(heading) * dir;
     const rz = Math.sin(heading) * dir;
-    const radius = (sim.airspeed * sim.airspeed) / (GRAVITY * WINGOVER.turnLoad);
+    const radius = (sim.airspeed * sim.airspeed) / (GRAVITY * WINGOVER.turnLoad * wingoverLoadScale(sim.airspeed));
     const margin = 0.5 * sim.wing.span + WINGOVER.sideMargin;
     const feet = p.y - sim.footDepth();
     const steps = 6;
@@ -1285,7 +1298,8 @@ export class Maneuvers {
     this.wingoverProgress = 0;
     this.woPrevHeading = airHeading(sim);
     // The turn starts from the horizontal lift the entry bank already gives (no roll back toward level first).
-    this.woStartLoad = clamp(Math.tan(Math.min(Math.abs(pathBank(sim)), 70 * DEG)), 0.6, WINGOVER.turnLoad);
+    this.woLoadScale = wingoverLoadScale(sim.airspeed);
+    this.woStartLoad = clamp(Math.tan(Math.min(Math.abs(pathBank(sim)), 70 * DEG)), 0.6, WINGOVER.turnLoad * this.woLoadScale);
     this.woDiveDepth = 1;
     sim.stamina = Math.max(0, sim.stamina - WINGOVER.stamina);
     sim.emit({ type: 'sound', name: 'whoosh', volume: 0.8 });
@@ -1320,9 +1334,10 @@ export class Maneuvers {
     const amp = p < 0.5 ? WINGOVER.climb : WINGOVER.dive * this.woDiveDepth;
     const gammaPlan = amp * wingoverShape(p);
     const slope = amp * wingoverSlope(p);
-    let turn = lerp(this.woStartLoad, WINGOVER.turnLoad, smoothstep(0, 0.25, p));
-    turn = lerp(turn, WINGOVER.diveLoad, smoothstep(0.5, 0.65, p));
-    turn = lerp(turn, WINGOVER.endLoad, smoothstep(0.75, 1, p));
+    const k = this.woLoadScale;
+    let turn = lerp(this.woStartLoad, WINGOVER.turnLoad * k, smoothstep(0, 0.25, p));
+    turn = lerp(turn, WINGOVER.diveLoad * k, smoothstep(0.5, 0.65, p));
+    turn = lerp(turn, WINGOVER.endLoad * k, smoothstep(0.75, 1, p));
     const headingRate = (GRAVITY * turn) / (V * Math.max(Math.cos(gamma), 0.3));
     const gammaRate = (slope * headingRate) / Math.PI + WINGOVER.pathGain * (gammaPlan - gamma);
     // Over the top the vertical part may go a little below zero (the bank passes 90°), no further; past the top the

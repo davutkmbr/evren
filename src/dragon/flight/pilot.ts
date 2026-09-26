@@ -11,6 +11,15 @@ export function readPilotInput(input: Input, out: PilotCommand): PilotCommand {
   out.yaw = input.axis('yaw');
   out.flap = input.isHeld('flap');
   out.dive = input.isHeld('dive');
+  if (out.flap && out.dive) {
+    // Space and Shift held together: the one pressed last wins (folded wings never beat; Space pressed after Shift
+    // opens them and beats, Shift pressed after Space folds them and stops the beats).
+    if (input.pressTime('flap') >= input.pressTime('dive')) {
+      out.dive = false;
+    } else {
+      out.flap = false;
+    }
+  }
   out.brake = input.isHeld('brake');
   out.fire = input.isHeld('fire');
   out.flapPressed = input.wasPressed('flap');

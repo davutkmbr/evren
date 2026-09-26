@@ -5,7 +5,7 @@
 import { keyHint } from '../components/key-hint';
 import { el } from '../dom';
 import type { HudDirector, HintItem } from './director';
-import { hintKeys, onPadHints, padHints } from './key-device';
+import { hintKeys, onPadHints, padHints, padLayout } from './key-device';
 import './zones.css';
 
 /** Zone classes: position a node in its band (zones.css). */
@@ -85,7 +85,7 @@ export class HintLineView {
       this.root.classList.add('is-out');
       return;
     }
-    const key = `${padHints() ? 'pad' : 'kb'}\u0001${line.caption}\u0001${line.hints.map((h) => h.join('\u0002')).join('\u0003')}`;
+    const key = `${padHints() ? padLayout() : 'kb'}\u0001${line.caption}\u0001${line.hints.map((h) => h.join('\u0002')).join('\u0003')}`;
     if (key !== this.key) {
       this.key = key;
       fillHintRow(this.row, line.hints, line.caption);
