@@ -19,7 +19,7 @@ function bilinear(g: GridWin<Float32Array>, x: number, z: number): number {
 
 /** GeoQuery.heightAt / coastDistance / landUseAt equivalents over OsmWorkerBase windows. */
 export class GeoSampler {
-  constructor(private readonly base: Pick<OsmWorkerBase, 'height' | 'coast' | 'landUse' | 'reserved'>) {}
+  constructor(private readonly base: Pick<OsmWorkerBase, 'height' | 'coast' | 'groundCoast' | 'landUse' | 'reserved'>) {}
 
   /** Terrain height (m). */
   height(x: number, z: number): number {
@@ -29,6 +29,11 @@ export class GeoSampler {
   /** Signed coast distance (m, positive on land). */
   coast(x: number, z: number): number {
     return bilinear(this.base.coast, x, z);
+  }
+
+  /** Signed coast distance (m) the ground heights follow (OsmWorkerBase.groundCoast, else coast()). */
+  groundCoast(x: number, z: number): number {
+    return bilinear(this.base.groundCoast ?? this.base.coast, x, z);
   }
 
   isWater(x: number, z: number): boolean {

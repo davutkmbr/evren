@@ -6,6 +6,8 @@
 import type { OsmArea, OsmData, OsmPoint } from '../../data';
 import { FloatBuf } from '../../shared/buffers';
 import { BoxGrid, hash, pointInRing } from '../../shared/geometry';
+import { type StandGround, standFault } from '../../../placement/stand';
+import { osmStandGround } from '../../shared/stand';
 import type { StreetSurface } from '../../shared/street-surface';
 import { CoverChannel, LotHint, LotStyle, isGreenArea, streetClearance, vnoise, type CoverBuild } from '../cover/cover';
 import { decodeSdf } from '../raster';
@@ -34,7 +36,12 @@ class Forest {
   readonly trunks: number[] = [];
   count = 0;
 
-  constructor(private readonly p: Planter) {}
+  /** Shared stand rule ground (placement/stand.ts). */
+  private readonly land: StandGround;
+
+  constructor(private readonly p: Planter) {
+    this.land = osmStandGround(p.surface);
+  }
 
   private channel(x: number, z: number, c: number): number {
     const k = this.p.cover.grid.index(x, z);
@@ -72,8 +79,10 @@ class Forest {
       return 'area';
     }
     const s = this.p.surface;
-    if (s.geo.coast(x, z) < 2) {
-      return 'water';
+    // Shared stand rule: on the OSM ground, on land and 2 m from the shore (a trunk plus its root flare).
+    const fault = standFault(this.land, x, z, { shore: 2, building: false });
+    if (fault) {
+      return fault === 'shore' ? 'water' : fault;
     }
     if (this.wallDistance(x, z) < wallClearance) {
       return 'wall';

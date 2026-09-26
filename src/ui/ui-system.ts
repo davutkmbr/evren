@@ -1,19 +1,23 @@
 import * as THREE from 'three';
 import type { CameraMode, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
+import type { ViewPreset } from '../core/debug';
 import type { QualityPreset } from '../core/quality';
 import { QUALITY_PRESETS } from '../core/quality';
 import { DiscoveryTracker } from './discovery/discovery-tracker';
 import { el } from './dom';
+import { DragonAbilities } from './hud/abilities';
 import { Hud } from './hud/hud';
+import { StatusToasts } from './hud/status-toasts';
 import { LoadingScreen } from './loading/loading-screen';
 import { FullMap, type TeleportTarget } from './map/full-map';
 import { MapRaster } from './map/map-raster';
 import { Minimap } from './map/minimap';
-import { buildControlsList } from './menu/controls-panel';
+import { ControlsView } from './menu/controls-panel';
 import { PauseMenu, type MenuTab } from './menu/pause-menu';
 import { SettingsPanel } from './menu/settings-panel';
 import { TeleportPanel } from './menu/teleport-panel';
+import { PERCH_TOAST } from './perch-teleport';
 import { FlightHints, HoverHints, PhotoHint, ShotCaption } from './overlays/hints';
 import { HelpOverlay } from './overlays/help-overlay';
 import { StatsOverlay } from './overlays/stats-overlay';
@@ -55,6 +59,8 @@ export class UiSystem implements System {
   private loading: LoadingScreen | null = null;
   private tracker!: DiscoveryTracker;
   private hud!: Hud;
+  private abilities!: DragonAbilities;
+  private statusToasts!: StatusToasts;
   private fullMap!: FullMap;
   private pauseMenu!: PauseMenu;
   private settings!: SettingsPanel;
@@ -89,10 +95,9 @@ export class UiSystem implements System {
 
     this.tracker = new DiscoveryTracker(ctx);
     this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints, this.hoverHints, this.shotCaption);
-    this.fullMap = new FullMap(this.raster, {
-      onTeleport: (target) => this.teleport(target),
-      onClose: () => this.closeModal(),
-    });
+    ctx.services.provide('hotbar', this.hud.hotbar);
+    this.abilities = new DragonAbilities(this.hud.hotbar, () => ctx.services.tryGet('dragon'));
+    this.statusToasts = new StatusToasts(this.toasts);
     this.settings = new SettingsPanel({
       ctx,
       prefs: this.prefs,
@@ -101,19 +106,44 @@ export class UiSystem implements System {
         this.tracker.reset();
         this.toasts.push('Keşif ilerlemesi sıfırlandı');
       },
+      onShowControls: () => this.pauseMenu.show('controls'),
     });
-    const teleportPanel = new TeleportPanel((_name, preset) => {
-      if (preset.time !== undefined) {
-        ctx.services.tryGet('env')?.setTimeOfDay(preset.time);
+    const flyTo = (view: ViewPreset): void => {
+      if (view.time !== undefined) {
+        ctx.services.tryGet('env')?.setTimeOfDay(view.time);
       }
-      this.teleport({ x: preset.x, y: preset.y, z: preset.z, headingDeg: preset.headingDeg, pitchDeg: preset.pitchDeg, label: preset.label });
+      this.teleport({ x: view.x, y: view.y, z: view.z, headingDeg: view.headingDeg, pitchDeg: view.pitchDeg, label: view.label });
+    };
+    const perchAt = (view: ViewPreset): void => {
+      flyTo(view);
+      this.toasts.push(PERCH_TOAST);
+    };
+    this.fullMap = new FullMap(this.raster, {
+      onTeleport: (target) => this.teleport(target),
+      onPerch: perchAt,
+      perches: () => ctx.services.tryGet('perches')?.points,
+      onClose: () => this.closeModal(),
+    });
+    const teleportPanel = new TeleportPanel({
+      raster: this.raster,
+      onTeleport: flyTo,
+      onPerch: perchAt,
+      onOpenMap: () => this.openModal('map'),
     });
     this.pauseMenu = new PauseMenu({
-      panels: { settings: this.settings.root, teleport: teleportPanel.root, controls: el('div', 'menu-controls', [buildControlsList()]) },
+      panels: { teleport: teleportPanel, controls: new ControlsView(), settings: this.settings },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
           this.settings.refresh();
+        } else if (tab === 'teleport') {
+          teleportPanel.setPerches(ctx.services.tryGet('perches')?.points);
+          teleportPanel.opened();
+        }
+      },
+      onTabClose: (tab) => {
+        if (tab === 'teleport') {
+          teleportPanel.closed();
         }
       },
       onClick: () => this.click(),
@@ -127,8 +157,7 @@ export class UiSystem implements System {
     }
     this.hud.root.hidden = true;
 
-    this.tracker.onChange((isNew) => {
-      this.hud.counter.set(this.tracker.count, this.tracker.total, isNew);
+    this.tracker.onChange(() => {
       this.pauseMenu.setProgress(this.tracker.count, this.tracker.total);
     });
 
@@ -137,8 +166,8 @@ export class UiSystem implements System {
       events.on('loading-progress', ({ label, progress }) => this.loading?.setProgress(label, progress)),
       events.on('loading-done', () => this.onLoadingDone()),
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
-      events.on('camera-mode', ({ mode }) => this.hud.instruments.setCameraMode(mode)),
       this.hud.maneuver.connect(events),
+      this.hud.area.connect(events),
     );
 
     void services.when('geo').then((geo) => {
@@ -146,9 +175,9 @@ export class UiSystem implements System {
       this.tracker.setGeo(geo);
       this.hud.compass.setLandmarks(geo.landmarks, this.tracker.discovered);
       this.hud.minimap.setGeo(geo, this.tracker.discovered);
+      this.hud.area.setGeo(geo);
       this.fullMap.setGeo(geo, this.tracker.discovered);
     });
-    void services.when('cameraRig').then((rig) => this.hud.instruments.setCameraMode(rig.mode));
     void services.when('audio').then((audio) => {
       // Older audio services do not keep the volume themselves: restore the UI's saved value into them.
       if (audio.masterVolume === undefined && this.prefs.volume !== undefined) {
@@ -178,7 +207,7 @@ export class UiSystem implements System {
     }
   }
 
-  update(_dt: number, ctx: EngineContext): void {
+  update(dt: number, ctx: EngineContext): void {
     const realDt = ctx.time.realDt;
     if (this.reenableInputFrame >= 0 && ctx.time.frame >= this.reenableInputFrame) {
       this.reenableInputFrame = -1;
@@ -191,6 +220,8 @@ export class UiSystem implements System {
     this.fillSnapshot(ctx);
     this.handleInput(ctx);
     this.updateContextHints(ctx);
+    this.abilities.update();
+    this.statusToasts.update(ctx, this.modal === 'none' && !this.photo);
 
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
@@ -201,9 +232,7 @@ export class UiSystem implements System {
       }
     }
     if (hudVisible && this.snapshot.valid) {
-      const env = ctx.services.tryGet('env');
-      const sunElevation = env ? Math.asin(Math.max(-1, Math.min(1, env.sunDirection.y))) * RAD : 30;
-      this.hud.update(this.snapshot, realDt, ctx.time.timeOfDay, sunElevation);
+      this.hud.update(this.snapshot, realDt);
     }
     this.tracker.update(this.snapshot, realDt, hudVisible);
   }
@@ -225,6 +254,8 @@ export class UiSystem implements System {
     }
     this.loading?.dispose();
     this.tracker?.dispose();
+    this.hud?.dispose();
+    this.ctx?.services.withdraw('hotbar');
     this.fullMap?.dispose();
     this.raster.dispose();
     this.root?.remove();
@@ -357,7 +388,10 @@ export class UiSystem implements System {
       this.setPhoto(!this.photo);
     } else if (input.wasPressed('hud') && !this.photo) {
       this.hudOff = !this.hudOff;
-      this.toasts.push(this.hudOff ? 'Arayüz gizlendi · geri getirmek için U' : 'Arayüz gösteriliyor');
+      this.toasts.push(this.hudOff ? 'Arayüz gizlendi · geri getirmek için [U]' : 'Arayüz gösteriliyor');
+    }
+    if (!this.photo) {
+      this.hud.hotbar.poll(input);
     }
   }
 
@@ -405,11 +439,19 @@ export class UiSystem implements System {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.repeat || this.modal === 'none') {
+    if (this.modal === 'none') {
       return;
     }
     const target = e.target as HTMLElement | null;
     if (target && target.tagName === 'INPUT' && e.code !== 'Escape') {
+      return;
+    }
+    // the open tab's own keys (list navigation, Enter to teleport; repeats allowed), before Esc / P
+    if (this.modal === 'pause' && e.code !== 'Escape' && e.code !== 'KeyP' && this.pauseMenu.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.repeat) {
       return;
     }
     if (this.modal === 'pause' && (e.code === 'Escape' || e.code === 'KeyP')) {

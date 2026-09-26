@@ -1,7 +1,8 @@
 # Seventeen Skies — Roadmap
 
 An open-world, realistic and "chill" flight simulation where we ride a dragon over Istanbul.
-This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,
+The game as a whole is described in the [GDD](../gdd/README.md) and the UI follows the locked
+[design language](../design/README.md). This folder holds the upcoming work split into phases. Each phase has its own file with goal, scope,
 technical approach, dependencies, acceptance criteria and an effort estimate.
 
 ## Vision
@@ -39,16 +40,21 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
   Still open: facade detail instances near the camera (arches ~0.65 M within 210 m), parked cars in the shadow
   cascades, inactive cascades on low / medium still get the casters that skip culling; city-wide rollout needs the
   compiler's tiles + HLOD.
-- **Eminönü street layer in the flight game** (`src/world/street/`, still opt-in `?street=1`; 25 September 2026):
-  compiled tiles are drawn through BatchedMeshes per material group (`src/street/tile-batches.ts`: one layout per
-  material, materials differing only in factors merged, emissive ones too in the game) plus one position-only shadow
-  proxy batch per shadow side (far cascades skip small casters); props cast through proxies as well. Tiles cross-fade
-  with the flight-scale city (per-tile fade slots shared by the hole mask, `src/street/fade.ts`), are copied in over
-  frames within a time budget, and the hole mask repaints only the changed region. Street-layer cost: square at 30 m
-  +496 → +74 draw calls, CPU +3.1 → ~+1.0 ms; Hasırcılar lane at 3 m +738 → +76 draws, CPU +3.9 → ~+1.4 ms (more
-  when GPU-bound). Not yet default: CPU is above the 0.8 ms budget and a 30 m pass while tiles stream has more
-  50 ms frames than before (GPU-bound frames plus the per-frame copy work); hidden flight-scale geometry under live
-  tiles is still drawn and discarded (the slice's LOD meshes are larger than the street area).
+- **Eminönü street layer in the flight game** (`src/world/street/`, on by default since 26 September 2026,
+  `?street=0` turns it off): compiled tiles are drawn through BatchedMeshes per material group
+  (`src/street/tile-batches.ts`: one layout per material, materials differing only in factors merged) in fixed-size
+  pages that never grow, plus position-only shadow proxy pages (far cascades skip small casters); props cast through
+  proxies as well. Tiles stream in hidden from 130 m AGL and cross-fade with the flight-scale city below 80 m (per-tile
+  fade slots shared by the hole mask, `src/street/fade.ts`); the hole mask repaints only the changed region.
+  Streaming hitches, found by measurement (`scripts/street-layer-test.mjs`): on ANGLE/Metal, writing an index buffer
+  the GPU may still read stalls the GPU process (every tile part cost a 35-50 ms frame) — each batch now rotates four
+  index buffers (`IndexRing`); growing a batch re-uploaded up to 230 MB in one frame — pages instead; programs were
+  compiled for the canvas, not the HDR target, and linked again on first draw — compiled against a render target now;
+  footprint rasterization took up to 20 ms per building — scanline fill. 30 m pass: 40-46 frames over 33 ms → 1-3
+  (street off 0, old per-mesh code 5-8); crossing 80 m: 300-400 ms spike → none. Street-layer cost: square at 30 m
+  +496 → ~+75 draw calls, CPU +3.1 → ~+0.7-1.4 ms; Hasırcılar lane +738 → ~+90 draws, CPU +3.9 → ~+1.2 ms. Open:
+  single 60-80 ms frames around 110-125 m AGL while tiles prefetch (buffer and texture first uploads); hidden
+  flight-scale geometry under live tiles is still drawn and discarded.
 - **Vessels** (`src/world/life/`): realistic ferries, fishing boats, tugs, cargo ships, Kelvin wakes, collision-free
   lanes. Declared good enough for now. External model candidates await approval in
   `.docs/assets/candidates/vessels.md` (agent's advice: only vapur, bulk carrier, tug).
@@ -147,6 +153,8 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 16 | [Street track S0–S8: walkable Kadıköy](16-street-layer.md) | G · On foot | L×many | 01 (bug fixes only) |
 | 17 | [Hamallar: co-op moving game in Kadıköy](17-hamallar-coop.md) | H · Co-op | L×many | 16 S4 (walk, enter, talk), S2 runtime decision |
 | 19 | [Moments: references, legends and city life](19-moments.md) | E · Variety | L | 01, 05, 13 |
+| 20 | [Movement variety, combos and flow](20-movement.md) | B · Chill loop | L | 05, 13 |
+| 21 | [The sea: low flight, plunge dives and swimming](21-sea.md) | B · Chill loop | L | 20 |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 

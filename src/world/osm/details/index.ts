@@ -127,7 +127,7 @@ class DetailsLayer extends LayerBase {
     const ctx = this.ctx;
     this.result = res;
     if (res.cover) {
-      const cover = createCoverMaterial(ctx.engine.renderer, res.cover.raster, ctx.rect);
+      const cover = createCoverMaterial(ctx.engine.renderer, res.cover.raster, ctx.fade);
       this.onDispose(() => cover.dispose());
       const mesh = res.cover.mesh;
       this.track(

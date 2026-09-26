@@ -12,6 +12,8 @@ import type { OsmData } from '../data';
 import { FloatBuf } from '../shared/buffers';
 import type { FootprintIndex } from '../shared/footprints';
 import { hash } from '../shared/geometry';
+import { osmStandGround } from '../shared/stand';
+import { POLE_KERB, standFault } from '../../placement/stand';
 import { Ground, Surf, type Path, type Street } from '../shared/street-field';
 import { BARE_FRONTAGE, Zone, type StreetSurface } from '../shared/street-surface';
 import { LAMP_HEADS, Light, LIGHT_RGB, POOL_RGB, type PropKind } from './kinds';
@@ -43,7 +45,10 @@ export interface LampResult {
 const MAIN = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 
 export function buildLamps(streets: readonly Street[], paths: readonly Path[], data: Pick<OsmData, 'points'>, surface: StreetSurface, footprints: FootprintIndex, sink: PropSink, padded: PadTest): LampResult {
-  const { geo, raster } = surface;
+  const { raster } = surface;
+  // Shared stand rule (placement/stand.ts): on the OSM ground, on land, a metre from the shore.
+  const land = osmStandGround(surface);
+  const onLand = (x: number, z: number): boolean => standFault(land, x, z, { building: false }) === null;
   const spacing = new Spacing(16);
   const sprites = new FloatBuf(4096);
   const pw = Math.ceil((raster.w * raster.px) / POOL_PX);
@@ -75,10 +80,10 @@ export function buildLamps(streets: readonly Street[], paths: readonly Path[], d
 
   /** Places lamp `kind` at (x, z) facing (dx, dz) unless another lamp is closer than `min`. */
   const place = (kind: PropKind, x: number, z: number, dx: number, dz: number, light: Light, min: number): boolean => {
-    if (geo.isWater(x, z) || !spacing.claim(x, z, min)) {
+    const y = surface.heightAt(x, z) - 0.03;
+    if (!onLand(x, z) || !sink.fits(kind, x, z, y) || !spacing.claim(x, z, min)) {
       return false;
     }
-    const y = surface.heightAt(x, z) - 0.03;
     const yaw = yawTowards(dx, dz);
     const s = 0.95 + 0.1 * hash(x * 0.71 + z * 0.13);
     sink.add(kind, x, y, z, yaw, 1, kind === 'lampWall' ? 1 : s, light);
@@ -98,7 +103,7 @@ export function buildLamps(streets: readonly Street[], paths: readonly Path[], d
     return true;
   };
 
-  const blocked = (x: number, z: number): boolean => footprints.inside(x, z) || geo.isWater(x, z) || padded(x, z);
+  const blocked = (x: number, z: number): boolean => footprints.inside(x, z) || !onLand(x, z) || padded(x, z);
 
   // 1. OSM street lamps.
   for (const p of data.points) {
@@ -121,14 +126,25 @@ export function buildLamps(streets: readonly Street[], paths: readonly Path[], d
 
   /**
    * Mast at the kerb on side (nx, nz) of the street point (x, z); where the sidewalk has no room (building line at the
-   * kerb, narrow Beyoğlu sidewalks) the lamp moves onto the facade as a wall bracket, so the street stays lit.
+   * kerb, narrow Beyoğlu sidewalks) the lamp moves onto the facade as a wall bracket, so the street stays lit. The
+   * base keeps POLE_KERB m behind the kerb line (the compiler's rule prop.pole): where the kerb line bends away from
+   * the street's centre line (corners, bays) the mast steps out from 0.45 m past the half width by up to 0.6 m.
    */
-  const kerbLamp = (s: Street, kind: PropKind, x: number, z: number, nx: number, nz: number, light: Light, min: number): void => {
-    const o = s.hw + 0.45;
+  const kerbLamp = (s: Street, kind: PropKind, x: number, z: number, nx: number, nz: number, light: Light, min: number, flipped = false): void => {
+    let o = s.hw + 0.45;
+    while (o < s.hw + 1.05 && surface.distance(x + nx * o, z + nz * o) < POLE_KERB) {
+      o += 0.15;
+    }
     const px = x + nx * o;
     const pz = z + nz * o;
-    if (!blocked(px, pz) && surface.distance(px, pz) >= 0.15 && surface.buildingDistance(px, pz) > 0.7) {
+    if (!blocked(px, pz) && surface.distance(px, pz) >= POLE_KERB && surface.buildingDistance(px, pz) > 0.7) {
       place(kind, px, pz, -nx, -nz, light, min);
+      return;
+    }
+    // Coastal road with the sea on this side: the mast moves to the kerb on the land side.
+    const fault = standFault(land, px, pz, { building: false });
+    if (!flipped && (fault === 'water' || fault === 'shore')) {
+      kerbLamp(s, kind, x, z, -nx, -nz, light, min, true);
       return;
     }
     const w = facade(x, z, nx, nz, Math.max(0.5, s.hw - 0.3), s.hw + 6);

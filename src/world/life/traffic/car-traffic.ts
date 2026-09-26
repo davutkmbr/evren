@@ -94,10 +94,10 @@ export class CarTraffic {
   private readonly carMaterial: THREE.MeshStandardMaterial;
 
   /**
-   * `exclude`: optional rectangle where cars are hidden; `surface`: the core 'roadSurface' service, the only source
+   * `exclude`: rectangles where cars are hidden; `surface`: the core 'roadSurface' service, the only source
    * of bridge deck heights (see RoadNetwork).
    */
-  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null, surface: RoadSurfaceService | null = null) {
+  constructor(geo: GeoQuery, densityScale: number, exclude: readonly WorldBounds[] = [], surface: RoadSurfaceService | null = null) {
     this.network = new RoadNetwork(geo, densityScale, exclude, surface);
     const cars = this.network.cars;
     const n = cars.length;

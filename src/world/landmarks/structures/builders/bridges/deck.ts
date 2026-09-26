@@ -8,9 +8,12 @@ import * as THREE from 'three';
 import type { StructureBuild } from '../../build/context';
 import type { BridgeFrame } from '../../build/bridge-frame';
 import { stations } from '../../build/bridge-frame';
+import { type DeckLayout, jointBreaks, jointColumns, jointOffset, lateralShift, solveDeckJoints } from '../../build/deck-joint';
 import type { MeshBuilder, SurfaceState, SweepFrame } from '../../build/mesh-builder';
 import { Emit, kelvin, LightMode } from '../../build/surfaces';
 import { Color, Pal, withEmit } from '../palette';
+import { Surf } from '../../build/surfaces';
+import type { DeckJoint, JointLine } from '../../types';
 
 export interface DeckStrip {
   x0: number;
@@ -139,6 +142,14 @@ function raised(frames: readonly SweepFrame[], dy: number): SweepFrame[] {
   return frames.map((f) => ({ ...f, p: f.p.clone().addScaledVector(f.up, dy) }));
 }
 
+/** Closes the girder cross-section at station s (road surface height y), facing `dir` along the axis. */
+function endCap(mb: MeshBuilder, frame: BridgeFrame, section: DeckSection, lod: number, s: number, y: number, dir: number): void {
+  const profile = lod === 0 ? section.girder : section.girderLow;
+  const pts = profile.map(([x, dy]) => frame.point(s, x, y + dy));
+  mb.surface(section.girderMat);
+  mb.polygonOutward(pts, frame.point(s - dir, 0, y - section.depth / 2));
+}
+
 function buildGirder(mb: MeshBuilder, section: DeckSection, frames: readonly SweepFrame[], lod: number, led: DeckOptions['led'], s0: number, s1: number): void {
   const profile = lod === 0 ? section.girder : section.girderLow;
   mb.surface(section.girderMat);
@@ -201,25 +212,141 @@ function buildLampPost(mb: MeshBuilder, frame: BridgeFrame, s: number, x: number
 /**
  * Builds the deck between s0 and s1. Returns the frames of the finest LOD (for hanger anchorage etc.).
  */
-export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions): void {
+/** Length (m) of one deck collider piece: short, so a sloped piece's box barely rises above the drawn road. */
+const DECK_COLLIDER_PIECE = 10;
+
+/**
+ * Deck colliders of every bridge type, derived from the drawn deck: boxes along the axis whose top is the road surface
+ * `height(s)` and whose bottom is the girder soffit (`section.depth` below), `halfWidth` wide, in DECK_COLLIDER_PIECE
+ * pieces from s0 to s1. `sectionAt` switches sections along the deck (e.g. a wider station).
+ */
+export function buildDeckColliders(b: StructureBuild, frame: BridgeFrame, s0: number, s1: number, height: (s: number) => number, sectionAt: (s: number) => DeckSection): void {
+  for (let s = s0; s < s1 - 1e-3; s += DECK_COLLIDER_PIECE) {
+    const e = Math.min(s + DECK_COLLIDER_PIECE, s1);
+    const section = sectionAt((s + e) / 2);
+    const half = section.depth / 2;
+    // segmentCollider adds half the rise of the piece on top of `half` around the midpoint of a and b.
+    b.segmentCollider(frame.point(s, 0, height(s) - half), frame.point(e, 0, height(e) - half), section.halfWidth, half);
+  }
+}
+
+/** Painted lane line pitch of the road shader (surface.glsl.ts structRoad). */
+const ROAD_LANE_WIDTH = 3.65;
+
+/**
+ * The lines the deck's surface shaders draw (tram track centres of rail strips, dashed lane lines of road strips) and
+ * the lateral positions that must not move under a joint's lateral warp (lamp lines, railings, walkway strips and the
+ * deck edges).
+ */
+export function deckLayout(section: DeckSection): DeckLayout {
+  const lines: JointLine[] = [];
+  const inStrip = (st: DeckStrip, x: number): boolean => x > Math.min(st.x0, st.x1) && x < Math.max(st.x0, st.x1);
+  for (const st of section.strips) {
+    const surface = stripSurface(st, undefined);
+    if (st.kind === 'rail' && surface.surf === Surf.Rail) {
+      // structRail: track centres at |u| = spacing / 2 (one track at u = 0 without spacing).
+      for (const x of surface.param > 0 ? [-surface.param / 2, surface.param / 2] : [0]) {
+        if (inStrip(st, x)) {
+          lines.push({ x, kind: 'track' });
+        }
+      }
+    } else if (st.kind === 'road' && surface.surf === Surf.Road) {
+      // structRoad: dashed lane lines at |u| = medianHalf + 0.6 + k lane widths, k = 1 .. lanes - 1.
+      const inner = surface.metal + 0.6;
+      for (let k = 1; k < surface.param; k++) {
+        for (const x of [-(inner + k * ROAD_LANE_WIDTH), inner + k * ROAD_LANE_WIDTH]) {
+          if (inStrip(st, x)) {
+            lines.push({ x, kind: 'lane' });
+          }
+        }
+      }
+    }
+  }
+  // Barriers between carriageways and tracks move with the surface they divide; kerbed walkways and what stands on
+  // them do not.
+  const anchors = new Set<number>([-section.halfWidth, section.halfWidth]);
+  for (const l of section.lamps?.lines ?? []) {
+    anchors.add(l.x);
+  }
+  for (const r of section.railings) {
+    anchors.add(r.x);
+  }
+  for (const st of section.strips) {
+    if ((st.raise ?? 0) > 0 || st.kind === 'walk') {
+      anchors.add(st.x0);
+      anchors.add(st.x1);
+    }
+  }
+  return { lines, anchors: [...anchors].sort((a, b) => a - b) };
+}
+
+/** Vertices this high (m) above the deck belong to fixtures (lamp arms and heads): they follow the walkway they stand on. */
+const FIXTURE_HEIGHT = 2;
+
+/**
+ * Surface level (m above the road surface) a deck vertex at lateral x, `dy` above the road surface belongs to: the
+ * raise of the walkway strip it lies on or stands on (its curb face: the top edge), else 0.
+ */
+function levelOf(section: DeckSection, x: number, dy: number): number {
+  let level = 0;
+  for (const st of section.strips) {
+    const r = st.raise ?? 0;
+    if (r <= 0) {
+      continue;
+    }
+    const inside = x > st.x0 + 1e-3 && x < st.x1 - 1e-3;
+    const edge = !inside && x > st.x0 - 1e-3 && x < st.x1 + 1e-3;
+    const near = dy > FIXTURE_HEIGHT && x > st.x0 - FIXTURE_HEIGHT && x < st.x1 + FIXTURE_HEIGHT;
+    if (inside || (edge && dy > r * 0.5) || near) {
+      level = Math.max(level, r);
+    }
+  }
+  return level;
+}
+
+/** Point on the deck at station s, deck lateral x, `dy` above the road surface, with its joints' warp and twist applied. */
+export function deckPoint(frame: BridgeFrame, joints: readonly DeckJoint[], height: (s: number) => number, s: number, x: number, dy: number): THREE.Vector3 {
+  const l = x + lateralShift(joints, s, x);
+  return frame.point(s, l, height(s) + dy + jointOffset(joints, s, l));
+}
+
+/** Builds the deck and returns its joints (deckPoint() places fixtures of other builders on the twisted deck). */
+export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions): DeckJoint[] {
   const partLength = opts.partLength ?? 320;
   const n = Math.max(1, Math.round((opts.s1 - opts.s0) / partLength));
   const cull = opts.cullDistance ?? 30000;
-  const breaks = opts.breaks ?? [];
+  // Landed ends twist into the drawn ground (build/deck-joint.ts): denser frames there, lateral vertex columns where
+  // the ground profile bends, and every vertex of the part raised by the joint offset of the surface it belongs to.
+  const surfaceLevel = (x: number): number => Math.max(0, ...section.strips.filter((st) => x >= st.x0 && x <= st.x1).map((st) => st.raise ?? 0));
+  const layout = deckLayout(section);
+  const joints = solveDeckJoints(frame, b.terrain, opts.height, opts.s0, opts.s1, section.halfWidth, b.jointGrounds, surfaceLevel, layout);
+  const breaks = [...(opts.breaks ?? []), ...jointBreaks(joints)];
   const lamps = section.lamps;
+  const surfaceAt = (s: number, x: number, dy = 0): number => opts.height(s) + dy + jointOffset(joints, s, x, levelOf(section, x, dy));
   for (let k = 0; k < n; k++) {
     const a = opts.s0 + ((opts.s1 - opts.s0) * k) / n;
     const c = opts.s0 + ((opts.s1 - opts.s0) * (k + 1)) / n;
+    const partJoints = joints.filter((j) => (j.s - a) * (j.s - c) <= 0 || Math.min(Math.abs(j.s - a), Math.abs(j.s - c)) < Math.max(j.length, j.lateral?.length ?? 0));
+    const cuts = jointColumns(partJoints);
     b.opaque(
       (mb, lod) => {
         const st = stations(a, c, lod === 0 ? 8 : 40, breaks);
         const frames = frame.frames(st, opts.height, opts.grade);
         mb.vBase = 0;
         buildGirder(mb, section, frames, lod, opts.led, opts.s0, opts.s1);
+        // End faces: a deck end never shows an open girder, whether it stands free or meets sloping ground.
+        for (const [s, first] of [
+          [opts.s0, k === 0],
+          [opts.s1, k === n - 1],
+        ] as const) {
+          if (first) {
+            endCap(mb, frame, section, lod, s, opts.height(s), s === opts.s0 ? -1 : 1);
+          }
+        }
         for (const strip of section.strips) {
           mb.surface(stripSurface(strip, lamps));
           const f = raised(frames, strip.raise ?? 0);
-          mb.ribbon(f, strip.x0, strip.x1);
+          mb.ribbon(f, strip.x0, strip.x1, 0, cuts);
           if ((strip.raise ?? 0) > 0.02 && lod === 0) {
             // curb faces
             mb.surface(Pal.barrier);
@@ -272,6 +399,24 @@ export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSe
             );
           }
         }
+        if (partJoints.length > 0) {
+          const p = { x: 0, z: 0 };
+          if (partJoints.some((j) => j.lateral)) {
+            // Lateral warp first: the height offsets follow the ground at each vertex's final position.
+            mb.displaceAlong(frame.rx, frame.rz, (x, _y, z) => {
+              p.x = x;
+              p.z = z;
+              return lateralShift(partJoints, frame.sOf(p), frame.xOf(p));
+            });
+          }
+          mb.displaceY((x, y, z) => {
+            p.x = x;
+            p.z = z;
+            const s = frame.sOf(p);
+            const l = frame.xOf(p);
+            return jointOffset(partJoints, s, l, levelOf(section, l, y - opts.height(s)));
+          });
+        }
       },
       { cullDistance: cull, detailScale: 0.6 },
     );
@@ -280,13 +425,13 @@ export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSe
   // railings (wires)
   const st = stations(opts.s0, opts.s1, 10, breaks);
   for (const r of section.railings) {
-    const top = st.map((s) => frame.point(s, r.x, opts.height(s) + r.raise + r.height));
-    const mid = st.map((s) => frame.point(s, r.x, opts.height(s) + r.raise + r.height * 0.5));
+    const top = st.map((s) => frame.point(s, r.x, surfaceAt(s, r.x, r.raise) + r.height));
+    const mid = st.map((s) => frame.point(s, r.x, surfaceAt(s, r.x, r.raise) + r.height * 0.5));
     b.wires.polyline(top, 0.035, Color.railing, { fade: [2500, 5000] });
     b.wires.polyline(mid, 0.02, Color.railing, { fade: [600, 1200] });
     for (let s = opts.s0; s <= opts.s1; s += 2.4) {
-      const p0 = frame.point(s, r.x, opts.height(s) + r.raise);
-      const p1 = frame.point(s, r.x, opts.height(s) + r.raise + r.height);
+      const p0 = frame.point(s, r.x, surfaceAt(s, r.x, r.raise));
+      const p1 = frame.point(s, r.x, surfaceAt(s, r.x, r.raise) + r.height);
       b.wires.add(p0, p1, 0.022, Color.railing, { fade: [250, 500] });
     }
   }
@@ -297,7 +442,7 @@ export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSe
     for (let i = first; lamps.phase + i * lamps.spacing <= opts.s1; i++) {
       const s = lamps.phase + i * lamps.spacing;
       for (const line of lamps.lines) {
-        const p = frame.point(s, line.x + line.arm * lamps.arm, opts.height(s) + lamps.height + 0.05);
+        const p = frame.point(s, line.x + line.arm * lamps.arm, surfaceAt(s, line.x, lamps.height + 0.05));
         b.lights.add(p, [warm[0] * lamps.intensity, warm[1] * lamps.intensity, warm[2] * lamps.intensity], 0.22);
       }
     }
@@ -306,14 +451,39 @@ export function buildDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSe
   if (section.traffic) {
     addTraffic(b, frame, section.traffic, opts);
   }
-  publishRoadDeck(b, frame, section, opts);
+  publishRoadDeck(b, frame, section, opts, joints);
+  recordEnds(b, frame, section, opts, joints);
+  return joints;
+}
+
+/** Both ends of the deck with its strips (joint checks: window.__structures.ends in dev). */
+function recordEnds(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions, joints: readonly DeckJoint[]): void {
+  const strips = section.strips.map((st) => ({
+    x0: st.x0,
+    x1: st.x1,
+    kind: st.kind,
+    raise: st.raise ?? 0,
+    lanes: st.lanes ?? 0,
+    medianHalf: st.medianHalf ?? 0,
+    param: stripSurface(st, undefined).param,
+  }));
+  for (const [s, dir] of [
+    [opts.s0, -1],
+    [opts.s1, 1],
+  ] as const) {
+    const landed = joints.some((j) => j.s === s);
+    const fixtures = [...section.barriers.map((q) => q.x), ...(section.lamps?.lines.map((q) => q.x) ?? [])].map((x) => x + lateralShift(joints, s, x));
+    const lines = deckLayout(section).lines.map((l) => ({ x: l.x + lateralShift(joints, s, l.x), kind: l.kind }));
+    const ground = b.jointGrounds.find((g) => Math.abs(g.s - s) < 1e-3 && Math.abs(g.ox - frame.ox) < 1e-3 && Math.abs(g.oz - frame.oz) < 1e-3)?.lines ?? [];
+    b.ends.push({ id: b.def.id, ox: frame.ox, oz: frame.oz, ax: frame.ax, az: frame.az, s, dir, height: opts.height(s), halfWidth: section.halfWidth, landed, strips, fixtures, lines, groundLines: ground });
+  }
 }
 
 /** Height sample spacing of the published road surface (m); the rendered LOD0 deck is linear over <= 8 m. */
 const SURFACE_STEP = 4;
 
 /** Records the carriageway of a road deck (height profile, lanes, raised walkways) for the 'roadSurface' service. */
-function publishRoadDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions): void {
+function publishRoadDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSection, opts: DeckOptions, joints: DeckJoint[]): void {
   const roads = section.strips.filter((st) => st.kind === 'road');
   if (roads.length === 0 || opts.s1 - opts.s0 < 1) {
     return;
@@ -345,6 +515,7 @@ function publishRoadDeck(b: StructureBuild, frame: BridgeFrame, section: DeckSec
     roadX1: Math.max(...roads.map((st) => st.x1)),
     raised,
     lanes,
+    joints,
   });
 }
 

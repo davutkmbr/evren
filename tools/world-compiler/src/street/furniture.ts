@@ -1110,6 +1110,14 @@ export function planStreet(a: AreaContext, sc: StreetContext): StreetPlan {
         const sag = 0.18 + 0.02 * (l1 + l2);
         const pts = sagLine(A, B, sag, 16);
         const mid = pts[8];
+        // Rule prop.pendant: the lantern hangs over the pedestrian lane or pavement. Between façades the wire's middle
+        // can sit over a vehicular carriageway where the lane opens onto a street; such a span is left out.
+        const under = rules.surface(mid[0], mid[2]);
+        if (under !== 'pedestrianLane' && under !== 'pavement') {
+          rules.log.note('prop.pendant', 'dropped');
+          continue;
+        }
+        rules.log.note('prop.pendant', 'kept');
         cables.push({ pts, r: 0.0125, tile: tileOf(mid[0], mid[2]) });
         count('spanWires');
         // Pendant hangs from the middle of the wire; its suspension point is 0.9 m above the prop's origin.

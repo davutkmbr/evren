@@ -13,7 +13,7 @@ import { bounds, hash, pointInRing } from '../../shared/geometry';
 import { GROUND_STEP } from '../../shared/ground';
 import type { StreetSurface } from '../../shared/street-surface';
 import type { CoverRaster } from '../protocol';
-import { COVER_RANGE, RasterGrid, buildingRaster, encodeSdf, stampLine, stampPolygon } from '../raster';
+import { COVER_RANGE, RasterGrid, buildingRaster, decodeSdf, encodeSdf, stampLine, stampPolygon } from '../raster';
 
 /** RGBA channels of the cover raster. */
 export const CoverChannel = {
@@ -211,8 +211,8 @@ export function buildCover(
         continue;
       }
       const x = grid.cx(i);
-      const off = streetClearance(surface, x, z);
-      const lim = reserved[j * w + i] || geo.coast(x, z) < 0.5 ? 0 : encodeSdf(off);
+      const off = Math.min(streetClearance(surface, x, z), padClearance(pads, x, z));
+      const lim = geo.coast(x, z) < 0.5 ? 0 : encodeSdf(off);
       for (let c = 0; c < 4; c++) {
         if (rgba[o + c] > lim) {
           rgba[o + c] = lim;
@@ -222,7 +222,7 @@ export function buildCover(
   }
   const hints = buildingHints(data, buildings, grid, ids);
   const landuse = landuseHints(data.areas);
-  const { lots, lotOf } = treatLots(grid, rgba, mask, ids, reserved, buildingDist, surface, poi, (lot, rim) => lotHint(lot, rim, hints, landuse));
+  const { lots, lotOf } = treatLots(grid, rgba, mask, ids, reserved, pads, buildingDist, surface, poi, (lot, rim) => lotHint(lot, rim, hints, landuse));
   return { grid, rgba, buildingDist, lots, lotOf };
 }
 
@@ -373,6 +373,20 @@ function lotStyle(area: number, enclosure: number, hint: LotHint, coast: number,
   return r < 0.4 ? LotStyle.Garden : r < 0.65 ? LotStyle.Plaza : r < 0.88 ? LotStyle.Paved : LotStyle.Vacant;
 }
 
+/** Signed distance (m) to the nearest landmark / mosque pad circle ([x, z, r] triples): negative inside one. */
+function padClearance(pads: readonly number[], x: number, z: number): number {
+  let d = COVER_RANGE;
+  for (let p = 0; p < pads.length; p += 3) {
+    const dx = Math.abs(x - pads[p]);
+    const dz = Math.abs(z - pads[p + 1]);
+    const r = pads[p + 2];
+    if (dx < r + d && dz < r + d) {
+      d = Math.min(d, Math.hypot(dx, dz) - r);
+    }
+  }
+  return d;
+}
+
 /** One byte per texel: 1 on landmark / mosque pads (GeoSampler.reserved as a raster). */
 function reservedMask(grid: RasterGrid, pads: readonly number[]): Uint8Array {
   const out = new Uint8Array(grid.w * grid.h);
@@ -389,10 +403,17 @@ function reservedMask(grid: RasterGrid, pads: readonly number[]): Uint8Array {
   return out;
 }
 
+/** Lot texels stay LOT_COAST m from the water and off texels where other cover reaches LOT_MAX_OTHER (encoded). */
+const LOT_COAST = 3;
+const LOT_MAX_OTHER = 110;
+const LOT_OTHER_COVER = -decodeSdf(LOT_MAX_OTHER);
+
 /** Signed clearance (m) from the street surfaces: negative on carriageways, plazas and sidewalks. */
 export function streetClearance(surface: StreetSurface, x: number, z: number): number {
+  // Bilinear sidewalk width (as the ground shader draws it): the per-texel value jumps where two streets meet and cut
+  // the cover along a 1 m staircase.
   const d = surface.distance(x, z);
-  return d - surface.sidewalkWidth(x, z) - 0.15;
+  return d - surface.sidewalkWidthSmooth(x, z) - 0.15;
 }
 
 /**
@@ -406,6 +427,7 @@ function treatLots(
   mask: Uint8Array,
   ids: Int32Array,
   reserved: Uint8Array,
+  pads: readonly number[],
   bdist: Uint16Array,
   surface: StreetSurface,
   poi: (x: number, z: number) => number,
@@ -420,11 +442,11 @@ function treatLots(
     for (let i = 0; i < w; i++) {
       const k = j * w + i;
       const o = k * 4;
-      if (mask[k] || reserved[k] || rgba[o] > 110 || rgba[o + 1] > 110 || rgba[o + 2] > 110 || rgba[o + 3] > 110) {
+      if (mask[k] || reserved[k] || rgba[o] > LOT_MAX_OTHER || rgba[o + 1] > LOT_MAX_OTHER || rgba[o + 2] > LOT_MAX_OTHER || rgba[o + 3] > LOT_MAX_OTHER) {
         continue;
       }
       const x = grid.cx(i);
-      if (streetClearance(surface, x, z) < 0.6 || geo.coast(x, z) < 3) {
+      if (streetClearance(surface, x, z) < 0.6 || geo.coast(x, z) < LOT_COAST) {
         continue;
       }
       free[k] = 1;
@@ -494,14 +516,14 @@ function treatLots(
   }
   for (const lot of lots) {
     if (lot.style !== LotStyle.Bare) {
-      paintLot(grid, rgba, bdist, surface, lot);
+      paintLot(grid, rgba, bdist, surface, pads, lot);
     }
   }
   return { lots, lotOf: label };
 }
 
 /** Paints one lot: SDF-like values (m) are min-combined edge insets and noise fields, encoded like the areas. */
-function paintLot(grid: RasterGrid, rgba: Uint8Array, bdist: Uint16Array, surface: StreetSurface, lot: LotRegion): void {
+function paintLot(grid: RasterGrid, rgba: Uint8Array, bdist: Uint16Array, surface: StreetSurface, pads: readonly number[], lot: LotRegion): void {
   const { w } = grid;
   const seed = hash(lot.cx * 0.7 + lot.cz * 1.3) * 100;
   const put = (o: number, c: number, d: number): void => {
@@ -518,10 +540,14 @@ function paintLot(grid: RasterGrid, rgba: Uint8Array, bdist: Uint16Array, surfac
     const z = grid.cz(j);
     const wall = bdist[k] / 10;
     const street = streetClearance(surface, x, z);
-    const edge = Math.min(wall - 0.5, street - 0.7);
+    const o = k * 4;
+    // Every border of the lot is a smooth distance, not only walls and streets: the lot mask stops LOT_OTHER_COVER m
+    // off other cover and LOT_COAST m from the water, and a painted value that stays high up to such a mask edge
+    // shows the 1 m texel staircase of the mask.
+    const other = decodeSdf(Math.max(rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3]));
+    const edge = Math.min(wall - 0.5, street - 0.7, -other - LOT_OTHER_COVER, surface.geo.coast(x, z) - LOT_COAST, padClearance(pads, x, z));
     const n1 = vnoise(x * 0.09 + seed, z * 0.09) * 0.65 + vnoise(x * 0.31, z * 0.31 + seed) * 0.35;
     const n2 = vnoise(x * 0.55 + seed * 3, z * 0.55);
-    const o = k * 4;
     switch (lot.style) {
       case LotStyle.Garden:
         // Lawn inset from the walls with a few bare holes, a soil bed along the walls.
@@ -549,7 +575,7 @@ function paintLot(grid: RasterGrid, rgba: Uint8Array, bdist: Uint16Array, surfac
   }
 }
 
-/** Draped mesh over every GroundGrid cell that has cover (same triangles as the streets ground mesh). */
+/** Draped mesh over every GroundGrid cell that has cover (same triangles and heights as the streets ground mesh). */
 export function buildCoverMesh(cover: CoverBuild, surface: StreetSurface): MeshBuf {
   const { ground } = surface;
   const { grid, rgba } = cover;
@@ -557,11 +583,15 @@ export function buildCoverMesh(cover: CoverBuild, surface: StreetSurface): MeshB
   const n = ground.nx;
   const ids = new Int32Array(ground.nx * ground.nz).fill(-1);
   const normal: [number, number, number] = [0, 1, 0];
+  // Same vertex heights as the off-street cells of the streets ground mesh (terrain + quay raise + kerb lift): the
+  // plain terrain grid lies up to ~1 m under the raised quays, where the ground hid the cover along its 5 m triangles.
+  const quay = surface.quayGridValues();
+  const lift = surface.liftGridValues();
   const vid = (i: number, j: number): number => {
     const k = j * n + i;
     if (ids[k] < 0) {
       ground.normalAt(i, j, normal);
-      ids[k] = mesh.vertex(ground.x0 + i * GROUND_STEP, ground.y[k], ground.z0 + j * GROUND_STEP, normal[0], normal[1], normal[2]);
+      ids[k] = mesh.vertex(ground.x0 + i * GROUND_STEP, ground.y[k] + quay[k] + lift[k], ground.z0 + j * GROUND_STEP, normal[0], normal[1], normal[2]);
     }
     return ids[k];
   };

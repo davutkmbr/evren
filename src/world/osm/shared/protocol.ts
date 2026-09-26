@@ -36,6 +36,13 @@ export interface StreetRaster {
   minZ: number;
   /** Texel size (m). */
   px: number;
+  /**
+   * Street tram tracks inside the rect as every layer draws them (tram-tracks.ts correctTramTracks: kerb-lane tracks
+   * moved onto the carriageway), centre lines resampled every metre.
+   */
+  tracks: { pts: number[]; gauge: number; routes?: string[] }[];
+  /** Kerb-lane move: samples moved / anchored in a flush bed; flush track bed length (m). */
+  trackStats: { moved: number; kept: number; bedM: number };
 }
 
 /**
@@ -45,11 +52,23 @@ export interface StreetRaster {
 export interface OsmWorkerBase {
   /** OSM_AREA plus the seam: where OSM content replaces procedural content. */
   rect: WorldBounds;
-  /** OSM_AREA itself. */
+  /** OSM_AREA itself (a streamed region's own area). */
   area: WorldBounds;
+  /**
+   * Where the ground fades out into the terrain (OsmContext.fade; absent: `rect`). Content that avoids the fade margin
+   * (quay walls, barriers) reads this, so it continues across edges shared with another region.
+   */
+  fade?: WorldBounds;
   height: GridWin<Float32Array>;
   /** Signed coast distance (m, positive on land). Same layout as `height`. */
   coast: GridWin<Float32Array>;
+  /**
+   * Signed coast distance the ground heights follow (the quay raise, StreetSurface.quayGridValues): always the flight
+   * world's geo coast, so every OSM ground (runtime slice, compiled street tiles) has the same heights. Absent: `coast`
+   * (the runtime slice, where `coast` is the geo coast). The compiler keeps its finer OSM shoreline in `coast` for land
+   * and water only.
+   */
+  groundCoast?: GridWin<Float32Array>;
   landUse: GridWin<Uint8Array>;
   /** Landmark and mosque pads kept free of OSM buildings / ground: x, z, radius triples. */
   reserved: number[];

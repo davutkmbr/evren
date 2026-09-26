@@ -1,33 +1,25 @@
-import type { District, GeoQuery, LandmarkDef } from '../../core/contracts';
-import { el, svg, TextSlot, TransformSlot } from '../dom';
+import type { GeoQuery, LandmarkDef } from '../../core/contracts';
+import { el, svg, TransformSlot } from '../dom';
 import { PLAYER_ARROW } from '../icons';
 import type { FlightSnapshot } from '../types';
 import type { MapRaster } from './map-raster';
 
 const DEG = Math.PI / 180;
 const DRAW_INTERVAL_S = 1 / 30;
-const DISTRICT_INTERVAL_S = 0.5;
-const SIDE_LABELS: Record<District['side'], string> = { europe: 'Avrupa Yakası', asia: 'Anadolu Yakası', island: 'Adalar' };
 
-/** Circular heading-up minimap (bottom-right) drawn from the pre-rendered world raster. */
+/** Small circular heading-up minimap (bottom-right) drawn from the pre-rendered world raster; a gold "K" marks north. */
 export class Minimap {
   readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly north: TransformSlot;
   private readonly arrow: TransformSlot;
-  private readonly districtName: TextSlot;
-  private readonly districtSide: TextSlot;
-  private readonly districtRow: HTMLElement;
-  private geo: GeoQuery | null = null;
   private landmarks: readonly LandmarkDef[] = [];
   private discovered: ReadonlySet<string> = new Set();
-  private cssSize = 184;
+  private cssSize = 132;
   private dpr = 1;
   private drawTimer = 0;
-  private districtTimer = 0;
   private viewRadius = 2200;
-  private lastDistrict: District | null | undefined = undefined;
 
   constructor(private readonly raster: MapRaster) {
     this.canvas = el('canvas', 'mm-canvas');
@@ -37,20 +29,10 @@ export class Minimap {
     const arrowNode = el('div', 'mm-arrow');
     arrowNode.append(svg(PLAYER_ARROW));
     this.arrow = new TransformSlot(arrowNode);
-    const nameNode = el('span', 'mm-district', '');
-    const sideNode = el('span', 'mm-side', '');
-    this.districtName = new TextSlot(nameNode);
-    this.districtSide = new TextSlot(sideNode);
-    this.districtRow = el('div', 'mm-place', [nameNode, sideNode]);
-    this.districtRow.hidden = true;
-    this.root = el('div', 'hud-minimap', [
-      this.districtRow,
-      el('div', 'mm-disc', [this.canvas, el('div', 'mm-ring'), northNode, arrowNode]),
-    ]);
+    this.root = el('div', 'hud-minimap', [el('div', 'mm-disc', [this.canvas, el('div', 'mm-ring'), northNode, arrowNode])]);
   }
 
   setGeo(geo: GeoQuery, discovered: ReadonlySet<string>): void {
-    this.geo = geo;
     this.landmarks = geo.landmarks;
     this.discovered = discovered;
   }
@@ -76,23 +58,6 @@ export class Minimap {
     this.viewRadius += (targetRadius - this.viewRadius) * Math.min(1, realDt * 1.5);
     this.north.set(`rotate(${(-s.viewHeadingDeg).toFixed(2)}deg)`);
     this.arrow.set(`rotate(${(s.headingDeg - s.viewHeadingDeg).toFixed(2)}deg)`);
-
-    this.districtTimer -= realDt;
-    if (this.districtTimer <= 0 && this.geo) {
-      this.districtTimer = DISTRICT_INTERVAL_S;
-      const district = this.geo.isWater(s.x, s.z) ? null : this.geo.districtAt(s.x, s.z);
-      if (district !== this.lastDistrict) {
-        this.lastDistrict = district;
-        if (district) {
-          this.districtName.set(district.name);
-          this.districtSide.set(SIDE_LABELS[district.side]);
-        } else {
-          this.districtName.set(this.geo.waterNameAt?.(s.x, s.z) ?? 'Su');
-          this.districtSide.set('Su üzeri');
-        }
-        this.districtRow.hidden = false;
-      }
-    }
 
     this.drawTimer -= realDt;
     if (this.drawTimer > 0) {

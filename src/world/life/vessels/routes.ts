@@ -3,7 +3,7 @@ import { latLonToLocal } from '../../../core/geo-coords';
 import { ANCHORAGES, PIERS, STRAIT_CENTRELINE, type PierDef } from '../data/places';
 import { offsetPolyline, Path2, relax, smoothPolyline, type P2 } from '../util/path';
 import { centreInChannel, clearance, clearanceGradient, pushToWater } from '../util/water-nav';
-import type { KeepOut } from './nav/keep-out';
+import { KeepOut } from './nav/keep-out';
 
 export interface Berth {
   pier: PierDef;
@@ -201,6 +201,30 @@ export function anchorageSpots(geo: GeoQuery, count: number, rng: () => number, 
   return out;
 }
 
+/** Clearance (m) between a moored hull and the edge of a bridge deck. */
+const BRIDGE_CLEARANCE = 6;
+/** Deck half width (m) assumed for a bridge landmark without a geo road (e.g. the Haliç metro bridge). */
+const BRIDGE_LANDMARK_HALF = 12;
+
+/**
+ * Bridge decks as keep-out corridors (geo bridge roads with their width, and the deck ends of every bridge landmark):
+ * boats are never moored under or into a bridge, whichever way a mooring line runs along the quay.
+ */
+export function bridgeKeepOut(geo: GeoQuery): KeepOut {
+  const k = new KeepOut();
+  for (const r of geo.roads) {
+    if (r.kind === 'bridge' && r.points.length >= 2) {
+      k.add(r.points, r.width / 2 + BRIDGE_CLEARANCE, 4);
+    }
+  }
+  for (const l of geo.landmarks) {
+    if (l.kind === 'bridge' && l.anchors && l.anchors.length >= 4) {
+      k.add([l.anchors[2], l.anchors[3]], BRIDGE_LANDMARK_HALF + BRIDGE_CLEARANCE, 4);
+    }
+  }
+  return k;
+}
+
 export interface MooringSpot {
   x: number;
   z: number;
@@ -211,9 +235,22 @@ export interface MooringSpot {
 
 /**
  * Berths for moored boats along a waterfront: `raft` stacks hulls side by side outwards from the quay, `line` puts them
- * bow to stern along it, `buoys` scatters them on moorings off the shore. Spots too close to a ferry pier are dropped.
+ * bow to stern along it, `buoys` scatters them on moorings off the shore. Spots too close to a ferry pier, or whose
+ * hull would lie under or in a bridge (`bridges`, see bridgeKeepOut), are dropped.
  */
-export function mooringSpots(geo: GeoQuery, lat: number, lon: number, layout: 'raft' | 'line' | 'buoys', count: number, length: number, beam: number, draft: number, berths: Map<string, Berth[]>, rng: () => number): MooringSpot[] {
+export function mooringSpots(
+  geo: GeoQuery,
+  lat: number,
+  lon: number,
+  layout: 'raft' | 'line' | 'buoys',
+  count: number,
+  length: number,
+  beam: number,
+  draft: number,
+  berths: Map<string, Berth[]>,
+  bridges: KeepOut,
+  rng: () => number,
+): MooringSpot[] {
   const p = latLonToLocal(lat, lon);
   const f = shoreFrame(geo, p.x, p.z, [30, 60]);
   const out: MooringSpot[] = [];
@@ -256,20 +293,22 @@ export function mooringSpots(geo: GeoQuery, lat: number, lon: number, layout: 'r
     // Float the hull: move out from the shore until the water under the whole footprint is deep enough.
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
+    const FOOTPRINT = [
+      [0, 0],
+      [0.45, -0.5],
+      [-0.45, -0.5],
+      [0.45, 0.5],
+      [-0.45, 0.5],
+    ];
     const afloat = (px: number, pz: number): boolean => {
-      for (const [a, c] of [
-        [0, 0],
-        [0.45, -0.5],
-        [-0.45, -0.5],
-        [0.45, 0.5],
-        [-0.45, 0.5],
-      ]) {
+      for (const [a, c] of FOOTPRINT) {
         const qx = px + fx * a * length - fz * c * beam;
         const qz = pz + fz * a * length + fx * c * beam;
         if (geo.heightAt(qx, qz) > -(draft + 0.35)) return false;
       }
       return true;
     };
+    const underBridge = (px: number, pz: number): boolean => FOOTPRINT.some(([a, c]) => bridges.blocked(px + fx * a * length - fz * c * beam, pz + fz * a * length + fx * c * beam));
     let pushed = 0;
     while (!afloat(x, z) && pushed < 40) {
       x += f.n.x;
@@ -281,7 +320,7 @@ export function mooringSpots(geo: GeoQuery, lat: number, lon: number, layout: 'r
       f.shore.x += f.n.x * pushed;
       f.shore.z += f.n.z * pushed;
     }
-    if (pushed >= 40 || clearance(geo, x, z) < beam * 0.5 || nearPier(x, z)) continue;
+    if (pushed >= 40 || clearance(geo, x, z) < beam * 0.5 || nearPier(x, z) || underBridge(x, z)) continue;
     out.push({ x, z, yaw, buoy });
   }
   return out;

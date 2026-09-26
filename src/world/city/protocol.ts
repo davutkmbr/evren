@@ -194,7 +194,16 @@ export interface ColliderRequestMsg {
   win: GeoWindowMsg;
 }
 
-export type CityWorkerRequest = CityInitMessage | TileRequestMsg | ColliderRequestMsg;
+/** Drops cached cell layouts overlapping a rectangle (the exclusion list changed there, geo-window.ts). */
+export interface ForgetMsg {
+  type: 'forget';
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+export type CityWorkerRequest = CityInitMessage | TileRequestMsg | ColliderRequestMsg | ForgetMsg;
 
 export interface ChunkArrays {
   position: Float32Array;

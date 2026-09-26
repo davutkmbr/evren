@@ -1,5 +1,6 @@
 /**
- * Schema (version 2) of public/data/osm/slice.json, written by scripts/data/fetch-osm.mjs, and its typed loader.
+ * Schema (version 2) of public/data/osm/slice.json and the region files public/data/osm/regions/*.json, written by
+ * scripts/data/fetch-osm.mjs, and its typed loader.
  * Data © OpenStreetMap contributors, ODbL 1.0.
  *
  * Conventions:
@@ -38,6 +39,11 @@ export interface OsmBuilding {
   minHeight?: number;
   /** building:levels (above ground, excl. roof levels). */
   levels?: number;
+  /**
+   * Streamed regions only: storeys estimated for an untagged building (no height / levels) by scripts/data/fetch-osm.mjs
+   * fillLevels: the median of its tagged neighbours. The renderer uses it in place of the district's floor range.
+   */
+  levelsFill?: number;
   /** building:min_level. */
   minLevel?: number;
   /** roof:levels. */
@@ -128,6 +134,8 @@ export interface OsmRail {
   layer?: number;
   /** Route refs of the lines using this track ("T1", "T2", "F2", ...). */
   routes?: string[];
+  /** A piece of a bridge way over land that meets the ground (street-field.ts streetRasterInput). */
+  landed?: true;
   /** service=* ("siding", "yard", "crossover", "spur"). */
   service?: string;
   usage?: string;
@@ -218,7 +226,7 @@ export interface OsmData {
   /** Fetch date (YYYY-MM-DD) and Overpass database timestamp. */
   fetched: string;
   osmBase: string | null;
-  /** Slice area (OSM_AREA) in degrees and local metres. The data itself extends ~75 m beyond it. */
+  /** Slice / region area in degrees and local metres. The data itself extends ~75 m beyond it. */
   bbox: { south: number; west: number; north: number; east: number } & WorldBounds;
   /** Outlines and building:part records (filter with `part` / `hasParts`). */
   buildings: OsmBuilding[];

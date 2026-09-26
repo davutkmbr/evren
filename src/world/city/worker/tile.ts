@@ -33,6 +33,21 @@ function cellLayout(ci: number, cj: number, win: GeoWindowMsg, world: WorldData)
   return layout;
 }
 
+/** Drops the cached layouts of cells within one cell of `rect` (their land use changed). */
+export function forgetCells(rect: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+  const i0 = Math.floor((rect.minX + WORLD_HALF) / BASE_CELL) - 1;
+  const i1 = Math.floor((rect.maxX + WORLD_HALF) / BASE_CELL) + 1;
+  const j0 = Math.floor((rect.minZ + WORLD_HALF) / BASE_CELL) - 1;
+  const j1 = Math.floor((rect.maxZ + WORLD_HALF) / BASE_CELL) + 1;
+  for (const key of [...cache.keys()]) {
+    const ci = key % CELLS;
+    const cj = Math.floor(key / CELLS);
+    if (ci >= i0 && ci <= i1 && cj >= j0 && cj <= j1) {
+      cache.delete(key);
+    }
+  }
+}
+
 function kept(b: BuildingRec, densityScale: number): boolean {
   return b.keep < densityScale;
 }
@@ -144,11 +159,44 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
   };
 }
 
-function roofRise(b: BuildingRec): number {
-  if (b.roof === Roof.Hip || b.roof === Roof.Gable) {
-    return Math.min(b.w, b.d) * 0.5 * Math.tan(b.pitch) * 0.6;
+/**
+ * Collider boxes of one building, shaped like the drawn one (emit.ts emitNear) so no box stands where nothing is
+ * drawn: walls up to the roof line; a pitched roof adds a second box inset from the sloped sides by as much as it
+ * rises, so its top edge meets the drawn roof slope (a single box to the roof height stood up to 2 m above the eaves,
+ * an invisible ledge along the walls); a flat roof adds the parapet only where one is drawn. Towers (setbacks, spire)
+ * and industrial halls (sawtooth) keep one box over their roof line.
+ */
+function pushBuildingColliders(b: BuildingRec, out: number[]): void {
+  const cik = b.flags & BF.Cikma ? 1.1 : 0;
+  const ca = Math.cos(b.a);
+  const sa = Math.sin(b.a);
+  // Local frame (emit.ts): x along the width, z along the depth; the front (çıkma side) is -z. A box centred at local
+  // (0, lz) with half extents (hx, hz): shift its centre by lz along the depth axis.
+  const box = (lz: number, y0: number, y1: number, hx: number, hz: number): void => {
+    out.push(b.x - lz * sa, (y0 + y1) * 0.5, b.z + lz * ca, hx, (y1 - y0) * 0.5, hz, -b.a);
+  };
+  const top = b.groundY + b.height;
+  const hw = b.w * 0.5;
+  const hd = b.d * 0.5 + cik * 0.5;
+  // Shift the box centre forward by half the çıkma so it covers the overhang.
+  const lz = -cik * 0.5;
+  if (b.type === BType.Tower || b.type === BType.Industrial) {
+    const rise = (b.roof === Roof.Hip || b.roof === Roof.Gable ? Math.min(b.w, b.d) * 0.5 * Math.tan(b.pitch) * 0.6 : b.roof === Roof.Flat ? 1 : 1.5) + (b.type === BType.Tower ? 5 : 0);
+    box(lz, b.baseY, top + rise, hw, hd);
+    return;
   }
-  return b.roof === Roof.Flat ? 1 : 1.5;
+  if (b.roof === Roof.Hip || b.roof === Roof.Gable) {
+    box(lz, b.baseY, top, hw, hd);
+    const tanP = Math.tan(b.pitch);
+    // emit.ts: a gable (ridge along x) only when the building is wider than deep; otherwise a hip roof.
+    const hip = b.roof === Roof.Hip || b.w < b.d;
+    const t = Math.min(hw, hd) * 0.6;
+    if (t * tanP > 0.3) {
+      box(lz, top, top + t * tanP, hip ? hw - t : hw, hd - t);
+    }
+    return;
+  }
+  box(lz, b.baseY, top + (b.roof === Roof.Flat ? (b.flags & BF.Parapet ? 0.8 : 0) : 1.5), hw, hd);
 }
 
 export function buildColliders(req: ColliderRequestMsg, world: WorldData): ColliderResultMsg {
@@ -163,16 +211,9 @@ export function buildColliders(req: ColliderRequestMsg, world: WorldData): Colli
     for (let i = 0; i < n; i++) {
       const layout = cellLayout(ci0 + i, cj0 + j, req.win, world);
       for (const b of layout.buildings) {
-        if (!kept(b, req.densityScale)) {
-          continue;
+        if (kept(b, req.densityScale)) {
+          pushBuildingColliders(b, out);
         }
-        const top = b.groundY + b.height + roofRise(b) + (b.type === BType.Tower ? 5 : 0);
-        const cik = b.flags & BF.Cikma ? 1.1 : 0;
-        const ca = Math.cos(b.a);
-        const sa = Math.sin(b.a);
-        // Shift the box centre forward by half the çıkma so it covers the overhang.
-        const oz = -cik * 0.5;
-        out.push(b.x - oz * sa, (b.baseY + top) * 0.5, b.z + oz * ca, b.w * 0.5, (top - b.baseY) * 0.5, b.d * 0.5 + cik * 0.5, -b.a);
       }
     }
   }

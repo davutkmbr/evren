@@ -227,7 +227,7 @@ export class MosqueSystem implements System {
         batch.setMatrixAt(instance, matrix);
         const { center, radius } = sphereOf(model.lods[1], placement);
         this.landmarks.push({ def, placement, matrix, center, radius, model, geom1, geom2, instance, lod0: null, lod0State: 'none', stateKey: -1 });
-        this.addColliders(worldColliders(model.colliders, placement), `mosque:${def.id}`);
+        this.addColliders(worldColliders(model.colliders, placement), `mosque:${def.id}`, def.id);
       });
     });
 
@@ -248,7 +248,7 @@ export class MosqueSystem implements System {
           batch.setMatrixAt(instance, placementMatrix(placement, _m));
           const { center, radius } = sphereOf(proto.lods[0]!, placement);
           this.sites.push({ placement, center, radius, variant: choice.variant, instance, stateKey: -1 });
-          this.addColliders(worldColliders(proto.colliders, placement, keepSmallCollider), 'mosque');
+          this.addColliders(worldColliders(proto.colliders, placement, keepSmallCollider), 'mosque', `mosque-site:${i}:${proto.id}`);
         }
       });
     }
@@ -286,13 +286,13 @@ export class MosqueSystem implements System {
     });
   }
 
-  private addColliders(colliders: Collider[], tag: string): void {
+  private addColliders(colliders: Collider[], tag: string, source: string): void {
     const world = this.ctx?.services.tryGet('collision');
     if (!world) {
       return;
     }
     for (const c of colliders) {
-      this.colliderIds.push(world.add(c, tag));
+      this.colliderIds.push(world.add(c, tag, source));
     }
   }
 
@@ -452,10 +452,14 @@ export class MosqueSystem implements System {
   }
 }
 
-/** Neighbourhood mosques register the prayer hall, dome and minaret colliders (porticos and turrets are skipped). */
+/**
+ * Neighbourhood mosques register the prayer hall, dome and minaret colliders. Porticos (open arcades, flagged by the
+ * builder: their 5.6-8.6 m roofs made a height test keep them as solid walls between the columns) and low boxes are
+ * skipped.
+ */
 function keepSmallCollider(c: LocalCollider): boolean {
   if (c.kind === 'box') {
-    return c.hy > 2.5;
+    return !c.open && c.hy > 2.5;
   }
   return true;
 }

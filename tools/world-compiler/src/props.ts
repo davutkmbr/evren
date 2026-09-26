@@ -9,7 +9,8 @@
  *
  * Conventions: metres, +Y up, the foot of the prop at the origin, the prop's front / reach along +Z (headingYaw()).
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { threadId } from 'node:worker_threads';
 import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Document, getBounds, type Material, NodeIO } from '@gltf-transform/core';
@@ -455,9 +456,15 @@ export class PropBaker {
       const uri = t.getURI();
       let src = join(dir, uri);
       if (!uri) {
-        // Embedded image: stage it for sips.
-        src = join(CACHE_DIR, 'tmp', `${def.id}_${k}.${t.getMimeType() === 'image/png' ? 'png' : 'jpg'}`);
-        writeFileSync(src, t.getImage()!);
+        // Embedded image: stage it for sips under its content hash, written once: a stable path and mtime keep the
+        // texture cache hitting, and parallel threads never rewrite a file another one is reading.
+        const img = t.getImage()!;
+        src = join(CACHE_DIR, 'tmp', `${def.id}_${k}_${createHash('sha256').update(img).digest('hex').slice(0, 16)}.${t.getMimeType() === 'image/png' ? 'png' : 'jpg'}`);
+        if (!existsSync(src)) {
+          const part = `${src}.${process.pid}-${threadId}.part`;
+          writeFileSync(part, img);
+          renameSync(part, src);
+        }
       }
       const stem = uri ? basename(uri).replace(/\.(jpe?g|png)$/i, '') : `${t.getName() || 'image'}_${k}`;
       const users = usedAsBase.get(t) ?? [];
