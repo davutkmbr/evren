@@ -13,7 +13,7 @@ import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, MAX_SUBSTEPS, PHYSICS_DT }
 import { PoseDriver } from '../../../src/dragon/flight/pose';
 import { FlightSim } from '../../../src/dragon/flight/sim';
 import type { PilotCommand, PilotEdge } from '../../../src/dragon/flight/types';
-import { clearPilotEdges, copyPilotCommand, createPilotCommand, latchPilotEdges, PILOT_EDGES } from '../../../src/dragon/flight/types';
+import { clearPilotEdges, copyPilotCommand, createEdgeRecord, createPilotCommand, latchPilotEdges, PILOT_EDGES } from '../../../src/dragon/flight/types';
 import type { DragonRigImpl } from '../../../src/dragon/model/rig';
 
 /* ------------------------------------------------------------------ */
@@ -249,7 +249,7 @@ export class PoseRuntime {
     const frameCmd = createPilotCommand();
     const stepCmd = createPilotCommand();
     const latch = createPilotCommand();
-    const pressed: Record<PilotEdge, boolean> = { flap: false, land: false, roar: false, rollLeft: false, rollRight: false, loop: false, drop: false, urge: false };
+    const pressed: Record<PilotEdge, boolean> = createEdgeRecord();
     const input: FrameInput = {
       cmd: frameCmd,
       press: (edge) => {

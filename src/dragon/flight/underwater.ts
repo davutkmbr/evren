@@ -321,7 +321,7 @@ function enterUnderwater(sim: FlightSim, speed: number, path: number, yaw: numbe
   sim.body.velocity.multiplyScalar(PLUNGE.entryKeepSlow + (PLUNGE.entryKeepFast - PLUNGE.entryKeepSlow) * smoothstep(PLUNGE.entrySlow, PLUNGE.entryFast, speed));
   sim.body.angularVelocity.set(0, 0, 0);
   sim.dive.beginDive(speed, path, yaw);
-  sim.maneuvers.cancel();
+  sim.maneuvers.cancel(sim);
   sim.setMode('underwater');
 }
 
