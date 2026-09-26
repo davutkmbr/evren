@@ -19,6 +19,7 @@ import { CELL_TILES, encodeMeshes, WALLS_FORMAT, WALLS_TILE, type MeshArrays, ty
 import type { WallData } from '../../../../src/world/landmarks/walls/data/types';
 import { latLonToLocal } from '../../../../src/core/geo-coords';
 import { HERITAGE_FORTRESS_TOWERS } from '../../../../src/world/landmarks/heritage/data/fortresses';
+import { isModelled } from '../../../../src/world/landmarks/claims';
 import { osmGroundHeight } from '../../../../src/world/osm/shared/street-surface';
 import { buildHeadlessGeo } from '../../../headless/geo';
 import { buildPieces, LODS, mergeParts } from './build';
@@ -40,6 +41,34 @@ const log = (m: string): void => console.log(`[walls] ${m}`);
 const t0 = performance.now();
 const data = JSON.parse(readFileSync(resolve(ROOT, 'data/osm/walls.json'), 'utf8')) as WallData;
 const geo = buildHeadlessGeo();
+// Walls mapped on a modelled palace's grounds are its garden and court walls (OSM tags some castle_wall), not
+// fortifications: the palace model owns that ground, so the wall kit leaves them out.
+const palaces = geo.landmarks.filter((l) => l.kind === 'palace' && isModelled(l));
+const onPalace = (pts: readonly number[]): string | null => {
+  const n = pts.length / 2;
+  for (const p of palaces) {
+    let inside = 0;
+    for (let i = 0; i < n; i++) {
+      inside += Math.hypot(pts[i * 2] - p.x, pts[i * 2 + 1] - p.z) < p.radius ? 1 : 0;
+    }
+    if (inside * 2 >= n) {
+      return p.id;
+    }
+  }
+  return null;
+};
+const dropped: string[] = [];
+data.lines = data.lines.filter((l) => {
+  const p = onPalace(l.pts);
+  return p ? (dropped.push(`${l.id}@${p}`), false) : true;
+});
+data.areas = data.areas.filter((a) => {
+  const p = onPalace(a.ring);
+  return p ? (dropped.push(`${a.id}@${p}`), false) : true;
+});
+if (dropped.length) {
+  log(`left to the palaces: ${dropped.join(', ')}`);
+}
 const site: Site = {
   reservedTowers: HERITAGE_FORTRESS_TOWERS.map((t) => ({ ...latLonToLocal(t.lat, t.lon), r: t.r })),
   ground: (x, z) => osmGroundHeight(geo.heightAt(x, z), geo.coastDistance(x, z)),

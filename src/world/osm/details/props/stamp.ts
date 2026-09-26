@@ -15,6 +15,10 @@ import { propTemplates, type PropKind } from './models';
 const RULES: Partial<Record<PropKind, StandRule>> = {
   mooring: { shore: 0.3, building: false },
   lifebuoy: { shore: 0.3, building: false },
+  // Indoor pools (inside a building outline) and rooftop pools are left to the buildings.
+  poolWater: { offRoad: true },
+  poolRound: { offRoad: true },
+  poolEdge: { offRoad: true },
 };
 const DEFAULT_RULE: StandRule = { building: false };
 
@@ -52,6 +56,9 @@ export const THROUGH_HOLE: ReadonlySet<PropKind> = new Set<PropKind>([
   'latticeTower',
   'sunbed',
   'beachUmbrella',
+  'poolWater',
+  'poolRound',
+  'poolEdge',
   'picnicTable',
   'kameriye',
   'streetClock',
@@ -101,7 +108,8 @@ export class PropStamper {
    * Places one prop: base at (x, y, z), front (+Z) turned to yaw (world direction (sin yaw, cos yaw)), uniform
    * `scale` (vertical `sy` when given). White template vertices take `tint` (parasol canopies).
    */
-  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale): boolean {
+  /** `scale` is the uniform size (x and z unless `sz` is given), `sy` the height scale. */
+  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale, sz = scale): boolean {
     if (this.ground) {
       const fault = standFault(this.ground, x, z, RULES[kind] ?? DEFAULT_RULE, y);
       this.log.note(kind, fault ?? 'kept');
@@ -117,7 +125,7 @@ export class PropStamper {
       const o = v * 3;
       const px = t.pos[o] * scale;
       const py = t.pos[o + 1] * sy;
-      const pz = t.pos[o + 2] * scale;
+      const pz = t.pos[o + 2] * sz;
       const nx = t.nrm[o];
       const ny = t.nrm[o + 1];
       const nz = t.nrm[o + 2];

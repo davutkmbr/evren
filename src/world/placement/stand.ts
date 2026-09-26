@@ -9,6 +9,7 @@
  *   placed beyond it would take the edge's height (floating or buried) and the edge's coast (land over the sea);
  * - it is on land, `shore` metres or more from the coastline, and the rendered ground is not below sea level;
  * - its base sits on the rendered ground (|base - ground| <= tolerance) when the caller passes a base height;
+ * - it is not inside the city walls' masonry (when the ground knows it);
  * - optionally: outside building footprints, and off vehicular carriageways.
  * Pure (no three.js), so workers and the compiler import it too.
  */
@@ -25,6 +26,8 @@ export interface StandGround {
   inBuilding?(x: number, z: number): boolean;
   /** On a vehicular carriageway (pedestrian streets do not count). */
   onCarriageway?(x: number, z: number): boolean;
+  /** Inside a built structure no prop may stand in (the city walls' masonry); checked for every rule. */
+  inStructure?(x: number, z: number): boolean;
 }
 
 /** What a prop needs from its spot. */
@@ -39,7 +42,7 @@ export interface StandRule {
   tolerance?: number;
 }
 
-export type StandFault = 'outside' | 'water' | 'shore' | 'building' | 'carriageway' | 'float' | 'buried';
+export type StandFault = 'outside' | 'water' | 'shore' | 'building' | 'structure' | 'carriageway' | 'float' | 'buried';
 
 /** Default coastline margin (m): the geo coast grid is ~23 m, so a prop keeps a metre from the interpolated shore. */
 export const SHORE_MARGIN = 1;
@@ -72,6 +75,9 @@ export function standFault(g: StandGround, x: number, z: number, rule: StandRule
   }
   if ((rule.building ?? true) && g.inBuilding?.(x, z)) {
     return 'building';
+  }
+  if (g.inStructure?.(x, z)) {
+    return 'structure';
   }
   if (rule.offRoad && g.onCarriageway?.(x, z)) {
     return 'carriageway';

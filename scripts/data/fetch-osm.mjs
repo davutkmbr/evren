@@ -118,7 +118,7 @@ const AREA_KEYS = [
   ['amenity', new Set(['parking', 'marketplace', 'fountain', 'bus_station', 'ferry_terminal', 'taxi'])],
   ['railway', new Set(['platform', 'station'])],
   ['public_transport', new Set(['platform', 'station'])],
-  ['leisure', new Set(['park', 'garden', 'playground', 'pitch', 'common', 'marina', 'sports_centre', 'dog_park'])],
+  ['leisure', new Set(['park', 'garden', 'playground', 'pitch', 'common', 'marina', 'sports_centre', 'dog_park', 'swimming_pool'])],
   ['natural', new Set(['water', 'grass', 'scrub', 'wood', 'beach', 'bare_rock', 'sand', 'wetland'])],
   ['water', null],
   ['landuse', null],
