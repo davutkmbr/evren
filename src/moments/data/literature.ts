@@ -27,6 +27,7 @@ import {
   SINAN_KITABE_SOURCES,
   YAGMUR_SOURCES,
 } from './sources';
+import { MUSIC_FELEK_BANA, MUSIC_HUSEYNI_TAKSIM, MUSIC_HUZZAM_TAKSIM, MUSIC_KAGITHANE, MUSIC_KATIBIM_SAFIYE_AYLA } from './music-sources';
 
 /** Backlog item of the literary moments in .docs/planning/19-moments.md. */
 const BACKLOG = 16;
@@ -70,6 +71,8 @@ export const nedim: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Kâğıthane Semaisi, Victor 69173 (1916): the instrumental introduction; Kâğıthane was the Lâle Devri pleasure ground Nedim sang.
+    musicId: 'kagithane-semaisi-1916',
     musicSource: {
       kind: 'memory',
       from: { lat: 41.01243, lon: 28.98366, height: 40, note: 'Topkapı palace on Sarayburnu, the poem\'s city', nearLandmark: 'topkapi-sarayi' },
@@ -110,7 +113,7 @@ export const nedim: Moment = {
     original('card', 'Our Turkish gloss of the two couplets'),
   ],
   needs: [],
-  sources: NEDIM_SOURCES,
+  sources: [...NEDIM_SOURCES, MUSIC_KAGITHANE],
   notes:
     'The rest of the kaside praises the Grand Vizier İbrahim Paşa and is not used. Long vowels (â, î, û) vary between ' +
     'editions; the lines keep one source as it is.',
@@ -139,6 +142,8 @@ export const sinanKitabe: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Hafız Kemal Bey, Hüseyni Taksim (Pathé, c. 1927-1928), private piece (US-risky).
+    musicId: 'huseyni-taksim-hafiz-kemal',
     musicSource: {
       kind: 'memory',
       from: { lat: 41.01723, lon: 28.96394, height: 8, note: "Mimar Sinan's tomb at the north corner of the Süleymaniye", nearLandmark: 'suleymaniye' },
@@ -184,7 +189,7 @@ export const sinanKitabe: Moment = {
     original('card', 'TDV İslâm Ansiklopedisi, "Sinan"; Wikipedia, "Mimar Sinan" (tomb of his own design)'),
   ],
   needs: ['text-approval'],
-  sources: SINAN_KITABE_SOURCES,
+  sources: [...SINAN_KITABE_SOURCES, MUSIC_HUSEYNI_TAKSIM],
   notes:
     'Only the opening four lines and the date line are used; the inscription ends with a request for a Fâtiha, left out ' +
     'on purpose. Surface any: perched on the tomb wall, the medrese roofs or hovering over the corner at dusk.',
@@ -208,6 +213,8 @@ export const katibim: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Safiye Ayla's Kâtibim (1949), private piece (US-risky): without private-assets/ the mood choice applies.
+    musicId: 'katibim-safiye-ayla-1949',
     // Heard from the street: a coffeehouse on the Üsküdar shore road, between Şemsi Paşa and the İskele square.
     musicSource: {
       kind: 'venue',
@@ -246,7 +253,7 @@ export const katibim: Moment = {
     original('card', 'Kâtibim: anonymous, Nihâvend (TSM repertoire)'),
   ],
   needs: [],
-  sources: KATIBIM_SOURCES,
+  sources: [...KATIBIM_SOURCES, MUSIC_KATIBIM_SAFIYE_AYLA],
   notes: 'Words only; no recording or melody is used (the moment music is our own). Rain only, not storm.',
 };
 
@@ -334,10 +341,13 @@ export const karagoz: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
-    // The Karagöz tent itself, on Şehzadebaşı Caddesi in front of the mosque (the old Direklerarası).
+    // Felek Bana, Victor 69175 (1916), sung: heard from a gramophone down the street.
+    musicId: 'felek-bana-1916',
+    // A coffeehouse gramophone a little way down Şehzadebaşı Caddesi (the old Direklerarası), playing a 78 while the
+    // perde plays in front of the mosque: the owner asked for the record as a distant gramophone (2026-09-26).
     musicSource: {
-      kind: 'live',
-      at: { lat: 41.0129, lon: 28.9584, height: 2, note: 'Karagöz tent on Şehzadebaşı Caddesi, beside the perde waypoint', expect: 'land', nearLandmark: 'sehzade' },
+      kind: 'gramophone',
+      at: { lat: 41.0137, lon: 28.9587, height: 4, note: 'Coffeehouse window on Şehzadebaşı Caddesi, about 90 m north of the Karagöz perde', expect: 'land', nearLandmark: 'sehzade' },
     },
     musicMood: ['joyful', 'history'],
     subtitles: timeline([
@@ -385,7 +395,7 @@ export const karagoz: Moment = {
     original('card', 'Türk Maarif Ansiklopedisi, "Karagöz"; UNESCO Representative List (2009)'),
   ],
   needs: [],
-  sources: KARAGOZ_SOURCES,
+  sources: [...KARAGOZ_SOURCES, MUSIC_FELEK_BANA],
   notes:
     'Not tied to Ramadan (a lunar calendar is not in the format); a night window stands in. Which of the two says the ' +
     'last formula varies between plays; Karagöz says it here, as in most summaries.',
@@ -480,6 +490,8 @@ export const hasim: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Reşad Bey, Hüzzam Taksim (Pathé, c. 1927-1928), private piece (US-risky): Hüzzam, the dusk makam.
+    musicId: 'huzzam-taksim-resad-bey',
     musicMood: ['nostalgic', 'tender', 'mystic'],
     subtitles: timeline([
       'Altın kulelerden yine kuşlar',
@@ -523,7 +535,7 @@ export const hasim: Moment = {
     original('card', 'Epigraf note on the first printing (Dergâh, 1921)'),
   ],
   needs: ['text-approval'],
-  sources: HASIM_SOURCES,
+  sources: [...HASIM_SOURCES, MUSIC_HUZZAM_TAKSIM],
   notes: 'The lake of the poem ("göllerde") is fitted to the Bosphorus at sunset; the card does not claim a place.',
 };
 
