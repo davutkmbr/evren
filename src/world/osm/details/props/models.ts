@@ -22,7 +22,21 @@ export type PropKind =
   | 'flagPole'
   | 'lifebuoy'
   | 'hoarding'
-  | 'crane';
+  | 'crane'
+  | 'fuelCanopy'
+  | 'fuelPump'
+  | 'fuelShop'
+  | 'fuelSign'
+  | 'goal'
+  | 'basketHoop'
+  | 'swing'
+  | 'slide'
+  | 'climber'
+  | 'shrub'
+  | 'flowers'
+  | 'rock'
+  | 'awning'
+  | 'pharmacySign';
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const cyl = (r0: number, r1: number, h: number, x: number, y: number, z: number, seg = 8): THREE.BufferGeometry => new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z);
@@ -225,6 +239,160 @@ function crane(): THREE.BufferGeometry {
   ]);
 }
 
+/* ------------------------------------------------------------------ feature kits (OSM place types) */
+
+/**
+ * Fuel station canopy, 16 x 10 m, 5.4 m clear: slab roof on four columns, the fascia band white so it takes the
+ * brand colour (tint), a lit underside. Front (+Z) faces the road.
+ */
+function fuelCanopy(): THREE.BufferGeometry {
+  const parts = [
+    part(box(16, 0.55, 10, 0, 5.95, 0), 0xe4e4e0),
+    part(box(16.1, 0.75, 10.1, 0, 6.05, 0).scale(1, 1, 1), 0xffffff),
+    part(box(15.6, 0.05, 9.6, 0, 5.66, 0), 0xf6f3e8, 1),
+  ];
+  for (const x of [-4.5, 4.5]) {
+    for (const z of [-2.5, 2.5]) {
+      parts.push(part(box(0.45, 5.7, 0.45, x, 2.85, z), 0xcfd1d2));
+    }
+  }
+  return merge(parts);
+}
+
+/** Pump island: kerbed island with a dispenser (lit display) and bollards at its ends; runs along x. */
+function fuelPump(): THREE.BufferGeometry {
+  return merge([
+    part(box(4.2, 0.18, 1.1, 0, 0.09, 0), 0xb9b6ad),
+    part(box(1.0, 1.9, 0.55, 0, 1.13, 0), 0xe8e8e4),
+    part(box(0.8, 0.4, 0.58, 0, 1.55, 0), 0x1d2a33, 0.9),
+    part(box(1.02, 0.25, 0.57, 0, 2.2, 0), 0xffffff),
+    part(cyl(0.09, 0.09, 1.0, -1.85, 0.68, 0, 6), 0xd8b020),
+    part(cyl(0.09, 0.09, 1.0, 1.85, 0.68, 0, 6), 0xd8b020),
+  ]);
+}
+
+/** Station shop: 12 x 7 m box, glazed front (+Z) lit at night, white brand band. */
+function fuelShop(): THREE.BufferGeometry {
+  return merge([
+    part(box(12, 3.6, 7, 0, 1.8, 0), 0xe2dfd6),
+    part(box(8, 2.4, 0.05, 0, 1.3, 3.52), 0x93b3bf, 0.7),
+    part(box(12.1, 0.7, 7.1, 0, 3.65, 0), 0xffffff),
+    part(box(12.4, 0.12, 7.4, 0, 4.06, 0), 0x6f7478),
+  ]);
+}
+
+/** Price pylon, 7.5 m: white panel takes the brand colour, the lit price board below it. */
+function fuelSign(): THREE.BufferGeometry {
+  return merge([
+    part(box(0.5, 7.5, 0.5, 0, 3.75, 0), 0x8f9397),
+    part(box(1.9, 1.9, 0.35, 0, 6.5, 0), 0xffffff, 0.35),
+    part(box(1.7, 2.3, 0.3, 0, 4.2, 0), 0x16191c, 0.8),
+    part(box(1.9, 0.4, 0.4, 0, 0.2, 0), 0x6f7478),
+  ]);
+}
+
+/** Football goal, 7.32 x 2.44 m, net depth 2 m (the net as a dark translucent-looking back frame). */
+function goal(): THREE.BufferGeometry {
+  const w = 0xf4f4f0;
+  return merge([
+    part(box(0.12, 2.44, 0.12, -3.66, 1.22, 0), w),
+    part(box(0.12, 2.44, 0.12, 3.66, 1.22, 0), w),
+    part(box(7.44, 0.12, 0.12, 0, 2.44, 0), w),
+    part(box(7.3, 2.3, 0.02, 0, 1.2, -1.9), 0x9aa2a6),
+    part(box(7.3, 0.02, 1.9, 0, 2.38, -0.95), 0x9aa2a6),
+  ]);
+}
+
+/** Basketball post with board and hoop (the court is +Z). */
+function basketHoop(): THREE.BufferGeometry {
+  return merge([
+    part(box(0.2, 3.3, 0.2, 0, 1.65, -1.2), 0x3a5a78),
+    part(box(0.12, 0.12, 1.2, 0, 3.2, -0.6), 0x3a5a78),
+    part(box(1.8, 1.05, 0.05, 0, 3.4, 0), 0xf2f2f0),
+    part(new THREE.TorusGeometry(0.23, 0.02, 4, 12).rotateX(Math.PI / 2).translate(0, 3.05, 0.28), 0xd2561c),
+  ]);
+}
+
+/** Playground swing frame with two seats. */
+function swing(): THREE.BufferGeometry {
+  const parts = [part(box(3.4, 0.1, 0.1, 0, 2.3, 0), 0xc8342b)];
+  for (const x of [-1.6, 1.6]) {
+    for (const s of [-1, 1]) {
+      parts.push(part(box(0.08, 2.4, 0.08, x, 1.15, s * 0.55).rotateX(s * 0.24), 0xc8342b));
+    }
+  }
+  for (const x of [-0.7, 0.7]) {
+    parts.push(part(box(0.02, 1.8, 0.02, x - 0.2, 1.35, 0), 0x777777), part(box(0.02, 1.8, 0.02, x + 0.2, 1.35, 0), 0x777777), part(box(0.5, 0.05, 0.22, x, 0.45, 0), 0x2b2b2b));
+  }
+  return merge(parts);
+}
+
+/** Slide tower: platform with roof and a slide down along +Z. */
+function slide(): THREE.BufferGeometry {
+  const parts = [part(box(1.3, 0.1, 1.3, 0, 1.5, -1), 0x7c5a3a), part(new THREE.ConeGeometry(1.0, 0.9, 4).rotateY(Math.PI / 4).translate(0, 3.05, -1), 0x2f6fb0)];
+  for (const [x, z] of [
+    [-0.6, -0.4],
+    [0.6, -0.4],
+    [-0.6, -1.6],
+    [0.6, -1.6],
+  ]) {
+    parts.push(part(box(0.1, 2.6, 0.1, x, 1.3, z), 0x7c5a3a));
+  }
+  parts.push(part(box(0.6, 0.08, 2.8, 0, 0.8, 0.95).rotateX(0.5).translate(0, 0.05, 0.35), 0xe3b21c));
+  return merge(parts);
+}
+
+/** Climbing frame: a cube of bars. */
+function climber(): THREE.BufferGeometry {
+  const parts = [];
+  const c = 0x3f8f4a;
+  for (const x of [-1, 0, 1]) {
+    for (const z of [-1, 1]) {
+      parts.push(part(box(0.07, 2, 0.07, x, 1, z), c));
+    }
+  }
+  for (const y of [0.7, 1.35, 2]) {
+    parts.push(part(box(2.1, 0.06, 0.06, 0, y, -1), c), part(box(2.1, 0.06, 0.06, 0, y, 1), c));
+    for (const x of [-1, 0, 1]) {
+      parts.push(part(box(0.06, 0.06, 2.1, x, y, 0), c));
+    }
+  }
+  return merge(parts);
+}
+
+/** Shrub: three low-poly clumps, 1.2 m across; white so it takes a green tint per instance. */
+function shrub(): THREE.BufferGeometry {
+  return merge([
+    part(new THREE.IcosahedronGeometry(0.62, 0).scale(1, 0.75, 1).translate(0, 0.5, 0), 0xffffff),
+    part(new THREE.IcosahedronGeometry(0.45, 0).scale(1, 0.8, 1).translate(0.45, 0.38, 0.2), 0xffffff),
+    part(new THREE.IcosahedronGeometry(0.4, 0).scale(1, 0.8, 1).translate(-0.35, 0.34, -0.3), 0xffffff),
+  ]);
+}
+
+/** Flower bed clump: low green cushion with coloured tops (white, tinted per instance). */
+function flowers(): THREE.BufferGeometry {
+  return merge([part(new THREE.IcosahedronGeometry(0.5, 0).scale(1.3, 0.35, 1).translate(0, 0.16, 0), 0x3e6a2c), part(new THREE.IcosahedronGeometry(0.42, 0).scale(1.2, 0.25, 0.9).translate(0, 0.3, 0), 0xffffff)]);
+}
+
+/** Field stone / boulder, about 1 m. */
+function rock(): THREE.BufferGeometry {
+  return merge([part(new THREE.DodecahedronGeometry(0.55, 0).scale(1.2, 0.6, 0.9).translate(0, 0.2, 0), 0x8b867c)]);
+}
+
+/**
+ * Shopfront awning (tente), 3.2 m wide, reaching 1.4 m out from the facade at 2.7 m: the canvas is white so it takes
+ * the shop's tint, with a scalloped valance. The facade is at z = 0, the street +Z.
+ */
+function awning(): THREE.BufferGeometry {
+  const canvas = doubleSided(new THREE.PlaneGeometry(3.2, 1.55).rotateX(-Math.PI / 2 + 0.45).translate(0, 2.95, 0.7));
+  return merge([part(canvas, 0xffffff), part(box(3.2, 0.25, 0.02, 0, 2.55, 1.4), 0xffffff), part(box(3.25, 0.06, 0.08, 0, 3.3, 0.04), 0x55595c)]);
+}
+
+/** Pharmacy sign: green lit box with the red "E" of Turkish pharmacies, on a wall bracket at 3.2 m. */
+function pharmacySign(): THREE.BufferGeometry {
+  return merge([part(box(0.05, 0.05, 0.6, 0, 3.4, 0.3), 0x444444), part(box(0.9, 0.9, 0.18, 0, 3.2, 0.62), 0x1f9d4a, 1), part(box(0.35, 0.5, 0.2, 0, 3.2, 0.62), 0xd02828, 1)]);
+}
+
 export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
   return {
     bench: bench(),
@@ -243,5 +411,19 @@ export function propTemplates(): Record<PropKind, THREE.BufferGeometry> {
     lifebuoy: lifebuoy(),
     hoarding: hoarding(),
     crane: crane(),
+    fuelCanopy: fuelCanopy(),
+    fuelPump: fuelPump(),
+    fuelShop: fuelShop(),
+    fuelSign: fuelSign(),
+    goal: goal(),
+    basketHoop: basketHoop(),
+    swing: swing(),
+    slide: slide(),
+    climber: climber(),
+    shrub: shrub(),
+    flowers: flowers(),
+    rock: rock(),
+    awning: awning(),
+    pharmacySign: pharmacySign(),
   };
 }

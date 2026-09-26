@@ -51,7 +51,8 @@ function lotStats(lots: readonly LotRegion[]): Record<string, number> {
   return out;
 }
 
-serveWorker<DetailsRequest, DetailsResult>((req) => {
+/** Builds the details layer of one region (the worker's job; also run headless by tools/headless/osm-details-check.ts). */
+export function buildDetails(req: DetailsRequest): DetailsResult {
   const t0 = performance.now();
   const { base, data, pads } = req;
   const surface = new StreetSurface(base);
@@ -127,4 +128,9 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
       ms: Math.round(performance.now() - t0),
     },
   };
-});
+}
+
+// In a worker (not when imported headless, where there is no `self`).
+if (typeof self !== 'undefined') {
+  serveWorker<DetailsRequest, DetailsResult>(buildDetails);
+}
