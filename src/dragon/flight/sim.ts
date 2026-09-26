@@ -8,6 +8,7 @@ import { BodyAxes, BodyState } from './body';
 import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
 import { GroundMoves } from './ground-moves';
+import { FlowSystem } from './flow/flow';
 import { endSkim, SkimState } from './skim';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
 import { MANEUVER_LABELS, Maneuvers } from './maneuvers';
@@ -40,6 +41,8 @@ export class FlightSim {
   readonly dive = new DiveState();
   /** Surface skim / ground effect ("sıyırma", skim.ts). */
   readonly skim = new SkimState();
+  /** Flow ("akış", phase 20 stage D): harmony of consecutive motions, paid back as capped drag / thrust (flow/). */
+  readonly flow = new FlowSystem();
   /** Perching on viewpoints (perch.ts): prompt, guided approach, perched hold, drop take-off off the perch. */
   readonly perch: PerchDriver = new PerchDriver(this);
   readonly wing: WingShape = createWingShape();
@@ -81,6 +84,8 @@ export class FlightSim {
   /** Vertical component of the aerodynamic force last step (N). */
   aeroVertical = 0;
   flapForce = 0;
+  /** Power of the dragon's own muscles into its motion through the air last airborne step (W/kg: wing beats, pushes). */
+  musclePower = 0;
   /** Surface under the dragon: the highest one reaching up to its body (a bridge deck overhead does not count). */
   surfaceY = 0;
   /** Lowest bottom of a structure entirely above the body (bridge deck, arch, overhang), Infinity when open sky. */
@@ -213,6 +218,9 @@ export class FlightSim {
     if (this.queueEvents) {
       this.events.push(event);
     }
+    if (event.type === 'maneuver') {
+      this.flow.onManeuver(event.id, event.ended, event.clean);
+    }
   }
 
   /** Place the dragon in level flight (or on the surface when `grounded`). */
@@ -243,6 +251,7 @@ export class FlightSim {
     this.controller.reset(0);
     this.maneuvers.reset();
     this.skim.reset();
+    this.flow.reset();
     this.dive.resetLook();
     this.leapCharge = 0;
     this.runTakeoff = 0;
@@ -386,6 +395,7 @@ export class FlightSim {
     this.updateStamina(cmd, h);
     this.enforceCeiling();
     this.enforceBoundary();
+    this.flow.step(this, h);
 
     if (!this.body.isFinite()) {
       this.body.copy(this.lastGood);

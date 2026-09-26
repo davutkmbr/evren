@@ -35,6 +35,7 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   wingover: 'Kanat üstü dönüş',
   immelmann: 'Immelmann',
   splits: 'Split-S',
+  flow: 'Kusursuz',
 };
 
 /** Moves kept in the log of finished moves (headless checks, diagnostics). */
@@ -636,9 +637,10 @@ export class Maneuvers {
     if (!this.powerActive || !wingsFree) {
       return;
     }
-    const room = this.powerEntry + POWER_STROKE.gain - sim.airspeed;
+    // Flow makes the surge stronger (exactly the plain stroke without flow).
+    const room = this.powerEntry + POWER_STROKE.gain * sim.flow.powerGainScale - sim.airspeed;
     t.effort = 1;
-    t.thrustBoost = Math.max(t.thrustBoost, 1 + (POWER_STROKE.thrust - 1) * smoothstep(0, 2.5, room));
+    t.thrustBoost = Math.max(t.thrustBoost, 1 + (POWER_STROKE.thrust * sim.flow.powerThrustScale - 1) * smoothstep(0, 2.5, room));
     t.spread = 1;
     t.sweep = Math.min(t.sweep, POWER_STROKE.sweep);
   }
