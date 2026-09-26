@@ -15,6 +15,11 @@ export interface XZ {
   z: number;
 }
 
+/** A moving anchor's position (e.g. one ferry in service); `id` names the object for the moment's actor. */
+export interface AnchorPoint extends XZ {
+  id?: number;
+}
+
 export interface MomentSession {
   /** Session clock in seconds (any monotonic clock, e.g. TimeState.elapsed). */
   now: number;
@@ -39,7 +44,7 @@ export interface MomentContext {
   dayOfYear: number;
   weather: WeatherPreset | 'custom';
   /** Current positions of moving anchors by name (e.g. 'ferry'). */
-  anchors?: Readonly<Record<string, readonly XZ[]>>;
+  anchors?: Readonly<Record<string, readonly AnchorPoint[]>>;
   session: MomentSession;
 }
 
@@ -193,6 +198,22 @@ function placeDistance(t: MomentTrigger, ctx: MomentContext): number {
     distance = pp.center ? Math.min(distance, best) : best;
   }
   return distance;
+}
+
+/** The anchor of `moment`'s place nearest to the dragon (null when the place has no anchor or none is supplied). */
+export function nearestAnchor(moment: Moment, ctx: Pick<MomentContext, 'position' | 'anchors'>): AnchorPoint | null {
+  const name = moment.trigger.place.anchor;
+  if (name === undefined) return null;
+  let best: AnchorPoint | null = null;
+  let bestD = Infinity;
+  for (const a of ctx.anchors?.[name] ?? []) {
+    const d = Math.hypot(ctx.position.x - a.x, ctx.position.z - a.z);
+    if (d < bestD) {
+      bestD = d;
+      best = a;
+    }
+  }
+  return best;
 }
 
 /* ------------------------------------------------------------------ */

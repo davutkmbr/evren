@@ -67,6 +67,8 @@ export class Flocks {
   private readonly p = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
   private time = 0;
+  /** Ferry flocks handed over to a moment (src/moments): dormant until given back. */
+  private readonly borrowed = new Set<Flock>();
 
   constructor(
     readonly capacity: number,
@@ -184,7 +186,7 @@ export class Flocks {
         f.z = f.vessel.z;
       }
       const dc = Math.hypot(f.x - cam.x, f.z - cam.z);
-      const want = dc < ACTIVE_RADIUS && (!f.vessel || f.vessel.state.speed > 0.5 || f.birds.length > 0);
+      const want = dc < ACTIVE_RADIUS && (!f.vessel || f.vessel.state.speed > 0.5 || f.birds.length > 0) && !this.borrowed.has(f);
       if (want && !f.active) this.activate(f);
       else if (!want && f.active && dc > ACTIVE_RADIUS * 1.1) this.deactivate(f);
     }
@@ -370,6 +372,43 @@ export class Flocks {
     this.p.set(this.px[i], this.py[i], this.pz[i]);
     this.m.compose(this.p, this.q, this.s);
     this.m.toArray(this.mesh.instanceMatrix.array, n * 16);
+  }
+
+  /**
+   * Hands the gulls trailing vessel `vesselId` to a moment: writes their states (x, y, z, vx, vy, vz per bird) into
+   * `out` and keeps the flock dormant until returnVesselFlock. Returns the number of birds written.
+   */
+  borrowVesselFlock(vesselId: number, out: Float32Array): number {
+    const f = this.flocks.find((x) => x.vessel?.id === vesselId);
+    if (!f) return 0;
+    let n = 0;
+    for (const i of f.birds) {
+      if ((n + 1) * 6 > out.length) break;
+      out.set([this.px[i], this.py[i], this.pz[i], this.vx[i], this.vy[i], this.vz[i]], n * 6);
+      n++;
+    }
+    if (f.active) this.deactivate(f);
+    this.borrowed.add(f);
+    return n;
+  }
+
+  /** Gives a borrowed ferry flock back, continuing from `count` bird states (flat as in borrowVesselFlock). */
+  returnVesselFlock(vesselId: number, states: Float32Array, count: number): void {
+    const f = this.flocks.find((x) => x.vessel?.id === vesselId);
+    if (!f || !this.borrowed.delete(f)) return;
+    if (count <= 0) return;
+    this.activate(f);
+    const n = Math.min(count, f.birds.length);
+    while (f.birds.length > n) this.free.push(f.birds.pop()!);
+    for (let k = 0; k < n; k++) {
+      const i = f.birds[k];
+      this.px[i] = states[k * 6];
+      this.py[i] = states[k * 6 + 1];
+      this.pz[i] = states[k * 6 + 2];
+      this.vx[i] = states[k * 6 + 3];
+      this.vy[i] = states[k * 6 + 4];
+      this.vz[i] = states[k * 6 + 5];
+    }
   }
 
   /** Debug: world position and velocity of the n-th drawn bird. */

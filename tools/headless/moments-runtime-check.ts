@@ -20,10 +20,14 @@
  *    clear / haze, 150–1500 m ASL, on the ground, in a race, with city life off or outside the corridor; climbing out
  *    ends the lines; the 30 min cooldown; forcing ignores every gate; the kettle site is ahead, in view, around the
  *    dragon's altitude and often on a real thermal of the lift field.
- *
  * 6. The "[I] Kaynağa bak" prompt (src/moments/sources.ts): offered on every frame of a moment with sources and for
  *    SOURCE_PROMPT_AFTER_S after it, not before, not after the window, not for a moment without sources, not while a
  *    race runs (a race also ends the window); the after-moment hint item is deferred by a race and ranks low.
+ * 7. The gull and simit on a ferry (moving anchor 'ferry' from the anchor feed): fires gliding, hovering or perched
+ *    near a ferry in service and names that ferry; not far from it, not at a stopped ferry, not at night, in rain or
+ *    storm, high above, diving or swimming, during a race or with city life off, not along a shore without ferries;
+ *    the hold follows the ferry as it pulls away, flying off ends it, the 600 s cooldown, the forced anchor and the
+ *    ?moment= placement beside the ferry.
  * Exits non-zero on any failure.
  */
 import { latLonToLocal, localToLatLon, WORLD_ORIGIN } from '../../src/core/geo-coords';
@@ -37,6 +41,8 @@ import type { Moment, SubtitleLine } from '../../src/moments/types';
 import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, type SourcePromptState } from '../../src/moments/sources';
 import { HUD_PRIORITY, HudDirector } from '../../src/ui/zones/director';
 import { buildHeadlessGeo } from './geo';
+import { AnchorFeed, ferryShortcut, inService } from '../../src/moments/anchors';
+import type { LifeService, VesselPose } from '../../src/core/contracts';
 import * as THREE from 'three';
 import { chooseKettleSite, STORK_SITE } from '../../src/moments/storks/site';
 import { dayOfYearOf } from '../../src/moments/triggers';
@@ -53,6 +59,8 @@ function check(cond: boolean, msg: string): void {
 
 const POEM_ID = 'orhan-veli-istanbulu-dinliyorum';
 const poem = ALL_MOMENTS.find((m) => m.id === POEM_ID)!;
+const GULL_ID = 'ferry-gull-simit';
+const gull = ALL_MOMENTS.find((m) => m.id === GULL_ID)!;
 const STORKS_ID = 'storks-bosphorus-migration';
 const storks = ALL_MOMENTS.find((m) => m.id === STORKS_ID)!;
 const FPS = 24;
@@ -143,8 +151,10 @@ console.log('2. playability');
   check(pp.playable && pp.soundFallback, 'the poem plays now (draft, only its optional sound missing → ambience fallback)');
   const ps = momentPlayability(storks);
   check(ps.playable && !ps.soundFallback, `the storks play now (ready, procedural flock and synthesised sound, no ambience fallback) ${ps.reason ?? ''}`);
+  const gp = momentPlayability(gull);
+  check(gull.status === 'ready' && gp.playable && !gp.soundFallback, `the ferry gull moment plays now (ready; procedural flock, its own gull calls, no ambience fallback) ${gp.reason ?? ''}`);
   for (const m of ALL_MOMENTS) {
-    if (m === poem || m === storks) continue;
+    if (m === poem || m === storks || m === gull) continue;
     const p = momentPlayability(m);
     check(!p.playable && !!p.reason, `${m.id} waits (${p.reason})`);
   }
@@ -734,6 +744,199 @@ console.log('6. source prompt');
     zones.update(1);
     check(zones.shownIn('lowerCenter') === 'race.hint', 'a race hint line outranks it');
     check(HUD_PRIORITY.momentSource < HUD_PRIORITY.flightHint && HUD_PRIORITY.momentSource < HUD_PRIORITY.momentLine, 'its priority sits below flight hints and moment lines');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Gull and simit on a ferry (moving anchor)                         */
+/* ------------------------------------------------------------------ */
+console.log('7. gull and simit on a ferry');
+{
+  // A vapur in service on the open water between Sarayburnu and Kadıköy, 7 m/s heading north-east.
+  const FERRY_ID = 42;
+  const start = latLonToLocal(41.0, 29.0);
+  check(geo.isWater(start.x, start.z) && geo.coastDistance(start.x, start.z) < -300, `the ferry's water is open sea (coast distance ${geo.coastDistance(start.x, start.z).toFixed(0)} m)`);
+  const yaw = (-45 * Math.PI) / 180; // forward (-sin yaw, -cos yaw) = north-east
+  const ferryAt = (t: number): VesselPose => ({
+    id: FERRY_ID,
+    kind: 'vapur',
+    x: start.x - Math.sin(yaw) * 7 * t,
+    z: start.z - Math.cos(yaw) * 7 * t,
+    yaw,
+    heave: 0,
+    speed: 7,
+    underway: true,
+    length: 72,
+    beam: 13.2,
+    draft: 3.1,
+    airDraft: 19.7,
+  });
+
+  // The anchor feed on a stand-in life service: the ferry above, a moored vapur and a tanker (not ferries).
+  let now = 0;
+  let serviceOn = true;
+  const docked: VesselPose = { ...ferryAt(0), id: 7, x: start.x + 90, speed: 0, underway: false };
+  const tanker: VesselPose = { ...ferryAt(0), id: 8, kind: 'tanker', x: start.x - 90 };
+  const life: LifeService = {
+    vessels(kinds, out) {
+      const all = [serviceOn ? ferryAt(now) : { ...ferryAt(now), speed: 0.5 }, docked, tanker].filter((p) => kinds.includes(p.kind));
+      out.length = 0;
+      out.push(...all);
+      return out;
+    },
+    vessel: (id, out) => (id === FERRY_ID ? Object.assign(out, ferryAt(now)) : null),
+  };
+  const feed = new AnchorFeed();
+  const pts = feed.update(life);
+  check(pts.ferry.length === 1 && pts.ferry[0].id === FERRY_ID, `the 'ferry' anchor lists the vapur in service only (not the moored one, not the tanker): ${pts.ferry.map((a) => a.id).join(', ')}`);
+  check(inService(ferryAt(0)) && !inService(docked), 'in service = underway and going ahead');
+
+  interface FerryFlight extends Flight {
+    /** Dragon offset from the ferry: along its heading and to starboard (m). */
+    along: number;
+    side: number;
+    service: boolean;
+  }
+  const ferryFlight = (over: Partial<FerryFlight> = {}): FerryFlight => ({ ...flight({ agl: 20, mode: 'gliding' }), along: -60, side: 80, service: true, ...over });
+  /** Runs `seconds` with the dragon riding along the ferry at an offset (or where `state` puts it). */
+  function flyFerry(runner: MomentRunner, seconds: number, state: (t: number) => FerryFlight, t0 = 0): void {
+    for (let k = 0; k < seconds * FPS; k++) {
+      const t = t0 + k * DT;
+      now = t;
+      const s = state(t);
+      serviceOn = s.service;
+      const fp = ferryAt(t);
+      const fx = -Math.sin(fp.yaw);
+      const fz = -Math.cos(fp.yaw);
+      const rx = Math.cos(fp.yaw);
+      const rz = -Math.sin(fp.yaw);
+      const p = { x: fp.x + fx * s.along + rx * s.side, z: fp.z + fz * s.along + rz * s.side };
+      const fr = frameAt(p, s);
+      fr.context!.anchors = feed.update(life);
+      runner.update(DT, fr);
+    }
+  }
+  const gullOnly = (): ReturnType<typeof harness> => harness([gull]);
+
+  // Fires near the ferry, under its conditions.
+  {
+    const { runner, log } = gullOnly();
+    flyFerry(runner, 30, () => ferryFlight());
+    const h = runner.history[0];
+    check(!!h && h.id === GULL_ID && h.reason === 'complete' && Math.abs(h.start - runner.pacing.dwellSec) <= DT + 1e-6, `gliding 20 m up, 100 m off the stern quarter: fires after the dwell and plays to the end (${h?.reason}, at ${h?.start.toFixed(2)} s)`);
+    check(log.shows.length === gull.content.subtitles.length && log.cards.length === 1, `all ${gull.content.subtitles.length} lines and the card (${log.shows.length}, ${log.cards.length})`);
+  }
+  {
+    const { runner } = gullOnly();
+    let anchor: number | undefined;
+    for (let k = 0; k < 3 && anchor === undefined; k++) {
+      flyFerry(runner, 2, () => ferryFlight({ mode: 'hovering', agl: 30, along: -120, side: 40 }), k * 2);
+      anchor = runner.currentAnchor;
+    }
+    check(anchor === FERRY_ID, `hovering by the stern: fires and names its ferry as the anchor (${anchor})`);
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ mode: 'grounded', agl: 0, along: 25, side: 0 }));
+    check(runner.history.length === 1 || !!runner.current, 'perched on the ferry: fires');
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ along: -200, side: 0, agl: 45 }));
+    check(!!runner.current || runner.history.length === 1, 'gliding 45 m up 164 m behind the stern (within 250 m of its centre): fires');
+  }
+  const noFire: Array<[string, Partial<FerryFlight>]> = [
+    ['300 m abeam (beyond 250 m)', { side: 300, along: 0 }],
+    ['1 km away', { side: 1000 }],
+    ['the ferry not in service (alongside, stopped)', { service: false }],
+    ['at night (22:00)', { timeOfDay: 22 }],
+    ['before dawn (05:30)', { timeOfDay: 5.5 }],
+    ['in rain', { weather: 'rain' }],
+    ['in a storm', { weather: 'storm' }],
+    ['high above it (150 m AGL)', { agl: 150 }],
+    ['diving past it', { mode: 'diving' }],
+    ['swimming beside it', { mode: 'swimming', agl: 0 }],
+    ['during a race', { racing: true }],
+    ['with the city-life category off', { prefs: { enabled: true, categories: { legend: true, 'city-life': false, poem: true } } }],
+  ];
+  for (const [label, over] of noFire) {
+    const { runner } = gullOnly();
+    flyFerry(runner, 20, () => ferryFlight(over));
+    check(runner.history.length === 0 && !runner.current, `no ferry moment ${label}`);
+  }
+  // Not away from ferries: the same glide along the European shore where no ferry runs.
+  {
+    const { runner } = gullOnly();
+    positionsLoop: for (const p of flyAlong(path, SPEED, 60)) {
+      const fr = frameAt(p, flight({ agl: 20 }));
+      fr.context!.anchors = feed.update(life);
+      runner.update(DT, fr);
+      if (runner.history.length > 0) break positionsLoop;
+    }
+    check(runner.history.length === 0, 'no ferry moment gliding along the shore away from the ferry');
+  }
+  // Fog and haze are fine.
+  for (const weather of ['fog', 'haze'] as const) {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ weather }));
+    check(!!runner.current || runner.history.length === 1, `fires in ${weather}`);
+  }
+  // Hold: the ferry pulls away while the dragon hovers; within the 250 + 100 m hold it goes on, leaving ends it.
+  {
+    const { runner, log } = gullOnly();
+    let leftAt = -1;
+    flyFerry(runner, 30, (t) => {
+      if (runner.currentLine === 1 && leftAt < 0) leftAt = t;
+      return ferryFlight(leftAt >= 0 ? { side: 700 } : {});
+    });
+    check(runner.history[0]?.reason === 'conditions' && log.hides[log.hides.length - 1]?.how === 'fade', `flying 700 m away mid-moment fades it out (${runner.history[0]?.reason})`);
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 30, () => ferryFlight({ side: 240, along: 0, mode: 'hovering' }));
+    check(runner.history[0]?.reason === 'complete', 'hovering 240 m abeam while the ferry sails on (beyond 250 m after a few seconds, inside the 350 m hold): plays to the end');
+  }
+  // Cooldown: repeatable after 600 s (and the global gap), not before.
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 700, () => ferryFlight());
+    const plays = runner.history.filter((x) => x.id === GULL_ID);
+    const cd = gull.trigger.repeat.kind === 'repeatable' ? gull.trigger.repeat.cooldownSec : Infinity;
+    check(plays.length === 2, `staying by the ferry for 700 s: plays twice (${plays.length}×)`);
+    if (plays.length === 2) {
+      const gap = plays[1].start - plays[0].start;
+      check(gap >= cd - 1e-6 && gap <= cd + runner.pacing.dwellSec + 2 * DT, `the second time after the ${cd} s cooldown (${gap.toFixed(1)} s)`);
+    }
+  }
+  // The shortcut: forced with an explicit anchor.
+  {
+    const { runner } = gullOnly();
+    check(runner.force(GULL_ID, FERRY_ID), 'force accepts the ferry moment with its anchor');
+    flyFerry(runner, 2, () => ferryFlight({ side: 3000, weather: 'rain' }));
+    check(runner.currentAnchor === FERRY_ID && !!runner.current, 'forced: plays at the given ferry whatever the conditions');
+  }
+  // The ?moment= placement next to a ferry in service.
+  {
+    now = 0;
+    serviceOn = true;
+    feed.update(life);
+    const sc = ferryShortcut(feed.vesselsOf('ferry'), (x, z) => geo.coastDistance(x, z));
+    check(!!sc && sc.anchorId === FERRY_ID, `?moment=${GULL_ID} picks the vapur in service (${sc?.anchorId})`);
+    if (sc) {
+      const fp = ferryAt(0);
+      const d = Math.hypot(sc.pose.x - fp.x, sc.pose.z - fp.z);
+      check(geo.isWater(sc.pose.x, sc.pose.z) && d > 30 && d < 90, `it hovers over the water beside the ferry (${d.toFixed(0)} m from its centre)`);
+      check(sc.pose.speed === 0 && sc.pose.y >= 10 && sc.pose.y <= 30, `hovering (speed 0) at ${sc.pose.y} m, inside the 60 m band`);
+      const toShip = (Math.atan2(fp.x - sc.pose.x, -(fp.z - sc.pose.z)) * 180) / Math.PI;
+      const diff = Math.abs(((sc.pose.headingDeg - toShip + 540) % 360) - 180);
+      check(diff < 60, `facing the ship's stern quarter (${diff.toFixed(0)}° off the line to its centre)`);
+      // And from there the trigger would fire by itself.
+      const r = gullOnly().runner;
+      const ctx = frameAt({ x: sc.pose.x, z: sc.pose.z }, flight({ agl: sc.pose.y, mode: 'hovering' }));
+      ctx.context!.anchors = feed.update(life);
+      for (let k = 0; k < 2 * FPS; k++) r.update(DT, ctx);
+      check(!!r.current, 'the shortcut pose satisfies the trigger on its own');
+    }
   }
 }
 
