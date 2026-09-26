@@ -1,11 +1,11 @@
 {
-  "name": "evren",
+  "name": "seventeen-skies",
   "private": true,
   "version": "0.1.0",
-  "description": "A realistic, open-world dragon-riding flight simulation over Istanbul, generated entirely in code with Three.js.",
+  "description": "Seventeen Skies: ride the flying creatures of Turkic myth over a real, living Istanbul. A realistic open-world flight game generated in code with Three.js.",
   "license": "MIT",
   "author": "Davut Kember <davutkmbr@gmail.com>",
-  "homepage": "https://davutkmbr.github.io/evren/",
+  "homepage": "https://seventeenskies.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/davutkmbr/evren.git"
@@ -15,6 +15,7 @@
     "webgl",
     "flight-simulator",
     "dragon",
+    "turkic-mythology",
     "istanbul",
     "procedural",
     "open-world",
@@ -30,6 +31,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "snap": "node scripts/snap.mjs",
+    "brand": "tsx scripts/brand/build-brand.ts",
     "walk-test": "node scripts/walk-test.mjs",
     "compile:world": "tsx tools/world-compiler/src/cli.ts",
     "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",

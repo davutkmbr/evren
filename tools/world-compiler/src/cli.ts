@@ -1,5 +1,5 @@
 /**
- * Evren world compiler: compiles one street-profile OSM area (data/osm/<area>.json, written by
+ * Seventeen Skies world compiler: compiles one street-profile OSM area (data/osm/<area>.json, written by
  * scripts/data/fetch-osm.mjs) into ~100 m glTF tiles plus JSON manifests under public/world/<area>/ (gitignored).
  *
  *   npm run compile:world -- --area kadikoy [--out public/world/kadikoy] [--format 0|1] [--strip auto|none|x0,z0,x1,z1]

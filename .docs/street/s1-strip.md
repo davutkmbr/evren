@@ -6,7 +6,7 @@ contain and how it is judged. It does not describe compiler code. The cameras ar
 `.shots/s1/reference/`, which is gitignored: they stay local and are never shipped. The photos are listed in the table
 in section 7.
 
-The frame is Evren local metres (`src/core/geo-coords.ts`): +X east, +Y up, +Z south. Heights are the format-0 compiled
+The frame is world-local metres (`src/core/geo-coords.ts`): +X east, +Y up, +Z south. Heights are the format-0 compiled
 ground (`public/world/kadikoy`, compiled 2026-09-24). Map data © OpenStreetMap contributors, ODbL 1.0.
 
 ## 1. Strip definition
