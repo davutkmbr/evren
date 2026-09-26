@@ -151,7 +151,7 @@ export class StorkFlockActor implements MomentActor {
     }
   }
 
-  end(reason: 'complete' | 'conditions' | 'race' | 'disabled'): void {
+  end(reason: 'complete' | 'race' | 'disabled'): void {
     this.playing = false;
     if (reason === 'race' || reason === 'disabled') {
       this.fadeRate = 1 / LIFE.quickFadeSeconds;
