@@ -54,7 +54,9 @@ function requireChunk(source: string, chunk: string, label: string): void {
 }
 
 export function createOpaqueMaterial(): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+  // Pulled in front of the OSM street ground (its own offset is -1 / -2): where a deck end twists down onto the street
+  // it lies on (build/deck-joint.ts), the coplanar ground underneath must not show through it.
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
   material.name = 'structures.opaque';
   patchMaterial(material, 'structures-opaque-v1', (shader) => {
     patchVertex(shader);

@@ -10,7 +10,7 @@ import { BridgeFrame, stations } from '../../build/bridge-frame';
 import type { MeshBuilder } from '../../build/mesh-builder';
 import { Emit, Surf } from '../../build/surfaces';
 import { Color, mat, Pal, withEmit } from '../palette';
-import { buildDeck, type DeckSection } from './deck';
+import { buildDeck, buildDeckColliders, type DeckSection } from './deck';
 import { buildPiers } from './piers';
 import { DeckProfile } from './profile';
 
@@ -104,7 +104,7 @@ function buildPylon(mb: MeshBuilder, frame: BridgeFrame, s: number, dirMain: num
 
 export function buildHalicMetroBridge(b: StructureBuild): void {
   const anchors = b.def.anchors ?? [];
-  const frame = BridgeFrame.fromPoints(anchors[0], anchors[1]);
+  const frame = BridgeFrame.fromAnchors(anchors);
   const half = 90;
   const sA = -half;
   const sB = half;
@@ -125,11 +125,7 @@ export function buildHalicMetroBridge(b: StructureBuild): void {
   buildDeck(b, frame, SIDE, { s0, s1: sA - 0.01, height, grade, partLength: 220 });
   buildDeck(b, frame, SIDE, { s0: sB + 0.01, s1, height, grade, partLength: 220 });
   buildDeck(b, frame, STATION, { s0: sA, s1: sB, height, grade, partLength: 200 });
-  for (let s = s0; s < s1 - 1; s += 45) {
-    const e = Math.min(s + 45, s1);
-    const hw = s > sA && e < sB ? STATION.halfWidth : SIDE.halfWidth;
-    b.segmentCollider(frame.point(s, 0, height(s) - 1.8), frame.point(e, 0, height(e) - 1.8), hw, 2.6);
-  }
+  buildDeckColliders(b, frame, s0, s1, height, (s) => (s > sA && s < sB ? STATION : SIDE));
 
   // pylons with their pier caps
   const yTop = 65;

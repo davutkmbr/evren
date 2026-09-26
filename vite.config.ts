@@ -8,7 +8,12 @@ const sandboxPages = Object.fromEntries(
     .map((f) => [`sandbox/${f.replace('.html', '')}`, resolve(__dirname, 'sandbox', f)]),
 );
 
-const WORLD_DIR = resolve(__dirname, 'public/world');
+/** Generated folders served straight from disk in dev (see worldStatic): mount path -> folder. */
+const STATIC_DIRS: Record<string, string> = {
+  '/world': resolve(__dirname, 'public/world'),
+  // Flight-scale OSM regions (scripts/data/osm-regions.mjs), fetched while the dev server runs.
+  '/data/osm/regions': resolve(__dirname, 'public/data/osm/regions'),
+};
 const WORLD_TYPES: Record<string, string> = {
   '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json',
@@ -30,27 +35,29 @@ function worldStatic(): Plugin {
   return {
     name: 'evren-world-static',
     configureServer(server) {
-      server.middlewares.use('/world', (req, res, next) => {
-        const rel = normalize(decodeURIComponent((req.url ?? '/').split('?')[0]));
-        const file = join(WORLD_DIR, rel);
-        if (!file.startsWith(WORLD_DIR)) {
-          next();
-          return;
-        }
-        try {
-          const st = statSync(file);
-          if (!st.isFile()) {
+      for (const [mount, dir] of Object.entries(STATIC_DIRS)) {
+        server.middlewares.use(mount, (req, res, next) => {
+          const rel = normalize(decodeURIComponent((req.url ?? '/').split('?')[0]));
+          const file = join(dir, rel);
+          if (!file.startsWith(dir)) {
             next();
             return;
           }
-          res.setHeader('Content-Type', WORLD_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream');
-          res.setHeader('Content-Length', String(st.size));
-          res.setHeader('Cache-Control', 'no-cache');
-          createReadStream(file).pipe(res);
-        } catch {
-          next();
-        }
-      });
+          try {
+            const st = statSync(file);
+            if (!st.isFile()) {
+              next();
+              return;
+            }
+            res.setHeader('Content-Type', WORLD_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream');
+            res.setHeader('Content-Length', String(st.size));
+            res.setHeader('Cache-Control', 'no-cache');
+            createReadStream(file).pipe(res);
+          } catch {
+            next();
+          }
+        });
+      }
     },
   };
 }
@@ -62,8 +69,10 @@ export default defineConfig({
     strictPort: true,
     host: '127.0.0.1',
     // Large generated or cached folders: served as static files, never watched (recompiles would flood the watcher).
+    // The data folders are anchored (the root data/ and public/data/): a bare '**/data/**' also hid source folders
+    // such as src/world/geo/data/ (landmark anchors, roads), whose edits then never reached the dev server.
     watch: {
-      ignored: ['**/public/world/**', '**/assets-src/**', '**/private-assets/**', '**/.shots/**', '**/data/**', '**/tools/**', '**/scripts/**'],
+      ignored: ['**/public/world/**', '**/public/data/**', `${resolve(__dirname, 'data').replace(/\\/g, '/')}/**`, '**/assets-src/**', '**/private-assets/**', '**/.shots/**', '**/tools/**', '**/scripts/**'],
     },
   },
   preview: { port: 5198, strictPort: true, host: '127.0.0.1' },

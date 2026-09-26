@@ -656,23 +656,49 @@ export class MeshBuilder {
 
   /**
    * Flat ribbon between two lateral offsets along frames (road surfaces): u = lateral offset (m, signed, right +),
-   * v = frame.s. `lift` raises it along the frame up axis.
+   * v = frame.s. `lift` raises it along the frame up axis. `cuts`: extra lateral vertex columns (those strictly
+   * between xLeft and xRight are used), e.g. where a deck end twists into an uneven ground.
    */
-  ribbon(frames: readonly SweepFrame[], xLeft: number, xRight: number, lift = 0): void {
+  ribbon(frames: readonly SweepFrame[], xLeft: number, xRight: number, lift = 0, cuts: readonly number[] = []): void {
+    const lo = Math.min(xLeft, xRight);
+    const hi = Math.max(xLeft, xRight);
+    const inner = cuts.filter((x) => x > lo + 1e-3 && x < hi - 1e-3).sort((a, b) => a - b);
+    const xs = xLeft <= xRight ? [xLeft, ...inner, xRight] : [xLeft, ...inner.reverse(), xRight];
     const p = new THREE.Vector3();
-    let prevL = -1;
-    let prevR = -1;
+    let prev: number[] = [];
     for (let f = 0; f < frames.length; f++) {
       const F = frames[f];
-      p.copy(F.p).addScaledVector(F.right, xLeft).addScaledVector(F.up, lift);
-      const l = this.vtx(p, F.up, xLeft, F.s);
-      p.copy(F.p).addScaledVector(F.right, xRight).addScaledVector(F.up, lift);
-      const r = this.vtx(p, F.up, xRight, F.s);
+      const row = xs.map((x) => {
+        p.copy(F.p).addScaledVector(F.right, x).addScaledVector(F.up, lift);
+        return this.vtx(p, F.up, x, F.s);
+      });
       if (f > 0) {
-        this.quad(prevL, prevR, r, l);
+        for (let k = 0; k < xs.length - 1; k++) {
+          this.quad(prev[k], prev[k + 1], row[k + 1], row[k]);
+        }
       }
-      prevL = l;
-      prevR = r;
+      prev = row;
+    }
+  }
+
+  /** Raises every vertex from index `from` on by dy(x, y, z) (normals kept: meant for small surface offsets). */
+  displaceY(dy: (x: number, y: number, z: number) => number, from = 0): void {
+    const P = this.pos.data;
+    for (let i = from * 3; i < this.pos.length; i += 3) {
+      P[i + 1] += dy(P[i], P[i + 1], P[i + 2]);
+    }
+  }
+
+  /**
+   * Moves every vertex from index `from` on horizontally: `move(x, y, z)` returns the distance along the unit
+   * horizontal direction (dirX, dirZ) (normals kept: meant for small lateral warps).
+   */
+  displaceAlong(dirX: number, dirZ: number, move: (x: number, y: number, z: number) => number, from = 0): void {
+    const P = this.pos.data;
+    for (let i = from * 3; i < this.pos.length; i += 3) {
+      const d = move(P[i], P[i + 1], P[i + 2]);
+      P[i] += dirX * d;
+      P[i + 2] += dirZ * d;
     }
   }
 
