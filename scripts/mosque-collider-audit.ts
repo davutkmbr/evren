@@ -9,7 +9,7 @@
  * - uncovered: solid geometry (walls, roofs, domes, minarets) more than TOL_OUT outside every collider: the dragon
  *   flies through it.
  * - phantom: collider surface farther than TOL_PHANTOM from any geometry: an invisible wall or roof in the air.
- * Thin fittings (alem, lamps, glazing) are not required to be covered. Surfaces are sampled on a ~0.5 m grid.
+ * Lamps and glazing (set back in the openings) are not required to be covered. Surfaces are sampled on a ~0.5 m grid.
  */
 import { writeFileSync } from 'node:fs';
 import { MeshBuilder } from '../src/world/landmarks/mosques/gen/builder';
@@ -21,8 +21,8 @@ import { Mat, type LocalCollider } from '../src/world/landmarks/mosques/gen/type
 const TOL_OUT = 0.8;
 const TOL_PHANTOM = 1.5;
 const STEP = 0.5;
-/** Materials that need no collider (fittings, glazing set back in the openings). */
-const SKIP_MATS = new Set<number>([Mat.Gold, Mat.Lamp, Mat.Glass]);
+/** Materials that need no collider (lamps, glazing set back in the openings). */
+const SKIP_MATS = new Set<number>([Mat.Lamp, Mat.Glass]);
 
 type P = [number, number, number];
 

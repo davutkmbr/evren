@@ -145,7 +145,7 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
     // shaft and petek up to the cap (one full-height cylinder used to stand in the air around the cap)
     { kind: 'cylinder', x: m.x, y: y0 + L.baseH, z: m.z, r: r * 1.15, h: L.capY - L.baseH },
   ];
-  // the lead cap up to its tip as stacked cylinders following its profile, then the alem's bulbs
+  // the lead cap up to its tip as stacked cylinders following its profile (the alem registers its own)
   const prof = capProfile(m, L, capRadius(m, L));
   const tiers = Math.max(3, Math.ceil((m.h - L.capY) / 1.0));
   for (let k = 0; k < tiers; k++) {
@@ -160,7 +160,7 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
     }
     cols.push({ kind: 'cylinder', x: m.x, y: y0 + ya, z: m.z, r: Math.max(r, 0.15), h: yb - ya });
   }
-  cols.push({ kind: 'cylinder', x: m.x, y: y0 + m.h - 0.15, z: m.z, r: L.alemH * 0.1, h: L.alemH * 0.62 });
+
   for (const f of L.floors) {
     cols.push({ kind: 'cylinder', x: m.x, y: y0 + f - L.corbelH, z: m.z, r: r + L.ext + 0.2, h: L.corbelH + 1.3 });
   }
