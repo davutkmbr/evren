@@ -13,6 +13,7 @@ import { ALL_MOMENTS } from './data';
 import { loadMomentPrefs, onMomentPrefsChange, type MomentPrefs } from './prefs';
 import { momentStartPose, MomentRunner, type MomentFrame, type MomentSink } from './runtime';
 import type { MomentContext } from './triggers';
+import { SourcePromptController } from './source-prompt';
 import { MomentView } from './view';
 
 /** Seconds of running game after the ?moment= teleport before the forced moment starts (the camera settles). */
@@ -36,6 +37,7 @@ export function createMomentSystem(): System {
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
   };
   const runner = new MomentRunner(ALL_MOMENTS, sink);
+  const sources = new SourcePromptController();
 
   const worldContext: Omit<MomentContext, 'session'> = {
     position: { x: 0, z: 0 },
@@ -159,6 +161,7 @@ export function createMomentSystem(): System {
       frame.prefs = prefs;
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
+      sources.update(dt, ctx, runner.current, frame.racing, view);
     },
 
     dispose(): void {
@@ -166,6 +169,7 @@ export function createMomentSystem(): System {
         fn();
       }
       ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(0);
+      sources.dispose(ctxRef);
       view?.dispose();
       view = null;
     },

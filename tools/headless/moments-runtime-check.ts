@@ -14,6 +14,9 @@
  * 4. Pacing while playing: pause freezes it, a few wing beats or a small climb do not end it, leaving the band fades
  *    the line out (and a moment cut short early may try again later, one cut late is spent), a race or the settings
  *    end it, the global gap keeps moments apart, and the ?moment= shortcut forces one.
+ * 5. The "[I] Kaynağa bak" prompt (src/moments/sources.ts): offered on every frame of a moment with sources and for
+ *    SOURCE_PROMPT_AFTER_S after it, not before, not after the window, not for a moment without sources, not while a
+ *    race runs (a race also ends the window); the after-moment hint item is deferred by a race and ranks low.
  *
  * Exits non-zero on any failure.
  */
@@ -25,6 +28,8 @@ import { defaultMomentPrefs, onMomentPrefsChange, saveMomentPrefs, type MomentPr
 import { HOLD, momentPlayability, MomentRunner, momentStartPose, type MomentFrame, type MomentSink } from '../../src/moments/runtime';
 import { pointInPolygon, type MomentContext, type XZ } from '../../src/moments/triggers';
 import type { Moment, SubtitleLine } from '../../src/moments/types';
+import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, type SourcePromptState } from '../../src/moments/sources';
+import { HUD_PRIORITY, HudDirector } from '../../src/ui/zones/director';
 import { buildHeadlessGeo } from './geo';
 
 let failures = 0;
@@ -426,6 +431,121 @@ console.log('4. pacing');
     off();
     const got = seen as MomentPrefs | null;
     check(!!got && got.categories.poem === false && got !== prefs, 'saving the settings notifies the runtime with a copy (even without storage)');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. The "[I] Kaynağa bak" prompt window                               */
+/* ------------------------------------------------------------------ */
+console.log('5. source prompt');
+{
+  const positions = flyAlong(path, SPEED, 120);
+  type Phase = 'none' | 'playing' | 'after';
+  const phaseOf = (s: SourcePromptState): Phase => (s ? s.phase : 'none');
+
+  // A full glide: nothing before the moment, the prompt all through it, then SOURCE_PROMPT_AFTER_S more, then nothing.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    const trace: { t: number; phase: Phase; playing: boolean; id?: string }[] = [];
+    positions.forEach((p) => {
+      runner.update(DT, frameAt(p, flight()));
+      const s = win.update(DT, runner.current, false);
+      trace.push({ t: runner.now, phase: phaseOf(s), playing: !!runner.current, id: s?.moment.id });
+    });
+    const h = runner.history[0];
+    check(!!h && h.reason === 'complete', 'the poem played in the prompt run');
+    if (h) {
+      const before = trace.filter((x) => x.t < h.start - 1e-6);
+      check(before.length > 0 && before.every((x) => x.phase === 'none'), 'no prompt before the moment starts');
+      const during = trace.filter((x) => x.playing);
+      check(during.length > 0 && during.every((x) => x.phase === 'playing' && x.id === POEM_ID), `the prompt is offered on every frame of the moment (${during.length} frames)`);
+      const after = trace.filter((x) => x.phase === 'after');
+      const afterSpan = after.length * DT;
+      check(after.length > 0 && after.every((x) => x.t >= h.end - 1e-6), 'the after-window follows the moment');
+      check(Math.abs(afterSpan - SOURCE_PROMPT_AFTER_S) <= DT + 1e-6, `it lasts ${SOURCE_PROMPT_AFTER_S} s after the moment (${afterSpan.toFixed(2)} s)`);
+      const later = trace.filter((x) => x.t > h.end + SOURCE_PROMPT_AFTER_S + DT);
+      check(later.length > 0 && later.every((x) => x.phase === 'none'), 'no prompt once the window has passed');
+    }
+  }
+
+  // Paused frames do not use up the window.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let i = 0;
+    while ((runner.history.length === 0 || runner.current) && i < positions.length) {
+      runner.update(DT, frameAt(positions[i], flight()));
+      win.update(DT, runner.current, false);
+      i++;
+    }
+    for (let k = 0; k < 60 * FPS; k++) win.update(0, runner.current, false);
+    check(win.current?.phase === 'after', 'a paused minute right after the moment keeps the prompt (menu open)');
+  }
+
+  // A race: no prompt while it runs, and a race ends the window after a moment.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let raceAt = -1;
+    const phases: Phase[] = [];
+    positions.forEach((p, i) => {
+      if (runner.currentLine === 2 && raceAt < 0) raceAt = i;
+      const racing = raceAt >= 0 && i > raceAt && i < raceAt + 5 * FPS;
+      runner.update(DT, frameAt(p, flight({ racing })));
+      const s = win.update(DT, runner.current, racing);
+      // Up to 15 s after the race began (the cut-short poem may retry after 90 s, with a fresh prompt then).
+      if (raceAt >= 0 && i > raceAt && i < raceAt + 15 * FPS) phases.push(phaseOf(s));
+    });
+    check(runner.history[0]?.reason === 'race', 'the race ended the poem');
+    check(phases.length > 0 && phases.every((x) => x === 'none'), 'no prompt during the race, and none after the race ends it');
+  }
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let endAt = -1;
+    let seenAfter = false;
+    const afterRace: Phase[] = [];
+    positions.forEach((p, i) => {
+      const racing = endAt >= 0 && i >= endAt + 3 * FPS && i < endAt + 4 * FPS;
+      runner.update(DT, frameAt(p, flight({ racing })));
+      const s = win.update(DT, runner.current, racing);
+      if (runner.history.length > 0 && endAt < 0) endAt = i;
+      if (endAt >= 0 && i < endAt + 3 * FPS && s?.phase === 'after') seenAfter = true;
+      if (endAt >= 0 && i >= endAt + 3 * FPS) afterRace.push(phaseOf(s));
+    });
+    check(seenAfter, 'the prompt shows right after the moment');
+    check(afterRace.length > 0 && afterRace.every((x) => x === 'none'), 'a race starting in the window removes the prompt for good');
+  }
+
+  // A moment without sources offers no prompt.
+  {
+    const bare: Moment = { ...poem, sources: undefined };
+    const { runner } = harness([bare]);
+    const win = new SourcePromptWindow();
+    let any = false;
+    positions.forEach((p) => {
+      runner.update(DT, frameAt(p, flight()));
+      if (win.update(DT, runner.current, false)) any = true;
+    });
+    check(runner.history.length === 1 && !any, 'a moment without sources offers no prompt');
+  }
+
+  // The hint item after a moment: low priority, deferred by a race, never over race lines.
+  {
+    const zones = new HudDirector();
+    const hint = { id: 'moment.source', zone: 'lowerCenter' as const, priority: HUD_PRIORITY.momentSource, duration: 10, maxWait: 10, deferIn: ['race'], hints: [['I', 'Kaynağa bak']] as const, joinable: true };
+    zones.request(hint);
+    zones.update(DT);
+    check(zones.isShown('moment.source'), 'the after-moment hint shows on a free hint line');
+    zones.setContext('race', true);
+    zones.update(DT);
+    check(!zones.isShown('moment.source'), 'it is deferred while a race runs');
+    zones.setContext('race', false);
+    zones.request({ id: 'race.hint', zone: 'lowerCenter', priority: HUD_PRIORITY.raceCountdown, hints: [['Y', 'iptal']] });
+    zones.update(1);
+    check(zones.shownIn('lowerCenter') === 'race.hint', 'a race hint line outranks it');
+    check(HUD_PRIORITY.momentSource < HUD_PRIORITY.flightHint && HUD_PRIORITY.momentSource < HUD_PRIORITY.momentLine, 'its priority sits below flight hints and moment lines');
   }
 }
 

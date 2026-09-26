@@ -30,6 +30,9 @@ export class MomentView {
     'aria-live': 'polite',
   });
   private readonly lineBinding = fadeBinding(this.line);
+  /** "[I] Kaynağa bak" under the subtitle line while a moment with sources plays (./source-prompt.ts). */
+  private readonly sourceHint = el('p', 'moment-source');
+  private sourceHintKey = '';
 
   private readonly cardMeta = el('span', 'dcard-meta');
   private readonly cardTitle = el('h3', 'dcard-title');
@@ -48,6 +51,18 @@ export class MomentView {
     container: HTMLElement,
   ) {
     container.append(this.line, this.card);
+    this.sourceHint.hidden = true;
+    this.line.append(this.sourceHint);
+  }
+
+  /** Shows `nodes` (a key and its verb) under the subtitle line; null hides it. `key` identifies the content. */
+  setSourceHint(key: string | null, nodes: () => Array<Node | string>): void {
+    if ((key ?? '') === this.sourceHintKey) {
+      return;
+    }
+    this.sourceHintKey = key ?? '';
+    this.sourceHint.hidden = !key;
+    this.sourceHint.replaceChildren(...(key ? nodes() : []));
   }
 
   showLine(line: SubtitleLine): void {

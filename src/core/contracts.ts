@@ -965,6 +965,8 @@ export interface GameEvents {
    * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
    */
   maneuver: { id: string; label: string };
+  /** The player asked for a moment's sources ("[I] Kaynağa bak", src/moments): the UI opens the source sheet. */
+  'moment-source': { id: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
   teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
   /**
