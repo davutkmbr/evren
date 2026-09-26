@@ -18,13 +18,14 @@
  *   pet G held / D-pad down, stand T, weather N, encourage V / D-pad up (the rider pats the neck and calls to the
  *   dragon: a bond interaction with no effect on speed or physics)
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
- *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
- *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap
+ *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks (gamepad: a left-stick flick up / down)
+ *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap (gamepad LB / RB)
+ * Gamepad buttons double-tap like keys (A / RT = Space, LT = Shift); key hints name the pad buttons (core/pad-keys.ts).
  * Hotbar: slot1..slot5 = Digit1..Digit5 (and the numpad digits); the digit keys are reserved for the hotbar.
  * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS
  * (the recogniser and the gesture collisions are documented in core/gestures.ts).
  */
-import { DOUBLE_TAP_MS, DoubleTapRecognizer } from './gestures';
+import { AxisPress, DOUBLE_TAP_MS, DoubleTapRecognizer } from './gestures';
 
 export { DOUBLE_TAP_MS };
 
@@ -117,7 +118,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'hover' | 'ground' | 'tricks' | 'dragon' | 'camera' | 'perch' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'ground' | 'water' | 'tricks' | 'dragon' | 'camera' | 'perch' | 'game';
 
 /**
  * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
@@ -145,6 +146,14 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Space / L', action: 'Koşarken (Shift + W): koşu hızıyla sıçrayıp havalan', group: 'ground' },
   { keys: 'Ctrl / X', action: 'Koşarak inerken: fren yap, kayarak dur', group: 'ground' },
   { keys: 'Space', action: 'Koşarak inerken: dokun-kalk, hızını koruyarak uçuşa dön', group: 'ground' },
+  // The sea (phase 21): the plunge, swimming, under water, the breach and the take-off from the water.
+  { keys: 'Shift', action: 'Derin suya dik alçalırken: kanatları kapat, suya dal', group: 'water' },
+  { keys: 'W / S', action: 'Yüzerken: ileri yüz / geri git', group: 'water' },
+  { keys: 'Shift + W', action: 'Hızlı yüz', group: 'water' },
+  { keys: 'A / D', action: 'Suda dön', group: 'water' },
+  { keys: 'Space / L', action: 'Yüzerken: suyun üstünde koşup havalan', group: 'water' },
+  { keys: 'W / S', action: 'Su altında: burun aşağı / yukarı', group: 'water' },
+  { keys: 'Space', action: 'Su altında: kanat vuruşu (yüzeye yakınken: sudan fırla)', group: 'water' },
   { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
   { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
   { keys: 'Space ×2', action: 'Güç vuruşu: iki derin kanat çırpışıyla hızlan (dayanıklılık harcar)', group: 'tricks' },
@@ -221,6 +230,9 @@ export class Input {
   private pendingMouse = { x: 0, y: 0 };
   private pendingWheel = 0;
   private gamepadButtonsPrev: boolean[] = [];
+  /** Pad buttons (and triggers) held last frame, by the button they press; the left stick's up / down flicks. */
+  private readonly padHeldPrev = new Set<ButtonName>();
+  private readonly padPitchFlick = new AxisPress(0.6, 0.25);
   private canvas: HTMLElement;
 
   constructor(canvas: HTMLElement) {
@@ -367,6 +379,9 @@ export class Input {
       [15, 'rollRight', true],
     ];
     let any = false;
+    const t = performance.now();
+    // Buttons that act like keys: a fresh press is a press, and two within DOUBLE_TAP_MS a double tap (like the keys).
+    const padDown = new Map<ButtonName, boolean>();
     for (const [i, name, edge] of map) {
       const now = b(i);
       if (now) {
@@ -376,21 +391,44 @@ export class Input {
         if (now && !this.gamepadButtonsPrev[i]) {
           this.pressedNow.add(name);
           if (name === 'rollLeft' || name === 'rollRight') {
+            // One D-pad press is the roll's double tap.
             this.doubleNow.add(name);
           }
         }
-      } else if (now) {
-        held.add(name);
+      } else {
+        if (now) {
+          held.add(name);
+        }
+        padDown.set(name, (padDown.get(name) ?? false) || now);
       }
       this.gamepadButtonsPrev[i] = now;
     }
-    if (val(7) > 0.3) {
+    const rt = val(7) > 0.3;
+    const lt = val(6) > 0.3;
+    if (rt) {
       held.add('flap');
       any = true;
     }
-    if (val(6) > 0.3) {
+    if (lt) {
       held.add('dive');
       any = true;
+    }
+    padDown.set('flap', (padDown.get('flap') ?? false) || rt);
+    padDown.set('dive', lt);
+    padDown.set('yawLeft', b(4));
+    padDown.set('yawRight', b(5));
+    for (const [name, now] of padDown) {
+      if (now && !this.padHeldPrev.has(name)) {
+        this.pressedNow.add(name);
+        if (this.doubleTaps.press(name, t)) {
+          this.doubleNow.add(name);
+        }
+      }
+      if (now) {
+        this.padHeldPrev.add(name);
+      } else {
+        this.padHeldPrev.delete(name);
+      }
     }
     const rx = dz(gp.axes[2] ?? 0);
     const ry = dz(gp.axes[3] ?? 0);
@@ -399,6 +437,16 @@ export class Input {
       this.mouseDelta.y += ry * 12;
       held.add('look');
       any = true;
+    }
+    // A flick of the left stick up / down is a press of S / W (the pitch axis before the invert setting, like the
+    // keys), so the S double tap (loop, wingover) is two flicks.
+    const flick = this.padPitchFlick.update(dz(gp.axes[1] ?? 0));
+    if (flick) {
+      const name: ButtonName = flick < 0 ? 'pitchUp' : 'pitchDown';
+      this.pressedNow.add(name);
+      if (this.doubleTaps.press(name, t)) {
+        this.doubleNow.add(name);
+      }
     }
     const res = {
       pitch: dz(gp.axes[1] ?? 0),
