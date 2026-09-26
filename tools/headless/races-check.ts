@@ -11,23 +11,50 @@
  * backwards pass does not count, stray and landing abort) plus the ghost path codec and records without storage.
  * Races v2: medal targets (data vs the default paces, thresholds, best medal in records), split delta sign and
  * format, ghost interpolation (time → position) and the ghost gap sign (progress along the course).
+ * Races v3: bridges are built with their real structures builders (colliders, like perches-check); a gate, speed
+ * ring or leg point under a deck is valid only when the deck underside is at least 25 m above the ring top (above the
+ * path point for legs) and the ring stays 20 m from every pier / tower collider. Speed rings get the gate clearance
+ * checks plus spacing from the gates. Unit tests: ring pass detection and the boost envelope, custom course share
+ * codes (round trip, malformed codes rejected), storage limits, and the editor's placement validation.
  *
  * Exits non-zero on any failure.
  */
 import { buildHeadlessGeo } from './geo';
+import { StructureBuild } from '../../src/world/landmarks/structures/build/context';
+import { builderFor } from '../../src/world/landmarks/structures/builders/registry';
+import { prepareSite } from '../../src/world/landmarks/structures/system/site-planner';
+import type { ColliderData } from '../../src/world/landmarks/structures/types';
 import {
   COURSES,
   compileCourse,
   RACE_PACE,
   COUNTDOWN_SECONDS,
   LEAD_IN,
+  SPEED_RING_RADIUS,
   betterMedal,
   defaultMedalTimes,
+  facing,
   medalFor,
   timedDistance,
   type CompiledCourse,
   type Gate,
 } from '../../src/activities/courses';
+import {
+  CUSTOM_LIMIT,
+  GATE_SIZES,
+  compileCustomCourse,
+  customCourseId,
+  decodeCourseCode,
+  deleteCustomCourse,
+  encodeCourseCode,
+  loadCustomCourses,
+  saveCustomCourse,
+  validateRingPlacement,
+  type CustomCourse,
+  type PlacementProbe,
+} from '../../src/activities/custom-courses';
+import { CourseEditor, poseFacing, type EditorPose } from '../../src/activities/editor';
+import { BOOST_DV, BOOST_SPEED_CAP, BOOST_TIME, BoostEnvelope, boostDeltaV } from '../../src/activities/speed-boost';
 import { GhostTrack, ghostGap } from '../../src/activities/ghost';
 import { RaceSession, courseProgress, gateCrossing, type RaceEvent, type Vec3 } from '../../src/activities/race';
 import { decodeGhost, encodeGhost, getRecord, submitRun, GhostRecorder, GHOST_HZ } from '../../src/activities/records';
@@ -59,6 +86,8 @@ const ok = (msg: string): void => console.log(`  ok   ${msg}`);
 
 interface Volume {
   id: string;
+  /** Landmark id (without the @anchor suffix). */
+  landmark: string;
   /** Segment (a == b for a cylinder). */
   ax: number;
   az: number;
@@ -85,13 +114,13 @@ function landmarkVolumes(landmarks: readonly LandmarkDef[]): Volume[] {
           }
         }
       }
-      out.push({ id: l.id, ax: best[0].x, az: best[0].z, bx: best[1].x, bz: best[1].z, radius: BRIDGE_HALF_WIDTH, top });
+      out.push({ id: l.id, landmark: l.id, ax: best[0].x, az: best[0].z, bx: best[1].x, bz: best[1].z, radius: BRIDGE_HALF_WIDTH, top });
       continue;
     }
     const r = l.kind === 'bridge' ? BRIDGE_HALF_WIDTH : l.extent ?? l.radius;
-    out.push({ id: l.id, ax: l.x, az: l.z, bx: l.x, bz: l.z, radius: r, top });
+    out.push({ id: l.id, landmark: l.id, ax: l.x, az: l.z, bx: l.x, bz: l.z, radius: r, top });
     for (const a of anchors) {
-      out.push({ id: `${l.id}@anchor`, ax: a.x, az: a.z, bx: a.x, bz: a.z, radius: Math.max(40, Math.min(l.radius, 80)), top });
+      out.push({ id: `${l.id}@anchor`, landmark: l.id, ax: a.x, az: a.z, bx: a.x, bz: a.z, radius: Math.max(40, Math.min(l.radius, 80)), top });
     }
   }
   return out;
@@ -106,6 +135,127 @@ function distToVolume(v: Volume, x: number, z: number): number {
 }
 
 /* ------------------------------------------------------------------ */
+/* Bridges: real structure colliders                                   */
+/* ------------------------------------------------------------------ */
+
+/** Deck underside above a ring top (m) required to pass under a bridge. */
+const UNDER_DECK_CLEARANCE = 25;
+/** Horizontal distance (m) a ring keeps from piers and towers under a bridge. */
+const PIER_LATERAL_CLEARANCE = 20;
+/** Colliders this far (m) beyond the ring's reach still count as overhead (the deck band, like the capsule). */
+const OVERHEAD_REACH = BRIDGE_HALF_WIDTH;
+/** Smallest gate radius (m) a course would use under a bridge. */
+const MIN_UNDER_GATE_RADIUS = 8;
+
+/** Builds every structures-built bridge and returns its colliders by landmark id. */
+function buildBridgeColliders(geo: GeoQuery): Map<string, ColliderData[]> {
+  const out = new Map<string, ColliderData[]>();
+  for (const def of geo.landmarks) {
+    if (def.kind !== 'bridge' || def.builder !== 'structures') {
+      continue;
+    }
+    const b = new StructureBuild(prepareSite(def, geo));
+    builderFor(b.def)(b);
+    const colliders = b.result(0).colliders;
+    if (colliders.length) {
+      out.set(def.id, colliders);
+    }
+  }
+  return out;
+}
+
+/** Horizontal distance from (x, z) to a collider's footprint (0 inside) and its vertical span. */
+function colliderReach(c: ColliderData, x: number, z: number): { d: number; bottom: number; top: number } {
+  if (c.kind === 'box') {
+    // Box yaw follows Object3D.rotation.y (same convention as perches-check colliderTop).
+    const dx = x - c.center[0];
+    const dz = z - c.center[2];
+    const cs = Math.cos(c.yaw);
+    const sn = Math.sin(c.yaw);
+    const lx = dx * cs - dz * sn;
+    const lz = dx * sn + dz * cs;
+    const ox = Math.max(0, Math.abs(lx) - c.halfSize[0]);
+    const oz = Math.max(0, Math.abs(lz) - c.halfSize[2]);
+    return { d: Math.hypot(ox, oz), bottom: c.center[1] - c.halfSize[1], top: c.center[1] + c.halfSize[1] };
+  }
+  if (c.kind === 'cylinder') {
+    return { d: Math.max(0, Math.hypot(x - c.base[0], z - c.base[2]) - c.radius), bottom: c.base[1], top: c.base[1] + c.height };
+  }
+  return { d: Math.max(0, Math.hypot(x - c.center[0], z - c.center[2]) - c.radius), bottom: c.center[1] - c.radius, top: c.center[1] + c.radius };
+}
+
+interface UnderBridge {
+  /** Some collider is overhead (within the deck band). */
+  under: boolean;
+  /** Lowest collider bottom overhead (m), Infinity when none. */
+  underside: number;
+  /** Underside minus the ring top (m). */
+  margin: number;
+  /** Horizontal distance from the ring's edge to the nearest pier / tower collider at the ring's height (m). */
+  lateral: number;
+  ok: boolean;
+}
+
+/**
+ * Under-bridge test for a ring of radius r centred at (x, y, z) (r = 0 for a path point). Colliders whose bottom is
+ * above the ring centre and whose footprint lies within r + OVERHEAD_REACH are overhead (the deck); every other
+ * collider reaching the band from 10 m below the ring to UNDER_DECK_CLEARANCE above its top is a pier, tower or
+ * approach span the ring must stay PIER_LATERAL_CLEARANCE away from.
+ */
+function underBridge(colliders: readonly ColliderData[], x: number, y: number, z: number, r: number): UnderBridge {
+  let underside = Infinity;
+  let lateral = Infinity;
+  const bandLow = y - r - 10;
+  const bandHigh = y + r + UNDER_DECK_CLEARANCE;
+  for (const c of colliders) {
+    const k = colliderReach(c, x, z);
+    if (k.bottom >= y && k.d <= r + OVERHEAD_REACH) {
+      underside = Math.min(underside, k.bottom);
+    } else if (k.top > bandLow && k.bottom < bandHigh) {
+      lateral = Math.min(lateral, k.d - r);
+    }
+  }
+  const margin = underside - (y + r);
+  return { under: underside < Infinity, underside, margin, lateral, ok: margin >= UNDER_DECK_CLEARANCE && lateral >= PIER_LATERAL_CLEARANCE };
+}
+
+/** Highest deck underside directly over water along a bridge's axis (m), and where. */
+function bestUnderside(geo: GeoQuery, v: Volume, colliders: readonly ColliderData[]): { underside: number; x: number; z: number } {
+  let best = { underside: -Infinity, x: v.ax, z: v.az };
+  const len = Math.hypot(v.bx - v.ax, v.bz - v.az);
+  for (let s = 0; s <= len; s += 5) {
+    const x = v.ax + ((v.bx - v.ax) * s) / len;
+    const z = v.az + ((v.bz - v.az) * s) / len;
+    if (!geo.isWater(x, z)) {
+      continue;
+    }
+    let under = Infinity;
+    let blocked = false;
+    for (const c of colliders) {
+      const k = colliderReach(c, x, z);
+      if (k.d > 0) {
+        continue;
+      }
+      if (k.bottom >= 0) {
+        under = Math.min(under, k.bottom);
+      } else if (k.top > 0) {
+        blocked = true;
+      }
+    }
+    if (!blocked && under < Infinity && under > best.underside) {
+      best = { underside: under, x, z };
+    }
+  }
+  return best;
+}
+
+interface Env {
+  geo: GeoQuery;
+  volumes: Volume[];
+  bridges: Map<string, ColliderData[]>;
+}
+
+/* ------------------------------------------------------------------ */
 /* Course checks                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -115,29 +265,92 @@ function surfaceAt(geo: GeoQuery, x: number, z: number): { h: number; land: bool
   return { h: Math.max(0, h), land };
 }
 
-function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): void {
-  const gates = course.gates;
-  console.log(`\n${course.def.name} (${course.def.id}): ${gates.length} gates`);
-  let before = failures;
+/** Speed rings keep this far (m) from every gate centre. */
+const RING_GATE_GAP = 100;
+/** Speed rings on built-in courses sit in this part of their leg. */
+const RING_LEG_T = [0.2, 0.8] as const;
 
-  // Gates: terrain clearance and landmark volumes.
-  for (const g of gates) {
-    const s = surfaceAt(geo, g.x, g.z);
-    const need = g.radius + GATE_TERRAIN_MARGIN + (s.land ? LAND_BUILDING_ALLOWANCE : 0);
-    const clearance = g.y - s.h;
-    if (clearance < need) {
-      fail(`gate ${g.index} clearance ${clearance.toFixed(0)} m < ${need} m (${s.land ? 'land' : 'water'}, ground ${s.h.toFixed(0)} m)`);
-    }
-    // The ring's horizontal footprint: radius times the horizontal part of its plane.
-    for (const v of volumes) {
-      const d = distToVolume(v, g.x, g.z);
-      if (d < g.radius + LANDMARK_H_MARGIN && g.y - g.radius < v.top + LANDMARK_V_MARGIN) {
-        fail(`gate ${g.index} cuts ${v.id}: ${d.toFixed(0)} m from its volume, ring bottom ${(g.y - g.radius).toFixed(0)} m < top ${v.top.toFixed(0)} + ${LANDMARK_V_MARGIN} m`);
+/** Clearance of one ring (gate or speed ring): terrain, landmark volumes, under-bridge rule. Returns report lines. */
+function checkRing(env: Env, what: string, g: { x: number; y: number; z: number; radius: number }): string[] {
+  const report: string[] = [];
+  const s = surfaceAt(env.geo, g.x, g.z);
+  const need = g.radius + GATE_TERRAIN_MARGIN + (s.land ? LAND_BUILDING_ALLOWANCE : 0);
+  const clearance = g.y - s.h;
+  if (clearance < need) {
+    fail(`${what} clearance ${clearance.toFixed(0)} m < ${need} m (${s.land ? 'land' : 'water'}, ground ${s.h.toFixed(0)} m)`);
+  }
+  for (const v of env.volumes) {
+    const d = distToVolume(v, g.x, g.z);
+    if (d < g.radius + LANDMARK_H_MARGIN && g.y - g.radius < v.top + LANDMARK_V_MARGIN) {
+      const colliders = v.id === v.landmark ? env.bridges.get(v.landmark) : undefined;
+      if (colliders) {
+        const u = underBridge(colliders, g.x, g.y, g.z, g.radius);
+        if (u.under) {
+          const line =
+            `${what} under ${v.id}: deck underside ${u.underside.toFixed(1)} m, ring top ${(g.y + g.radius).toFixed(1)} m ` +
+            `→ margin ${u.margin.toFixed(1)} m (need ${UNDER_DECK_CLEARANCE}), nearest structure at ring height (piers, towers, low deck ends) ${Number.isFinite(u.lateral) ? `${u.lateral.toFixed(0)} m` : 'none'} (need ${PIER_LATERAL_CLEARANCE})`;
+          if (u.ok) {
+            report.push(line);
+          } else {
+            fail(line);
+          }
+          continue;
+        }
       }
+      fail(`${what} cuts ${v.id}: ${d.toFixed(0)} m from its volume, ring bottom ${(g.y - g.radius).toFixed(0)} m < top ${v.top.toFixed(0)} + ${LANDMARK_V_MARGIN} m`);
     }
+  }
+  return report;
+}
+
+function checkCourse(env: Env, course: CompiledCourse): { underGates: number } {
+  const { geo, volumes } = env;
+  const gates = course.gates;
+  console.log(`\n${course.def.name} (${course.def.id}): ${gates.length} gates, ${course.speedRings.length} speed rings`);
+  let before = failures;
+  const under: string[] = [];
+
+  // Gates: terrain clearance, landmark volumes, bridges.
+  for (const g of gates) {
+    under.push(...checkRing(env, `gate ${g.index}`, g));
   }
   if (failures === before) {
     ok('gate clearance above terrain and landmark volumes');
+  }
+  const underGates = under.length;
+  for (const line of under) {
+    ok(line);
+  }
+
+  // Speed rings: the same clearance, on the middle of a leg, away from the gates.
+  before = failures;
+  const ringDefs = course.def.speedRings ?? [];
+  if (!course.def.custom && (course.speedRings.length < 2 || course.speedRings.length > 4)) {
+    fail(`${course.speedRings.length} speed rings (want 2–4 per course)`);
+  }
+  if (ringDefs.length !== course.speedRings.length) {
+    fail(`${ringDefs.length - course.speedRings.length} speed ring(s) on a leg that does not exist`);
+  }
+  for (const def of ringDefs) {
+    if ('leg' in def && (def.t < RING_LEG_T[0] || def.t > RING_LEG_T[1])) {
+      fail(`speed ring on leg ${def.leg} at t = ${def.t} (keep ${RING_LEG_T[0]}–${RING_LEG_T[1]})`);
+    }
+  }
+  let minGap = Infinity;
+  for (const r of course.speedRings) {
+    for (const line of checkRing(env, `speed ring ${r.index}`, r)) {
+      ok(line);
+    }
+    for (const g of gates) {
+      const d = Math.hypot(r.x - g.x, r.y - g.y, r.z - g.z);
+      minGap = Math.min(minGap, d);
+      if (d < RING_GATE_GAP) {
+        fail(`speed ring ${r.index} only ${d.toFixed(0)} m from gate ${g.index} (≥ ${RING_GATE_GAP} m)`);
+      }
+    }
+  }
+  if (failures === before && course.speedRings.length) {
+    ok(`${course.speedRings.length} speed rings clear, ≥ ${minGap.toFixed(0)} m from any gate`);
   }
 
   // Spacing and turn angles.
@@ -170,7 +383,7 @@ function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): 
     ok(`spacing ${Math.min(...spacing).toFixed(0)}–${Math.max(...spacing).toFixed(0)} m, max turn ${maxTurn.toFixed(0)}°`);
   }
 
-  // Legs (lead-in included): terrain clearance and landmark volumes along the straight line.
+  // Legs (lead-in included): terrain clearance, landmark volumes and bridges along the straight line.
   before = failures;
   const pts: Vec3[] = [course.start, ...gates];
   let minLegClear = Infinity;
@@ -181,6 +394,7 @@ function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): 
     const steps = Math.max(1, Math.ceil(len / 10));
     const hits = new Set<string>();
     let worst: { clear: number; need: number; t: number } | null = null;
+    let underMin: { margin: number; lateral: number; id: string } | null = null;
     for (let k = 0; k <= steps; k++) {
       const t = k / steps;
       const x = a.x + (b.x - a.x) * t;
@@ -195,6 +409,17 @@ function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): 
       }
       for (const v of volumes) {
         if (distToVolume(v, x, z) < 10 && y < v.top + 10) {
+          const colliders = v.id === v.landmark ? env.bridges.get(v.landmark) : undefined;
+          const u = colliders ? underBridge(colliders, x, y, z, 0) : null;
+          if (u?.under) {
+            if (!underMin || u.margin < underMin.margin) {
+              underMin = { margin: u.margin, lateral: u.lateral, id: v.id };
+            }
+            if (!u.ok) {
+              hits.add(`${v.id} (under the deck: margin ${u.margin.toFixed(1)} m, pier ${u.lateral.toFixed(0)} m)`);
+            }
+            continue;
+          }
           hits.add(v.id);
         }
       }
@@ -206,6 +431,9 @@ function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): 
     for (const id of hits) {
       fail(`leg ${name} passes through ${id}`);
     }
+    if (underMin && hits.size === 0) {
+      ok(`leg ${name} under ${underMin.id}: min deck margin above the path ${underMin.margin.toFixed(1)} m, nearest structure at path height ${Number.isFinite(underMin.lateral) ? `${underMin.lateral.toFixed(0)} m` : 'none'}`);
+    }
   }
   if (failures === before) {
     ok(`legs clear (min clearance ${minLegClear.toFixed(0)} m)`);
@@ -215,6 +443,27 @@ function checkCourse(geo: GeoQuery, course: CompiledCourse, volumes: Volume[]): 
   const leadTime = LEAD_IN / RACE_PACE;
   if (leadTime <= COUNTDOWN_SECONDS) {
     fail(`lead-in ${LEAD_IN} m reaches the start gate before GO`);
+  }
+  return { underGates };
+}
+
+/** Deck clearance of every built bridge: the largest ring that could pass under it by the course rules. */
+function bridgeReport(env: Env): void {
+  console.log('\nBridges (built colliders): room under the deck');
+  for (const [id, colliders] of env.bridges) {
+    const v = env.volumes.find((x) => x.id === id);
+    if (!v) {
+      continue;
+    }
+    const b = bestUnderside(env.geo, v, colliders);
+    if (!Number.isFinite(b.underside)) {
+      ok(`${id}: no deck over open water`);
+      continue;
+    }
+    // Centre ≥ r + GATE_TERRAIN_MARGIN over water and underside ≥ centre + r + UNDER_DECK_CLEARANCE.
+    const rMax = (b.underside - GATE_TERRAIN_MARGIN - UNDER_DECK_CLEARANCE) / 2;
+    const verdict = rMax >= MIN_UNDER_GATE_RADIUS ? `a gate up to r = ${Math.floor(rMax)} m fits` : `no gate fits (r ≥ ${MIN_UNDER_GATE_RADIUS} m needs ≥ ${2 * MIN_UNDER_GATE_RADIUS + GATE_TERRAIN_MARGIN + UNDER_DECK_CLEARANCE} m)`;
+    ok(`${id}: highest deck underside over water ${b.underside.toFixed(1)} m → ${verdict}`);
   }
 }
 
@@ -629,14 +878,338 @@ function ghostTests(course: CompiledCourse): void {
 
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Races v3: speed rings, custom courses, editor                       */
+/* ------------------------------------------------------------------ */
+
+function speedRingTests(course: CompiledCourse): void {
+  console.log(`\nSpeed rings and boost (${course.def.id})`);
+  const rings = course.speedRings;
+  const gates = course.gates;
+  // A straight run through the gates crosses every ring (they sit on the legs) exactly once, in order.
+  {
+    const s = new RaceSession(course);
+    const ev = [...s.start(), ...fly(s, [course.start, ...gates, along(gates[gates.length - 1], 200)])];
+    const boosts = ev.filter((e) => e.type === 'boost').map((e) => (e as { index: number }).index);
+    const want = rings.map((r) => r.index).join(',');
+    if (boosts.join(',') === want && s.phase === 'finished' && s.splits.length === gates.length) {
+      ok(`straight run: boost at rings [${boosts.join(',')}], gates and finish unaffected`);
+    } else {
+      fail(`straight run boosts [${boosts.join(',')}], want [${want}], phase ${s.phase}`);
+    }
+  }
+  // Rings: forward pass once per run, backward and beside-the-ring passes never, none during the countdown.
+  {
+    const r = rings[0];
+    const g = r as unknown as Gate;
+    const w = r.radius;
+    const s = new RaceSession(course, { strayAbort: 1e6, strayWarn: 1e6 });
+    const count = (ev: RaceEvent[]): number => ev.filter((e) => e.type === 'boost').length;
+    const cd: RaceEvent[] = [...s.start()];
+    for (let t = 0; t < COUNTDOWN_SECONDS - 0.5; t += DT) {
+      cd.push(...s.update(DT, t < 1 ? along(g, -5) : along(g, 5), false));
+    }
+    for (let t = 0; t < 1; t += DT) {
+      cd.push(...s.update(DT, along(g, 5), false));
+    }
+    const duringCountdown = count(cd);
+    const running = s.phase === 'running';
+    const backwards = count(fly(s, [along(g, 5), along(g, -30)]));
+    const beside = count(fly(s, [along(g, -30), along(g, -30, w * 1.3), along(g, 30, w * 1.3), along(g, -30, w * 3)]));
+    const forward = count(fly(s, [along(g, -30, w * 3), along(g, -30, w * 0.8), along(g, 30, w * 0.8)]));
+    const again = count(fly(s, [along(g, 30, w * 0.8), along(g, 30, w * 3), along(g, -30, w * 3), along(g, -30), along(g, 30)]));
+    if (running && duringCountdown === 0 && backwards === 0 && beside === 0 && forward === 1 && again === 0 && s.boostsUsed[r.index]) {
+      ok('ring pass: forward inside the rim boosts once per run; backwards, beside the rim and countdown passes do not');
+    } else {
+      fail(`ring pass: running ${running}, countdown ${duringCountdown}, backwards ${backwards}, beside ${beside}, forward ${forward}, again ${again}`);
+    }
+  }
+  // Boost envelope: total, cap, duration, smoothness.
+  {
+    const cases: Array<[number, number]> = [
+      [35, BOOST_DV],
+      [70, BOOST_SPEED_CAP - 70],
+      [BOOST_SPEED_CAP, 0],
+      [95, 0],
+      [Number.NaN, 0],
+    ];
+    const bad = cases.filter(([v, want]) => Math.abs(boostDeltaV(v) - want) > 1e-9);
+    for (const [v, want] of bad) {
+      fail(`boostDeltaV(${v}) = ${boostDeltaV(v)}, want ${want}`);
+    }
+    const env = new BoostEnvelope();
+    let speed = 40;
+    const total = env.start(speed);
+    let sum = 0;
+    let t = 0;
+    let maxStep = 0;
+    let first = -1;
+    let lastT = 0;
+    while (t < 3) {
+      const dv = env.step(DT, speed);
+      if (first < 0) {
+        first = dv;
+      }
+      if (dv > 0) {
+        lastT = t + DT;
+      }
+      maxStep = Math.max(maxStep, dv);
+      sum += dv;
+      speed += dv;
+      t += DT;
+    }
+    // Rate peaks at 2·dv/T (sin² profile).
+    const peak = ((2 * BOOST_DV) / BOOST_TIME) * DT;
+    const okEnv = Math.abs(sum - total) < 1e-9 && Math.abs(total - BOOST_DV) < 1e-9 && lastT <= BOOST_TIME + DT + 1e-9 && lastT > BOOST_TIME - 2 * DT && maxStep <= peak + 1e-9 && first < maxStep / 4 && !env.active;
+    // Near the cap the push never takes the speed over the cap, even when the speed rises by itself meanwhile.
+    const nearCap = new BoostEnvelope();
+    let v = 72;
+    nearCap.start(v);
+    let over = 0;
+    for (let k = 0; k < 60; k++) {
+      const before = v;
+      v += nearCap.step(DT, v);
+      over = Math.max(over, v - Math.max(BOOST_SPEED_CAP, before));
+      v += 0.1; // diving acceleration
+    }
+    const top = BOOST_SPEED_CAP + over;
+    if (okEnv && top <= BOOST_SPEED_CAP + 1e-9 && bad.length === 0) {
+      ok(`envelope: +${total} m/s over ${lastT.toFixed(2)} s (peak ${(maxStep / DT).toFixed(1)} m/s², sums exactly), capped at ${BOOST_SPEED_CAP} m/s (below the 80–90 m/s dive envelope)`);
+    } else {
+      fail(`envelope: sum ${sum} of ${total}, last step at ${lastT.toFixed(2)} s, max step ${maxStep.toFixed(3)} (peak ${peak.toFixed(3)}), first ${first.toFixed(4)}, near-cap top ${top.toFixed(2)}`);
+    }
+  }
+}
+
+/** Synthetic world for placement tests: flat land at 50 m for x < 0, sea (floor -20 m) for x ≥ 0, a 120 m building
+ * at 1000 < x < 1100 and a bridge deck from 64 to 68 m over 2000 < x < 2100. */
+const testProbe: PlacementProbe = {
+  terrainAt: (x) => (x < 0 ? 50 : -20),
+  surfaceAt: (x) => (x > 1000 && x < 1100 ? 120 : x > 2000 && x < 2100 ? 68 : x < 0 ? 50 : 0),
+  solidAt: (x, y, _z, r) => (x > 1000 && x < 1100 && y - r < 120) || (x > 2000 && x < 2100 && y + r > 64 && y - r < 68),
+};
+
+function customCourseTests(env: Env): void {
+  console.log('\nCustom courses: share codes, storage, editor validation');
+  const mk = (id: string, name: string): CustomCourse => {
+    const gates = [
+      { x: 2000, y: 80, z: -1000, r: GATE_SIZES.medium, h: 0, p: 0 },
+      { x: 2000, y: 90, z: -1600, r: GATE_SIZES.small, h: 10, p: 3 },
+      { x: 2150, y: 85, z: -2200, r: GATE_SIZES.large, h: 25, p: -2 },
+      { x: 2400, y: 70, z: -2800, r: GATE_SIZES.medium, h: 30, p: -5 },
+    ];
+    const rings = [
+      { x: 2000, y: 85, z: -1300, h: 0, p: 2 },
+      { x: 2270, y: 78, z: -2500, h: 27, p: -3 },
+    ];
+    return { id: id || customCourseId(gates, rings), name, gates, rings };
+  };
+  // Round trip (Turkish name, UTF-8), id from the geometry.
+  const c = mk('', 'Kız Kulesi – Üsküdar şöleni ğ');
+  const code = encodeCourseCode(c);
+  const back = decodeCourseCode(`  ${code.slice(0, 20)}\n${code.slice(20)}  `);
+  if (back.ok && JSON.stringify(back.course) === JSON.stringify(c) && back.course.id === c.id) {
+    ok(`share code round trip: ${c.gates.length} gates + ${c.rings.length} rings → ${code.length} chars (${code.slice(0, 18)}…), name and id kept`);
+  } else {
+    fail(`share code round trip: ${JSON.stringify(back)}`);
+  }
+  // Malformed codes.
+  const b64 = (o: unknown): string => 'EVR1.' + Buffer.from(JSON.stringify(o), 'utf8').toString('base64url');
+  const payload = { v: 1, n: 'x', g: c.gates.map((g) => [g.x, g.y, g.z, g.r, g.h, g.p]) };
+  const gatesWith = (i: number, v: unknown[]): unknown => ({ ...payload, g: payload.g.map((g, k) => (k === i ? v : g)) });
+  const malformed: Array<[string, unknown]> = [
+    ['empty', ''],
+    ['not a string', 42],
+    ['null', null],
+    ['garbage', 'hello world'],
+    ['prefix only', 'EVR1.'],
+    ['bad characters', 'EVR1.ab$d'],
+    ['other version prefix', code.replace('EVR1.', 'EVR2.')],
+    ['truncated', code.slice(0, code.length - 9)],
+    ['not JSON', 'EVR1.' + Buffer.from('{not json', 'utf8').toString('base64url')],
+    ['invalid UTF-8', 'EVR1.' + Buffer.from([0x7b, 0xff, 0xfe, 0x7d]).toString('base64url')],
+    ['top-level array', b64([1, 2, 3])],
+    ['version 2', b64({ ...payload, v: 2 })],
+    ['extra key', b64({ ...payload, x: 1 })],
+    ['name not a string', b64({ ...payload, n: 5 })],
+    ['two gates', b64({ ...payload, g: payload.g.slice(0, 2) })],
+    ['33 gates', b64({ ...payload, g: Array.from({ length: 33 }, (_, i) => [i * 100, 80, 0, 22, 90, 0]) })],
+    ['fractional coordinate', b64(gatesWith(1, [2000.5, 90, -1600, 14, 10, 3]))],
+    ['unknown radius', b64(gatesWith(1, [2000, 90, -1600, 17, 10, 3]))],
+    ['outside the world', b64(gatesWith(1, [30000, 90, -1600, 14, 10, 3]))],
+    ['heading 360', b64(gatesWith(1, [2000, 90, -1600, 14, 360, 3]))],
+    ['pitch 80', b64(gatesWith(1, [2000, 90, -1600, 14, 10, 80]))],
+    ['string in gate', b64(gatesWith(1, [2000, '90', -1600, 14, 10, 3]))],
+    ['gate too short', b64(gatesWith(1, [2000, 90, -1600, 14, 10]))],
+    ['gates 20 m apart', b64(gatesWith(1, [2000, 80, -1020, 14, 10, 3]))],
+    ['bad speed ring', b64({ ...payload, s: [[1, 2, 3]] })],
+    ['17 speed rings', b64({ ...payload, s: Array.from({ length: 17 }, () => [0, 80, 0, 0, 0]) })],
+    ['huge', 'EVR1.' + 'A'.repeat(5000)],
+  ];
+  const accepted = malformed.filter(([, v]) => decodeCourseCode(v).ok);
+  if (accepted.length === 0) {
+    ok(`${malformed.length} malformed codes rejected`);
+  } else {
+    for (const [name] of accepted) {
+      fail(`malformed code accepted: ${name}`);
+    }
+  }
+  const control = decodeCourseCode(b64({ ...payload, n: 'a\u0000b‮  c   d' }));
+  if (!control.ok || control.course.name !== 'ab c d') {
+    fail(`name sanitising: ${JSON.stringify(control)}`);
+  }
+
+  // Compiled custom course: gates face their stored heading, default medals, a straight run finishes.
+  {
+    const cc = compileCustomCourse(c, '');
+    const g1 = cc.gates[1];
+    const d = facing(10, 3);
+    const medals = defaultMedalTimes(timedDistance(cc));
+    const s = new RaceSession(cc, { strayAbort: 1e6, strayWarn: 1e6 });
+    s.start();
+    fly(s, [cc.start, ...cc.gates.map((g) => along(g, -40)).flatMap((p, i) => [p, along(cc.gates[i], 40)])]);
+    const facingOk = Math.abs(g1.nx - d[0]) < 1e-9 && Math.abs(g1.ny - d[1]) < 1e-9 && Math.abs(g1.nz - d[2]) < 1e-9;
+    const posOk = Math.abs(g1.x - 2000) < 1e-6 && Math.abs(g1.z + 1600) < 1e-6;
+    if (facingOk && posOk && JSON.stringify(cc.def.medals) === JSON.stringify(medals) && s.phase === 'finished' && cc.speedRings.length === 2 && cc.speedRings[0].radius === SPEED_RING_RADIUS) {
+      ok(`compiled custom course: stored facing, exact positions, default medals ${medals.gold}/${medals.silver}/${medals.bronze} s, a run through it finishes`);
+    } else {
+      fail(`compiled custom course: facing ${facingOk}, position ${posOk}, medals ${JSON.stringify(cc.def.medals)} vs ${JSON.stringify(medals)}, phase ${s.phase}`);
+    }
+  }
+
+  // Storage (in memory in Node): save, duplicate, replace, limit, delete.
+  {
+    const first = saveCustomCourse(c);
+    const dup = saveCustomCourse({ ...c, name: 'kopya' });
+    const moved = { ...c, gates: c.gates.map((g) => ({ ...g, y: g.y + 5 })) };
+    moved.id = customCourseId(moved.gates, moved.rings);
+    const replaced = saveCustomCourse(moved, c.id);
+    const afterReplace = loadCustomCourses().map((x) => x.id);
+    let limitHit = false;
+    for (let i = 0; i < CUSTOM_LIMIT + 2; i++) {
+      const x = { ...c, gates: c.gates.map((g) => ({ ...g, x: g.x + (i + 1) * 3 })) };
+      x.id = customCourseId(x.gates, x.rings);
+      const r = saveCustomCourse(x);
+      if (!r.ok && r.error === 'limit') {
+        limitHit = true;
+      }
+    }
+    const count = loadCustomCourses().length;
+    const deleted = deleteCustomCourse(moved.id);
+    if (
+      first.ok && !dup.ok && dup.error === 'duplicate' && replaced.ok && afterReplace.includes(moved.id) && !afterReplace.includes(c.id) &&
+      limitHit && count === CUSTOM_LIMIT && deleted && loadCustomCourses().length === CUSTOM_LIMIT - 1
+    ) {
+      ok(`storage: duplicates refused, edit replaces in place, max ${CUSTOM_LIMIT} courses, delete`);
+    } else {
+      fail(`storage: ${JSON.stringify({ first: first.ok, dup, replaced: replaced.ok, afterReplace, limitHit, count, deleted })}`);
+    }
+    for (const x of loadCustomCourses().slice()) {
+      deleteCustomCourse(x.id);
+    }
+  }
+
+  // Placement validation on the synthetic world.
+  {
+    const cases: Array<[string, [number, number, number, number, number, number], string | null]> = [
+      ['over land, high enough', [-500, 80, 0, 22, 0, 0], null],
+      ['over land, rim in the ground', [-500, 60, 0, 14, 0, 0], 'terrain'],
+      ['low over the sea', [500, 20, 0, 14, 0, 0], null],
+      ['rim in the sea', [500, 10, 0, 14, 0, 0], 'terrain'],
+      ['pitched ring clears the ground', [-500, 70, 0, 14, 0, 40], null],
+      ['inside a building', [1050, 90, 0, 14, 0, 0], 'structure'],
+      ['above the building', [1050, 150, 0, 14, 0, 0], null],
+      ['under the bridge deck', [2050, 30, 0, 11, 90, 0], null],
+      ['touching the deck', [2050, 55, 0, 14, 90, 0], 'structure'],
+      ['outside the world', [30000, 80, 0, 14, 0, 0], 'bounds'],
+      ['not finite', [Number.NaN, 80, 0, 14, 0, 0], 'bounds'],
+    ];
+    const bad = cases.filter(([, a, want]) => validateRingPlacement(a[0], a[1], a[2], a[3], a[4], a[5], testProbe) !== want);
+    const noSolid = validateRingPlacement(2050, 30, 0, 11, 90, 0, { terrainAt: testProbe.terrainAt, surfaceAt: testProbe.surfaceAt });
+    if (bad.length === 0 && noSolid === 'structure') {
+      ok(`placement: ${cases.length + 1} synthetic cases (ground, sea, building, under a deck, bounds; no solid test = conservative)`);
+    } else {
+      for (const [name, a, want] of bad) {
+        fail(`placement ${name}: ${validateRingPlacement(a[0], a[1], a[2], a[3], a[4], a[5], testProbe)}, want ${want}`);
+      }
+      if (noSolid !== 'structure') {
+        fail(`placement without solid test under a deck: ${noSolid}`);
+      }
+    }
+    // Real terrain: inside the Çamlıca hill vs high over the Bosphorus.
+    const hill = env.geo.landmark('camlica-kulesi');
+    const real: PlacementProbe = { terrainAt: (x, z) => env.geo.heightAt(x, z) };
+    if (hill) {
+      const hy = env.geo.heightAt(hill.x + 150, hill.z);
+      const inHill = validateRingPlacement(hill.x + 150, hy - 5, hill.z, 22, 90, 0, real);
+      const bridge = env.geo.landmark('bogazici-koprusu')!;
+      const overSea = validateRingPlacement(bridge.x, 120, bridge.z + 400, 22, 0, 0, real);
+      if (inHill === 'terrain' && overSea === null) {
+        ok(`placement on the real terrain: inside Çamlıca hill (ground ${hy.toFixed(0)} m) rejected, 120 m over the Bosphorus accepted`);
+      } else {
+        fail(`placement on the real terrain: hill ${inHill}, sea ${overSea}`);
+      }
+    }
+  }
+
+  // Editor: facing from the flight direction, spacing, undo, skip invalid, too few, lead-in.
+  {
+    const pose = (x: number, y: number, z: number, vx = 0, vy = 0, vz = -35): EditorPose => ({ x, y, z, vx, vy, vz, headingDeg: 0 });
+    const f1 = poseFacing(pose(0, 0, 0, 30, 30, -30));
+    const f2 = poseFacing(pose(0, 0, 0, 0.5, 0, 0.5));
+    const facingOk = Math.abs(f1.h - 45) < 1e-9 && Math.abs(f1.p - 35.26) < 0.01 && f2.h === 0 && f2.p === 0;
+    const steep = poseFacing(pose(0, 0, 0, 0, -80, -10)).p;
+
+    const ed = new CourseEditor();
+    ed.reset();
+    const a = ed.place(pose(500, 80, 0), testProbe);
+    const tooClose = ed.place(pose(500, 80, -30), testProbe);
+    ed.cycleSize(); // large
+    const b = ed.place(pose(500, 85, -600), testProbe);
+    ed.toggleKind();
+    const ring = ed.place(pose(500, 85, -900), testProbe);
+    ed.toggleKind();
+    const buried = ed.place(pose(-500, 55, -1300), testProbe); // over land: rim in the ground
+    const c3 = ed.place(pose(500, 90, -1800), testProbe);
+    const built = ed.build('  Deneme\tparkuru  ', testProbe);
+    const undone = ed.undo();
+    const tooFew = ed.build('x', testProbe);
+    const okPlace = a.ok && !a.problem && !tooClose.ok && tooClose.reason === 'spacing' && b.ok && ring.ok && ring.kind === 'ring' && buried.ok && buried.problem === 'terrain' && c3.ok;
+    const okBuild = built.ok && built.skippedGates === 1 && built.course.gates.length === 3 && built.course.rings.length === 1 && built.course.name === 'Deneme parkuru' && built.course.gates[1].r === GATE_SIZES.large;
+    const okUndo = undone === 'gate' && !tooFew.ok && tooFew.error === 'tooFew' && tooFew.valid === 2;
+    // Lead-in: first gate facing away from a wall of land 150 m behind it.
+    const cliff: PlacementProbe = { terrainAt: (_x, z) => (z > 150 ? 400 : -20) };
+    const ed2 = new CourseEditor();
+    ed2.reset();
+    ed2.place(pose(0, 60, 0), cliff);
+    ed2.place(pose(0, 60, -500), cliff);
+    ed2.place(pose(0, 60, -1000), cliff);
+    const blocked = ed2.build('x', cliff);
+    if (facingOk && steep === -40 && okPlace && okBuild && okUndo && !blocked.ok && blocked.error === 'leadIn') {
+      ok('editor: facing from velocity (pitch clamped ±40°), spacing refused, invalid gate shown then skipped on save, undo, min 3 gates, blocked lead-in refused');
+    } else {
+      fail(`editor: ${JSON.stringify({ facingOk, steep, a, tooClose, b, ring, buried, c3, built: built.ok ? { ...built, course: built.course.name } : built, undone, tooFew, blocked })}`);
+    }
+  }
+}
+
 const t0 = Date.now();
 const geo = buildHeadlessGeo();
 console.log(`GeoQuery built in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 const volumes = landmarkVolumes(geo.landmarks);
+const t1 = Date.now();
+const bridges = buildBridgeColliders(geo);
+console.log(`Bridge structures built in ${((Date.now() - t1) / 1000).toFixed(1)} s: ${[...bridges].map(([id, c]) => `${id} (${c.length})`).join(', ')}`);
+const env: Env = { geo, volumes, bridges };
 const compiled = COURSES.map(compileCourse);
+let underGates = 0;
 for (const c of compiled) {
-  checkCourse(geo, c, volumes);
+  underGates += checkCourse(env, c).underGates;
 }
+if (underGates === 0) {
+  fail('no course has a gate under a bridge');
+}
+bridgeReport(env);
 for (const c of compiled) {
   logicTests(c);
 }
@@ -644,6 +1217,10 @@ unitTests(compiled[0]);
 medalTests(compiled);
 formatTests();
 ghostTests(compiled[0]);
+for (const c of compiled) {
+  speedRingTests(c);
+}
+customCourseTests(env);
 
 console.log('\nCourse            gates   length   est. @35 m/s');
 for (const c of compiled) {
