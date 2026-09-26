@@ -30,6 +30,7 @@ import { GalataDeck, placeAnglers, standerArray } from './waterfront/bridge';
 import { createFlags } from './waterfront/flags';
 import { createPigeons } from './waterfront/pigeons';
 import { isModelled, landmarkClaims } from '../../landmarks/claims';
+import { perchClearings } from '../../perches/clearings';
 
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
@@ -93,6 +94,7 @@ class DetailsLayer extends LayerBase {
       lines: Array.from(claims.lines),
       infillClaims: claims,
       mosques: mosquePads(ctx.geo),
+      clearings: perchClearings(ctx.geo),
     };
     const job = runWorker<DetailsRequest, DetailsResult>(worker, request);
     this.onDispose(() => job.cancel());

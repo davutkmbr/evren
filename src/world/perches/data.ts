@@ -13,7 +13,8 @@
  * - the Beyazıt Kulesi: its stone roof is 2.3 m wide around the 11 m signal pole, no grip keeps the body off the pole;
  * - the Çamlıca Kulesi: no ledge, the crown slopes straight into the 5 m antenna mast;
  * - Rumeli Hisarı: no built towers yet, and the hillside woods stand over its tower tops;
- * - hill tops (trees) and the city-wall towers (18-20 m over the ground: trees and houses around them are as tall).
+ * - hill tops (trees).
+ * The city-wall tower perches are not listed here: walls.ts picks them by rule from the walls bake's candidates.
  */
 import type { PerchSurface } from '../../core/contracts';
 

@@ -10,8 +10,11 @@
  * - structures: y within 1.5 m of the built mesh top at the grip point (downward ray over the most detailed LOD);
  *   the collider top there is printed and flagged when the dragon would sit inside a collider;
  * - the built structure itself does not rise over the grip within the neighbour radius outside the grip area.
+ * - wall-tower perches (walls.ts): the rules with their measured surroundings, and the grip against the tower's
+ *   collider top in the walls bake (when public/world/walls exists).
  * Exits with code 1 on any failure.
  */
+import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import type { GeoQuery, LandmarkDef, PerchPoint } from '../../src/core/contracts';
 import { buildLandmarkModel } from '../../src/world/landmarks/mosques/gen/build';
@@ -24,6 +27,8 @@ import { PERCH_DATA } from '../../src/world/perches/data';
 import { resolvePerch } from '../../src/world/perches/resolve';
 import { neighbourEnvelope, PERCH_RULES, validatePerch, viewBlocker } from '../../src/world/perches/rules';
 import { buildPerchService } from '../../src/world/perches/service';
+import { wallTowerPerches } from '../../src/world/perches/walls';
+import type { WallsColliders } from '../../src/world/landmarks/walls/data/baked';
 import { buildHeadlessGeo } from './geo';
 
 const TOP_TOLERANCE = 1.5;
@@ -282,7 +287,45 @@ function main(): void {
     }
   }
 
-  console.log(`\n${points.length} perches (${service.points.length} pass the rules), ${failures.length} failure(s) (${Math.round(performance.now() - t0)} ms)`);
+  // City-wall tower perches (picked by rule from the walls bake's candidates): rules with their measured surroundings,
+  // and the grip against the tower's collider top in the bake when it is there.
+  const walls = wallTowerPerches(geo);
+  const bakeFile = new URL('../../public/world/walls/colliders.json', import.meta.url);
+  const bake = existsSync(bakeFile) ? (JSON.parse(readFileSync(bakeFile, 'utf8')) as WallsColliders) : null;
+  for (const { point: p, surroundings } of walls) {
+    const lines = [`${p.id} [${p.surface}] "${p.name}"`];
+    const ground = Math.max(geo.heightAt(p.x, p.z), 0);
+    const env = neighbourEnvelope(geo, p.x, p.z, undefined, surroundings);
+    lines.push(`  pos x=${f1(p.x)} y=${f1(p.y)} z=${f1(p.z)}  heading=${p.headingDeg}  above ground ${f1(p.y - ground)} m (min ${PERCH_RULES.minAboveGroundMeasured})`);
+    lines.push(`  neighbour envelope ${f1(env.height)} (${env.what}) -> clears by ${f1(p.y - env.height)} m; trees over ${f1(p.y - PERCH_RULES.neighbourMargin)} m cleared within ${PERCH_RULES.neighbourRadius} m`);
+    for (const v of validatePerch(geo, p, surroundings)) {
+      failures.push(`${p.id}: rule: ${v}`);
+    }
+    if (bake) {
+      let top = -Infinity;
+      const b = bake.boxes;
+      for (let k = 0; k < b.length; k += 8) {
+        const dx = p.x - b[k];
+        const dz = p.z - b[k + 2];
+        const c = Math.cos(b[k + 6]);
+        const sn = Math.sin(b[k + 6]);
+        if (Math.abs(dx * c - dz * sn) <= b[k + 3] && Math.abs(dx * sn + dz * c) <= b[k + 5]) {
+          top = Math.max(top, b[k + 1] + b[k + 4]);
+        }
+      }
+      lines.push(`  walls bake: collider top ${f1(top)} (grip ${p.y - top >= 0 ? '+' : ''}${f1(p.y - top)})`);
+      if (!Number.isFinite(top) || top - p.y > 1 || p.y - top > 1.5) {
+        failures.push(`${p.id}: grip ${f1(p.y)} does not match the tower's collider top ${f1(top)} in the walls bake`);
+      }
+    } else {
+      lines.push('  walls bake missing (npm run compile:walls): tower top not checked');
+    }
+    const v = viewBlocker(geo, p, surroundings);
+    lines.push(`  view cone: ${v ? `BLOCKED by ${v.what} ${f1(v.height)} m at ${v.at} m` : 'open'}`);
+    console.log(lines.join('\n'));
+  }
+
+  console.log(`\n${points.length} catalogue perches (${service.points.length - walls.length} pass the rules) + ${walls.length} wall-tower perches, ${failures.length} failure(s) (${Math.round(performance.now() - t0)} ms)`);
   for (const f of failures) {
     console.log(`FAIL ${f}`);
   }

@@ -69,7 +69,7 @@ serveWorker<DetailsRequest, DetailsResult>((req) => {
   const cover = buildCover(data, parcels.length ? data.buildings.concat(parcels) : data.buildings, surface, pads, poi);
   const t1 = performance.now();
   const coverMesh = buildCoverMesh(cover, surface);
-  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, lines: req.lines, mosques: req.mosques });
+  const trees = placeTrees(data, { surface, cover, area: base.rect, pads, lines: req.lines, mosques: req.mosques, clearings: req.clearings });
   const t2 = performance.now();
   // Props and walkers keep a margin from the area's edges, except where another OSM region continues (base.fade is
   // pushed far out there): on those sides they reach the shared edge.
