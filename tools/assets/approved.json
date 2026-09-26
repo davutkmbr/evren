@@ -1704,6 +1704,24 @@
    "download": "manual",
    "shortlist": ".docs/assets/candidates/rider-humans.md",
    "conditions": []
+  },
+  {
+   "id": "metal038",
+   "name": "Metal 038",
+   "source": "ambientcg",
+   "source_id": "Metal038",
+   "url": "https://ambientcg.com/view?id=Metal038",
+   "licence": "CC0-1.0",
+   "licence_url": "https://docs.ambientcg.com/license/",
+   "author": "Lennart Demes",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider helmet, vambraces, mirror plate and gilt fittings (public/textures/rider/)",
+   "repeat_m": null,
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
   }
  ]
 }

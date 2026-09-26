@@ -76,12 +76,16 @@ def trim(obj, point, normal):
     obj.data.update()
 
 
-def grow(obj, offset, thickness, smooth=6, subdiv=1, noise=0.0, noise_scale=0.08, loose=0, remesh=0.0, folds=0.0, trims=()):
+def grow(obj, offset, thickness, smooth=6, subdiv=1, noise=0.0, noise_scale=0.08, loose=0, remesh=0.0, folds=0.0, trims=(), rim=True, keep_out=True, anchor=6):
     """
     Pushes the surface out along its normals and relaxes it (loose = extra smoothing so the garment bridges the body's
-    hollows instead of hugging them), gives it thickness, optionally rebuilds a clean watertight topology (voxel
-    remesh, m), then adds cloth folds: `folds` hangs long vertical ripples (gravity), `noise` general bumps.
+    hollows instead of hugging them), adds cloth folds (`folds`: long vertical ripples, `noise`: general bumps),
+    subdivides, then cuts the hems with the trim planes on the dense surface (clean, straight edges) and gives the shell
+    its thickness. keep_out=False lets the shell sink where it is smoothed. `anchor` rings of vertices next to the open
+    edges are held by the smoothing (it would pull the edges in and open gaps between garments).
     """
+    if anchor:
+        edge_rings(obj, "relax", anchor)
     d = obj.modifiers.new("grow", "DISPLACE")
     d.direction = "NORMAL"
     d.mid_level = 0.0
@@ -91,32 +95,15 @@ def grow(obj, offset, thickness, smooth=6, subdiv=1, noise=0.0, noise_scale=0.08
         s = obj.modifiers.new("smooth", "SMOOTH")
         s.factor = 0.9
         s.iterations = smooth + loose
-    if BODY["obj"] is not None:
+        if anchor:
+            s.vertex_group = "relax"
+    if BODY["obj"] is not None and keep_out:
         # ...but never sinks into the body: anything inside is pushed back out to a minimum gap.
         sw = obj.modifiers.new("keep_out", "SHRINKWRAP")
         sw.target = BODY["obj"]
         sw.wrap_method = "NEAREST_SURFACEPOINT"
         sw.wrap_mode = "OUTSIDE"
         sw.offset = min(offset, 0.006)
-    if trims:
-        apply_all(obj)
-        for pt, nr in trims:
-            trim(obj, pt, nr)
-    if thickness > 0:
-        so = obj.modifiers.new("thick", "SOLIDIFY")
-        so.thickness = thickness
-        so.offset = -1.0
-        so.use_rim = True
-    apply_all(obj)
-    if remesh > 0:
-        rm = obj.modifiers.new("remesh", "REMESH")
-        rm.mode = "VOXEL"
-        rm.voxel_size = remesh
-        rm.adaptivity = 0.0
-        cs = obj.modifiers.new("relax", "CORRECTIVE_SMOOTH")
-        cs.iterations = 4
-        cs.use_only_smooth = True
-        apply_all(obj)
     if folds > 0:
         tex = bpy.data.textures.new(obj.name + "_drape", "WOOD")
         tex.wood_type = "BANDNOISE"
@@ -144,7 +131,45 @@ def grow(obj, offset, thickness, smooth=6, subdiv=1, noise=0.0, noise_scale=0.08
         sd.levels = subdiv
         sd.render_levels = subdiv
     apply_all(obj)
+    for pt, nr in trims:
+        trim(obj, pt, nr)
+    if remesh > 0:
+        rm = obj.modifiers.new("remesh", "REMESH")
+        rm.mode = "VOXEL"
+        rm.voxel_size = remesh
+        rm.adaptivity = 0.0
+    if thickness > 0:
+        so = obj.modifiers.new("thick", "SOLIDIFY")
+        so.thickness = thickness
+        so.offset = -1.0
+        so.use_rim = rim  # open rims get a piping cord instead
+    apply_all(obj)
     smooth_shade(obj)
+
+
+def edge_rings(obj, name, rings):
+    """Vertex group: 0 on the open edges rising to 1 `rings` edges away (breadth-first over the mesh)."""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    dist = {}
+    frontier = [v.index for v in bm.verts if v.is_boundary]
+    for i in frontier:
+        dist[i] = 0
+    bm.verts.ensure_lookup_table()
+    while frontier:
+        nxt = []
+        for i in frontier:
+            for e in bm.verts[i].link_edges:
+                o = e.other_vert(bm.verts[i]).index
+                if o not in dist:
+                    dist[o] = dist[i] + 1
+                    nxt.append(o)
+        frontier = nxt
+    bm.free()
+    g = obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)
+    for v in obj.data.vertices:
+        g.add([v.index], min(1.0, dist.get(v.index, rings) / rings), "REPLACE")
 
 
 def cloth_settle(obj, colliders, pin_group=None, frames=24, mass=0.25, stiffness=8.0, gravity=True):
@@ -191,10 +216,31 @@ def pin_group(obj, name, weight_of):
     return name
 
 
-def skin(obj, body, rig):
-    """Skin weights from the nearest body surface, an armature modifier, parented to the rig (keeps the transform)."""
+def skin(obj, body, rig, weights=None):
+    """
+    Skin weights from the nearest body surface (or weights(world co) -> {bone: w} for parts that must not follow the
+    nearest limb: skirts, hanging ends, the helmet), an armature modifier, parented to the rig (keeps the transform).
+    """
     for g in list(obj.vertex_groups):
         obj.vertex_groups.remove(g)
+    if weights is not None:
+        mw = obj.matrix_world
+        groups = {}
+        for v in obj.data.vertices:
+            ws = weights(mw @ v.co)
+            tot = sum(ws.values()) or 1.0
+            for bone, w in ws.items():
+                if w <= 0:
+                    continue
+                g = groups.get(bone) or obj.vertex_groups.new(name="mixamorig:" + bone)
+                groups[bone] = g
+                g.add([v.index], w / tot, "REPLACE")
+        arm = obj.modifiers.new("Armature", "ARMATURE")
+        arm.object = rig
+        mw = obj.matrix_world.copy()
+        obj.parent = rig
+        obj.matrix_world = mw
+        return
     for g in body.vertex_groups:
         if g.name.startswith("mixamorig:"):
             obj.vertex_groups.new(name=g.name)
@@ -259,3 +305,122 @@ def add_primitive(kind, name, loc, scale=(1, 1, 1), rot=(0, 0, 0), **kw):
 
 def vec(*a):
     return Vector(a)
+
+
+def boundary_loops(obj):
+    """World-space boundary edge chains of a mesh: [(points, closed)]."""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.transform(obj.matrix_world)
+    adj = {}
+    for e in bm.edges:
+        if e.is_boundary:
+            a, b = e.verts
+            adj.setdefault(a.index, []).append(b.index)
+            adj.setdefault(b.index, []).append(a.index)
+    co = {v.index: v.co.copy() for v in bm.verts}
+    bm.free()
+    seen = set()
+    loops = []
+    for start in adj:
+        if start in seen:
+            continue
+        chain = [start]
+        seen.add(start)
+        prev, cur = None, start
+        while True:
+            nxt = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxt:
+                break
+            prev, cur = cur, nxt[0]
+            chain.append(cur)
+            seen.add(cur)
+        closed = len(chain) > 2 and start in adj[cur]
+        loops.append(([co[i] for i in chain], closed))
+    return loops
+
+
+def piping(obj, radius, key_name, min_length=0.04, relax=8, color=(0.3, 0.2, 0.07), rough=0.4, metal=0.0):
+    """
+    A round cord along every open edge of a garment shell (hems, collar, cuffs, slits): hides the cut, reads as a
+    finished, bound edge (the gilt bordür of Ottoman robes). The edge line is relaxed first so the cord runs smooth.
+    """
+    out = []
+    loops = [(p, c) for p, c in boundary_loops(obj) if len(p) >= 3]
+    body = BODY["obj"]
+    if body is not None:
+        # A solidified shell without rims has each edge twice (outer and inner skin): keep the outer one.
+        def centre(p):
+            return sum(p, Vector()) / len(p)
+
+        def gap(p):
+            inv = body.matrix_world.inverted()
+            tot = 0.0
+            for q in p[:: max(1, len(p) // 12)]:
+                ok, hit, _n, _i = body.closest_point_on_mesh(inv @ q)
+                tot += ((body.matrix_world @ hit) - q).length if ok else 0.0
+            return tot
+        keep = []
+        for i, (p, c) in enumerate(loops):
+            twin = [k for k, (q, _) in enumerate(loops) if k != i and (centre(q) - centre(p)).length < 0.015 and abs(len(q) - len(p)) <= max(2, len(p) // 10)]
+            if twin and gap(loops[twin[0]][0]) > gap(p):
+                continue
+            keep.append((p, c))
+        loops = keep
+    for pts, closed in loops:
+        n = len(pts)
+        length = sum((pts[i] - pts[i - 1]).length for i in range(1, n))
+        if n < 3 or length < min_length:
+            continue
+        for _ in range(relax):
+            new = []
+            for i in range(n):
+                if not closed and i in (0, n - 1):
+                    new.append(pts[i])
+                    continue
+                a, b = pts[(i - 1) % n], pts[(i + 1) % n]
+                new.append(pts[i] * 0.5 + (a + b) * 0.25)
+            pts = new
+        cu = bpy.data.curves.new(obj.name + "_piping", "CURVE")
+        cu.dimensions = "3D"
+        cu.bevel_depth = radius
+        cu.bevel_resolution = 2
+        cu.use_fill_caps = True
+        sp = cu.splines.new("POLY")
+        sp.points.add(n - 1)
+        for i, p in enumerate(pts):
+            sp.points[i].co = (p.x, p.y, p.z, 1.0)
+        sp.use_cyclic_u = closed
+        co = bpy.data.objects.new(obj.name + "_piping", cu)
+        bpy.context.scene.collection.objects.link(co)
+        deps = bpy.context.evaluated_depsgraph_get()
+        me = bpy.data.meshes.new_from_object(co.evaluated_get(deps))
+        mo = bpy.data.objects.new(obj.name + "_piping", me)
+        bpy.context.scene.collection.objects.link(mo)
+        bpy.data.objects.remove(co, do_unlink=True)
+        smooth_shade(mo)
+        material(mo, key_name, color, rough, metal)
+        out.append(mo)
+    return out
+
+
+def bake_ao(objs, samples=48, distance=0.25):
+    """Ambient occlusion baked into a per-vertex colour attribute 'ao' (Cycles, CPU), all scene geometry occluding."""
+    scene = bpy.context.scene
+    engine = scene.render.engine
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = samples
+    scene.world = scene.world or bpy.data.worlds.new("World")
+    scene.world.light_settings.distance = distance
+    for o in objs:
+        me = o.data
+        ca = me.color_attributes.get("ao") or me.color_attributes.new("ao", "BYTE_COLOR", "POINT")
+        me.color_attributes.active_color = ca
+        me.color_attributes.render_color_index = me.color_attributes.active_color_index
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
+    scene.render.engine = engine

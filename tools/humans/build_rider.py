@@ -1,6 +1,7 @@
 """
-Builds a rider human with MPFB 2 from the approved CC0 MakeHuman assets, poses it in the riding pose, applies that
-pose as the rest pose and exports a glTF binary (mesh, skin weights, mixamo-named skeleton, textures).
+Builds a rider human with MPFB 2 from the approved CC0 MakeHuman assets, dresses it on the neutral standing (rest) pose
+and exports a glTF binary: mesh, skin weights, the mixamo-named skeleton, textures and the pose clips ("stand", "ride").
+Binding in the standing pose keeps the character ready for any clip (riding, gliding, landing, walking, running).
 
   node scripts/blender-run.mjs --no-slot tools/humans/build_rider.py -- <out.glb> [preview-dir]
 """
@@ -71,6 +72,98 @@ HumanService.set_character_skin(skin, basemesh, skin_type="MAKESKIN")
 
 
 
+def dump():
+    for n in ["Hips", "Spine2", "Head", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftArm", "LeftForeArm", "LeftHand"]:
+        pb = rig.pose.bones["mixamorig:" + n]
+        h = rig.matrix_world @ pb.head
+        t = rig.matrix_world @ pb.tail
+        print(f"BONE {n:12s} head {h.x:+.3f} {h.y:+.3f} {h.z:+.3f}  tail {t.x:+.3f} {t.y:+.3f} {t.z:+.3f}")
+dump()
+
+def preview(tag_prefix=""):
+    """Workbench renders (orthographic): front, side, a close-up of the left hand and of the head."""
+    if not PREVIEW:
+        return
+    os.makedirs(PREVIEW, exist_ok=True)
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.render.resolution_x = 600
+    scene.render.resolution_y = 800
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = os.environ.get("RIDER_COLOR", "TEXTURE")
+    cam = scene.camera
+    if cam is None:
+        cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+        scene.collection.objects.link(cam)
+        scene.camera = cam
+    cam.data.type = "ORTHO"
+    hand = rig.matrix_world @ rig.pose.bones["mixamorig:LeftHand"].head
+    head = rig.matrix_world @ rig.pose.bones["mixamorig:Head"].head
+    foot = rig.matrix_world @ rig.pose.bones["mixamorig:LeftFoot"].head
+    views = os.environ.get("RIDER_VIEWS", "front,side").split(",")
+    shots = {
+        "front": ((0, -5, 0.8), (90, 0, 0), 2.0),
+        "side": ((5, 0, 0.8), (90, 0, 90), 2.0),
+        "back": ((0, 5, 0.9), (90, 0, 180), 2.0),
+        "hand": ((hand.x + 2, hand.y, hand.z), (90, 0, 90), 0.35),
+        "handtop": ((hand.x, hand.y, hand.z + 2), (0, 0, 0), 0.35),
+        "head": ((head.x, head.y - 2, head.z + 0.1), (90, 0, 0), 0.45),
+        "headside": ((head.x + 2, head.y, head.z + 0.1), (90, 0, 90), 0.45),
+        "neck": ((head.x, head.y - 1.2, head.z + 1.0), (50, 0, 0), 0.5),
+        "foot": ((foot.x + 1.4, foot.y - 1.4, foot.z + 0.15), (90, 0, 45), 0.6),
+    }
+    hide = [h for h in os.environ.get("RIDER_HIDE", "").split(",") if h]
+    for o in bpy.data.objects:
+        if o.type == "MESH":
+            o.hide_render = any(o.name.startswith(h) for h in hide)
+    for tag in views:
+        loc, rot, ortho = shots[tag]
+        cam.data.ortho_scale = ortho
+        cam.location = loc
+        cam.rotation_euler = Euler([math.radians(a) for a in rot], "XYZ")
+        scene.render.filepath = os.path.join(PREVIEW, f"{tag_prefix}{tag}.png")
+        bpy.ops.render.render(write_still=True)
+
+
+
+# --- Bake the body / face targets and the asset masks into the meshes (runtime morphs come later); the rest pose stays
+# the neutral standing pose so the same skin works for riding, gliding, walking and running clips.
+for o in bpy.data.objects:
+    if o.type == "MESH":
+        bpy.context.view_layer.objects.active = o
+        if o.data.shape_keys:
+            bpy.ops.object.shape_key_remove(all=True, apply_mix=True)
+        for m in list(o.modifiers):
+            if m.type == "MASK":
+                bpy.ops.object.modifier_apply(modifier=m.name)
+
+# --- Outfit (built on the standing body).
+OUTFIT = os.environ.get("RIDER_OUTFIT", "akinci")
+if OUTFIT == "akinci":
+    import akinci
+    akinci.build(rig, basemesh, [basemesh])
+preview("stand-")
+if OUT == "-" and os.environ.get("RIDER_POSE", "1") == "0":
+    sys.exit(0)
+
+# --- Clips: "stand" (the rest pose) and "ride" (seated on the dragon, hands on the reins, feet in the stirrups).
+def key_clip(name):
+    """Keys every bone's current pose into a new action (two identical frames: a held pose)."""
+    act = bpy.data.actions.new(name)
+    act.use_fake_user = True
+    if rig.animation_data is None:
+        rig.animation_data_create()
+    rig.animation_data.action = act
+    for pb in rig.pose.bones:
+        rot = "rotation_euler" if pb.rotation_mode in ("XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX") else "rotation_quaternion"
+        for f in (1, 2):
+            pb.keyframe_insert("location", frame=f)
+            pb.keyframe_insert(rot, frame=f)
+    return act
+
+
+key_clip("stand")
+rig.animation_data.action = None
 # --- Riding pose. The spine leans forward a little; arms and legs are solved with Blender's IK toward the reins and
 # the stirrups (positions relative to the hips, Blender axes: +X the rider's left, -Y forward, +Z up), then baked.
 SPINE = {"Spine": 7, "Spine1": 4, "Spine2": 2, "Neck": -5, "Head": -4}
@@ -126,97 +219,21 @@ for side in ("Left", "Right"):
             e = [0.0, 0.0, 0.0]
             e["XYZ".index(CURL_AXIS[-1])] = math.radians(deg) * (-1 if CURL_AXIS.startswith("-") else 1)
             pb.rotation_euler = Euler(e, "XYZ")
+key_clip("ride")
 bpy.ops.object.mode_set(mode="OBJECT")
 bpy.context.view_layer.update()
 
-def dump():
-    for n in ["Hips", "Spine2", "Head", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftArm", "LeftForeArm", "LeftHand"]:
-        pb = rig.pose.bones["mixamorig:" + n]
-        h = rig.matrix_world @ pb.head
-        t = rig.matrix_world @ pb.tail
-        print(f"BONE {n:12s} head {h.x:+.3f} {h.y:+.3f} {h.z:+.3f}  tail {t.x:+.3f} {t.y:+.3f} {t.z:+.3f}")
 dump()
-
-def preview(tag_prefix=""):
-    """Workbench renders (orthographic): front, side, a close-up of the left hand and of the head."""
-    if not PREVIEW:
-        return
-    os.makedirs(PREVIEW, exist_ok=True)
-    scene = bpy.context.scene
-    scene.render.engine = "BLENDER_WORKBENCH"
-    scene.render.resolution_x = 600
-    scene.render.resolution_y = 800
-    scene.display.shading.light = "STUDIO"
-    scene.display.shading.color_type = os.environ.get("RIDER_COLOR", "TEXTURE")
-    cam = scene.camera
-    if cam is None:
-        cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
-        scene.collection.objects.link(cam)
-        scene.camera = cam
-    cam.data.type = "ORTHO"
-    hand = rig.matrix_world @ rig.pose.bones["mixamorig:LeftHand"].head
-    head = rig.matrix_world @ rig.pose.bones["mixamorig:Head"].head
-    views = os.environ.get("RIDER_VIEWS", "front,side").split(",")
-    shots = {
-        "front": ((0, -5, 0.8), (90, 0, 0), 2.0),
-        "side": ((5, 0, 0.8), (90, 0, 90), 2.0),
-        "back": ((0, 5, 0.9), (90, 0, 180), 2.0),
-        "hand": ((hand.x + 2, hand.y, hand.z), (90, 0, 90), 0.35),
-        "handtop": ((hand.x, hand.y, hand.z + 2), (0, 0, 0), 0.35),
-        "head": ((head.x, head.y - 2, head.z + 0.1), (90, 0, 0), 0.45),
-        "headside": ((head.x + 2, head.y, head.z + 0.1), (90, 0, 90), 0.45),
-    }
-    for tag in views:
-        loc, rot, ortho = shots[tag]
-        cam.data.ortho_scale = ortho
-        cam.location = loc
-        cam.rotation_euler = Euler([math.radians(a) for a in rot], "XYZ")
-        scene.render.filepath = os.path.join(PREVIEW, f"{tag_prefix}{tag}.png")
-        bpy.ops.render.render(write_still=True)
-
-
-preview()
+preview("ride-")
 if OUT == "-":
     sys.exit(0)
-
-# --- Apply the riding pose as the rest pose (the game binds in it), then export.
-bpy.context.view_layer.objects.active = rig
-meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.parent == rig or o == basemesh]
-for o in bpy.data.objects:
-    if o.type == "MESH":
-        bpy.context.view_layer.objects.active = o
-        if o.data.shape_keys:
-            # Bake the body / face targets into the mesh (runtime morphs come later).
-            bpy.ops.object.shape_key_remove(all=True, apply_mix=True)
-        for m in list(o.modifiers):
-            if m.type == "MASK":
-                bpy.ops.object.modifier_apply(modifier=m.name)
-        for m in list(o.modifiers):
-            if m.type == "ARMATURE":
-                # Bake the posed shape, then re-add the armature modifier for the new rest.
-                bpy.ops.object.modifier_copy(modifier=m.name)
-                bpy.ops.object.modifier_apply(modifier=m.name)
-bpy.context.view_layer.objects.active = rig
-bpy.ops.object.mode_set(mode="POSE")
-bpy.ops.pose.armature_apply(selected=False)
-bpy.ops.object.mode_set(mode="OBJECT")
-# --- Outfit (built on the rest-posed body).
-OUTFIT = os.environ.get("RIDER_OUTFIT", "akinci")
-if OUTFIT == "akinci":
-    import akinci
-    # The dragon under the rider, for the cloth to rest on: a long rounded body along the neck, below the seat.
-    hips_w = rig.matrix_world @ rig.pose.bones["mixamorig:Hips"].head
-    bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=0.34, depth=3.0, location=(0, hips_w.y + 0.4, hips_w.z - 0.46), rotation=(math.radians(90), 0, 0))
-    dragon_proxy = bpy.context.active_object
-    dragon_proxy.name = "dragon_proxy"
-    akinci.build(rig, basemesh, [basemesh, dragon_proxy])
-    bpy.data.objects.remove(dragon_proxy, do_unlink=True)
-    preview("outfit-")
 
 bpy.ops.object.select_all(action="DESELECT")
 for o in [rig] + list(rig.children_recursive):
     o.select_set(True)
 os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
-bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True, export_skins=True, export_animations=False,
-                          export_morph=False, export_apply=False, export_yup=True, export_image_format="JPEG", export_jpeg_quality=88)
+bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True, export_skins=True, export_animations=True,
+                          export_animation_mode="ACTIONS", export_force_sampling=True, export_morph=False, export_apply=False,
+                          export_yup=True, export_image_format="JPEG", export_jpeg_quality=88,
+                          export_vertex_color="NAME", export_vertex_color_name="ao")
 print("EXPORTED", OUT, os.path.getsize(OUT))

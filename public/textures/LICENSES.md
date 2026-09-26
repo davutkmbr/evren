@@ -45,6 +45,7 @@ object space), under the Poly Haven / ambientCG CC0 texture approval (CLAUDE.md;
 | `brown_leather_*` | [brown_leather](https://polyhaven.com/a/brown_leather) (Poly Haven) | Rob Tuytel | 0.4 m | boots, gloves, straps | CC0 1.0 |
 | `crepe_satin_*` | [crepe_satin](https://polyhaven.com/a/crepe_satin) (Poly Haven) | colormass, Rico Cilliers | 0.27 m | sash | CC0 1.0 |
 | `chainmail002_*` | [Chainmail 002](https://ambientcg.com/view?id=Chainmail002) (ambientCG) | Lennart Demes | 0.25 m (assumed) | mail | CC0 1.0 |
+| `metal038_*` | [Metal 038](https://ambientcg.com/view?id=Metal038) (ambientCG) | Lennart Demes | 0.35 m (assumed) | helmet, vambraces, mirror plate, gilt fittings (tinted) | CC0 1.0 |
 
 <!-- GENERATED:street-assets (tools/world-compiler/src/street/licences.ts) -->
 
