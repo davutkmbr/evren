@@ -20,8 +20,9 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { threadId } from 'node:worker_threads';
 import { deflateSync, crc32 } from 'node:zlib';
 import { ROOT } from '../lib/areas.mjs';
 import { hasMaterial, materialDef, type MaterialName, type TextureSetRef } from './materials';
@@ -399,7 +400,8 @@ export class TextureBaker {
   ) {
     mkdirSync(CACHE_DIR, { recursive: true });
     mkdirSync(join(outDir, 'textures'), { recursive: true });
-    this.tmp = join(CACHE_DIR, 'tmp');
+    // Per thread: parallel compiles and worker threads (--jobs) bake at the same time.
+    this.tmp = join(CACHE_DIR, 'tmp', `${process.pid}-${threadId}`);
     mkdirSync(this.tmp, { recursive: true });
   }
 
@@ -547,8 +549,12 @@ export class TextureBaker {
       dims = JSON.parse(readFileSync(meta, 'utf8')) as [number, number];
       this.cacheHits++;
     } else {
-      dims = make(cached);
-      writeFileSync(meta, JSON.stringify(dims));
+      // Written aside and renamed: another thread may read the cache entry meanwhile.
+      const part = join(CACHE_DIR, `${h}.${process.pid}-${threadId}.part.${ext}`);
+      dims = make(part);
+      renameSync(part, cached);
+      writeFileSync(`${meta}.${process.pid}-${threadId}`, JSON.stringify(dims));
+      renameSync(`${meta}.${process.pid}-${threadId}`, meta);
       this.cacheMisses++;
     }
     const file = `${name}.${ext}`;

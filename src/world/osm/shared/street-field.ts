@@ -11,6 +11,9 @@ import type { WorldBounds } from '../../../core/contracts';
 import type { OsmArea, OsmData, OsmRoad } from '../data';
 import { BoxGrid, ringArea, segDist } from './geometry';
 import { MASK_RANGE, SIDEWALK_MAX, type StreetRaster } from './protocol';
+import { clipPlatformRing, correctTramTracks, TRACK_KERB_REACH, TRACK_PLATFORM_CLEAR, trackDistance, type TrackField, type TramTrack } from './tram-tracks';
+
+export { TRACK_KERB_REACH };
 
 /** Surface classes of carriageways and paths (StreetRaster ids R & SURF_MASK, ids B). */
 export const Surf = {
@@ -48,12 +51,56 @@ export const SURF_MASK = 7;
 export const FLAG_PEDESTRIAN = 8;
 /** The winning street has kerbs (raised sidewalk / block ground next to it). */
 export const FLAG_KERBED = 16;
-/** Inside the bed of an embedded tram track. */
+/** Within the rail reach of a street tram track (the corrected tracks, StreetRaster.tracks). */
 export const FLAG_TRAM = 32;
 /** On (or right next to) the median strip of a dual carriageway: the strip itself is streets masonry. */
 export const FLAG_MEDIAN = 64;
 /** Gaps between the two carriageways of a dual carriageway up to this width (m) are median strips. */
 export const MEDIAN_MAX = 6;
+/**
+ * Inside a flush tram track bed (StreetField.stampTrackBeds): the bed is part of the carriageway distance field, so the
+ * ground, the height query and the kerbs treat it as carriageway.
+ */
+export const FLAG_TRACK_BED = 128;
+
+/** Half width (m) of the flush track bed: half the standard gauge plus 1.2 m (the tram body overhangs ~0.6 m). */
+export const TRACK_BED_HALF = 1.435 / 2 + 1.2;
+/** Resampling step (m) of the track classification. */
+const TRACK_STEP = 1;
+/** A track with a carriageway along it (TRACK_AXIS_TOL) within this distance (m) on both sides lies on a median. */
+const TRACK_MEDIAN_REACH = 14;
+const TRACK_AXIS_TOL = (35 * Math.PI) / 180;
+/**
+ * Raised ground narrower than this (m) between a track bed and a carriageway or another track's bed joins the bed:
+ * the 1 m raster draws thinner kerbed ridges as saw teeth.
+ */
+const TRACK_SLIVER = 2.5;
+/**
+ * Slope (per m of width) of the join: raised ground `gap` m wide between a bed and a carriageway keeps the distance
+ * value (gap - TRACK_SLIVER) * TRACK_SLIVER_SLOPE at most. A steep cut ends a strip whose width crosses TRACK_SLIVER
+ * cleanly; a flat one (the old half slope) left a near-zero field over metres of strip, and the 8-bit field drew
+ * its end as ragged islands.
+ */
+const TRACK_SLIVER_SLOPE = 3;
+/** The bed runs on this many samples (TRACK_STEP m each) into the carriageway past its ends. */
+const TRACK_BED_LEAD = 3;
+
+/** Another track this close (m, centre to centre) makes a double track: off the carriageway, its own right-of-way. */
+const DOUBLE_TRACK = 4.5;
+/** Shift (m) past the carriageway edge of a kerb-lane move (world compiler: near rail TRAM_KERB inside the kerb). */
+const TRACK_TWIN_SHIFT = 1.435 / 2 + 0.05 + 0.85;
+
+/** Class of a street tram track sample (StreetField.classifyTracks). */
+export const TrackClass = {
+  /** Both rails on the carriageway. */
+  Street: 0,
+  /** Off the carriageway on its kerb side (a kerb-lane track OSM draws on the pavement). */
+  Kerb: 1,
+  /** Off the carriageway between two carriageways (a median right-of-way): flush bed. */
+  Median: 2,
+  /** Off the carriageway on its own right-of-way (a double track, away from streets, a square): flush bed. */
+  Reserved: 3,
+} as const;
 
 /** Raster texel size (m). */
 export const STREET_RASTER_PX = 1;
@@ -281,9 +328,71 @@ export function groundOf(a: OsmArea): number {
   }
 }
 
-/** Surface tram tracks embedded in the street (bridge and tunnel sections are left to their structures). */
-export function streetTramTracks(data: Pick<OsmData, 'rails'>): { pts: number[]; gauge: number; routes?: string[] }[] {
-  return data.rails.filter((r) => (r.kind === 'tram' || r.kind === 'light_rail') && !r.tunnel && !r.bridge);
+/** Pieces of polyline `pts` inside `rect` (segments crossing the edge are cut at it). */
+export function clipToRect(pts: readonly number[], rect: WorldBounds): number[][] {
+  const inside = (x: number, z: number): boolean => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
+  // Liang-Barsky parameter range [t0, t1] of segment a-b inside the rect (t0 > t1: misses it).
+  const range = (ax: number, az: number, bx: number, bz: number): [number, number] => {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = bx - ax;
+    const dz = bz - az;
+    for (const [p, q] of [
+      [-dx, ax - rect.minX],
+      [dx, rect.maxX - ax],
+      [-dz, az - rect.minZ],
+      [dz, rect.maxZ - az],
+    ]) {
+      if (Math.abs(p) < 1e-12) {
+        if (q < 0) {
+          return [1, 0];
+        }
+        continue;
+      }
+      const r = q / p;
+      if (p < 0) {
+        t0 = Math.max(t0, r);
+      } else {
+        t1 = Math.min(t1, r);
+      }
+    }
+    return [t0, t1];
+  };
+  const out: number[][] = [];
+  let cur: number[] | null = null;
+  for (let k = 2; k < pts.length; k += 2) {
+    const ax = pts[k - 2];
+    const az = pts[k - 1];
+    const bx = pts[k];
+    const bz = pts[k + 1];
+    const [t0, t1] = range(ax, az, bx, bz);
+    if (t0 > t1) {
+      cur = null;
+      continue;
+    }
+    if (!cur) {
+      cur = [ax + (bx - ax) * t0, az + (bz - az) * t0];
+      out.push(cur);
+    }
+    cur.push(ax + (bx - ax) * t1, az + (bz - az) * t1);
+    if (!inside(bx, bz)) {
+      cur = null;
+    }
+  }
+  return out.filter((p) => p.length >= 4);
+}
+
+/**
+ * Surface tram tracks embedded in the street (bridge and tunnel sections are left to their structures). With `rect`,
+ * only the pieces inside it: the OSM ways run past the built area, where no OSM ground exists to drape them on
+ * (StreetSurface clamps its lookups to the rect edge, so they would hang in the air or sink into the terrain).
+ */
+export function streetTramTracks(data: Pick<OsmData, 'rails'>, rect?: WorldBounds): { pts: number[]; gauge: number; routes?: string[]; landed?: true }[] {
+  const tracks = data.rails.filter((r) => (r.kind === 'tram' || r.kind === 'light_rail') && !r.tunnel && !r.bridge);
+  if (!rect) {
+    return tracks;
+  }
+  return tracks.flatMap((r) => clipToRect(r.pts, rect).map((pts) => ({ pts, gauge: r.gauge, routes: r.routes, landed: r.landed })));
 }
 
 /** Height (m) of raised tram platforms above the surrounding carriageway (low-floor T1 / T5 stops). */
@@ -322,8 +431,111 @@ export function tramPlatforms(data: Pick<OsmData, 'areas' | 'rails'>): OsmArea[]
 /** Everything the street raster is built from (foundation.ts posts exactly this to the foundation worker). */
 export type StreetRasterInput = Pick<OsmData, 'roads' | 'areas' | 'buildings' | 'rails'>;
 
-export function streetRasterInput(data: OsmData): StreetRasterInput {
-  return { roads: data.roads, areas: data.areas, buildings: data.buildings, rails: data.rails };
+/**
+ * `coast` (signed coast distance, positive on land) given: bridge ways also contribute their pieces over land that
+ * meet the ground (abutment()), as ground-level streets and tracks. A bridge deck lands on the street ground at its
+ * abutments; under the deck's last
+ * metres over the quay the ground must be carriageway (no kerb lift poking through the deck) and the carriageway,
+ * tram bed and kerbs continue exactly where the deck ends.
+ */
+export function streetRasterInput(data: OsmData, coast?: (x: number, z: number) => number): StreetRasterInput {
+  if (!coast) {
+    return { roads: data.roads, areas: data.areas, buildings: data.buildings, rails: data.rails };
+  }
+  // Ways a landed piece must not cross: then it is an overpass (a road or rail runs under it), not an abutment.
+  const below = [...data.roads, ...data.rails].filter((w) => !w.bridge && !w.tunnel).map((w) => w.pts);
+  const landed = <T extends { pts: number[]; bridge?: true; refs?: number[] }>(ways: readonly T[]): T[] =>
+    ways.flatMap((w) => (w.bridge ? landPieces(w.pts, coast).filter((p) => abutment(p, w.pts, below)).map((pts) => ({ ...w, pts, bridge: undefined, refs: undefined })) : []));
+  return { roads: data.roads.concat(landed(data.roads)), areas: data.areas, buildings: data.buildings, rails: data.rails.concat(landed(data.rails).map((r) => ({ ...r, landed: true as const }))) };
+}
+
+/** Coast distance (m) from which the OSM ground exists (the quay wall stands at QUAY_EDGE in street-surface.ts). */
+const LAND_EDGE = 1;
+/** Resampling step (m) when cutting a way at the shore. */
+const LAND_STEP = 1;
+
+/** Longest piece (m) of a bridge way over land that still lands on the ground (an abutment or a short stream crossing). */
+const ABUTMENT_MAX = 60;
+
+/**
+ * Whether a piece of bridge way `way` over land meets the ground: it starts or ends at an end of the way (the deck's
+ * abutment, or the whole of a short crossing over a stream the coast does not know), is at most ABUTMENT_MAX m long
+ * and no other way crosses under it (away from its ends). Viaducts and overpasses over land (a motorway approach, a
+ * road over a road or a railway) stay in the air.
+ */
+function abutment(piece: readonly number[], way: readonly number[], below: readonly (readonly number[])[]): boolean {
+  const n = piece.length;
+  const near = (x: number, z: number, i: number): boolean => Math.hypot(x - way[i], z - way[i + 1]) < LAND_STEP * 1.5;
+  const atEnd = near(piece[0], piece[1], 0) || near(piece[0], piece[1], way.length - 2) || near(piece[n - 2], piece[n - 1], 0) || near(piece[n - 2], piece[n - 1], way.length - 2);
+  let len = 0;
+  for (let k = 2; k < n; k += 2) {
+    len += Math.hypot(piece[k] - piece[k - 2], piece[k + 1] - piece[k - 1]);
+  }
+  if (!atEnd || len > ABUTMENT_MAX) {
+    return false;
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let k = 0; k < n; k += 2) {
+    minX = Math.min(minX, piece[k]);
+    maxX = Math.max(maxX, piece[k]);
+    minZ = Math.min(minZ, piece[k + 1]);
+    maxZ = Math.max(maxZ, piece[k + 1]);
+  }
+  const cross = (ax: number, az: number, bx: number, bz: number, cx: number, cz: number, dx: number, dz: number): boolean => {
+    const d1 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+    const d2 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax);
+    const d3 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx);
+    const d4 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx);
+    return d1 * d2 < 0 && d3 * d4 < 0;
+  };
+  // The piece's first and last LAND_STEP m are left out: ways that meet the bridge at its ends are not under it.
+  for (const w of below) {
+    for (let j = 2; j < w.length; j += 2) {
+      const cx = w[j - 2];
+      const cz = w[j - 1];
+      const dx = w[j];
+      const dz = w[j + 1];
+      if (Math.max(cx, dx) < minX || Math.min(cx, dx) > maxX || Math.max(cz, dz) < minZ || Math.min(cz, dz) > maxZ) {
+        continue;
+      }
+      for (let k = 4; k < n - 2; k += 2) {
+        if (cross(piece[k - 2], piece[k - 1], piece[k], piece[k + 1], cx, cz, dx, dz)) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/** Pieces (>= 2 m) of polyline `pts` over land, cut at the shore with LAND_STEP resolution. */
+function landPieces(pts: readonly number[], coast: (x: number, z: number) => number): number[][] {
+  const out: number[][] = [];
+  let cur: number[] | null = null;
+  const visit = (x: number, z: number): void => {
+    if (coast(x, z) > LAND_EDGE) {
+      if (!cur) {
+        cur = [];
+        out.push(cur);
+      }
+      cur.push(x, z);
+    } else {
+      cur = null;
+    }
+  };
+  visit(pts[0], pts[1]);
+  for (let k = 2; k < pts.length; k += 2) {
+    const ax = pts[k - 2];
+    const az = pts[k - 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(pts[k] - ax, pts[k + 1] - az) / LAND_STEP));
+    for (let i = 1; i <= n; i++) {
+      visit(ax + ((pts[k] - ax) * i) / n, az + ((pts[k + 1] - az) * i) / n);
+    }
+  }
+  return out.filter((p) => p.length >= 4 && Math.hypot(p[p.length - 2] - p[0], p[p.length - 1] - p[1]) >= 2);
 }
 
 /**
@@ -843,10 +1055,296 @@ export class StreetField {
     });
   }
 
-  stampTram(pts: readonly number[], gauge: number): void {
-    this.sweep(pts, gauge / 2 + 0.55, (idx) => {
-      this.street[idx] |= FLAG_TRAM;
+  /** Carriageway distance (m) at (x, z), bilinear over texel centres (the value StreetSurface.distance decodes). */
+  private distAt(x: number, z: number): number {
+    const fx = Math.min(this.w - 1.001, Math.max(0, (x - this.minX) / this.px - 0.5));
+    const fz = Math.min(this.h - 1.001, Math.max(0, (z - this.minZ) / this.px - 0.5));
+    const i = fx | 0;
+    const j = fz | 0;
+    const tx = fx - i;
+    const tz = fz - j;
+    const k = j * this.w + i;
+    const a = this.d[k] + (this.d[k + 1] - this.d[k]) * tx;
+    const b = this.d[k + this.w] + (this.d[k + this.w + 1] - this.d[k + this.w]) * tx;
+    return a + (b - a) * tz;
+  }
+
+  private texelIndex(x: number, z: number): number {
+    const i = Math.min(this.w - 1, Math.max(0, Math.floor((x - this.minX) / this.px)));
+    const j = Math.min(this.h - 1, Math.max(0, Math.floor((z - this.minZ) / this.px)));
+    return j * this.w + i;
+  }
+
+  /**
+   * Resamples every track every TRACK_STEP m and classifies every sample (TrackClass) against the carriageway distance
+   * field (valid after the streets and kerb fillets are stamped). Off the carriageway, a track lies on a median when on
+   * both sides, within TRACK_MEDIAN_REACH and not across a building, a vehicular carriageway running along it
+   * (TRACK_AXIS_TOL) or another street track is found; a track with another track beside it (DOUBLE_TRACK: a double
+   * track) or across the carriageway within reach of a kerb-lane move (it would pinch the pair; the street is wider
+   * than its OSM width says), or its centre TRACK_KERB_REACH m or more off the carriageway, is on its own
+   * right-of-way; the rest are single kerb-lane tracks.
+   */
+  classifyTracks(tracks: readonly { pts: readonly number[]; gauge: number }[]): { pts: number[]; cls: Uint8Array }[] {
+    const res = tracks.map((t) => {
+      const out: number[] = [];
+      const pts = t.pts;
+      for (let k = 2; k < pts.length; k += 2) {
+        const ax = pts[k - 2];
+        const az = pts[k - 1];
+        const m = Math.max(1, Math.round(Math.hypot(pts[k] - ax, pts[k + 1] - az) / TRACK_STEP));
+        for (let i = k === 2 ? 0 : 1; i <= m; i++) {
+          out.push(ax + ((pts[k] - ax) * i) / m, az + ((pts[k + 1] - az) * i) / m);
+        }
+      }
+      return { pts: out, cls: new Uint8Array(out.length / 2), tan: new Float32Array(out.length), g: t.gauge / 2 + 0.05 };
     });
+    // All samples in a grid: [x, z, track].
+    const grid = new BoxGrid(8);
+    const samples: number[] = [];
+    res.forEach((r, ti) => {
+      const P = r.pts;
+      const n = r.cls.length;
+      for (let i = 0; i < n; i++) {
+        const j = Math.min(n - 1, i + 1);
+        const h = Math.max(0, i - 1);
+        const tx = P[j * 2] - P[h * 2];
+        const tz = P[j * 2 + 1] - P[h * 2 + 1];
+        const l = Math.hypot(tx, tz) || 1;
+        r.tan[i * 2] = tx / l;
+        r.tan[i * 2 + 1] = tz / l;
+        const x = P[i * 2];
+        const z = P[i * 2 + 1];
+        const off = this.distAt(x - (tz / l) * r.g, z + (tx / l) * r.g) >= -0.05 || this.distAt(x + (tz / l) * r.g, z - (tx / l) * r.g) >= -0.05;
+        r.cls[i] = off ? TrackClass.Kerb : TrackClass.Street;
+        const id = samples.push(x, z, ti) / 3 - 1;
+        grid.add(id, x - DOUBLE_TRACK, z - DOUBLE_TRACK, x + DOUBLE_TRACK, z + DOUBLE_TRACK);
+      }
+    });
+    /** Another track's sample within `r` of (x, z). */
+    const otherTrack = (x: number, z: number, ti: number, r: number): boolean => {
+      for (const id of grid.at(x, z)) {
+        const o = id * 3;
+        if (samples[o + 2] !== ti && (samples[o] - x) ** 2 + (samples[o + 1] - z) ** 2 < r * r) {
+          return true;
+        }
+      }
+      return false;
+    };
+    res.forEach((r, ti) => {
+      const P = r.pts;
+      for (let i = 0; i < r.cls.length; i++) {
+        if (r.cls[i] === TrackClass.Street) {
+          continue;
+        }
+        const x = P[i * 2];
+        const z = P[i * 2 + 1];
+        const tx = r.tan[i * 2];
+        const tz = r.tan[i * 2 + 1];
+        let ang = Math.atan2(tz, tx);
+        if (ang < 0) {
+          ang += Math.PI;
+        }
+        const d0 = this.distAt(x, z);
+        // A kerb-lane move shifts the track up to d0 + TRACK_TWIN_SHIFT m: a twin track closer than that plus
+        // DOUBLE_TRACK would end up pinched against (or on) it.
+        const twinReach = DOUBLE_TRACK + Math.max(0, d0) + TRACK_TWIN_SHIFT;
+        let twin = false;
+        /** A carriageway along the track or another track on side `side` (marching out from beyond the rail). */
+        const along = (side: number): boolean => {
+          let found = false;
+          for (let q = r.g + 0.1; q <= TRACK_MEDIAN_REACH; q += 0.5) {
+            const px = x - tz * side * q;
+            const pz = z + tx * side * q;
+            const idx = this.texelIndex(px, pz);
+            if (this.bd[idx] <= 0) {
+              break;
+            }
+            if (otherTrack(px, pz, ti, 0.75)) {
+              twin ||= q < twinReach;
+              return true;
+            }
+            if (!found && this.distAt(px, pz) < 0 && !(this.street[idx] & FLAG_PEDESTRIAN)) {
+              const diff = Math.abs((this.dir[idx] / 256) * Math.PI - ang);
+              found = Math.min(diff, Math.PI - diff) < TRACK_AXIS_TOL;
+            }
+            if (found && q >= twinReach) {
+              break;
+            }
+          }
+          return found;
+        };
+        const a = along(1);
+        const b = along(-1);
+        if (a && b) {
+          r.cls[i] = TrackClass.Median;
+        } else if (twin || otherTrack(x, z, ti, DOUBLE_TRACK) || d0 >= TRACK_KERB_REACH) {
+          r.cls[i] = TrackClass.Reserved;
+        }
+      }
+    });
+    return res.map((r) => ({ pts: r.pts, cls: r.cls }));
+  }
+
+  /**
+   * Flush track beds: TRACK_BED_HALF m either side of every median and own right-of-way stretch of the street tram
+   * tracks (TrackClass; run on TRACK_BED_LEAD samples into the carriageway) join the carriageway distance field, so the
+   * bed lies at carriageway level in every layer (ground mesh, StreetSurface.heightAt, the compiled street ground) with
+   * the kerbs stopping at it (stampBeds: slivers, platforms). Returns the bed length (m).
+   */
+  stampTrackBeds(tracks: readonly { pts: readonly number[]; gauge: number }[]): number {
+    return this.stampBeds(
+      this.classifyTracks(tracks).map(({ pts, cls }) => {
+        const n = cls.length;
+        const bed = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+          if (cls[i] === TrackClass.Median || cls[i] === TrackClass.Reserved) {
+            for (let k = Math.max(0, i - TRACK_BED_LEAD); k <= Math.min(n - 1, i + TRACK_BED_LEAD); k++) {
+              if (k === i || cls[k] === TrackClass.Street) {
+                bed[k] = 1;
+              }
+            }
+          }
+        }
+        return { pts, bed };
+      }),
+    );
+  }
+
+  /** Carriageway distance and flush-bed queries of the field as it stands (tram-tracks.ts correctTramTracks). */
+  trackField(): TrackField {
+    return {
+      distance: (x, z) => this.distAt(x, z),
+      trackBedAt: (x, z) => (this.street[this.texelIndex(x, z)] & FLAG_TRACK_BED) !== 0,
+    };
+  }
+
+  /**
+   * Flush beds along the corrected tracks (tram-tracks.ts) where their rails still leave the carriageway (kerb-lane
+   * tracks that cannot reach the lane: the move stops TRACK_KERB_REACH m out or tapers off next to a bedded stretch),
+   * run on TRACK_BED_LEAD samples into the carriageway, like stampTrackBeds. Returns the bed length (m).
+   */
+  stampOffRoadBeds(tracks: readonly TramTrack[]): number {
+    return this.stampBeds(
+      tracks.map(({ pts, gauge }) => {
+        const n = pts.length / 2;
+        const g = gauge / 2 + 0.05;
+        const bed = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+          const j = Math.min(n - 1, i + 1);
+          const h = Math.max(0, i - 1);
+          const tx = pts[j * 2] - pts[h * 2];
+          const tz = pts[j * 2 + 1] - pts[h * 2 + 1];
+          const l = Math.hypot(tx, tz) || 1;
+          const x = pts[i * 2];
+          const z = pts[i * 2 + 1];
+          if (this.distAt(x - (tz / l) * g, z + (tx / l) * g) >= -0.05 || this.distAt(x + (tz / l) * g, z - (tx / l) * g) >= -0.05) {
+            for (let k = Math.max(0, i - TRACK_BED_LEAD); k <= Math.min(n - 1, i + TRACK_BED_LEAD); k++) {
+              bed[k] = 1;
+            }
+          }
+        }
+        return { pts, bed };
+      }),
+    );
+  }
+
+  /**
+   * Stamps the beds of the flagged track samples (runs of `bed`): TRACK_BED_HALF m either side join the carriageway
+   * distance field. Raised ground between a bed and a carriageway or another track's bed narrower than TRACK_SLIVER
+   * joins the bed (TRACK_SLIVER_SLOPE); raised tram platforms keep their
+   * edge TRACK_PLATFORM_CLEAR m off the track centre. Texels inside the bed get FLAG_TRACK_BED. Returns the bed
+   * length (m).
+   */
+  private stampBeds(tracks: readonly { pts: readonly number[]; bed: Uint8Array }[]): number {
+    // Per texel: nearest bed distance, its track, and the nearest bed distance of any other track.
+    const bedD = new Map<number, [number, number, number]>();
+    let bedM = 0;
+    tracks.forEach(({ pts, bed }, ti) => {
+      const n = bed.length;
+      for (let i = 0; i < n; ) {
+        if (!bed[i]) {
+          i++;
+          continue;
+        }
+        let e = i;
+        while (e + 1 < n && bed[e + 1]) {
+          e++;
+        }
+        if (e > i) {
+          const run = pts.slice(i * 2, e * 2 + 2);
+          for (let k = 2; k < run.length; k += 2) {
+            bedM += Math.hypot(run[k] - run[k - 2], run[k + 1] - run[k - 1]);
+          }
+          this.sweep(run, TRACK_BED_HALF + TRACK_SLIVER + 1, (idx, dist) => {
+            const b = dist - TRACK_BED_HALF;
+            const e = bedD.get(idx);
+            if (!e) {
+              bedD.set(idx, [b, ti, Infinity]);
+            } else if (e[1] === ti) {
+              e[0] = Math.min(e[0], b);
+            } else if (b < e[0]) {
+              e[2] = e[0];
+              e[0] = b;
+              e[1] = ti;
+            } else {
+              e[2] = Math.min(e[2], b);
+            }
+          });
+        }
+        i = e + 1;
+      }
+    });
+    for (const [idx, [b, , b2]] of bedD) {
+      const platform = this.ground[idx] === Ground.Platform;
+      const d = this.d[idx];
+      if (platform) {
+        // The platform edge stands TRACK_PLATFORM_CLEAR m off the track centre: a distance field with its zero there
+        // (the platform's own values are metres from any carriageway; bilinear filtering would lift the rails).
+        const nd = Math.min(d, b + TRACK_BED_HALF - TRACK_PLATFORM_CLEAR);
+        this.d[idx] = nd;
+        if (nd < 0) {
+          this.street[idx] |= FLAG_TRACK_BED;
+        }
+        continue;
+      }
+      let nd = Math.min(d, b);
+      // Raised ground between this bed and a carriageway or another track's bed, `gap` m wide: joins the bed below
+      // TRACK_SLIVER, cut steeply (TRACK_SLIVER_SLOPE).
+      const other = Math.min(d, b2);
+      const gap = other + b;
+      if (other > 0 && b > 0) {
+        nd = Math.min(nd, (gap - TRACK_SLIVER) * TRACK_SLIVER_SLOPE);
+      }
+      this.d[idx] = nd;
+      if (b < 0) {
+        this.street[idx] |= FLAG_TRACK_BED;
+      }
+    }
+    return bedM;
+  }
+
+  /** Flags the texels within the rail reach of the (corrected) tracks with FLAG_TRAM. */
+  stampTram(tracks: readonly { pts: readonly number[]; gauge: number }[]): void {
+    for (const t of tracks) {
+      this.sweep(t.pts, t.gauge / 2 + 0.55, (idx) => {
+        this.street[idx] |= FLAG_TRAM;
+      });
+    }
+  }
+
+  /**
+   * Tram platform ground (Ground.Platform) within TRACK_PLATFORM_CLEAR m of a track centre falls back to plain paving
+   * (Ground.Plaza, not raised): OSM often draws the platform over the rails (platformClearance, the masonry clips its
+   * outline the same way).
+   */
+  clearPlatforms(tracks: readonly TramTrack[]): void {
+    for (const t of tracks) {
+      this.sweep(t.pts, TRACK_PLATFORM_CLEAR, (idx) => {
+        if (this.ground[idx] === Ground.Platform) {
+          this.ground[idx] = Ground.Plaza;
+        }
+      });
+    }
   }
 
   fillGround(rings: readonly number[][], id: number): void {
@@ -911,7 +1409,7 @@ export class StreetField {
     }
   }
 
-  toRaster(): StreetRaster {
+  toRaster(): Omit<StreetRaster, 'tracks' | 'trackStats'> {
     const n = this.w * this.h;
     const rgba = new Uint8Array(n * 4);
     const ids = new Uint8Array(n * 4);
@@ -942,9 +1440,6 @@ export function buildStreetRaster(data: StreetRasterInput, rect: WorldBounds): S
     field.fillGround([a.ring, ...(a.holes ?? [])], id);
   }
   field.buildingDistance(data.buildings.filter((b) => !b.part));
-  for (const t of streetTramTracks(data)) {
-    field.stampTram(t.pts, t.gauge);
-  }
   const streets = classifyStreets(data.roads);
   for (const s of streets) {
     field.stampStreet(s);
@@ -952,11 +1447,35 @@ export function buildStreetRaster(data: StreetRasterInput, rect: WorldBounds): S
   for (const f of kerbFillets(streets, data.roads, (x, z) => field.buildingDistanceAt(x, z))) {
     field.stampFillet(f);
   }
+  const tracks = streetTramTracks(data, rect);
+  const bedM = field.stampTrackBeds(tracks);
+  // The rails every layer draws: kerb-lane tracks moved onto the carriageway (against the field with the median and
+  // right-of-way beds in), then beds where the moved rails still leave it, the rail flag and the platform clearance.
+  const corrected = correctTramTracks(field.trackField(), tracks);
+  const offM = field.stampOffRoadBeds(corrected.tracks);
+  field.stampTram(corrected.tracks);
+  field.clearPlatforms(corrected.tracks);
   for (const m of findMedians(streets)) {
     field.stampMedian(m);
   }
   for (const p of classifyPaths(data.roads)) {
     field.stampPath(p);
   }
-  return field.toRaster();
+  return {
+    ...field.toRaster(),
+    // Pieces of bridge ways over land (streetRasterInput) shape the ground; their rails belong to the bridge.
+    tracks: corrected.tracks.filter((_, i) => !tracks[i].landed),
+    trackStats: { moved: corrected.moved, kept: corrected.kept, bedM: Math.round(bedM + offM) },
+  };
 }
+
+/**
+ * Where a tram platform is raised (> 0; masonry.ts clips the platform outline to it, tram-tracks.ts clipPlatformRing):
+ * off the carriageway and TRACK_PLATFORM_CLEAR m off every track centre (StreetField.clearPlatforms), as
+ * StreetSurface.heightAt raises it.
+ */
+export function platformClearance(distance: (x: number, z: number) => number, tracks: readonly { pts: readonly number[] }[]): (x: number, z: number) => number {
+  return (x, z) => Math.min(distance(x, z), trackDistance(tracks, x, z) - TRACK_PLATFORM_CLEAR);
+}
+
+export { clipPlatformRing };

@@ -9,7 +9,7 @@ import { latLonToLocal } from '../../../../core/geo-coords';
 import { PIERS } from '../../../life/data/places';
 import type { OsmData } from '../../data';
 import { MeshBuf } from '../../shared/buffers';
-import { hash, segDist } from '../../shared/geometry';
+import { hash, pointInRing, segDist } from '../../shared/geometry';
 import type { GeoSampler } from '../../shared/geo';
 import type { MeshArrays } from '../../shared/protocol';
 import { merge, part } from '../../shared/props';
@@ -188,6 +188,38 @@ function berths(): number[] {
   return out;
 }
 
+/** Clearance (m) between a moored hull and a bridge / pier outline. */
+const STRUCTURE_CLEARANCE = 6;
+/** Half width (m) assumed for a bridge way without an outline or a width tag. */
+const BRIDGE_WAY_HALF = 8;
+
+/**
+ * Structures over the water a boat must not be moored under or into: OSM bridge and pier outlines
+ * (man_made=bridge / pier areas, e.g. the Galata Bridge deck) and every bridge way (roads, rails) as a fallback for
+ * bridges drawn without an outline. Returns a test for a point with a clearance radius.
+ */
+function structureTest(data: Pick<OsmData, 'areas' | 'roads' | 'rails'>): (x: number, z: number, r: number) => boolean {
+  const rings = data.areas.filter((a) => a.kind === 'man_made=bridge' || a.kind === 'man_made=pier').map((a) => a.ring);
+  const ways: { pts: number[]; half: number }[] = [];
+  for (const w of [...data.roads, ...data.rails]) {
+    if (w.bridge) {
+      ways.push({ pts: w.pts, half: 'width' in w && w.width ? w.width / 2 : BRIDGE_WAY_HALF });
+    }
+  }
+  const nearPolyline = (p: readonly number[], closed: boolean, x: number, z: number, r: number): boolean => {
+    const n = p.length;
+    for (let k = 2; k <= (closed ? n : n - 2); k += 2) {
+      const a = k - 2;
+      const b = k % n;
+      if (segDist(x, z, p[a], p[a + 1], p[b], p[b + 1]) < r) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return (x, z, r) => rings.some((ring) => pointInRing(ring, x, z) || nearPolyline(ring, true, x, z, r)) || ways.some((w) => nearPolyline(w.pts, false, x, z, r + w.half));
+}
+
 export interface BoatResult {
   mesh: MeshArrays | null;
   /** Mooring anchors (x, z pairs) for quay bollards. */
@@ -197,9 +229,20 @@ export interface BoatResult {
 
 /**
  * Moors boats along the OSM coastline near `anchors` ([x, z, kind] with kind 0 fish-bread boats, 1 kayıks): hulls
- * parallel to the quay, 1.2 m off it, every boat fully in water and away from the ferry berths.
+ * parallel to the quay, 1.2 m off it, every boat fully in water and away from the ferry berths, bridges and piers.
  */
-function moorAlong(data: Pick<OsmData, 'lines'>, geo: GeoSampler, ax: number, az: number, reach: number, spacing: number, max: number, keep: number[], cb: (x: number, z: number, yaw: number, i: number) => void): void {
+function moorAlong(
+  data: Pick<OsmData, 'lines'>,
+  geo: GeoSampler,
+  blocked: (x: number, z: number, r: number) => boolean,
+  ax: number,
+  az: number,
+  reach: number,
+  spacing: number,
+  max: number,
+  keep: number[],
+  cb: (x: number, z: number, yaw: number, i: number) => void,
+): void {
   const avoid = berths();
   let placed = 0;
   let best: { l: number[]; k: number; d: number } | null = null;
@@ -250,7 +293,9 @@ function moorAlong(data: Pick<OsmData, 'lines'>, geo: GeoSampler, ax: number, az
         const bx = qx - tz * off;
         const bz = qz + tx * off;
         const ends = [bx + tx * spacing * 0.45, bz + tz * spacing * 0.45, bx - tx * spacing * 0.45, bz - tz * spacing * 0.45];
-        if (geo.coast(bx, bz) < -1.5 && geo.coast(ends[0], ends[1]) < -0.8 && geo.coast(ends[2], ends[3]) < -0.8) {
+        const inWater = geo.coast(bx, bz) < -1.5 && geo.coast(ends[0], ends[1]) < -0.8 && geo.coast(ends[2], ends[3]) < -0.8;
+        // Hull (bow, middle, stern) clear of bridge decks and piers: never under or inside a bridge head.
+        if (inWater && ![0, 1, 2].some((e) => blocked(e === 2 ? bx : ends[e * 2], e === 2 ? bz : ends[e * 2 + 1], STRUCTURE_CLEARANCE + spacing * 0.2))) {
           cb(bx, bz, Math.atan2(tx, tz), placed);
           keep.push(qx, qz);
           placed++;
@@ -261,8 +306,9 @@ function moorAlong(data: Pick<OsmData, 'lines'>, geo: GeoSampler, ax: number, az
   }
 }
 
-export function buildBoats(data: Pick<OsmData, 'lines' | 'roads'>, geo: GeoSampler): BoatResult {
+export function buildBoats(data: Pick<OsmData, 'lines' | 'roads' | 'rails' | 'areas'>, geo: GeoSampler): BoatResult {
   const stamper = new BoatStamper();
+  const blocked = structureTest(data);
   const anchors: number[] = [];
   const fish = [fishBreadBoat(0x1f3f86, 0xd7a93a, 0xa3201b), fishBreadBoat(0x8f1d1d, 0xe0b441, 0x1c3f7a), fishBreadBoat(0x1b5a3a, 0xd9ad40, 0xa3201b)].map(flatten);
   const small = [kayik(0xe9e6de, 0x1d5fa8), kayik(0x2a7d9a, 0xe9e6de), kayik(0xe9e6de, 0x2e8a4a), kayik(0xd8b04a, 0x2b2b2b)].map(flatten);
@@ -280,19 +326,19 @@ export function buildBoats(data: Pick<OsmData, 'lines' | 'roads'>, geo: GeoSampl
   const keep: number[] = [];
   if (south) {
     const [sx, sz] = south;
-    moorAlong(data, geo, sx - 70, sz + 10, 90, 16, 3, keep, (x, z, yaw, i) => {
+    moorAlong(data, geo, blocked, sx - 70, sz + 10, 90, 16, 3, keep, (x, z, yaw, i) => {
       stamper.add(fish[i % fish.length], x, z, yaw, hash(i * 3.3) * 6.28);
       anchors.push(x, z);
     });
-    moorAlong(data, geo, sx - 170, sz + 30, 70, 9, 4, keep, (x, z, yaw, i) => stamper.add(small[i % small.length], x, z, yaw + (hash(i) < 0.5 ? 0 : Math.PI), hash(i * 7.1) * 6.28));
+    moorAlong(data, geo, blocked, sx - 170, sz + 30, 70, 9, 4, keep, (x, z, yaw, i) => stamper.add(small[i % small.length], x, z, yaw + (hash(i) < 0.5 ? 0 : Math.PI), hash(i * 7.1) * 6.28));
   }
   if (north) {
     const [nx, nz] = north;
-    moorAlong(data, geo, nx - 60, nz, 80, 9, 5, keep, (x, z, yaw, i) => {
+    moorAlong(data, geo, blocked, nx - 60, nz, 80, 9, 5, keep, (x, z, yaw, i) => {
       stamper.add(small[(i + 1) % small.length], x, z, yaw + (hash(i * 1.3) < 0.5 ? 0 : Math.PI), hash(i * 5.7) * 6.28);
       anchors.push(x, z);
     });
-    moorAlong(data, geo, nx + 90, nz + 10, 60, 9, 3, keep, (x, z, yaw, i) => {
+    moorAlong(data, geo, blocked, nx + 90, nz + 10, 60, 9, 3, keep, (x, z, yaw, i) => {
       stamper.add(small[(i + 2) % small.length], x, z, yaw + (hash(i * 2.3) < 0.5 ? 0 : Math.PI), hash(i * 4.1) * 6.28);
       anchors.push(x, z);
     });

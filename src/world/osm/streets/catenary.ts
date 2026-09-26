@@ -4,11 +4,9 @@
  * ribbons (they vanish with distance, like real wires). The İstiklal heritage tram hangs its wire from span wires
  * between the facades instead of masts.
  */
-import type { OsmData } from '../data';
 import { MeshBuf } from '../shared/buffers';
 import type { FootprintIndex } from '../shared/footprints';
 import { segDist } from '../shared/geometry';
-import { streetTramTracks } from '../shared/street-field';
 import type { StreetSurface } from '../shared/street-surface';
 import { type PropSink, Spacing, walkLine, yawTowards } from './sink';
 
@@ -40,9 +38,9 @@ function wire(m: MeshBuf, a: number[], b: number[]): void {
   m.quad(v0, v3, v2, v1);
 }
 
-export function buildCatenary(data: Pick<OsmData, 'rails'>, surface: StreetSurface, footprints: FootprintIndex, sink: PropSink): { wires: MeshBuf; masts: number } {
+export function buildCatenary(surface: StreetSurface, footprints: FootprintIndex, sink: PropSink): { wires: MeshBuf; masts: number } {
   const wires = wireMesh();
-  const tracks = streetTramTracks(data);
+  const tracks = surface.tramTracks;
   const masts = new Spacing(16);
   let count = 0;
   const wireAt = (x: number, z: number): number[] => [x, surface.heightAt(x, z) + WIRE_H, z];

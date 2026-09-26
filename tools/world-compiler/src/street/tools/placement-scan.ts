@@ -1,13 +1,16 @@
 /**
  * Dev tool: scans a compiled area's full-detail tile glbs and instances against the street surface raster and lists
- * small details on the wrong surface (npx tsx placement-scan.ts <area> [--spots N] [--json out.json]):
- * - road paint (st_paint zebras, st_paint_lines lane / edge lines) off the carriageway, on pedestrian streets or kerbs;
+ * small details on the wrong surface (npx tsx placement-scan.ts <area> [--spots N] [--json out.json] [--dir <compiled area>]):
+ * - road paint (st_paint zebras, st_paint_lines lane / edge lines) off the carriageway, on pedestrian streets, kerbs
+ *   or tram track beds;
  * - tactile strips (st_tactile) on the carriageway or inside buildings;
- * - tram rails (st_rail) raised above carriageway level (on a raised pavement or kerb);
+ * - tram rails (st_rail) raised above carriageway level (on a raised pavement or kerb) or sunk below it;
  * - prop instances (street furniture, lamps, trees, bins, bollards) on the carriageway or inside buildings.
  * Counts are per triangle (centroid) for geometry and per instance for props; `--spots` prints the worst 4 m cells.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+import { patchGlbJson } from '../../gltf';
 import { resolve } from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
 import { EXTMeshoptCompression, KHRMeshQuantization } from '@gltf-transform/extensions';
@@ -21,6 +24,7 @@ import { Zone } from '../../../../../src/world/osm/shared/street-surface';
 import { groundHeights, landField, PierField } from '../../ground';
 import { GUTTER_WIDTH, KERB_WIDTH, streetContext } from '../common';
 import { Ground } from '../../../../../src/world/osm/shared/street-field';
+import { trackBedClearanceIndex } from '../../../../../src/world/osm/shared/tram-tracks';
 
 const areaId = process.argv[2] ?? 'eminonu';
 const argOf = (n: string): string | null => {
@@ -42,11 +46,20 @@ const s = f.surface;
 const sc = streetContext({ shared: new Map(), data, foundation: f, heights: groundHeights(s), land: landField(f, new PierField(data)) } as unknown as Parameters<typeof streetContext>[0]);
 /** What the street ground draws at (x, z) (street/ground.ts: carriageway where D < 0, pedestrian paving where a pedestrian street wins). */
 const pedPaving = (x: number, z: number): boolean => sc.winMargin(x, z, (q) => q.pedestrian) > 0;
-const kerbStone = (x: number, z: number): boolean => sc.winMargin(x, z, (q) => q.kerbed) > 0 && s.liftAt(x, z) > 0.05;
-const dir = resolve(ROOT, `public/world/${areaId}`);
+// The gutter as street/ground.ts draws it and the placement rules test it (raster kerb flag), so the scan counts what is drawn.
+const kerbStone = (x: number, z: number): boolean => s.kerbed(x, z) && s.liftAt(x, z) > 0.05;
+const dir = resolve(ROOT, argOf('--dir') ?? `public/world/${areaId}`);
+/** A file of the compiled area; web-profile output (`--web`) is gzipped (`<file>.gz`, gzip magic 1f 8b). */
+const readOut = (rel: string): Buffer => {
+  const b = readFileSync(resolve(dir, rel));
+  return b[0] === 0x1f && b[1] === 0x8b ? gunzipSync(b) : b;
+};
 
 await MeshoptDecoder.ready;
 const io = new NodeIO().registerExtensions([EXTMeshoptCompression, KHRMeshQuantization]).registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+
+/** Tram track beds crossing paint stays off (tram-tracks.ts tramBedHalf, the flush bed): the rule paint.zebraTrack. */
+const bedClear = trackBedClearanceIndex(s.tramTracks, 1);
 
 type Check = (x: number, z: number, y: number) => string | null;
 /** Road paint: must lie on a vehicular carriageway, clear of the kerb (gutter excluded for lane lines). */
@@ -61,7 +74,7 @@ const paintCheck = (lane: boolean): Check => (x, z) => {
   if (lane && d > -GUTTER_WIDTH && kerbStone(x, z)) {
     return 'inGutter';
   }
-  if (lane && s.tramBed(x, z)) {
+  if (lane ? s.tramBed(x, z) : bedClear(x, z) < 0 || s.trackBedAt(x, z)) {
     return 'onTramBed';
   }
   if (s.groundAt(x, z) === Ground.Parking) {
@@ -82,8 +95,17 @@ const tactileCheck: Check = (x, z) => {
   }
   return null;
 };
-/** Rails: raised above carriageway level (a raised pavement or kerb) is wrong; off the raster's carriageway at road level is the flush track bed. */
-const railCheck: Check = (x, z, y) => (y - s.baseAt(x, z) > 0.06 ? (s.zone(x, z) === Zone.Sidewalk ? 'raisedOnSidewalk' : 'raised') : null);
+/**
+ * Rails: raised above carriageway level (a raised pavement or kerb) is wrong, so is sinking below it (more than the
+ * street wear dips); off the raster's carriageway at road level is the flush track bed.
+ */
+const railCheck: Check = (x, z, y) => {
+  const h = y - s.baseAt(x, z);
+  if (h > 0.06) {
+    return s.zone(x, z) === Zone.Sidewalk ? 'raisedOnSidewalk' : 'raised';
+  }
+  return h < -0.05 ? 'buried' : null;
+};
 
 const CHECKS: Record<string, Check> = { st_paint: paintCheck(false), st_paint_lines: paintCheck(true), st_tactile: tactileCheck, st_rail: railCheck };
 const counts = new Map<string, Map<string, number>>();
@@ -102,9 +124,12 @@ const bump = (m: string, k: string, x: number, z: number): void => {
 
 const index = JSON.parse(readFileSync(resolve(dir, 'index.json'), 'utf8')) as { tiles: { id: string; glb: string; manifest: string }[] };
 for (const tile of index.tiles) {
-  const man = JSON.parse(readFileSync(resolve(dir, tile.manifest), 'utf8')) as { detail: string; instances?: { asset: string; position: number[] }[] };
+  const man = JSON.parse(readOut(tile.manifest).toString('utf8')) as { detail: string; instances?: { asset: string; position: number[] }[] };
   if (man.detail === 'full') {
-    const doc = await io.read(resolve(dir, tile.glb));
+    // Geometry only: external images (../textures, the shared web store) become empty inline ones.
+    const doc = await io.readBinary(patchGlbJson(new Uint8Array(readOut(tile.glb)), (j) => {
+      j.images = (j.images ?? []).map(() => ({ uri: 'data:application/octet-stream;base64,AA==' }));
+    }));
     for (const node of doc.getRoot().listNodes()) {
       const mesh = node.getMesh();
       if (!mesh) {

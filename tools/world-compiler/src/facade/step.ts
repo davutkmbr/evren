@@ -24,6 +24,7 @@ import { district, landmarkBlocksEnabled, landmarkOf } from '../district';
 import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
 import { type FacadePlan, parentOf, planFacade, planTop } from './plan';
+import { SLOTS_RECORD, SlotSink } from '../modules/slots';
 
 /** AreaContext.shared key of the Set<string> of building ids (e.g. "w102190096") the façade step must not emit. */
 export const FACADE_SKIP = 'facade:skip';
@@ -238,6 +239,7 @@ export const facadeStep: CompileStep = {
     const sh = t.area.shared.get('facade') as Shared;
     const skip = t.area.shared.get(FACADE_SKIP) as Set<string> | undefined;
     const records: FacadeRecord[] = [];
+    const slots = new SlotSink([t.origin[0], t.origin[2]]);
     let plainTris = 0;
     let massTris = 0;
     for (const s of t.solids) {
@@ -288,6 +290,7 @@ export const facadeStep: CompileStep = {
           pois: t.manifest.pois.filter((q) => q.building === s.rec.id),
           doors: t.manifest.doors.filter((d) => d.building === s.rec.id),
           market: district().facade.market(cx, cz),
+          slots,
           interiors: () => t.area.shared.get('interiors') as ReturnType<Parameters<typeof buildFacade>[3]['interiors']>,
         }),
       );
@@ -297,6 +300,9 @@ export const facadeStep: CompileStep = {
     sh.totals.shops += records.reduce((q, r) => q + r.shops.filter((u) => u.kind === 'shop').length, 0);
     sh.totals.lod0Triangles += tris;
     const mine = (id: string): boolean => t.manifest.buildings.some((b) => b.id === id);
+    if (slots.count) {
+      t.record(`${SLOTS_RECORD}facade`, slots.record());
+    }
     t.record('facade', {
       buildings: records,
       lod0Triangles: tris,

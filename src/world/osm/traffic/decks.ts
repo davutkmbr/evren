@@ -20,7 +20,7 @@ interface DeckLayout {
 
 /** Mirrors GALATA_SECTION / ATATURK_SECTION (lanes = DeckTraffic lanes, tracks = rail strip centre spacing / 2). */
 const DECK_LAYOUTS: Record<string, DeckLayout> = {
-  'galata-koprusu': { halfWidth: 21, lanes: [9.2, 5.6], tracks: [1.7] },
+  'galata-koprusu': { halfWidth: 21, lanes: [13, 9.3, 5.7], tracks: [2.3] },
   'ataturk-koprusu': { halfWidth: 12.5, lanes: [6.3, 2.7], tracks: [] },
 };
 

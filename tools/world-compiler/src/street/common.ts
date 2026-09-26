@@ -9,7 +9,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { BoxGrid, hash, pointInRing } from '../../../../src/world/osm/shared/geometry';
-import { classifyStreets, streetTramTracks, Surf, type Street } from '../../../../src/world/osm/shared/street-field';
+import { classifyStreets, Surf, TRACK_BED_HALF, type Street } from '../../../../src/world/osm/shared/street-field';
+import type { TramTrack } from '../../../../src/world/osm/shared/tram-tracks';
 import { ROOT } from '../../lib/areas.mjs';
 import { district } from '../district';
 import type { XYZ } from '../format';
@@ -17,7 +18,7 @@ import type { OsmStreetRoad } from '../osm-street';
 import type { AreaContext, TileContext } from '../registry';
 import { placementLog } from './placement';
 
-export { hash };
+export { hash, TRACK_BED_HALF };
 
 /** Kerb stone: bevel width and height, top width (m). */
 export const KERB_BEVEL = 0.02;
@@ -92,36 +93,25 @@ export interface StreetContext {
   spineDist(x: number, z: number): number;
   inSquare(x: number, z: number): boolean;
   /**
-   * Street tram tracks (OSM) resampled every TRAM_STEP m and moved onto the carriageway where OSM draws them on the
-   * pavement or within TRAM_KERB of a kerb (the T3 at İskele Camii runs in the kerb lane, c05 photo: near rail
-   * about 0.8 m off the kerb, OSM puts the track 1.2 m inside the stop's pavement).
+   * Street tram tracks as every layer draws them (StreetSurface.tramTracks, shared/tram-tracks.ts): resampled every
+   * metre, kerb-lane stretches moved onto the carriageway where OSM draws them on the pavement or within TRAM_KERB of a
+   * kerb (the T3 at İskele Camii runs in the kerb lane, c05 photo: near rail about 0.8 m off the kerb, OSM puts the
+   * track 1.2 m inside the stop's pavement). Median and own right-of-way tracks (the raster's flush track bed,
+   * StreetSurface.trackBedAt) stay where OSM has them.
    */
   tram: TramTrack[];
   /** Distance from (x, z) to the nearest tram track centre line (Infinity without tracks). */
   tramDist(x: number, z: number): number;
   /**
-   * Signed distance (m) into the flush tram track bed (> 0 inside, clamped at -5): TRACK_BED_HALF m either side of
-   * the corrected track where its rails leave the carriageway. The bed lies at carriageway level (groundY, the street
-   * ground) with a kerb step where raised pavement meets it; placement rules treat it as track.
+   * Signed distance (m) into the flush tram track bed (> 0 inside, -5 outside): the street raster's bed (median and
+   * own right-of-way tracks, and the corrected tracks where their rails still leave the carriageway, street-field.ts
+   * stampTrackBeds / stampOffRoadBeds: part of the carriageway, depth = -distance). The bed lies at carriageway level
+   * (groundY, the street ground) with the carriageway's kerbs; placement rules treat it as track.
    */
   trackBed(x: number, z: number): number;
 }
 
-export interface TramTrack {
-  /** Centre line [x, z, ...]. */
-  pts: number[];
-  gauge: number;
-}
-
-/** Resampling step (m) of the corrected tram tracks. */
-const TRAM_STEP = 1;
-/** Clearance (m) from the kerb line to the near rail of a tram track in a kerb lane. */
-const TRAM_KERB = 0.85;
-
-/** Half width (m) of the flush track bed: half the gauge plus 1.2 m (the tram body overhangs the rails by ~0.6 m). */
-export const TRACK_BED_HALF = 1.435 / 2 + 1.2;
-/** The bed runs on this many track samples (TRAM_STEP m each) into the carriageway past an off-road stretch. */
-const TRACK_BED_LEAD = 3;
+export type { TramTrack };
 
 /** Range (m) of StreetContext.winMargin. */
 const WIN_RANGE = 12;
@@ -359,7 +349,7 @@ export function streetContext(a: AreaContext): StreetContext {
     }
     return d;
   };
-  const tram = correctTramTracks(a);
+  const tram = s.tramTracks;
   const tramGrid = new BoxGrid(20);
   const tramSegs: [number, number, number, number][] = [];
   for (const tr of tram) {
@@ -376,61 +366,13 @@ export function streetContext(a: AreaContext): StreetContext {
     }
     return d;
   };
-  /* Track bed: the stretches of the corrected tracks whose rails still leave the carriageway (a separate right-of-way,
-     a square, a pavement) get a flush bed TRACK_BED_HALF m either side of the centre line, at carriageway level. */
-  const bedGrid = new BoxGrid(20);
-  const bedSegs: [number, number, number, number][] = [];
-  let bedM = 0;
-  for (const tr of tram) {
-    const P = tr.pts;
-    const n = P.length / 2;
-    const off = new Uint8Array(n);
-    const g = tr.gauge / 2 + 0.05;
-    for (let i = 0; i < n; i++) {
-      const j = Math.min(n - 1, i + 1);
-      const h = Math.max(0, i - 1);
-      let tx = P[j * 2] - P[h * 2];
-      let tz = P[j * 2 + 1] - P[h * 2 + 1];
-      const l = Math.hypot(tx, tz) || 1;
-      tx /= l;
-      tz /= l;
-      const x = P[i * 2];
-      const z = P[i * 2 + 1];
-      if (s.distance(x - tz * g, z + tx * g) >= -0.05 || s.distance(x + tz * g, z - tx * g) >= -0.05) {
-        off[i] = 1;
-      }
-    }
-    // Grow each off-road stretch by TRACK_BED_LEAD samples, so the bed runs on into the carriageway.
-    const bed = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      if (off[i]) {
-        for (let k = Math.max(0, i - TRACK_BED_LEAD); k <= Math.min(n - 1, i + TRACK_BED_LEAD); k++) {
-          bed[k] = 1;
-        }
-      }
-    }
-    for (let i = 1; i < n; i++) {
-      if (!bed[i] || !bed[i - 1]) {
-        continue;
-      }
-      const ax = P[i * 2 - 2];
-      const az = P[i * 2 - 1];
-      const bx = P[i * 2];
-      const bz = P[i * 2 + 1];
-      const id = bedSegs.push([ax, az, bx, bz]) - 1;
-      bedGrid.add(id, Math.min(ax, bx) - 6, Math.min(az, bz) - 6, Math.max(ax, bx) + 6, Math.max(az, bz) + 6);
-      bedM += Math.hypot(bx - ax, bz - az);
-    }
-  }
-  const trackBed = (x: number, z: number): number => {
-    let d = 5 + TRACK_BED_HALF;
-    for (const id of bedGrid.at(x, z)) {
-      const [ax, az, bx, bz] = bedSegs[id];
-      d = Math.min(d, segProject(x, z, ax, az, bx, bz).d);
-    }
-    return TRACK_BED_HALF - d;
-  };
-  placementLog(a).note('track.bedM', 'kept', Math.round(bedM));
+  /* Track bed: the raster's (street-field.ts: median and own right-of-way tracks, and the corrected tracks where their
+     rails still leave the carriageway): part of the carriageway, so the street ground and its kerbs follow the
+     carriageway edge there exactly like the runtime ground; inside it the carriageway distance is the depth. */
+  const trackBed = (x: number, z: number): number => (s.trackBedAt(x, z) ? -s.distance(x, z) : -5);
+  placementLog(a).note('rail.corrected', 'moved', s.raster.trackStats.moved);
+  placementLog(a).note('rail.corrected', 'kept', s.raster.trackStats.kept);
+  placementLog(a).note('track.bedM', 'kept', s.raster.trackStats.bedM);
   const groundY = (x: number, z: number): number => (s.distance(x, z) < 0 || trackBed(x, z) > 0 ? a.heights.carriage(x, z) : a.heights.off(x, z) - drop(x, z));
   const ctx: StreetContext = {
     streets,
@@ -527,89 +469,6 @@ function spanCrossings(a: AreaContext, crossings: Crossing[]): void {
   crossings.push(...keep);
 }
 
-/**
- * The street tram tracks, resampled every TRAM_STEP m; a stretch that OSM draws on the pavement or with its near rail
- * closer than TRAM_KERB to the kerb (but within 5 m of the carriageway) is moved along the carriageway distance
- * gradient until the near rail clears the kerb by TRAM_KERB, the samples next to a moved stretch ease into it, so the track bends instead of kinking.
- */
-function correctTramTracks(a: AreaContext): TramTrack[] {
-  const s = a.foundation.surface;
-  const out: TramTrack[] = [];
-  for (const tr of streetTramTracks(a.data)) {
-    const want = -(tr.gauge / 2 + 0.05 + TRAM_KERB);
-    const pts: number[] = [];
-    for (let k = 2; k < tr.pts.length; k += 2) {
-      const ax = tr.pts[k - 2];
-      const az = tr.pts[k - 1];
-      const len = Math.hypot(tr.pts[k] - ax, tr.pts[k + 1] - az);
-      const m = Math.max(1, Math.round(len / TRAM_STEP));
-      for (let i = k === 2 ? 0 : 1; i <= m; i++) {
-        pts.push(ax + ((tr.pts[k] - ax) * i) / m, az + ((tr.pts[k + 1] - az) * i) / m);
-      }
-    }
-    const moved = new Float64Array(pts.length);
-    for (let k = 0; k < pts.length; k += 2) {
-      let x = pts[k];
-      let z = pts[k + 1];
-      const d0 = s.distance(x, z);
-      if (d0 > want && d0 < 5) {
-        for (let it = 0; it < 40; it++) {
-          const d = s.distance(x, z);
-          if (d <= want) {
-            break;
-          }
-          const h = 0.3;
-          let gx = s.distance(x + h, z) - s.distance(x - h, z);
-          let gz = s.distance(x, z + h) - s.distance(x, z - h);
-          const l = Math.hypot(gx, gz) || 1;
-          gx /= l;
-          gz /= l;
-          const stepLen = Math.min(0.5, Math.max(0.05, d - want));
-          x -= gx * stepLen;
-          z -= gz * stepLen;
-        }
-        moved[k] = x - pts[k];
-        moved[k + 1] = z - pts[k + 1];
-      }
-    }
-    // Ease the untouched samples next to a moved stretch (diffusion with the moved samples fixed), so the track
-    // bends away from the OSM line over several metres instead of kinking.
-    const fixed = (i: number): boolean => moved[i * 2] !== 0 || moved[i * 2 + 1] !== 0;
-    let off = moved;
-    const n = off.length / 2;
-    for (let pass = 0; pass < 16; pass++) {
-      const next = Float64Array.from(off);
-      for (let i = 0; i < n; i++) {
-        if (fixed(i)) {
-          continue;
-        }
-        let sx = 0;
-        let sz = 0;
-        let w = 0;
-        for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) {
-          sx += off[j * 2];
-          sz += off[j * 2 + 1];
-          w++;
-        }
-        next[i * 2] = sx / w;
-        next[i * 2 + 1] = sz / w;
-      }
-      off = next;
-    }
-    for (let pass = 0; pass < 2; pass++) {
-      const next = Float64Array.from(off);
-      for (let i = 1; i + 1 < n; i++) {
-        next[i * 2] = (off[i * 2 - 2] + off[i * 2] * 2 + off[i * 2 + 2]) / 4;
-        next[i * 2 + 1] = (off[i * 2 - 1] + off[i * 2 + 1] * 2 + off[i * 2 + 3]) / 4;
-      }
-      off = next;
-    }
-    placementLog(a).note('rail.corrected', 'moved', moved.reduce((n, v, k) => n + (k % 2 === 0 && (v !== 0 || moved[k + 1] !== 0) ? 1 : 0), 0));
-    out.push({ pts: pts.map((v, k) => v + off[k]), gauge: tr.gauge });
-  }
-  return out;
-}
-
 /** Smooth value noise in [0, 1] (bilinear over a hashed lattice of `cell` metres). */
 export function valueNoise(x: number, z: number, cell: number, seed = 0): number {
   const fx = x / cell;
@@ -620,9 +479,14 @@ export function valueNoise(x: number, z: number, cell: number, seed = 0): number
   const v = fz - j;
   const su = u * u * (3 - 2 * u);
   const sv = v * v * (3 - 2 * v);
-  const h = (a: number, b: number): number => hash(a * 157.31 + b * 311.7 + seed * 17.13);
-  const a0 = h(i, j) + (h(i + 1, j) - h(i, j)) * su;
-  const a1 = h(i, j + 1) + (h(i + 1, j + 1) - h(i, j + 1)) * su;
+  // Each lattice corner hashed once (same values as hashing per use; the ground asks this ~10^5 times a tile).
+  const k = seed * 17.13;
+  const h00 = hash(i * 157.31 + j * 311.7 + k);
+  const h10 = hash((i + 1) * 157.31 + j * 311.7 + k);
+  const h01 = hash(i * 157.31 + (j + 1) * 311.7 + k);
+  const h11 = hash((i + 1) * 157.31 + (j + 1) * 311.7 + k);
+  const a0 = h00 + (h10 - h00) * su;
+  const a1 = h01 + (h11 - h01) * su;
   return a0 + (a1 - a0) * sv;
 }
 

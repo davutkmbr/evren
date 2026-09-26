@@ -1,7 +1,6 @@
 /**
  * Terrain heights for the worker: oriented patches sampled on the main thread from geo.heightAt().
  */
-import type { GeoQuery } from '../../../../core/contracts';
 import type { HeightPatch } from '../types';
 
 export interface PatchSpec {
@@ -17,8 +16,8 @@ export interface PatchSpec {
   cell: number;
 }
 
-/** Main thread: samples a patch from the geo service. */
-export function samplePatch(geo: GeoQuery, spec: PatchSpec): HeightPatch {
+/** Main thread: samples a patch from a ground height function (geo.heightAt, or the visible ground). */
+export function samplePatch(heightAt: (x: number, z: number) => number, spec: PatchSpec): HeightPatch {
   const nu = Math.max(2, Math.ceil(spec.lenU / spec.cell) + 1);
   const nv = Math.max(2, Math.ceil(spec.lenV / spec.cell) + 1);
   const data = new Float32Array(nu * nv);
@@ -30,7 +29,7 @@ export function samplePatch(geo: GeoQuery, spec: PatchSpec): HeightPatch {
       const u = spec.u0 + (i * spec.lenU) / (nu - 1);
       const x = spec.ox + spec.ux * u + vx * v;
       const z = spec.oz + spec.uz * u + vz * v;
-      data[j * nu + i] = geo.heightAt(x, z);
+      data[j * nu + i] = heightAt(x, z);
     }
   }
   return { ...spec, nu, nv, data };

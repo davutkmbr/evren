@@ -142,9 +142,13 @@ export class Placer {
     this.standers.push(x, y, z, yaw, pose, seed);
   }
 
-  prop(kind: Parameters<PropStamper['add']>[0], x: number, z: number, yaw: number, scale = 1, tint?: [number, number, number]): void {
-    this.props.add(kind, x, this.y(x, z), z, yaw, scale, tint);
+  /** Stamps a prop on the ground; false when the shared stand rule refuses the spot (then nothing is reserved). */
+  prop(kind: Parameters<PropStamper['add']>[0], x: number, z: number, yaw: number, scale = 1, tint?: [number, number, number]): boolean {
+    if (!this.props.add(kind, x, this.y(x, z), z, yaw, scale, tint)) {
+      return false;
+    }
     this.reserve(x, z);
+    return true;
   }
 }
 
@@ -156,7 +160,9 @@ function local(x: number, z: number, yaw: number, dx: number, dz: number): [numb
 }
 
 function benchWithPeople(pl: Placer, x: number, z: number, yaw: number, seed: number): void {
-  pl.prop('bench', x, z, yaw);
+  if (!pl.prop('bench', x, z, yaw)) {
+    return;
+  }
   const r = hash(seed * 3.7);
   const sitters = r < 0.4 ? 1 : r < 0.6 ? 2 : 0;
   for (let k = 0; k < sitters; k++) {
@@ -284,10 +290,8 @@ function placeStops(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
     const [x, z] = spot;
     const yaw = pl.faceStreet(x, z, 0);
     const waiting = 1 + Math.floor(hash(i * 5.3) * (shelter ? 5 : 3));
-    if (shelter) {
-      pl.prop('busShelter', x, z, yaw);
-    } else {
-      pl.prop('busSign', x, z, yaw);
+    if (!pl.prop(shelter ? 'busShelter' : 'busSign', x, z, yaw)) {
+      return;
     }
     for (let k = 0; k < waiting; k++) {
       const sit = shelter && k < 2 && hash(i + k * 3.3) < 0.6;
@@ -387,7 +391,9 @@ function placeCafes(pl: Placer, data: Pick<OsmData, 'points'>): void {
         continue;
       }
       const yaw = face + Math.PI / 2 + (hash(k + i) - 0.5) * 0.25;
-      pl.prop('cafeTable', px, pz, yaw);
+      if (!pl.prop('cafeTable', px, pz, yaw)) {
+        continue;
+      }
       for (const s of [-1, 1]) {
         if (hash(i * 3 + k * 7 + s) < 0.55) {
           const [sx, sz] = local(px, pz, yaw, s * 0.62, 0);
@@ -435,7 +441,9 @@ function placeCarts(pl: Placer, data: Pick<OsmData, 'points' | 'areas' | 'roads'
     const [x, z] = spot;
     const yaw = hash(i * 5.5) * 6.28;
     const chestnut = hash(i * 8.3) < 0.35;
-    pl.prop(chestnut ? 'chestnutCart' : 'simitCart', x, z, yaw);
+    if (!pl.prop(chestnut ? 'chestnutCart' : 'simitCart', x, z, yaw)) {
+      return;
+    }
     const [vx, vz] = local(x, z, yaw, 0.2, -0.95);
     pl.person(vx, vz, yaw, Pose.Stand, i * 7 + 3);
     if (hash(i * 6.1) < 0.5) {
@@ -534,9 +542,10 @@ function placeFlags(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
     const spot = pl.near(x, z, 8, 1.5, 2);
     if (spot) {
       const y = pl.y(spot[0], spot[1]);
-      pl.props.add('flagPole', spot[0], y, spot[1], 0, 1, undefined, h);
-      pl.flags.push(spot[0], y, spot[1], 0, h, kind);
-      pl.reserve(spot[0], spot[1]);
+      if (pl.props.add('flagPole', spot[0], y, spot[1], 0, 1, undefined, h)) {
+        pl.flags.push(spot[0], y, spot[1], 0, h, kind);
+        pl.reserve(spot[0], spot[1]);
+      }
     }
   };
   data.points.forEach((p, i) => {

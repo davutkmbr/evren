@@ -7,8 +7,10 @@
  */
 import { type Document, Logger, NodeIO } from '@gltf-transform/core';
 import { EXTMeshoptCompression, KHRMeshQuantization } from '@gltf-transform/extensions';
-import { cloneDocument, meshopt, quantize, reorder, weld } from '@gltf-transform/functions';
+import { cloneDocument, reorder, weld } from '@gltf-transform/functions';
+import { fastMeshopt, fastQuantize } from './quantize';
 import { MeshoptEncoder } from 'meshoptimizer';
+import { prepareWeb, webProfile } from './web';
 
 let enabled = true;
 
@@ -29,12 +31,28 @@ export async function writeGlb(source: Document): Promise<Uint8Array> {
   await MeshoptEncoder.ready;
   const doc = cloneDocument(source);
   doc.setLogger(new Logger(Logger.Verbosity.ERROR));
+  const web = webProfile();
+  if (web) {
+    prepareWeb(doc);
+  }
   await doc.transform(
     weld(),
-    quantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 12, quantizeColor: 8, quantizeGeneric: 8 }),
+    // quantize.ts: the library's quantize() with its per-vertex loops on typed arrays (byte-identical, faster).
+    fastQuantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 12, quantizeColor: 8, quantizeGeneric: 8 }),
     reorder({ encoder: MeshoptEncoder }),
-    meshopt({ encoder: MeshoptEncoder, level: 'medium' }),
+    // Web: 'high' stores normals octahedral (8 bits) through the meshopt filter.
+    fastMeshopt({ encoder: MeshoptEncoder, level: web ? 'high' : 'medium' }),
   );
-  const io = new NodeIO().registerExtensions([EXTMeshoptCompression, KHRMeshQuantization]).registerDependencies({ 'meshopt.encoder': MeshoptEncoder });
+  const io = new NodeIO().registerExtensions([EXTMeshoptCompression, KHRMeshQuantization]).registerDependencies({ 'meshopt.encoder': web ? WEB_ENCODER : MeshoptEncoder });
   return io.writeBinary(doc);
 }
+
+/**
+ * Web: vertex attributes with meshopt's vertex codec version 1 at its highest level (10-20% smaller than version 0;
+ * three's meshopt decoder, meshoptimizer 1.1, reads both). Indices as before.
+ */
+const WEB_ENCODER: typeof MeshoptEncoder = {
+  ...MeshoptEncoder,
+  encodeGltfBuffer: (source, count, size, mode) =>
+    mode === 'ATTRIBUTES' ? MeshoptEncoder.encodeVertexBufferLevel(source, count, size, 3, 1) : MeshoptEncoder.encodeGltfBuffer(source, count, size, mode),
+};

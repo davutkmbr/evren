@@ -8,6 +8,7 @@ import type { CollisionWorld } from '../../../core/collision';
 import type { GeoQuery } from '../../../core/contracts';
 import type { OsmData, OsmPoint } from '../data';
 import { LayerBase } from '../shared/layer';
+import { findPassages } from '../shared/passages';
 import { InstanceLod, type InstanceLodOptions } from '../shared/instance-lod';
 import { LodTiledMesh } from '../shared/lod-tiles';
 import { countTriangles } from '../shared/three';
@@ -99,6 +100,7 @@ class BuildingsLayer extends LayerBase {
       buildings: data.buildings,
       pois: poiTriples(data.points),
       pads: landmarkPads(ctx.geo),
+      passages: findPassages(data.buildings, data.roads),
       infill: { roads: data.roads, areas: data.areas, rails: data.rails },
     };
     const job = runWorker<BuildingsRequest, BuildingsResult>(worker, request);

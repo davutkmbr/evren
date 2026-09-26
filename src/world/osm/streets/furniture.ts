@@ -9,7 +9,7 @@
 import type { OsmData, OsmRoad } from '../data';
 import type { FootprintIndex } from '../shared/footprints';
 import { hash, ringArea, segDist } from '../shared/geometry';
-import { CARRIAGEWAY_KINDS, streetTramTracks, type Street } from '../shared/street-field';
+import { CARRIAGEWAY_KINDS, type Street } from '../shared/street-field';
 import type { StreetSurface } from '../shared/street-surface';
 import { type PropSink, Spacing, yawTowards } from './sink';
 
@@ -196,7 +196,7 @@ export function buildFurniture(
   }
 
   // Tram stop canopies along surface platforms (open towards the nearest track) and ticket gates at the ends.
-  const tracks = streetTramTracks(data);
+  const tracks = surface.tramTracks;
   let canopies = 0;
   for (const a of data.areas) {
     if (a.kind !== 'railway=platform' || (a.layer ?? 0) < 0 || Math.abs(ringArea(a.ring)) < 40) {

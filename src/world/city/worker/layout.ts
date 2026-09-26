@@ -2,6 +2,7 @@
  * Base-cell layout: superblock street systems -> blocks -> lots -> building records, plus street lights.
  * Deterministic from world position alone, so any tile/LOD that covers a cell regenerates identical buildings.
  */
+import { type StandGround, standFault } from '../../placement/stand';
 import { BASE_CELL, Style, type StyleId } from '../protocol';
 import { BType, Typ, makeBuilding, type BuildingRec, type LotInput, type TypId } from './building';
 import { LU, type GeoSampler } from './geo-sampler';
@@ -369,6 +370,11 @@ function pushLamp(out: CellLayout, x: number, y: number, z: number, col: number)
   out.lampCol.push(col);
 }
 
+/** The procedural city's ground for the shared stand rule (placement/stand.ts): the geo window's terrain and coast. */
+function cityGround(geo: GeoSampler): StandGround {
+  return { coast: (x, z) => geo.coast(x, z), ground: (x, z) => geo.height(x, z) };
+}
+
 function blockLamps(f: BlockFrame, geo: GeoSampler, cell: [number, number, number, number], out: CellLayout): void {
   const { W, D, sb } = f;
   let ok = 0;
@@ -390,6 +396,7 @@ function blockLamps(f: BlockFrame, geo: GeoSampler, cell: [number, number, numbe
   const spacing = sb.style === Style.Historic ? 24 : sb.style === Style.Villa ? 38 : 31;
   const off = sb.style === Style.Historic ? 0.6 : 1.4;
   const col = lampColor(1, sb.lampType);
+  const land = cityGround(geo);
   const edges: [number, number, number, number, number][] = [
     [0, -off, 1, 0, W],
     [W + off, 0, 0, 1, D],
@@ -407,7 +414,7 @@ function blockLamps(f: BlockFrame, geo: GeoSampler, cell: [number, number, numbe
         continue;
       }
       const lu = geo.landUse(x, z);
-      if (lu === LU.Water || lu === LU.Forest || lu === LU.Park || lu === LU.Cemetery || lu === LU.Landmark || geo.coast(x, z) < 2) {
+      if (lu === LU.Water || lu === LU.Forest || lu === LU.Park || lu === LU.Cemetery || lu === LU.Landmark || standFault(land, x, z, { shore: 2 })) {
         continue;
       }
       pushLamp(out, x, geo.height(x, z) + 7.2, z, col);
@@ -418,6 +425,7 @@ function blockLamps(f: BlockFrame, geo: GeoSampler, cell: [number, number, numbe
 function roadLamps(world: WorldData, geo: GeoSampler, cell: [number, number, number, number], out: CellLayout): void {
   const segs = world.roads.query(cell[0] - 30, cell[1] - 30, cell[2] + 30, cell[3] + 30, segScratch);
   const spacing = 38;
+  const land = cityGround(geo);
   for (const s of segs) {
     if (s.kind === 3) {
       continue;
@@ -444,7 +452,8 @@ function roadLamps(world: WorldData, geo: GeoSampler, cell: [number, number, num
           continue;
         }
         const h = geo.height(x, z);
-        if (h < 0.5 || geo.coast(x, z) < 1) {
+        // Shared stand rule; roadside lights also keep off the low shore (h < 0.5 m reads as beach from the air).
+        if (h < 0.5 || standFault(land, x, z)) {
           continue;
         }
         pushLamp(out, x, h + (s.width > 20 ? 11 : 9), z, col);

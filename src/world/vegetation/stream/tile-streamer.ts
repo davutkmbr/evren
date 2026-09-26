@@ -62,7 +62,7 @@ export class TileStreamer {
     readonly tileSize: number,
     onRemove: (tile: VegTile) => void,
     workerCount = 2,
-    exclude: WorldBounds | null = null,
+    exclude: readonly WorldBounds[] = [],
   ) {
     this.cutter = new GeoWindowCutter(geo, exclude);
     this.onRemove = onRemove;
@@ -105,6 +105,19 @@ export class TileStreamer {
     this.loaded.length = 0;
     this.lastX = Infinity;
     this.evaluated = false;
+  }
+
+  /** Forgets the tiles overlapping `rect` (the exclusion list changed there); the next update requests them again. */
+  invalidate(rect: WorldBounds): void {
+    const T = this.tileSize;
+    for (const [key, t] of this.tiles) {
+      if (t.x0 > rect.maxX || t.x0 + T < rect.minX || t.z0 > rect.maxZ || t.z0 + T < rect.minZ) {
+        continue;
+      }
+      this.onRemove(t);
+      this.tiles.delete(key);
+    }
+    this.lastX = Infinity;
   }
 
   drainLoaded(out: VegTile[]): void {

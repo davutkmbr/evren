@@ -1,6 +1,6 @@
 /**
- * Street lamps and shopfront light of the street tiles (format 1), replacing the core lamp fixtures (../fixtures.ts,
- * which still runs on the other tiles):
+ * Street lamps and shopfront light of the street tiles (format 1), replacing the core lamp fixtures (../fixtures.ts);
+ * the other tiles get the core step's lamps under the same placement rules (placeLamps):
  * - lamp records of the manifest (lamps.ts: the flight slice's lighting rules) become instances as in the core step:
  *   kerb masts (sodium 2000 K / LED 4000 K / warm 3000 K), wall brackets (street_lamp_02) and post lanterns
  *   (street_lamp_01) — except post lanterns within PENDANT_REACH of a span-wire pendant (furniture.ts), which lights
@@ -12,7 +12,6 @@
  */
 import { hash } from '../../../../src/world/osm/shared/geometry';
 import type { LampRec, XYZ } from '../format';
-import { lampFixturesStep } from '../fixtures';
 import { headingYaw, rotateYaw } from '../instances';
 import { LAMP_KELVIN } from '../lights';
 import type { CompileStep, TileContext } from '../registry';
@@ -32,8 +31,14 @@ const LAMP_PROPS: Record<string, { prop: string; variantByLight: boolean; lift?:
 
 const FOOD = /^amenity=(cafe|restaurant|fast_food|ice_cream|bar|pub)$/;
 
-function placeLamps(t: TileContext): { lamps: number; replaced: number } {
-  const plan = streetPlan(t.area);
+/**
+ * Places the tile's lamp records under the placement rule of their prop (every tile, so a lite tile's kerb mast
+ * clears the kerb like a full tile's). `street`: a street tile, where post lanterns near a span-wire pendant give way
+ * to it and lanterns carry their own spot + point lights; elsewhere every lamp keeps its template light (as the core
+ * lampFixturesStep).
+ */
+function placeLamps(t: TileContext, street: boolean): { lamps: number; replaced: number } {
+  const pendants = street ? streetPlan(t.area).pendants : [];
   const rules = placementRules(t.area);
   let lamps = 0;
   let replaced = 0;
@@ -42,7 +47,7 @@ function placeLamps(t: TileContext): { lamps: number; replaced: number } {
     if (!spec) {
       return;
     }
-    if (l.kind === 'lantern' && plan.pendants.some(([x, z]) => Math.hypot(x - l.position[0], z - l.position[2]) < PENDANT_REACH)) {
+    if (l.kind === 'lantern' && pendants.some(([x, z]) => Math.hypot(x - l.position[0], z - l.position[2]) < PENDANT_REACH)) {
       replaced++;
       return;
     }
@@ -63,7 +68,7 @@ function placeLamps(t: TileContext): { lamps: number; replaced: number } {
       }
     }
     const yaw = headingYaw(l.heading, '+Z');
-    const lantern = spec.prop === 'street_lamp_01' || spec.prop === 'street_lamp_02';
+    const lantern = street && (spec.prop === 'street_lamp_01' || spec.prop === 'street_lamp_02');
     t.place(spec.prop, pos, yaw, {
       ...(spec.variantByLight ? { variant: l.light } : {}),
       ref: `${t.id}/lamp${k}`,
@@ -141,9 +146,10 @@ export const streetLightsStep: CompileStep = {
   id: 'streetLights',
   tile(t) {
     if (!streetTile(t)) {
-      return lampFixturesStep.tile!(t);
+      placeLamps(t, false);
+      return;
     }
-    const l = placeLamps(t);
+    const l = placeLamps(t, true);
     const s = shopLights(t);
     t.record('streetLights', { ...l, ...s });
   },

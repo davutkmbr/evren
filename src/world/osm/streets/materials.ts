@@ -148,6 +148,45 @@ void gSample(int id, float w, vec2 p, vec2 gx, vec2 gy, float rot, inout vec3 al
 int gIdAt(ivec2 t, int ch) {
   return int(texelFetch(uStreetIds, clamp(t, ivec2(0), ivec2(uMaskSize) - 1), 0)[ch] * 255.0 + 0.5);
 }
+
+vec4 gBspline(float t) {
+  float s = 1.0 - t;
+  return vec4(s * s * s, 4.0 - 6.0 * t * t + 3.0 * t * t * t, 4.0 - 6.0 * s * s + 3.0 * s * s * s, t * t * t) / 6.0;
+}
+
+// Categorical id of channel ch at continuous texel coordinate q, with smooth borders: every candidate id of the 2x2
+// neighbourhood is weighted by a cubic B-spline over the 4x4 texels around q and the heaviest wins, so borders follow
+// the smooth iso-line of the filtered raster instead of the 1 m texel staircase. Uniform 2x2 neighbourhoods (almost
+// every fragment) cost four fetches.
+int gIdSmooth(vec2 q, int ch) {
+  vec2 f = q - 0.5;
+  ivec2 b = ivec2(floor(f));
+  vec2 t = f - vec2(b);
+  int c0 = gIdAt(b, ch);
+  int c1 = gIdAt(b + ivec2(1, 0), ch);
+  int c2 = gIdAt(b + ivec2(0, 1), ch);
+  int c3 = gIdAt(b + ivec2(1, 1), ch);
+  if (c0 == c1 && c0 == c2 && c0 == c3) return c0;
+  vec4 wx = gBspline(t.x);
+  vec4 wz = gBspline(t.y);
+  vec4 acc = vec4(0.0);
+  for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++) {
+      int id = gIdAt(b + ivec2(i - 1, j - 1), ch);
+      float w = wx[i] * wz[j];
+      if (id == c0) acc.x += w;
+      else if (id == c1) acc.y += w;
+      else if (id == c2) acc.z += w;
+      else if (id == c3) acc.w += w;
+    }
+  }
+  int best = c0;
+  float bw = acc.x;
+  if (acc.y > bw) { best = c1; bw = acc.y; }
+  if (acc.z > bw) { best = c2; bw = acc.z; }
+  if (acc.w > bw) { best = c3; }
+  return best;
+}
 `;
 
 const GROUND_MAIN = /* glsl */ `
@@ -166,9 +205,11 @@ vec3 gEmis = vec3(0.0);
   float pd = gDecode(m.a, ${glslFloat(PATH_RANGE)});
   // Ids (nearest texel, jittered so that surface borders follow the stones rather than the texel grid).
   vec2 jit = (vec2(vnoise2(p * 2.1), vnoise2(p * 2.1 + 17.3)) - 0.5) * 0.9;
-  ivec2 t = ivec2(floor((p + jit - uMaskXf.xy) * uMaskXf.zw * uMaskSize));
+  vec2 tq = (p + jit - uMaskXf.xy) * uMaskXf.zw * uMaskSize;
+  ivec2 t = ivec2(floor(tq));
   int flags = gIdAt(t, 0);
-  int groundId = gIdAt(t, 1);
+  // Ground cover borders run across open paving (plazas, quays, squares): smooth them (1 m staircase otherwise).
+  int groundId = gIdSmooth(tq, 1);
   int pathSurf = gIdAt(t, 2);
   int surf = flags & ${SURF_MASK};
   // Street frame of the winning street: paving courses, patches and wheel tracks follow the street, not the world.
@@ -346,7 +387,7 @@ export function createStreetMaterials(renderer: THREE.WebGLRenderer): StreetMate
     uGroundMap: { value: groundMap },
   };
   const ground = streetHole(new THREE.MeshStandardMaterial({ name: 'ground', roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
-  patchMaterial(ground, 'osm-ground-v4', (shader) => {
+  patchMaterial(ground, 'osm-ground-v5', (shader) => {
     Object.assign(shader.uniforms, groundUniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGW;\nvarying vec3 vGN;')

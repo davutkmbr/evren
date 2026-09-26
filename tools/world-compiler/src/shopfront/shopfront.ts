@@ -17,8 +17,11 @@ import { Batch, Frame, h01, lin, mix, pick, pickWeighted, scale } from '../facad
 import { SIGN_GLOW, type SignGlow } from '../facade/materials';
 import type { FacadePlan } from '../facade/plan';
 import { district } from '../district';
-import { emitText, textWidth } from './font';
+import { textWidth } from './font';
 import { emitShopInterior } from './interior';
+import type { SlotSink } from '../modules/slots';
+import { emitTextSlot } from '../modules/text';
+import { shopInteriorSlots } from '../modules/shop';
 import { fillerTrade, type ShopName, shopName, type Trade, tradeOf } from './names';
 
 export type Kepenk = 'open' | 'half' | 'closed';
@@ -259,6 +262,8 @@ export interface ShopEmitContext {
   G1: number;
   /** Interior depth available behind the glazing (m). */
   depthAt: (r: number) => number;
+  /** Module slots of the tile: texts become text slots (modules/text.ts). */
+  slots?: SlotSink;
 }
 
 const RV = 0.3;
@@ -278,27 +283,28 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
   batch.quadF(c.clad.material, '-R', [[r1, yFloor - 0.1, 0], [r1, yFloor - 0.1, -RV], [r1, yOpen, -RV], [r1, yOpen, 0]], [cl, clIn, clIn, cl]);
   batch.quadF(c.clad.material, '-Y', [[r0, yOpen, 0], [r1, yOpen, 0], [r1, yOpen, -RV], [r0, yOpen, -RV]], [cl, cl, clIn, clIn]);
   // Threshold step (terrazzo / marble).
-  batch.box(u.kind === 'entrance' ? 'fac_marble' : 'fac_terrazzo', r0, r1, yFloor - 0.35, yFloor, -RV - 0.02, 0.03, lin(0x9c9890), { front: true, top: true });
+  if (c.slots) {
+    c.slots.add(f, 'shop.step', { style: u.kind === 'entrance' ? 'marble' : 'terrazzo', seed: u.seed, r: r0, y: yFloor, w: r1 - r0 });
+  } else {
+    batch.box(u.kind === 'entrance' ? 'fac_marble' : 'fac_terrazzo', r0, r1, yFloor - 0.35, yFloor, -RV - 0.02, 0.03, lin(0x9c9890), { front: true, top: true });
+  }
   if (u.kind === 'entrance') {
-    emitEntrance(batch, u, p);
+    emitEntrance(batch, u, p, c.slots);
     return { lights, instances };
   }
   const yBox = yOpen - KEPENK_BOX;
   const galv = u.kepenk === 'closed' && U(1) < 0.35 ? 'fac_kepenk_worn' : 'fac_kepenk';
   const kepenkTint = U(2) < 0.78 ? lin(0xe4e6e8) : lin(pick([0x6f8a7a, 0x7d8ea6, 0xa0724f, 0xc9b98f], U(3)));
-  // Guide rails and the coil box at the top of the opening.
-  batch.box('fac_kepenk', r0, r0 + 0.07, yFloor, yBox, -0.14, -0.05, kepenkTint, { front: true, right: true });
-  batch.box('fac_kepenk', r1 - 0.07, r1, yFloor, yBox, -0.14, -0.05, kepenkTint, { front: true, left: true });
-  batch.box(galv, r0, r1, yBox, yOpen, -RV, -0.03, kepenkTint, { front: true, bottom: true });
   const yK = u.kepenk === 'closed' ? yFloor : u.kepenk === 'half' ? yFloor + 1.15 + 0.7 * U(4) : yBox;
-  if (yK < yBox - 0.01) {
-    const wxK = (_r: number, y: number): Weather => [y < yFloor + 0.35 ? 0.7 : 0.2 + 0.2 * U(12), y > yBox - 0.5 ? 0.6 : 0.15, 0, y < yFloor + 0.2 ? 0.5 : 0];
-    // Split at 0.35 m so the grime and splash at the foot have their own row of vertices.
-    if (yK < yFloor + 0.34) {
-      batch.quadF(galv, 'N', [[r0 + 0.035, yK, -0.09], [r1 - 0.035, yK, -0.09], [r1 - 0.035, yFloor + 0.35, -0.09], [r0 + 0.035, yFloor + 0.35, -0.09]], kepenkTint, undefined, wxK);
+  if (c.slots) {
+    // Kepenk modules (modules/shopfront.ts): the rails and coil box, the curtain down to yK.
+    const style = galv === 'fac_kepenk_worn' ? 'worn' : 'plain';
+    c.slots.add(f, 'shop.kepenk.frame', { style, seed: u.seed + 0.1, r: r0, y: yFloor, w: r1 - r0, h: yBox - yFloor, tint0: kepenkTint });
+    if (yK < yBox - 0.01) {
+      c.slots.add(f, 'shop.kepenk.curtain', { style, seed: u.seed + 0.2, r: r0, y: yK, w: r1 - r0, h: yBox - yK, tint0: kepenkTint });
     }
-    batch.quadF(galv, 'N', [[r0 + 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, yBox, -0.09], [r0 + 0.035, yBox, -0.09]], kepenkTint, undefined, wxK);
-    batch.box('fac_kepenk', r0 + 0.035, r1 - 0.035, yK, yK + 0.06, -0.12, -0.08, scale(kepenkTint, 0.7), { front: true, bottom: true, top: true });
+  } else {
+    bakeKepenk(batch, u, yBox, yK, galv, kepenkTint, U);
   }
   if (u.kepenk !== 'closed') {
     emitGlazing(batch, u, yBox, c, U);
@@ -338,13 +344,20 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
     if (yMount > c.G1 - 0.25) {
       yMount = yOpen + 0.04;
     }
-    emitAwning(batch, u, yMount, Math.max(yFloor + 2.35, yMount - u.awningDepth * 0.42));
+    const yFront = Math.max(yFloor + 2.35, yMount - u.awningDepth * 0.42);
+    if (c.slots) {
+      const [ca, cb] = u.awningColors;
+      const stripes = Math.abs(ca[0] - cb[0]) + Math.abs(ca[1] - cb[1]) + Math.abs(ca[2] - cb[2]) > 0.05;
+      c.slots.add(f, 'shop.awning', { style: u.awning === 'market' ? 'market' : 'shop', seed: u.seed + 0.7, r: r0, y: yMount, w: r1 - r0, h: yMount - yFront, dd: u.awningDepth, tint0: ca, tint1: stripes ? cb : ca });
+    } else {
+      emitAwning(batch, u, yMount, yFront);
+    }
     if (u.awning === 'market') {
       lights += emitBulbs(batch, u, yMount, c, U);
     }
   }
   if (u.projecting && u.name) {
-    emitProjectingSign(batch, u, Math.min(yOpen + 0.32, c.G1 - 0.75), U);
+    emitProjectingSign(batch, u, Math.min(yOpen + 0.32, c.G1 - 0.75), U, c.slots);
   }
   if (u.stall !== 'none') {
     const w = r1 - r0;
@@ -363,6 +376,23 @@ export function emitShopUnit(batch: Batch, u: ShopUnit, p: FacadePlan, c: ShopEm
   return { lights, instances };
 }
 
+/** Kepenk as baked geometry (no slot sink): guide rails, the coil box at the top of the opening, the curtain. */
+function bakeKepenk(batch: Batch, u: ShopUnit, yBox: number, yK: number, galv: string, kepenkTint: RGBA, U: (q: number) => number): void {
+  const { r0, r1, yFloor, yOpen } = u;
+  batch.box('fac_kepenk', r0, r0 + 0.07, yFloor, yBox, -0.14, -0.05, kepenkTint, { front: true, right: true });
+  batch.box('fac_kepenk', r1 - 0.07, r1, yFloor, yBox, -0.14, -0.05, kepenkTint, { front: true, left: true });
+  batch.box(galv, r0, r1, yBox, yOpen, -RV, -0.03, kepenkTint, { front: true, bottom: true });
+  if (yK < yBox - 0.01) {
+    const wxK = (_r: number, y: number): Weather => [y < yFloor + 0.35 ? 0.7 : 0.2 + 0.2 * U(12), y > yBox - 0.5 ? 0.6 : 0.15, 0, y < yFloor + 0.2 ? 0.5 : 0];
+    // Split at 0.35 m so the grime and splash at the foot have their own row of vertices.
+    if (yK < yFloor + 0.34) {
+      batch.quadF(galv, 'N', [[r0 + 0.035, yK, -0.09], [r1 - 0.035, yK, -0.09], [r1 - 0.035, yFloor + 0.35, -0.09], [r0 + 0.035, yFloor + 0.35, -0.09]], kepenkTint, undefined, wxK);
+    }
+    batch.quadF(galv, 'N', [[r0 + 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, Math.max(yK, yFloor + 0.35), -0.09], [r1 - 0.035, yBox, -0.09], [r0 + 0.035, yBox, -0.09]], kepenkTint, undefined, wxK);
+    batch.box('fac_kepenk', r0 + 0.035, r1 - 0.035, yK, yK + 0.06, -0.12, -0.08, scale(kepenkTint, 0.7), { front: true, bottom: true, top: true });
+  }
+}
+
 function emitGlazing(batch: Batch, u: ShopUnit, yTop: number, c: ShopEmitContext, U: (q: number) => number): void {
   const { r0, r1, yFloor } = u;
   const d = -RV;
@@ -372,6 +402,18 @@ function emitGlazing(batch: Batch, u: ShopUnit, yTop: number, c: ShopEmitContext
   const dl = u.doorR - u.doorW / 2;
   const dr = u.doorR + u.doorW / 2;
   const open = !!u.interior;
+  if (c.slots && !open) {
+    // Glazing modules (modules/shopfront.ts): the pane run left of the door, the door, the run right of it.
+    const at = { y: yFloor, h: yTop - yFloor, tint0: alu };
+    if (dl - fw - r0 > 0.05) {
+      c.slots.add(batch.f, 'shop.glazing', { ...at, style: 'run', seed: u.seed + 0.3, r: r0, w: dl - fw - r0 });
+    }
+    c.slots.add(batch.f, 'shop.door', { ...at, seed: u.seed + 0.4, r: dl - fw, w: dr - dl + fw });
+    c.slots.add(batch.f, 'shop.glazing', { ...at, style: 'end', seed: u.seed + 0.5, r: dr, w: r1 - dr });
+    const depth = Math.max(1.2, Math.min(3.4, c.depthAt((r0 + r1) / 2) - 0.4));
+    shopInteriorSlots(batch, c.slots, { r0, r1, yFloor, yTop, d, db: d - depth, trade: u.trade, seed: u.seed, doorR: u.doorR, doorW: u.doorW }, c.place, `${c.tile}/${u.name?.name ?? u.poi ?? ''}`);
+    return;
+  }
   const transom = Math.min(yTop - 0.3, open ? yFloor + u.doorH : yFloor + 2.2);
   // Frame: sill rail with kick panel (not across an open door), head rail, jamb posts, mullions every <= 1.6 m.
   for (const [a, b] of open ? [[r0, dl - fw], [dr + fw, r1]] : [[r0, r1]]) {
@@ -431,11 +473,12 @@ function emitSign(batch: Batch, u: ShopUnit, y0: number, y1: number, c: ShopEmit
   const dark = [0x1f4d3a, 0x1d3b66, 0x9e1f23, 0x1e1e1e, 0x4a4f55].includes(panelHex);
   const panel = lin(panelHex);
   const wxS = (_r: number, y: number): Weather => [y < y0 + 0.05 ? 0.5 : 0.25, y < (y0 + y1) / 2 ? 0.45 : 0.1, 0.4, 0];
-  batch.box('fac_sign', s0, s1, y0, y1, 0, dS, scale(panel, 0.9), { top: true, bottom: true, left: true, right: true }, wxS);
-  if (u.signLit) {
-    batch.quadF(`fac_glow_${u.glow}`, 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], mix(lin(0xffffff), lin(SIGN_GLOW[u.glow]), 0.25));
+  const face = u.signLit ? mix(lin(0xffffff), lin(SIGN_GLOW[u.glow]), 0.25) : panel;
+  if (c.slots) {
+    c.slots.add(f, 'shop.sign', { style: u.signLit ? u.glow : 'plain', seed: u.seed + 0.6, r: s0, y: y0, w: s1 - s0, h: y1 - y0, tint0: panel, tint1: face });
   } else {
-    batch.quadF('fac_sign', 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], panel, undefined, wxS);
+    batch.box('fac_sign', s0, s1, y0, y1, 0, dS, scale(panel, 0.9), { top: true, bottom: true, left: true, right: true }, wxS);
+    batch.quadF(u.signLit ? `fac_glow_${u.glow}` : 'fac_sign', 'N', [[s0, y0, dS], [s1, y0, dS], [s1, y1, dS], [s0, y1, dS]], face, undefined, u.signLit ? undefined : wxS);
   }
   const name = u.name!;
   const w = s1 - s0 - 0.3;
@@ -452,7 +495,7 @@ function emitSign(batch: Batch, u: ShopUnit, y0: number, y1: number, c: ShopEmit
   const neon = !u.signLit && U(22) < 0.25;
   const letterColor = u.signLit ? lin(pick([0x9e1f23, 0x1d3b66, 0x1e1e1e, 0x1f4d3a], U(23))) : dark ? lin(pick([0xf6f2e8, 0xf2c94c], U(23))) : lin(pick([0x9e1f23, 0x1d3b66, 0x1e1e1e, 0x1f6b45], U(23)));
   const box = !u.signLit && capH >= 0.2;
-  emitText(batch, text, {
+  emitTextSlot(batch, c.slots, text, {
     material: neon ? `fac_glow_${U(24) < 0.5 ? 'red' : 'green'}` : 'fac_letters',
     color: neon ? lin(0xffffff) : letterColor,
     r: (s0 + s1) / 2,
@@ -556,7 +599,7 @@ function emitBulbs(batch: Batch, u: ShopUnit, yMount: number, c: ShopEmitContext
   return lights;
 }
 
-function emitProjectingSign(batch: Batch, u: ShopUnit, y0: number, U: (q: number) => number): void {
+function emitProjectingSign(batch: Batch, u: ShopUnit, y0: number, U: (q: number) => number, slots?: SlotSink): void {
   const f = batch.f;
   const rS = u.r1 + 0.2;
   const t = 0.05;
@@ -566,16 +609,22 @@ function emitProjectingSign(batch: Batch, u: ShopUnit, y0: number, U: (q: number
   const lit = U(40) < 0.6;
   const glow: SignGlow = pick<SignGlow>(['white', 'red', 'green', 'yellow', 'blue'], U(41));
   const panel = lin(pick([0xf2efe6, 0x1d3b66, 0x9e1f23, 0x1f4d3a], U(42)));
-  // Bracket and the box.
-  batch.box('fac_metal', rS - 0.015, rS + 0.015, y1, y1 + 0.03, 0, dOut, lin(0x2a2a2a), { top: true, bottom: true, left: true, right: true, front: true });
-  batch.box('fac_sign', rS - t, rS + t, y0, y1, dIn, dOut, panel, { top: true, bottom: true, front: true });
   const faceMat = lit ? `fac_glow_${glow}` : 'fac_sign';
   const faceCol = lit ? lin(0xffffff) : panel;
+  if (slots) {
+    slots.add(f, 'shop.blade', { style: lit ? glow : 'plain', seed: u.seed + 0.8, r: rS, y: y0, tint0: panel, tint1: faceCol });
+  } else {
+    // Bracket and the box.
+    batch.box('fac_metal', rS - 0.015, rS + 0.015, y1, y1 + 0.03, 0, dOut, lin(0x2a2a2a), { top: true, bottom: true, left: true, right: true, front: true });
+    batch.box('fac_sign', rS - t, rS + t, y0, y1, dIn, dOut, panel, { top: true, bottom: true, front: true });
+  }
   // Faces toward +r and -r, each with the short trade word in the face's own frame.
   for (const side of [1, -1]) {
     const rFace = rS + side * t;
     const axis = side > 0 ? 'R' : '-R';
-    batch.quadF(faceMat, axis, [[rFace, y0, dIn], [rFace, y0, dOut], [rFace, y1, dOut], [rFace, y1, dIn]], faceCol);
+    if (!slots) {
+      batch.quadF(faceMat, axis, [[rFace, y0, dIn], [rFace, y0, dOut], [rFace, y1, dOut], [rFace, y1, dIn]], faceCol);
+    }
     // Face frame: normal = side * R; "right" when facing it is -side * N.
     const [ox, oz] = f.xz(rFace, side > 0 ? dOut : dIn);
     const sub = new Frame(ox, oz, -side * f.nx, -side * f.nz, side * f.rx, side * f.rz, dOut - dIn);
@@ -583,13 +632,13 @@ function emitProjectingSign(batch: Batch, u: ShopUnit, y0: number, U: (q: number
     const capH = Math.min(0.2, (dOut - dIn - 0.12) / Math.max(0.1, textWidth(word)));
     if (capH >= 0.06) {
       const sb = new Batch(batch.mesh, sub);
-      emitText(sb, word, { material: 'fac_letters', color: lit ? lin(0x1e1e1e) : lin(0xf6f2e8), r: (dOut - dIn) / 2, y: (y0 + y1) / 2 - capH / 2, d: 0.004, capH, depth: 0 });
+      emitTextSlot(sb, slots, word, { material: 'fac_letters', color: lit ? lin(0x1e1e1e) : lin(0xf6f2e8), r: (dOut - dIn) / 2, y: (y0 + y1) / 2 - capH / 2, d: 0.004, capH, depth: 0 });
       sb.flush();
     }
   }
 }
 
-function emitEntrance(batch: Batch, u: ShopUnit, p: FacadePlan): void {
+function emitEntrance(batch: Batch, u: ShopUnit, p: FacadePlan, slots?: SlotSink): void {
   const U = (q: number): number => h01(u.seed, 60 + q);
   const { r0, r1, yFloor, yOpen } = u;
   const d = -RV;
@@ -619,7 +668,7 @@ function emitEntrance(batch: Batch, u: ShopUnit, p: FacadePlan): void {
   const py = Math.min(yFloor + 2.05, yOpen - 0.2);
   if (pr > r0 - 1.2) {
     batch.box('fac_sign', pr, pr + pw, py, py + 0.15, 0, 0.012, lin(0x8e1b22), { front: true, left: true, right: true, top: true, bottom: true }, [0.3, 0.3, 0.4, 0]);
-    emitText(batch, num, { material: 'fac_letters', color: lin(0xf4f0e6), r: pr + pw / 2, y: py + 0.035, d: 0.014, capH: 0.08, depth: 0 });
+    emitTextSlot(batch, slots, num, { material: 'fac_letters', color: lin(0xf4f0e6), r: pr + pw / 2, y: py + 0.035, d: 0.014, capH: 0.08, depth: 0 });
   }
   // The block's name ("… APARTMANI") in brass letters on a marble plaque over the door.
   const name = `${pick(APT_NAMES, U(21))} APT.`;
@@ -629,7 +678,7 @@ function emitEntrance(batch: Batch, u: ShopUnit, p: FacadePlan): void {
     const pw2 = textWidth(name) * cap + 0.12;
     const pc = (r0 + r1) / 2;
     batch.box('fac_marble', pc - pw2 / 2, pc + pw2 / 2, plY, plY + cap + 0.08, 0, 0.02, lin(0xd8d4c8), { front: true, left: true, right: true, top: true, bottom: true }, [0.45, 0.4, 0.3, 0]);
-    emitText(batch, name, { material: 'fac_letters', color: lin(0xa88a3a), r: pc, y: plY + 0.04, d: 0.022, capH: cap, depth: 0 });
+    emitTextSlot(batch, slots, name, { material: 'fac_letters', color: lin(0xa88a3a), r: pc, y: plY + 0.04, d: 0.022, capH: cap, depth: 0 });
   }
   // A taped note on about one door in three: a printed headline and hand-written lines.
   if (U(22) < 0.36) {

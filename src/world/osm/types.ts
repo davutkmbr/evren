@@ -28,10 +28,15 @@ import type { StreetSurface } from './shared/street-surface';
 export interface OsmContext {
   readonly engine: EngineContext;
   readonly geo: GeoQuery;
-  /** OSM_AREA in local metres. */
+  /** The region's own area in local metres (OSM_AREA for the Galata slice). */
   readonly area: WorldBounds;
   /** Area plus seam: the build rect, where OSM content replaces procedural content. */
   readonly rect: WorldBounds;
+  /**
+   * Where the ground and ground cover fade out into the terrain: `rect`, except on sides shared with another OSM
+   * region (regions.ts OsmRegionDef.fade), where the neighbour's ground continues seamlessly.
+   */
+  readonly fade: WorldBounds;
   /** Plain-data foundation for layer workers (geo windows, landmark pads, street raster). */
   readonly base: OsmWorkerBase;
   /** Main-thread street surface query (same data the workers and the ground shader use). */
