@@ -67,6 +67,11 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
   power stroke). No combo tables: any move, and unnamed hand-flown manoeuvring, takes part; repeating one pattern
   wears out, wasting energy never builds flow. Shown as a thin line under the stamina wings, "Kusursuz …" captions
   when a harmony peaks — the skill ceiling for races.
+- Phase 04 **hard landing**: meeting the ground too fast (legs out sinking ≥ 8 m/s; belly first at ≥ 6 m/s, or a
+  glancing belly hit at ≥ 3 m/s while ≥ 24 m/s over the ground) tumbles the dragon along it — a plow into a roll over
+  the shoulder, a sideways log roll or a belly skid, never the same twice in a row — then it gets up, shakes its head
+  and grumbles or sneezes, briefly embarrassed. No penalty: control is back grounded in 3.3–3.7 s; in a race it only
+  costs its time. Normal landings (slow, running, perch, water) never trigger it.
 - Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
   dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
 
@@ -83,7 +88,7 @@ control or costs speed.
   deeper the fonder it is, half closes its eyes, leans into the hand, raises its neck plates and slowly curls its tail
   tip; a light rumble on gamepads.
 - **Mood:** content, curious, playful, tired or excited, from flight time, stamina, the hour, petting, discoveries and
-  flow, with hysteresis and decay. It shows only in pose and sound (and one quiet line in the pause menu); no meters.
+  flow, with hysteresis and decay; briefly embarrassed after a hard landing. It shows only in pose and sound (and one quiet line in the pause menu); no meters.
 - **Self-driven behaviours** (rare, about one a minute, never in a race, landing or tight moment, each in variants that
   never repeat back to back): looking around, snapping at a gull, a yawn (sometimes with a small flame), a sneeze with
   smoke, a happy rock, stretching the wings after a long flight, shaking off water after a swim, a head shake, dozing,

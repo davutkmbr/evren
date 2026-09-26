@@ -172,6 +172,19 @@ export class FlowSystem {
     }
   }
 
+  /**
+   * A hard landing (hard-landing.ts): the same drop as any airborne contact (the dragon is already on the ground when
+   * the step sees it, so it is told).
+   */
+  hardContact(): void {
+    if (!this.enabled) {
+      return;
+    }
+    this.value *= FLOW.contactKeep;
+    this.burst.spoil();
+    this.burst.cancel();
+  }
+
   /** Every substep, after the physics. */
   step(sim: FlightSim, h: number): void {
     if (!this.enabled) {
