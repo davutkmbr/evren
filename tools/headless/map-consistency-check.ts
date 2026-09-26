@@ -21,13 +21,18 @@
  *    detail. The tiles' landmarks draw nothing, so the game's model or the flight-scale twin shows through them.
  * 5. Invented content: no neighbourhood mosque site (a procedural mosque whose pad removes OSM buildings) reaches into
  *    an OSM region, and no infill parcel (a building OSM does not have) reaches into a street area.
+ * 6. Far layer (phase 24): the city bake (public/data/osm/city, scripts/data/osm-city-bake.ts), the regions and the
+ *    street areas come from one OSM snapshot, and inside every region the bake holds exactly the buildings the region
+ *    layer draws (infill included), with the same wall and bottom heights. A stale bake fails here.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import type { WorldBounds } from '../../src/core/contracts';
 import { latLonToLocal } from '../../src/core/geo-coords';
+import { type CityBakeIndex, decodeBuildings } from '../../src/world/city/osm/format';
 import { buildLandmarkDefs } from '../../src/world/geo/prepare';
-import { buildBuildings } from '../../src/world/osm/buildings/build';
+import { buildBuildings, collectSolids, planSolid } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { CANOPY_KINDS, ringCentroid } from '../../src/world/osm/buildings/selection';
@@ -52,6 +57,8 @@ const VERBOSE = args.includes('--verbose');
 const DATA_SHIFT = 2;
 /** Largest share of an area's features that may differ between the two fetches (snapshot drift). */
 const DATA_DRIFT_MAX = 0.01;
+/** Largest wall height difference (dm) between the city bake and the region layer. */
+const HEIGHT_DM = 1;
 /** Green area kinds (drawn by the street tiles' cover and the flight layer's ground cover alike). */
 const GREEN = /^(leisure=(park|garden|playground|pitch|common|dog_park)|landuse=(grass|forest|cemetery|meadow|recreation_ground|village_green|orchard|allotments)|natural=(wood|scrub|grassland|heath))$/;
 
@@ -221,6 +228,8 @@ const keepOut = streetAreaRects().map((a) => a.rect);
 interface FlightBuild {
   drawn: Set<number>;
   parcels: OsmBuilding[];
+  /** Wall and bottom height (dm) per drawn OSM id, from the layer's own plan (buildings/build.ts planSolid). */
+  heights: Map<number, [number, number]>;
 }
 const flightBuilds = new Map<string, FlightBuild>();
 /** Runs the flight-scale buildings worker (buildings.worker.ts) for one region, synchronously. */
@@ -243,7 +252,12 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
   const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
   const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, layerClaims, surface, base.area);
   const out = buildBuildings({ buildings, pois: new Float32Array(), claims: layerClaims, extra: infill.parcels }, surface, base.rect);
-  const res = { drawn: new Set(Array.from(out.drawnIds)), parcels: infill.parcels };
+  const heights = new Map<number, [number, number]>();
+  for (const sol of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, base.rect)) {
+    const { plan, wallH } = planSolid(sol);
+    heights.set(sol.b.id, [Math.round(wallH * 10), Math.round(plan.minH * 10)]);
+  }
+  const res = { drawn: new Set(Array.from(out.drawnIds)), parcels: infill.parcels, heights };
   flightBuilds.set(r.id, res);
   return res;
 }
@@ -340,6 +354,79 @@ console.log('5. Invented content stays out of the real map');
     }
   }
   check(bad.length === 0, `${parcels} infill parcels in ${flightBuilds.size} regions, none in a street area`, bad);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+console.log('6. Far layer: the city bake draws what the regions draw');
+{
+  const bakeDir = resolve(ROOT, 'public/data/osm/city');
+  const indexFile = resolve(bakeDir, 'index.json');
+  if (!existsSync(indexFile)) {
+    check(false, 'city bake present (npx tsx scripts/data/osm-city-bake.ts)');
+  } else {
+    const index = readJson<CityBakeIndex>(indexFile);
+    // One snapshot: the bake, the regions and the street areas.
+    const bases = new Map<string, string[]>();
+    const note = (base: string | null | undefined, what: string): void => {
+      const k = base ?? 'none';
+      bases.set(k, [...(bases.get(k) ?? []), what]);
+    };
+    note(index.osmBase, 'city bake');
+    for (const r of regions.filter((q) => existsSync(regionFile(q)))) {
+      note((dataOf(r) as OsmData & { osmBase?: string }).osmBase, r.id);
+    }
+    for (const [id, d] of streetData) {
+      note((d as OsmData & { osmBase?: string }).osmBase, id);
+    }
+    check(bases.size === 1, `one OSM snapshot for the bake, ${regions.length} regions and ${streetData.size} street areas`, [...bases].map(([b, list]) => `${b}: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` +${list.length - 6}` : ''}`));
+
+    // Baked records: id -> centroid and heights.
+    const baked = new Map<number, { cx: number; cz: number; wallH: number; minH: number }>();
+    for (const f of index.files) {
+      const d = decodeBuildings(gunzipSync(readFileSync(resolve(bakeDir, f.file))));
+      for (let k = 0; k < d.header.count; k++) {
+        let x = 0;
+        let z = 0;
+        for (let v = d.start[k]; v < d.start[k + 1]; v++) {
+          x += d.xy[v * 2];
+          z += d.xy[v * 2 + 1];
+        }
+        baked.set(d.id[k], { cx: x / d.nv[k], cz: z / d.nv[k], wallH: d.wallH[k], minH: d.minH[k] });
+      }
+    }
+    const bad: string[] = [];
+    const lines: string[] = [];
+    let compared = 0;
+    const onlyRegions = ONLY ? regions.filter((r) => overlaps(r.rect, areas[0].rect)) : regions;
+    for (const r of onlyRegions.filter((q) => existsSync(regionFile(q)))) {
+      const fb = flightBuild(r);
+      const rect = groundRect(r.rect);
+      let missing = 0;
+      let extra = 0;
+      let height = 0;
+      for (const [id, [wallH, minH]] of fb.heights) {
+        compared++;
+        const b = baked.get(id);
+        if (!b) {
+          missing++;
+          lines.push(`${r.id}: ${id} drawn by the region, missing from the bake`);
+        } else if (Math.abs(b.wallH - wallH) > HEIGHT_DM || Math.abs(b.minH - minH) > HEIGHT_DM) {
+          height++;
+          lines.push(`${r.id}: ${id} wall ${(b.wallH / 10).toFixed(1)} m baked, ${(wallH / 10).toFixed(1)} m in the region`);
+        }
+      }
+      for (const [id, b] of baked) {
+        if (inRect(rect, b.cx, b.cz) && !fb.heights.has(id)) {
+          extra++;
+          lines.push(`${r.id}: ${id} in the bake, not drawn by the region`);
+        }
+      }
+      if (missing || extra || height) {
+        bad.push(`${r.id}: ${missing} missing, ${extra} extra, ${height} with another height`);
+      }
+    }
+    check(bad.length === 0, `${compared} region buildings: same set and heights in the bake (stale bake: re-run the bake after changing buildings/)`, [...bad, ...lines]);
+  }
 }
 
 console.log(failures.length ? `\n${failures.length} check(s) failed` : '\nall checks passed');
