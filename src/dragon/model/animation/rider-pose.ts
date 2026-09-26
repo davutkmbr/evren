@@ -21,6 +21,10 @@ export interface RiderCues {
   cheer: number;
   pet: number;
   stand: number;
+  /** Bond cues (phase 06): laughing, pointing at what the dragon looks at, patting the neck (V). */
+  laugh: number;
+  show: number;
+  pat: number;
 }
 
 /** Pelvis rise (m) and forward shift (rig z) when standing on the saddle with soft knees. */
@@ -31,6 +35,15 @@ const SEAT_TOP = 1.1;
 const ANKLE_ABOVE_SOLE = 0.055;
 /** Petting strokes (forward + back) per second. */
 const STROKE_HZ = 0.62;
+/** Patting (V): taps per second, how far the palm lifts off between taps (m), and where on the track it pats. */
+const PAT_HZ = 3.2;
+const PAT_LIFT = 0.055;
+const PAT_U = 0.4;
+/** Laughing: shoulder bob frequency (Hz). */
+const LAUGH_HZ = 5.5;
+/** Showing: the pointing arm's yaw range (rad, + = to the left across the body) and pitch range. */
+const SHOW_YAW = { min: -1.7, max: 0.8 };
+const SHOW_PITCH = { min: -0.5, max: 0.6 };
 /** Share of the wrist twist the forearm takes over (the rest stays at the wrist). */
 const FOREARM_TWIST = 0.55;
 /** Open-hand finger angles (rad, extension about the grip axis) for joints A, B, C and the thumb spread. */
@@ -152,6 +165,12 @@ const _axis = new THREE.Vector3();
 const _handPos: Record<Side, THREE.Vector3> = { R: new THREE.Vector3(), L: new THREE.Vector3() };
 const _handRot: Record<Side, THREE.Quaternion> = { R: new THREE.Quaternion(), L: new THREE.Quaternion() };
 const _anchorPos = new THREE.Vector3();
+const _petWrist = new THREE.Vector3();
+/** The wrist sits this far above the skin (palm thickness plus a hair) and behind the palm's contact point (m). */
+const PALM_LIFT = 0.026;
+const PALM_BACK = 0.058;
+/** Half the palm's thickness: the palm's skin side sits this much below the wrist line (m). */
+const PALM_THICK = 0.022;
 const _anchorNrm = new THREE.Vector3();
 const _anchorFwd = new THREE.Vector3();
 const _a0 = new THREE.Vector3();
@@ -180,7 +199,13 @@ export class RiderAnimator {
    * instead of diving forward with the lean, so the camera looks down onto the stroking hand.
    */
   readonly povOffset = new THREE.Vector3();
-  readonly cues: RiderCues = { reinLeft: 0, reinRight: 0, tuck: 0, point: 0, cheer: 0, pet: 0, stand: 0 };
+  readonly cues: RiderCues = { reinLeft: 0, reinRight: 0, tuck: 0, point: 0, cheer: 0, pet: 0, stand: 0, laugh: 0, show: 0, pat: 0 };
+  /**
+   * Petting contact after the last update (checks): `active` while the hand is fully on the neck, `error` = distance
+   * (m) between the wrist the IK reached and the wrist that puts the palm on the skin, `gap` = the palm's height above
+   * the skinned neck surface along its normal (m).
+   */
+  readonly petContact = { active: false, error: 0, gap: 0 };
   /** First-person blend 0..1 (the animator's POV blend), see POV_GRIP. */
   firstPerson = 0;
   /** Debug override (screenshots): fixed petting stroke phase (rad). */
@@ -214,6 +239,9 @@ export class RiderAnimator {
     cheer: new Ease(7, 4),
     pet: new Ease(4.5, 4),
     stand: new Ease(9, 9),
+    laugh: new Ease(6, 3),
+    show: new Ease(5, 4),
+    pat: new Ease(9, 6),
     /** The head looks down at the petting hand and comes back up slowly (the POV camera follows it). */
     petLook: new Ease(3, 0.9),
     gazeLook: new Ease(2.5, 2),
@@ -302,13 +330,22 @@ export class RiderAnimator {
     c.cheer = e.cheer.step(clamp(pose.riderCheer ?? 0, 0, 1), dt);
     c.pet = e.pet.step(clamp(pose.riderPet ?? 0, 0, 1), dt);
     c.stand = e.stand.step(clamp(pose.riderStand ?? 0, 0, 1), dt);
+    c.laugh = e.laugh.step(clamp(pose.riderLaugh ?? 0, 0, 1), dt);
+    c.show = e.show.step(clamp(pose.riderShow ?? 0, 0, 1), dt);
+    c.pat = e.pat.step(clamp(pose.riderPat ?? 0, 0, 1), dt);
     const petLook = e.petLook.step(c.pet, dt);
     const gazeLook = e.gazeLook.step(clamp(pose.gazeRider ?? 0, 0, 1), dt);
 
-    // Right-hand gestures take turns: cheer over point over petting.
+    // Right-hand gestures take turns: cheer over point over showing over petting / patting.
     const cheer = c.cheer;
     const point = c.point * (1 - cheer);
-    const pet = c.pet * (1 - Math.max(cheer, point)) * (1 - c.tuck);
+    const show = c.show * (1 - Math.max(cheer, point)) * (1 - c.tuck) * (1 - c.stand);
+    const pat = c.pat * (1 - Math.max(cheer, point, show)) * (1 - c.tuck);
+    const pet = Math.max(c.pet, pat) * (1 - Math.max(cheer, point, show)) * (1 - c.tuck);
+    const patOnly = pet > 1e-4 ? clamp((pat - c.pet) / pet, 0, 1) : 0;
+    const laugh = c.laugh;
+    const showYaw = clamp(pose.riderShowYaw ?? 0, SHOW_YAW.min, SHOW_YAW.max);
+    const showPitch = clamp(pose.riderShowPitch ?? 0, SHOW_PITCH.min, SHOW_PITCH.max);
     const tuck = c.tuck * (1 - c.stand);
     const stand = c.stand;
     const feet = smoothstep(stand, 0.04, 0.6);
@@ -321,7 +358,9 @@ export class RiderAnimator {
     if (strokes && dt > 0) {
       this.strokePhase += dt * Math.PI * 2 * STROKE_HZ;
     }
-    const strokeU = 0.5 + 0.44 * Math.sin(this.debugStrokePhase ?? this.strokePhase);
+    // Patting holds one spot on the neck instead of stroking along it.
+    const strokeU = THREE.MathUtils.lerp(0.5 + 0.44 * Math.sin(this.debugStrokePhase ?? this.strokePhase), PAT_U, patOnly);
+    const patLift = patOnly * PAT_LIFT * Math.max(0, Math.sin(time * Math.PI * 2 * PAT_HZ));
 
     // --- Torso: lean springs + cues (pitch > 0 leans back, yaw > 0 brings the right shoulder forward, roll > 0 leans left).
     const leanPitch = clamp(pose.riderLeanPitch, -0.6, 0.6);
@@ -382,6 +421,19 @@ export class RiderAnimator {
     hdP += (0.72 + 0.18 * strokeU) * pet - 0.9 * petLook;
     hdY -= 0.28 * pet;
     hdR += 0.06 * pet;
+
+    // Laughing: the shoulders bob, the head goes back a little (less in first person: the view is the head).
+    const fpKeep = 1 - 0.75 * this.firstPerson;
+    const bob = Math.sin(time * Math.PI * 2 * LAUGH_HZ) * (0.6 + 0.4 * Math.sin(time * 1.9));
+    chP += 0.035 * bob * laugh;
+    spP += 0.04 * laugh;
+    hdP -= 0.14 * laugh * fpKeep;
+    hdR += 0.04 * laugh * Math.sin(time * 2.3);
+    // Showing: the torso turns toward the arm, the head looks along it (third person only: in POV the player looks).
+    chY += 0.3 * showYaw * show;
+    spY += 0.12 * showYaw * show;
+    hdY += 0.45 * showYaw * show * (1 - this.firstPerson);
+    hdP -= 0.3 * showPitch * show * (1 - this.firstPerson);
 
     // Standing: upright with a slight forward lean, the knees absorb part of the heave; slow balance sway.
     const sway = Math.sin(time * 0.83) * 0.6 + Math.sin(time * 1.37 + 1.1) * 0.4;
@@ -452,9 +504,11 @@ export class RiderAnimator {
       let open = 0;
       if (side === 'R') {
         if (pet > 0.001 && strokes) {
-          // Palm on the scales, fingers along the neck and a little down the flank; wrist behind the palm.
+          // Palm on the scales, fingers along the neck and a little down the flank; wrist behind the palm. A pat lifts
+          // the palm off between taps.
           _dir.copy(_anchorFwd);
-          _tmp.copy(_anchorPos).addScaledVector(_anchorNrm, 0.026).addScaledVector(_dir, -0.058);
+          _tmp.copy(_anchorPos).addScaledVector(_anchorNrm, PALM_LIFT + patLift).addScaledVector(_dir, -PALM_BACK);
+          _petWrist.copy(_tmp);
           _target.lerp(_tmp, pet);
           _poleDir.lerp(POLE_PET, pet);
           this.handFrame(arm.fist, sgn, _dir, _tmp2.copy(_anchorNrm).negate(), _qa);
@@ -470,6 +524,17 @@ export class RiderAnimator {
           mapFrame(arm.fist.fwd, arm.fist.up, _dir, _up, _qa);
           _qh.slerp(_qa, point);
           open = Math.max(open, point * 0.9);
+        }
+        if (show > 0.001) {
+          // Pointing at what the dragon looks at: POINT_DIR turned by the target's yaw and pitch (dragon frame).
+          _dir.copy(POINT_DIR).applyAxisAngle(_axis.set(1, 0, 0), showPitch).applyAxisAngle(_axis.set(0, 1, 0), showYaw).applyQuaternion(_qc);
+          _tmp.copy(shoulder).addScaledVector(_dir, arm.l1 + arm.l2 + 0.05);
+          _target.lerp(_tmp, show);
+          _poleDir.lerp(POLE_POINT, show);
+          _up.set(0, 1, 0).applyQuaternion(_qc);
+          mapFrame(arm.fist.fwd, arm.fist.up, _dir, _up, _qa);
+          _qh.slerp(_qa, show);
+          open = Math.max(open, show * 0.9);
         }
         if (cheer > 0.001) {
           _tmp.copy(CHEER_HAND);
@@ -487,8 +552,18 @@ export class RiderAnimator {
       _pole.copy(_poleDir).applyQuaternion(_qr).add(shoulder);
       this.solveArm(arm, shoulder, _target, _pole, _qh, side);
       this.setFingers(arm, sgn, open);
+      if (side === 'R') {
+        // Contact check: the reached wrist against the one that lays the palm on the skin.
+        const pc = this.petContact;
+        pc.active = strokes && pet > 0.97 && patOnly < 0.01 && Math.max(cheer, point, show) < 0.01;
+        if (pc.active) {
+          pc.error = _handPos.R.distanceTo(_petWrist);
+          _tmp.copy(_handPos.R).addScaledVector(_anchorFwd, PALM_BACK).sub(_anchorPos);
+          pc.gap = _tmp.dot(_anchorNrm) - PALM_THICK;
+        }
+      }
     }
-    this.placeReinGrip(Math.max(pet, point, cheer));
+    this.placeReinGrip(Math.max(pet, point, cheer, show));
 
     // --- Legs ---
     rigTransform(this.pelvis, this.rigRoot, _pp, _qp);

@@ -87,10 +87,12 @@ technical approach, dependencies, acceptance criteria and an effort estimate.
     and wing-snap catch, leap and running take-offs (the "dehh" urge on V was removed on 26 Sep, see
     [20](20-movement.md)); camera and wind reactions; HUD maneuver caption.
     Not yet: thermals and ridge lift, g-force vignette, the other landing types.
-  - Rider and bond ([10](10-rider-animations.md) and [06](06-dragon-bond.md), part): procedural rider cues for every
-    command (`DragonPose` rider fields), rider leg bones, petting with a purr, standing on the saddle, the dragon's
-    gaze back at the rider (`src/dragon/model/animation/rider-pose.ts`, `src/dragon/model/behavior/`). Not yet: Mixamo
-    clips, mood system, bond level.
+  - Rider and bond ([10](10-rider-animations.md) and [06](06-dragon-bond.md)): procedural rider cues for every
+    command (`DragonPose` rider fields), rider leg bones, standing on the saddle; phase 06 built on 26 Sep: the gaze
+    back with a safety gate, glances at landmarks, ferries, birds and storks, eyelids, pupils and nostril steam,
+    petting (palm IK on the neck, deeper purr, half-closed eyes, plates up, tail curl, rumble), the mood state machine
+    with ten self-driven behaviours in variants, and V "encourage" (`src/dragon/model/behavior/bond/`,
+    `tools/headless/bond-check.ts`). Not yet: Mixamo clips, bond level and its unlocks.
   - Fixes from play: bridge wire and ship wake ribbons stretched into lines across the sky (per-vertex culling), fire
     now leaves from inside the open mouth, a compact discovery card shown only for new discoveries, and recorded CC0
     wind, wingbeat, thunder, rain and denoised gull sounds (Freesound, `public/audio/`, calmer mix; synthesis as the

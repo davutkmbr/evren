@@ -152,6 +152,8 @@ function createGullScene(ctx: EngineContext, anchorId: number | undefined): Gull
   let lastCall = -Infinity;
   let lastFlap = -Infinity;
   let clock = 0;
+  /** Seconds to the next 'dragon-attention' hint (phase 06: the dragon glances at the gulls). */
+  let attentionIn = 1;
   let playing = true;
   let finished = false;
   let disposed = false;
@@ -277,6 +279,12 @@ function createGullScene(ctx: EngineContext, anchorId: number | undefined): Gull
         }
       }
       flock.update(dt, ferry, dragon ? dragonP : null, camP, water());
+      attentionIn -= dt;
+      if (attentionIn <= 0 && flock.count > 0) {
+        attentionIn = 2;
+        const k = Math.floor(clock * 7) % flock.count;
+        ctx.events.emit('dragon-attention', { x: flock.px[k], y: flock.py[k], z: flock.pz[k], kind: 'bird', strength: 0.8 });
+      }
       draw();
       sounds();
       if (flock.done) {

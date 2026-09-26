@@ -64,6 +64,8 @@ export function buildDorsalSpikes(builder: MeshBuilder, body: BodySurface): void
         segments: 8,
         rings: 9,
         materialId: MAT.horn,
+        // Neck thorns are the plates the bond raises (body material: aData.w = 2).
+        dataW: z < SADDLE_Z.front ? 2 : 0,
         skin: body.skinForSurface(s, 0, skin),
       });
     }

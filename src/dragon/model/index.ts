@@ -3,6 +3,7 @@ import type { System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
 import { globalUniforms } from '../../core/uniforms';
 import { RiderBehavior } from './behavior/rider-behavior';
+import { BondBehavior } from './behavior/bond/bond-behavior';
 import { DragonRigImpl } from './rig';
 
 function textureSizeFor(preset: string): number {
@@ -25,10 +26,11 @@ function keyLightDirection(light: THREE.Object3D | undefined, out: THREE.Vector3
   return out.lengthSq() > 1e-10;
 }
 
-/** Procedural dragon + rider model and rig. Provides the 'rig' service (DragonRig). */
+/** Procedural dragon + rider model and rig. Provides the 'rig' service (DragonRig) and the 'bond' service. */
 export function createDragonModelSystem(): System {
   let rig: DragonRigImpl | undefined;
   let rider: RiderBehavior | undefined;
+  let bond: BondBehavior | undefined;
   let unsubscribe: (() => void) | undefined;
   let fallbackLight: THREE.Object3D | undefined;
   let scanCountdown = 0;
@@ -45,6 +47,7 @@ export function createDragonModelSystem(): System {
       );
       ctx.services.provide('rig', rig);
       rider = new RiderBehavior(rig, ctx);
+      bond = new BondBehavior(rig, rider, ctx);
       unsubscribe = ctx.quality.onChange((settings) => {
         rig?.setTextureQuality(textureSizeFor(settings.preset));
       });
@@ -71,12 +74,16 @@ export function createDragonModelSystem(): System {
         _lightDir.copy(env ? env.sunDirection : (globalUniforms.uSunDir.value as THREE.Vector3));
       }
       const wind = env ? env.wind : (globalUniforms.uWind.value as THREE.Vector3);
-      // Rider actions and the dragon's attention go on top of this frame's flight pose.
+      // Rider actions, then the bond (gaze, mood, reactions, phase 06) go on top of this frame's flight pose; the debug
+      // handle's forced cues last.
       rider?.update(dt, ctx);
+      bond?.update(dt, ctx);
+      rider?.applyOverrides();
       rig.applyPose(dt, ctx.services.tryGet('dragon'), _lightDir, wind);
     },
     dispose() {
       unsubscribe?.();
+      bond?.dispose();
       rider?.dispose();
       rig?.dispose();
     },
