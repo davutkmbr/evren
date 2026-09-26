@@ -11,7 +11,7 @@ const MAX_WAIT_S = 0.6;
 
 /**
  * Caption for the dragon's maneuvers and the rider's actions ('maneuver' events: "Takla", "Serbest düşüş",
- * "Kanatlar açıldı", "Dehh!"...) in the lowerCenter zone. Fades in, holds ~1.4 s and fades out; a new maneuver
+ * "Kanatlar açıldı", "Güç vuruşu"...) in the lowerCenter zone. Fades in, holds ~1.4 s and fades out; a new maneuver
  * replaces the text in place with a small pop. Outranks the flight and start hints, yields to race lines.
  */
 export class ManeuverCaption {

@@ -480,18 +480,6 @@ export const SCENARIOS: Scenario[] = [
     camera: 'fixed',
   },
   {
-    name: 'urge',
-    description: 'V at 26 m/s: the rider\'s "dehh" and the surge',
-    setup: fly(200, 26),
-    seconds: 5,
-    script: pressAt(0.5, 'urge'),
-    frames: 16,
-    fps: 8,
-    window: () => 0.3,
-    view: 'side',
-    camera: 'fixed',
-  },
-  {
     name: 'hover',
     description: 'brake held at 18 m/s, 60 m up: hover',
     setup: fly(60, 18),

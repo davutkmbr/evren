@@ -3,11 +3,11 @@ import type { DragonPose, DragonState, EngineContext } from '../../../core/contr
 import type { DragonRigImpl } from '../rig';
 
 /** Pose fields the debug handle can force (all rider cues, including the ones flight writes). */
-const CUE_KEYS = ['riderReinLeft', 'riderReinRight', 'riderTuck', 'riderUrge', 'riderPoint', 'riderCheer', 'riderPet', 'riderStand', 'gazeRider'] as const;
+const CUE_KEYS = ['riderReinLeft', 'riderReinRight', 'riderTuck', 'riderPoint', 'riderCheer', 'riderPet', 'riderStand', 'gazeRider'] as const;
 type CueKey = (typeof CUE_KEYS)[number];
 
-/** Debug overrides: cue values plus fixed animation phases (urge snap 0..1, petting stroke in rad) and the gaze side. */
-export type RiderDebugOverrides = Partial<Record<CueKey, number>> & { urgePhase?: number; strokePhase?: number; gazeSide?: number };
+/** Debug overrides: cue values plus a fixed petting stroke phase (rad) and the gaze side. */
+export type RiderDebugOverrides = Partial<Record<CueKey, number>> & { strokePhase?: number; gazeSide?: number };
 
 export interface RiderDebugHandle {
   force(values: RiderDebugOverrides): RiderDebugOverrides;
@@ -26,7 +26,7 @@ const PET_GAZE = 0.8;
 /** Seconds between purr phrases while petted (each phrase is ~2 s). */
 const PURR_EVERY = 2.1;
 /** Maneuvers the dragon glances back after ("did you like that?"). */
-const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'urge', 'wingover', 'immelmann', 'splits']);
+const GLANCE_AFTER = new Set(['catch', 'roll', 'loop', 'wingover', 'immelmann', 'splits']);
 
 const LABELS = {
   pet: 'Ejderhayı seviyorsun',
@@ -102,7 +102,7 @@ export class RiderBehavior {
         },
         clear: () => {
           this.overrides = null;
-          this.rig.setDebugPhases(null, null);
+          this.rig.setDebugStrokePhase(null);
         },
         state: () => ({ pet: this.petT, petting: this.petting, stand: this.standT, wantStand: this.wantStand, gaze: this.gaze, glance: !!this.glance }),
       };
@@ -127,7 +127,7 @@ export class RiderBehavior {
         }
       }
       this.rig.setPose(forced);
-      this.rig.setDebugPhases(o.urgePhase ?? null, o.strokePhase ?? null);
+      this.rig.setDebugStrokePhase(o.strokePhase ?? null);
       if (o.gazeSide !== undefined) {
         this.rig.setGazeSide(o.gazeSide, true);
       }
@@ -146,7 +146,7 @@ export class RiderBehavior {
     const state = ctx.services.tryGet('dragon');
     const pose = this.rig.getPose();
     const tuck = pose.riderTuck ?? 0;
-    const busyHands = Math.max(pose.riderUrge ?? 0, pose.riderPoint ?? 0, pose.riderCheer ?? 0);
+    const busyHands = Math.max(pose.riderPoint ?? 0, pose.riderCheer ?? 0);
     const mode = state?.mode ?? 'flying';
     const bank = state ? Math.abs(bankAngle(state)) : 0;
     const g = state?.gForce ?? 1;
