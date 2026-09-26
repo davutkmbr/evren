@@ -604,8 +604,10 @@ export interface EnvironmentState {
 /* ------------------------------------------------------------------ */
 
 export interface FxService {
-  /** One-shot water splash at a world point. */
+  /** One-shot water splash at a world point (the dragon's water contacts: skims, plunges, breaches). */
   splash(position: THREE.Vector3, strength: number): void;
+  /** One-shot splash of something else hitting the water (dolphins): no skim-contact bookkeeping. */
+  worldSplash?(position: THREE.Vector3, strength: number): void;
   /** One-shot dust/debris burst (landing on ground). */
   dust(position: THREE.Vector3, strength: number): void;
 }
@@ -670,7 +672,16 @@ export interface AudioService {
   setMomentMusic?(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void;
   /** A bond sound of the dragon at its head (phase 06); `volume` 0..1.5 also sets its intensity. */
   bondCue?(cue: BondAudioCue, volume?: number): void;
+  /**
+   * A dolphin sound at a world point (world/life/dolphins): recorded whistles, breaths and splashes from the audio
+   * manifest ('dolphin/*' entries). Silent while no recording is approved, except 'splash', which falls back to the
+   * generic water splash. `volume` 0..1.5 on top of the distance.
+   */
+  dolphinCue?(cue: DolphinAudioCue, position: { x: number; y: number; z: number }, volume?: number): void;
 }
+
+/** Dolphin sound cues: a whistle or click train (heard faintly above water), a breath at the surface, a leap's splash. */
+export type DolphinAudioCue = 'whistle' | 'breath' | 'splash';
 
 /**
  * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
@@ -1219,10 +1230,11 @@ export interface GameEvents {
    */
   'dragon-puff': { kind: 'smoke' | 'flame' | 'steam' | 'droplets'; strength: number };
   /**
-   * Something worth a look for the dragon (phase 06 attention): a ferry horn, a flock, a stork kettle. World point;
+   * Something worth a look for the dragon (phase 06 attention): a ferry horn, a flock, a stork kettle, a dolphin
+   * surfacing or leaping (world/life/dolphins). World point;
    * `strength` 0..1 ranks it. Any system may emit it; the bond behaviour turns the head there when it is safe.
    */
-  'dragon-attention': { x: number; y: number; z: number; kind: 'horn' | 'bird' | 'stork' | 'ferry' | 'sound'; strength: number };
+  'dragon-attention': { x: number; y: number; z: number; kind: 'horn' | 'bird' | 'stork' | 'ferry' | 'dolphin' | 'sound'; strength: number };
   /** The player asked for a moment's sources ("[I] Kaynağa bak", src/moments): the UI opens the source sheet. */
   'moment-source': { id: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
