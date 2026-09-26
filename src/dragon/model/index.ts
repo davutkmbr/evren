@@ -5,6 +5,32 @@ import { globalUniforms } from '../../core/uniforms';
 import { RiderBehavior } from './behavior/rider-behavior';
 import { BondBehavior } from './behavior/bond/bond-behavior';
 import { DragonRigImpl } from './rig';
+import { DEFAULT_APPEARANCE, sanitizeAppearance } from './rider/appearance';
+import { RIDER_SIZE } from './rider/skeleton';
+
+/** Work-in-progress Blender-pipeline rider: `?riderUrl=<glb url>`. */
+function humanRiderFlag(): string | undefined {
+  return typeof window === 'undefined' ? undefined : (new URLSearchParams(window.location.search).get('riderUrl') ?? undefined);
+}
+
+/** Work-in-progress rider rebuild: `?rider=new` (optionally `&look=<JSON appearance fields>`). */
+function newRiderFlag(): ReturnType<typeof sanitizeAppearance> | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('rider') !== 'new') {
+    return undefined;
+  }
+  RIDER_SIZE.scale = Number(q.get('riderScale') ?? 1) || 1;
+  let look: unknown = {};
+  try {
+    look = JSON.parse(q.get('look') ?? '{}');
+  } catch {
+    look = {};
+  }
+  return sanitizeAppearance({ ...DEFAULT_APPEARANCE, ...(look as object) });
+}
 
 function textureSizeFor(preset: string): number {
   return preset === 'low' ? 1024 : 2048;
@@ -34,18 +60,26 @@ export function createDragonModelSystem(): System {
   let unsubscribe: (() => void) | undefined;
   let fallbackLight: THREE.Object3D | undefined;
   let scanCountdown = 0;
+  let loading = 0;
   return {
     name: 'dragon-model',
+    pending: () => loading,
     order: UpdateOrder.Animation,
     init(ctx) {
       const t0 = performance.now();
-      rig = new DragonRigImpl({ renderer: ctx.renderer, textureSize: textureSizeFor(ctx.quality.settings.preset) });
+      rig = new DragonRigImpl({ renderer: ctx.renderer, textureSize: textureSizeFor(ctx.quality.settings.preset), newRider: newRiderFlag(), humanRider: humanRiderFlag() });
       const s = rig.stats;
       console.info(
         `[dragon] built in ${(performance.now() - t0).toFixed(0)} ms: ${s.bones} bones, ` +
           `tris body ${s.bodyTriangles} + membrane ${s.membraneTriangles} + rider ${s.riderTriangles}`,
       );
       ctx.services.provide('rig', rig);
+      if (rig.humanLoading) {
+        loading = 1;
+        void rig.humanLoading.finally(() => {
+          loading = 0;
+        });
+      }
       rider = new RiderBehavior(rig, ctx);
       bond = new BondBehavior(rig, rider, ctx);
       unsubscribe = ctx.quality.onChange((settings) => {

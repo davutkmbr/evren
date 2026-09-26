@@ -1602,6 +1602,126 @@
    "download": "api",
    "shortlist": ".docs/assets/candidates/wall-scans.md",
    "conditions": []
+  },
+  {
+   "id": "velour_velvet",
+   "name": "Velour Velvet",
+   "source": "polyhaven",
+   "source_id": "velour_velvet",
+   "url": "https://polyhaven.com/a/velour_velvet",
+   "licence": "CC0-1.0",
+   "licence_url": "https://polyhaven.com/license",
+   "author": "colormass, Rico Cilliers",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider dolama and cape (public/textures/rider/)",
+   "repeat_m": [
+    0.28,
+    0.27
+   ],
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
+  },
+  {
+   "id": "rough_linen",
+   "name": "Rough Linen",
+   "source": "polyhaven",
+   "source_id": "rough_linen",
+   "url": "https://polyhaven.com/a/rough_linen",
+   "licence": "CC0-1.0",
+   "licence_url": "https://polyhaven.com/license",
+   "author": "colormass, Rico Cilliers",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider şalvar and shirt (public/textures/rider/)",
+   "repeat_m": [
+    0.27,
+    0.27
+   ],
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
+  },
+  {
+   "id": "brown_leather",
+   "name": "Brown Leather",
+   "source": "polyhaven",
+   "source_id": "brown_leather",
+   "url": "https://polyhaven.com/a/brown_leather",
+   "licence": "CC0-1.0",
+   "licence_url": "https://polyhaven.com/license",
+   "author": "Rob Tuytel",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider boots, gloves, straps (public/textures/rider/)",
+   "repeat_m": [
+    0.4,
+    0.4
+   ],
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
+  },
+  {
+   "id": "crepe_satin",
+   "name": "Crepe Satin",
+   "source": "polyhaven",
+   "source_id": "crepe_satin",
+   "url": "https://polyhaven.com/a/crepe_satin",
+   "licence": "CC0-1.0",
+   "licence_url": "https://polyhaven.com/license",
+   "author": "colormass, Rico Cilliers",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider sash (public/textures/rider/)",
+   "repeat_m": [
+    0.26,
+    0.27
+   ],
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
+  },
+  {
+   "id": "chainmail002",
+   "name": "Chainmail 002",
+   "source": "ambientcg",
+   "source_id": "Chainmail002",
+   "url": "https://ambientcg.com/view?id=Chainmail002",
+   "licence": "CC0-1.0",
+   "licence_url": "https://docs.ambientcg.com/license/",
+   "author": "Lennart Demes",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider mail (public/textures/rider/)",
+   "repeat_m": null,
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
+  },
+  {
+   "id": "metal038",
+   "name": "Metal 038",
+   "source": "ambientcg",
+   "source_id": "Metal038",
+   "url": "https://ambientcg.com/view?id=Metal038",
+   "licence": "CC0-1.0",
+   "licence_url": "https://docs.ambientcg.com/license/",
+   "author": "Lennart Demes",
+   "attribution": null,
+   "kind": "texture",
+   "use": "Rider helmet, vambraces, mirror plate and gilt fittings (public/textures/rider/)",
+   "repeat_m": null,
+   "resolution": "1k",
+   "download": "manual",
+   "shortlist": ".docs/assets/candidates/rider-humans.md",
+   "conditions": []
   }
  ]
 }

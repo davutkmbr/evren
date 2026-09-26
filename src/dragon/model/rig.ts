@@ -19,10 +19,17 @@ import type { SurfaceAnchor } from './animation/rider-pose';
 import { buildRider, RIDER_HIDE_POINT } from './geometry/rider';
 import { buildTack } from './geometry/tack';
 import { createRiderMaterial, type RiderUniforms } from './materials/rider-material';
+import { RiderCharacter } from './rider/character';
+import { loadHumanRider, type HumanRider } from './rider/human';
+import type { RiderAppearance } from './rider/appearance';
 
 export interface RigBuildOptions {
   renderer: THREE.WebGLRenderer;
   textureSize: number;
+  /** The rebuilt rider (work in progress, `?rider=new`): replaces the old rider mesh; not animated yet. */
+  newRider?: RiderAppearance;
+  /** A rider glTF from the Blender pipeline (work in progress, `?rider=<url>`): replaces the old rider mesh. */
+  humanRider?: string;
 }
 
 /** The hero textures are always seen at grazing angles up close: fixed anisotropy per size tier. */
@@ -98,6 +105,10 @@ export class DragonRigImpl implements DragonRig {
   private readonly riderMaterial: THREE.MeshStandardMaterial;
   private readonly riderDepthMaterial: THREE.MeshDepthMaterial;
   private readonly riderUniforms: RiderUniforms;
+  /** The rebuilt rider when enabled (see RigBuildOptions.newRider). */
+  character?: RiderCharacter;
+  /** The Blender-pipeline rider while / after it loads. */
+  humanLoading?: Promise<HumanRider>;
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
@@ -146,7 +157,9 @@ export class DragonRigImpl implements DragonRig {
     const membraneMesh = makeSkinned(memGeo, this.membraneMaterial, this.skel, 'dragon-membrane');
     membraneMesh.customDepthMaterial = this.membraneDepthMaterial;
     const riderBuilder = new MeshBuilder();
-    buildRider(riderBuilder, this.skel);
+    if (!opts.newRider && !opts.humanRider) {
+      buildRider(riderBuilder, this.skel);
+    }
     buildTack(riderBuilder, body, this.skel);
     const riderMat = createRiderMaterial(RIDER_HIDE_POINT);
     this.riderMaterial = riderMat.material;
@@ -161,6 +174,17 @@ export class DragonRigImpl implements DragonRig {
     this.root.add(bodyMesh, membraneMesh, riderMesh);
     this.stats.bodyTriangles = bodyBuilder.triangleCount;
     this.stats.membraneTriangles = membraneBuilder.triangleCount;
+
+    if (opts.humanRider) {
+      this.humanLoading = loadHumanRider(opts.humanRider, this.skel.bone('chest'), LANDMARKS.chest).then((h) => {
+        console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes`);
+        return h;
+      });
+    }
+    if (opts.newRider) {
+      this.character = new RiderCharacter({ anchor: this.skel.bone('chest'), anchorRest: LANDMARKS.chest, meshParent: this.root }, opts.newRider);
+      console.info(`[rider] ${this.character.stats.triangles} tris in ${this.character.stats.ms.toFixed(0)} ms`);
+    }
 
     // Anchors.
     const headBone = this.skel.bone('head');
@@ -262,6 +286,10 @@ export class DragonRigImpl implements DragonRig {
     }
     this.riderUniforms.uAirspeed.value = o.airspeed;
     this.riderUniforms.uAirflow.value.copy(o.airflow);
+    if (this.character) {
+      this.character.uniforms.uAirspeed.value = o.airspeed;
+      this.character.uniforms.uAirflow.value.copy(o.airflow);
+    }
   }
 
   /** Re-bakes the procedural textures when the quality preset changes the texture size. */
@@ -295,6 +323,7 @@ export class DragonRigImpl implements DragonRig {
     this.membraneMaterial.dispose();
     this.membraneDepthMaterial.dispose();
     this.riderMaterial.dispose();
+    this.character?.dispose();
     this.riderDepthMaterial.dispose();
     for (const rt of [...this.scaleTex.targets, ...this.membraneTex.targets]) {
       rt.dispose();
