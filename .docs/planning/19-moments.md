@@ -51,16 +51,17 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
   and city ferries (double-enders) in service, i.e. underway on their line and going ahead faster than 2 m/s, read every
   frame from the living world's new `life` service (`src/world/life/life-service.ts`: vessel poses by kind, by id).
   Each anchor point carries the vessel id; the runner remembers the anchor nearest to the dragon when a moment starts
-  (`MomentRunner.currentAnchor`), and while it plays the anchor radius gets 100 m of hysteresis (the ferry pulls away
-  while the dragon watches). `moments-check` accepts an anchored `ready` record only for anchors the game supplies.
+  (`MomentRunner.currentAnchor`). `moments-check` accepts an anchored `ready` record only for anchors the game supplies.
 - **Pacing.** One moment at a time. A moment starts after its trigger held for 1 s; after a moment another may start
   only after a 180 s gap; records keep their own once-per-session / cooldown rules. Nothing starts or continues during a
   race, and nothing advances while the game is paused (menus, map, photo mode). The settings gate playback: a category
   switched off (or Anlar off) never starts and ends a playing moment of that category.
-- **Never takes control.** While a moment plays its conditions are re-checked with a little hysteresis (altitude band
-  ±15 m, shore band ±60 m, flapping allowed during a glide). When they fail for 1.2 s (the dragon climbs out of the
-  band, leaves the shore, lands, rain starts) the line on screen fades out slowly and the rest is skipped. A moment cut
-  short before half of its lines is not spent and may try again after 90 s; one cut later is spent.
+- **Plays to its end.** Once a moment has started it runs to its last line whatever the dragon does: climbing out of
+  the band, leaving the shore, flying away from the ferry, landing or a change of weather no longer cut it short
+  (owner decision, 26 Sep: before, a moment cut by its conditions after 1.2 s did not start the global gap, so the next
+  moment in range started at once and seemed to interrupt the first). Only a race and switching its category off end it
+  early (the line fades out). Every end, early or not, starts the 180 s gap. A moment cut short before half of its
+  lines is not spent and may try again after 90 s (and the gap); one cut later is spent.
 - **Screen.** Subtitle lines go through the HUD zone director in the `lowerCenter` zone (priority 45: below maneuver
   captions, above flight and start hints; deferred by a race): italic, shadowed, no box, slow fades. The closing card
   uses the discovery card's look in the `corner` zone ("Yeni an", category, title, text; 9 s). Design language updated.
@@ -89,7 +90,7 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
 - **Checks.** `tools/headless/moments-runtime-check.ts` flies a scripted low glide along the European shore from
   Beşiktaş to Bebek on the real geography: the poem fires exactly once, after the dwell, with the record's timeline
   (4 s lines, 0.5 s gaps) and the card at the end; it does not fire high, inland, in rain or storm, while flapping,
-  during a race or with its category off; pause, hysteresis, fade-out, retry, race / settings cut-off, the global gap
+  during a race or with its category off; pause, playing to the end whatever the flight does, no overlap and the global gap after every end, retry, race / settings cut-off
   and the shortcut are covered; the corridor polygon is verified to cover all of the strait's water and both shores
   (its north end was extended to the Black Sea mouth, 41.24° N). Section 5 covers the storks, section 7 the ferry
   moment on the real geography with the anchor feed (below); `tools/headless/moments-gulls-check.ts` covers the gull
