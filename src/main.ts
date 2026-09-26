@@ -21,6 +21,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'mosques', load: () => import('./world/landmarks/mosques').then((m) => m.createMosqueSystem) },
   { name: 'structures', load: () => import('./world/landmarks/structures').then((m) => m.createStructureSystem) },
   { name: 'heritage', load: () => import('./world/landmarks/heritage').then((m) => m.createHeritageSystem) },
+  { name: 'perches', load: () => import('./world/perches').then((m) => m.createPerchSystem) },
   { name: 'clouds', load: () => import('./render/clouds').then((m) => m.createCloudSystem) },
   { name: 'dragon-model', load: () => import('./dragon/model').then((m) => m.createDragonModelSystem) },
   { name: 'flight', load: () => import('./dragon/flight').then((m) => m.createFlightSystem) },
