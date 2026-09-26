@@ -192,6 +192,8 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
       host.snap();
       return snapshot(sim);
     },
+    /** Lands chain link number `link` now (flow's chain bursts: push, camera kick, sounds, HUD counter). */
+    chainLink: (link = 3): void => sim.flow.debugLink(sim, link),
     setStamina: (value: number): void => {
       sim.stamina = Math.max(0, Math.min(1, value));
       sim.tired = false;

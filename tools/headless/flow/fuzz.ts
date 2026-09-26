@@ -75,6 +75,10 @@ export interface FuzzRun {
   maxSpeed: number;
   /** Most frequent macro's share of the flow gained. */
   topMacroShare: number;
+  /** Chain links (flow/burst.ts), the longest chain and the total burst push (m/s). */
+  links: number;
+  bestChain: number;
+  burstDv: number;
 }
 
 export function createSim(alt: number, speed: number, heading = 0): FlightSim {
@@ -200,14 +204,17 @@ export function fuzzRun(seed: number, seconds: number, forceFlow?: number): Fuzz
     lossRatio: ref < -1 ? (seg.cumNet - startNet) / ref : 1,
     maxSpeed,
     topMacroShare: top,
+    links: sim.flow.burst.totalLinks,
+    bestChain: sim.flow.burst.bestChain,
+    burstDv: sim.flow.burst.totalDv,
   };
 }
 
 /**
  * One macro repeated back to back for `seconds` at the best timing (the next as soon as the move ends); the pilot
- * climbs out below 120 m. Returns the mean and the highest flow.
+ * climbs out below 120 m. Returns the mean and the highest flow and the chain links and bursts it earned.
  */
-export function repeatRun(macro: Macro, seconds: number, seed = 1): { mean: number; max: number; transitions: number } {
+export function repeatRun(macro: Macro, seconds: number, seed = 1): { mean: number; max: number; transitions: number; links: number; bestChain: number; burstDv: number } {
   const sim = createSim(600, 34);
   const p = new KeyPilot();
   let t = 0;
@@ -243,5 +250,6 @@ export function repeatRun(macro: Macro, seconds: number, seed = 1): { mean: numb
     });
     t = fly(sim, p, 0.1, t, each);
   }
-  return { mean: sum / Math.max(n, 1), max: sim.flow.log.reduce((m, l) => Math.max(m, l.flow), 0), transitions: sim.flow.transitions };
+  const b = sim.flow.burst;
+  return { mean: sum / Math.max(n, 1), max: sim.flow.log.reduce((m, l) => Math.max(m, l.flow), 0), transitions: sim.flow.transitions, links: b.totalLinks, bestChain: b.bestChain, burstDv: b.totalDv };
 }

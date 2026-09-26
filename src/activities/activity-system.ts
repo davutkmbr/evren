@@ -303,7 +303,7 @@ export function createActivitySystem(): System {
           emitActivity('started', `${name} · ${RACE_TEXT.label.running(1, s.total)}`);
           break;
         case 'gate': {
-          notePass(course.gates[e.index]);
+          notePass(course.gates[e.index], 'gate');
           rings.setNext(e.index + 1, false);
           if (e.index < s.total - 1) {
             hud?.gate(e.split, e.bestSplit !== undefined ? e.split - e.bestSplit : undefined);
@@ -313,7 +313,7 @@ export function createActivitySystem(): System {
           break;
         }
         case 'boost':
-          notePass(course.speedRings[e.index]);
+          notePass(course.speedRings[e.index], 'ring');
           speedRings.markUsed(e.index);
           startBoost();
           break;
@@ -361,14 +361,14 @@ export function createActivitySystem(): System {
     }
   }
 
-  /** A gate or speed ring passed: tells flight how snug it was (the flow system's use of the world). */
-  function notePass(ring: { x: number; y: number; z: number; radius: number } | undefined): void {
+  /** A gate or speed ring passed: tells flight how snug it was (the flow system's use of the world, chain links). */
+  function notePass(ring: { x: number; y: number; z: number; radius: number } | undefined, kind: 'gate' | 'ring'): void {
     const d = dragon;
     if (!d || !ring || typeof d.notePass !== 'function') {
       return;
     }
     const p = d.position;
-    d.notePass(passTightness(ring.radius, Math.hypot(p.x - ring.x, p.y - ring.y, p.z - ring.z)));
+    d.notePass(passTightness(ring.radius, Math.hypot(p.x - ring.x, p.y - ring.y, p.z - ring.z)), kind);
   }
 
   /* ---------------- speed ring boost ---------------- */
@@ -1095,6 +1095,11 @@ export function createActivitySystem(): System {
       // While a race is prepared, run, aborting or its result is open, the HUD zones defer the area title and the
       // compass landmark label (the next gate is the target).
       c.services.tryGet('hudZones')?.setContext('race', !!session?.active || !!hud?.holdsScreen);
+      // A running race (countdown included): full-size chain bursts and full-strength speed effects (flight, camera, fx).
+      const racing = !!session?.active;
+      if (dragon && !!dragon.racing !== racing) {
+        dragon.setRacing?.(racing);
+      }
       if (hud?.busy) {
         const on = hudVisible();
         hud.setVisible(on);

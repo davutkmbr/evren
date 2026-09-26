@@ -3,6 +3,7 @@ import type { QualityPreset } from '../../core/quality';
 import { el } from '../dom';
 import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
+import { motionEffects, setMotionEffects, type MotionEffects } from '../../core/speed-feel';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
 import type { MomentCategory } from '../../moments/types';
 import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
@@ -52,6 +53,7 @@ export class SettingsPanel {
   private readonly timeOfDay: Control<number>;
   private readonly timeSpeed: Control<number>;
   private readonly camera: Control<CameraMode>;
+  private readonly motion: Control<MotionEffects>;
   private readonly weatherPreset: Control<WeatherPreset | 'custom'>;
   private readonly weatherSliders: Record<keyof WeatherSettings, Control<number>>;
   private readonly momentPrefs: MomentPrefs = loadMomentPrefs();
@@ -91,6 +93,17 @@ export class SettingsPanel {
       ],
       'third',
       (mode) => ctx.services.tryGet('cameraRig')?.setMode(mode),
+    );
+
+    this.motion = segmented<MotionEffects>(
+      'Hareket efektleri',
+      [
+        { value: 'full', label: 'Tam' },
+        { value: 'reduced', label: 'Azaltılmış' },
+        { value: 'off', label: 'Kapalı' },
+      ],
+      motionEffects(),
+      (v) => setMotionEffects(v),
     );
 
     this.sensitivity = slider({
@@ -241,6 +254,7 @@ export class SettingsPanel {
         settingSection('Görüntü', [
           settingRow('Grafik kalitesi', 'Gölge, bulut, yansıma ve çizim mesafesi', this.quality.root),
           settingRow('Kamera', undefined, this.camera.root, { keys: 'C' }),
+          settingRow('Hareket efektleri', 'Hızda görüş açısı, sarsıntı ve rüzgâr çizgileri; hareket hassasiyetinde azalt', this.motion.root),
           settingRow('Uzak bulanıklık', 'Uzaktaki şehri havanın yaptığı gibi yumuşatır', this.weatherSliders.farBlur.root),
         ]),
       ],
@@ -335,6 +349,7 @@ export class SettingsPanel {
   refresh(): void {
     const { ctx } = this.options;
     this.quality.set(ctx.quality.settings.preset);
+    this.motion.set(motionEffects());
     this.sensitivity.set(ctx.input.settings.mouseSensitivity);
     this.invertMouse.set(ctx.input.settings.invertMouseY);
     this.invertPitch.set(ctx.input.settings.invertPitch);
