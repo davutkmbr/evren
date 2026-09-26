@@ -1,0 +1,781 @@
+/* Ring race screens, race UI v2 (src/activities/hud). Layout only: keys, actions, options, values, medals, lists,
+   fields, the route map and the chart are shared components (src/ui/components, styles/components.css).
+   The roots carry .ejd for the shared tokens (base.css). Over the scene: plain text with shadows, no boxes. */
+
+.race-ui {
+  z-index: 2;
+  --race-ink: #f6f1e7;
+  --race-ink-2: rgba(246, 241, 231, 0.85);
+  --race-gold: #e8b872;
+  --race-teal: #7fd1c0;
+  --race-ghost: #b39cf0;
+  --race-faster: #8fbdea;
+  --race-slower: #e6a46b;
+  --race-warn: #ffb89c;
+  --race-sheet: rgba(17, 19, 24, 0.95);
+}
+
+/* ---------------- start screen ---------------- */
+
+.race-intro {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--gutter) + 68px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--race-ink);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  animation: race-fade-in 260ms var(--ease-out);
+}
+
+.race-intro-name {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+.race-intro-info {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  font-size: 14px;
+  color: var(--race-ink-2);
+}
+
+.race-intro-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.race-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 57.5%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--race-ink);
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+
+.race-count-val {
+  font-family: var(--font-display);
+  font-size: clamp(72px, 13.4vh, 120px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  animation: race-count-pop 1000ms var(--ease-out) both;
+}
+
+.race-count-val.is-go {
+  font-size: clamp(56px, 9.8vh, 88px);
+  color: var(--race-gold);
+  animation-name: race-go-pop;
+}
+
+.race-count-sub {
+  font-size: 15px;
+  color: var(--race-ink-2);
+}
+
+@keyframes race-count-pop {
+  0% { opacity: 0; transform: scale(1.25); }
+  18% { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(0.97); }
+}
+
+@keyframes race-go-pop {
+  0% { opacity: 0; transform: scale(0.85); }
+  22% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.race-intro-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 176px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  font-size: 13.5px;
+  color: var(--race-ink-2);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.race-intro-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.race-ghost-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--race-ghost);
+}
+
+.race-ghost-dot.is-glow {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 8px var(--race-ghost);
+}
+
+/* ---------------- running readout ---------------- */
+
+.race-readout {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--gutter) + 72px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--race-ink);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.race-clock {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.race-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  color: rgba(246, 241, 231, 0.88);
+}
+
+.race-split {
+  font-weight: 600;
+  color: var(--race-ink);
+  animation: race-fade-in 200ms var(--ease-out);
+}
+
+.race-split.is-faster {
+  color: var(--race-faster);
+}
+
+.race-split.is-slower {
+  color: var(--race-slower);
+}
+
+.race-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.race-warn {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--race-warn);
+}
+
+.race-boost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 57.5%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.race-boost-val {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--race-teal);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  animation: race-boost 1200ms var(--ease-out) both;
+}
+
+@keyframes race-boost {
+  0% { opacity: 0; transform: translateY(6px); }
+  20% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+
+@keyframes race-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------------- next-gate marker ---------------- */
+
+.race-gm {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.race-gm-arrow {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+}
+
+.race-gm-arrow svg {
+  display: block;
+  fill: var(--race-gold);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.55));
+}
+
+.race-gm.is-edge .race-gm-arrow {
+  display: block;
+}
+
+.race-gm-dist {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--race-ink);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  will-change: transform;
+}
+
+/* ---------------- result screen ---------------- */
+
+.race-finish {
+  position: absolute;
+  inset: 0;
+  color: var(--ink);
+}
+
+.race-finish-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(8, 9, 12, 0.82) 0%, rgba(8, 9, 12, 0.7) 52%, rgba(8, 9, 12, 0.2) 100%);
+  opacity: 0;
+  transition: opacity 320ms var(--ease-out);
+}
+
+.race-finish-grid {
+  position: absolute;
+  top: 16.7vh;
+  left: 50%;
+  width: min(1200px, calc(100% - 48px));
+  display: grid;
+  grid-template-columns: minmax(0, 520px) minmax(0, 560px);
+  justify-content: space-between;
+  column-gap: 48px;
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out);
+}
+
+.race-finish.is-in .race-finish-shade,
+.race-finish.is-in .race-finish-grid {
+  opacity: 1;
+}
+
+.race-finish.is-in .race-finish-grid {
+  transform: translate(-50%, 0);
+}
+
+.race-finish-main {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.race-finish-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.race-finish-title {
+  font-size: 15px;
+  color: rgba(243, 238, 229, 0.7);
+}
+
+.race-finish-time {
+  font-family: var(--font-display);
+  font-size: clamp(56px, 9.8vh, 88px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.race-finish-medal {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.race-finish-medal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.race-finish-medal-name {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.race-finish-medal-next {
+  font-size: 14px;
+  color: rgba(243, 238, 229, 0.7);
+}
+
+.race-finish-medal .ui-pill {
+  margin-left: 8px;
+}
+
+.race-finish-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.race-finish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding-top: 8px;
+}
+
+.race-finish-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.race-finish-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.race-finish-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.race-finish-chart-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.race-finish-chart-sub {
+  margin-top: -6px;
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.55);
+}
+
+.race-finish-note {
+  margin: 0;
+  max-width: 440px;
+  padding-top: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(243, 238, 229, 0.7);
+}
+
+@media (max-width: 1100px) {
+  .race-finish-grid {
+    top: 10vh;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 32px;
+    max-height: 86vh;
+    overflow-y: auto;
+  }
+
+  .race-finish-note {
+    padding-top: 0;
+  }
+}
+
+/* ---------------- course picker (sheet, like the pause menu) ---------------- */
+
+.race-picker {
+  position: absolute;
+  inset: 0;
+}
+
+.race-picker-shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.45);
+}
+
+.race-sheet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(1140px, calc(100% - 48px));
+  height: min(740px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--race-sheet);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  color: var(--ink);
+  transform: translate(-50%, -50%);
+  animation: race-sheet-in 220ms var(--ease-out);
+}
+
+@keyframes race-sheet-in {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.race-sheet-head {
+  height: 72px;
+  flex-shrink: 0;
+  padding: 0 20px 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.race-sheet-titles {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.race-sheet-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.race-sheet-counts {
+  font-size: 13px;
+  color: rgba(243, 238, 229, 0.55);
+}
+
+.race-sheet-body {
+  flex-grow: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+}
+
+.race-list {
+  min-height: 0;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--line);
+}
+
+.race-list-cap {
+  padding: 4px 12px 6px;
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.5);
+}
+
+.race-list-rows {
+  flex: 0 1 auto;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.race-list-rule {
+  flex-shrink: 0;
+  height: 1px;
+  margin: 10px 12px;
+  background: var(--line);
+}
+
+.race-list-new {
+  padding: 0 10px;
+}
+
+.race-list-code {
+  margin-top: auto;
+  padding: 16px 12px 0;
+}
+
+.race-detail {
+  min-width: 0;
+  min-height: 0;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.race-detail-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.race-detail-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.race-detail-name {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.race-detail-desc {
+  font-size: 14px;
+  color: rgba(243, 238, 229, 0.65);
+}
+
+.race-detail-actions {
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+}
+
+.race-detail-map {
+  flex: 0 1 330px;
+  min-height: 150px;
+}
+
+.race-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.race-detail-ladder {
+  flex-shrink: 0;
+}
+
+.race-detail-spacer {
+  flex-grow: 1;
+}
+
+.race-detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+}
+
+.race-detail-note {
+  margin-left: auto;
+  font-size: 13px;
+  color: rgba(243, 238, 229, 0.5);
+}
+
+@media (max-width: 960px) {
+  .race-sheet-body {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .race-detail-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ---------------- course editor ---------------- */
+
+.race-editor {
+  position: absolute;
+  inset: 0;
+  color: var(--race-ink);
+}
+
+.race-editor.is-hidden {
+  visibility: hidden;
+}
+
+.race-editor-head {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--gutter) + 76px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.race-editor-title {
+  font-size: 14px;
+  color: rgba(246, 241, 231, 0.8);
+}
+
+.race-editor-placing {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+.race-editor-placing.is-ring {
+  color: var(--race-teal);
+}
+
+.race-editor-counts {
+  font-size: 14px;
+  color: var(--race-ink-2);
+}
+
+.race-editor-warn {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--race-warn);
+}
+
+.race-editor-keys {
+  position: absolute;
+  left: 36px;
+  top: 33vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13.5px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.race-editor-keys .ui-keycap {
+  min-width: 40px;
+  text-shadow: none;
+}
+
+.race-editor-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.race-editor-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  will-change: transform;
+}
+
+.race-editor-label.is-ring {
+  color: var(--race-teal);
+}
+
+.race-editor-label.is-invalid {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--race-warn);
+}
+
+.race-editor-save {
+  position: absolute;
+  inset: 0;
+}
+
+.race-editor-save-shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.55);
+}
+
+.race-editor-save-box {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(500px, calc(100% - 48px));
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-radius: 18px;
+  background: rgba(17, 19, 24, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
+  transform: translate(-50%, -50%);
+  animation: race-fade-in 180ms var(--ease-out);
+}
+
+.race-editor-save-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.race-editor-save-warn {
+  font-size: 13px;
+  color: var(--race-warn);
+}
+
+.race-editor-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .race-count-val,
+  .race-boost-val,
+  .race-sheet,
+  .race-intro,
+  .race-split,
+  .race-editor-save-box {
+    animation: none;
+  }
+
+  .race-finish-shade,
+  .race-finish-grid {
+    transition: none;
+  }
+}

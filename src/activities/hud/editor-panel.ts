@@ -1,20 +1,26 @@
 /**
- * Course editor overlay: a small plain-text panel (controls, counts, placement mode), the save name field and the
- * number labels over the placed rings (screen positions come from the activity system, which projects them).
- * Plain text with a text shadow over the scene, no glass box, in line with the HUD direction.
+ * Course editor overlay (race UI v2), plain text over the scene: at the top centre "Parkur editörü · <course>", the
+ * current placement big ("Kapı · orta" / "Hız halkası"), counts and length and one warning line; on the left a key
+ * strip (key cap + action); number labels over the placed rings (invalid ones red with the reason; screen positions
+ * come from the activity system, which projects them); and the save dialog with one name field.
  */
+import { keyHint, prompt, textField } from '../../ui/components';
 import { MIN_GATES, NAME_MAX, type GateSize } from '../custom-courses';
 import type { EditorKind } from '../editor';
-import { RACE_TEXT } from '../text';
-import { Text, Transform, h, show, toggle } from './dom';
+import { RACE_TEXT, formatCourseLength } from '../text';
+import { Text, Transform, h, noFocus, show, toggle } from './dom';
 
 export interface EditorPanelState {
   sourceName?: string;
   gates: number;
   rings: number;
+  /** Invalid gates and speed rings (red; skipped on save). */
   invalid: number;
+  validGates: number;
   kind: EditorKind;
   size: GateSize;
+  /** Gate-to-gate length so far (m). */
+  lengthM: number;
 }
 
 export interface EditorLabel {
@@ -22,7 +28,8 @@ export interface EditorLabel {
   y: number;
   text: string;
   ring: boolean;
-  invalid: boolean;
+  /** Why the ring is invalid (shown after the number), undefined when valid. */
+  reason?: string;
 }
 
 /** Keys of the editor (event.code) and their key caps. */
@@ -39,14 +46,13 @@ const MAX_LABELS = 48;
 
 export class EditorPanel {
   readonly root = h('div', 'race-editor');
-  private readonly panel = h('div', 'race-editor-panel');
-  private readonly subtitle = new Text(h('div', 'race-editor-sub'));
-  private readonly count = new Text(h('div', 'race-editor-count ejd-num'));
-  private readonly invalid = new Text(h('div', 'race-editor-invalid'));
-  private readonly mode = new Text(h('div', 'race-editor-mode'));
-  private readonly min = new Text(h('div', 'race-editor-min'));
-  private readonly nameRow = h('div', 'race-editor-name');
-  private readonly nameInput = h('input', 'race-editor-name-input');
+  private readonly title = new Text(h('span', 'race-editor-title'));
+  private readonly placing = new Text(h('span', 'race-editor-placing'));
+  private readonly counts = new Text(h('span', 'race-editor-counts ejd-num'));
+  private readonly warn = new Text(h('span', 'race-editor-warn'));
+  private readonly dialog = h('div', 'race-editor-save');
+  private readonly field = textField(RACE_TEXT.editor.namePrompt, { size: 'l', maxLength: NAME_MAX });
+  private readonly saveWarn = h('span', 'race-editor-save-warn');
   private readonly labelLayer = h('div', 'race-editor-labels');
   private readonly labels: Array<{ node: HTMLElement; text: Text; transform: Transform; on: boolean }> = [];
   private onSubmit: ((name: string) => void) | null = null;
@@ -57,30 +63,30 @@ export class EditorPanel {
     private readonly onTyping: (typing: boolean) => void,
   ) {
     const t = RACE_TEXT.editor;
+    const k = EDITOR_KEYS;
     this.root.setAttribute('lang', 'tr');
-    const key = (k: { cap: string }, label: string): HTMLElement => h('div', 'race-editor-key', [h('kbd', undefined, k.cap), h('span', undefined, label)]);
-    const keys = h('div', 'race-editor-keys', [
-      key(EDITOR_KEYS.place, t.keys.place),
-      key(EDITOR_KEYS.undo, t.keys.undo),
-      key(EDITOR_KEYS.kind, t.keys.kind),
-      key(EDITOR_KEYS.size, t.keys.size),
-      key(EDITOR_KEYS.save, t.keys.save),
-      key(EDITOR_KEYS.exit, t.keys.exit),
-    ]);
-    this.nameInput.type = 'text';
-    this.nameInput.maxLength = NAME_MAX;
-    this.nameInput.spellcheck = false;
-    this.nameInput.autocomplete = 'off';
-    this.nameInput.setAttribute('aria-label', t.namePrompt);
-    this.nameInput.addEventListener('focus', () => this.onTyping(true));
-    this.nameInput.addEventListener('blur', () => {
+    const keys = h(
+      'div',
+      'race-editor-keys',
+      [
+        keyHint(k.place.cap, t.keys.place),
+        keyHint(k.kind.cap, t.keys.kind),
+        keyHint(k.size.cap, t.keys.size),
+        keyHint(k.undo.cap, t.keys.undo),
+        keyHint(k.save.cap, t.keys.save),
+        keyHint(k.exit.cap, t.keys.exit),
+      ].map((x) => x.root),
+    );
+    const input = this.field.input;
+    input.addEventListener('focus', () => this.onTyping(true));
+    input.addEventListener('blur', () => {
       this.onTyping(false);
       // Focus lost some other way (a click elsewhere, a menu): the question is withdrawn.
-      if (!this.nameRow.hidden) {
+      if (this.naming) {
         this.finishName(false);
       }
     });
-    this.nameInput.addEventListener('keydown', (e) => {
+    input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.code === 'Enter' || e.code === 'NumpadEnter') {
         e.preventDefault();
@@ -90,19 +96,21 @@ export class EditorPanel {
         this.finishName(false);
       }
     });
-    this.nameRow.append(h('div', 'race-editor-name-label', t.namePrompt), this.nameInput, h('div', 'race-editor-name-hint', t.nameHint));
-    this.nameRow.hidden = true;
-    this.panel.append(
-      h('div', 'race-editor-title', t.title),
-      this.subtitle.node,
-      this.count.node,
-      this.invalid.node,
-      this.mode.node,
-      this.min.node,
-      keys,
-      this.nameRow,
-    );
-    this.root.append(this.labelLayer, this.panel);
+    // The prompts never take focus, so clicking them keeps the field focused until the answer is handled.
+    const cancel = noFocus(prompt(t.cancel, 'Esc', 'secondary', () => this.finishName(false)).root);
+    const save = noFocus(prompt(t.save, 'Enter', 'primary', () => this.finishName(true)).root);
+    const box = h('div', 'race-editor-save-box ejd-interactive', [
+      h('span', 'race-editor-save-title', t.saveTitle),
+      this.field.root,
+      this.saveWarn,
+      h('div', 'race-editor-save-actions', [cancel, save]),
+    ]);
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', t.saveTitle);
+    this.dialog.append(h('div', 'race-editor-save-shade'), box);
+    this.dialog.hidden = true;
+    const head = h('div', 'race-editor-head', [this.title.node, this.placing.node, this.counts.node, this.warn.node]);
+    this.root.append(this.labelLayer, head, keys, this.dialog);
     this.root.hidden = true;
     parent.append(this.root);
   }
@@ -112,7 +120,7 @@ export class EditorPanel {
   }
 
   get naming(): boolean {
-    return !this.nameRow.hidden;
+    return !this.dialog.hidden;
   }
 
   setOpen(open: boolean): void {
@@ -130,25 +138,25 @@ export class EditorPanel {
 
   update(s: EditorPanelState): void {
     const t = RACE_TEXT.editor;
-    this.subtitle.set(t.subtitle(s.sourceName));
-    this.count.set(t.count(s.gates, s.rings));
-    this.invalid.set(s.invalid > 0 ? t.invalidCount(s.invalid) : '');
-    show(this.invalid.node, s.invalid > 0);
-    this.mode.set(s.kind === 'ring' ? t.placingRing : t.placing(t.kindGate, t.size[s.size]));
-    toggle(this.mode.node, 'is-ring', s.kind === 'ring');
-    const valid = s.gates - s.invalid;
-    this.min.set(valid < MIN_GATES ? t.minGates(MIN_GATES) : '');
-    show(this.min.node, valid < MIN_GATES);
+    this.title.set(t.title(s.sourceName));
+    this.placing.set(s.kind === 'ring' ? t.placingRing : t.placing(t.size[s.size]));
+    toggle(this.placing.node, 'is-ring', s.kind === 'ring');
+    this.counts.set(t.counts(s.gates, s.rings, formatCourseLength(s.lengthM)));
+    const warn = s.invalid > 0 ? t.invalidCount(s.invalid) : s.validGates < MIN_GATES ? t.minGates(MIN_GATES) : '';
+    this.warn.set(warn);
+    show(this.warn.node, warn !== '');
   }
 
-  /** Asks for the course name; exactly one of the callbacks runs. */
-  askName(initial: string, onSubmit: (name: string) => void, onCancel: () => void): void {
+  /** Opens the save dialog; `warning` names what saving will skip. Exactly one of the callbacks runs. */
+  askName(initial: string, warning: string, onSubmit: (name: string) => void, onCancel: () => void): void {
     this.onSubmit = onSubmit;
     this.onCancel = onCancel;
-    this.nameInput.value = initial;
-    this.nameRow.hidden = false;
-    this.nameInput.focus({ preventScroll: true });
-    this.nameInput.select();
+    this.saveWarn.textContent = warning;
+    show(this.saveWarn, warning !== '');
+    this.field.input.value = initial;
+    show(this.dialog, true);
+    this.field.input.focus({ preventScroll: true });
+    this.field.input.select();
   }
 
   /** Withdraws the name question (the cancel callback runs). */
@@ -157,17 +165,17 @@ export class EditorPanel {
   }
 
   private finishName(submit: boolean): void {
-    if (this.nameRow.hidden) {
+    if (!this.naming) {
       return;
     }
     const submitFn = this.onSubmit;
     const cancelFn = this.onCancel;
     this.onSubmit = null;
     this.onCancel = null;
-    this.nameRow.hidden = true;
-    const value = this.nameInput.value;
-    if (document.activeElement === this.nameInput) {
-      this.nameInput.blur();
+    show(this.dialog, false);
+    const value = this.field.input.value;
+    if (document.activeElement === this.field.input) {
+      this.field.input.blur();
     }
     if (submit) {
       submitFn?.(value);
@@ -195,10 +203,10 @@ export class EditorPanel {
         }
         continue;
       }
-      l.text.set(it.text);
+      l.text.set(it.reason ? `${it.text} · ${it.reason}` : it.text);
       l.transform.set(`translate(${Math.round(it.x)}px, ${Math.round(it.y)}px) translate(-50%, -50%)`);
       toggle(l.node, 'is-ring', it.ring);
-      toggle(l.node, 'is-invalid', it.invalid);
+      toggle(l.node, 'is-invalid', !!it.reason);
       if (!l.on) {
         l.on = true;
         show(l.node, true);

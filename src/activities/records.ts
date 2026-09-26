@@ -23,6 +23,8 @@ export interface RaceRecord {
   date?: string;
   /** Best medal earned on this course (any run). */
   medal?: Medal;
+  /** Finished runs on this course (records from before this field count their best run once). */
+  runs?: number;
 }
 
 export interface SubmitResult {
@@ -69,6 +71,9 @@ export function loadRecords(): RecordTable {
           if (rec.medal !== undefined && !MEDALS.has(rec.medal)) {
             delete rec.medal;
           }
+          if (rec.runs !== undefined && !(typeof rec.runs === 'number' && Number.isFinite(rec.runs) && rec.runs >= 1)) {
+            delete rec.runs;
+          }
           table[id] = rec;
         }
       }
@@ -89,6 +94,11 @@ function saveRecords(table: RecordTable): void {
   }
 }
 
+/** Finished runs behind a record (0 without one; an older record without a count stands for one run). */
+export function recordRuns(rec: RaceRecord | undefined): number {
+  return rec ? Math.max(1, Math.floor(rec.runs ?? 1)) : 0;
+}
+
 export function getRecord(courseId: string): RaceRecord | undefined {
   return loadRecords()[courseId];
 }
@@ -102,14 +112,13 @@ export function submitRun(courseId: string, time: number, splits: readonly numbe
   const prev = table[courseId];
   const bestMedal = betterMedal(prev?.medal, medal);
   const newMedal = !!medal && bestMedal === medal && prev?.medal !== medal;
+  const runs = recordRuns(prev) + 1;
   if (prev && prev.best <= time) {
-    if (newMedal) {
-      table[courseId] = { ...prev, medal: bestMedal ?? undefined };
-      saveRecords(table);
-    }
+    table[courseId] = { ...prev, medal: bestMedal ?? undefined, runs };
+    saveRecords(table);
     return { previousBest: prev.best, newRecord: false, medal: bestMedal, newMedal };
   }
-  table[courseId] = { best: time, splits: splits.slice(), ghost, date: new Date().toISOString(), medal: bestMedal ?? undefined };
+  table[courseId] = { best: time, splits: splits.slice(), ghost, date: new Date().toISOString(), medal: bestMedal ?? undefined, runs };
   saveRecords(table);
   return { previousBest: prev?.best, newRecord: true, medal: bestMedal, newMedal };
 }

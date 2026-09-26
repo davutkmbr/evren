@@ -176,6 +176,17 @@ export class CourseEditor {
     return this.gates.filter((g) => !g.problem).length;
   }
 
+  /** Length of the gate-to-gate legs placed so far (m, all gates in order). */
+  get length(): number {
+    let sum = 0;
+    for (let i = 1; i < this.gates.length; i++) {
+      const a = this.gates[i - 1];
+      const b = this.gates[i];
+      sum += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    }
+    return sum;
+  }
+
   /**
    * Builds the course to save: gates and rings are re-checked with `probe` (terrain everywhere; colliders only where
    * they are loaded, so the placement-time result is kept too) and invalid ones are skipped. Needs MIN_GATES valid

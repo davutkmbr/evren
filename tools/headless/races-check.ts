@@ -16,6 +16,8 @@
  * path point for legs) and the ring stays 20 m from every pier / tower collider. Speed rings get the gate clearance
  * checks plus spacing from the gates. Unit tests: ring pass detection and the boost envelope, custom course share
  * codes (round trip, malformed codes rejected), storage limits, and the editor's placement validation.
+ * Race UI v2: next-medal text, ghost gap text, the save dialog's skipped warning, the result chart's per-gate deltas
+ * and its diverging-bar scaling, the route map frame, run counts in records, editor length and the ghost preference.
  *
  * Exits non-zero on any failure.
  */
@@ -57,8 +59,22 @@ import { CourseEditor, poseFacing, type EditorPose } from '../../src/activities/
 import { BOOST_DV, BOOST_SPEED_CAP, BOOST_TIME, BoostEnvelope, boostDeltaV } from '../../src/activities/speed-boost';
 import { GhostTrack, ghostGap } from '../../src/activities/ghost';
 import { RaceSession, courseProgress, gateCrossing, type RaceEvent, type Vec3 } from '../../src/activities/race';
-import { decodeGhost, encodeGhost, getRecord, submitRun, GhostRecorder, GHOST_HZ } from '../../src/activities/records';
-import { deltaTone, formatGateDistance, formatRaceTime, formatSplitDelta, formatTargetTime, formatTime } from '../../src/activities/text';
+import { decodeGhost, encodeGhost, getRecord, recordRuns, submitRun, GhostRecorder, GHOST_HZ } from '../../src/activities/records';
+import {
+  deltaTone,
+  formatGateDistance,
+  formatRaceTime,
+  formatSplitDelta,
+  formatTargetTime,
+  formatTime,
+  ghostGapText,
+  nextMedalText,
+  skippedWarning,
+} from '../../src/activities/text';
+import { gateDeltas, gateLabel } from '../../src/activities/result';
+import { loadGhostEnabled, saveGhostEnabled } from '../../src/activities/race-prefs';
+import { DIVERGING_LABEL_ROOM, divergingBar, divergingExtent, divergingRowHeight } from '../../src/ui/components/diverging-bars';
+import { frameRoute } from '../../src/ui/components/route-map';
 import type { GeoQuery, LandmarkDef } from '../../src/core/contracts';
 
 const GATE_TERRAIN_MARGIN = 15;
@@ -1193,6 +1209,136 @@ function customCourseTests(env: Env): void {
   }
 }
 
+/** Race UI v2: pure pieces behind the picker, start screen, HUD, result screen and editor. */
+function uiV2Tests(course: CompiledCourse): void {
+  console.log('\nRace UI v2');
+  const m = { gold: 248, silver: 287, bronze: 341 };
+  const text: Array<[string, string, string]> = [
+    ['nextMedalText(240)', nextMedalText(240, m), 'Hedef 4:08 · en iyi derece'],
+    ['nextMedalText(248)', nextMedalText(248, m), 'Hedef 4:08 · en iyi derece'],
+    ['nextMedalText(264.37)', nextMedalText(264.37, m), 'Altın için 16,4 s daha hızlı'],
+    ['nextMedalText(248.01)', nextMedalText(248.01, m), 'Altın için 0,1 s daha hızlı'],
+    ['nextMedalText(296.1)', nextMedalText(296.1, m), 'Gümüş için 9,1 s daha hızlı'],
+    ['nextMedalText(400)', nextMedalText(400, m), 'Bronz için 5:41'],
+    ['ghostGapText(-2.13)', ghostGapText(-2.13), 'Hayalet 2,1 s geride'],
+    ['ghostGapText(1.4)', ghostGapText(1.4), 'Hayalet 1,4 s önde'],
+    ['ghostGapText(0.02)', ghostGapText(0.02), 'Hayalet yanında'],
+    ['skippedWarning([terrain], [])', skippedWarning(['terrain'], []), '1 geçersiz kapı atlanacak (yere değiyor).'],
+    ['skippedWarning([terrain], [structure])', skippedWarning(['terrain'], ['structure']), '1 geçersiz kapı, 1 geçersiz hız halkası atlanacak.'],
+    ['skippedWarning([], [structure, structure])', skippedWarning([], ['structure', 'structure']), '2 geçersiz hız halkası atlanacak (yapının içinde).'],
+    ['skippedWarning([], [])', skippedWarning([], []), ''],
+    ['gateLabel(unlabelled 2 of 11)', gateLabel({}, 2, 11), 'Kapı 3'],
+    ['gateLabel(last)', gateLabel({ label: 'Eyüp' }, 6, 7), 'Eyüp (bitiş)'],
+  ];
+  const badText = text.filter(([, got, want]) => got !== want);
+  for (const [name, got, want] of badText) {
+    fail(`${name} = "${got}", want "${want}"`);
+  }
+  if (!badText.length) {
+    ok(`${text.length} text cases (next medal rounds up, ghost gap sign, skipped reasons, chart labels)`);
+  }
+
+  // Per-gate deltas: start gate left out, cumulative split minus reference split, null without a usable reference.
+  const n = course.gates.length;
+  const ref = course.gates.map((_, i) => 10 + i * 20);
+  const run = ref.map((r, i) => r + (i % 2 ? -0.5 : 0.25) * i);
+  const d = gateDeltas(course.gates, run, ref);
+  const deltasOk =
+    !!d &&
+    d.length === n - 1 &&
+    d[0].index === 1 &&
+    d.every((g) => Math.abs(g.delta - (run[g.index] - ref[g.index])) < 1e-9 && g.split === run[g.index]) &&
+    d[d.length - 1].label.endsWith('(bitiş)') &&
+    d[0].label === (course.gates[1].label ?? 'Kapı 2');
+  const nullOk =
+    gateDeltas(course.gates, run, undefined) === null &&
+    gateDeltas(course.gates, run, ref.slice(1)) === null &&
+    gateDeltas(course.gates, run.slice(0, -1), ref) === null &&
+    gateDeltas(course.gates, run.map((v, i) => (i === 3 ? NaN : v)), ref) === null;
+  if (deltasOk && nullOk) {
+    ok(`gate deltas: ${n - 1} rows for ${n} gates, null without a matching reference`);
+  } else {
+    fail(`gate deltas: ${JSON.stringify({ deltasOk, nullOk, d })}`);
+  }
+
+  // Diverging bars: extent rounds up, bars keep label room, sides by sign, row height clamps.
+  const ext = [divergingExtent([-7.25, 2, -0.4]), divergingExtent([0.34, -0.12]), divergingExtent([]), divergingExtent([0, 0]), divergingExtent([3])];
+  const usable = 0.5 * (1 - DIVERGING_LABEL_ROOM);
+  const full = divergingBar(-8, 8);
+  const half = divergingBar(4, 8);
+  const zero = divergingBar(0, 8);
+  const over = divergingBar(20, 8);
+  const barsOk =
+    ext.join(',') === '8,0.4,1,1,3' &&
+    full.side === 'negative' && Math.abs(full.width - usable) < 1e-9 && Math.abs(full.start - (0.5 - usable)) < 1e-9 &&
+    half.side === 'positive' && half.start === 0.5 && Math.abs(half.width - usable / 2) < 1e-9 &&
+    zero.side === 'zero' && zero.width === 0 &&
+    Math.abs(over.width - usable) < 1e-9 &&
+    divergingRowHeight(10) === 32 && divergingRowHeight(32) === 16 && divergingRowHeight(16) === 22 && divergingRowHeight(0) === 32;
+  if (barsOk) {
+    ok('diverging bars: extent 7,25 → 8 s, bars capped with label room, row height 16–32 px');
+  } else {
+    fail(`diverging bars: ${JSON.stringify({ ext, full, half, zero, over, rows: [divergingRowHeight(10), divergingRowHeight(32), divergingRowHeight(16)] })}`);
+  }
+
+  // Route frame: centred on the bounding box, the design aspect, padded, and at least minSpan wide.
+  const aspect = 776 / 330;
+  const pts = course.gates.map((g) => ({ x: g.x, y: g.z }));
+  const f = frameRoute(pts, aspect, 1.35, 2400);
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const inside = pts.every((p) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h);
+  const centred = Math.abs(f.x + f.w / 2 - (Math.min(...xs) + Math.max(...xs)) / 2) < 1e-6 && Math.abs(f.y + f.h / 2 - (Math.min(...ys) + Math.max(...ys)) / 2) < 1e-6;
+  const tiny = frameRoute([{ x: 5, y: 5 }, { x: 15, y: 5 }], aspect, 1.35, 2400);
+  const frameOk = inside && centred && Math.abs(f.w / f.h - aspect) < 1e-9 && tiny.w === 2400 && Math.abs(tiny.x + tiny.w / 2 - 10) < 1e-9;
+  if (frameOk) {
+    ok(`route frame: ${(f.w / 1000).toFixed(1)} × ${(f.h / 1000).toFixed(1)} km around ${course.def.name}, short routes kept at 2,4 km`);
+  } else {
+    fail(`route frame: ${JSON.stringify({ f, inside, centred, tiny })}`);
+  }
+
+  // Run counts: every finish counts, a legacy record without the field stands for one run.
+  const id = 'ui-v2-runs';
+  submitRun(id, 100, [100]);
+  submitRun(id, 120, [120]);
+  submitRun(id, 90, [90]);
+  const runsOk = getRecord(id)?.runs === 3 && getRecord(id)?.best === 90 && recordRuns(undefined) === 0 && recordRuns({ best: 1, splits: [] }) === 1;
+  if (runsOk) {
+    ok('records count runs (3 finishes → 3, the best kept)');
+  } else {
+    fail(`run counts: ${JSON.stringify(getRecord(id))}`);
+  }
+
+  // Editor length: the legs between the placed gates.
+  const ed = new CourseEditor();
+  ed.reset({
+    id: 'c-test',
+    name: 'Test',
+    gates: [
+      { x: 0, y: 50, z: 0, r: 22, h: 0, p: 0 },
+      { x: 300, y: 50, z: 400, r: 22, h: 0, p: 0 },
+      { x: 300, y: 50, z: 1000, r: 22, h: 0, p: 0 },
+    ],
+    rings: [],
+  });
+  if (Math.abs(ed.length - 1100) < 1e-9) {
+    ok('editor length: 500 m + 600 m = 1,1 km');
+  } else {
+    fail(`editor length ${ed.length}, want 1100`);
+  }
+
+  // Ghost preference: default on, remembered (in memory without storage).
+  const before = loadGhostEnabled();
+  saveGhostEnabled(false);
+  const off = loadGhostEnabled();
+  saveGhostEnabled(true);
+  if (before && !off && loadGhostEnabled()) {
+    ok('ghost switch preference: default on, remembered');
+  } else {
+    fail(`ghost preference: ${JSON.stringify({ before, off })}`);
+  }
+}
+
 const t0 = Date.now();
 const geo = buildHeadlessGeo();
 console.log(`GeoQuery built in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
@@ -1221,6 +1367,7 @@ for (const c of compiled) {
   speedRingTests(c);
 }
 customCourseTests(env);
+uiV2Tests(compiled[0]);
 
 console.log('\nCourse            gates   length   est. @35 m/s');
 for (const c of compiled) {

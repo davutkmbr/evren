@@ -1,6 +1,8 @@
-/* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd). */
+/* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd).
+   Rules that base.css also sets on `.ejd kbd` / `.ejd button` repeat the root class so the component wins inside it. */
 
-.ui-keycap {
+.ui-keycap,
+.ejd .ui-keycap {
   display: inline-grid;
   place-items: center;
   min-width: 26px;
@@ -15,25 +17,29 @@
   white-space: nowrap;
 }
 
-.ui-keycap-gold {
+.ui-keycap-gold,
+.ejd .ui-keycap-gold {
   background: var(--accent, #e8b872);
   color: #1a1408;
   border-color: #a97c3c;
 }
 
-.ui-keycap-ink {
+.ui-keycap-ink,
+.ejd .ui-keycap-ink {
   background: rgba(243, 238, 229, 0.1);
   color: var(--ink, #f3eee5);
   border-color: rgba(243, 238, 229, 0.38);
 }
 
-.ui-keycap-quiet {
+.ui-keycap-quiet,
+.ejd .ui-keycap-quiet {
   background: transparent;
   color: rgba(243, 238, 229, 0.72);
   border-color: rgba(243, 238, 229, 0.24);
 }
 
-.ui-keycap-warn {
+.ui-keycap-warn,
+.ejd .ui-keycap-warn {
   background: rgba(255, 145, 104, 0.12);
   color: #ffb89c;
   border-color: rgba(255, 145, 104, 0.45);
@@ -53,7 +59,8 @@
 
 /* Prompt: key + verb, no pill */
 
-.ui-prompt {
+.ui-prompt,
+.ejd .ui-prompt {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -89,7 +96,8 @@
   text-underline-offset: 4px;
 }
 
-.ui-prompt:focus-visible {
+.ui-prompt:focus-visible,
+.ejd .ui-prompt:focus-visible {
   outline: 2px solid var(--accent, #e8b872);
   outline-offset: 2px;
 }
@@ -101,7 +109,8 @@
 
 /* Switch: key, name, written state */
 
-.ui-switch {
+.ui-switch,
+.ejd .ui-switch {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -148,7 +157,8 @@
   cursor: default;
 }
 
-.ui-switch:focus-visible {
+.ui-switch:focus-visible,
+.ejd .ui-switch:focus-visible {
   outline: 2px solid var(--accent, #e8b872);
   outline-offset: 2px;
 }
@@ -278,6 +288,449 @@
 
 .ui-ladder [hidden] {
   display: none;
+}
+
+/* Medal colours (shared by the ladder, dots and discs) */
+
+.ui-medal-gold {
+  --medal: #e8b872;
+}
+
+.ui-medal-none {
+  --medal: rgba(243, 238, 229, 0.2);
+}
+
+/* Key hint: key + what it does, plain text */
+
+.ui-keyhint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+/* Medal dot and disc */
+
+.ui-medal-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--medal);
+}
+
+.ui-medal-dot-s {
+  width: 9px;
+  height: 9px;
+}
+
+.ui-medal-dot-m {
+  width: 10px;
+  height: 10px;
+}
+
+.ui-medal-dot.ui-medal-none {
+  background: none;
+  border: 1.5px solid rgba(243, 238, 229, 0.3);
+}
+
+.ui-medal-disc {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--medal);
+  color: #1a1408;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+
+.ui-medal-disc.ui-medal-none {
+  color: rgba(243, 238, 229, 0.45);
+}
+
+/* Pill */
+
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.ui-pill-gold {
+  background: var(--accent, #e8b872);
+  color: #1a1408;
+}
+
+.ui-pill-quiet {
+  border: 1px solid rgba(243, 238, 229, 0.3);
+  color: rgba(243, 238, 229, 0.86);
+  font-weight: 600;
+}
+
+/* Legend */
+
+.ui-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.7);
+}
+
+.ui-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ui-legend-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--legend-color);
+}
+
+.ui-legend-ring {
+  width: 8px;
+  height: 8px;
+  background: none;
+  border: 1.5px solid var(--legend-color);
+}
+
+.ui-legend-square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* List row: selection is a gold bar on the left edge */
+
+.ui-row,
+.ejd .ui-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 14px 8px 18px;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink, #f3eee5);
+  transition: background-color 140ms;
+}
+
+.ui-row:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ui-row.is-selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ui-row-bar {
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.ui-row.is-selected .ui-row-bar {
+  background: var(--accent, #e8b872);
+}
+
+.ui-row-text {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-row-label {
+  font-size: 15px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-row-sub {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.52);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-row-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 13.5px;
+  color: rgba(243, 238, 229, 0.86);
+}
+
+.ui-row-marker {
+  display: inline-flex;
+}
+
+.ui-row-marker:empty {
+  display: none;
+}
+
+/* Text field */
+
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.55);
+}
+
+.ui-field-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink, #f3eee5);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  pointer-events: auto;
+  user-select: text;
+  transition: border-color 140ms;
+}
+
+.ui-field-input::placeholder {
+  color: rgba(243, 238, 229, 0.38);
+}
+
+.ui-field-input:focus {
+  border-color: var(--accent, #e8b872);
+}
+
+.ui-field-l .ui-field-label {
+  font-size: 13px;
+  color: rgba(243, 238, 229, 0.6);
+}
+
+.ui-field-l .ui-field-input {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 15px;
+}
+
+.ui-field-msg {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.55);
+}
+
+.ui-field-msg.is-warn {
+  color: #ffb89c;
+}
+
+/* Route map card */
+
+.ui-route {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #262a31;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.085));
+}
+
+.ui-route-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ui-route-land {
+  fill: #262a31;
+}
+
+.ui-route-line {
+  fill: none;
+  stroke: var(--accent, #e8b872);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ui-route-stop,
+.ui-route-start {
+  fill: var(--accent, #e8b872);
+  stroke: #111318;
+}
+
+.ui-route-start {
+  fill: var(--ink, #f3eee5);
+}
+
+.ui-route-ring {
+  fill: none;
+  stroke: #7fd1c0;
+}
+
+.ui-route-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  font-size: 12px;
+  color: rgba(243, 238, 229, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Diverging bar chart */
+
+.ui-bars {
+  --bars-label: 170px;
+  --bars-row: 32px;
+  position: relative;
+}
+
+.ui-bars-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.ui-bars-zero {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--bars-label) + (100% - var(--bars-label)) / 2);
+  width: 1px;
+  background: rgba(243, 238, 229, 0.35);
+}
+
+.ui-bars-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--bars-row);
+  border-radius: 6px;
+  pointer-events: auto;
+}
+
+.ui-bars-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  z-index: 1;
+}
+
+.ui-bars-label {
+  width: var(--bars-label);
+  flex-shrink: 0;
+  padding-right: 10px;
+  font-size: 13px;
+  color: rgba(243, 238, 229, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-bars-plot {
+  position: relative;
+  flex-grow: 1;
+  align-self: stretch;
+}
+
+.ui-bars-bar {
+  position: absolute;
+  top: 50%;
+  height: min(12px, calc(var(--bars-row) - 8px));
+  min-width: 2px;
+  transform: translateY(-50%);
+}
+
+.ui-bars-bar.is-negative {
+  background: var(--bars-neg);
+  border-radius: 4px 0 0 4px;
+}
+
+.ui-bars-bar.is-positive {
+  background: var(--bars-pos);
+  border-radius: 0 4px 4px 0;
+}
+
+.ui-bars-bar.is-zero {
+  background: rgba(243, 238, 229, 0.5);
+}
+
+.ui-bars-value {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12.5px;
+  line-height: 1;
+  color: rgba(243, 238, 229, 0.85);
+  white-space: nowrap;
+}
+
+.ui-bars-tip {
+  position: absolute;
+  top: 50%;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(17, 19, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.ui-bars-tip.is-right {
+  left: calc(50% + 14px);
+}
+
+.ui-bars-tip.is-left {
+  right: calc(50% + 14px);
+}
+
+.ui-bars-row:hover .ui-bars-tip {
+  display: flex;
+}
+
+.ui-bars-tip-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ui-bars-tip-line {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.75);
 }
 
 /* ================================================================== */
