@@ -3,11 +3,12 @@
  * into TILE-metre tiles; whenever the camera has moved RESTREAM_STEP metres, the tiles within `radius` (3D distance to
  * the tile's mean height) are copied into the live instance ranges of two meshes: the ring within `shadowRadius` into
  * one that casts shadows, the rest into one that does not. So a kind costs at most two draw calls however large the
- * area, nothing past its radius is drawn in any pass, and small props never fill the far shadow cascades.
+ * area, nothing past its radius is drawn in any pass, and small props never fill the far shadow cascades. The live
+ * instance buffers start small and grow to what the radius holds, never to the whole area.
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
-import { setShadowGate } from '../../../core/shadow-gate';
+import { setShadowGate, type ShadowGate } from '../../../core/shadow-gate';
 import type { QualityPreset } from '../../../core/quality';
 import { INSTANCE_STRIDE } from './protocol';
 
@@ -17,6 +18,9 @@ export const LOD_RADIUS_SCALE: Record<QualityPreset, number> = { low: 0.55, medi
 const TILE = 96;
 /** Camera travel (m) that triggers a re-stream. */
 const RESTREAM_STEP = 12;
+/** Instances a live buffer starts with, and its headroom factor when it grows. */
+const START_CAPACITY = 256;
+const GROW = 1.5;
 
 export interface InstanceLodOptions {
   /** Drawn within this distance (m, at the "high" preset); Infinity = always. */
@@ -36,9 +40,13 @@ interface Part {
   tiles: number[];
 }
 
+function instancedAttribute(count: number, size: number): THREE.InstancedBufferAttribute {
+  const attr = new THREE.InstancedBufferAttribute(new Float32Array(count * size), size);
+  attr.setUsage(THREE.DynamicDrawUsage);
+  return attr;
+}
+
 export class InstanceLod {
-  /** Shadow-casting ring first, then the rest. */
-  readonly meshes: THREE.InstancedMesh[] = [];
   private readonly parts: Part[] = [];
   private readonly matrices: Float32Array;
   private readonly colours: Float32Array;
@@ -53,7 +61,7 @@ export class InstanceLod {
   private lastScale = -1;
 
   constructor(
-    group: THREE.Object3D,
+    private readonly group: THREE.Object3D,
     readonly name: string,
     records: Float32Array,
     geometry: THREE.BufferGeometry,
@@ -139,28 +147,58 @@ export class InstanceLod {
           g.addGroup(group.start, group.count, group.materialIndex);
         }
       }
+      const cap = Math.min(n, START_CAPACITY);
       const extra = extraSrc.map((e) => {
-        const attr = new THREE.InstancedBufferAttribute(new Float32Array(n * e.size), e.size);
-        attr.setUsage(THREE.DynamicDrawUsage);
+        const attr = instancedAttribute(cap, e.size);
         g.setAttribute(e.name, attr);
         return { name: e.name, attr, src: e.to, size: e.size };
       });
-      const mesh = new THREE.InstancedMesh(g, material, n);
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-      mesh.count = 0;
-      mesh.visible = false;
-      mesh.name = name;
-      mesh.frustumCulled = false;
-      mesh.matrixAutoUpdate = false;
-      mesh.castShadow = part === 0 && opt.shadowRadius > 0;
-      mesh.receiveShadow = opt.receiveShadow ?? true;
-      mesh.layers.set(opt.layer ?? RenderLayers.NoReflection);
+      const mesh = this.createMesh(g, material, cap, part === 0);
       group.add(mesh);
-      this.meshes.push(mesh);
       this.parts.push({ mesh, extra, tiles: [] });
     }
+  }
+
+  /** Shadow-casting ring first, then the rest. */
+  get meshes(): THREE.InstancedMesh[] {
+    return this.parts.map((p) => p.mesh);
+  }
+
+  private createMesh(geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[], capacity: number, caster: boolean): THREE.InstancedMesh {
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+    mesh.instanceColor = instancedAttribute(capacity, 3);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.visible = false;
+    mesh.name = this.name;
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.castShadow = caster && this.opt.shadowRadius > 0;
+    mesh.receiveShadow = this.opt.receiveShadow ?? true;
+    mesh.layers.set(this.opt.layer ?? RenderLayers.NoReflection);
+    return mesh;
+  }
+
+  /** Replaces the part's mesh (and extra attributes) by one with room for `count` instances; the old buffers are freed. */
+  private grow(part: Part, count: number): void {
+    const total = this.colours.length / 3;
+    const cap = Math.min(total, Math.max(count, Math.ceil(count * GROW)));
+    const old = part.mesh;
+    for (const e of part.extra) {
+      e.attr = instancedAttribute(cap, e.size);
+      old.geometry.setAttribute(e.name, e.attr);
+    }
+    const mesh = this.createMesh(old.geometry, old.material, cap, old.castShadow);
+    // The shadow gate is per object: carry it over.
+    const gate = old.userData.shadowGate as ShadowGate | undefined;
+    if (gate) {
+      setShadowGate(mesh, gate);
+    }
+    this.group.remove(old);
+    // Frees the old instance matrix / colour buffers (the geometry stays with the new mesh).
+    old.dispose();
+    this.group.add(mesh);
+    part.mesh = mesh;
   }
 
   /** Instances drawn now (debug). */
@@ -212,6 +250,13 @@ export class InstanceLod {
       return;
     }
     part.tiles = tiles;
+    let total = 0;
+    for (const t of tiles) {
+      total += this.ranges[t * 2 + 1];
+    }
+    if (total > part.mesh.instanceMatrix.count) {
+      this.grow(part, total);
+    }
     const mesh = part.mesh;
     const dst = mesh.instanceMatrix.array as Float32Array;
     const dstC = mesh.instanceColor!.array as Float32Array;
