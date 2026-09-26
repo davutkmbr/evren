@@ -1,7 +1,13 @@
 import { ANADOLU_KEEP, YEDIKULE_TOWERS } from '../../data/fortresses';
 import { centroid, obb } from '../geom';
 import type { SiteContext } from '../site';
-import { M } from './common';
+import { dim, M } from './common';
+
+/** Masonry for the city-wall material (registry.ts WALL_MATERIAL_SITES): no floodlight channel. */
+const RUBBLE = dim(M.rubble, 0);
+const ASHLAR = dim(M.ashlar, 0);
+const ASHLAR_GREY = dim(M.ashlarGrey, 0);
+const LEAD = dim(M.lead, 0);
 import { roundTower, squareTower, type MerlonSpec } from '../prims/fort';
 
 const MERLONS: MerlonSpec = { w: 1.3, gap: 0.9, h: 1.5, depth: 0.8 };
@@ -23,7 +29,7 @@ export function buildYedikule(ctx: SiteContext): void {
       const a = (k / 8) * Math.PI * 2;
       g = Math.min(g, ctx.groundOrSea(x + Math.cos(a) * t.r, z + Math.sin(a) * t.r));
     }
-    const top = roundTower(ctx.mb, x, z, g, { r: t.r, h: t.h ?? 26, seg: ctx.lod === 0 ? 28 : 12, mat: M.ashlarGrey, topMat: M.ashlar, batter: 0.5, merlons: MERLONS, corbel: true, sink: 4 }, ctx.lod);
+    const top = roundTower(ctx.mb, x, z, g, { r: t.r, h: t.h ?? 26, seg: ctx.lod === 0 ? 28 : 12, mat: ASHLAR_GREY, topMat: ASHLAR, batter: 0.5, merlons: MERLONS, corbel: true, sink: 4 }, ctx.lod);
     ctx.collider({ kind: 'cylinder', x, y: g - 2, z, r: t.r + 0.4, h: top - g + 2 });
   }
 }
@@ -39,6 +45,6 @@ export function buildAnadoluHisari(ctx: SiteContext): void {
   const b = obb(ring);
   const g = ctx.groundRange(ring).min;
   const h = 25;
-  squareTower(ctx.mb, b.cx, b.cz, -b.angle, b.len + 0.6, b.wid + 0.6, g, h, M.rubble, M.ashlarGrey, ctx.lod, MERLONS, 4);
+  squareTower(ctx.mb, b.cx, b.cz, -b.angle, b.len + 0.6, b.wid + 0.6, g, h, RUBBLE, ASHLAR_GREY, ctx.lod, MERLONS, 4);
   ctx.boxCollider(b.cx, b.cz, b.len + 0.6, b.wid + 0.6, b.angle, g - 2, g + h + MERLONS.h);
 }

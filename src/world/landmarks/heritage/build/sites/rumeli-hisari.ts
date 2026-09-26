@@ -1,7 +1,13 @@
 import { RUMELI_CURTAIN, RUMELI_GREAT_TOWERS, RUMELI_SMALL_TOWERS, type TowerSpot } from '../../data/fortresses';
 import { centroid, offsetRing } from '../geom';
 import type { SiteContext } from '../site';
-import { M } from './common';
+import { dim, M } from './common';
+
+/** Masonry for the city-wall material (registry.ts WALL_MATERIAL_SITES): no floodlight channel. */
+const RUBBLE = dim(M.rubble, 0);
+const ASHLAR = dim(M.ashlar, 0);
+const ASHLAR_GREY = dim(M.ashlarGrey, 0);
+const LEAD = dim(M.lead, 0);
 import { curtainWall, roundTower, samplePath, type MerlonSpec } from '../prims/fort';
 
 /** Curtain thickness and height above the ground (m), crenellation. */
@@ -25,7 +31,7 @@ export function buildRumeliHisari(ctx: SiteContext): void {
   curtainWall(
     ctx.mb,
     smp,
-    { thick: THICK, height: () => CURTAIN_H, sink: 4, outer: M.rubble, inner: M.rubble, top: M.ashlarGrey, merlons: MERLONS, vMode: 'world' },
+    { thick: THICK, height: () => CURTAIN_H, sink: 4, outer: RUBBLE, inner: RUBBLE, top: ASHLAR_GREY, merlons: MERLONS, vMode: 'world' },
     ctx.lod,
   );
   for (let i = 0; i + 1 < smp.length; i += 4) {
@@ -49,8 +55,8 @@ export function buildRumeliHisari(ctx: SiteContext): void {
       z,
       g,
       great
-        ? { r: t.r, h, seg: ctx.lod === 0 ? 32 : 14, mat: M.rubble, topMat: M.ashlarGrey, batter: 0.6, cone: { rise: t.r * 0.95, overhang: 0.5, mat: M.lead }, corbel: true, sink: 5 }
-        : { r: t.r, h, seg: ctx.lod === 0 ? 18 : 10, mat: M.rubble, topMat: M.ashlarGrey, batter: 0.3, merlons: MERLONS, sink: 4 },
+        ? { r: t.r, h, seg: ctx.lod === 0 ? 32 : 14, mat: RUBBLE, topMat: ASHLAR_GREY, batter: 0.6, cone: { rise: t.r * 0.95, overhang: 0.5, mat: LEAD }, corbel: true, sink: 5 }
+        : { r: t.r, h, seg: ctx.lod === 0 ? 18 : 10, mat: RUBBLE, topMat: ASHLAR_GREY, batter: 0.3, merlons: MERLONS, sink: 4 },
       ctx.lod,
     );
     ctx.collider({ kind: 'cylinder', x, y: g - 2, z, r: t.r + 0.4, h: top - g + 2 });
