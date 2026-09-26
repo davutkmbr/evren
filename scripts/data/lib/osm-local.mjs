@@ -22,7 +22,7 @@
  *
  * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright); see data/osm/LICENSE.md.
  */
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, writeSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -450,7 +450,7 @@ export async function buildIndex({ pbf = SOURCE_PBF, out = INDEX_FILE, bbox = CL
     };
     const meta = {
       version: INDEX_VERSION,
-      source: 'Geofabrik extract turkey-latest.osm.pbf (https://download.geofabrik.de/europe/turkey.html)',
+      source: extractSource(),
       writingProgram: header.writingprogram ?? null,
       osmBase,
       built: new Date().toISOString(),
@@ -1301,6 +1301,16 @@ function relJson(idx, r, st) {
     if (e > s) el.tags = idx.tagsObject(idx.relTagKv, s, e);
   }
   return el;
+}
+
+/**
+ * Label of the extract the index is built from: the URL `osm-extract.mjs download` recorded in SRC_DIR/SOURCE.json
+ * (Geofabrik, or a mirror of the same extract when Geofabrik is unreachable), else Geofabrik.
+ */
+export function extractSource() {
+  const file = resolve(SRC_DIR, 'SOURCE.json');
+  const url = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).url : null;
+  return url ? `turkey-latest.osm.pbf extract (${new URL(url).host})` : 'Geofabrik extract turkey-latest.osm.pbf (https://download.geofabrik.de/europe/turkey.html)';
 }
 
 /** Overpass-compatible answer for `ql` from the local index. */
