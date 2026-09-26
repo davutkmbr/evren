@@ -1,8 +1,42 @@
 /* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd); every key is a .ui-keycap.
    Rules that base.css also sets on `.ejd kbd` / `.ejd button` repeat the root class so the component wins inside it. */
 
+/* Interaction state tokens (hover, press, focus, disabled, motion). The state rules live in "Interaction states"
+   below; components only mark their root (`interactive()` in components/interaction.ts). */
+:root {
+  --ui-motion-fast: 140ms; /* hover in, colour changes */
+  --ui-motion-press: 90ms; /* press down and release */
+  --ui-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-hover-surface: rgba(255, 255, 255, 0.05);
+  --ui-selected-surface: rgba(255, 255, 255, 0.08);
+  --ui-selected-hover-surface: rgba(255, 255, 255, 0.1);
+  --ui-press-surface: rgba(255, 255, 255, 0.025);
+  --ui-press-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.32), inset 0 1px 3px rgba(0, 0, 0, 0.22);
+  --ui-focus-color: var(--accent, #e8b872);
+  --ui-focus-ring: 2px solid var(--ui-focus-color);
+  --ui-focus-offset: 3px; /* outside the component, following its radius */
+  --ui-focus-offset-inset: -2px; /* rows and buttons inside a panel: the ring is drawn inside */
+  --ui-focus-offset-tight: 1px; /* a segment inside its track */
+  --ui-disabled-opacity: 0.45;
+  --ui-cap-lift: -1px; /* key cap on hover */
+  --ui-cap-sink: 1px; /* key cap pressed */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ui-cap-lift: 0px;
+    --ui-cap-sink: 0px;
+  }
+}
+
+/* Key cap. Each tone names its face and rim for rest, hover and pressed (--cap-*); the interaction states pick
+   them, so a cap looks right in every state without per-component colours. --cap-edge is the bottom edge depth. */
+
 .ui-keycap,
 .ejd .ui-keycap {
+  --cap-edge: 3px;
+  --cap-edge-pressed: 1px;
+  --cap-glow: 0 0 0 transparent;
   display: inline-grid;
   place-items: center;
   min-width: 26px;
@@ -10,8 +44,10 @@
   box-sizing: border-box;
   padding: 0 7px;
   border: 1px solid;
-  border-bottom-width: 3px;
+  border-bottom-width: var(--cap-edge);
   border-radius: 6px;
+  background: var(--cap-face);
+  border-color: var(--cap-rim);
   font: 700 11.5px/1 var(--font-ui, system-ui);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -19,30 +55,44 @@
 
 .ui-keycap-gold,
 .ejd .ui-keycap-gold {
-  background: var(--accent, #e8b872);
+  --cap-face: var(--accent, #e8b872);
+  --cap-rim: #a97c3c;
+  --cap-face-hover: #efc486;
+  --cap-rim-hover: #b3864a;
+  --cap-face-pressed: #d8a660;
+  --cap-glow: 0 0 14px rgba(232, 184, 114, 0.42);
   color: #1a1408;
-  border-color: #a97c3c;
 }
 
 .ui-keycap-ink,
 .ejd .ui-keycap-ink {
-  background: rgba(243, 238, 229, 0.1);
+  --cap-face: rgba(243, 238, 229, 0.1);
+  --cap-rim: rgba(243, 238, 229, 0.38);
+  --cap-face-hover: rgba(243, 238, 229, 0.17);
+  --cap-rim-hover: rgba(243, 238, 229, 0.52);
+  --cap-face-pressed: rgba(243, 238, 229, 0.07);
   color: var(--ink, #f3eee5);
-  border-color: rgba(243, 238, 229, 0.38);
 }
 
 .ui-keycap-quiet,
 .ejd .ui-keycap-quiet {
-  background: transparent;
+  --cap-face: transparent;
+  --cap-rim: rgba(243, 238, 229, 0.24);
+  --cap-face-hover: rgba(243, 238, 229, 0.07);
+  --cap-rim-hover: rgba(243, 238, 229, 0.38);
+  --cap-face-pressed: rgba(243, 238, 229, 0.03);
   color: rgba(243, 238, 229, 0.72);
-  border-color: rgba(243, 238, 229, 0.24);
 }
 
 .ui-keycap-warn,
 .ejd .ui-keycap-warn {
-  background: rgba(255, 145, 104, 0.12);
+  --cap-face: rgba(255, 145, 104, 0.12);
+  --cap-rim: rgba(255, 145, 104, 0.45);
+  --cap-face-hover: rgba(255, 145, 104, 0.2);
+  --cap-rim-hover: rgba(255, 145, 104, 0.62);
+  --cap-face-pressed: rgba(255, 145, 104, 0.08);
+  --cap-glow: 0 0 12px rgba(255, 145, 104, 0.25);
   color: #ffb89c;
-  border-color: rgba(255, 145, 104, 0.45);
 }
 
 .ui-keycombo {
@@ -69,7 +119,6 @@
   border-radius: 8px;
   color: var(--ink, #f3eee5);
   white-space: nowrap;
-  transition: color 140ms, background-color 140ms;
 }
 
 .ui-prompt-label {
@@ -88,25 +137,6 @@
   color: #ffb89c;
 }
 
-.ui-prompt:hover .ui-prompt-label,
-.ui-prompt:focus-visible .ui-prompt-label {
-  color: var(--ink, #f3eee5);
-  text-decoration: underline;
-  text-decoration-color: rgba(243, 238, 229, 0.35);
-  text-underline-offset: 4px;
-}
-
-.ui-prompt:focus-visible,
-.ejd .ui-prompt:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: 2px;
-}
-
-.ui-prompt:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 /* Switch: key, name, written state */
 
 .ui-switch,
@@ -118,6 +148,11 @@
   padding: 0 4px;
   border-radius: 8px;
   white-space: nowrap;
+}
+
+.ui-switch-label,
+.ui-prompt-label {
+  transition: color var(--ui-motion-fast) var(--ui-ease-out);
 }
 
 .ui-switch-label {
@@ -152,16 +187,6 @@
   box-shadow: 0 0 8px var(--accent-switch);
 }
 
-.ui-switch:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.ui-switch:focus-visible,
-.ejd .ui-switch:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: 2px;
-}
 
 /* Stat */
 
@@ -428,15 +453,6 @@
   border-radius: 10px;
   text-align: left;
   color: var(--ink, #f3eee5);
-  transition: background-color 140ms;
-}
-
-.ui-row:hover {
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.ui-row.is-selected {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .ui-row-bar {
@@ -464,6 +480,8 @@
 .ui-row-label {
   font-size: 15px;
   font-weight: 550;
+  color: rgba(243, 238, 229, 0.9);
+  transition: color var(--ui-motion-fast) var(--ui-ease-out);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -520,19 +538,14 @@
   color: var(--ink, #f3eee5);
   font: inherit;
   font-size: 13px;
-  outline: none;
   pointer-events: auto;
   user-select: text;
-  transition: border-color 140ms;
 }
 
 .ui-field-input::placeholder {
   color: rgba(243, 238, 229, 0.38);
 }
 
-.ui-field-input:focus {
-  border-color: var(--accent, #e8b872);
-}
 
 .ui-field-l .ui-field-label {
   font-size: 13px;
@@ -761,16 +774,6 @@
   border-radius: 9px;
   text-align: left;
   color: var(--ink, #f3eee5);
-  transition: background-color 140ms;
-}
-
-.ui-layer:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.ui-layer:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: -2px;
 }
 
 .ui-layer-swatch {
@@ -801,7 +804,7 @@
   flex-grow: 1;
   font-size: 13.5px;
   color: rgba(243, 238, 229, 0.62);
-  transition: color 140ms;
+  transition: color var(--ui-motion-fast) var(--ui-ease-out);
 }
 
 .ui-layer.is-on .ui-layer-label {
@@ -872,22 +875,12 @@
   width: 44px;
   height: 44px;
   color: rgba(243, 238, 229, 0.86);
-  transition: background-color 140ms, color 140ms;
 }
 
 .ui-zoom-btn + .ui-zoom-btn {
   border-top: 1px solid var(--line, rgba(255, 255, 255, 0.085));
 }
 
-.ui-zoom-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink, #f3eee5);
-}
-
-.ui-zoom-btn:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: -2px;
-}
 
 .ui-zoom-btn svg {
   width: 18px;
@@ -959,10 +952,10 @@
 
 .ui-keycap-s,
 .ejd .ui-keycap-s {
+  --cap-edge: 2px;
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border-bottom-width: 2px;
   border-radius: 5px;
   font-size: 10.5px;
   vertical-align: middle;
@@ -1043,12 +1036,6 @@
   font-weight: 500;
   white-space: nowrap;
   color: rgba(243, 238, 229, 0.65);
-  transition: background-color 150ms, color 150ms, box-shadow 150ms;
-}
-
-.ui-seg-btn:hover,
-.ejd .ui-seg-btn:hover {
-  color: var(--ink, #f3eee5);
 }
 
 .ui-seg-btn.is-on,
@@ -1058,11 +1045,6 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.ui-seg-btn:focus-visible,
-.ejd .ui-seg-btn:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: 1px;
-}
 
 /* Slider with readout */
 
@@ -1099,16 +1081,9 @@
   height: 16px;
   margin-top: -6px;
   border-radius: 50%;
-  background: #f8f3ea;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(232, 184, 114, 0.2);
-  transition: box-shadow 150ms;
-}
-
-.ui-slider-input:hover::-webkit-slider-thumb,
-.ejd .ui-slider-input:hover::-webkit-slider-thumb,
-.ui-slider-input:focus-visible::-webkit-slider-thumb,
-.ejd .ui-slider-input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 5px rgba(232, 184, 114, 0.2);
+  background: var(--thumb-face, #f8f3ea);
+  box-shadow: var(--thumb-shadow, 0 1px 3px rgba(0, 0, 0, 0.45));
+  transition: box-shadow var(--ui-motion-fast) var(--ui-ease-out), background-color var(--ui-motion-press) ease-out;
 }
 
 .ui-slider-input::-moz-range-track,
@@ -1131,8 +1106,9 @@
   height: 16px;
   border: 0;
   border-radius: 50%;
-  background: #f8f3ea;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  background: var(--thumb-face, #f8f3ea);
+  box-shadow: var(--thumb-shadow, 0 1px 3px rgba(0, 0, 0, 0.45));
+  transition: box-shadow var(--ui-motion-fast) var(--ui-ease-out), background-color var(--ui-motion-press) ease-out;
 }
 
 .ui-slider-input:focus-visible,
@@ -1158,7 +1134,7 @@
   height: 24px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
-  transition: background-color 180ms;
+  transition: background-color var(--ui-motion-fast) var(--ui-ease-out), box-shadow var(--ui-motion-press) ease-out;
 }
 
 .ui-toggle-knob,
@@ -1184,11 +1160,6 @@
   transform: translateX(16px);
 }
 
-.ui-toggle:focus-visible,
-.ejd .ui-toggle:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: 2px;
-}
 
 /* Setting rows, sections and the "show more" disclosure */
 
@@ -1242,7 +1213,13 @@
 .ejd .ui-setting-row.is-disabled .ui-setting-text,
 .ui-setting-row.is-disabled .ui-setting-control,
 .ejd .ui-setting-row.is-disabled .ui-setting-control {
-  opacity: 0.42;
+  opacity: var(--ui-disabled-opacity);
+}
+
+/* the row already greys its control out: do not dim the control a second time */
+.ui-setting-row.is-disabled .ui-int:disabled,
+.ejd .ui-setting-row.is-disabled .ui-int:disabled {
+  opacity: 1;
 }
 
 .ui-setting-text,
@@ -1292,19 +1269,9 @@
   padding: 0 16px;
   font-size: 13px;
   font-weight: 500;
+  border-radius: 10px;
   color: var(--ink-2, rgba(243, 238, 229, 0.7));
   text-align: left;
-}
-
-.ui-setting-more:hover,
-.ejd .ui-setting-more:hover {
-  color: var(--ink, #f3eee5);
-}
-
-.ui-setting-more:focus-visible,
-.ejd .ui-setting-more:focus-visible {
-  outline: 2px solid var(--accent, #e8b872);
-  outline-offset: -2px;
 }
 
 .ui-setting-more-chev,
@@ -1339,5 +1306,221 @@
   .ui-slider-input,
   .ejd .ui-slider-input {
     width: 160px;
+  }
+}
+
+/* ================================================================== */
+/* Interaction states: one system for every interactive component.     */
+/* A root marked by interactive() gets `ui-int` + a family class:      */
+/*   ui-int-cap      key + verb (prompt, option switch)                */
+/*   ui-int-surface  rows and square buttons (list row, layer row,     */
+/*                   zoom buttons, menu categories, teleport rows)     */
+/*   ui-int-segment  an option in a track (segmented, menu tabs, chips)*/
+/*   ui-int-control  toggle, slider, text field (shared tokens only)   */
+/* Pressed = :active or .is-pressed (pointer, or the named key held).  */
+/* ================================================================== */
+
+.ui-int,
+.ejd .ui-int {
+  transition:
+    color var(--ui-motion-fast) var(--ui-ease-out),
+    background-color var(--ui-motion-fast) var(--ui-ease-out),
+    border-color var(--ui-motion-fast) var(--ui-ease-out),
+    box-shadow var(--ui-motion-fast) var(--ui-ease-out),
+    opacity var(--ui-motion-fast) var(--ui-ease-out);
+}
+
+.ui-int:is(:active, .is-pressed),
+.ejd .ui-int:is(:active, .is-pressed) {
+  transition-duration: var(--ui-motion-press);
+}
+
+/* Focus: keyboard only (focus-visible), a 2px gold ring following the component's radius */
+
+.ui-int:focus-visible,
+.ejd .ui-int:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.ui-int-surface:focus-visible,
+.ejd .ui-int-surface:focus-visible {
+  outline-offset: var(--ui-focus-offset-inset);
+}
+
+.ui-int-segment:focus-visible,
+.ejd .ui-int-segment:focus-visible {
+  outline-offset: var(--ui-focus-offset-tight);
+}
+
+/* Disabled: faded, no hover or press, default cursor (the reason is the element's title where the API takes one) */
+
+.ui-int:is(:disabled, [aria-disabled='true']),
+.ejd .ui-int:is(:disabled, [aria-disabled='true']) {
+  opacity: var(--ui-disabled-opacity);
+  cursor: default;
+}
+
+/* --- Key + verb: the key cap is a physical key --- */
+
+.ui-int-cap .ui-keycap,
+.ejd .ui-int-cap .ui-keycap {
+  transition:
+    transform var(--ui-motion-fast) var(--ui-ease-out),
+    background-color var(--ui-motion-fast) var(--ui-ease-out),
+    border-color var(--ui-motion-fast) var(--ui-ease-out),
+    box-shadow var(--ui-motion-fast) var(--ui-ease-out),
+    border-bottom-width var(--ui-motion-press) ease-out;
+}
+
+@media (hover: hover) {
+  /* hover: the cap rises (a touch deeper edge, brighter face; gold adds a warm glow) */
+  .ui-int-cap:hover:not(:disabled, [aria-disabled='true']) .ui-keycap,
+  .ejd .ui-int-cap:hover:not(:disabled, [aria-disabled='true']) .ui-keycap {
+    transform: translateY(var(--ui-cap-lift));
+    background-color: var(--cap-face-hover);
+    border-color: var(--cap-rim-hover);
+    box-shadow: 0 1px 0 var(--cap-rim-hover), var(--cap-glow);
+  }
+}
+
+/* hover and keyboard focus: the verb goes to full ink (no underline) */
+.ui-int-cap:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) :is(.ui-prompt-label, .ui-switch-label),
+.ejd .ui-int-cap:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) :is(.ui-prompt-label, .ui-switch-label) {
+  color: var(--ink, #f3eee5);
+}
+
+.ui-int-cap.ui-prompt-danger:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) .ui-prompt-label,
+.ejd .ui-int-cap.ui-prompt-danger:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) .ui-prompt-label {
+  color: #ffd2c0;
+}
+
+/* pressed: the cap goes down, its bottom edge thin, the face a shade darker */
+.ui-int-cap:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']) .ui-keycap,
+.ejd .ui-int-cap:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']) .ui-keycap {
+  transform: translateY(var(--ui-cap-sink));
+  border-bottom-width: var(--cap-edge-pressed);
+  background-color: var(--cap-face-pressed);
+  border-color: var(--cap-rim);
+  box-shadow: none;
+  transition-duration: var(--ui-motion-press);
+}
+
+/* --- Rows and square buttons: a faint surface lift --- */
+
+@media (hover: hover) {
+  /* a selected row sets --ui-int-hover-bg to the stronger selected-hover surface */
+  .ui-int-surface:hover:not(:disabled, [aria-disabled='true']),
+  .ejd .ui-int-surface:hover:not(:disabled, [aria-disabled='true']) {
+    background-color: var(--ui-int-hover-bg, var(--ui-hover-surface));
+    color: var(--ink, #f3eee5);
+  }
+
+  .ui-int-surface:hover:not(:disabled, [aria-disabled='true']) .ui-row-label,
+  .ejd .ui-int-surface:hover:not(:disabled, [aria-disabled='true']) .ui-row-label {
+    color: var(--ink, #f3eee5);
+  }
+
+  .ui-layer.ui-int:hover:not(.is-on) .ui-layer-label,
+  .ejd .ui-layer.ui-int:hover:not(.is-on) .ui-layer-label {
+    color: rgba(243, 238, 229, 0.86);
+  }
+}
+
+/* selected: the gold bar (where the row has one) and a slightly stronger surface */
+.ui-row.is-selected,
+.ejd .ui-row.is-selected {
+  --ui-int-hover-bg: var(--ui-selected-hover-surface);
+  background-color: var(--ui-selected-surface);
+}
+
+/* pressed: a darker surface with a 1px inset shadow */
+.ui-int-surface:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']),
+.ejd .ui-int-surface:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']) {
+  background-color: var(--ui-press-surface);
+  box-shadow: var(--ui-press-shadow);
+}
+
+/* --- Segments in a track, tabs, filter chips --- */
+
+@media (hover: hover) {
+  .ui-int-segment:hover:not(:disabled, [aria-disabled='true'], .is-on),
+  .ejd .ui-int-segment:hover:not(:disabled, [aria-disabled='true'], .is-on) {
+    background-color: var(--ui-hover-surface);
+    color: var(--ink, #f3eee5);
+  }
+}
+
+.ui-int-segment:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']),
+.ejd .ui-int-segment:is(:active, .is-pressed):not(:disabled, [aria-disabled='true']) {
+  background-color: var(--ui-press-surface);
+  box-shadow: var(--ui-press-shadow);
+}
+
+/* a selected segment or tab pressed again: pushed in, but still reads as the chosen one */
+:is(.ui-seg-btn, .menu-tab).is-on:is(:active, .is-pressed),
+.ejd :is(.ui-seg-btn, .menu-tab).is-on:is(:active, .is-pressed) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Controls: toggle, slider, text field --- */
+
+@media (hover: hover) {
+  .ui-toggle.ui-int:hover:not(:disabled),
+  .ejd .ui-toggle.ui-int:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .ui-toggle.ui-int.is-on:hover:not(:disabled),
+  .ejd .ui-toggle.ui-int.is-on:hover:not(:disabled) {
+    background-color: #efc486;
+  }
+
+  .ui-slider-input.ui-int:hover:not(:disabled),
+  .ejd .ui-slider-input.ui-int:hover:not(:disabled) {
+    --thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 5px rgba(232, 184, 114, 0.2);
+  }
+
+  .ui-field-input.ui-int:hover:not(:disabled, :focus),
+  .ejd .ui-field-input.ui-int:hover:not(:disabled, :focus) {
+    border-color: var(--line-3, rgba(255, 255, 255, 0.24));
+  }
+}
+
+.ui-toggle.ui-int:is(:active, .is-pressed):not(:disabled),
+.ejd .ui-toggle.ui-int:is(:active, .is-pressed):not(:disabled) {
+  box-shadow: var(--ui-press-shadow);
+}
+
+.ui-toggle.ui-int:is(:active, .is-pressed):not(:disabled) .ui-toggle-knob,
+.ejd .ui-toggle.ui-int:is(:active, .is-pressed):not(:disabled) .ui-toggle-knob {
+  background: #e6dfd3;
+}
+
+/* the slider's ring sits on its thumb (the gap is the sheet colour) */
+.ui-slider-input.ui-int:focus-visible,
+.ejd .ui-slider-input.ui-int:focus-visible {
+  outline: none;
+  --thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 var(--ui-focus-offset) #16181d,
+    0 0 0 calc(var(--ui-focus-offset) + 2px) var(--ui-focus-color);
+}
+
+.ui-slider-input.ui-int:is(:active, .is-pressed):not(:disabled),
+.ejd .ui-slider-input.ui-int:is(:active, .is-pressed):not(:disabled) {
+  --thumb-face: #e6dfd3;
+}
+
+.ui-field-input.ui-int:focus,
+.ejd .ui-field-input.ui-int:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* colour only: no lift or sink (the tokens are 0), and the key's edge keeps its depth */
+  .ui-keycap,
+  .ejd .ui-keycap,
+  .ui-keycap-s,
+  .ejd .ui-keycap-s {
+    --cap-edge-pressed: var(--cap-edge);
   }
 }

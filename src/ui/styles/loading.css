@@ -186,6 +186,11 @@
   animation: ld-breathe 2.8s var(--ease-in-out) infinite;
 }
 
+/* the breathing glow pauses while the prompt is hovered, focused or pressed, so its key cap states show */
+.ejd-loading .ld-cta:is(:hover, :focus-visible, :active, .is-pressed) .ui-keycap {
+  animation: none;
+}
+
 .ejd-loading .ld-keys {
   display: flex;
   flex-wrap: wrap;

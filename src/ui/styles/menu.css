@@ -94,12 +94,9 @@
   font-weight: 500;
   white-space: nowrap;
   color: rgba(243, 238, 229, 0.65);
-  transition: background-color 150ms, color 150ms, box-shadow 150ms;
 }
 
-.menu-tab:hover {
-  color: var(--ink);
-}
+/* hover, press and focus: the segment family of the shared interaction states (components.css) */
 
 .menu-tab.is-on {
   color: var(--ink);
@@ -199,16 +196,13 @@
   font-size: 14px;
   text-align: left;
   color: var(--ink-2);
-  transition: background-color 140ms, color 140ms;
 }
 
-.menu-cat:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--ink);
-}
-
-.menu-cat.is-on {
-  background: rgba(255, 255, 255, 0.08);
+/* hover, press and focus: the surface family of the shared interaction states (components.css) */
+.menu-cat.is-on,
+.ejd .menu-cat.is-on {
+  --ui-int-hover-bg: var(--ui-selected-hover-surface);
+  background-color: var(--ui-selected-surface);
   color: var(--ink);
   font-weight: 500;
 }
@@ -542,17 +536,28 @@
   color: var(--ink);
   font: inherit;
   font-size: 14px;
-  outline: none;
   user-select: text;
-  transition: border-color 150ms;
+  transition: border-color var(--ui-motion-fast) var(--ui-ease-out);
 }
 
 .tp-search::placeholder {
   color: var(--ink-3);
 }
 
+/* the same states as the text field component: hover border, keyboard focus ring */
+@media (hover: hover) {
+  .tp-search:hover:not(:focus) {
+    border-color: var(--line-3);
+  }
+}
+
 .tp-search:focus {
-  border-color: rgba(232, 184, 114, 0.7);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ejd .tp-search:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .tp-chips {
@@ -573,18 +578,24 @@
   font-size: 12.5px;
   font-weight: 500;
   color: var(--ink-2);
-  transition: border-color 140ms, color 140ms, background-color 140ms;
 }
 
-.tp-chip:hover {
-  border-color: var(--line-3);
-  color: var(--ink);
+/* hover, press and focus: the segment family of the shared interaction states; the chip adds its border */
+@media (hover: hover) {
+  .ejd .tp-chip.ui-int:hover:not(.is-on) {
+    border-color: var(--line-3);
+  }
 }
 
-.tp-chip.is-on {
-  background: rgba(232, 184, 114, 0.16);
+.tp-chip.is-on,
+.ejd .tp-chip.is-on {
+  background-color: rgba(232, 184, 114, 0.16);
   border-color: rgba(232, 184, 114, 0.55);
   color: var(--accent-2);
+}
+
+.ejd .tp-chip.is-on.ui-int:is(:active, .is-pressed) {
+  background-color: rgba(232, 184, 114, 0.1);
 }
 
 .tp-chip-count {
@@ -605,6 +616,7 @@
 }
 
 .tp-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -613,17 +625,35 @@
   padding: 8px 12px;
   border-radius: 10px;
   text-align: left;
-  transition: background-color 120ms, box-shadow 120ms;
 }
 
-.tp-row:hover,
-.tp-row.is-hover {
-  background: rgba(255, 255, 255, 0.05);
+/* hover, press and focus: the surface family of the shared interaction states (components.css); a pin hovered on
+   the map lifts its row the same way. Selected: the list row's gold bar on the left edge and a stronger surface. */
+
+.tp-row::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color var(--ui-motion-fast) var(--ui-ease-out);
 }
 
-.tp-row.is-on {
-  background: rgba(232, 184, 114, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(232, 184, 114, 0.45);
+.tp-row.is-on::before {
+  background: var(--accent);
+}
+
+.tp-row.is-on,
+.ejd .tp-row.is-on {
+  --ui-int-hover-bg: var(--ui-selected-hover-surface);
+  background-color: var(--ui-selected-surface);
+}
+
+.ejd .tp-row.is-hover {
+  background-color: var(--ui-int-hover-bg, var(--ui-hover-surface));
 }
 
 .tp-kind {

@@ -1,4 +1,5 @@
 import { el } from '../dom';
+import { bindKeyPress, interactive } from './interaction';
 import { keyCap } from './keycap';
 
 export interface OptionSwitch {
@@ -15,7 +16,8 @@ export function optionSwitch(label: string, key: string, on: boolean, accent: st
   const dot = el('i', 'ui-switch-dot');
   const stateText = el('span', 'ui-switch-state-text');
   const state = el('span', 'ui-switch-state', [dot, stateText]);
-  const root = el('button', 'ui-switch', [keyCap(key, 'ink'), el('span', 'ui-switch-label', label), state], { type: 'button', role: 'switch' });
+  const root = interactive(el('button', 'ui-switch', [keyCap(key, 'ink'), el('span', 'ui-switch-label', label), state], { type: 'button', role: 'switch' }), 'cap');
+  bindKeyPress(root, key);
   root.style.setProperty('--accent-switch', accent);
   let value = on;
   let disabledReason = '';
@@ -43,6 +45,11 @@ export function optionSwitch(label: string, key: string, on: boolean, accent: st
     setDisabled: (d, reason) => {
       root.disabled = d;
       disabledReason = reason ?? '';
+      if (d && reason) {
+        root.title = reason;
+      } else {
+        root.removeAttribute('title');
+      }
       paint();
     },
   };

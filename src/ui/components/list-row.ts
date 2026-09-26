@@ -1,4 +1,5 @@
 import { el } from '../dom';
+import { interactive } from './interaction';
 
 export interface ListRowContent {
   label: string;
@@ -6,6 +7,14 @@ export interface ListRowContent {
   sub?: string;
   /** Trailing value (tabular), e.g. a time. */
   value?: string;
+}
+
+export interface ListRowOptions {
+  /**
+   * Puts the row in the tab order: Enter / Space pick it like a click. Off by default, for screens that drive their
+   * list with their own keys while flight keys stay live (a focused row would be "clicked" again by Space, the flap).
+   */
+  focusable?: boolean;
 }
 
 export interface ListRow {
@@ -19,20 +28,25 @@ export interface ListRow {
 /**
  * One entry of a selectable list: a name and a quieter second line on the left, a value and an optional marker on the
  * right. The selection is a gold bar on the left edge and a faint fill, not a boxed card. A click calls `onPick`,
- * hovering calls `onHover`. Rows take no keyboard focus (the screen drives its list with its own keys).
+ * hovering calls `onHover`. Rows take no keyboard focus unless `options.focusable` (the screen drives its list with its
+ * own keys). States: the shared surface family (hover lift, pressed inset, inset focus ring).
  */
-export function listRow(content: ListRowContent, onPick?: () => void, onHover?: () => void): ListRow {
+export function listRow(content: ListRowContent, onPick?: () => void, onHover?: () => void, options: ListRowOptions = {}): ListRow {
   const label = el('span', 'ui-row-label');
   const sub = el('span', 'ui-row-sub');
   const value = el('span', 'ui-row-value ejd-num');
   const markerSlot = el('span', 'ui-row-marker');
-  const root = el(
-    'button',
-    'ui-row',
-    [el('i', 'ui-row-bar'), el('span', 'ui-row-text', [label, sub]), el('span', 'ui-row-end', [value, markerSlot])],
-    { type: 'button', tabindex: -1, 'aria-pressed': 'false' },
+  const root = interactive(
+    el(
+      'button',
+      'ui-row',
+      [el('i', 'ui-row-bar'), el('span', 'ui-row-text', [label, sub]), el('span', 'ui-row-end', [value, markerSlot])],
+      { type: 'button', tabindex: options.focusable ? 0 : -1, 'aria-pressed': 'false' },
+    ),
+    'surface',
   );
-  // No focus on click: a focused button would be "clicked" again by Space (flap) later.
+  // No focus on click: a focused button would be "clicked" again by Space (flap) later. A focusable row still takes
+  // focus from Tab (and then answers Enter / Space as a native button).
   root.addEventListener('mousedown', (e) => e.preventDefault());
   if (onPick) {
     root.addEventListener('click', (e) => {

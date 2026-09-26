@@ -1,5 +1,6 @@
 import '../styles/components.css';
 import { el } from '../dom';
+import { interactive } from './interaction';
 
 /** How the row's swatch is drawn: a filled dot, a hollow ring, or a dot with a soft halo. */
 export type LayerMark = 'fill' | 'ring' | 'halo';
@@ -26,11 +27,14 @@ export interface LayerToggleOptions {
  */
 export function layerToggle(label: string, options: LayerToggleOptions): LayerToggle {
   const count = el('span', 'ui-layer-count ejd-num', options.count ?? '');
-  const root = el(
-    'button',
-    `ui-layer ui-layer-${options.mark ?? 'fill'}`,
-    [el('i', 'ui-layer-swatch', undefined, { 'aria-hidden': 'true' }), el('span', 'ui-layer-label', label), count],
-    { type: 'button', role: 'switch' },
+  const root = interactive(
+    el(
+      'button',
+      `ui-layer ui-layer-${options.mark ?? 'fill'}`,
+      [el('i', 'ui-layer-swatch', undefined, { 'aria-hidden': 'true' }), el('span', 'ui-layer-label', label), count],
+      { type: 'button', role: 'switch' },
+    ),
+    'surface',
   );
   root.style.setProperty('--layer-color', options.color);
   let value = options.on ?? true;
