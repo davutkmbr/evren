@@ -769,7 +769,7 @@ export const SWIM_POSE = {
   settleSink: 2,
   settleAlign: 1.6,
   /** Neck raise (pose neckPitch, + = up) while floating, and extra with the stroke (the head pushes forward). */
-  neckRaise: 0.42,
+  neckRaise: 0.55,
   neckStroke: -0.1,
   /**
    * Tail: carried at the surface (pitch, + = down; slightly lifted so the sweeping tail shows at the waterline) and how
@@ -811,13 +811,13 @@ export const SWIM_POSE = {
    */
   sprayMinStroke: 0.3,
   /** End of a wing's power stroke after its catch (rad): the rig's SWIM_RIG.paddlePower share of the cycle. */
-  paddlePowerPhase: 0.42 * Math.PI * 2,
+  paddlePowerPhase: 0.45 * Math.PI * 2,
   sprayCatch: 0.45,
-  sprayCatchOut: 0.3,
-  sprayCatchForward: 0.08,
+  sprayCatchOut: 0.13,
+  sprayCatchForward: 0.17,
   sprayLift: 0.3,
-  sprayLiftOut: 0.24,
-  sprayLiftForward: -0.12,
+  sprayLiftOut: 0.18,
+  sprayLiftForward: -0.07,
   sprayTail: 0.35,
   sprayTailBack: 0.85,
 } as const;
