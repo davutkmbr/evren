@@ -6,8 +6,11 @@
  * Crossing another gate never counts: a later gate reports `missed` (the racer skipped one), crossing the next gate
  * backwards reports `wrongWay`. The race aborts when the dragon strays too far from the current leg or stays on the
  * ground / in the water.
+ *
+ * Speed rings (optional boosts) are tested every running frame too: a forward pass through a ring not used yet in this
+ * run reports `boost` (each ring works once per run). They never affect gates, splits or the finish.
  */
-import { COUNTDOWN_SECONDS, type CompiledCourse, type Gate } from './courses';
+import { COUNTDOWN_SECONDS, type CompiledCourse, type Gate, type SpeedRing } from './courses';
 
 export type RacePhase = 'idle' | 'countdown' | 'running' | 'finished' | 'aborted';
 export type AbortReason = 'stray' | 'landed' | 'cancel' | 'teleport';
@@ -24,6 +27,7 @@ export type RaceEvent =
   | { type: 'gate'; index: number; elapsed: number; split: number; bestSplit?: number }
   | { type: 'missed'; expected: number; crossed: number }
   | { type: 'wrongWay'; index: number }
+  | { type: 'boost'; index: number }
   | { type: 'strayWarning'; distance: number }
   | { type: 'finished'; time: number; splits: readonly number[] }
   | { type: 'aborted'; reason: AbortReason };
@@ -44,7 +48,7 @@ export interface RaceOptions {
  * Tests the segment a→b against a gate disc. Returns 1 for a forward pass (crossing along the normal inside the
  * radius), -1 for a backward pass, 0 otherwise.
  */
-export function gateCrossing(gate: Gate, a: Vec3, b: Vec3): -1 | 0 | 1 {
+export function gateCrossing(gate: Gate | SpeedRing, a: Vec3, b: Vec3): -1 | 0 | 1 {
   const da = (a.x - gate.x) * gate.nx + (a.y - gate.y) * gate.ny + (a.z - gate.z) * gate.nz;
   const db = (b.x - gate.x) * gate.nx + (b.y - gate.y) * gate.ny + (b.z - gate.z) * gate.nz;
   const forward = da < 0 && db >= 0;
@@ -113,6 +117,8 @@ export class RaceSession {
   /** Cumulative time at each passed gate (s). */
   readonly splits: number[] = [];
   abortReason: AbortReason | null = null;
+  /** Speed rings already used in this run (by index). */
+  readonly boostsUsed: boolean[] = [];
 
   private countdownLeft = 0;
   private lastCountdownSecond = 0;
@@ -146,6 +152,7 @@ export class RaceSession {
     this.next = 0;
     this.elapsed = 0;
     this.splits.length = 0;
+    this.boostsUsed.length = 0;
     this.abortReason = null;
     this.prev = null;
     this.groundedFor = 0;
@@ -206,6 +213,13 @@ export class RaceSession {
     const prev = this.prev;
     this.prev = { x: pos.x, y: pos.y, z: pos.z };
     if (prev) {
+      const rings = this.course.speedRings;
+      for (let i = 0; i < rings.length; i++) {
+        if (!this.boostsUsed[i] && gateCrossing(rings[i], prev, pos) === 1) {
+          this.boostsUsed[i] = true;
+          events.push({ type: 'boost', index: i });
+        }
+      }
       const gates = this.course.gates;
       const cross = gateCrossing(gates[this.next], prev, pos);
       if (cross === 1) {

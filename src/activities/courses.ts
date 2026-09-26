@@ -10,6 +10,9 @@ import { latLonToLocal } from '../core/geo-coords';
 
 export type CourseId = 'bogaz' | 'halic' | 'adalar';
 
+/** Custom (player-built) course ids start with this prefix (see custom-courses.ts). */
+export const CUSTOM_ID_PREFIX = 'c-';
+
 export interface GateDef {
   lat: number;
   lon: number;
@@ -19,15 +22,37 @@ export interface GateDef {
   radius: number;
   /** Optional Turkish caption for the landmark this gate frames (split toasts). */
   label?: string;
+  /**
+   * Explicit facing (custom courses: the flight direction when the gate was placed). Without it the normal is the
+   * smoothed path direction.
+   */
+  headingDeg?: number;
+  pitchDeg?: number;
 }
 
+/**
+ * Speed ring (optional boost, not a gate): either a point on the straight leg from gate `leg` to gate `leg + 1` at
+ * fraction `t` (built-in courses; faces along the leg) or an explicit position and facing (custom courses).
+ */
+export type SpeedRingDef =
+  | { leg: number; t: number; radius?: number }
+  | { lat: number; lon: number; alt: number; headingDeg: number; pitchDeg: number; radius?: number };
+
+/** Default speed ring radius (m): smaller than any gate, so it reads as a bonus to aim for. */
+export const SPEED_RING_RADIUS = 12;
+
 export interface CourseDef {
-  id: CourseId;
+  /** A CourseId for built-in courses, CUSTOM_ID_PREFIX + hash for player-built ones. */
+  id: string;
   /** Turkish course name shown in the game. */
   name: string;
   /** One sentence Turkish description. */
   description: string;
   gates: readonly GateDef[];
+  /** Optional boost rings (never required, not counted as gates). */
+  speedRings?: readonly SpeedRingDef[];
+  /** True for player-built courses. */
+  custom?: boolean;
   /** Medal target times (s, whole seconds). Defaults come from defaultMedalTimes(); keep them in sync by hand. */
   medals: MedalTimes;
 }
@@ -60,6 +85,18 @@ export interface Gate {
   label?: string;
 }
 
+/** A compiled speed ring: same disc test as a gate (gateCrossing works on it). */
+export interface SpeedRing {
+  index: number;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
 export interface CourseStart {
   x: number;
   y: number;
@@ -72,6 +109,7 @@ export interface CourseStart {
 export interface CompiledCourse {
   def: CourseDef;
   gates: readonly Gate[];
+  speedRings: readonly SpeedRing[];
   /** Sum of the straight legs gate to gate (m), without the lead-in. */
   length: number;
   /** Where a race start places the dragon: on the lead-in line before gate 0, flying at it. */
@@ -91,20 +129,26 @@ export const COURSES: readonly CourseDef[] = [
   {
     id: 'bogaz',
     name: 'Boğaz turu',
-    description: 'Kız Kulesi’nden Boğaziçi Köprüsü’nün üstünden Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
-    medals: { gold: 248, silver: 288, bronze: 342 },
+    description: 'Kız Kulesi’nden 15 Temmuz Şehitler Köprüsü’nün altından Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
+    medals: { gold: 248, silver: 287, bronze: 341 },
     gates: [
       { lat: 41.0135, lon: 28.9996, alt: 70, radius: 32, label: 'Başlangıç' },
       { lat: 41.0216, lon: 28.9998, alt: 60, radius: 30, label: 'Kız Kulesi' },
       { lat: 41.0306, lon: 29.0039, alt: 70, radius: 30 },
-      { lat: 41.0369, lon: 29.0117, alt: 85, radius: 30, label: 'Beşiktaş' },
-      { lat: 41.0414, lon: 29.0236, alt: 130, radius: 30, label: 'Ortaköy' },
-      { lat: 41.0455, lon: 29.0343, alt: 235, radius: 32, label: 'Boğaziçi Köprüsü' },
-      { lat: 41.0531, lon: 29.0432, alt: 130, radius: 30 },
+      { lat: 41.0369, lon: 29.0117, alt: 75, radius: 30, label: 'Beşiktaş' },
+      { lat: 41.0414, lon: 29.0236, alt: 60, radius: 30, label: 'Ortaköy' },
+      // Under the deck at mid-span: the deck underside is ~64 m, so a small ring low over the water (see races-check).
+      { lat: 41.0455, lon: 29.0343, alt: 26, radius: 11, label: '15 Temmuz Şehitler Köprüsü' },
+      { lat: 41.0531, lon: 29.0432, alt: 60, radius: 30 },
       { lat: 41.0621, lon: 29.0468, alt: 80, radius: 30, label: 'Kuleli' },
       { lat: 41.0711, lon: 29.0510, alt: 75, radius: 30, label: 'Bebek' },
       { lat: 41.0801, lon: 29.0593, alt: 90, radius: 30, label: 'Rumeli Hisarı' },
       { lat: 41.0914, lon: 29.0613, alt: 175, radius: 32, label: 'Fatih Sultan Mehmet Köprüsü' },
+    ],
+    speedRings: [
+      { leg: 0, t: 0.5 },
+      { leg: 2, t: 0.5 },
+      { leg: 7, t: 0.5 },
     ],
   },
   {
@@ -120,6 +164,10 @@ export const COURSES: readonly CourseDef[] = [
       { lat: 41.0387, lon: 28.9482, alt: 55, radius: 24, label: 'Balat' },
       { lat: 41.0428, lon: 28.9432, alt: 65, radius: 24, label: 'Ayvansaray' },
       { lat: 41.0491, lon: 28.9379, alt: 60, radius: 26, label: 'Eyüp' },
+    ],
+    speedRings: [
+      { leg: 2, t: 0.5 },
+      { leg: 4, t: 0.5 },
     ],
   },
   {
@@ -139,6 +187,12 @@ export const COURSES: readonly CourseDef[] = [
       { lat: 40.8694, lon: 29.1463, alt: 55, radius: 30, label: 'Sedef Adası' },
       { lat: 40.8577, lon: 29.1332, alt: 55, radius: 30 },
       { lat: 40.8442, lon: 29.1308, alt: 60, radius: 32, label: 'Büyükada güney ucu' },
+    ],
+    speedRings: [
+      { leg: 0, t: 0.5 },
+      { leg: 3, t: 0.5 },
+      { leg: 5, t: 0.5 },
+      { leg: 9, t: 0.5 },
     ],
   },
 ];
@@ -170,8 +224,37 @@ export function compileCourse(def: CourseDef): CompiledCourse {
       d = (out ?? inn)!;
     }
     const g = def.gates[i];
+    if (g.headingDeg !== undefined) {
+      d = facing(g.headingDeg, g.pitchDeg ?? 0);
+    }
     return { index: i, x: p.x, y: p.y, z: p.z, radius: g.radius, nx: d[0], ny: d[1], nz: d[2], label: g.label };
   });
+  const speedRings: SpeedRing[] = [];
+  for (const r of def.speedRings ?? []) {
+    const radius = r.radius ?? SPEED_RING_RADIUS;
+    if ('leg' in r) {
+      if (r.leg < 0 || r.leg >= n - 1) {
+        continue;
+      }
+      const a = pts[r.leg];
+      const b = pts[r.leg + 1];
+      const d = legDir(r.leg);
+      speedRings.push({
+        index: speedRings.length,
+        x: a.x + (b.x - a.x) * r.t,
+        y: a.y + (b.y - a.y) * r.t,
+        z: a.z + (b.z - a.z) * r.t,
+        radius,
+        nx: d[0],
+        ny: d[1],
+        nz: d[2],
+      });
+    } else {
+      const p = latLonToLocal(r.lat, r.lon);
+      const d = facing(r.headingDeg, r.pitchDeg);
+      speedRings.push({ index: speedRings.length, x: p.x, y: r.alt, z: p.z, radius, nx: d[0], ny: d[1], nz: d[2] });
+    }
+  }
   let length = 0;
   for (let i = 1; i < n; i++) {
     length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
@@ -181,9 +264,22 @@ export function compileCourse(def: CourseDef): CompiledCourse {
   const h = Math.hypot(g0.nx, g0.nz) || 1;
   const fx = g0.nx / h;
   const fz = g0.nz / h;
-  const headingDeg = ((Math.atan2(fx, -fz) * 180) / Math.PI + 360) % 360;
+  const headingDeg = headingOf(fx, fz);
   const start: CourseStart = { x: g0.x - fx * LEAD_IN, y: g0.y, z: g0.z - fz * LEAD_IN, headingDeg, pitchDeg: 0, speed: RACE_PACE };
-  return { def, gates, length, start };
+  return { def, gates, speedRings, length, start };
+}
+
+/** Unit direction of a compass heading (0 = north = -z, 90 = east = +x) and a pitch (+ up), degrees. */
+export function facing(headingDeg: number, pitchDeg: number): [number, number, number] {
+  const h = (headingDeg * Math.PI) / 180;
+  const p = (pitchDeg * Math.PI) / 180;
+  const c = Math.cos(p);
+  return [Math.sin(h) * c, Math.sin(p), -Math.cos(h) * c];
+}
+
+/** Compass heading (degrees, 0..360) of a horizontal direction. */
+export function headingOf(x: number, z: number): number {
+  return ((Math.atan2(x, -z) * 180) / Math.PI + 360) % 360;
 }
 
 /** Default medal targets for a timed distance (m): MEDAL_PACE averages, rounded to whole seconds. */

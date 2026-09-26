@@ -556,3 +556,224 @@
   white-space: nowrap;
   will-change: transform;
 }
+
+/* ---------------- course picker: custom courses, new course, share codes ---------------- */
+
+.race-picker-list {
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.race-picker-new .race-picker-name {
+  color: var(--accent-2);
+}
+
+.race-picker-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.race-picker-row:not(.is-on) .race-picker-row-actions {
+  display: none;
+}
+
+.race-picker-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.race-picker-row-action:hover {
+  color: var(--ink);
+}
+
+.race-picker-row-action kbd,
+.race-picker-action kbd {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10.5px;
+}
+
+.race-picker-del-confirm {
+  display: none;
+  color: var(--race-slower);
+}
+
+.race-picker-row.is-armed .race-picker-del-confirm {
+  display: inline;
+}
+
+.race-picker-row.is-armed .race-picker-del {
+  color: var(--race-slower);
+}
+
+.race-picker-foot-custom {
+  margin-top: 6px;
+}
+
+.race-picker-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.race-picker-action:hover {
+  color: var(--ink);
+}
+
+.race-picker-import {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px 2px;
+}
+
+.race-picker-import-input,
+.race-editor-name-input {
+  width: 100%;
+  padding: 5px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line-3);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.race-picker-import-input:focus,
+.race-editor-name-input:focus {
+  border-bottom-color: var(--accent);
+}
+
+.race-picker-import-msg {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+/* ---------------- course editor (plain text over the scene) ---------------- */
+
+.race-editor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.race-editor.is-hidden {
+  visibility: hidden;
+}
+
+.race-editor-panel {
+  position: absolute;
+  left: var(--gutter);
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 250px;
+  transform: translateY(-50%);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75), 0 0 12px rgba(0, 0, 0, 0.45);
+}
+
+.race-editor-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.race-editor-sub,
+.race-editor-count {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.race-editor-invalid,
+.race-editor-min {
+  font-size: 12.5px;
+  color: var(--race-slower);
+}
+
+.race-editor-mode {
+  margin-top: 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent-2);
+}
+
+.race-editor-mode.is-ring {
+  color: #7fe8c4;
+}
+
+.race-editor-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.race-editor-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.race-editor-key kbd {
+  min-width: 44px;
+  text-shadow: none;
+}
+
+.race-editor-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.race-editor-name-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.race-editor-name-hint {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.race-editor-labels {
+  position: absolute;
+  inset: 0;
+}
+
+.race-editor-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-2);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.race-editor-label.is-ring {
+  font-size: 12.5px;
+  color: #7fe8c4;
+}
+
+.race-editor-label.is-invalid {
+  color: var(--race-slower);
+}

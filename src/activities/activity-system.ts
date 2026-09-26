@@ -1,8 +1,8 @@
 /**
- * Activities runtime (phase 13): ring races for now.
+ * Activities runtime (phase 13): ring races and the course editor.
  *
- * Start a race from the course picker (Y opens it; Y during a race cancels the race), with ?race=bogaz|halic|adalar,
- * or window.__evrenRaces.start('bogaz') (dev server, sandboxes and ?race= pages). A start teleports the dragon onto the
+ * Start a race from the course picker (Y opens it; Y during a race cancels the race), with ?race=<course id>, or
+ * window.__evrenRaces.start('bogaz') (dev server, sandboxes and ?race= pages). A start teleports the dragon onto the
  * course's lead-in line, runs a 3 s countdown and then times the run gate by gate.
  *
  * Feedback: the race HUD (hud/race-hud.ts: countdown, clock panel, split deltas against the record, warnings, finish
@@ -10,20 +10,49 @@
  * gap to it. A toast only announces the start. Emits 'activity' events (started at GO, every checkpoint, finished,
  * aborted); records (best time, splits, best medal, ghost path) persist per course in localStorage.
  *
- * Idle cost: no per-frame DOM work and the ring pass is disabled while no race, card or picker is shown.
+ * Speed rings (races only): flying through one pushes the dragon forward (speed-boost.ts: +10 m/s over 1.5 s, capped
+ * under the dive envelope) with a whoosh and a short camera shake. DragonState.velocity is flight telemetry (copied
+ * from the physics body every frame and never read back), so writing it does nothing. The push goes through an
+ * optional `addVelocity(dx, dy, dz)` on the dragon service when flight provides one (spread over the envelope);
+ * until then it is applied once at the ring through the 'teleport' event with the boosted speed (same position,
+ * heading and pitch; the flight resets roll and the camera re-snaps).
+ *
+ * Course editor (picker → "+ Yeni parkur" or E on a custom course): fly around, B places a gate (or a speed ring) at
+ * the dragon with its flight direction, Backspace removes the last one, K switches gate / speed ring, J cycles the gate
+ * size, Enter saves under a name, Y leaves. Custom courses (custom-courses.ts) appear in the picker with records,
+ * medals and ghosts like the built-in ones, and travel as share codes (K copies, I pastes).
+ *
+ * Idle cost: no per-frame DOM work and the ring pass is disabled while no race, card, picker or editor is shown.
  */
 import * as THREE from 'three';
 import type { DragonState, EngineContext, GameEvents, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
-import { COURSES, getCourse, medalFor } from './courses';
+import { COURSES, getCourse, medalFor, type CompiledCourse } from './courses';
+import {
+  CUSTOM_LIMIT,
+  MIN_GATES,
+  compileCustomCourse,
+  decodeCourseCode,
+  deleteCustomCourse,
+  encodeCourseCode,
+  getCustomCourse,
+  loadCustomCourses,
+  saveCustomCourse,
+  type CustomCourse,
+  type PlacementProbe,
+} from './custom-courses';
+import { CourseEditor } from './editor';
 import { GateRings } from './gate-rings';
 import { GhostTrack, ghostGap } from './ghost';
 import { CoursePicker, type PickerEntry } from './hud/course-picker';
+import { EDITOR_KEYS, EditorPanel, type EditorLabel } from './hud/editor-panel';
 import { GhostOrb } from './hud/ghost-orb';
 import { RaceHud } from './hud/race-hud';
 import { RingPass } from './ring-pass';
 import { RaceSession, courseProgress, type AbortReason, type RaceEvent } from './race';
 import { GhostRecorder, clearRecords, decodeGhost, getRecord, loadRecords, submitRun } from './records';
+import { BoostEnvelope, boostDeltaV } from './speed-boost';
+import { SpeedRingMesh } from './speed-ring-mesh';
 import { RACE_TEXT, formatRaceTime } from './text';
 
 /** Seconds the rings stay visible (in the finish colour) after the finish. */
@@ -31,14 +60,26 @@ const FINISH_LINGER = 5;
 /** A jump larger than this in one frame (m) is a teleport, not flight. */
 const TELEPORT_JUMP = 400;
 const RACE_KEY = 'KeyY';
+/** Camera shake of a speed ring (m of offset amplitude; a roar is 0.12). */
+const BOOST_SHAKE = 0.2;
+/** Seconds a second Y press confirms leaving the editor with unsaved changes. */
+const EXIT_CONFIRM_SECONDS = 4;
+/** Flight modes a speed ring pushes (airborne flight). */
+const BOOST_MODES: ReadonlySet<DragonState['mode']> = new Set(['flying', 'gliding', 'diving', 'stalling']);
+
+/** Optional flight hook for a smooth push (not in contracts yet; see the header). */
+interface VelocityHook {
+  addVelocity?: (dx: number, dy: number, dz: number) => void;
+}
 
 export function createActivitySystem(): System {
   let ctx: EngineContext | null = null;
   let dragon: DragonState | null = null;
   const rings = new GateRings();
+  const speedRings = new SpeedRingMesh();
   const ringPass = new RingPass();
   const ghost = new GhostOrb();
-  ringPass.scene.add(rings.group, ghost.group);
+  ringPass.scene.add(rings.group, speedRings.mesh, ghost.group);
   let session: RaceSession | null = null;
   let recorder = new GhostRecorder();
   let ghostTrack: GhostTrack | null = null;
@@ -47,22 +88,39 @@ export function createActivitySystem(): System {
   let pendingUrlCourse: string | null = null;
   let loadingDone = false;
   let ownTeleport = false;
-  let lastCourseIndex = -1;
+  /** The teleport being emitted is a speed ring push: the run and its trail continue. */
+  let boostTeleport = false;
+  let lastCourseId: string | null = null;
   const lastPos = { x: 0, y: 0, z: 0, valid: false };
   const disposers: Array<() => void> = [];
+  const boost = new BoostEnvelope();
+  let pendingShake = 0;
+
+  // Editor.
+  const editor = new CourseEditor();
+  let editing = false;
+  let exitArmedLeft = 0;
+
+  // Text fields (picker paste field, editor name): game input is off while one has focus.
+  let typing = false;
+  let inputDisabledByUs = false;
 
   // DOM (created in init).
   let hud: RaceHud | null = null;
   let picker: CoursePicker | null = null;
   let pickerRoot: HTMLElement | null = null;
+  let editorPanel: EditorPanel | null = null;
+  let editorRoot: HTMLElement | null = null;
   /** The UI system's root (.ejd) and HUD (.ejd-hud), looked up once they exist. */
   let uiEjd: HTMLElement | null = null;
   let uiHud: HTMLElement | null = null;
   let viewW = 1;
   let viewH = 1;
   const view = new THREE.Vector3();
+  const probeSphere = new THREE.Vector3();
+  const tmpDir = new THREE.Vector3();
 
-  const audio = (name: 'ui-click' | 'discover', volume: number): void => {
+  const audio = (name: 'ui-click' | 'discover' | 'whoosh', volume: number): void => {
     ctx?.services.tryGet('audio')?.play(name, volume);
   };
 
@@ -102,22 +160,67 @@ export function createActivitySystem(): System {
     return uiHud ? !uiHud.hidden : true;
   }
 
+  function modalOpen(): boolean {
+    findUi();
+    const cl = uiEjd?.classList;
+    return !!cl && (cl.contains('is-modal') || cl.contains('is-photo') || cl.contains('is-prestart'));
+  }
+
   /** A menu, the map, photo mode or the start screen owns the screen (or the game is paused). */
   function uiBlocked(): boolean {
     if (!ctx) {
       return true;
     }
-    if (ctx.time.paused || !ctx.input.enabled) {
+    if (ctx.time.paused || (!ctx.input.enabled && !inputDisabledByUs)) {
       return true;
     }
-    const cl = uiEjd?.classList;
-    return !!cl && (cl.contains('is-modal') || cl.contains('is-photo') || cl.contains('is-prestart'));
+    return modalOpen();
+  }
+
+  /** A text field of ours gained or lost focus: game input off while typing, restored after (unless a menu took it). */
+  function setTyping(on: boolean): void {
+    if (!ctx) {
+      return;
+    }
+    typing = on;
+    if (on) {
+      if (ctx.input.enabled) {
+        ctx.input.enabled = false;
+        inputDisabledByUs = true;
+      }
+    } else if (inputDisabledByUs) {
+      inputDisabledByUs = false;
+      // A menu that opened meanwhile owns input now; it re-enables it when it closes.
+      if (!modalOpen()) {
+        ctx.input.enabled = true;
+      }
+    }
+  }
+
+  /* ---------------- courses ---------------- */
+
+  function customDescription(c: CustomCourse): string {
+    return RACE_TEXT.picker.customDesc(c.rings.length);
+  }
+
+  /** Built-in or custom course by id. */
+  function resolveCourse(id: string): CompiledCourse | undefined {
+    const builtIn = getCourse(id);
+    if (builtIn) {
+      return builtIn;
+    }
+    const custom = getCustomCourse(id);
+    return custom ? compileCustomCourse(custom, customDescription(custom)) : undefined;
+  }
+
+  function allCourseIds(): string[] {
+    return [...COURSES.map((c) => c.id), ...loadCustomCourses().map((c) => c.id)];
   }
 
   /* ---------------- race control ---------------- */
 
   function start(id: string): boolean {
-    const course = getCourse(id);
+    const course = resolveCourse(id);
     if (!course) {
       toast(RACE_TEXT.unknownCourse(id), 'warn');
       return false;
@@ -126,10 +229,13 @@ export function createActivitySystem(): System {
       return false;
     }
     closePicker();
+    if (editing) {
+      exitEditor(true);
+    }
     if (session?.active) {
       handle(session.abort('cancel'));
     }
-    lastCourseIndex = COURSES.findIndex((c) => c.id === id);
+    lastCourseId = id;
     const rec = getRecord(id);
     const splitsMatch = rec?.splits.length === course.gates.length;
     referenceSplits = splitsMatch ? rec!.splits.slice() : undefined;
@@ -143,7 +249,9 @@ export function createActivitySystem(): System {
     }
     ghost.setTrack(ghostTrack);
     lingerLeft = 0;
+    boost.cancel();
     rings.setCourse(course);
+    speedRings.set(course.speedRings);
     const s = course.start;
     ownTeleport = true;
     ctx.events.emit('teleport', { x: s.x, y: s.y, z: s.z, headingDeg: s.headingDeg, pitchDeg: s.pitchDeg, speed: s.speed });
@@ -160,6 +268,12 @@ export function createActivitySystem(): System {
     if (session?.active) {
       handle(session.abort(reason));
     }
+  }
+
+  function hideCourse(): void {
+    rings.setCourse(null);
+    speedRings.set([]);
+    boost.cancel();
   }
 
   function handle(events: readonly RaceEvent[]): void {
@@ -190,6 +304,10 @@ export function createActivitySystem(): System {
           }
           break;
         }
+        case 'boost':
+          speedRings.markUsed(e.index);
+          startBoost();
+          break;
         case 'finished': {
           rings.setNext(s.total, true);
           lingerLeft = FINISH_LINGER;
@@ -225,16 +343,256 @@ export function createActivitySystem(): System {
           hud?.abort(RACE_TEXT.aborted[e.reason]);
           ghost.hide();
           emitActivity('aborted', `${name} · ${RACE_TEXT.label.aborted}`);
-          rings.setCourse(null);
+          hideCourse();
           break;
       }
     }
   }
 
+  /* ---------------- speed ring boost ---------------- */
+
+  function startBoost(): void {
+    const d = dragon;
+    if (!d || !ctx || !BOOST_MODES.has(d.mode)) {
+      return;
+    }
+    audio('whoosh', 0.9);
+    // Next frame: a teleport re-snaps the camera this frame, which clears any shake added before it.
+    pendingShake = BOOST_SHAKE;
+    const hook = (d as unknown as VelocityHook).addVelocity;
+    if (typeof hook === 'function') {
+      boost.start(d.airspeed);
+      return;
+    }
+    const dv = boostDeltaV(d.airspeed);
+    if (dv <= 0) {
+      return;
+    }
+    // Fallback: the whole push at once, through the teleport event (same place, heading and nose pitch).
+    tmpDir.set(0, 0, -1).applyQuaternion(d.quaternion);
+    const pitchDeg = (Math.asin(Math.max(-1, Math.min(1, tmpDir.y))) * 180) / Math.PI;
+    const p = d.position;
+    boostTeleport = true;
+    ctx.events.emit('teleport', { x: p.x, y: p.y, z: p.z, headingDeg: d.headingDeg, pitchDeg, speed: d.airspeed + dv });
+    boostTeleport = false;
+  }
+
+  /** Smooth push through the flight hook (only when flight provides one). */
+  function stepBoost(dt: number): void {
+    const d = dragon;
+    if (!d || !boost.active) {
+      return;
+    }
+    const hook = (d as unknown as VelocityHook).addVelocity;
+    if (typeof hook !== 'function' || !BOOST_MODES.has(d.mode)) {
+      boost.cancel();
+      return;
+    }
+    const dv = boost.step(dt, d.airspeed);
+    const v = d.velocity;
+    const len = v.length();
+    if (dv > 0 && len > 1) {
+      hook.call(d, (v.x / len) * dv, (v.y / len) * dv, (v.z / len) * dv);
+    }
+  }
+
+  /* ---------------- editor ---------------- */
+
+  function placementProbe(): PlacementProbe {
+    const geo = ctx?.services.tryGet('geo');
+    const col = ctx?.services.tryGet('collision');
+    return {
+      terrainAt: (x, z) => (geo ? geo.heightAt(x, z) : (col?.terrainHeight(x, z) ?? 0)),
+      surfaceAt: col ? (x, z) => col.surfaceHeight(x, z) : undefined,
+      solidAt: col
+        ? (x, y, z, r) => {
+            probeSphere.set(x, y, z);
+            return col.resolveSphere(probeSphere, Math.min(r, 1.5)) !== null;
+          }
+        : undefined,
+    };
+  }
+
+  function startEditor(from?: CustomCourse): boolean {
+    if (!ctx || !editorPanel) {
+      return false;
+    }
+    if (session?.active) {
+      toast(RACE_TEXT.editorToast.busy, 'warn');
+      return false;
+    }
+    closePicker();
+    hud?.closeFinish();
+    lingerLeft = 0;
+    hideCourse();
+    editor.reset(from);
+    editing = true;
+    exitArmedLeft = 0;
+    editorPanel.setOpen(true);
+    refreshEditor();
+    toast(RACE_TEXT.editorToast.started);
+    audio('ui-click', 0.6);
+    return true;
+  }
+
+  function exitEditor(force = false): void {
+    if (!editing) {
+      return;
+    }
+    if (!force && editor.dirty && exitArmedLeft <= 0) {
+      exitArmedLeft = EXIT_CONFIRM_SECONDS;
+      toast(RACE_TEXT.editorToast.exitConfirm, 'warn');
+      return;
+    }
+    editing = false;
+    exitArmedLeft = 0;
+    editorPanel?.setOpen(false);
+    rings.setCourse(null);
+    speedRings.set([]);
+    if (!force) {
+      toast(RACE_TEXT.editorToast.exited);
+    }
+  }
+
+  function refreshEditor(): void {
+    rings.showEditor(
+      editor.previewGates(),
+      editor.gates.map((g) => !!g.problem),
+    );
+    speedRings.set(
+      editor.previewRings(),
+      editor.rings.map((r) => !!r.problem),
+    );
+    editorPanel?.update({
+      sourceName: editor.sourceName,
+      gates: editor.gates.length,
+      rings: editor.rings.length,
+      invalid: editor.gates.length - editor.validGates,
+      kind: editor.kind,
+      size: editor.size,
+    });
+  }
+
+  function editorPlace(): void {
+    const d = dragon;
+    if (!d) {
+      return;
+    }
+    const p = d.position;
+    const v = d.velocity;
+    const r = editor.place({ x: p.x, y: p.y, z: p.z, vx: v.x, vy: v.y, vz: v.z, headingDeg: d.headingDeg }, placementProbe());
+    const t = RACE_TEXT.editorToast;
+    if (!r.ok) {
+      toast(t.refused[r.reason], 'warn');
+      audio('ui-click', 0.3);
+      return;
+    }
+    if (r.problem === 'terrain' || r.problem === 'structure') {
+      toast(t.invalid[r.problem], 'warn');
+    } else {
+      toast(r.kind === 'gate' ? t.placedGate(r.index + 1) : t.placedRing(r.index + 1));
+    }
+    audio('ui-click', 0.7);
+    refreshEditor();
+  }
+
+  function editorSave(): void {
+    if (!editorPanel || editorPanel.naming) {
+      return;
+    }
+    if (editor.validGates < MIN_GATES) {
+      toast(RACE_TEXT.editorToast.tooFew(editor.validGates, MIN_GATES), 'warn');
+      return;
+    }
+    const fallback = editor.sourceName ?? `Parkurum ${loadCustomCourses().length + 1}`;
+    editorPanel.askName(
+      fallback,
+      (name) => finishSave(name.trim() ? name : fallback),
+      () => undefined,
+    );
+  }
+
+  function finishSave(name: string): void {
+    const t = RACE_TEXT.editorToast;
+    const built = editor.build(name, placementProbe());
+    if (!built.ok) {
+      toast(built.error === 'tooFew' ? t.tooFew(built.valid, MIN_GATES) : t.leadIn, 'warn');
+      refreshEditor();
+      return;
+    }
+    const saved = saveCustomCourse(built.course, editor.sourceId);
+    if (!saved.ok) {
+      toast(saved.error === 'limit' ? t.limit(CUSTOM_LIMIT) : t.duplicate, 'warn');
+      return;
+    }
+    if (editor.sourceId && editor.sourceId !== saved.course.id) {
+      // The geometry changed: the old records and ghost belong to a course that no longer exists.
+      clearRecords(editor.sourceId);
+    }
+    toast(t.saved(saved.course.name));
+    if (built.skippedGates || built.skippedRings) {
+      toast(t.skipped(built.skippedGates, built.skippedRings), 'warn');
+    }
+    audio('discover', 0.6);
+    exitEditor(true);
+    lastCourseId = saved.course.id;
+    openPicker();
+  }
+
+  function updateEditor(c: EngineContext): void {
+    if (exitArmedLeft > 0) {
+      exitArmedLeft -= c.time.realDt;
+    }
+    const blocked = uiBlocked();
+    if (blocked && editorPanel?.naming) {
+      // A menu took over while typing the name: the question is withdrawn (the editor stays open).
+      editorPanel.cancelName();
+    }
+    editorPanel?.setVisible(hudVisible() && !modalOpen());
+    rings.animate(c.time.elapsed);
+  }
+
+  /** Projects a world point to screen pixels; null when behind the camera or off screen. */
+  function project(c: EngineContext, x: number, y: number, z: number): { x: number; y: number } | null {
+    view.set(x, y, z).applyMatrix4(c.camera.matrixWorldInverse);
+    if (-view.z <= c.camera.near) {
+      return null;
+    }
+    view.applyMatrix4(c.camera.projectionMatrix);
+    const sx = (view.x * 0.5 + 0.5) * viewW;
+    const sy = (0.5 - view.y * 0.5) * viewH;
+    return sx < -40 || sx > viewW + 40 || sy < -40 || sy > viewH + 40 ? null : { x: sx, y: sy };
+  }
+
+  function updateEditorLabels(c: EngineContext): void {
+    if (!editorPanel) {
+      return;
+    }
+    if (!editing || !hudVisible() || modalOpen()) {
+      editorPanel.setLabels([]);
+      return;
+    }
+    c.camera.updateMatrixWorld();
+    const items: EditorLabel[] = [];
+    editor.gates.forEach((g, i) => {
+      const s = project(c, g.x, g.y + g.r + 6, g.z);
+      if (s) {
+        items.push({ x: s.x, y: s.y, text: String(i + 1), ring: false, invalid: !!g.problem });
+      }
+    });
+    editor.rings.forEach((r, i) => {
+      const s = project(c, r.x, r.y + 18, r.z);
+      if (s) {
+        items.push({ x: s.x, y: s.y, text: `H${i + 1}`, ring: true, invalid: !!r.problem });
+      }
+    });
+    editorPanel.setLabels(items);
+  }
+
   /* ---------------- picker ---------------- */
 
   function pickerEntries(): PickerEntry[] {
-    return COURSES.map((def) => {
+    const entries: PickerEntry[] = COURSES.map((def) => {
       const c = getCourse(def.id)!;
       const rec = getRecord(def.id);
       return {
@@ -248,14 +606,33 @@ export function createActivitySystem(): System {
         medals: def.medals,
       };
     });
+    for (const custom of loadCustomCourses()) {
+      const c = compileCustomCourse(custom, customDescription(custom));
+      const rec = getRecord(custom.id);
+      entries.push({
+        id: custom.id,
+        name: custom.name,
+        description: c.def.description,
+        lengthM: c.length,
+        gates: c.gates.length,
+        best: rec?.best,
+        medal: rec?.medal ?? null,
+        medals: c.def.medals,
+        custom: true,
+      });
+    }
+    return entries;
   }
 
-  function openPicker(): void {
+  function openPicker(selectId?: string): void {
     if (!picker || !pickerRoot) {
       return;
     }
     hud?.closeFinish();
-    picker.open(pickerEntries(), lastCourseIndex >= 0 ? lastCourseIndex : 0);
+    if (picker.isOpen) {
+      picker.close();
+    }
+    picker.open(pickerEntries(), selectId ?? lastCourseId ?? undefined);
     pickerRoot.hidden = false;
     audio('ui-click', 0.5);
   }
@@ -269,6 +646,63 @@ export function createActivitySystem(): System {
     }
   }
 
+  function importCode(code: string): string | null {
+    const res = decodeCourseCode(code);
+    if (!res.ok) {
+      return RACE_TEXT.share.errors[res.error];
+    }
+    const saved = saveCustomCourse(res.course);
+    if (!saved.ok) {
+      return saved.error === 'limit' ? RACE_TEXT.editorToast.limit(CUSTOM_LIMIT) : RACE_TEXT.editorToast.duplicate;
+    }
+    toast(RACE_TEXT.share.imported(saved.course.name));
+    audio('discover', 0.5);
+    openPicker(saved.course.id);
+    return null;
+  }
+
+  function copyCode(id: string): void {
+    const custom = getCustomCourse(id);
+    if (!custom) {
+      return;
+    }
+    const code = encodeCourseCode(custom);
+    const fallback = (): void => {
+      picker?.showCode(code);
+      toast(RACE_TEXT.share.copyFallback);
+    };
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clip?.writeText) {
+      fallback();
+      return;
+    }
+    clip.writeText(code).then(
+      () => {
+        toast(RACE_TEXT.share.copied);
+        audio('ui-click', 0.5);
+      },
+      fallback,
+    );
+  }
+
+  function removeCourse(id: string): void {
+    const custom = getCustomCourse(id);
+    if (!custom) {
+      return;
+    }
+    const ids = allCourseIds();
+    const at = ids.indexOf(id);
+    deleteCustomCourse(id);
+    clearRecords(id);
+    if (lastCourseId === id) {
+      lastCourseId = null;
+    }
+    toast(RACE_TEXT.share.deleted(custom.name));
+    audio('ui-click', 0.5);
+    const rest = allCourseIds();
+    openPicker(rest[Math.min(at, rest.length - 1)]);
+  }
+
   /* ---------------- keys ---------------- */
 
   const swallow = (e: KeyboardEvent): void => {
@@ -276,8 +710,58 @@ export function createActivitySystem(): System {
     e.stopImmediatePropagation();
   };
 
-  // Capture phase on window: runs before the input system and the UI (bubble listeners), so keys the picker or the
-  // finish card use never reach flight controls or the pause menu. Every other key passes through untouched.
+  /** Editor keys (only while the editor is open and nothing else owns the screen). */
+  function editorKey(e: KeyboardEvent): boolean {
+    const k = EDITOR_KEYS;
+    switch (e.code) {
+      case k.place.code:
+        if (!e.repeat) {
+          editorPlace();
+        }
+        return true;
+      case k.undo.code:
+        if (!e.repeat) {
+          const removed = editor.undo();
+          toast(removed ? RACE_TEXT.editorToast.removed : RACE_TEXT.editorToast.nothingToRemove);
+          audio('ui-click', 0.4);
+          refreshEditor();
+        }
+        return true;
+      case k.kind.code:
+        if (!e.repeat) {
+          editor.toggleKind();
+          audio('ui-click', 0.4);
+          refreshEditor();
+        }
+        return true;
+      case k.size.code:
+        if (!e.repeat) {
+          editor.cycleSize();
+          if (editor.kind === 'ring') {
+            editor.toggleKind();
+          }
+          audio('ui-click', 0.4);
+          refreshEditor();
+        }
+        return true;
+      case k.save.code:
+      case 'NumpadEnter':
+        if (!e.repeat) {
+          editorSave();
+        }
+        return true;
+      case k.exit.code:
+        if (!e.repeat) {
+          exitEditor();
+        }
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Capture phase on window: runs before the input system and the UI (bubble listeners), so keys the picker, the
+  // editor or the finish card use never reach flight controls or the pause menu. Every other key passes through.
   const onKeyDown = (e: KeyboardEvent): void => {
     if (!ctx || e.ctrlKey || e.metaKey || e.altKey) {
       return;
@@ -295,6 +779,12 @@ export function createActivitySystem(): System {
       }
       return;
     }
+    if (editing) {
+      if (!uiBlocked() && !editorPanel?.naming && editorKey(e)) {
+        swallow(e);
+      }
+      return;
+    }
     if (hud?.finishOpen && hud.shown && (e.code === RACE_KEY || e.code === 'Escape')) {
       if (!e.repeat) {
         hud.closeFinish();
@@ -305,14 +795,14 @@ export function createActivitySystem(): System {
     if (e.code !== RACE_KEY || e.repeat) {
       return;
     }
-    findUi();
     if (uiBlocked()) {
       return;
     }
     if (session?.active) {
       cancel('cancel');
     } else if (ctx.debug.nohud || !picker) {
-      start(COURSES[(lastCourseIndex + 1) % COURSES.length].id);
+      const ids = allCourseIds();
+      start(ids[(Math.max(-1, ids.indexOf(lastCourseId ?? '')) + 1) % ids.length]);
     } else {
       openPicker();
     }
@@ -362,7 +852,10 @@ export function createActivitySystem(): System {
   function installDebugHook(): void {
     const hook = {
       courses: () =>
-        COURSES.map((c) => ({ id: c.id, name: c.name, gates: c.gates.length, lengthM: Math.round(getCourse(c.id)!.length), medals: { ...c.medals } })),
+        allCourseIds().map((id) => {
+          const c = resolveCourse(id)!;
+          return { id, name: c.def.name, gates: c.gates.length, speedRings: c.speedRings.length, lengthM: Math.round(c.length), medals: { ...c.def.medals }, custom: !!c.def.custom };
+        }),
       start: (id: string): boolean => start(id),
       cancel: (): void => cancel('cancel'),
       /** Opens (default) or closes the course picker. */
@@ -383,11 +876,13 @@ export function createActivitySystem(): System {
               total: session.total,
               elapsed: session.elapsed,
               splits: session.splits.slice(),
+              boostsUsed: session.boostsUsed.slice(),
               ghost: ghost.visible,
               picker: !!picker?.isOpen,
               finishCard: !!hud?.finishOpen,
+              editing,
             }
-          : { phase: 'idle' as const, picker: !!picker?.isOpen },
+          : { phase: 'idle' as const, picker: !!picker?.isOpen, editing },
       records: () => loadRecords(),
       clearRecords: (id?: string): void => clearRecords(id),
       /** Teleports to just before gate `index` of a running race (testing). */
@@ -412,6 +907,25 @@ export function createActivitySystem(): System {
         session.resetTrail();
         return true;
       },
+      /** Course editor: open (optionally on a custom course), place / undo at the dragon, save, close. */
+      editor: {
+        open: (id?: string): boolean => startEditor(id ? getCustomCourse(id) : undefined),
+        place: (): void => editorPlace(),
+        undo: (): void => {
+          editor.undo();
+          refreshEditor();
+        },
+        save: (name: string): void => finishSave(name),
+        close: (): void => exitEditor(true),
+        state: () => ({ editing, kind: editor.kind, size: editor.size, gates: editor.gates.map((g) => ({ ...g })), rings: editor.rings.map((r) => ({ ...r })) }),
+      },
+      customCourses: () => loadCustomCourses().map((c) => ({ ...c })),
+      exportCourse: (id: string): string | null => {
+        const c = getCustomCourse(id);
+        return c ? encodeCourseCode(c) : null;
+      },
+      importCourse: (code: string): string | null => importCode(code),
+      deleteCourse: (id: string): void => removeCourse(id),
     };
     (window as unknown as { __evrenRaces?: typeof hook }).__evrenRaces = hook;
     disposers.push(() => {
@@ -454,7 +968,23 @@ export function createActivitySystem(): System {
           audio('ui-click', 0.4);
         },
         onMove: () => audio('ui-click', 0.3),
+        onNew: () => startEditor(),
+        onEdit: (id) => {
+          const custom = getCustomCourse(id);
+          if (custom) {
+            startEditor(custom);
+          }
+        },
+        onDelete: (id) => removeCourse(id),
+        onCopy: (id) => copyCode(id),
+        onImport: (code) => importCode(code),
+        onTyping: (on) => setTyping(on),
       });
+      editorRoot = document.createElement('div');
+      editorRoot.className = 'ejd race-ui race-ui-editor';
+      editorRoot.setAttribute('lang', 'tr');
+      c.uiRoot.append(editorRoot);
+      editorPanel = new EditorPanel(editorRoot, (on) => setTyping(on));
       viewW = Math.max(1, c.canvas.clientWidth || window.innerWidth);
       viewH = Math.max(1, c.canvas.clientHeight || window.innerHeight);
       findUi();
@@ -465,12 +995,17 @@ export function createActivitySystem(): System {
           findUi();
         }),
         c.events.on('teleport', () => {
+          if (boostTeleport) {
+            // A speed ring push: same place, the run and its trail go on.
+            return;
+          }
           // Someone else moved the dragon (map teleport, view preset): the run is void.
           if (!ownTeleport && session?.active) {
             cancel('teleport');
           }
           lastPos.valid = false;
           session?.resetTrail();
+          boost.cancel();
         }),
       );
       window.addEventListener('keydown', onKeyDown, true);
@@ -482,8 +1017,8 @@ export function createActivitySystem(): System {
     },
 
     update(dt, c) {
-      // the pass only runs (one full-screen copy + the markers) while rings or the ghost are shown
-      ringPass.enabled = rings.group.visible || ghost.visible;
+      // the pass only runs (one full-screen copy + the markers) while rings, speed rings or the ghost are shown
+      ringPass.enabled = rings.group.visible || speedRings.visible || ghost.visible;
       if (pendingUrlCourse && loadingDone && dragon) {
         const id = pendingUrlCourse;
         pendingUrlCourse = null;
@@ -498,14 +1033,27 @@ export function createActivitySystem(): System {
         hud.setVisible(on);
         hud.update(on ? c.time.realDt : 0);
       }
+      if (pendingShake > 0 && dt > 0) {
+        c.services.tryGet('cameraRig')?.shake(pendingShake);
+        pendingShake = 0;
+      }
+      stepBoost(dt);
+      if (speedRings.visible) {
+        speedRings.animate(c.time.elapsed);
+      }
+      if (editing) {
+        updateEditor(c);
+      }
       if (!session || !dragon) {
         return;
       }
-      rings.animate(c.time.elapsed);
+      if (!editing) {
+        rings.animate(c.time.elapsed);
+      }
       if (lingerLeft > 0) {
         lingerLeft -= c.time.realDt;
-        if (lingerLeft <= 0 && !session.active) {
-          rings.setCourse(null);
+        if (lingerLeft <= 0 && !session.active && !editing) {
+          hideCourse();
         }
       }
       if (!session.active) {
@@ -541,6 +1089,9 @@ export function createActivitySystem(): System {
       if (hud?.busy) {
         updateMarker(c);
       }
+      if (editing) {
+        updateEditorLabels(c);
+      }
     },
 
     onResize(width, height) {
@@ -552,18 +1103,25 @@ export function createActivitySystem(): System {
       for (const d of disposers.splice(0)) {
         d();
       }
+      if (typing) {
+        setTyping(false);
+      }
       ctx?.pipeline.removeHdrPass(ringPass);
       rings.dispose();
+      speedRings.dispose();
       ghost.dispose();
       ringPass.dispose();
       hud?.dispose();
       picker?.dispose();
       pickerRoot?.remove();
+      editorPanel?.dispose();
+      editorRoot?.remove();
       hud = null;
       picker = null;
       pickerRoot = null;
+      editorPanel = null;
+      editorRoot = null;
       ctx = null;
     },
   };
 }
-
