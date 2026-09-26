@@ -20,7 +20,7 @@ export function bondPose(pose: Readonly<DragonPose>, o: BondOutputs, pov: boolea
     neckShake: o.neckShake,
     bodyRoll: o.bodyRoll * (pov ? 0.3 : 1),
     tailCurl: o.tailCurl,
-    riderLaugh: o.riderLaugh,
+    riderLaugh: Math.max(pose.riderLaugh ?? 0, o.riderLaugh),
     riderShow: o.riderShow,
     riderShowYaw: o.riderShowYaw,
     riderShowPitch: o.riderShowPitch,
