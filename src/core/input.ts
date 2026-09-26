@@ -108,7 +108,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
   { keys: '[ / ]', action: 'Günün saatini değiştir', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
-  { keys: 'Y', action: 'Halka yarışı: sıradaki parkuru başlat / iptal et', group: 'game' },
+  { keys: 'Y', action: 'Halka yarışı: parkur seç (yarışta: iptal et)', group: 'game' },
   { keys: 'M', action: 'Harita', group: 'game' },
   { keys: 'U', action: 'Arayüzü gizle', group: 'game' },
   { keys: 'H', action: 'Yardım', group: 'game' },

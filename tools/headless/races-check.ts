@@ -9,14 +9,29 @@
  * are sampled for terrain clearance and landmark volumes too.
  * Logic: synthetic trajectories through the state machine (straight run finishes, a skipped gate does not count, a
  * backwards pass does not count, stray and landing abort) plus the ghost path codec and records without storage.
+ * Races v2: medal targets (data vs the default paces, thresholds, best medal in records), split delta sign and
+ * format, ghost interpolation (time → position) and the ghost gap sign (progress along the course).
  *
  * Exits non-zero on any failure.
  */
 import { buildHeadlessGeo } from './geo';
-import { COURSES, compileCourse, RACE_PACE, COUNTDOWN_SECONDS, LEAD_IN, type CompiledCourse, type Gate } from '../../src/activities/courses';
-import { RaceSession, gateCrossing, type RaceEvent, type Vec3 } from '../../src/activities/race';
+import {
+  COURSES,
+  compileCourse,
+  RACE_PACE,
+  COUNTDOWN_SECONDS,
+  LEAD_IN,
+  betterMedal,
+  defaultMedalTimes,
+  medalFor,
+  timedDistance,
+  type CompiledCourse,
+  type Gate,
+} from '../../src/activities/courses';
+import { GhostTrack, ghostGap } from '../../src/activities/ghost';
+import { RaceSession, courseProgress, gateCrossing, type RaceEvent, type Vec3 } from '../../src/activities/race';
 import { decodeGhost, encodeGhost, getRecord, submitRun, GhostRecorder, GHOST_HZ } from '../../src/activities/records';
-import { formatTime } from '../../src/activities/text';
+import { deltaTone, formatGateDistance, formatRaceTime, formatSplitDelta, formatTargetTime, formatTime } from '../../src/activities/text';
 import type { GeoQuery, LandmarkDef } from '../../src/core/contracts';
 
 const GATE_TERRAIN_MARGIN = 15;
@@ -417,6 +432,202 @@ function unitTests(course: CompiledCourse): void {
 }
 
 /* ------------------------------------------------------------------ */
+/* Races v2: medals, split deltas, ghost replay and gap                */
+/* ------------------------------------------------------------------ */
+
+function medalTests(courses: CompiledCourse[]): void {
+  console.log('\nMedals');
+  for (const c of courses) {
+    const m = c.def.medals;
+    const d = defaultMedalTimes(timedDistance(c));
+    const whole = [m.gold, m.silver, m.bronze].every((v) => Number.isInteger(v) && v > 0);
+    if (!whole || !(m.gold < m.silver && m.silver < m.bronze)) {
+      fail(`${c.def.id}: targets must be whole seconds with gold < silver < bronze (${JSON.stringify(m)})`);
+      continue;
+    }
+    const off = Math.max(Math.abs(m.gold - d.gold) / d.gold, Math.abs(m.silver - d.silver) / d.silver, Math.abs(m.bronze - d.bronze) / d.bronze);
+    if (off > 0.1) {
+      fail(`${c.def.id}: targets ${JSON.stringify(m)} more than 10% off the defaults ${JSON.stringify(d)}`);
+    } else {
+      const same = m.gold === d.gold && m.silver === d.silver && m.bronze === d.bronze;
+      ok(
+        `${c.def.id}: gold ${formatTargetTime(m.gold)} · silver ${formatTargetTime(m.silver)} · bronze ${formatTargetTime(m.bronze)} ` +
+          `(${same ? 'default paces' : `defaults ${d.gold}/${d.silver}/${d.bronze}`}, ${(timedDistance(c) / 1000).toFixed(2)} km timed)`,
+      );
+    }
+  }
+  const m = { gold: 100, silver: 120, bronze: 140 };
+  const cases: Array<[number, string | null]> = [
+    [80, 'gold'],
+    [100, 'gold'],
+    [100.01, 'silver'],
+    [120, 'silver'],
+    [139.99, 'bronze'],
+    [140.01, null],
+    [Number.NaN, null],
+  ];
+  const bad = cases.filter(([t, want]) => medalFor(t, m) !== want);
+  if (bad.length) {
+    for (const [t, want] of bad) {
+      fail(`medalFor(${t}) = ${medalFor(t, m)}, want ${want}`);
+    }
+  } else {
+    ok(`medalFor thresholds: ${cases.length} cases`);
+  }
+  if (betterMedal('bronze', 'gold') !== 'gold' || betterMedal(null, 'silver') !== 'silver' || betterMedal(undefined, null) !== null || betterMedal('silver', 'bronze') !== 'silver') {
+    fail('betterMedal ordering');
+  }
+  // Records keep the best medal: bronze first, a slower medal-less run keeps it, a faster gold run upgrades it.
+  const id = 'test-medals';
+  const a = submitRun(id, 135, [135], undefined, medalFor(135, m));
+  const b = submitRun(id, 150, [150], undefined, medalFor(150, m));
+  const c = submitRun(id, 95, [95], undefined, medalFor(95, m));
+  if (a.medal === 'bronze' && a.newMedal && b.medal === 'bronze' && !b.newMedal && !b.newRecord && c.medal === 'gold' && c.newMedal && getRecord(id)?.medal === 'gold') {
+    ok('records: best medal stored, kept on a slower run, upgraded on a faster one');
+  } else {
+    fail(`records medal: ${JSON.stringify({ a, b, c, stored: getRecord(id)?.medal })}`);
+  }
+}
+
+function formatTests(): void {
+  console.log('\nSplit deltas and time formats');
+  const cases: Array<[string, string, string]> = [
+    ['formatSplitDelta(-1.237)', formatSplitDelta(-1.237), '−1,24'],
+    ['formatSplitDelta(0.8)', formatSplitDelta(0.8), '+0,80'],
+    ['formatSplitDelta(0)', formatSplitDelta(0), '±0,00'],
+    ['formatSplitDelta(-0.004)', formatSplitDelta(-0.004), '±0,00'],
+    ['formatSplitDelta(-75.5)', formatSplitDelta(-75.5), '−1:15,50'],
+    ['formatSplitDelta(-2.13, 1)', formatSplitDelta(-2.13, 1), '−2,1'],
+    ['formatSplitDelta(3.06, 1)', formatSplitDelta(3.06, 1), '+3,1'],
+    ['deltaTone(-1.24)', deltaTone(-1.24), 'faster'],
+    ['deltaTone(0.8)', deltaTone(0.8), 'slower'],
+    ['deltaTone(0.004)', deltaTone(0.004), 'even'],
+    ['formatRaceTime(83.456)', formatRaceTime(83.456), '1:23,46'],
+    ['formatRaceTime(59.999)', formatRaceTime(59.999), '1:00,00'],
+    ['formatRaceTime(0)', formatRaceTime(0), '0:00,00'],
+    ['formatTargetTime(248)', formatTargetTime(248), '4:08'],
+    ['formatGateDistance(637)', formatGateDistance(637), '640 m'],
+    ['formatGateDistance(1234)', formatGateDistance(1234), '1,2 km'],
+  ];
+  const bad = cases.filter(([, got, want]) => got !== want);
+  if (bad.length) {
+    for (const [name, got, want] of bad) {
+      fail(`${name} = "${got}", want "${want}"`);
+    }
+  } else {
+    ok(`${cases.length} cases (sign: negative = faster, green)`);
+  }
+}
+
+/** Point `d` meters along the polyline, and the distance to each vertex. */
+function polyline(pts: Vec3[]): { at: (d: number) => Vec3; cum: number[]; length: number } {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
+  }
+  const length = cum[cum.length - 1];
+  const at = (d: number): Vec3 => {
+    const dd = Math.max(0, Math.min(length, d));
+    let i = 1;
+    while (i < pts.length - 1 && cum[i] < dd) {
+      i++;
+    }
+    const a = pts[i - 1];
+    const b = pts[i];
+    const k = cum[i] > cum[i - 1] ? (dd - cum[i - 1]) / (cum[i] - cum[i - 1]) : 0;
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k };
+  };
+  return { at, cum, length };
+}
+
+function ghostTests(course: CompiledCourse): void {
+  console.log(`\nGhost replay and gap (${course.def.id})`);
+  // Interpolation on a trivial track: x = 10 m per sample.
+  {
+    const samples = new Float32Array([0, 50, 0, 10, 52, 0, 20, 54, 0, 30, 56, 0]);
+    const tr = new GhostTrack(samples, { hz: 5 });
+    const p: Vec3 = { x: 0, y: 0, z: 0 };
+    const checks: Array<[number, number, number]> = [
+      [0, 0, 50],
+      [0.3, 15, 53],
+      [0.6, 30, 56],
+      [-1, 0, 50],
+      [9, 30, 56],
+    ];
+    const bad = checks.filter(([t, x, y]) => !tr.positionAt(t, p) || Math.abs(p.x - x) > 1e-4 || Math.abs(p.y - y) > 1e-4);
+    if (bad.length === 0 && Math.abs(tr.duration - 0.6) < 1e-9 && tr.finishTime === tr.duration) {
+      ok(`positionAt: ${checks.length} cases (lerp between samples, clamped to the recorded range)`);
+    } else {
+      fail(`positionAt: t = ${bad.map(([t]) => t).join(', ')} wrong`);
+    }
+    if (new GhostTrack(new Float32Array(0)).positionAt(1, p)) {
+      fail('positionAt on an empty track returned true');
+    }
+  }
+
+  // A constant-speed run along the course (from the lead-in start), through the recorder and the codec.
+  const speed = 40;
+  const pts: Vec3[] = [course.start, ...course.gates];
+  const line = polyline(pts);
+  const rec = new GhostRecorder();
+  for (let t = 0; t * speed <= line.length + speed; t += DT) {
+    const q = line.at(t * speed);
+    rec.push(DT, q.x, q.y, q.z);
+  }
+  const splits = line.cum.slice(1).map((d) => d / speed);
+  const finish = splits[splits.length - 1];
+  const encoded = rec.encode();
+  const track = new GhostTrack(decodeGhost(encoded), { course, splits, finishTime: finish });
+  {
+    const p: Vec3 = { x: 0, y: 0, z: 0 };
+    let maxErr = 0;
+    for (let t = 0.13; t < finish; t += 3.7) {
+      track.positionAt(t, p);
+      const q = line.at(t * speed);
+      maxErr = Math.max(maxErr, Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z));
+    }
+    if (maxErr < 2.5) {
+      ok(`time → position on a recorded ${finish.toFixed(0)} s run: max error ${maxErr.toFixed(2)} m`);
+    } else {
+      fail(`time → position error ${maxErr.toFixed(2)} m`);
+    }
+  }
+  // Gap: a racer on leg 3 (gate 2 → 3) at the point the ghost reached after tGhost seconds.
+  {
+    const legMid = (line.cum[3] + line.cum[4]) / 2;
+    const pos = line.at(legMid);
+    const prog = courseProgress(course, 3, pos);
+    const tGhost = legMid / speed;
+    const ahead = ghostGap(track, tGhost - 2, prog);
+    const behind = ghostGap(track, tGhost + 3, prog);
+    const even = ghostGap(track, tGhost, prog);
+    if (prog > 3.3 && prog < 3.7 && ahead !== null && behind !== null && even !== null && Math.abs(ahead + 2) < 0.25 && Math.abs(behind - 3) < 0.25 && Math.abs(even) < 0.25) {
+      ok(`gap sign: 2 s early → ${formatSplitDelta(ahead, 1)} s (ahead), 3 s late → ${formatSplitDelta(behind, 1)} s (behind), progress ${prog.toFixed(2)}`);
+    } else {
+      fail(`gap: progress ${prog.toFixed(2)}, ahead ${ahead}, behind ${behind}, even ${even}`);
+    }
+    // At the finish line the gap is the finish time difference (within a sample).
+    const atFinish = ghostGap(track, finish + 5, course.gates.length);
+    if (atFinish === null || Math.abs(atFinish - 5) > 1 / GHOST_HZ + 1e-6) {
+      fail(`gap at the finish: ${atFinish}`);
+    }
+    // Progress beyond the ghost's samples (a truncated path): the ghost's finish time is the reference.
+    const all = decodeGhost(encoded);
+    const cut = new GhostTrack(all.slice(0, Math.floor(all.length * 0.6 / 3) * 3), { course, splits, finishTime: finish });
+    const late = ghostGap(cut, finish + 5, course.gates.length - 1.5);
+    if (late === null || Math.abs(late - 5) > 1e-6) {
+      fail(`gap past the ghost's last sample: ${late}`);
+    } else {
+      ok('gap at the finish and past a truncated ghost path uses the ghost finish time');
+    }
+    // No progress data (splits did not match): no gap.
+    if (ghostGap(new GhostTrack(decodeGhost(encoded)), 10, 1.5) !== null) {
+      fail('gap without course data should be null');
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
 
 const t0 = Date.now();
 const geo = buildHeadlessGeo();
@@ -430,6 +641,9 @@ for (const c of compiled) {
   logicTests(c);
 }
 unitTests(compiled[0]);
+medalTests(compiled);
+formatTests();
+ghostTests(compiled[0]);
 
 console.log('\nCourse            gates   length   est. @35 m/s');
 for (const c of compiled) {
