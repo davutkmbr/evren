@@ -85,6 +85,8 @@ export const gullSimit: Moment = {
     repeat: { kind: 'repeatable', cooldownSec: 600 },
   },
   content: {
+    // A deck radio on the ferry the moment started at (the 'ferry' anchor); it moves with the ship.
+    musicSource: { kind: 'ferry', anchor: 'ferry', height: 8 },
     // Procedural (src/moments/gull-simit): the ferry's gull flock and the tossed simit pieces; no passengers.
     actorId: 'moments/ferry-gull-flock',
     soundId: 'moments/gull-call',

@@ -158,7 +158,11 @@ for (const [name, mut, expect] of badPhrases) {
   }
   check(new Set(TEST_PHRASES.map((p) => p.family)).size >= 3, 'test phrases cover at least three families');
   check(TEST_PHRASES.some((p) => p.tags.includes('night')) && TEST_PHRASES.some((p) => p.tags.includes('day')), 'test phrases cover day and night');
-  check(TEST_MOMENT_PIECES.length >= 1 && TEST_MOMENT_PIECES.every((p) => p.role === 'moment' && p.tags.includes('poem')), 'a test moment piece for poems exists');
+  check(TEST_MOMENT_PIECES.every((p) => p.role === 'moment') && TEST_MOMENT_PIECES.some((p) => p.tags.includes('poem')), 'a test moment piece for poems exists');
+  check(
+    TEST_MOMENT_PIECES.some((p) => p.tags.includes('legend')) && TEST_MOMENT_PIECES.some((p) => p.tags.includes('city-life')),
+    'test moment pieces for legends and city life exist (every source kind is audible with ?music=test)',
+  );
   check(near(phraseGain({ lufs: PHRASE_TARGET_LUFS - 6 }), Math.pow(10, 6 / 20)), 'a phrase 6 dB under the target is lifted 6 dB');
   check(near(phraseGain({ lufs: PHRASE_TARGET_LUFS + 30, gain: 0.5 }), 0.5 * Math.pow(10, -12 / 20)), 'the loudness correction is clamped to 12 dB and the trim applies');
   check(phraseGain({}) === 1, 'no lufs, no gain: unity');
