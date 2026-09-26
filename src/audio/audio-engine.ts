@@ -10,9 +10,9 @@ import { playBubbles } from './sfx/bubbles';
 import { playPaddle, playSnort } from './sfx/swim';
 import { playLand, playSplash, playSpray, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
-import { playDiscover, playUiClick } from './sfx/ui';
+import { playChainCue, playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
-import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
+import { playBurstRush, playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
@@ -51,6 +51,8 @@ export interface DragonAudioState {
   wingspan: number;
   /** 0..1 skimming low over water. */
   skim: number;
+  /** 0..1 perceived-speed surge (race speeds and chain bursts in their context; wind.ts). */
+  surge: number;
   /**
    * The sea reacting to low flight (lowFlight service, phase 21 stage 2): 0..1 downwash on the water, skim wake and
    * fire steam, the water point under the dragon and the steam point.
@@ -118,6 +120,7 @@ export function createAudioFrame(): AudioFrame {
       firing: false,
       wingspan: 18,
       skim: 0,
+      surge: 0,
       downwash: 0,
       wake: 0,
       steam: 0,
@@ -167,6 +170,9 @@ export const MIX = {
   thunder: 0.85,
   wingSnap: 1.3,
   whoosh: 0.9,
+  /** Chain bursts (phase 20): the forward rush of a burst and the chain-link tone (quiet: it plays often in a race). */
+  burst: 0.75,
+  chain: 0.32,
   reinSnap: 0.8,
   purr: 1.1,
   /** Nostril bubbles under water: quiet, they repeat every half second. */
@@ -204,6 +210,9 @@ const COOLDOWN: Record<SoundName, number> = {
   'rein-snap': 0.2,
   purr: 1.2,
 };
+
+/** Two chain links closer than this (s) make one sound. */
+const CHAIN_COOLDOWN = 0.25;
 
 const DRAGON_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 18, delayAbove: 120 };
 /**
@@ -303,6 +312,7 @@ export class AudioEngine {
   private lastSpray = -1e9;
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
+  private lastChainAt = -1e9;
   private readonly lastPlayed: Record<SoundName, number> = {
     roar: -1e9,
     flap: -1e9,
@@ -403,6 +413,7 @@ export class AudioEngine {
       p.diving = d.diving;
       p.stall = d.stall;
       p.skim = d.skim;
+      p.surge = d.surge;
       p.exposure = lerp(EXPOSURE_THIRD, EXPOSURE_POV, this.pov);
     } else {
       p.airspeed = frame.listenerSpeed;
@@ -413,6 +424,7 @@ export class AudioEngine {
       p.diving = 0;
       p.stall = 0;
       p.skim = 0;
+      p.surge = 0;
       p.exposure = EXPOSURE_FREE;
     }
     p.pov = this.pov;
@@ -521,6 +533,26 @@ export class AudioEngine {
   private dragonSource(): Vec3 {
     const f = this.frame;
     return f.dragon.present ? f.dragon.position : f.listener.position;
+  }
+
+  /**
+   * A chain link landed (phase 20 chain bursts): a short forward rush when it pushes (`dv` m/s) and a soft struck tone
+   * whose pitch climbs with the chain (`link`), both scaled by `context` (full in a race, subtle in free flight).
+   */
+  chainLink(link: number, dv: number, context: number): void {
+    const now = this.now;
+    if (now - this.lastChainAt < CHAIN_COOLDOWN || context <= 0) {
+      return;
+    }
+    this.lastChainAt = now;
+    const f = this.frame;
+    const k = clamp(context, 0, 1);
+    if (dv > 0.5) {
+      const pl = placeSource(f.listener, this.dragonSource(), DRAGON_BODY, this.place);
+      pl.gain *= MIX.burst * k;
+      playBurstRush(this.sfx, now, clamp(dv / 12, 0.3, 1.2), pl);
+    }
+    playChainCue(this.ui, now, MIX.chain * (0.55 + 0.45 * k), link);
   }
 
   play(name: SoundName, volume = 1): void {

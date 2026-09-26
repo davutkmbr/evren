@@ -7,8 +7,11 @@ import type { DragonRig, DragonState, EngineContext, System } from '../../core/c
 import { UpdateOrder } from '../../core/contracts';
 import { VIEW_PRESETS } from '../../core/debug';
 import { headingToYaw, yawToHeading } from '../../core/geo-coords';
-import { clamp } from '../../core/math/noise';
+import { clamp, smoothstep } from '../../core/math/noise';
+import { speedFeel } from '../../core/speed-feel';
 import { BodyState } from './body';
+import { BURST } from './flow/burst';
+
 import { mountFlowDebug } from './flow/debug-overlay';
 import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, MAX_SUBSTEPS, PHYSICS_DT } from './params';
 import { Autopilot, hasPilotInput, readPilotInput } from './pilot';
@@ -18,12 +21,16 @@ import { createTestControl, installFlightTestHook } from './test-hook';
 import type { PilotCommand, SimEvent } from './types';
 import { clearOverrides, clearPilotEdges, copyPilotCommand, createPilotCommand, latchPilotEdges, PILOT_EDGES } from './types';
 
+/** Burst spray over water: below this foot clearance (m), every `spacing` m, splash strength at full push and feel. */
+const BURST_SPRAY = { height: 9, spacing: 5, strength: 0.22, wakeBack: 9 } as const;
+
 const DEFAULT_SPAWN_SPEED = 40;
 /** Seconds between roars. */
 const ROAR_COOLDOWN = 2.6;
 
 export function createFlightSystem(): System {
   const sim = new FlightSim();
+  sim.flow.burstScale = BURST.freeFlightScale;
   const object = new THREE.Group();
   object.name = 'dragon';
   const state: DragonState = {
@@ -43,6 +50,14 @@ export function createFlightSystem(): System {
     firing: false,
     touchingWater: false,
     roarCooldown: 0,
+    chain: 0,
+    burst: 0,
+    racing: false,
+    setRacing(on) {
+      state.racing = on;
+      // Full-size chain bursts in a race; in free flight they stay smaller (the game's calm direction).
+      sim.flow.burstScale = on ? 1 : BURST.freeFlightScale;
+    },
     addVelocity(dx, dy, dz) {
       sim.body.velocity.x += dx;
       sim.body.velocity.y += dy;
@@ -50,8 +65,8 @@ export function createFlightSystem(): System {
       // An outside push is not the dragon's own energy management (flow's energy stewardship).
       sim.flow.noteExternal(sim);
     },
-    notePass(tightness) {
-      sim.flow.notePass(sim, tightness);
+    notePass(tightness, kind) {
+      sim.flow.notePass(sim, tightness, kind);
     },
     requestRoar() {
       return ctxRef ? roar(ctxRef) : false;
@@ -62,6 +77,8 @@ export function createFlightSystem(): System {
     perch: sim.perch,
   };
 
+  let sprayDistance = 0;
+  const sprayPoint = new THREE.Vector3();
   const previous = new BodyState();
   const poseDriver = new PoseDriver();
   const autopilot = new Autopilot();
@@ -148,6 +165,43 @@ export function createFlightSystem(): System {
     return frameCmd;
   }
 
+  /**
+   * Perceived speed over water (phase 20): while a chain burst pushes low over the sea, the downwash throws a spray
+   * trail from under the wingtips and a wake behind the tail, spaced by distance; stronger with the push and the speed,
+   * scaled by the speed feel (core/speed-feel.ts). Presentation only (FX, no sound, no physics).
+   */
+  function burstSpray(ctx: EngineContext, dt: number): void {
+    const push = sim.flow.burst.rate / 2;
+    const height = sim.footClearance;
+    if (push < 0.05 || !sim.overWater || !sim.airborne || height > BURST_SPRAY.height) {
+      sprayDistance = 0;
+      return;
+    }
+    const v = sim.body.velocity;
+    sprayDistance += Math.hypot(v.x, v.z) * dt;
+    if (sprayDistance < BURST_SPRAY.spacing) {
+      return;
+    }
+    sprayDistance = 0;
+    const fx = ctx.services.tryGet('fx');
+    const feel = speedFeel(state);
+    const strength = BURST_SPRAY.strength * push * feel * smoothstep(BURST_SPRAY.height, 1.5, height) * smoothstep(25, 60, sim.airspeed);
+    if (!fx || strength < 0.01) {
+      return;
+    }
+    const p = sim.body.position;
+    const axes = sim.axes;
+    const reach = sim.wing.span * 0.35;
+    for (const side of [-1, 1]) {
+      sprayPoint.copy(p).addScaledVector(axes.right, side * reach).addScaledVector(axes.forward, -2);
+      sprayPoint.y = sim.waterHeight(sprayPoint.x, sprayPoint.z);
+      fx.splash(sprayPoint, strength);
+    }
+    sprayPoint.copy(p).addScaledVector(axes.forward, -BURST_SPRAY.wakeBack);
+    sprayPoint.y = sim.waterHeight(sprayPoint.x, sprayPoint.z);
+    fx.splash(sprayPoint, strength * 1.4);
+  }
+
   function dispatchEvents(ctx: EngineContext): void {
     const events = sim.events;
     if (events.length === 0) {
@@ -204,6 +258,9 @@ export function createFlightSystem(): System {
         case 'sound':
           audio?.play(e.name, e.volume);
           break;
+        case 'chain':
+          ctx.events.emit('chain-link', { link: e.link, dv: e.dv, source: e.source });
+          break;
         case 'shake':
           cam?.shake(e.amount);
           break;
@@ -239,6 +296,8 @@ export function createFlightSystem(): System {
     state.headingDeg = yawToHeading(sim.axes.yaw());
     state.stamina = sim.stamina;
     state.flow = sim.flow.value;
+    state.chain = sim.flow.burst.links;
+    state.burst = sim.flow.burst.rate / 2;
     state.flapEffort = sim.beat.effort;
     state.firing = sim.firing;
     state.roarCooldown = roarCooldown / ROAR_COOLDOWN;
@@ -347,6 +406,7 @@ export function createFlightSystem(): System {
         object.quaternion.slerpQuaternions(previous.quaternion, sim.body.quaternion, alpha);
 
         dispatchEvents(ctx);
+        burstSpray(ctx, dt);
         if (sim.firing !== wasFiring) {
           wasFiring = sim.firing;
           ctx.events.emit(sim.firing ? 'fire-start' : 'fire-stop', {});

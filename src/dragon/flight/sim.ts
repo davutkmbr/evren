@@ -52,7 +52,7 @@ export class FlightSim {
   readonly events: SimEvent[] = [];
   /** When false, events are counted but not queued (fast-forward tests). */
   queueEvents = true;
-  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, spray: 0, dust: 0, landed: 0, mode: 0, maneuver: 0, sound: 0, shake: 0 };
+  readonly eventCounts: Record<SimEvent['type'], number> = { flap: 0, impact: 0, splash: 0, spray: 0, dust: 0, landed: 0, mode: 0, maneuver: 0, sound: 0, shake: 0, chain: 0 };
 
   mode: FlightMode = 'flying';
   modeTime = 0;

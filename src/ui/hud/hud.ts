@@ -9,6 +9,7 @@ import { CompassTape } from './compass-tape';
 import { AltitudeReadout, SpeedReadout } from './flight-readout';
 import { Hotbar } from './hotbar';
 import { ManeuverCaption } from './maneuver-caption';
+import { ChainCounter } from './chain-counter';
 import { FlowLine } from './flow-line';
 import { StaminaWings } from './stamina-wings';
 
@@ -30,6 +31,7 @@ export class Hud {
   readonly altitude = new AltitudeReadout();
   readonly stamina = new StaminaWings();
   readonly flow = new FlowLine();
+  readonly chain = new ChainCounter();
   readonly hotbar = new Hotbar();
   readonly maneuver: ManeuverCaption;
   private readonly hintLine: HintLineView;
@@ -53,7 +55,7 @@ export class Hud {
       this.area.root,
       el('div', 'hud-cluster', [
         this.speed.root,
-        el('div', 'hud-cluster-mid', [this.stamina.root, this.flow.root, this.hotbar.root]),
+        el('div', 'hud-cluster-mid', [this.stamina.root, this.flow.root, this.chain.root, this.hotbar.root]),
         this.altitude.root,
       ]),
       this.minimap.root,
@@ -76,6 +78,7 @@ export class Hud {
     this.minimap.update(s, realDt);
     this.stamina.update(s.stamina, realDt);
     this.flow.update(s.flow, realDt);
+    this.chain.update(s.chain, realDt);
     this.hotbar.render();
     this.area.update(s, realDt, this.zones);
     this.textTimer -= realDt;
