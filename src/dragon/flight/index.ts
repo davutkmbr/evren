@@ -250,9 +250,11 @@ export function createFlightSystem(): System {
           }
           break;
         case 'maneuver':
-          // Move-end markers (flow hooks) stay inside the flight model.
+          // Move ends (flow hooks) are not captions: they go out as 'maneuver-end' (the tutorial hints' "learned").
           if (!e.ended) {
-            ctx.events.emit('maneuver', { id: e.id, label: e.label });
+            ctx.events.emit('maneuver', e.clean === undefined ? { id: e.id, label: e.label } : { id: e.id, label: e.label, clean: e.clean });
+          } else {
+            ctx.events.emit('maneuver-end', { id: e.id, clean: e.clean ?? false });
           }
           break;
         case 'sound':
