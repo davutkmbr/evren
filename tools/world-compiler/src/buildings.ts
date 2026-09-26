@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import type { OsmBuilding } from '../../../src/world/osm/data';
 import { BoxGrid, bounds, pointInRing, ringArea } from '../../../src/world/osm/shared/geometry';
+import { NON_SOLID_KINDS } from '../../../src/world/osm/buildings/selection';
 import { type StreetSurface, Zone } from '../../../src/world/osm/shared/street-surface';
 import type { FootprintIndex } from '../../../src/world/osm/shared/footprints';
 import type { BuildingRec, DoorRec, XYZ } from './format';
@@ -73,7 +74,8 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
   const seen = new Map<number, number>();
   const out: Solid[] = [];
   for (const b of buildings) {
-    if (!b.part && b.hasParts) {
+    // The shared rule (src/world/osm/buildings/selection.ts): the flight-scale layer draws the same set from the air.
+    if ((!b.part && b.hasParts) || NON_SOLID_KINDS.has(b.kind)) {
       continue;
     }
     let ring = b.ring;

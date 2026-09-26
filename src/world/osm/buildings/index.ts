@@ -16,6 +16,7 @@ import type { OsmContext, OsmLayer } from '../types';
 import { isWallOwned } from '../../landmarks/walls/system/owned';
 import { landmarkClaims } from '../../landmarks/claims';
 import { Poi } from './build';
+import { streetAreaRects } from '../street-areas';
 import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
 import { type BuildingMaterials, createBuildingMaterials } from './materials';
@@ -89,7 +90,7 @@ class BuildingsLayer extends LayerBase {
       // Modelled landmarks keep their ground (pads, line bodies such as the aqueduct): no OSM building through them.
       claims: landmarkClaims(ctx.geo),
       passages: findPassages(data.buildings, data.roads),
-      infill: { roads: data.roads, areas: data.areas, rails: data.rails },
+      infill: { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetAreaRects().map((a) => a.rect) },
     };
     const job = runWorker<BuildingsRequest, BuildingsResult>(worker, request);
     this.onDispose(() => job.cancel());

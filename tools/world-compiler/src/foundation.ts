@@ -16,6 +16,7 @@
  */
 import type { WorldBounds } from '../../../src/core/contracts';
 import { buildWorld } from '../../../src/world/geo/build/build-world';
+import { readOsmLand } from '../../headless/geo';
 import { type GridSpec, HEIGHT_GRID, LANDUSE_GRID } from '../../../src/world/geo/build/grid';
 import { prepareBuildInput } from '../../../src/world/geo/prepare';
 import type { OsmData } from '../../../src/world/osm/data';
@@ -155,7 +156,8 @@ export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40, s
     return { rect, base: shared.base, surface: new StreetSurface(shared.base), footprints: new FootprintIndex(data.buildings), coastSource: shared.coastSource, ms: { geo: 0, coast: 0, raster: 0 } };
   }
   const t0 = performance.now();
-  const world = buildWorld(prepareBuildInput().input);
+  // The runtime's land use, OSM parks and woods included (geo/build/osm-land.ts).
+  const world = buildWorld(prepareBuildInput().input, readOsmLand());
   const outer = groundRect({ minX: rect.minX - margin, maxX: rect.maxX + margin, minZ: rect.minZ - margin, maxZ: rect.maxZ + margin });
   const landUse = cut(world.landUse, LANDUSE_GRID, outer);
   const t1 = performance.now();
@@ -179,7 +181,8 @@ export function buildFoundation(data: OsmData, rect: WorldBounds, margin = 40, s
   const t2 = performance.now();
   const street = buildStreetRaster(streetRasterInput(data, (x, z) => bilinear(coast, x, z)), outer);
   const t3 = performance.now();
-  // No landmark pads: the street layer draws every OSM building itself (hero buildings included).
+  // No reserved pads: the street layer draws its own ground everywhere. Buildings on the game's landmark claims are
+  // flagged as landmarks instead (district.ts landmarkOf, `--landmarks none`).
   const base: OsmWorkerBase = { rect: outer, area: rect, height, coast, groundCoast, landUse, reserved: [], street };
   return {
     rect,
