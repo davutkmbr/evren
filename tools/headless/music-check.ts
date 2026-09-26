@@ -6,8 +6,10 @@
  * 1. Manifest: a complete good example validates; each bad example fails with the expected issue (stem lengths
  *    differ, a duration off the grid, missing / bad licence fields, missing base stem, unknown role, bad paths, a
  *    missing file, duplicate ids, bad grid values, no approval date) and never takes a valid set down with it; the
- *    shipped public/audio/music/manifest.json validates (with the files checked on disk); the DEV test sets are valid
- *    and their notes fit their loops; decoded-length check, source picking, credit line.
+ *    shipped public/audio/music/manifest.json validates (with the files checked on disk, no US-risky piece in it), and
+ *    so does the private manifest (private-assets/audio/moments/) when present; restored 78 rpm pieces carry a valid
+ *    denoised / raw variant pair and `?music=raw` swaps to the raw files; every moment's musicId names a piece; the
+ *    DEV test sets are valid and their notes fit their loops; decoded-length check, source picking, credit line.
  * 2. Bar grid: positions, bar / phrase boundaries with lookahead, loop offsets.
  * 3. Rules: state sequences → stem targets (grounded, perched, cruising, fast, dive, flow, low over water, thermal,
  *    night, storm, fog, race, moment with and without its own music, underwater, menu), hysteresis and hold times (no
@@ -22,7 +24,21 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { positionAt, nextBoundary, loopOffsetAt, gridBarSec, type BarGrid } from '../../src/audio/music/clock';
-import { checkDecodedLengths, creditLine, loopSeconds, pickSource, validateManifest, type MusicSetDef, type StemRole } from '../../src/audio/music/manifest';
+import {
+  applyPhraseVariant,
+  checkDecodedLengths,
+  creditLine,
+  loopSeconds,
+  mergePrivatePhrases,
+  pickSource,
+  PRIVATE_PREFIX,
+  validateManifest,
+  type MusicManifest,
+  type MusicPhraseDef,
+  type MusicSetDef,
+  type StemRole,
+} from '../../src/audio/music/manifest';
+import { ALL_MOMENTS } from '../../src/moments/data';
 import { idleInput, MusicRulesEngine, applyRules, matchState, ConditionTracker, MUSIC_RULES, FULL_MIX, type MusicInput, type MusicTarget } from '../../src/audio/music/rules';
 import { MusicDirector, DEFAULT_DIRECTOR, seededRandom, scoreSet, type DirectorCommand, type DirectorWorld } from '../../src/audio/music/director';
 import { TEST_SETS, testScore } from '../../src/audio/music/test-sets';
@@ -125,16 +141,109 @@ for (const [name, mut, expect] of bad) {
   check(validateManifest({ version: 1, sets: [tag] }).warnings.some((x) => /unknown tag/.test(x.message)), 'an unknown tag only warns');
 }
 {
-  // The shipped manifest (empty until the owner approves music) validates with the files checked on disk.
+  // The shipped manifest validates with the files checked on disk; the private one (US-risky historic recordings,
+  // gitignored) too when this machine has it.
   const root = join(import.meta.dirname, '../../public/audio/music');
+  const privRoot = join(import.meta.dirname, '../../private-assets/audio/moments');
   const path = join(root, 'manifest.json');
+  let shipped: MusicManifest = { version: 1, sets: [], phrases: [] };
+  let privIds = new Set<string>();
   if (existsSync(path)) {
-    const r = validateManifest(JSON.parse(readFileSync(path, 'utf8')), { exists: (p) => existsSync(join(root, p)) });
+    const r = validateManifest(JSON.parse(readFileSync(path, 'utf8')), { exists: (p) => existsSync(join(root, p)), publicManifest: true });
     check(r.ok, `public/audio/music/manifest.json validates (${r.errors.map((e) => `${e.path}: ${e.message}`).join('; ')})`);
-    console.log(`  shipped manifest: ${r.manifest.sets.length} set(s)`);
+    shipped = r.manifest;
+    const moments = (r.manifest.phrases ?? []).filter((p) => p.role === 'moment');
+    console.log(`  shipped manifest: ${r.manifest.sets.length} set(s), ${(r.manifest.phrases ?? []).length} phrase(s), ${moments.length} moment piece(s)`);
+    for (const p of r.manifest.phrases ?? []) {
+      if (p.credit.licence === 'public-domain') {
+        check(!!p.variants?.raw && !!p.variants?.denoised, `${p.id}: a restored historic piece ships both variants (denoised and raw)`);
+        check(p.lufs !== undefined && p.variants?.raw?.lufs !== undefined, `${p.id}: both variants carry their measured lufs`);
+        const raw = applyPhraseVariant(p, 'raw');
+        check(raw.src[0] === p.variants?.raw?.src[0] && raw.variant === 'raw', `${p.id}: ?music=raw plays the raw files`);
+      }
+    }
   } else {
     console.log('  no public/audio/music/manifest.json (no music: fine)');
   }
+  const privPath = join(privRoot, 'manifest.json');
+  if (existsSync(privPath)) {
+    const exists = (p: string): boolean => p.startsWith(PRIVATE_PREFIX) && existsSync(join(privRoot, p.slice(PRIVATE_PREFIX.length)));
+    const r = validateManifest(JSON.parse(readFileSync(privPath, 'utf8')), { exists });
+    check(r.ok, `private-assets/audio/moments/manifest.json validates (${r.errors.map((e) => `${e.path}: ${e.message}`).join('; ')})`);
+    const merged = mergePrivatePhrases(shipped, r.manifest);
+    check(merged.skipped.length === 0, `the private manifest merges without conflicts (${merged.skipped.join('; ')})`);
+    privIds = new Set((r.manifest.phrases ?? []).map((p) => p.id));
+    console.log(`  private manifest: ${privIds.size} phrase(s) (builds include them; the repository does not)`);
+  } else {
+    console.log('  no private-assets/audio/moments/manifest.json on this machine (private pieces fall back to the mood choice)');
+  }
+  // Every moment's musicId names a shipped piece or set, or a declared private piece (only a note when this machine
+  // lacks the private files: the moment then picks by mood).
+  const pubIds = new Set([...shipped.sets.map((x) => x.id), ...(shipped.phrases ?? []).map((x) => x.id)]);
+  const recipes = join(import.meta.dirname, '../../tools/assets/moment-pieces.json');
+  const privDeclared = new Set<string>(
+    existsSync(recipes)
+      ? (JSON.parse(readFileSync(recipes, 'utf8')) as { pieces: Array<{ id: string; target: string }> }).pieces.filter((x) => x.target === 'private').map((x) => x.id)
+      : [],
+  );
+  for (const m of ALL_MOMENTS) {
+    const id = m.content.musicId;
+    if (!id) {
+      continue;
+    }
+    if (privDeclared.has(id)) {
+      check(!pubIds.has(id), `${m.id}: private piece ${id} is not in the public manifest`);
+      if (!privIds.has(id)) {
+        console.log(`  note: ${m.id} names the private piece ${id}, absent on this machine`);
+      }
+    } else {
+      check(pubIds.has(id), `${m.id}: musicId ${id} names a piece of public/audio/music/manifest.json`);
+    }
+  }
+}
+{
+  // Historic recordings: licences, variants and the public / private split.
+  const piece = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: 'tas-plak-1',
+    role: 'moment',
+    src: ['moments/tas-plak-1.opus', 'moments/tas-plak-1.m4a'],
+    durationSec: 60,
+    tags: ['poem'],
+    lufs: -21,
+    variant: 'denoised',
+    variants: {
+      denoised: { src: ['moments/tas-plak-1.opus', 'moments/tas-plak-1.m4a'], lufs: -21 },
+      raw: { src: ['moments/tas-plak-1.raw.opus', 'moments/tas-plak-1.raw.m4a'], lufs: -23 },
+    },
+    credit: { title: 'Taş plak', author: 'Biri', licence: 'public-domain', sourceUrl: 'https://www.loc.gov/item/x/', attribution: 'Taş plak — Biri, Victor 1 (1916)' },
+    approvedOn: '2026-09-26',
+    ...over,
+  });
+  const ok = (p: Record<string, unknown>, opts = {}): boolean => validateManifest({ version: 1, sets: [], phrases: [p] }, opts).ok;
+  check(ok(piece()), 'a restored historic piece with both variants validates');
+  check(!ok(piece({ credit: { title: 'T', author: 'A', licence: 'public-domain', sourceUrl: 'https://x.org/' } })), 'a public-domain recording needs its attribution');
+  check(!ok(piece({ credit: { title: 'T', author: 'A', licence: 'public-domain', attribution: 'a' } })), 'a public-domain recording needs its sourceUrl');
+  check(!ok(piece({ variant: 'raw' })), 'src must be the default variant');
+  check(!ok(piece({ variant: 'clean' })), 'an unknown default variant fails');
+  check(!ok(piece({ variants: { denoised: { src: ['moments/tas-plak-1.opus', 'moments/tas-plak-1.m4a'] }, extra: { src: ['moments/b.opus'] } } })), 'an unknown variant name fails');
+  check(!ok(piece({ variants: undefined })), 'variant without variants fails');
+  const riskyCredit = { title: 'T', author: 'A', licence: 'public-domain-tr', sourceUrl: 'https://gallica.bnf.fr/x', attribution: 'a' };
+  const risky = piece({ credit: riskyCredit });
+  check(ok(risky) && !ok(risky, { publicManifest: true }), 'a US-risky (public-domain-tr) piece is rejected from the public manifest only');
+  const privSrc = { src: ['private/a.opus'], variant: 'denoised', variants: { denoised: { src: ['private/a.opus'] } } };
+  check(!ok(piece(privSrc), { publicManifest: true }), 'a private/ file is rejected from the public manifest');
+  const pub = validateManifest({ version: 1, sets: [], phrases: [piece()] }).manifest;
+  const priv = validateManifest({
+    version: 1,
+    sets: [],
+    phrases: [piece({ ...privSrc, id: 'gizli-1', credit: riskyCredit }), piece({ id: 'kacak-1', credit: riskyCredit }), piece({ ...privSrc, credit: riskyCredit })],
+  }).manifest;
+  const merged = mergePrivatePhrases(pub, priv);
+  check(merged.manifest.phrases?.map((p) => p.id).join(',') === 'tas-plak-1,gizli-1', 'the private merge adds private/ pieces only and never replaces a public id');
+  check(merged.skipped.length === 2, 'the private merge reports what it skipped');
+  const def = pub.phrases![0] as MusicPhraseDef;
+  check(applyPhraseVariant(def, 'raw').lufs === -23 && applyPhraseVariant(def, 'denoised') === def && applyPhraseVariant(def, null) === def, 'variant switching swaps src and lufs only when asked');
+  check(creditLine({ credit: def.credit }).includes('kamu malı'), 'the credit line names public domain in Turkish');
 }
 {
   const r = validateManifest({ version: 1, sets: TEST_SETS });
