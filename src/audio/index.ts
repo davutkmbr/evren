@@ -170,6 +170,12 @@ export function createAudioSystem(): System {
     setAmbienceLift(amount: number): void {
       ambienceLift = clamp01(finiteOr(amount, 0));
     },
+    momentCue(cue, position, vol, panFrom): void {
+      engine?.momentCue(cue, position, vol, panFrom);
+    },
+    setMomentBed(amount: number): void {
+      engine?.setMomentBed(amount);
+    },
   };
 
   const debugHandle: AudioDebugHandle = {

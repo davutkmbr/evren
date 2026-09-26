@@ -1,4 +1,4 @@
-import type { AudioOneShot, CameraMode } from '../core/contracts';
+import type { AudioOneShot, CameraMode, MomentAudioCue } from '../core/contracts';
 import { clamp, clamp01, finiteOr, lerp, smoothstep } from './dsp/math';
 import { createNoiseBank, type NoiseBank } from './dsp/noise';
 import { SmoothParam } from './dsp/param';
@@ -14,6 +14,7 @@ import { playDiscover, playUiClick } from './sfx/ui';
 import { playPurr } from './sfx/bond';
 import { playReinSnap, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
+import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
@@ -26,6 +27,7 @@ import { UnderwaterVoice } from './voices/underwater';
 import { SeaVoice } from './voices/sea';
 import { SwimVoice } from './voices/swim';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
+import { MomentBedVoice } from './voices/moment';
 
 export type SoundName = AudioOneShot;
 
@@ -181,6 +183,14 @@ export const MIX = {
   swimBed: 0.9,
   paddle: 0.85,
   snort: 0.6,
+  /**
+   * Moments (src/moments): the storks' bill clatter, a nearby stork's wing beat and the air rush of one passing close,
+   * and the soft open-air wind bed of the moment (its own level is MOMENT_BED_LEVEL).
+   */
+  storkClatter: 0.7,
+  storkWing: 0.75,
+  storkPass: 0.6,
+  momentBed: 1.0,
 } as const;
 
 /** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
@@ -258,6 +268,10 @@ const STEAM_POINT: PlaceOptions = { refDistance: 26, reverb: 0.2, size: 8, delay
 /** The water around the swimming body (a broad source) and one wing's paddle (beside the shoulder). */
 const SWIM_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 16, delayAbove: 120 };
 const PADDLE_POINT: PlaceOptions = { refDistance: 26, reverb: 0.15, size: 6, delayAbove: 120 };
+/** A stork (2 m wingspan) as a sound source: small, heard only up close. */
+const STORK_POINT: PlaceOptions = { refDistance: 8, reverb: 0.12, size: 2, delayAbove: 80 };
+/** Shortest gap (s) between two moment cues of the same kind. */
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5 };
 /** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
 const PADDLE_OFFSET = 4;
 /** Seconds between two snorts while swimming (random within). */
@@ -291,6 +305,7 @@ export class AudioEngine {
   readonly underwater: UnderwaterVoice;
   readonly sea: SeaVoice;
   readonly swim: SwimVoice;
+  readonly momentBed: MomentBedVoice;
   readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
@@ -332,6 +347,8 @@ export class AudioEngine {
   private readonly swimPlace: Placement = placement();
   private readonly paddlePos: Vec3 = { x: 0, y: 0, z: 0 };
   private lastPaddle = -1e9;
+  private momentBedLevel = 0;
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -370,6 +387,7 @@ export class AudioEngine {
     this.underwater = new UnderwaterVoice(ctx, this.noise, this.bus.underwater, rng);
     this.sea = new SeaVoice(ctx, this.noise, this.bus.sfx, rng);
     this.swim = new SwimVoice(ctx, this.noise, this.bus.sfx, rng);
+    this.momentBed = new MomentBedVoice(ctx, this.noise, this.bus.ambience, rng);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -477,6 +495,7 @@ export class AudioEngine {
     this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck) * windKeep, now);
 
     this.ambience.update(frame.probe, dt, now, !this.paused, frame.listener.position.x, frame.listener.position.z);
+    this.momentBed.update(this.paused ? 0 : this.momentBedLevel * MIX.momentBed * (1 - uw), now);
     if (frame.rain > 1e-3) {
       this.samples?.request('rain');
     }
@@ -595,6 +614,42 @@ export class AudioEngine {
         playPurr(this.sfx, now, 1, pl);
         break;
       }
+    }
+  }
+
+  /** Soft open-air wind bed of a playing moment, 0..1 (smoothed by the voice). */
+  setMomentBed(amount: number): void {
+    this.momentBedLevel = clamp01(finiteOr(amount, 0));
+  }
+
+  /**
+   * A positional cue of a moment's creatures at `position` (world): bill clatter, a wing beat, a close pass. `volume`
+   * 0..1.5 on top of the distance; `panFrom` (pass only) is where the rush starts in the stereo field.
+   */
+  momentCue(cue: MomentAudioCue, position: Vec3, volume = 1, panFrom = 0): void {
+    const now = this.now;
+    if (this.paused || this.stats.active > this.maxVoices || now - this.lastCue[cue] < MOMENT_CUE_SPACING[cue]) {
+      return;
+    }
+    if (!Number.isFinite(position.x + position.y + position.z)) {
+      return;
+    }
+    this.lastCue[cue] = now;
+    const pl = placeSource(this.frame.listener, position, STORK_POINT, this.place);
+    const vol = clamp(finiteOr(volume, 1), 0, 1.5);
+    switch (cue) {
+      case 'stork-clatter':
+        pl.gain *= MIX.storkClatter;
+        playStorkClatter(this.sfx, now, vol, pl);
+        break;
+      case 'stork-wingbeat':
+        pl.gain *= MIX.storkWing;
+        playStorkWingbeat(this.sfx, now, vol, pl);
+        break;
+      case 'stork-pass':
+        pl.gain *= MIX.storkPass;
+        playStorkPass(this.sfx, now, vol, pl, panFrom);
+        break;
     }
   }
 
@@ -764,6 +819,7 @@ export class AudioEngine {
     this.underwater.dispose(this.ctx.currentTime);
     this.sea.dispose(this.ctx.currentTime);
     this.swim.dispose(this.ctx.currentTime);
+    this.momentBed.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();
