@@ -8,6 +8,11 @@ export interface LandmarkClaims {
   lines: Float32Array;
   /** Historic mosque settings (monument-setting.ts): x, z, radius, platform y per site. */
   settings?: Float32Array;
+  /**
+   * Solid volumes of the structures without a ground pad (bridges), structure-volumes.ts STRUCTURE_STRIDE floats per
+   * box: a building or tree that would enter one is left out (height-aware: houses under a high deck stay).
+   */
+  structures?: Float32Array;
 }
 
 export const LINE_STRIDE = 6;

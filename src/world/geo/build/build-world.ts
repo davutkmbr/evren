@@ -5,7 +5,7 @@ import type { BuildInput, BuildOutput } from '../types';
 import { buildDensityGrid, buildDistrictGrid, qiblaBearing, selectMosqueSites } from './areas';
 import { COARSE_GRID, HEIGHT_GRID, LAND_SPLINE_GRID, spec } from './grid';
 import type { GridSpec } from './grid';
-import { applyShoreFlats, carveValleys, composeBaseHeights, flattenPads, raiseSummits } from './height';
+import { applyShoreFlats, capUnderStructures, carveValleys, composeBaseHeights, flattenPads, raiseSummits } from './height';
 import { buildLandUse, reserveDiscs } from './landuse';
 import { NoiseFrame, NoiseTile } from './noise-tile';
 import { fillRingsValue, pointInRing, stampDisc } from './raster';
@@ -249,6 +249,9 @@ export function stageHeight(input: BuildInput, coastStage: CoastStage, relief: R
   raiseSummits(height, coastStage.coast, input.summits, noise);
   const padHeights = flattenPads(height, coastStage.coast, input.pads);
   lap('summitsPads');
+  // Bridges (landmarks/structure-volumes.ts): no ground above a deck, pier or anchorage.
+  capUnderStructures(height, input.structureCaps, input.structureStride);
+  lap('structureCaps');
   return { height, padHeights };
 }
 

@@ -24,7 +24,7 @@ import { passageArch, passageColliders, passageProfile, portalOnWall, portalWall
 import { buildRoof, createPropSink, type PropSink } from './roofs';
 import type { LandmarkClaims } from '../../landmarks/claim-shapes';
 import { settingTop } from '../../landmarks/monument-setting';
-import { CANOPY_KINDS, NON_SOLID_KINDS, onLandmarkClaim } from './selection';
+import { CANOPY_KINDS, nearClaimedStructure, NON_SOLID_KINDS, onLandmarkClaim, onStructure } from './selection';
 
 /** POI point kinds (x, z, kind triples): 1 shop, 2 food and drink (awnings), 3 services (banks, pharmacies). */
 export const Poi = { Shop: 1, Food: 2, Service: 3, Hotel: 4 } as const;
@@ -203,7 +203,14 @@ export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | '
         }
         return h;
       });
-    solids.push({ b, ring, holes, id: parent ? parent.id : b.id, infill });
+    const solid: Solid = { b, ring, holes, id: parent ? parent.id : b.id, infill };
+    if (solidOnStructure(input.claims, solid)) {
+      if (stats) {
+        stats.skippedStructure = (stats.skippedStructure ?? 0) + 1;
+      }
+      return;
+    }
+    solids.push(solid);
   };
   for (const b of input.buildings) {
     consider(b, false);
@@ -229,6 +236,34 @@ export function solidGround(ring: readonly number[], groundAt: (x: number, z: nu
 export interface SolidGround {
   min: number;
   ref: number;
+}
+
+/**
+ * Whether a solid would enter a bridge of the claims (landmarks/structure-volumes.ts), with its planned heights, so a
+ * house under a high deck stays. The world compiler asks the same (district.ts landmarkOf, structureBlocks).
+ */
+export function solidOnStructure(claims: LandmarkClaims, s: Solid): boolean {
+  if (!nearClaimedStructure(claims, s.ring)) {
+    return false;
+  }
+  const { plan, wallH, rise } = planSolid(s);
+  return onStructure(claims, s.ring, plan.minH, wallH + rise);
+}
+
+/** solidOnStructure for a raw OSM building (the world compiler's rule for `--landmarks none`). */
+export function structureBlocks(claims: LandmarkClaims, b: OsmBuilding): boolean {
+  let ring = cleanRing(b.ring);
+  if (ring.length < 6 || !nearClaimedStructure(claims, ring)) {
+    return false;
+  }
+  if (ringArea(ring) < 0) {
+    const rev: number[] = [];
+    for (let i = ring.length - 2; i >= 0; i -= 2) {
+      rev.push(ring[i], ring[i + 1]);
+    }
+    ring = rev;
+  }
+  return solidOnStructure(claims, { b, ring, holes: [], id: b.id, infill: false });
 }
 
 /**
