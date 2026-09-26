@@ -22,15 +22,11 @@ import { prepareSite } from '../../src/world/landmarks/structures/system/site-pl
 import type { ColliderData } from '../../src/world/landmarks/structures/types';
 import { PERCH_DATA } from '../../src/world/perches/data';
 import { resolvePerch } from '../../src/world/perches/resolve';
-import { neighbourEnvelope, PERCH_RULES, validatePerch } from '../../src/world/perches/rules';
+import { neighbourEnvelope, PERCH_RULES, validatePerch, viewBlocker } from '../../src/world/perches/rules';
 import { buildPerchService } from '../../src/world/perches/service';
 import { buildHeadlessGeo } from './geo';
 
 const TOP_TOLERANCE = 1.5;
-const EYE_HEIGHT = 3;
-const VIEW_FROM = 40;
-const VIEW_TO = 1500;
-const VIEW_STEP = 25;
 
 /** World-space triangle soup plus colliders of one built landmark. */
 interface Built {
@@ -156,29 +152,22 @@ function colliderTop(colliders: readonly ColliderData[], x: number, z: number): 
   return best;
 }
 
-/** Highest terrain along the heading (and the distance where it occurs). */
-function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at: number } {
-  const h = (p.headingDeg * Math.PI) / 180;
-  const dx = Math.sin(h);
-  const dz = -Math.cos(h);
-  let height = -Infinity;
-  let at = 0;
-  for (let d = VIEW_FROM; d <= VIEW_TO; d += VIEW_STEP) {
-    const t = geo.heightAt(p.x + dx * d, p.z + dz * d);
-    if (t > height) {
-      height = t;
-      at = d;
-    }
-  }
-  return { height, at };
-}
-
-/** Highest point of the built structure on rings from just outside the grip area to the neighbour radius. */
+/**
+ * Highest point of the built structure in front of the dragon (within ±frontAngle of the heading), on rings from
+ * just outside the grip area to ownRadius. Behind the dragon the structure may rise (a gallery against its tower).
+ */
 function ownRise(tris: readonly Float32Array[], p: PerchPoint): { height: number; at: number } {
   let best = { height: -Infinity, at: 0 };
+  const heading = (p.headingDeg * Math.PI) / 180;
+  const front = (PERCH_RULES.frontAngle * Math.PI) / 180;
   for (let r = p.gripRadius + 4; r <= PERCH_RULES.ownRadius; r += 3) {
     for (let k = 0; k < 32; k++) {
-      const a = (k / 32) * Math.PI * 2;
+      // Compass bearing of the sample (x = sin, -z = cos), skipped outside the front cone.
+      const b = heading + (k / 32 - 0.5) * 2 * Math.PI;
+      if (Math.abs(Math.atan2(Math.sin(b - heading), Math.cos(b - heading))) > front) {
+        continue;
+      }
+      const a = Math.atan2(-Math.cos(b), Math.sin(b));
       const t = rayTop(tris, p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
       if (t > best.height) {
         best = { height: t, at: r };
@@ -255,7 +244,7 @@ function main(): void {
           fail(`grip ${f1(p.y - top)} m off the built top`);
         }
         const rise = ownRise(b.tris, p);
-        lines.push(`  own structure within ${PERCH_RULES.ownRadius} m: top ${f1(rise.height)} at ${rise.at} m (grip ${p.y - rise.height >= 0 ? '+' : ''}${f1(p.y - rise.height)})`);
+        lines.push(`  own structure in front within ${PERCH_RULES.ownRadius} m: top ${f1(rise.height)} at ${rise.at} m (grip ${p.y - rise.height >= 0 ? '+' : ''}${f1(p.y - rise.height)})`);
         if (rise.height > p.y + PERCH_RULES.neighbourMargin) {
           fail(`own structure rises ${f1(rise.height - p.y)} m over the grip ${rise.at} m away`);
         }
@@ -271,8 +260,10 @@ function main(): void {
     }
 
     const v = viewBlocker(geo, p);
-    const open = v.height < p.y + EYE_HEIGHT;
-    lines.push(`  view ${VIEW_FROM}-${VIEW_TO} m along ${p.headingDeg}°: max terrain ${f1(v.height)} at ${v.at} m -> ${open ? 'open' : 'BLOCKED'}`);
+    const R = PERCH_RULES;
+    lines.push(
+      `  view cone ±${R.viewSpread}° around ${p.headingDeg}°, ${R.viewFrom}-${R.viewTo} m: ${v ? `BLOCKED by ${v.what} ${f1(v.height)} m at ${v.at} m (${v.bearing}°)` : 'open'}`,
+    );
     console.log(lines.join('\n'));
   }
 
