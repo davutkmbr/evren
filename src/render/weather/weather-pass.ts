@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { EngineContext, HdrPass, HdrPassInputs } from '../../core/contracts';
 import { createPostMaterial, FullscreenRenderer } from '../post/fullscreen';
 import { COMMON_GLSL } from '../shaders/common.glsl';
+import { SEA_FOG } from './sea-fog';
 
 /** Per-frame inputs of the weather pass (written by the weather system). */
 export interface WeatherPassParams {
@@ -22,6 +23,15 @@ export interface WeatherPassParams {
   readonly fogSun: THREE.Color;
   /** Drift of the fog banks (world metres, xz). */
   readonly fogDrift: THREE.Vector2;
+  /**
+   * Fog banks lying on the sea (phase 21 stage 6, sea-fog.ts): extinction at sea level (1/m, 0 = off: the branch is
+   * skipped), scale height (m), patchiness 0..1, the longest distance integrated (m) and the banks' drift (m, xz).
+   */
+  seaFogDensity: number;
+  seaFogHeight: number;
+  seaFogPatches: number;
+  seaFogDistance: number;
+  readonly seaFogDrift: THREE.Vector2;
   /** Lightning: radiance added to sky/distant pixels and to everything (linear HDR), direction of the channel. */
   readonly flashSky: THREE.Color;
   readonly flashNear: THREE.Color;
@@ -40,6 +50,11 @@ export function createWeatherPassParams(): WeatherPassParams {
     fogLight: new THREE.Color(),
     fogSun: new THREE.Color(),
     fogDrift: new THREE.Vector2(),
+    seaFogDensity: 0,
+    seaFogHeight: 16,
+    seaFogPatches: 0.75,
+    seaFogDistance: 9000,
+    seaFogDrift: new THREE.Vector2(),
     flashSky: new THREE.Color(),
     flashNear: new THREE.Color(),
     flashDir: new THREE.Vector3(0, 1, 0),
@@ -99,8 +114,11 @@ void main() {
 }
 `;
 
-/** Full resolution: sharp/blurred mix, exponential ground fog with drifting banks, lightning flash. */
-const COMPOSITE_FRAG = /* glsl */ `
+/**
+ * Full resolution: sharp/blurred mix, exponential ground fog with drifting banks, the thin sea fog layer (phase 21
+ * stage 6), lightning flash.
+ */
+export const WEATHER_COMPOSITE_FRAG = /* glsl */ `
 ${COMMON_GLSL}
 ${COC_GLSL}
 uniform sampler2D tScene;
@@ -113,6 +131,8 @@ uniform vec4 uFog;
 uniform vec3 uFogLight;
 uniform vec3 uFogSun;
 uniform vec2 uFogDrift;
+uniform vec4 uSeaFog;
+uniform vec2 uSeaFogDrift;
 uniform vec3 uFlashSky;
 uniform vec3 uFlashNear;
 uniform vec3 uFlashDir;
@@ -156,6 +176,25 @@ void main() {
     col = col * T + inscatter * (1.0 - T);
   }
 
+  // Sea fog: a thin exponential layer from sea level (scale height uSeaFog.y) with banks drifting on the wind, sampled
+  // where the ray runs lowest through it; hills and towers rise out of it. Off (0) outside its weather.
+  if (uSeaFog.x > 0.0 && uCamPos.y > -0.5) {
+    float Hs = uSeaFog.y;
+    float ds = min(dist, uSeaFog.w);
+    float s0 = max(uCamPos.y, 0.0);
+    float s1 = max(s0 + ds * dir.y, 0.0);
+    float ods = abs(dir.y) > 1e-4
+      ? uSeaFog.x * Hs * (exp(-s0 / Hs) - exp(-s1 / Hs)) / dir.y
+      : uSeaFog.x * exp(-s0 / Hs) * ds;
+    float tb = dir.y < -1e-3 ? min(ds, s0 / -dir.y) : min(ds, 500.0);
+    vec2 bankXZ = uCamPos.xz + dir.xz * (0.7 * tb);
+    float bank = fbm2((bankXZ + uSeaFogDrift) / ${SEA_FOG.bankSize.toFixed(1)}, 3);
+    ods *= mix(1.0, 1.8 * smoothstep(0.28, 0.72, bank), uSeaFog.z);
+    float Ts = exp(-max(ods, 0.0));
+    vec3 seaInscatter = uFogLight + uFogSun * hgPhase(dot(dir, uSunDir), 0.6);
+    col = col * Ts + seaInscatter * (1.0 - Ts);
+  }
+
   // The flash lights the cloud deck around the channel most (a glow a few kilometres wide), the rest of the sky less.
   float far = sky ? 1.0 : smoothstep(1200.0, 9000.0, dist);
   float glow = 0.3 + 0.7 * pow(max(dot(dir, uFlashDir), 0.0), 18.0) + 0.25 * fbm2(dir.xz / max(dir.y + 0.35, 0.1) * 3.0 + uFlashDir.xz * 7.0, 3);
@@ -165,8 +204,8 @@ void main() {
 `;
 
 /**
- * Weather HdrPass (after the clouds, before transparent effects): aerial blur of the distance, ground fog and the
- * lightning flash. Disabled (zero cost) when all three are off.
+ * Weather HdrPass (after the clouds, before transparent effects): aerial blur of the distance, ground fog, the sea fog
+ * layer and the lightning flash. Disabled (zero cost) when all of them are off.
  */
 export class WeatherPass implements HdrPass {
   readonly name = 'weather';
@@ -216,7 +255,7 @@ export class WeatherPass implements HdrPass {
     const p = this.params;
     this.compositeMaterial = createPostMaterial({
       name: 'weather.composite',
-      fragmentShader: COMPOSITE_FRAG,
+      fragmentShader: WEATHER_COMPOSITE_FRAG,
       uniforms: {
         ...shared,
         tScene: { value: null },
@@ -229,6 +268,8 @@ export class WeatherPass implements HdrPass {
         uFogLight: { value: p.fogLight },
         uFogSun: { value: p.fogSun },
         uFogDrift: { value: p.fogDrift },
+        uSeaFog: { value: new THREE.Vector4() },
+        uSeaFogDrift: { value: p.seaFogDrift },
         uFlashSky: { value: p.flashSky },
         uFlashNear: { value: p.flashNear },
         uFlashDir: { value: p.flashDir },
@@ -245,7 +286,7 @@ export class WeatherPass implements HdrPass {
   /** True when any effect is active (the system toggles `enabled` from it). */
   get active(): boolean {
     const p = this.params;
-    return this.overlayActive || p.blurRadius > 0.05 || p.fogDensity > 1e-6 || p.flashSky.r + p.flashNear.r > 1e-5;
+    return this.overlayActive || p.blurRadius > 0.05 || p.fogDensity > 1e-6 || p.seaFogDensity > 1e-7 || p.flashSky.r + p.flashNear.r > 1e-5;
   }
 
   render(renderer: THREE.WebGLRenderer, inputs: HdrPassInputs, output: THREE.WebGLRenderTarget, ctx: EngineContext): void {
@@ -276,6 +317,7 @@ export class WeatherPass implements HdrPass {
     (c.uProjInv.value as THREE.Matrix4).copy(cam.projectionMatrixInverse);
     (c.uCamWorld.value as THREE.Matrix4).copy(cam.matrixWorld);
     (c.uFog.value as THREE.Vector4).set(p.fogDensity, Math.max(p.fogHeight, 1), p.fogPatches, 0);
+    (c.uSeaFog.value as THREE.Vector4).set(p.seaFogDensity > 1e-7 ? p.seaFogDensity : 0, Math.max(p.seaFogHeight, 1), p.seaFogPatches, Math.max(p.seaFogDistance, 1));
     this.fs.draw(renderer, this.compositeMaterial, output);
 
     if (this.overlayActive) {
