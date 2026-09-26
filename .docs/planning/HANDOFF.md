@@ -115,11 +115,29 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    re-fetch from the local extract before they show.
 5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe
    model; "port" unclear — ask); street layer test rerun on a quiet machine (`node scripts/street-layer-test.mjs`);
-   flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
+   flip/pass/gpu need a rerun on a quiet machine.
    **Done (cloud session, PR #30):** bridge joints re-refined when later regions start drawing; no vehicles on the
    water (`tools/headless/traffic-water-check.ts`); OSM colour tags incl. Turkish words (`osm/shared/colour.ts`, fixes
    `Unknown color kiremit`).
    Phase 24 (far OSM layer) is merged; items 1, 2 and the pool re-fetch are local runs.
+6. **Flicker while moving (owner report, open):** reflections on the sea come and go as the view turns (hard,
+   screen-aligned light/dark patches, by day with the sun ahead and in the evening), and at night car lights and
+   city window lights blink black. Findings so far: the sea patches vanish with `?wrefl=sky` (planar mirror, PR #65
+   added the switch); PR #66 widened the mirror to an angular margin (9 deg each side, resolution up to 1.35x, softer
+   edge) but the owner still sees it. `?dynres=0` does not change the night-light blinking. Probably several causes.
+   Plan: a GPU flicker audit (`scripts/flicker-audit.mjs` on the snap.mjs infrastructure: deterministic camera
+   sweep, consecutive frames, per-pixel up-down-up luminance instability, heatmaps + scores), then bisect with URL
+   toggles (wrefl, dynres, osmfar, osmregions, street, traffic, walls, bloom, aa, flare, shadows) and fix each cause
+   generically. Suspects: mirror edge hand-over / `reflDistanceAt` distortion / mirror-vs-camera frame lag;
+   sub-pixel emissive lights aliasing away (need a minimum projected size); night LOD handovers of the far OSM
+   layer and city chunks (`night-lights.glsl.ts`, `osm/fade.ts`, `city/streamer.ts`); the dragon casts a strong
+   moon shadow on the water under an overcast night sky (should not).
+7. **Local runs owed by PR #62:** `npm run compile:walls` (baked wall tiles are gitignored: palace walls left to
+   Dolmabahçe, towers flanking gate breaches); the region re-fetch for swimming pools. Open question for the owner:
+   the Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
+8. **Never shot in the cloud (no GPU there):** the perch audit (`node scripts/perch-audit.mjs`), the OSM feature
+   kits (fuel stations, pitches, playgrounds, cemeteries, markets, shopfronts, motorway verges) and the region
+   performance steps of PRs #60 / #62 (heap and `--perf` near Kadıköy, region fade-in at ~1.2 km).
 
 ## Working notes
 
