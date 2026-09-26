@@ -260,7 +260,7 @@ export class ModeBlend {
     _q2.slerpQuaternions(this.relFrom, _relTo, w);
     out.quaternion.copy(target.quaternion).multiply(_look).multiply(_q2);
     out.position.copy(_pos).applyQuaternion(target.quaternion).add(target.position);
-    const floor = collision.groundHeight(out.position.x, out.position.z) + 0.3;
+    const floor = collision.floorHeight(out.position.x, out.position.z, 0.3);
     if (out.position.y < floor) {
       out.position.y = floor;
     }

@@ -2,8 +2,9 @@
 
 Milestone: B · Chill loop · Effort: L · Depends on: 20 (movement; shares skim, breach and flow), water module, fx
 
-Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test. Stages 1–2 can start in parallel with phase 20
-stage B; stage 4 (underwater rendering) needs GPU review by the owner.
+Status: in progress (requested by the owner on 26 September 2026): stage 1 done; stage 3 built (plunge, under water, breach), awaiting the pose-sheet approval and the feel test; stage 4 built (the camera follows the dragon under
+water, underwater look, waterline, droplets, underwater audio), awaiting the owner's GPU review. Stages 1–2 can start
+in parallel with phase 20 stage B.
 
 ## Goal
 
@@ -83,9 +84,8 @@ Ground-effect lift keeps working and becomes the physical basis of **sıyırma**
 - Breach keeps 60 % of the underwater speed (at least 8 m/s, climbing at least 7 m/s) into the take-off climb.
 - Vessel hulls: `src/world/life/vessels/hull-colliders.ts` registers one underwater box per vessel within 900 m of the
   dragon (tag `vessel`, top just below the surface) and re-places it every frame (`CollisionWorld.move`).
-- Camera (until stage 4): the chase camera holds its pivot at the surface line above the dragon (1 m under it) and
-  stops following the underwater pitch and acceleration, so it follows the dragon's track just above the water with a
-  level horizon instead of diving after it or swinging with every pitch change under water.
+- Camera: stage 3 held the chase camera's pivot at the surface line; stage 4 replaced that (the camera now follows
+  the dragon under water, see "Stage 4 as built").
 - Flow hooks: 'maneuver' events 'plunge' ("Dalış") and 'breach' ("Fırlama", with `clean`); the plunge's end is a
   flight-internal event with `ended` and `clean` (no seabed / hull contact, not surfaced by force). The game-level
   `GameEvents['maneuver']` carries id and label only; flow in phase 20 needs an optional `clean?: boolean` there (or
@@ -100,6 +100,76 @@ Ground-effect lift keeps working and becomes the physical basis of **sıyırma**
   (post pass, short).
 - Night: dark water, city lights shimmering from below.
 - Budget: ≤ 1 ms GPU on "high" while under water, zero cost above water.
+
+### Stage 4 as built
+
+The owner's report: "it dives under water but we can't see under water"; the camera should go under with the dragon.
+
+- **Camera follows under** (`src/camera/obstruction.ts`, `modes/chase.ts`, `modes/pov.ts`, `blend.ts`,
+  `shots/shoulder.ts`). The camera collision has a *submerge allowance*: unlimited while the dragon is in its
+  `underwater` mode (only the seabed + 1.5 m and colliders, including the vessel hull boxes, bound the eye; boom casts
+  and push-outs ignore the water plane), then it starts at the eye's own depth when the dragon leaves the water and
+  shrinks exponentially (3/s plus 1.2 m/s), so every camera rises back out without a jump and never lingers. Above
+  water the floor is now the real wave crest at the eye (`water.heightAt`, never below y = 0), so a camera never cuts
+  through a lodos swell and never flashes "under" by accident. The chase camera under water: boom 0.55 × length,
+  nearly level (2.5° elevation) behind the dragon, 25 % of the flight-path pitch and 35 % of the roll-follow, 35 % of
+  the acceleration lag, sinking to the lower floor at ω 6 (rising at ω 12). The boom's speed stretch is smoothed now
+  (a water entry brakes the dragon by 10+ m/s within one frame, which made the boom jump ~1.5 m). POV simply rides
+  along (its "never below the water" clamp follows the same allowance).
+- **Under-water state** (`src/world/water/underwater/state.ts`, service `underwater` in `contracts.ts`): the camera
+  height against the CPU wave height at the camera x/z (the surface the shader draws). Switches 4 cm past the surface
+  in either direction, holds a switch ≥ 0.3 s unless the camera is decisively (35 cm) past it: a real plunge or breach
+  switches in its frame, a lens bobbing on the waterline never flickers. `lensActive` (under, or within 0.9 m above
+  the surface) gates every lens effect; `droplets` goes to 1 on a breach after ≥ 0.35 s under and fades in 1.1 s.
+- **Underwater look** (`src/render/post/composite-pass.ts` `UNDERWATER_LOOK`, `shaders/composite.glsl.ts`), evaluated
+  inside the existing composite pass (no extra pass, no extra scene render), branch skipped while the lens is dry:
+  per pixel, the near-plane point against the local wave plane (height + normal at the camera) decides under / above,
+  so the waterline crosses the lens as a clean tilted line with a thin milky wet band (the scene itself already shows
+  the right side of the surface on each half, the near plane clips the surface in between); under-water pixels get the
+  fog with distance (extinction 0.40 / 0.12 / 0.13 per m: green-blue, ~15–25 m visibility), the in-scattered water
+  colour that darkens with camera depth and when looking down, the daylight lost on its way down to each lit point,
+  caustics projected along the refracted sun, and light shafts (3 / 5 / 6 steps on medium / high / ultra, off on
+  low: a shaft pattern at the point where the refracted sun ray through each sample entered the surface, so the shafts
+  line up with the sun). Exposure +0.8 EV under water (the meter reads the scene before the medium). Droplets: two
+  layers of refracting drops with dark rims that slide down and shrink over ~1 s after a breach.
+- **Surface from below** (`src/world/water/shaders/water-fragment.glsl.ts`): the existing underside (Snell's window
+  with the refracted sky and sun, total internal reflection of the water body outside it) now also switches on under a
+  wave crest (`uCamUnder`), and at night the window's rim carries a faint warm glow of the city lights that shimmers with
+  the wave normal. The planar reflection pass is skipped while the camera is under water.
+- **Floating particles** (`src/world/water/underwater/particles.ts`): one opaque point draw (250 / 600 / 1200 / 1800
+  points by quality) wrapped in a 22 m cube around the camera, drifting with the current; depth-written so the fog
+  treats each mote at its own distance; hidden above water.
+- **Audio** (`src/audio/master-bus.ts`, `voices/underwater.ts`, `sfx/bubbles.ts`): the air buses (sfx, wind,
+  ambience, reverb) pass a new low-pass that sweeps down to 380 Hz and −5 dB under water; the wind bed keeps 3 % and
+  the ambience 30 %; a synthesised water bed (breathing brown noise under 260 Hz, a 110 Hz rumble, a rush band that
+  rises with speed through the water, darker with depth) plays on a new unmuffled `underwater` input, gated so it
+  costs nothing above water. The stage 3 nostril bubbles (splash events of strength ≤ 0.08 while the dragon is under
+  water) now play as quiet, varied bubble bloops (2–5 rising sine bloops + a gurgle; full band under water, faint
+  pops from above) instead of a splash; the small surface splash visual stays. The dragon's breathing is silent while
+  it holds its breath under water.
+- **Performance** (estimates, no GPU here): above water nothing runs (composite branch off, particles hidden, water
+  bed stopped, one CPU wave query per frame). Under water on "high" at 1600 × 900: composite branch ≈ 0.2–0.35 ms
+  (≈ 150 ALU per pixel: lens plane, fog, caustics, 5 shaft steps), particles < 0.05 ms, droplets < 0.05 ms for a
+  second; the underside shading is cheaper than the top side and the skipped planar reflection saves more than all of
+  it. Clouds and weather HDR passes still run under water (hidden by the fog); a candidate saving if needed.
+- **Checks:** `tools/headless/underwater-check.ts` (real flight sim + real chase / POV camera + real camera collision:
+  plunges, breaches, a slow rise, a hull ahead, a shallow site with the camera orbited toward the seabed, lodos; no
+  NaN, seabed clearance, hull boxes, per-frame jumps, level horizon, camera back out ≤ 3.5 s, under flag vs the CPU
+  wave height; the state machine's switching, hysteresis, droplets; structural GLSL sanity, since no GLSL validator is
+  installed).
+
+**What the owner should look at (GPU):**
+
+1. Plunge in the Marmara off Kadıköy by day: the camera swoops after the dragon through the surface, stays calm and
+   level-ish, and the dragon stays readable at ~16 m (fog density `UNDERWATER_LOOK.sigma`, boom
+   `underwaterDistance`).
+2. Look up from 5–10 m: the bright Snell window, the darker total-reflection ring, shafts lining up with the sun,
+   caustics on the dragon's back and the seabed in shallow water.
+3. Hold at the waterline (slow surfacing into swimming, POV): a clean tilted split with a thin wet band, no flicker.
+4. Breach: droplets on the lens for about a second.
+5. Night: dark water, faint warm shimmer at the window's rim; no bright artefacts.
+6. Sound: muffled world, wind gone, the low water bed, quiet varied bubbles instead of splashes; clean return above.
+7. Cost with `?stats=1` / `?postbench=N` on "high" under water (budget ≤ 1 ms).
 
 ## Strand 5 — Swimming, reworked
 
@@ -210,8 +280,8 @@ only as the far LOD and as a fallback on "low".
 |---|---|---|
 | 1 | Water service with the CPU wave evaluator; dragon floats and skims on real waves; current | Parity test passes; swim/skim checks pass |
 | 2 | Low flight: downwash ripples, skim wake, wingtip curls, fire steam, water sound | Owner GPU review OK; budget met |
-| 3 | Plunge, under-water movement (camera stays above for now), breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
-| 4 | Underwater rendering | Owner GPU review OK; ≤ 1 ms |
+| 3 | Plunge, under-water movement, breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
+| 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company | Checks and sheets approved; feel test OK |
 | 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
 | 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes | Wake-angle and energy checks pass; budgets met; owner GPU review |

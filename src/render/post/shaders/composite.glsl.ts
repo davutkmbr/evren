@@ -3,7 +3,8 @@ import { TONEMAP_GLSL } from './tonemap.glsl';
 
 /**
  * HDR -> display composite at internal resolution:
- * underwater medium, speed blur + edge chromatic aberration, bloom, lens flare, vignette, exposure,
+ * lens droplets, underwater medium (per-pixel waterline, fog, depth tint, caustics, light shafts), speed blur + edge
+ * chromatic aberration, bloom, lens flare, vignette, exposure,
  * Purkinje shift, white balance, tone mapping + look, lift/gain. Alpha = perceptual luma (FXAA input).
  */
 export const COMPOSITE_FRAG = /* glsl */ `
@@ -39,6 +40,15 @@ uniform float uFlareIntensity;
 uniform float uUnderwater;
 uniform vec3 uWaterLight;
 uniform float uCamDepth;
+uniform vec4 uWaterPlane;
+uniform float uSurfaceY;
+uniform vec3 uWaterSigma;
+uniform vec3 uSunRefr;
+uniform vec3 uShaftColor;
+uniform vec2 uShaft;
+uniform vec2 uCaustic;
+uniform vec2 uLensBand;
+uniform float uDroplets;
 uniform float uNear;
 uniform float uFar;
 uniform mat4 uProjInv;
@@ -186,34 +196,115 @@ float causticPattern(vec2 p, float t) {
   return pow(c, 6.0);
 }
 
-vec3 underwaterMedium(vec3 color, vec2 uv) {
+/* Signed height (m) of a world point above the water plane at the camera (the lens waterline). */
+float waterPlaneHeight(vec3 p) {
+  return dot(uWaterPlane.xyz, p) - uWaterPlane.w;
+}
+
+/* Soft light shafts: brightness of the sunlight that entered the surface at q (constant along each refracted ray). */
+float shaftPattern(vec2 q, float t) {
+  float s = sin(q.x * 0.83 + t * 0.35) * sin(q.y * 0.71 - t * 0.28) + 0.6 * sin((q.x + q.y) * 1.63 + t * 0.52);
+  s = clamp(s * 0.45 + 0.35, 0.0, 1.0);
+  return s * s;
+}
+
+/* Light shafts along the view ray (uShaft.x steps over at most uShaft.y m), projected up the refracted sun ray. */
+vec3 lightShafts(vec3 worldDir, float dist, float jitter) {
+  int steps = int(uShaft.x);
+  float len = min(dist, uShaft.y);
+  float acc = 0.0;
+  for (int i = 0; i < 8; i++) {
+    if (i >= steps) {
+      break;
+    }
+    float t = (float(i) + jitter) / uShaft.x * len;
+    vec3 p = uCamPos + worldDir * t;
+    float pd = max(uSurfaceY - p.y, 0.0);
+    vec2 q = p.xz - uSunRefr.xz * (pd / max(-uSunRefr.y, 0.2));
+    acc += shaftPattern(q, uTime) * exp(-uWaterSigma.g * (t + pd));
+  }
+  return uShaftColor * (acc * len / max(uShaft.x, 1.0));
+}
+
+vec3 underwaterMedium(vec3 color, vec2 uv, float jitter) {
   float depth = textureLod(tDepth, uv, 0.0).r;
   vec4 vp = uProjInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
   vec3 viewDir = normalize(vp.xyz / vp.w);
   float z = depth <= 0.0 ? 1e5 : postLinearDepth(depth, uNear, uFar);
   float dist = z / max(-viewDir.z, 1e-3);
   vec3 worldDir = normalize(mat3(uCamWorld) * viewDir);
-  // Coastal (Marmara / Bosphorus) water: red absorbed within metres, ~20 m visibility in green-blue.
-  vec3 sigma = vec3(0.30, 0.058, 0.052) + vec3(0.02, 0.022, 0.026);
-  vec3 trans = exp(-sigma * min(dist, 400.0));
-  float surfaceLight = exp(-0.07 * uCamDepth);
+  // Coastal (Marmara / Bosphorus) water: red absorbed within metres, green-blue visibility of a couple of tens of m.
+  vec3 trans = exp(-uWaterSigma * min(dist, 400.0));
+  float surfaceLight = exp(-uWaterSigma.g * 0.75 * uCamDepth);
   float upness = clamp(worldDir.y * 0.5 + 0.5, 0.0, 1.0);
-  vec3 medium = uWaterLight * surfaceLight * (0.18 + 0.82 * upness * upness);
+  vec3 medium = uWaterLight * surfaceLight * (0.14 + 0.86 * upness * upness);
   vec3 lit = color;
   if (depth > 0.0) {
     vec3 wp = uCamPos + worldDir * dist;
-    float c = causticPattern(wp.xz * 0.45, uTime * 1.1);
-    float nearSurface = exp(-0.12 * max(-wp.y, 0.0));
-    lit *= 1.0 + c * 1.6 * nearSurface * exp(-dist * 0.03);
+    float pd = max(uSurfaceY - wp.y, 0.0);
+    // Daylight lost on its way down to the point, then caustics from the waves above (projected along the sun).
+    lit *= exp(-uWaterSigma * (uCaustic.y * pd));
+    vec2 q = wp.xz - uSunRefr.xz * (pd / max(-uSunRefr.y, 0.2));
+    float c = causticPattern(q * 0.45, uTime * 1.1);
+    lit *= 1.0 + c * uCaustic.x * exp(-0.12 * pd) * exp(-dist * 0.03);
   }
-  return lit * trans + medium * (1.0 - trans);
+  vec3 result = lit * trans + medium * (1.0 - trans);
+  if (uShaft.x > 0.5) {
+    result += lightShafts(worldDir, dist, jitter);
+  }
+  return result;
+}
+
+/* Signed height of this pixel's near-plane point above the lens waterline (m): < 0 = the pixel looks from under water. */
+float lensWaterHeight(vec2 uv) {
+  vec4 vp = uProjInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 viewDir = vp.xyz / vp.w;
+  vec3 nearPoint = viewDir * (uNear / max(-viewDir.z, 1e-4));
+  return waterPlaneHeight(uCamPos + mat3(uCamWorld) * nearPoint);
+}
+
+/* Droplets on the lens after a breach: uv offset of one layer of drops (grid cells per screen height), rim in .z. */
+vec3 dropletLayer(vec2 uv, float cells, float seed) {
+  vec2 grid = vec2(uAspect * cells, cells);
+  vec2 g = uv * grid;
+  vec2 cell = floor(g);
+  float h = postHash12(cell + seed);
+  if (h > 0.55) {
+    return vec3(0.0);
+  }
+  float fall = (1.0 - uDroplets) * (0.3 + 1.2 * h);
+  vec2 c = vec2(0.25 + 0.5 * postHash12(cell + seed + 7.7), 0.35 + 0.4 * postHash12(cell + seed + 1.3) - fall);
+  float r = (0.16 + 0.2 * postHash12(cell + seed + 5.9)) * (0.55 + 0.45 * uDroplets);
+  vec2 d = fract(g) - c;
+  d.y *= 0.85;
+  float l = length(d) / r;
+  if (l >= 1.0) {
+    return vec3(0.0);
+  }
+  float bulge = sqrt(1.0 - l * l);
+  return vec3(-d / grid * (0.6 + 0.9 * bulge), smoothstep(0.65, 1.0, l));
 }
 
 void main() {
   vec2 uv = vUv;
   float jitter = interleavedGradientNoise(gl_FragCoord.xy, uFrame);
+  // Lens under water: which side of the waterline this pixel's near-plane point is on, and the wet band on the line.
+  float underMask = 0.0;
+  float wetBand = 0.0;
   if (uUnderwater > 0.0) {
-    uv += vec2(sin(uv.y * 22.0 + uTime * 1.7), cos(uv.x * 19.0 + uTime * 1.3)) * 0.0022 * uUnderwater;
+    float hLens = lensWaterHeight(vUv);
+    underMask = 1.0 - smoothstep(-uLensBand.x, uLensBand.x, hLens);
+    wetBand = exp(-(hLens * hLens) / (uLensBand.y * uLensBand.y));
+    uv += vec2(sin(uv.y * 22.0 + uTime * 1.7), cos(uv.x * 19.0 + uTime * 1.3)) * 0.0022 * underMask;
+    uv.y += 0.012 * wetBand;
+  }
+  float dropRim = 0.0;
+  if (uDroplets > 0.0) {
+    vec3 a = dropletLayer(vUv, 7.0, 3.1);
+    vec3 b = dropletLayer(vUv + vec2(0.37, 0.11), 13.0, 11.7);
+    float fade = smoothstep(0.0, 0.35, uDroplets);
+    uv += (a.xy + b.xy) * fade;
+    dropRim = max(a.z, b.z) * fade;
   }
   vec3 col = uSpeed > 0.001 ? speedSample(uv, jitter) : textureLod(tColor, uv, 0.0).rgb;
   col = sanitizeHdr(col);
@@ -224,8 +315,15 @@ void main() {
   if (uFlareIntensity > 0.0) {
     col += lensFlare(uv);
   }
-  if (uUnderwater > 0.0) {
-    col = mix(col, underwaterMedium(col, uv), uUnderwater);
+  if (underMask > 0.0) {
+    col = mix(col, underwaterMedium(col, uv, jitter), underMask);
+  }
+  if (wetBand > 0.01) {
+    // The meniscus on the lens: a thin, bright, slightly milky line where the water crosses it.
+    col = mix(col, col * 0.7 + uWaterLight * 0.6 + postLuma(col) * 0.15, 0.55 * wetBand);
+  }
+  if (dropRim > 0.0) {
+    col *= 1.0 - 0.3 * dropRim;
   }
 
   vec2 vc = (vUv - 0.5) * vec2(uAspect, 1.0);

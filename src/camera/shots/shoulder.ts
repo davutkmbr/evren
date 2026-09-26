@@ -50,8 +50,8 @@ export class ShoulderShot extends Shot {
     const dt = env.frame.dt;
     _local.copy(this.local).applyQuaternion(t.quaternion);
     out.position.copy(t.headPosition).add(_local);
-    if (out.position.y < 0.4 && env.frame.collision.groundHeight(out.position.x, out.position.z) <= 0) {
-      out.position.y = 0.4;
+    if (env.frame.collision.groundHeight(out.position.x, out.position.z) <= 0) {
+      out.position.y = Math.max(out.position.y, env.frame.collision.floorHeight(out.position.x, out.position.z, 0.4));
     }
     // Follow climbs and dives only partly so the horizon stays in the frame.
     _dir.copy(t.travelDir).add(t.forward).normalize();

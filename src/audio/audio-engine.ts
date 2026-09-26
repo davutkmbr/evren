@@ -6,6 +6,7 @@ import { mulberry32 } from './dsp/rng';
 import { createMasterBus, type MasterBus } from './master-bus';
 import { playIgnition } from './sfx/fire';
 import { playFlap } from './sfx/flap';
+import { playBubbles } from './sfx/bubbles';
 import { playLand, playSplash, playStep } from './sfx/impacts';
 import { playRoar } from './sfx/roar';
 import { playDiscover, playUiClick } from './sfx/ui';
@@ -19,6 +20,7 @@ import { AmbienceVoice, emptyProbe, type AmbienceProbe } from './voices/ambience
 import { CreatureVoice } from './voices/creature';
 import { FireVoice } from './voices/fire';
 import { RainVoice } from './voices/rain';
+import { UnderwaterVoice } from './voices/underwater';
 import { WindVoice, defaultWindParams, speedLevel, type WindParams } from './voices/wind';
 
 export type SoundName = AudioOneShot;
@@ -67,6 +69,9 @@ export interface AudioFrame {
   rain: number;
   /** Storm (lightning) intensity 0..1 (weather service): loads the recorded thunder before the first strike. */
   storm: number;
+  /** 0..1 the listener (camera) is under water (underwater service, smoothed), and its depth below the surface (m). */
+  underwater: number;
+  underwaterDepth: number;
   probe: AmbienceProbe;
 }
 
@@ -100,6 +105,8 @@ export function createAudioFrame(): AudioFrame {
     ambientWind: 4,
     rain: 0,
     storm: 0,
+    underwater: 0,
+    underwaterDepth: 0,
     probe: emptyProbe(),
   };
 }
@@ -127,7 +134,15 @@ export const MIX = {
   whoosh: 0.9,
   reinSnap: 0.8,
   purr: 1.1,
+  /** Nostril bubbles under water: quiet, they repeat every half second. */
+  bubbles: 0.45,
 } as const;
+
+/** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
+const UNDERWATER_WIND_KEEP = 0.03;
+const UNDERWATER_AMBIENCE_KEEP = 0.3;
+/** From above the water, the bubbles popping at the surface are this much quieter. */
+const BUBBLES_ABOVE = 0.35;
 
 /** Minimum retrigger interval per sound (s): merges duplicate triggers (event + direct call). */
 const COOLDOWN: Record<SoundName, number> = {
@@ -217,11 +232,16 @@ export class AudioEngine {
   readonly ambience: AmbienceVoice;
   readonly creature: CreatureVoice;
   readonly rain: RainVoice;
+  readonly underwater: UnderwaterVoice;
   readonly samples: SampleBank | null;
 
   private readonly sfx: SfxEnv;
   private readonly ui: SfxEnv;
   private readonly amb: SfxEnv;
+  /** One-shots in the water with an under-water listener (not muffled). */
+  private readonly water: SfxEnv;
+  private underwaterLevel = 0;
+  private lastBubbles = -1e9;
   private frame: AudioFrame = createAudioFrame();
   private readonly windParams: WindParams = defaultWindParams();
   private readonly lastPlayed: Record<SoundName, number> = {
@@ -267,6 +287,7 @@ export class AudioEngine {
     this.sfx = { ...env, out: this.bus.sfx };
     this.ui = { ...env, out: this.bus.ui };
     this.amb = { ...env, out: this.bus.ambience };
+    this.water = { ...env, out: this.bus.underwater };
     this.windDuck = ctx.createGain();
     this.windCarve = ctx.createBiquadFilter();
     this.windCarve.type = 'peaking';
@@ -279,6 +300,7 @@ export class AudioEngine {
     this.ambience = new AmbienceVoice(ctx, this.noise, this.amb, this.bus.ambience, (rng() * 1e6) | 0);
     this.creature = new CreatureVoice(ctx, this.noise, this.bus.sfx, (rng() * 1e6) | 0);
     this.rain = new RainVoice(ctx, this.noise, this.bus.ambience, rng, this.samples);
+    this.underwater = new UnderwaterVoice(ctx, this.noise, this.bus.underwater, rng);
     this.windBusGain = new SmoothParam(this.bus.wind.gain, MIX.wind, 0.15);
     this.ambienceBusGain = new SmoothParam(this.bus.ambience.gain, MIX.ambience, 0.6);
   }
@@ -345,7 +367,14 @@ export class AudioEngine {
 
     const roarDuck = now < this.roarUntil ? 1 : 0;
     const fireDuck = this.fire.active ? 1 : 0;
-    this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck), now);
+    const uw = clamp01(finiteOr(frame.underwater, 0));
+    if (Math.abs(uw - this.underwaterLevel) > 0.01 || (uw === 0 && this.underwaterLevel !== 0) || (uw === 1 && this.underwaterLevel !== 1)) {
+      this.underwaterLevel = uw;
+      this.bus.setUnderwater(uw, now);
+    }
+    this.underwater.update(this.paused ? 0 : uw, finiteOr(frame.underwaterDepth, 0), frame.listenerSpeed, now);
+    const windKeep = 1 - (1 - UNDERWATER_WIND_KEEP) * uw;
+    this.windBusGain.set(MIX.wind * (1 - 0.4 * roarDuck) * (1 - 0.25 * fireDuck) * windKeep, now);
 
     this.ambience.update(frame.probe, dt, now, !this.paused, frame.listener.position.x, frame.listener.position.z);
     if (frame.rain > 1e-3) {
@@ -359,7 +388,7 @@ export class AudioEngine {
     }
     this.rain.update(this.paused ? 0 : frame.rain, this.pov, p.airspeed, now);
     const masking = clamp01(1.6 * speedLevel(p.airspeed)) * (1 - smoothstep(150, 450, finiteOr(frame.probe.agl, 1e3)));
-    this.ambienceBusGain.set(MIX.ambience * Math.pow(10, (AMBIENCE_LIFT_DB * masking) / 20), now);
+    this.ambienceBusGain.set(MIX.ambience * Math.pow(10, (AMBIENCE_LIFT_DB * masking * (1 - uw)) / 20) * (1 - (1 - UNDERWATER_AMBIENCE_KEEP) * uw), now);
     this.windCarveGain.set(WIND_CARVE_DB * masking, now);
 
     const reverbLevel = 1 - 0.55 * smoothstep(250, 1800, frame.probe.agl);
@@ -488,6 +517,28 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Nostril bubbles of the dragon under water (replaces the stage 3 surface splash cue): quiet, varied bloops; heard
+   * in full with the listener under water, faint pops at the surface from above.
+   */
+  bubblesAt(position: Vec3, strength: number): void {
+    const now = this.now;
+    if (now - this.lastBubbles < 0.12 || this.stats.active > this.maxVoices) {
+      return;
+    }
+    this.lastBubbles = now;
+    const under = this.underwaterLevel > 0.5;
+    const pl = placeSource(this.frame.listener, position, WORLD_POINT, this.place);
+    pl.gain *= MIX.bubbles * (under ? 1 : BUBBLES_ABOVE);
+    if (under) {
+      // Sound travels ~4.3x faster in water and the ear cannot place it well: no air delay or absorption, narrow pan.
+      pl.delay = 0;
+      pl.cutoff = 20000;
+      pl.pan *= 0.5;
+    }
+    playBubbles(under ? this.water : this.sfx, now, 0.6 + 0.8 * clamp01(strength * 10), pl, under);
+  }
+
   /** Ground impact at `speed` m/s. */
   landAt(position: Vec3, speed: number): void {
     const now = this.now;
@@ -573,6 +624,7 @@ export class AudioEngine {
     this.ambience.dispose();
     this.creature.dispose();
     this.rain.dispose(this.ctx.currentTime);
+    this.underwater.dispose(this.ctx.currentTime);
     this.windDuck.disconnect();
     this.windCarve.disconnect();
     this.bus.dispose();
