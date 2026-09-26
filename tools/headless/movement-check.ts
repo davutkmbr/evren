@@ -381,6 +381,16 @@ async function leaps(): Promise<void> {
     const tuckTime = tuckK >= 0 ? recs[tuckK].time - recs[lift].time : NaN;
     const strokesBeforeTuck = strokes.filter((t) => t < tuckTime).length;
     const variant = (run.rt.sim as unknown as { moves?: { lastVariant: string | null } }).moves?.lastVariant ?? 'n/a';
+    // Height gained in the first second after lift-off (the leap itself, before sustained flapping).
+    let apex = -Infinity;
+    for (let k = lift; k < recs.length && recs[k].time < recs[lift].time + 1; k++) {
+      apex = Math.max(apex, recs[k].position[1] - recs[press].position[1]);
+    }
+    console.log(`  ${name.padEnd(10)} rises ${f2(apex)} m in the first second after lift-off (upward speed at lift-off ${f2(recs[lift].velocity[1])} m/s)`);
+    note(`${name}.rise1s`, apex);
+    if (name === 'leap') {
+      check(apex >= 5, `${name}: a powerful leap, >= 5 m up in the first second (${f2(apex)})`);
+    }
     console.log(
       `  ${name.padEnd(10)} (${variant}) crouch ${f2(crouchTime)} s, push ${f2(pushTime)} s, largest per-frame velocity change ${f2(jump)} m/s, first full downstroke ${f2(firstStroke)} s after lift-off, legs tuck at ${f2(tuckTime)} s after ${strokesBeforeTuck} strokes`,
     );
@@ -390,7 +400,7 @@ async function leaps(): Promise<void> {
     note(`${name}.firstStroke`, firstStroke);
     note(`${name}.strokesBeforeTuck`, strokesBeforeTuck);
     if (name === 'leap') {
-      check(crouchTime >= 0.33 && crouchTime <= 0.47, `${name}: crouch 0.35-0.45 s (${f2(crouchTime)})`);
+      check(crouchTime >= 0.6 && crouchTime <= 0.8, `${name}: crouch 0.6-0.8 s, a slow, deep gather (${f2(crouchTime)})`);
     }
     check(pushTime >= 0.11 && pushTime <= 0.24, `${name}: push-off 0.12-0.2 s (tired up to 0.23) (${f2(pushTime)})`);
     check(jump <= 3, `${name}: no velocity jump > 3 m/s in one frame (${f2(jump)})`);
