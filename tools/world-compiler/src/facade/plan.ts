@@ -9,8 +9,9 @@
  * - T3: 1980s+ infill or refit (ribbon glazing, composite panels, glass balustrades, two-storey glazed base);
  * - T5: kiosk (one storey).
  * Heights: the profile's per-building storeys (Kadıköy: S1 spec section 2) win, then OSM height / levels, then parts
- * inherit their outline's tags (Simple 3D Buildings: the outline carries building:levels, its parts do not), then a
- * hash over the profile's storey range.
+ * inherit their outline's tags (Simple 3D Buildings: the outline carries building:levels, its parts do not), then the
+ * wall top the flight-scale layer plans for it (Solid.flightTop: one height up close and from the air), then a hash
+ * over the profile's storey range.
  */
 import type { OsmBuilding } from '../../../../src/world/osm/data';
 import { pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
@@ -62,7 +63,7 @@ export interface FacadePlan {
   wear: number;
   seed: number;
   /** Where the storeys came from. */
-  source: 'spec' | 'osm-height' | 'osm-levels' | 'parent-levels' | 'hash';
+  source: 'spec' | 'osm-height' | 'osm-levels' | 'parent-levels' | 'flight' | 'hash';
 }
 
 /** A per-building row fitted to reference photos (district profiles, `buildings.spec`). */
@@ -146,7 +147,7 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   }
   const met = METRICS[typ];
   const G = spec?.G ?? met.G[0] + (met.G[1] - met.G[0]) * H(2);
-  const F = spec?.F ?? met.F[0] + (met.F[1] - met.F[0]) * H(3);
+  let F = spec?.F ?? met.F[0] + (met.F[1] - met.F[0]) * H(3);
   let storeys: number;
   let source: FacadePlan['source'];
   const levels = osm?.levels ?? (s.rec.heightSource === 'default' ? parent?.levels : undefined);
@@ -160,6 +161,13 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
   } else if (levels) {
     storeys = levels + (osm?.roofLevels ?? 0);
     source = osm?.levels ? 'osm-levels' : 'parent-levels';
+  } else if (s.flightTop !== undefined) {
+    storeys = Math.max(1, Math.round((s.flightTop - streetBase - G) / F) + 1);
+    // The storey height takes up the rounding, so the roof meets the flight-scale wall top.
+    if (storeys > 1) {
+      F = (s.flightTop - streetBase - G) / (storeys - 1);
+    }
+    source = 'flight';
   } else {
     const [lo, hi] = typ === 'T5' ? [1, 1] : dp.buildings.storeys[typ];
     storeys = lo + Math.floor(H(4) * (hi - lo + 1));
@@ -172,7 +180,7 @@ export function planFacade(s: Solid, osm: OsmBuilding | undefined, parent: OsmBu
     storeys = 1;
   }
   const roof: FacadePlan['roof'] = spec?.roof ?? (typ === 'T2' && osm?.roofShape !== 'flat' && H(5) < 0.25 && area < 260 ? 'hipped' : osm?.roofShape === 'hipped' ? 'hipped' : 'flat');
-  if (source === 'hash') {
+  if (source === 'hash' || source === 'flight') {
     const lift = roof === 'hipped' ? HIPPED_RIDGE : met.parapet;
     while (storeys > 1 && streetBase + G + (storeys - 1) * F + lift > maxTop) {
       storeys--;
