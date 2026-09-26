@@ -9,7 +9,7 @@ import { BridgeFrame, stations } from '../../build/bridge-frame';
 import type { SurfaceState } from '../../build/mesh-builder';
 import type { Rgb } from '../../build/surfaces';
 import { Color, Pal } from '../palette';
-import { buildDeck, type DeckSection } from './deck';
+import { buildDeck, buildDeckColliders, type DeckSection } from './deck';
 import { buildPiers } from './piers';
 import { DeckProfile } from './profile';
 import { buildATower, buildPortalTower, legAt, type LegSpec } from './towers';
@@ -109,7 +109,7 @@ export function buildSuspensionBridge(b: StructureBuild, spec: SuspensionSpec): 
   if (anchors.length < 4) {
     throw new Error('suspension bridge needs 4 anchors');
   }
-  const frame = BridgeFrame.fromPoints(anchors[0], anchors[1]);
+  const frame = BridgeFrame.fromAnchors(anchors);
   const half = spec.mainSpan / 2;
   const sTowerA = -half;
   const sTowerB = half;
@@ -118,7 +118,7 @@ export function buildSuspensionBridge(b: StructureBuild, spec: SuspensionSpec): 
   const section = spec.section;
   const hMid = spec.clearance + section.depth + 0.1;
   const profile = new DeckProfile(
-    { hMid, crestRadius: spec.crestRadius, sTowerA, sTowerB, sEndA, sEndB, maxApproach: 700, maxGrade: spec.maxGrade, depth: section.depth },
+    { hMid, crestRadius: spec.crestRadius, sTowerA, sTowerB, sEndA, sEndB, maxApproach: 700, maxGrade: spec.maxGrade, depth: section.depth, halfWidth: section.halfWidth },
     frame,
     b.terrain,
   );
@@ -138,12 +138,7 @@ export function buildSuspensionBridge(b: StructureBuild, spec: SuspensionSpec): 
     breaks: [sTowerA, sTowerB, sEndA, sEndB, 0],
     led: led ? { group: led.group, u0: 0, u1: 1, strength: led.deck } : undefined,
   });
-  for (let s = s0; s < s1 - 1; s += 60) {
-    const e = Math.min(s + 60, s1);
-    const pa = frame.point(s, 0, height(s) - section.depth / 2 + 0.5);
-    const pb = frame.point(e, 0, height(e) - section.depth / 2 + 0.5);
-    b.segmentCollider(pa, pb, section.halfWidth, section.depth / 2 + 0.5);
-  }
+  buildDeckColliders(b, frame, s0, s1, height, () => section);
 
   // towers
   const tw = spec.tower;
@@ -311,6 +306,10 @@ export function buildSuspensionBridge(b: StructureBuild, spec: SuspensionSpec): 
           for (let k = 0; k < st.perFan; k++) {
             const t = k / (st.perFan - 1);
             const sDeck = sT + dir * (from + (to - from) * t);
+            if (sDeck < s0 || sDeck > s1) {
+              // The side span landed on a hillside short of its nominal end (profile.ts): no deck to anchor to.
+              continue;
+            }
             const yAnchor = leg.yBase + (leg.yTop - leg.yBase) * (st.towerFrom + (st.towerTo - st.towerFrom) * t);
             const l = legAt(leg, yAnchor);
             const top = frame.point(sT + dir * l.da * 0.3, l.x - side * l.dt * 0.1, yAnchor);
