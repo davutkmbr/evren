@@ -1,5 +1,6 @@
 import { SHARED_GLSL } from '../../../render/shaders';
 import { BAND_COUNT, WATER_IOR } from '../config';
+import { DISTURBANCE_WATER_SAMPLE_GLSL, DISTURBANCE_WATER_UNIFORMS_GLSL } from '../lowflight/shaders.glsl';
 import { WATER_COMMON_GLSL } from './water-common.glsl';
 import { WATER_SKY_GLSL } from './water-sky.glsl';
 
@@ -15,6 +16,7 @@ const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
  * - water body from regional remote-sensing reflectance and attenuation, sea floor in shallow water
  * - whitecaps (Gerstner crest compression x wind), shore break/lapping foam, current slicks
  * - underside with Snell's window when the camera is below the surface
+ * - the disturbance field under a low-flying dragon (phase 21 stage 2): ripple slopes, ruffled darker patches, foam
  */
 export const WATER_FRAGMENT_GLSL = /* glsl */ `
 #include <common>
@@ -48,6 +50,7 @@ uniform vec3 uAtten[5];
 uniform vec3 uFloorAlbedo[5];
 uniform float uRoughness[5];
 uniform float uCamUnder;              // 1 while the camera is under the water (underwater service)
+${DISTURBANCE_WATER_UNIFORMS_GLSL}
 
 varying vec3 vWorld;
 varying vec4 vLagr;
@@ -145,6 +148,9 @@ void main() {
   roughMul *= mix(0.6, 1.0, smoothstep(0.0, 160.0, offshore));
   // Fast current (Rumelihisari, Akintiburnu) and wind against it make the surface choppier.
   roughMul *= 1.0 + 0.3 * smoothstep(0.9, 2.6, flowMag);
+  // Low flight (disturbance field): the downwash and the wake ruffle the detail waves (a darker "cat's paw" patch).
+${DISTURBANCE_WATER_SAMPLE_GLSL}
+  roughMul *= 1.0 + 1.2 * min(distRough, 2.0);
   float r2 = roughMul * roughMul;
 
   // Pixel footprint in metres (anisotropy capped at 5:1 like the texture hardware).
@@ -236,6 +242,11 @@ void main() {
   for (int b = WATER_BANDS; b < ${BAND_COUNT}; b++) {
     lostVar += uBandA[b].w * r2;
   }
+
+  // Ripples of the disturbance field; finer than the pixel footprint they turn into roughness.
+  float distFade = 1.0 - smoothstep(1.0, 4.0, fp / max(uDistRect.w, 1e-3));
+  slope += distSlope * distFade;
+  lostVar += dot(distSlope, distSlope) * (1.0 - distFade * distFade) * 0.5 + 0.02 * distRough;
 
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
   float sigma2 = lostVar + uSeaParams.y * r2 + 0.0003;
@@ -359,6 +370,8 @@ void main() {
   float backLit = pow(clamp(dot(-V, L), 0.0, 1.0), 4.0) * (1.0 - clamp(L.y * 2.5, 0.0, 1.0));
   body += keyE * rrs * (crest * backLit * 14.0);
 
+  // Ruffled patches reflect less of the bright low sky: they read darker than the glassy water around them.
+  reflection *= 1.0 - 0.22 * clamp(distRough, 0.0, 1.0);
   vec3 color = reflection * fresnel + specular + body;
 
   // ---- Foam ----
@@ -394,7 +407,9 @@ void main() {
   float slicks = smoothstep(0.6, 0.95, slickLines) * smoothstep(0.8, 2.2, flowMag) * smoothstep(0.62, 0.9, breakup + gust * 0.3);
   slicks *= 0.3 * clamp(foamTex.r * 1.4 + fineFoam * 0.4, 0.0, 1.0) * (1.0 - smoothstep(0.4, 2.0, fp));
 
-  float foam = clamp(capFoam + shoreFoam + slicks, 0.0, 1.0);
+  // Wake furrow, tip kisses and boiling under the fire breath (disturbance field), broken up by the foam texture.
+  float dragonFoam = distFoam * clamp(foamTex.r * 1.6 + fineFoam * 0.6, 0.0, 1.0) * (1.0 - smoothstep(1.5, 5.0, fp));
+  float foam = clamp(capFoam + shoreFoam + slicks + dragonFoam, 0.0, 1.0);
   vec3 foamL = vec3(0.78, 0.8, 0.8) * (1.0 / PI) * Ed;
   color = mix(color, foamL + specular * 0.05, foam);
   color += vec3(0.7) * (1.0 / PI) * Ed * farCaps;
