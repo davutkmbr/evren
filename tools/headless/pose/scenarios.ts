@@ -441,6 +441,29 @@ export const SCENARIOS: Scenario[] = [
     view: 'side',
     camera: 'fixed',
   },
+  ...(['front', 'side', 'belly'] as const).map(
+    (variant): Scenario => ({
+      name: `hardland-${variant}`,
+      description: `Nose down into the ground at 26 m/s sinking 9 m/s, legs tucked: the hard landing (${variant} variant), get-up and head shake`,
+      setup: (rt) => {
+        rt.teleport(0, GROUND_Y + 2.3, 0, 0, 26, -19);
+        rt.sim.body.velocity.set(0, -9, -26);
+        rt.sim.legsOut = 0;
+        rt.sim.spread = 0.4;
+        rt.sim.hard.forceNext = variant;
+      },
+      seconds: 6,
+      script: () => (_t, _sim, input) => {
+        input.cmd.pitch = 1;
+      },
+      frames: 30,
+      fps: 8,
+      window: () => 0,
+      view: 'side',
+      camera: 'fixed',
+      span: 34,
+    }),
+  ),
   {
     name: 'roll',
     description: 'D double tap at 34 m/s: barrel roll',

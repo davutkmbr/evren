@@ -266,7 +266,8 @@ The owner's report: "it dives under water but we can't see under water"; the cam
   like a swan, longer in rough seas; or a breach take-off after a dive.
 - **Leaving the water:** a shake-off (spray burst from the wings and the neck), a wet sheen on the scales that dries in
   ~20 s (material parameter), drips while flying low.
-- **Company:** gulls land on the floating dragon's back; boats give it room (vessel agents treat the swimming dragon
+- **Company:** dolphins ride beside the dragon flying low or swimming near a pod and scatter from a plunge (built in
+  phase 13, `src/world/life/dolphins/`, see `13-living-world.md` → Dolphins as built); gulls land on the floating dragon's back; boats give it room (vessel agents treat the swimming dragon
   as an obstacle); anglers on the Galata Bridge react (moments).
 
 ### Stage 5 as built: swimming

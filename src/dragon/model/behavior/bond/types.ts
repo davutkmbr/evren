@@ -1,15 +1,15 @@
-import type { BondAudioCue, DragonMood, FlightMode } from '../../../../core/contracts';
+import type { BondAudioCue, DragonMood, FlightMode, HardLandingPhase } from '../../../../core/contracts';
 
 /**
  * Phase 06 bond core: shared types and the feel tunables. Everything in this folder except `bond-behavior.ts` is pure
  * logic (no engine, no DOM), so the headless check (tools/headless/bond-check.ts) runs the exact code the game runs.
  */
 
-export const MOODS: readonly DragonMood[] = ['content', 'curious', 'playful', 'tired', 'excited'];
+export const MOODS: readonly DragonMood[] = ['content', 'curious', 'playful', 'tired', 'excited', 'embarrassed'];
 
 /** A world thing worth a look, already turned into the dragon's body frame by the adapter. */
 export interface AttentionCandidate {
-  kind: 'landmark' | 'horn' | 'bird' | 'stork' | 'ferry' | 'sound';
+  kind: 'landmark' | 'horn' | 'bird' | 'stork' | 'ferry' | 'dolphin' | 'sound';
   /** Stable key (landmark id, vessel id, "bird") for the per-target cooldown. */
   key: string;
   /** Body-relative direction (rad): yaw > 0 = to the dragon's left, pitch > 0 = up. */
@@ -70,6 +70,8 @@ export interface BondInputs {
   /** One-shot events this frame. */
   maneuverGlance: boolean;
   trickDone: boolean;
+  /** Phase of a running hard landing (tumble, get-up, head shake), null when none runs. */
+  hardLanding: HardLandingPhase | null;
 }
 
 /** What one frame of the bond core asks of the rig, the sound and the effects. */
@@ -198,6 +200,7 @@ export function createInputs(): BondInputs {
     discovery: null,
     maneuverGlance: false,
     trickDone: false,
+    hardLanding: null,
   };
 }
 
@@ -252,15 +255,18 @@ export const BOND = {
     birdTime: 1.6,
     ferryTime: 2.6,
     storkTime: 2.8,
+    dolphinTime: 2.6,
     hornTime: 2.4,
     birdCooldown: 14,
     ferryCooldown: 45,
     storkCooldown: 25,
+    dolphinCooldown: 20,
     hornCooldown: 8,
     /** Ranges (m) a candidate must be within. */
     birdRange: 70,
     ferryRange: 420,
     storkRange: 650,
+    dolphinRange: 500,
     hornRange: 1500,
     /** The rider points at a landmark / stork / ferry the dragon looks at, for this long. */
     showTime: 1.6,
@@ -283,6 +289,15 @@ export const BOND = {
     excitementDecay: 22,
     playRise: 40,
     playDecay: 80,
+    /** Embarrassment after a hard landing: decay time constant, and the shortest time the mood holds before it may go. */
+    embarrassDecay: 5,
+    embarrassHold: 6,
+  },
+  hardLanding: {
+    /** The head shake after the get-up (s; the flight's HARD_LANDING.shakeTime is 1.3 s of standing still). */
+    shakeTime: 1.25,
+    /** The "oof" at the impact. */
+    oofVolume: 0.85,
   },
   behavior: {
     /** Global gap between self-driven behaviours (s, random within), scaled by mood. */

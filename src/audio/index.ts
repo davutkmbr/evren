@@ -181,6 +181,9 @@ export function createAudioSystem(): System {
     bondCue(cue, vol): void {
       engine?.bondCue(cue, vol ?? 1);
     },
+    dolphinCue(cue, position, vol): void {
+      engine?.dolphinCue(cue, position, vol ?? 1);
+    },
     setMomentBed(amount: number): void {
       engine?.setMomentBed(amount);
     },

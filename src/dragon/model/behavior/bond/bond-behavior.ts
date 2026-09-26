@@ -185,6 +185,7 @@ export class BondBehavior implements DragonBondState {
       inp.flapEffort = state.flapEffort;
       inp.flow = state.flow ?? 0;
       inp.firing = state.firing;
+      inp.hardLanding = state.hardLanding ?? null;
       const phase = state.perch?.phase ?? 'free';
       inp.perched = phase === 'perched';
       inp.perchBusy = phase === 'approach' || phase === 'leaving';
