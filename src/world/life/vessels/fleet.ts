@@ -14,7 +14,7 @@ import { planService, type ServicePlan } from './nav/ferry-plan';
 import { Track } from './nav/track';
 import { KeepOut } from './nav/keep-out';
 import { TrafficRules } from './nav/traffic-rules';
-import { anchorageSpots, buildTourLoop, mooringSpots, type Berth, type StraitLanes } from './routes';
+import { anchorageSpots, bridgeKeepOut, buildTourLoop, mooringSpots, type Berth, type StraitLanes } from './routes';
 import { WakeTrails } from '../wakes/wake-trails';
 
 const PLANING = new Set(['seabus', 'motorboat', 'pilot', 'yacht']);
@@ -188,11 +188,12 @@ export class Fleet {
 
     // Boats made fast along the waterfront (scaled with the quality budget).
     const mooredShare = Math.min(1, budget / 70);
+    const bridges = bridgeKeepOut(geo);
     for (const m of MOORINGS) {
       const model = models.get(m.model);
       if (!model) continue;
       const count = Math.max(1, Math.round(m.count * mooredShare));
-      const spots = mooringSpots(geo, m.lat, m.lon, m.layout, count, model.length, model.beam, model.draft, berths, rng);
+      const spots = mooringSpots(geo, m.lat, m.lon, m.layout, count, model.length, model.beam, model.draft, berths, bridges, rng);
       spots.forEach((s, k) => {
         const beh = s.buoy ? new AtAnchor(s.x, s.z, s.yaw, 0.25, rng()) : new Moored(s.x, s.z, s.yaw, rng());
         const v = add(m.model, beh, m.paints[k % m.paints.length], packSeed(rng() * 8, 0.2 + rng() * 0.6));

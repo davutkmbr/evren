@@ -15,6 +15,7 @@ import { buildPlatforms, buildQuay, buildSteps, masonryMesh } from './masonry';
 import type { StreetsRequest, StreetsResult } from './protocol';
 import { landPads } from './pads';
 import { PropSink } from './sink';
+import { osmStandGround } from '../shared/stand';
 
 serveWorker<StreetsRequest, StreetsResult>((req) => {
   const t0 = performance.now();
@@ -26,16 +27,17 @@ serveWorker<StreetsRequest, StreetsResult>((req) => {
   const padded = landPads(surface.geo, req.base.reserved);
   const ground = buildGroundMesh(surface, padded);
   const t2 = performance.now();
-  const sink = new PropSink();
+  // Every street prop passes the shared stand rule (placement/stand.ts) on the OSM ground.
+  const sink = new PropSink(osmStandGround(surface, footprints));
   const lamps = buildLamps(streets, paths, req.data, surface, footprints, sink, padded);
   const furniture = buildFurniture(streets, req.data, surface, footprints, sink);
-  const catenary = buildCatenary(req.data, surface, footprints, sink);
+  const catenary = buildCatenary(surface, footprints, sink);
   const decals = buildDecals(streets, req.data, surface, furniture.marks);
   const masonry = masonryMesh();
   const steps = buildSteps(masonry, paths, surface);
   const platforms = buildPlatforms(masonry, req.data, surface);
-  const quay = buildQuay(masonry, ground.quay, surface, req.base.rect);
-  const barriers = buildBarriers(masonry, req.data, surface, padded, req.base.rect);
+  const quay = buildQuay(masonry, ground.quay, surface, req.base.fade ?? req.base.rect);
+  const barriers = buildBarriers(masonry, req.data, surface, padded, req.base.fade ?? req.base.rect);
   const { instances, lights } = sink.take();
   const groundArrays = ground.mesh.take();
   const tiled = lodTileIndex(groundArrays.attributes.position.array as Float32Array, groundArrays.index, ground.mesh.takeTriLod());
@@ -68,6 +70,7 @@ serveWorker<StreetsRequest, StreetsResult>((req) => {
       groundPrepMs: ground.stats.prepMs,
       groundMeshMs: ground.stats.meshMs,
       crossings: decals.crossings,
+      zebraTrack: decals.zebraTrack,
       manholes: decals.manholes,
       lamps: lamps.lamps,
       masts: catenary.masts,
@@ -76,6 +79,7 @@ serveWorker<StreetsRequest, StreetsResult>((req) => {
       quay,
       ...barriers,
       ...furniture.stats,
+      ...sink.log.flat('stand.'),
       liftMs: Math.round(t1 - t0),
       groundMs: Math.round(t2 - t1),
       ms: Math.round(performance.now() - t0),

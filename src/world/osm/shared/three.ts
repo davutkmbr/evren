@@ -3,12 +3,24 @@ import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
 import type { MeshArrays } from './protocol';
 
+/**
+ * Static OSM meshes drop their CPU arrays once uploaded (every streamed region would otherwise keep a second copy of
+ * its geometry in the JS heap). `?keepGeometry=1` keeps them for test tools that ray-test the drawn meshes
+ * (scripts/lib/collision-walk.mjs), like the procedural city.
+ */
+const KEEP_CPU = typeof location !== 'undefined' && new URLSearchParams(location.search).get('keepGeometry') === '1';
+
+function releaseArray(this: THREE.BufferAttribute): void {
+  (this as unknown as { array: ArrayLike<number> | null }).array = null;
+}
+
 export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
+  const attr = (a: THREE.BufferAttribute): THREE.BufferAttribute => (KEEP_CPU ? a : a.onUpload(releaseArray));
   for (const [name, a] of Object.entries(m.attributes)) {
-    g.setAttribute(name, new THREE.BufferAttribute(a.array, a.size, a.normalized ?? false));
+    g.setAttribute(name, attr(new THREE.BufferAttribute(a.array, a.size, a.normalized ?? false)));
   }
-  g.setIndex(new THREE.BufferAttribute(m.index, 1));
+  g.setIndex(attr(new THREE.BufferAttribute(m.index, 1)));
   g.computeBoundingSphere();
   return g;
 }
