@@ -65,21 +65,23 @@ bake time; the runtime adds the quay raise, as the region layer now does.
 the region data extent, street raster and keep-out rects. The parcels a region will draw then already stand in the far
 layer. Decision 4: baked.
 
-**Tiling** follows the procedural city's quadtree: 500 m, 1 km and 2 km tiles (`city/protocol.ts:116`). Each level is
-a pre-thinned set:
+**Tiling (as built in S1).** One file per 2 km block (`public/data/osm/city/blocks/<bi>_<bj>.bin.gz`) holds every
+building, sorted by the city's 500 m level-0 tile. The city's 1 km and 2 km tiles are unions of these. A first bake
+with pre-thinned L1/L2 copies measured 56 MB gzip and thinned almost nothing: most Istanbul apartments are Mid (12 m)
+or taller, and the procedural city's far tiles keep every building too, sinking the small ones by distance
+(`city/worker/tile.ts`). So the workers derive the far levels from the one set, and the bake stores no per-level
+copies.
 
-- **L0 (500 m):** every building, footprint simplified to 0.5 m.
-- **L1 (1 km):** buildings under about 40 m² dropped, unless they sit in a row of neighbours. Footprints simplified
-  to 2 m. Adjacent row buildings of the same height merged into one prism.
-- **L2 (2 km):** only the fade classes the procedural L2 keeps: Skyline, Large and Mid (`city/protocol.ts:55-64`,
-  thresholds 30 / 18 / 12 m). Footprints simplified to 4 m.
+**Container** (`src/world/city/osm/format.ts`): `'OCB1'`, a JSON header and aligned typed blobs, gzip, read off the
+main thread. Records are struct-of-arrays:
 
-**Container.** The walls bake's container (`'WLB1'`-style header plus aligned blobs, gzip, loaded by
-`src/street/format.ts fetchBytes` off the main thread). Per tile:
+- outlines: 0.2 m Int16, first vertex relative to the block centre, then per-vertex steps, stored as byte planes;
+- wall and bottom heights (dm, u16), roof rise, roof class, archetype, storeys, floor height, flags (fade class,
+  usage, minaret, infill, tower);
+- wall and roof tint as sRGB 565;
+- OSM id as an i32 step from the previous record.
 
-- quantised Int16 rings, 0.1 m around the tile origin;
-- the per-building attribute block: height dm, min height dm, roof class, colour indices, usage, fade class and the
-  OSM id (for the handover and the checks).
+Measured: about 14 MB gzip for the whole square (see S1 below).
 
 **Coverage mask.** Per 250 m cell (the city's layout cell), the mask decides OSM versus procedural. Its outline is the
 only place where the two may meet. It is stored with the bake. The threshold comes from the S0 audit
@@ -203,7 +205,7 @@ Performance checks with `snap.mjs --perf` on the reference machine:
 | # | Stage | Result | Gate |
 |---|---|---|---|
 | S0 | Audit — **done** ([osm-city-coverage.md](../research/osm-city-coverage.md)) | 616k outlines; about 14 MB gzip for the pyramid; mask threshold: smoothed coverage ≥ 0.05. Most geo "urban" land without OSM buildings is forest, meadow or park in OSM | — |
-| S1 | Bake | `osm-city.mjs` → L0/L1/L2 tiles, coverage mask and land-use polygons. Regions and street areas re-fetched from the same extract. `plan.ts` runs in Node | `check:map` far-vs-region section green |
+| S1 | Bake — `npm run bake:city` (`scripts/data/osm-city-bake.ts`) | Block files, coverage mask (`src/world/city/osm/mask.json`) and land-use polygons. Regions, the Galata slice and the street areas re-fetched from the same extract. The flight layer's `collectSolids` / `planSolid` run in the bake | `check:map` section 6 (far vs region, one snapshot) green |
 | S2 | Data mode + land use | City worker emits baked buildings in covered cells; region exclusion by centroid ownership. OSM land use is stamped into the geo build in the same stage (the S0 audit shows the procedural fallback would otherwise keep building on about 110 km² of real forest, meadow and park); mosque sites and vegetation follow | Views recognisable against satellite imagery (phase 08 criteria); perf within budget; `check:map` land-use section green |
 | S3 | Handover | Screen-door cross-fade between city and region content, both directions | No visible pop when flying into and out of every landing region |
 | S5 | Night | One occupancy curve and emission scale | Night flight into a region shows no window change at the handover |
