@@ -507,7 +507,9 @@ export class AudioEngine {
     if (frame.probe.coast > 0.02 || frame.probe.water > 0.02) {
       this.samples?.request('coast');
     }
-    this.rain.update(this.paused ? 0 : frame.rain, this.pov, p.airspeed, now);
+    // Rain on the sea (phase 21 stage 6): the hiss of drops on open water while the listener is low over it.
+    const rainSea = clamp01(finiteOr(frame.probe.water, 0)) * (1 - smoothstep(15, 140, finiteOr(frame.probe.agl, 1e3))) * (1 - uw);
+    this.rain.update(this.paused ? 0 : frame.rain, this.pov, p.airspeed, now, rainSea);
     const masking = clamp01(1.6 * speedLevel(p.airspeed)) * (1 - smoothstep(150, 450, finiteOr(frame.probe.agl, 1e3)));
     this.ambienceBusGain.set(MIX.ambience * Math.pow(10, (AMBIENCE_LIFT_DB * masking * (1 - uw)) / 20) * (1 - (1 - UNDERWATER_AMBIENCE_KEEP) * uw), now);
     this.windCarveGain.set(WIND_CARVE_DB * masking, now);

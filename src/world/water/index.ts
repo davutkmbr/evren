@@ -6,6 +6,8 @@
  * with the wave particles (particles/: hull wakes, the dragon's waves, splash rings; phase 21 stage 7a) on top, which
  * the surface also draws from a splat window around the camera, and the foam (foam/: an advected foam field around the
  * camera fed by breaking crests, wakes, surf, hulls, the dragon and splashes, plus spray sources for fx; stage 7c).
+ * The weather reaches the sea here (weather/: a storm raises the wind the waves are built from, rain draws drop rings
+ * and damps the short waves; stage 6).
  */
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
@@ -260,6 +262,10 @@ export function createWaterSystem(): System {
       origin.set(Math.round(cam.position.x / ORIGIN_SNAP) * ORIGIN_SNAP, Math.round(cam.position.z / ORIGIN_SNAP) * ORIGIN_SNAP);
       const env = ctx.services.tryGet('env');
       const wind = env ? env.wind : tmpWind.copy(globalUniforms.uWind.value as THREE.Vector3);
+      // The weather over the sea (phase 21 stage 6): storms raise the sea's wind, rain draws drop rings.
+      const weather = ctx.services.tryGet('weather');
+      sea.weather.rain = weather ? weather.current.rain : 0;
+      sea.weather.storm = weather ? weather.current.storm : 0;
       sea.update(wind, ctx.time.elapsed, dt, origin.x, origin.y);
       waves.sync(sea, origin.x, origin.y, ctx.time.elapsed);
       uniforms.uOrigin.value.copy(origin);

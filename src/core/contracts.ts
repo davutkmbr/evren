@@ -785,6 +785,12 @@ export interface WaterService {
   currentAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3;
   readonly seaState: Readonly<WaterSeaState>;
   /**
+   * Local significant wave height of the ambient waves at (x, z) (m; the spectrum with the local fetch weights, no
+   * wave particles). Phase 21 stage 6: the swimming dragon's rocking and its water take-off read it. Optional: simple
+   * stand-ins (flat water) leave it out, which reads as calm.
+   */
+  significantHeightAt?(x: number, z: number): number;
+  /**
    * Wave particles (phase 21 stage 7a): the interactive part of the sea (hull wakes, the dragon, splashes), already
    * included in heightAt / normalAt / velocityAt. Optional: simple stand-ins (flat water in checks) leave it out.
    */

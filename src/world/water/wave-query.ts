@@ -280,6 +280,23 @@ export class WaveQuery implements WaterService {
     return clamp01(flow[2] + (flow[3] - flow[2]) * this.lodos);
   }
 
+  /**
+   * Local significant wave height of the ambient waves at (x, z) (m): 4 sqrt(sum (g A)^2 / 2) over the slots with the
+   * local group weights (phase 21 stage 6: rocking and water take-offs read it). No solve, no particles.
+   */
+  significantHeightAt(x: number, z: number): number {
+    this.groupsAt(x, z);
+    this.cacheVersion = -1;
+    const gw = this.groupW;
+    let var2 = 0;
+    for (let i = 0; i < this.count; i++) {
+      const A = this.amp[i] * gw[this.group[i]];
+      var2 += A * A;
+    }
+    const hs = 4 * Math.sqrt(var2 * 0.5) * this.keep;
+    return Number.isFinite(hs) ? hs : 0;
+  }
+
   /** Displacement, Jacobian, slopes and orbital velocity of the undisplaced point (x0, z0). */
   private evaluate(x0: number, z0: number): void {
     this.groupsAt(x0, z0);

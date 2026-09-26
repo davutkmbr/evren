@@ -10,6 +10,7 @@ import { SHARP_PROFILES, VOL_PROFILES } from './particles/types';
 import { FireEmitter, type FireLightState } from './emitters/fire-emitter';
 import { SurfaceEmitter } from './emitters/surface-emitter';
 import { SeaSprayEmitter } from './emitters/sea-spray-emitter';
+import { RainSplashEmitter } from './emitters/rain-splash-emitter';
 import { TRAIL_LIFE, TRAIL_POINTS, WingTrails } from './emitters/wing-trails';
 import { isWaterAt, type EmitContext } from './emitters/emit-context';
 import { FxPass, MAX_MOTES, type FxRenderState } from './render/fx-pass';
@@ -40,6 +41,8 @@ export class FxSystem implements System, FxService {
   private readonly surface = new SurfaceEmitter();
   /** Spindrift, bow spray and rooster tails from the water's spray sources (phase 21 stage 7c). */
   private readonly seaSpray = new SeaSprayEmitter();
+  /** Rain drops splashing on the sea near the camera (phase 21 stage 6). */
+  private readonly rainSplash = new RainSplashEmitter();
   private readonly trails = new WingTrails();
   private emit: EmitContext | null = null;
   private readonly lights: FireLightState = {
@@ -191,7 +194,10 @@ export class FxSystem implements System, FxService {
     const low = ctx.services.tryGet('lowFlight');
     this.fire.update(emit, dragon, rig, this.lights, low);
     this.surface.update(emit, dragon, rig, low);
-    this.seaSpray.update(emit, ctx.services.tryGet('water')?.foam);
+    const water = ctx.services.tryGet('water');
+    this.seaSpray.update(emit, water?.foam);
+    const camPos = ctx.camera.position;
+    this.rainSplash.update(emit, ctx.services.tryGet('weather')?.current.rain ?? 0, water, camPos.x, camPos.y, camPos.z);
 
     let humidity = 0.8;
     if (dragon) {
