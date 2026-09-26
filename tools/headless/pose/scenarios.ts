@@ -666,6 +666,79 @@ export const SCENARIOS: Scenario[] = [
     camera: 'fixed',
   },
   {
+    name: 'wingover',
+    description: 'D held to bank at 32 m/s, S double tap at 1.5 s: wingover (climb, pivot over the high wing, dive out reversed)',
+    setup: fly(250, 32),
+    seconds: 11,
+    script: () => {
+      let pressed = false;
+      return (t, _sim, input) => {
+        input.cmd.roll = t < 1.6 ? 1 : 0;
+        if (!pressed && t >= 1.5) {
+          pressed = true;
+          input.press('loop');
+        }
+      };
+    },
+    frames: 24,
+    fps: 3,
+    window: (records) => firstTime(records, (r) => r.trick === 'wingover', 1.5) - 0.2,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'immelmann',
+    description: 'S double tap at 40 m/s, D pressed at the top of the loop: Immelmann (half loop, half roll out upright)',
+    setup: fly(300, 40),
+    seconds: 7,
+    script: () => {
+      let pressed = false;
+      let rollAt = -1;
+      return (t, sim, input) => {
+        if (!pressed && t >= 0.5) {
+          pressed = true;
+          input.press('loop');
+        }
+        if (rollAt < 0 && sim.maneuvers.kind === 'loop' && sim.maneuvers.describe().loopDeg > 150) {
+          rollAt = t;
+        }
+        input.cmd.roll = rollAt >= 0 && t < rollAt + 0.3 ? 1 : 0;
+      };
+    },
+    frames: 24,
+    fps: 5,
+    window: () => 0.5,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
+    name: 'splits',
+    description: 'D double tap in a 50° dive at 38 m/s: Split-S (half roll onto the back, pull through to level, reversed)',
+    setup: (rt) => {
+      rt.teleport(0, GROUND_Y + 400, 0, 0, 38, -50);
+      const path = -50 * DEG;
+      rt.sim.body.velocity.set(0, Math.sin(path) * 38, -Math.cos(path) * 38);
+    },
+    seconds: 7,
+    script: () => {
+      let pressed = false;
+      return (t, _sim, input) => {
+        if (t < 0.5) {
+          input.pathDeg = -50;
+        }
+        if (!pressed && t >= 0.5) {
+          pressed = true;
+          input.press('rollRight');
+        }
+      };
+    },
+    frames: 24,
+    fps: 5,
+    window: () => 0.4,
+    view: 'side',
+    camera: 'fixed',
+  },
+  {
     name: 'turn',
     description: '60° bank held (assist override) at 32 m/s',
     setup: fly(250, 32),
