@@ -1,0 +1,233 @@
+/* Moment sources (src/ui/moments): the source sheet, the pause menu's Anlar tab, and the quiet "[I] Kaynağa bak" under
+   a playing moment's subtitle line. Tokens and sizes follow .docs/design/README.md (sheet 20 px radius, sheet title
+   20–28 px, body 13–14 px, captions 12–12.5 px). */
+
+/* ---------------- source sheet ---------------- */
+
+.msrc-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(17, 19, 24, 0.95);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  animation: ejd-sheet-in 280ms var(--ease-out);
+}
+
+.msrc-sheet:focus-visible {
+  outline: none;
+}
+
+.msrc-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 16px 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.msrc-state {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.msrc-body {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 28px 28px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* ---------------- shared detail ---------------- */
+
+.msrc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.msrc-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.msrc-meta {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.msrc-excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--line-2);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.msrc-card-title {
+  margin: 0 0 4px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.msrc-card-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.msrc-heading {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.msrc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msrc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.msrc-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.msrc-kind {
+  flex: none;
+  min-width: 58px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.msrc-item-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.msrc-credit {
+  margin: 0 0 0 68px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.msrc-actions {
+  margin-left: 64px;
+}
+
+.msrc-video {
+  margin-left: 68px;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.msrc-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.msrc-figure {
+  margin: 0 0 0 68px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.msrc-figure .msrc-credit {
+  margin: 0;
+}
+
+.msrc-img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+}
+
+.msrc-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.msrc-offline {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+/* ---------------- pause menu → Anlar ---------------- */
+
+.msrc-empty {
+  max-width: 460px;
+}
+
+/* ---------------- under a playing moment's subtitle line ---------------- */
+
+.moment-source {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-style: normal;
+  color: var(--ink-3, rgba(243, 238, 229, 0.48));
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.moment-source[hidden] {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .msrc-credit,
+  .msrc-video,
+  .msrc-figure {
+    margin-left: 0;
+  }
+
+  .msrc-actions {
+    margin-left: -4px;
+  }
+}
