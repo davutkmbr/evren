@@ -411,6 +411,35 @@ export class Flocks {
     }
   }
 
+  /**
+   * Closest active bird to (x, y, z) within `maxDistance` m (the dragon's attention, phase 06): writes its position
+   * into `out` and returns the distance, or -1 when none. Dormant and borrowed flocks are skipped.
+   */
+  nearestBird(x: number, y: number, z: number, maxDistance: number, out: THREE.Vector3): number {
+    let best = maxDistance * maxDistance;
+    let found = -1;
+    for (const f of this.flocks) {
+      if (!f.active || this.borrowed.has(f)) continue;
+      const ax = f.vessel ? f.vessel.x : f.x;
+      const az = f.vessel ? f.vessel.z : f.z;
+      const reach = maxDistance + f.radius * 2;
+      if ((ax - x) * (ax - x) + (az - z) * (az - z) > reach * reach) continue;
+      for (const i of f.birds) {
+        const dx = this.px[i] - x;
+        const dy = this.py[i] - y;
+        const dz = this.pz[i] - z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best) {
+          best = d2;
+          found = i;
+        }
+      }
+    }
+    if (found < 0) return -1;
+    out.set(this.px[found], this.py[found], this.pz[found]);
+    return Math.sqrt(best);
+  }
+
   /** Debug: world position and velocity of the n-th drawn bird. */
   debugBird(n: number, pos: THREE.Vector3, vel: THREE.Vector3): boolean {
     let k = 0;

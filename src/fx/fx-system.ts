@@ -11,6 +11,7 @@ import { FireEmitter, type FireLightState } from './emitters/fire-emitter';
 import { SurfaceEmitter } from './emitters/surface-emitter';
 import { SeaSprayEmitter } from './emitters/sea-spray-emitter';
 import { TRAIL_LIFE, TRAIL_POINTS, WingTrails } from './emitters/wing-trails';
+import { BreathEmitter } from './emitters/breath-emitter';
 import { isWaterAt, type EmitContext } from './emitters/emit-context';
 import { FxPass, MAX_MOTES, type FxRenderState } from './render/fx-pass';
 import { createBlackbodyLut } from './render/blackbody';
@@ -41,6 +42,8 @@ export class FxSystem implements System, FxService {
   /** Spindrift, bow spray and rooster tails from the water's spray sources (phase 21 stage 7c). */
   private readonly seaSpray = new SeaSprayEmitter();
   private readonly trails = new WingTrails();
+  /** The dragon's breath steam and the bond behaviours' puffs (phase 06). */
+  private readonly breath = new BreathEmitter();
   private emit: EmitContext | null = null;
   private readonly lights: FireLightState = {
     pos: [new THREE.Vector3(0, -1e5, 0), new THREE.Vector3(0, -1e5, 0)],
@@ -105,6 +108,7 @@ export class FxSystem implements System, FxService {
       ctx.events.on('splash', ({ position, strength }) => this.splash(position, strength)),
       ctx.events.on('ground-impact', ({ position, speed }) => this.dust(position, speed / 14)),
       ctx.events.on('flap', ({ strength }) => this.surface.onFlap(strength)),
+      ctx.events.on('dragon-puff', ({ kind, strength }) => this.breath.puff(kind, strength)),
     );
     ctx.services.provide('fx', this);
     try {
@@ -192,6 +196,7 @@ export class FxSystem implements System, FxService {
     this.fire.update(emit, dragon, rig, this.lights, low);
     this.surface.update(emit, dragon, rig, low);
     this.seaSpray.update(emit, ctx.services.tryGet('water')?.foam);
+    this.breath.update(emit, dragon, rig, ctx.services.tryGet('bond'));
 
     let humidity = 0.8;
     if (dragon) {

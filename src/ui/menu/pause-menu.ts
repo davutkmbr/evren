@@ -38,6 +38,8 @@ export class PauseMenu {
   private readonly progress = stat('Keşifler', '0/0');
   private progressLast = '0/0';
   private readonly progressFill: HTMLElement;
+  /** One quiet line about the dragon's mood (phase 06: no meter anywhere, only this). */
+  private readonly moodLine = el('span', 'menu-mood');
   private tab: MenuTab = 'teleport';
   private isOpen = false;
 
@@ -85,7 +87,7 @@ export class PauseMenu {
       'menu-sheet',
       [
         el('header', 'menu-top', [
-          el('div', 'menu-brand', [el('span', 'menu-state', 'Duraklatıldı'), el('span', 'menu-name', BRAND.name, { lang: 'en' })]),
+          el('div', 'menu-brand', [el('span', 'menu-state', 'Duraklatıldı'), el('span', 'menu-name', BRAND.name, { lang: 'en' }), this.moodLine]),
           el('nav', 'menu-tabs-wrap', [tablist], { 'aria-label': 'Menü bölümleri' }),
           el('div', 'menu-top-end', [
             el('div', 'menu-progress', [
@@ -119,6 +121,13 @@ export class PauseMenu {
       this.progress.set(text);
     }
     this.progressFill.style.transform = `scaleX(${total > 0 ? (count / total).toFixed(3) : '0'})`;
+  }
+
+  /** The dragon's mood line under the game's name ('' hides it). */
+  setMood(line: string): void {
+    this.moodLine.textContent = line;
+    this.moodLine.hidden = line === '';
+    this.moodLine.title = line;
   }
 
   open(tab: MenuTab = this.tab): void {

@@ -74,6 +74,9 @@ export function createLifeService(src: LifeServiceSource): LifeService {
       borrowed.add(id);
       return f ? f.borrowVesselFlock(id, out) : 0;
     },
+    nearestBird(x, y, z, maxDistance, out) {
+      return src.flocks ? src.flocks.nearestBird(x, y, z, maxDistance, out) : -1;
+    },
     returnGulls(id, states, count) {
       const f = syncBorrowed();
       borrowed.delete(id);
