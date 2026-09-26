@@ -56,6 +56,9 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Rider: every command shows on the rider; petting, standing, the dragon's gaze back. Humans are MetaHuman +
   Mixamo (private asset store).
 - Hooks for other systems: `addVelocity` (speed rings, powers), `requestRoar`, `fireBurst`.
+- Planned (phase 20): run-out landings and touch-and-go, leaping take-offs, new air moves (power stroke, dart,
+  wingover, Immelmann / Split-S, side-slip, surface skim) and a flow system that rewards clean chains with capped
+  speed — the skill ceiling for races.
 
 ### 5.2 The world (`src/world/`, `tools/world-compiler/`)
 - Real relief (SRTM-based), coastline and land use; OSM streets, buildings, traffic and pedestrians (the
