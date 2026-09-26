@@ -14,7 +14,7 @@ function coarseSpec(size: number): GridSpecMsg {
   return { size, cell, origin: -WORLD_HALF + cell / 2 };
 }
 
-export function buildInitMessage(geo: GeoQuery): CityInitMessage {
+export function buildInitMessage(geo: GeoQuery, osm: CityInitMessage['osm'] = null): CityInitMessage {
   const districtIndex = new Map(geo.districts.map((d, i) => [d, i]));
   const dSpec = coarseSpec(256);
   const dGrid = new Uint8Array(dSpec.size * dSpec.size);
@@ -64,6 +64,7 @@ export function buildInitMessage(geo: GeoQuery): CityInitMessage {
     })),
     districtGrid: { data: dGrid, spec: dSpec },
     heightCoarse: { data: hGrid, spec: hSpec },
+    osm,
   };
 }
 
@@ -93,6 +94,17 @@ export class GeoWindowCutter {
     private readonly exclude: readonly WorldBounds[] = [],
   ) {
     this.coastData = floatTextureData(geo);
+  }
+
+  /** Flat minX, minZ, maxX, maxZ of the exclusion rects touching the rectangle (the far OSM layer's region ownership). */
+  excludedIn(x0: number, z0: number, x1: number, z1: number): number[] {
+    const out: number[] = [];
+    for (const ex of this.exclude) {
+      if (ex.minX < x1 && ex.maxX > x0 && ex.minZ < z1 && ex.maxZ > z0) {
+        out.push(ex.minX, ex.minZ, ex.maxX, ex.maxZ);
+      }
+    }
+    return out;
   }
 
   cut(x0: number, z0: number, x1: number, z1: number): GeoWindowMsg {

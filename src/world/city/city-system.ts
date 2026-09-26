@@ -1,6 +1,7 @@
 /**
- * Procedural Istanbul city fabric: streams building chunks (3 LOD levels) generated in workers around the camera,
- * street/road lights and aviation beacons, and building colliders around the dragon.
+ * Istanbul city fabric: streams building chunks (3 LOD levels) generated in workers around the camera, street/road
+ * lights and aviation beacons, and building colliders around the dragon. Where the far OSM layer's coverage mask says
+ * so (phase 24, city/osm/), the chunks carry the real OSM buildings of the bake; elsewhere procedural lots.
  */
 import * as THREE from 'three';
 import type { EngineContext, GeoQuery, System } from '../../core/contracts';
@@ -11,7 +12,10 @@ import { onOsmExclusionChange, osmActiveExclusion } from '../osm/regions';
 import { GeoWindowCutter, buildInitMessage, buildOccupancy } from './geo-window';
 import { LampPool } from './lamps';
 import { CityMaterials } from './materials/building-material';
-import { BASE_CELL, LEVEL_COUNT, LEVEL_SIZES } from './protocol';
+import { BASE_CELL, type CityInitMessage, LEVEL_COUNT, LEVEL_SIZES } from './protocol';
+import { CITY_BAKE_FORMAT, type CityBakeIndex, OSM_CITY_DIR } from './osm/format';
+import { osmBuiltMask } from './osm/mask';
+import { fetchJson } from '../../street/format';
 import { CityStreamer, type CityLodParams, type StreamStats } from './streamer';
 import { CityWorkerPool } from './worker-pool';
 
@@ -57,6 +61,28 @@ function lodParams(q: QualitySettings): CityLodParams {
   };
 }
 
+/**
+ * The far OSM layer's bake (phase 24, city/osm/format.ts): the workers draw its buildings in the coverage mask's OSM
+ * cells. Null (procedural city only) when it is missing or `?osmfar=0`.
+ */
+async function loadFarOsm(ctx: EngineContext): Promise<CityInitMessage['osm']> {
+  if (ctx.debug.params.get('osmfar') === '0') {
+    return null;
+  }
+  const base = new URL(`${import.meta.env?.BASE_URL ?? '/'}${OSM_CITY_DIR}`, window.location.href).href;
+  try {
+    const index = await fetchJson<CityBakeIndex>(`${base}index.json`);
+    if (index.format !== CITY_BAKE_FORMAT) {
+      console.warn(`[city] far OSM bake format ${index.format}, expected ${CITY_BAKE_FORMAT}: procedural city only`);
+      return null;
+    }
+    return { base, blocks: index.files.map((f) => `${f.block[0]}_${f.block[1]}`) };
+  } catch (err) {
+    console.warn('[city] no far OSM bake (npm run bake:city): procedural city only', err);
+    return null;
+  }
+}
+
 function workerCount(): number {
   const hc = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
   return Math.max(2, Math.min(4, Math.floor(hc / 3)));
@@ -85,18 +111,26 @@ export class CitySystem implements System {
   private readonly colliderCenter = new THREE.Vector3();
 
   async init(ctx: EngineContext): Promise<void> {
-    const geo = await ctx.services.when('geo');
-    this.setup(ctx, geo);
+    const [geo, osm] = await Promise.all([ctx.services.when('geo'), loadFarOsm(ctx)]);
+    this.setup(ctx, geo, osm);
   }
 
-  private setup(ctx: EngineContext, geo: GeoQuery): void {
+  private setup(ctx: EngineContext, geo: GeoQuery, osm: CityInitMessage['osm']): void {
     const t0 = performance.now();
-    this.masks = levelMasks(buildOccupancy(geo, BASE_CELL));
+    const occupancy = buildOccupancy(geo, BASE_CELL);
+    if (osm) {
+      // The far OSM layer also streams tiles where real buildings stand on land the geo map leaves unbuilt.
+      const built = osmBuiltMask();
+      for (let k = 0; k < occupancy.length && k < built.length; k++) {
+        occupancy[k] |= built[k];
+      }
+    }
+    this.masks = levelMasks(occupancy);
     // OSM regions replace the procedural city while they are drawn: chunks and colliders over a region's rect are
-    // rebuilt whenever it enters or leaves the active list.
+    // rebuilt whenever it enters or leaves the active list (the far OSM layer's buildings a region owns go too).
     this.cutter = new GeoWindowCutter(geo, osmActiveExclusion());
     this.pool = new CityWorkerPool(workerCount());
-    this.pool.init(buildInitMessage(geo));
+    this.pool.init(buildInitMessage(geo, osm));
 
     this.materials = new CityMaterials();
     const b = geo.bounds;
@@ -178,7 +212,8 @@ export class CitySystem implements System {
     const x0 = -WORLD_HALF + ix * COLLIDER_TILE;
     const z0 = -WORLD_HALF + iz * COLLIDER_TILE;
     const win = this.cutter!.cut(x0 - COLLIDER_MARGIN, z0 - COLLIDER_MARGIN, x0 + COLLIDER_TILE + COLLIDER_MARGIN, z0 + COLLIDER_TILE + COLLIDER_MARGIN);
-    pool.submit(route, { type: 'colliders', ix, iz, size: COLLIDER_TILE, densityScale: this.densityScale, win }, (res) => {
+    const exclude = this.cutter!.excludedIn(x0, z0, x0 + COLLIDER_TILE, z0 + COLLIDER_TILE);
+    pool.submit(route, { type: 'colliders', ix, iz, size: COLLIDER_TILE, densityScale: this.densityScale, win, exclude }, (res) => {
       if (res.type === 'colliders') {
         done(res.boxes);
       }

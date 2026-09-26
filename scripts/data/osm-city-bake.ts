@@ -17,6 +17,10 @@
  *   do.
  * One file per 2 km block holds every building (sorted by 500 m tile); the city workers derive their 1 km and 2 km
  * tiles from it (format.ts).
+ * Two passes. Pass A reads the land-use polygons and the mapped footprint of every block and derives the coverage mask
+ * from the hand-drawn land use. The game stamps those polygons into its land use inside the mask's OSM cells
+ * (geo/build/osm-land.ts) and keeps mosque sites out of them, and pass B computes infill and the regions' solids on
+ * exactly that geography (tools/headless/geo.ts buildGeoWith), so the bake matches the runtime.
  * Coverage mask (research/osm-city-coverage.md): a 250 m cell is OSM when the OSM footprint area over its 3 x 3
  * neighbourhood covers >= MASK_COVER of the geo-buildable land (one relaxed pass at MASK_RELAXED for cells mostly
  * surrounded by OSM cells), when the geo map does not build on it, or when it lies in a region. Buildings in the other
@@ -25,13 +29,13 @@
  * Data © OpenStreetMap contributors, ODbL 1.0.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import * as THREE from 'three';
 import type { WorldBounds } from '../../src/core/contracts';
 import { localToLatLon } from '../../src/core/geo-coords';
-import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, encodeMask, FadeClass, FLAG, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
+import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, decodeLand, encodeMask, FadeClass, FLAG, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
 import { LEVEL_SIZES } from '../../src/world/city/protocol';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { Arch } from '../../src/world/osm/buildings/archetypes';
@@ -45,7 +49,7 @@ import type { OsmWorkerBase } from '../../src/world/osm/shared/protocol';
 import { buildStreetRaster, streetRasterInput } from '../../src/world/osm/shared/street-field';
 import { StreetSurface } from '../../src/world/osm/shared/street-surface';
 import { streetAreaRects } from '../../src/world/osm/street-areas';
-import { buildHeadlessGeo } from '../../tools/headless/geo';
+import { buildGeoWith } from '../../tools/headless/geo';
 import { ROOT } from '../../tools/world-compiler/lib/areas.mjs';
 import { extractSource } from './lib/osm-local.mjs';
 
@@ -118,26 +122,16 @@ async function fetchBlocks(): Promise<void> {
 await fetchBlocks();
 
 // ---------------------------------------------------------------------------------------------------------------
-// 2. Context: geo, regions, claims, walls.
-const geo = buildHeadlessGeo();
+// 2. Context: regions, claims, walls, helpers.
 const regions = osmRegions().map((r) => ({ def: r, rect: groundRect(r.rect) }));
 const regionFile = (url: string): string => resolve(ROOT, 'public', url.replace(/^\//, ''));
 const streetRects = streetAreaRects().map((a) => a.rect);
-/** The runtime's claims (buildings/index.ts): regions use exactly these. */
-const layerClaims = landmarkClaims(geo);
-/** Outside the regions: modelled landmarks only. Neighbourhood mosque sites stay out of OSM cells (geo siteExclusion). */
-const bakeClaims = landmarkClaims({ landmarks: geo.landmarks, smallMosqueSites: [] });
 const wallsIndex = resolve(ROOT, 'public/world/walls/index.json');
 const wallOwned = new Set<number>(existsSync(wallsIndex) ? ((JSON.parse(readFileSync(wallsIndex, 'utf8')) as { owned?: number[] }).owned ?? []) : []);
 if (!existsSync(wallsIndex)) {
   log('WARNING: public/world/walls/index.json missing (npm run compile:walls): wall-owned buildings stay in the bake');
 }
-
-function surfaceOver(data: OsmData, rect: WorldBounds, area: WorldBounds): StreetSurface {
-  const g = groundRect(rect);
-  const base: OsmWorkerBase = { rect: g, area, ...cutGeoWindows(geo, g), reserved: reservedPads(geo), street: buildStreetRaster(streetRasterInput(data, (x, z) => geo.coastDistance(x, z)), g) };
-  return new StreetSurface(base);
-}
+const inAnyRegion = (x: number, z: number): boolean => regions.some((r) => inRect(r.rect, x, z));
 
 interface Rec {
   s: Solid;
@@ -168,29 +162,113 @@ const toRec = (s: Solid): Rec => {
   const [cx, cz] = centroidOf(s.ring);
   return { s, cx, cz, area: Math.abs(areaOf(s.ring)) };
 };
-
-// 3. Region solids (the region layer's own set), cached per region.
-const regionRecs: Rec[] = [];
-let regionInfill = 0;
-for (const { def, rect } of regions) {
-  const file = regionFile(def.url);
-  if (!existsSync(file)) {
-    continue;
+/** Douglas-Peucker on a closed flat ring; null when it collapses. */
+function simplifyRing(r: number[], tol: number): number[] | null {
+  if (tol <= 0) {
+    return r;
   }
-  const data = JSON.parse(readFileSync(file, 'utf8')) as OsmData;
-  const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
-  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetRects }, layerClaims, surfaceOver(data, def.rect, def.area), def.area);
-  regionInfill += infill.parcels.length;
-  for (const s of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, rect)) {
-    regionRecs.push(toRec(s));
+  const pts: [number, number][] = [];
+  for (let i = 0; i < r.length; i += 2) {
+    pts.push([r[i], r[i + 1]]);
   }
+  pts.push(pts[0]);
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [i0, i1] = stack.pop()!;
+    let best = -1;
+    let bestD = tol;
+    const [ax, az] = pts[i0];
+    const [bx, bz] = pts[i1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const l2 = dx * dx + dz * dz;
+    for (let i = i0 + 1; i < i1; i++) {
+      const [px, pz] = pts[i];
+      const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / l2)) : 0;
+      const d = Math.hypot(px - ax - t * dx, pz - az - t * dz);
+      if (d > bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best >= 0) {
+      keep[best] = 1;
+      stack.push([i0, best], [best, i1]);
+    }
+  }
+  const out: number[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (keep[i]) {
+      out.push(pts[i][0], pts[i][1]);
+    }
+  }
+  return out.length >= 6 && areaOf(out) > 0 ? out : null;
 }
-log(`regions: ${regionRecs.length} solids (${regionInfill} infill parcels)`);
-const inAnyRegion = (x: number, z: number): boolean => regions.some((r) => inRect(r.rect, x, z));
 
-// 4. Block solids and land-use polygons.
-const recs: Rec[] = regionRecs.filter((r) => inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, r.cx, r.cz));
-let blockInfill = 0;
+function reverse(r: number[]): number[] {
+  const out: number[] = [];
+  for (let i = r.length - 2; i >= 0; i -= 2) {
+    out.push(r[i], r[i + 1]);
+  }
+  return out;
+}
+
+/** Land use: per polygon class, ring count, origin (f32) and rings (i16, LAND_UNIT m, 2 m simplification). */
+function encodeLand(land: { cls: LandClass; rings: number[][] }[]): { bytes: Uint8Array; polygons: number } {
+  const cls: number[] = [];
+  const ringCount: number[] = [];
+  const nvs: number[] = [];
+  const org: number[] = [];
+  const xy: number[] = [];
+  for (const p of land) {
+    const outer = simplifyRing(areaOf(p.rings[0]) < 0 ? reverse(p.rings[0]) : p.rings[0], 2);
+    if (!outer) {
+      continue;
+    }
+    // Holes are stored counter-clockwise too; the reader knows ring 0 is the outer ring.
+    const holes = p.rings.slice(1).map((r) => simplifyRing(areaOf(r) < 0 ? reverse(r) : r, 2)).filter((r): r is number[] => !!r);
+    const rings = [outer, ...holes].filter((r) => r.length / 2 < 65536);
+    const [cx, cz] = centroidOf(rings[0]);
+    if (!inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, cx, cz)) {
+      continue;
+    }
+    let far = false;
+    for (const r of rings) {
+      for (let q = 0; q < r.length; q++) {
+        far ||= Math.abs(r[q] - (q % 2 ? cz : cx)) / LAND_UNIT > 32000;
+      }
+    }
+    if (far) {
+      continue;
+    }
+    cls.push(p.cls);
+    ringCount.push(Math.min(255, rings.length));
+    org.push(cx, cz);
+    for (const r of rings.slice(0, 255)) {
+      nvs.push(r.length / 2);
+      for (let q = 0; q < r.length; q += 2) {
+        xy.push(Math.round((r[q] - cx) / LAND_UNIT), Math.round((r[q + 1] - cz) / LAND_UNIT));
+      }
+    }
+  }
+  const header: Omit<LandFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, polygons: cls.length, rings: nvs.length, vertices: xy.length / 2 };
+  return { bytes: packContainer<LandFileHeader>(header, { cls: new Uint8Array(cls), rings: new Uint8Array(ringCount), nv: new Uint16Array(nvs), org: new Float32Array(org), xy: new Int16Array(xy) }), polygons: cls.length };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 3. Pass A: land-use polygons and the mapped footprint per mask cell -> coverage mask. The mask reads the hand-drawn
+// land use (what the procedural city would build on), so it does not depend on the OSM land use it gates.
+const geoPlain = buildGeoWith(null);
+const plainClaims = landmarkClaims({ landmarks: geoPlain.landmarks, smallMosqueSites: [] });
+const N = MASK_SIZE;
+const cellOf = (x: number, z: number): number => {
+  const i = Math.floor((x + BAKE_HALF) / MASK_CELL);
+  const j = Math.floor((z + BAKE_HALF) / MASK_CELL);
+  return i < 0 || j < 0 || i >= N || j >= N ? -1 : j * N + i;
+};
+const footprint = new Float64Array(N * N);
 const landSeen = new Set<number>();
 const land: { cls: LandClass; rings: number[][] }[] = [];
 let osmBase: string | null = null;
@@ -199,17 +277,11 @@ for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
     const rect = blockRect(bi, bj);
     const data = JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData & { osmBase?: string };
     osmBase ??= data.osmBase ?? null;
-    const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
-    let extra: OsmBuilding[] = [];
-    if (buildings.length >= INFILL_MIN_BUILDINGS) {
-      const keepOut = [...streetRects, ...regions.map((r) => r.rect)].filter((k) => overlaps(k, rect));
-      extra = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, bakeClaims, surfaceOver(data, rect, rect), rect).parcels;
-      blockInfill += extra.length;
-    }
-    for (const s of collectSolids({ buildings, claims: bakeClaims, extra }, rect)) {
+    for (const s of collectSolids({ buildings: data.buildings.filter((b) => !wallOwned.has(b.id)), claims: plainClaims }, rect)) {
       const r = toRec(s);
-      if (inRect(rect, r.cx, r.cz) && !inAnyRegion(r.cx, r.cz)) {
-        recs.push(r);
+      const k = inRect(rect, r.cx, r.cz) ? cellOf(r.cx, r.cz) : -1;
+      if (k >= 0) {
+        footprint[k] += r.area;
       }
     }
     for (const a of data.areas as OsmArea[]) {
@@ -224,23 +296,6 @@ for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
       land.push({ cls, rings: [a.ring, ...(a.holes ?? [])] });
     }
   }
-  log(`block row ${bj + 1}/${BAKE_BLOCKS}: ${recs.length} solids`);
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// 5. Coverage mask.
-const N = MASK_SIZE;
-const cellOf = (x: number, z: number): number => {
-  const i = Math.floor((x + BAKE_HALF) / MASK_CELL);
-  const j = Math.floor((z + BAKE_HALF) / MASK_CELL);
-  return i < 0 || j < 0 || i >= N || j >= N ? -1 : j * N + i;
-};
-const footprint = new Float64Array(N * N);
-for (const r of recs) {
-  const k = cellOf(r.cx, r.cz);
-  if (k >= 0 && !r.s.infill) {
-    footprint[k] += r.area;
-  }
 }
 const buildable = new Float32Array(N * N);
 const regionCell = new Uint8Array(N * N);
@@ -250,7 +305,7 @@ for (let j = 0; j < N; j++) {
     const S = 10;
     for (let sj = 0; sj < S; sj++) {
       for (let si = 0; si < S; si++) {
-        b += BUILDABLE.has(geo.landUseAt(-BAKE_HALF + i * MASK_CELL + ((si + 0.5) * MASK_CELL) / S, -BAKE_HALF + j * MASK_CELL + ((sj + 0.5) * MASK_CELL) / S)) ? 1 : 0;
+        b += BUILDABLE.has(geoPlain.landUseAt(-BAKE_HALF + i * MASK_CELL + ((si + 0.5) * MASK_CELL) / S, -BAKE_HALF + j * MASK_CELL + ((sj + 0.5) * MASK_CELL) / S)) ? 1 : 0;
       }
     }
     buildable[j * N + i] = b / (S * S);
@@ -296,11 +351,71 @@ for (let j = 1; j < N - 1; j++) {
     relaxed[k] = nb >= 5 ? 1 : 0;
   }
 }
+log(`pass A: ${relaxed.reduce((s, v) => s + v, 0)} OSM cells, ${land.length} land-use polygons`);
+const landFile = encodeLand(land);
+
+// 4. The geography the game builds from this bake: OSM land use stamped into the OSM cells, mosque sites kept out of
+// them. Infill (which leaves parks and woods free) and the regions' own solids are computed on it, as at runtime.
+const geo = buildGeoWith(decodeLand(landFile.bytes), relaxed);
+/** The runtime's claims (buildings/index.ts): regions use exactly these. */
+const layerClaims = landmarkClaims(geo);
+/** Outside the regions: modelled landmarks only (no mosque site reaches into an OSM cell). */
+const bakeClaims = landmarkClaims({ landmarks: geo.landmarks, smallMosqueSites: [] });
+
+function surfaceOver(data: OsmData, rect: WorldBounds, area: WorldBounds): StreetSurface {
+  const g = groundRect(rect);
+  const base: OsmWorkerBase = { rect: g, area, ...cutGeoWindows(geo, g), reserved: reservedPads(geo), street: buildStreetRaster(streetRasterInput(data, (x, z) => geo.coastDistance(x, z)), g) };
+  return new StreetSurface(base);
+}
+
+// 5. Pass B: region solids (the region layer's own set and infill), then every other block with its own infill.
+const regionRecs: Rec[] = [];
+let regionInfill = 0;
+for (const { def, rect } of regions) {
+  const file = regionFile(def.url);
+  if (!existsSync(file)) {
+    continue;
+  }
+  const data = JSON.parse(readFileSync(file, 'utf8')) as OsmData;
+  const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
+  const infill = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetRects }, layerClaims, surfaceOver(data, def.rect, def.area), def.area);
+  regionInfill += infill.parcels.length;
+  for (const s of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, rect)) {
+    regionRecs.push(toRec(s));
+  }
+}
+log(`regions: ${regionRecs.length} solids (${regionInfill} infill parcels)`);
+const recs: Rec[] = regionRecs.filter((r) => inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, r.cx, r.cz));
+let blockInfill = 0;
+for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
+  for (let bi = 0; bi < BAKE_BLOCKS; bi++) {
+    const rect = blockRect(bi, bj);
+    const data = JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData;
+    const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
+    let extra: OsmBuilding[] = [];
+    if (buildings.length >= INFILL_MIN_BUILDINGS) {
+      const keepOut = [...streetRects, ...regions.map((r) => r.rect)].filter((k) => overlaps(k, rect));
+      extra = findInfill(buildings, { roads: data.roads, areas: data.areas, rails: data.rails, keepOut }, bakeClaims, surfaceOver(data, rect, rect), rect).parcels;
+      blockInfill += extra.length;
+    }
+    for (const s of collectSolids({ buildings, claims: bakeClaims, extra }, rect)) {
+      const r = toRec(s);
+      if (inRect(rect, r.cx, r.cz) && !inAnyRegion(r.cx, r.cz)) {
+        recs.push(r);
+      }
+    }
+  }
+  log(`block row ${bj + 1}/${BAKE_BLOCKS}: ${recs.length} solids`);
+}
 const kept = recs.filter((r) => {
   const k = cellOf(r.cx, r.cz);
   return k >= 0 && relaxed[k] === 1;
 });
 const droppedProcedural = recs.length - kept.length;
+const builtCells = new Uint8Array(N * N);
+for (const r of kept) {
+  builtCells[cellOf(r.cx, r.cz)] = 1;
+}
 log(`mask: ${relaxed.reduce((s, v) => s + v, 0)} OSM cells; ${kept.length} solids kept, ${droppedProcedural} in procedural cells`);
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -351,51 +466,6 @@ const outs: Out[] = kept.map((r) => {
   };
 });
 
-/** Douglas-Peucker on a closed flat ring; null when it collapses. */
-function simplifyRing(r: number[], tol: number): number[] | null {
-  if (tol <= 0) {
-    return r;
-  }
-  const pts: [number, number][] = [];
-  for (let i = 0; i < r.length; i += 2) {
-    pts.push([r[i], r[i + 1]]);
-  }
-  pts.push(pts[0]);
-  const keep = new Uint8Array(pts.length);
-  keep[0] = keep[pts.length - 1] = 1;
-  const stack: [number, number][] = [[0, pts.length - 1]];
-  while (stack.length) {
-    const [i0, i1] = stack.pop()!;
-    let best = -1;
-    let bestD = tol;
-    const [ax, az] = pts[i0];
-    const [bx, bz] = pts[i1];
-    const dx = bx - ax;
-    const dz = bz - az;
-    const l2 = dx * dx + dz * dz;
-    for (let i = i0 + 1; i < i1; i++) {
-      const [px, pz] = pts[i];
-      const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / l2)) : 0;
-      const d = Math.hypot(px - ax - t * dx, pz - az - t * dz);
-      if (d > bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    if (best >= 0) {
-      keep[best] = 1;
-      stack.push([i0, best], [best, i1]);
-    }
-  }
-  const out: number[] = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    if (keep[i]) {
-      out.push(pts[i][0], pts[i][1]);
-    }
-  }
-  return out.length >= 6 && areaOf(out) > 0 ? out : null;
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // 7. Files.
 rmSync(OUT_DIR, { recursive: true, force: true });
@@ -420,6 +490,8 @@ for (const o of outs) {
   list.push(o);
 }
 const TILE0 = LEVEL_SIZES[0];
+writeFileSync(resolve(OUT_DIR, 'land.bin.gz'), gzipSync(landFile.bytes, { level: 9 }));
+index.land = { file: 'land.bin.gz', polygons: landFile.polygons, bytes: statSync(resolve(OUT_DIR, 'land.bin.gz')).size };
 let buildingBytes = 0;
 let longRings = 0;
 for (const [key, list] of byBlock) {
@@ -495,57 +567,6 @@ for (const [key, list] of byBlock) {
   buildingBytes += bytes.length;
 }
 
-// Land use: per polygon class, ring count, origin (f32) and rings (i16, LAND_UNIT m, 2 m simplification).
-{
-  const cls: number[] = [];
-  const ringCount: number[] = [];
-  const nvs: number[] = [];
-  const org: number[] = [];
-  const xy: number[] = [];
-  for (const p of land) {
-    const outer = simplifyRing(areaOf(p.rings[0]) < 0 ? reverse(p.rings[0]) : p.rings[0], 2);
-    if (!outer) {
-      continue;
-    }
-    // Holes are stored counter-clockwise too; the reader knows ring 0 is the outer ring.
-    const holes = p.rings.slice(1).map((r) => simplifyRing(areaOf(r) < 0 ? reverse(r) : r, 2)).filter((r): r is number[] => !!r);
-    const rings = [outer, ...holes].filter((r) => r.length / 2 < 65536);
-    const [cx, cz] = centroidOf(rings[0]);
-    if (!inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, cx, cz)) {
-      continue;
-    }
-    let far = false;
-    for (const r of rings) {
-      for (let q = 0; q < r.length; q++) {
-        far ||= Math.abs(r[q] - (q % 2 ? cz : cx)) / LAND_UNIT > 32000;
-      }
-    }
-    if (far) {
-      continue;
-    }
-    cls.push(p.cls);
-    ringCount.push(Math.min(255, rings.length));
-    org.push(cx, cz);
-    for (const r of rings.slice(0, 255)) {
-      nvs.push(r.length / 2);
-      for (let q = 0; q < r.length; q += 2) {
-        xy.push(Math.round((r[q] - cx) / LAND_UNIT), Math.round((r[q + 1] - cz) / LAND_UNIT));
-      }
-    }
-  }
-  const header: Omit<LandFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, polygons: cls.length, rings: nvs.length, vertices: xy.length / 2 };
-  const bytes = gzipSync(packContainer<LandFileHeader>(header, { cls: new Uint8Array(cls), rings: new Uint8Array(ringCount), nv: new Uint16Array(nvs), org: new Float32Array(org), xy: new Int16Array(xy) }), { level: 9 });
-  writeFileSync(resolve(OUT_DIR, 'land.bin.gz'), bytes);
-  index.land = { file: 'land.bin.gz', polygons: cls.length, bytes: bytes.length };
-}
-function reverse(r: number[]): number[] {
-  const out: number[] = [];
-  for (let i = r.length - 2; i >= 0; i -= 2) {
-    out.push(r[i], r[i + 1]);
-  }
-  return out;
-}
-
 index.stats = {
   solids: outs.length,
   regionSolids: regionRecs.length,
@@ -568,6 +589,7 @@ const maskFile: CoverageMaskFile = {
   osmBase,
   rule: `OSM where the OSM footprint area over the 3 x 3 cells covers >= ${MASK_COVER} of the geo-buildable land (relaxed ${MASK_RELAXED} with >= 5 OSM neighbours), where the geo map does not build (< 30 % buildable), or inside a flight-scale region`,
   bits: encodeMask(relaxed),
+  built: encodeMask(builtCells),
 };
 writeFileSync(MASK_FILE, JSON.stringify(maskFile, null, 1) + '\n');
 log(`done: ${JSON.stringify(index.stats)}`);
