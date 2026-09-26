@@ -70,6 +70,10 @@ export const nedim: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.01243, lon: 28.98366, height: 40, note: 'Topkapı palace on Sarayburnu, the poem\'s city', nearLandmark: 'topkapi-sarayi' },
+    },
     musicMood: ['solemn', 'history'],
     // Two couplets; divan Turkish reads slowly, so each line holds 5 s.
     subtitles: timeline(
@@ -135,6 +139,10 @@ export const sinanKitabe: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.01723, lon: 28.96394, height: 8, note: "Mimar Sinan's tomb at the north corner of the Süleymaniye", nearLandmark: 'suleymaniye' },
+    },
     musicMood: ['solemn', 'tender', 'history'],
     subtitles: timeline(
       [
@@ -200,6 +208,11 @@ export const katibim: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Heard from the street: a coffeehouse on the Üsküdar shore road, between Şemsi Paşa and the İskele square.
+    musicSource: {
+      kind: 'venue',
+      at: { lat: 41.0258, lon: 29.0135, height: 4, note: 'Coffeehouse on the shore road between Şemsi Paşa and the İskele square, ~50 m from the water', expect: 'land' },
+    },
     musicMood: ['joyful', 'tender'],
     subtitles: timeline([
       'Üsküdar’a gider iken aldı da bir yağmur,',
@@ -321,6 +334,11 @@ export const karagoz: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // The Karagöz tent itself, on Şehzadebaşı Caddesi in front of the mosque (the old Direklerarası).
+    musicSource: {
+      kind: 'live',
+      at: { lat: 41.0129, lon: 28.9584, height: 2, note: 'Karagöz tent on Şehzadebaşı Caddesi, beside the perde waypoint', expect: 'land', nearLandmark: 'sehzade' },
+    },
     musicMood: ['joyful', 'history'],
     subtitles: timeline([
       { speaker: 'Hacivat', text: 'Off… Hay Hak! … Yâr bana bir eğlence!' },
@@ -394,6 +412,11 @@ export const yagmur: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // A horn gramophone at a window of Aşiyan, the poet's house above Rumelihisarı.
+    musicSource: {
+      kind: 'gramophone',
+      at: { lat: 41.08266, lon: 29.05345, height: 7, note: 'Aşiyan Müzesi (OSM way 746788646), upper-floor window over the Bosphorus', expect: 'land' },
+    },
     musicMood: ['nostalgic', 'tender'],
     subtitles: timeline([
       'Küçük, muttarid, muhteriz darbeler',
@@ -523,6 +546,12 @@ export const kuyruklu: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // A horn gramophone at a window of the writer's house on Heybeliada; a quiet island night carries it far.
+    musicSource: {
+      kind: 'gramophone',
+      at: { lat: 40.8768, lon: 29.1004, height: 6, note: "Hüseyin Rahmi's house (museum) by his monument, Heybeliada; the house's exact footprint is to confirm", expect: 'land' },
+      reachScale: 1.8,
+    },
     musicMood: ['joyful', 'mystic'],
     subtitles: timeline([
       '1910 baharı. Halley kuyrukluyıldızı geliyor, mahalleyi kıyamet telaşı sardı.',
@@ -583,6 +612,10 @@ export const prokopios: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.0085, lon: 28.98, height: 55, note: 'The Hagia Sophia dome', nearLandmark: 'ayasofya' },
+    },
     musicMood: ['solemn', 'mystic', 'history'],
     subtitles: timeline([
       'Görenleri hayran bırakan, kulaktan duyanlara ise büsbütün inanılmaz gelen bir güzellik.',
@@ -638,6 +671,10 @@ export const deAmicis: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.01243, lon: 28.98366, height: 40, note: 'Sarayburnu and the palace, where the city opens up as the fog lifts', nearLandmark: 'topkapi-sarayi' },
+    },
     musicMood: ['solemn', 'sea', 'history'],
     subtitles: timeline([
       'Sis vardı. Koyu bir sis ufku her yandan örtüyordu.',

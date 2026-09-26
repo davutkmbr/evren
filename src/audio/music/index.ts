@@ -6,7 +6,9 @@
  *   rules.ts     game state → stem mix, duck, set preferences (conditions with hysteresis, rules table, smoothing)
  *   director.ts  which set plays when: play / silence cycle, bar / phrase-quantised changes, race / moment overrides
  *   sprinkle.ts  sprinkle mode ("Müzik tarzı: Seyrek"): mostly silence, a short single-instrument phrase now and then
- *   moment-music.ts  the emotional one-shot piece under a moment's subtitles
+ *   moment-music.ts  the emotional one-shot piece under a moment's subtitles (and its lead-in from a world source)
+ *   moment-source.ts where the moment piece comes from: world source kinds and memory (pure tuning + mapping)
+ *   source-graph.ts  WebAudio: the world / memory chains the moment piece plays through
  *   clock.ts     bar-grid math
  *   player.ts    WebAudio: on-demand decoding, sample-locked stem loops, fades, stingers, one-shot phrase voices
  *   test-sets.ts DEV-ONLY procedural test sets, phrases and a moment piece (`?music=test`)
@@ -27,6 +29,11 @@ import { positionAt } from './clock';
 import { DEFAULT_DIRECTOR, MusicDirector, type DirectorCommand } from './director';
 import { EMPTY_MANIFEST, MUSIC_BASE, roleOf, stemsOf, validateManifest, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
 import { MomentMusicDirector, type MomentMusicRequest } from './moment-music';
+import { emptySourceMix, type SourceEnv, type SourceMix } from './moment-source';
+import { MomentSourceSession, type MomentSourceFrame } from './moment-source-session';
+import type { SourceGraph } from './source-graph';
+import type { ListenerPose } from '../spatial';
+import { smoothstep } from '../dsp/math';
 import { MusicPlayer } from './player';
 import { idleInput, MUSIC_CONDITIONS, MUSIC_RULES, MusicRulesEngine, type MusicInput, type MusicPolicy, type MusicTarget, type StemMix } from './rules';
 import { effectiveMusicStyle, loadAdaptiveMusic, loadMusicStyle, loadMusicVolume, saveAdaptiveMusic, saveMusicStyle, saveMusicVolume, type MusicStyle } from './settings';
@@ -74,6 +81,21 @@ export interface MusicSnapshot {
     phrases: string[];
   };
   moment: { current: string | null; pending: string | null; last: string | null; note: string; pieces: string[] };
+  /** The moment piece's source (null while no moment piece plays). */
+  source: { momentId: string; kind: string; phase: string; distance: number; reach: number; windMask: number; clarity: number; open: number; memory: number; level: number } | null;
+}
+
+export type { MomentSourceFrame } from './moment-source-session';
+
+/**
+ * The audio service's moment source surface (src/audio/index.ts implements it next to AudioService; the moments
+ * system reaches it through `AudioService & Partial<MomentSourceAudio>`).
+ */
+export interface MomentSourceAudio {
+  /** The moment the playing moment piece belongs to and the anchor it follows (null: none plays). */
+  readonly momentMusicFocus: { momentId: string; anchorId?: number } | null;
+  /** Per frame, and once right before setMomentMusic(true) with the starting moment as `current`. */
+  updateMomentSources(frame: MomentSourceFrame): void;
 }
 
 /** Extra facts about a moment for choosing its piece (AudioService.setMomentMusic). */
@@ -106,6 +128,8 @@ export interface MusicDebugApi {
   setStyle(style: MusicStyle): void;
   /** Starts a fake moment (as the moments system does) with a category / mood / musicId; `endMoment()` ends it. */
   moment(info?: MomentMusicInfo & { musicId?: string }): void;
+  /** The moment piece's source mix now (null while none plays). */
+  source(): SourceMix | null;
   endMoment(): void;
   /** Plays a stinger of the current set ('go', 'finish', 'intro', 'outro'). */
   cue(kind: StingerKind): void;
@@ -117,6 +141,12 @@ export interface MusicDebugApi {
 
 /** Seconds between water look-ups under the dragon (a GeoQuery grid sample). */
 const WATER_PROBE_S = 0.25;
+/** The source graph is torn down after this long without a moment piece (s; the memory hall's tail is 5 s). */
+const SOURCE_GRAPH_IDLE_S = 8;
+/** World music (loops, sprinkles) ducks under an audible lead-in / world source by up to this much. */
+const SOURCE_WORLD_DUCK = 0.6;
+const NO_LISTENER: ListenerPose = { position: { x: 0, y: 0, z: 0 }, forward: { x: 0, y: 0, z: -1 }, right: { x: 1, y: 0, z: 0 } };
+const IDLE_MIX: SourceMix = emptySourceMix();
 
 export class MusicController {
   private audio: BaseAudioContext | null = null;
@@ -133,6 +163,16 @@ export class MusicController {
   private urlStyle: MusicStyle | null = null;
   private appliedStyle: MusicStyle | null = null;
   private momentSeq = 0;
+  private srcFrame: MomentSourceFrame = { current: null, focus: null, nearby: null };
+  private readonly source = new MomentSourceSession();
+  private graph: SourceGraph | null = null;
+  private graphModule: typeof import('./source-graph') | null = null;
+  private graphIdle = 0;
+  private sourceDuck = 0;
+  private reverbDest: AudioNode | null = null;
+  private readonly srcEnv: SourceEnv = { night: 0, windSpeed: 4, rain: 0, storm: 0, overWater: false, airspeed: 0, mode: 'none', perched: false };
+  private readonly dragonPos = { x: 0, y: 0, z: 0 };
+  private dragonOk = false;
   private momentReq: MomentMusicRequest = { active: false, seq: 0, musicId: null, category: null, mood: [], time: [] };
   private momentDuck = 0;
   private sprinkleCtx: SprinkleContext | null = null;
@@ -182,6 +222,14 @@ export class MusicController {
     saveAdaptiveMusic(on);
   }
 
+  get momentMusicFocus(): { momentId: string; anchorId?: number } | null {
+    return this.source.focus(this.momentMusic.view);
+  }
+
+  updateMomentSources(frame: MomentSourceFrame): void {
+    this.srcFrame = frame;
+  }
+
   setMomentMusic(active: boolean, musicId?: string, info?: MomentMusicInfo): void {
     this.momentActive = active;
     this.momentMusicId = active ? (musicId ?? null) : null;
@@ -195,6 +243,8 @@ export class MusicController {
       category: active ? (info?.category ?? null) : null,
       mood: active ? [...(info?.mood ?? [])] : [],
       time: this.momentReq.time,
+      momentId: active ? (this.srcFrame.current?.momentId ?? null) : null,
+      world: false,
     };
   }
 
@@ -258,10 +308,18 @@ export class MusicController {
   }
 
   /** The audio system calls this once its engine (and master bus) exists. */
-  attach(audio: BaseAudioContext, destination: AudioNode): void {
+  attach(audio: BaseAudioContext, destination: AudioNode, reverbSend?: AudioNode): void {
     this.audio = audio;
     this.player = new MusicPlayer(audio, destination);
     this.player.setVolume(this.volume);
+    if (reverbSend) {
+      this.reverbDest = reverbSend;
+      this.player.connectReverb(reverbSend);
+    }
+    // The source graph module is small; loaded up front so the first moment piece never waits for it.
+    void import('./source-graph').then((m) => {
+      this.graphModule = m;
+    });
     if (this.testMode) {
       void this.registerTestLoaders();
     }
@@ -339,6 +397,13 @@ export class MusicController {
       s.flapEffort = Number.isFinite(dragon.flapEffort) ? dragon.flapEffort : 0;
       s.flow = Number.isFinite(dragon.flow ?? 0) ? (dragon.flow ?? 0) : 0;
       s.perched = dragon.perch?.phase === 'perched';
+      const dp = dragon.position;
+      this.dragonOk = Number.isFinite(dp.x + dp.y + dp.z);
+      if (this.dragonOk) {
+        this.dragonPos.x = dp.x;
+        this.dragonPos.y = dp.y;
+        this.dragonPos.z = dp.z;
+      }
       s.burst = Number.isFinite(dragon.burst ?? 0) ? (dragon.burst ?? 0) : 0;
       this.waterTimer -= dt;
       if (this.waterTimer <= 0) {
@@ -356,6 +421,8 @@ export class MusicController {
     s.hour = Number.isFinite(ctx.time.timeOfDay) ? ctx.time.timeOfDay : 12;
     const env = services.tryGet('env');
     s.night = env && Number.isFinite(env.nightFactor) ? env.nightFactor : 0;
+    const wind = env ? env.wind.length() : 4;
+    this.srcEnv.windSpeed = Number.isFinite(wind) ? wind : 4;
     const weather = services.tryGet('weather');
     s.storm = weather?.current.storm ?? 0;
     s.rain = weather?.current.rain ?? 0;
@@ -381,7 +448,7 @@ export class MusicController {
     return this.forced ? { ...s, ...this.forced } : s;
   }
 
-  update(ctx: EngineContext, realDt: number): void {
+  update(ctx: EngineContext, realDt: number, listener: ListenerPose = NO_LISTENER): void {
     const player = this.player;
     const audio = this.audio;
     if (!player || !audio || this.disabled) {
@@ -394,6 +461,12 @@ export class MusicController {
     const style = this.musicStyle;
     const sctx = sprinkleContext(input, target.conditions, this.adaptive);
     this.sprinkleCtx = sctx;
+    this.updateSource(realDt, input, listener);
+    // A lead-in or a moment's music back in the world: sprinkles wait, as under a moment.
+    const worldPhase = this.momentMusic.view.phase;
+    if (!sctx.hold && (worldPhase === 'lead' || worldPhase === 'world') && (this.source.mix?.audible ?? 0) > 0.03) {
+      sctx.hold = 'moment';
+    }
     if (!player.isPaused && this.manifestLoaded) {
       if (style !== this.appliedStyle) {
         this.switchStyle(style, now);
@@ -423,14 +496,82 @@ export class MusicController {
       this.momentReq.time = [...sctx.tags].filter((t) => TIME_TAGS.includes(t));
       if (audible || this.momentMusic.playing) {
         const pieces = this.phrases.filter((p) => roleOf(p) === 'moment' && !player.hasPhraseFailed(p.id));
-        this.runOneShots('m', this.momentMusic.tick(now, this.momentReq, { phrases: pieces, isReady: phraseReady }), 'moment');
+        const cmds = this.momentMusic.tick(now, this.momentReq, { phrases: pieces, isReady: phraseReady }, this.source.state);
+        if (cmds.some((c) => c.type === 'play')) {
+          this.ensureGraph();
+        }
+        this.runOneShots('m', cmds, 'moment');
       }
     }
+    this.applySource(realDt);
     // The moment piece takes only the menu duck (the moment duck is there to make room for it).
     const wantMomentDuck = target.conditions.includes('menu') ? (MUSIC_RULES.find((r) => r.id === 'menu')?.duck ?? 0) : 0;
     this.momentDuck += (wantMomentDuck - this.momentDuck) * (1 - Math.exp(-realDt / 0.5));
-    player.update(target.mix, target.duck, this.momentDuck);
+    // An audible lead-in / world source (no moment yet, or the moment is over) ducks the world music a little.
+    const phase = this.momentMusic.view.phase;
+    const wantSourceDuck = phase === 'lead' || phase === 'world' ? SOURCE_WORLD_DUCK * smoothstep(0.03, 0.4, this.source.mix?.audible ?? 0) : 0;
+    this.sourceDuck += (wantSourceDuck - this.sourceDuck) * (1 - Math.exp(-realDt / 0.6));
+    const duck = 1 - (1 - target.duck) * (1 - this.sourceDuck);
+    player.update(target.mix, duck, this.momentDuck);
     this.overlay?.update(realDt, this.snapshot());
+  }
+
+  /**
+   * Source side of the moment music, before the director's tick: which spec the playing piece follows, the tracker
+   * (opening, memory cross-fade), the lead-in candidate and whether the voice's source is still within reach.
+   */
+  private updateSource(dt: number, input: MusicInput, listener: ListenerPose): void {
+    const e = this.srcEnv;
+    e.night = input.night;
+    e.rain = input.rain;
+    e.storm = input.storm;
+    e.overWater = input.overWater;
+    e.airspeed = input.airspeed;
+    e.mode = input.mode;
+    e.perched = input.perched;
+    this.source.update(
+      {
+        dt,
+        frame: this.srcFrame,
+        momentActive: this.momentActive,
+        view: this.momentMusic.view,
+        listener,
+        dragon: this.dragonOk ? this.dragonPos : null,
+        env: e,
+        blocked: input.race !== 'none' || input.menu,
+      },
+      this.momentReq,
+    );
+  }
+
+  /** Builds the source graph (once the module is there) and routes moment voices through it. */
+  private ensureGraph(): void {
+    if (this.graph || !this.audio || !this.player || !this.graphModule) {
+      return;
+    }
+    this.graph = new this.graphModule.SourceGraph(this.audio, this.player.momentOutput, this.reverbDest ? this.player.momentSend : null);
+    this.player.momentInput = this.graph.input;
+    this.graphIdle = 0;
+  }
+
+  /** Applies the source mix to the graph; tears the graph down once no moment piece has sounded for a while. */
+  private applySource(dt: number): void {
+    const graph = this.graph;
+    if (!graph || !this.player) {
+      return;
+    }
+    const busy = this.player.voicesOf('m') > 0 || this.momentMusic.view.pending !== null;
+    if (busy) {
+      this.graphIdle = 0;
+      graph.apply(this.source.mix ?? IDLE_MIX);
+      return;
+    }
+    this.graphIdle += dt;
+    if (this.graphIdle > SOURCE_GRAPH_IDLE_S) {
+      this.player.momentInput = null;
+      graph.dispose();
+      this.graph = null;
+    }
   }
 
   private switchStyle(style: MusicStyle, now: number): void {
@@ -491,6 +632,21 @@ export class MusicController {
         phrases: this.sprinklePhrases.map((p) => p.id),
       },
       moment: { current: mv.current, pending: mv.pending, last: mv.last, note: mv.note, pieces: this.phrases.filter((p) => roleOf(p) === 'moment').map((p) => p.id) },
+      source:
+        this.source.mix && mv.current
+          ? {
+              momentId: mv.momentId ?? '—',
+              kind: this.source.voiceSpec?.kind ?? 'memory',
+              phase: mv.phase ?? '—',
+              distance: this.source.mix.distance,
+              reach: this.source.mix.reach,
+              windMask: this.source.mix.windMask,
+              clarity: this.source.mix.clarity,
+              open: this.source.mix.open,
+              memory: this.source.mix.memory,
+              level: this.source.mix.audible,
+            }
+          : null,
       set: cur?.set.id ?? null,
       setTitle: cur?.set.credit.title ?? null,
       bar: pos?.bar ?? 0,
@@ -557,6 +713,7 @@ export class MusicController {
         this.setMomentMusic(true, info?.musicId, info);
       },
       endMoment: () => this.setMomentMusic(false),
+      source: () => (this.source.mix ? { ...this.source.mix } : null),
       cue: (kind: StingerKind) => {
         this.pendingCues.push(kind);
       },
@@ -580,6 +737,8 @@ export class MusicController {
     }
     this.overlay?.dispose();
     this.overlay = null;
+    this.graph?.dispose();
+    this.graph = null;
     this.player?.dispose();
     this.player = null;
     const g = window as unknown as { __evrenMusic?: MusicDebugApi };

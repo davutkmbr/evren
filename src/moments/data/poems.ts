@@ -38,6 +38,8 @@ export const istanbuluDinliyorum: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // "Gözlerim kapalı": the city is heard with eyes closed, so the music is a memory, centred and diffuse.
+    musicSource: { kind: 'memory' },
     soundId: 'moments/shore-ambience-soft',
     // a moment piece by mood (src/audio/music/moment-music.ts); none is approved yet, so the music only ducks
     musicMood: ['nostalgic', 'sea'],
