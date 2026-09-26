@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
 import { takeoffLegs } from './ground-moves';
-import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, LEAP, MASS, PLUNGE, PROXIMITY, RUNOUT, WING } from './params';
+import { LandingStyle } from './landing';
+import { DEG, ENVELOPE, FLAP, GRAVITY, HOVER, LANDING, LANDING_STYLE, LEAP, MASS, PLUNGE, PROXIMITY, RUNOUT, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { copyPilotCommand, createPilotCommand } from './types';
@@ -112,6 +113,8 @@ export class FlightController {
   hoverDescent = false;
   /** Landing: the shallow approach that touches down running (null until the landing has chosen). */
   runOutApproach: boolean | null = null;
+  /** Landing v2: the variant and the animal-like modulation of the approach and flare (landing.ts). */
+  readonly landingStyle = new LandingStyle();
   /** Upset recovery (after collisions / departures): nose down, wings level, then resume. */
   upset = false;
   private diveLatched = false;
@@ -155,6 +158,7 @@ export class FlightController {
     this.resetHover();
     this.sustainPath = 0;
     this.forwardLatch = false;
+    this.landingStyle.reset();
   }
 
   private resetHover(): void {
@@ -180,6 +184,8 @@ export class FlightController {
       this.flare = false;
       this.hoverDescent = false;
       this.runOutApproach = null;
+    } else {
+      this.landingStyle.end();
     }
     if (mode === 'hovering' || mode === 'landing' || mode === 'takeoff') {
       this.resetHover();
@@ -638,7 +644,8 @@ export class FlightController {
     const pitchRate = clamp(3.5 * (pitchTarget - sim.pitch), -pitchRateLimit, pitchRateLimit);
     t.rate.set(_feedForward.x + pitchRate, _feedForward.y, _feedForward.z + rollRate);
 
-    const ratio = (FLAP.forwardRatio + (FLAP.hoverRatio - FLAP.forwardRatio) * sim.hoverBlend) * ceilingFactor(sim.body.position.y);
+    // A thrust boost set before the call (the landing's cushioning beats) is part of the force per unit of effort.
+    const ratio = (FLAP.forwardRatio + (FLAP.hoverRatio - FLAP.forwardRatio) * sim.hoverBlend) * ceilingFactor(sim.body.position.y) * t.thrustBoost;
     const weight = MASS * GRAVITY;
     const needed = clamp((weight * (1 + liftFeed) - sim.aeroVertical) / weight, 0, 1.5);
     const feed = Math.pow(needed / Math.max(ratio, 0.2), 1 / FLAP.effortExponent);
@@ -682,9 +689,11 @@ export class FlightController {
   }
 
   /**
-   * Assisted landing, ~7 s from 45 m: a steep braked approach, then a decisive flare (the hover law with the body
-   * pitched far back, wings reaching forward and back-strokes) that takes out the sink rate and the speed together,
-   * and a short settle onto the feet. It never goes around: holding height is the most it does.
+   * Assisted landing, ~7 s from 45 m: a braked approach that reads as an animal's (landing.ts: a glide slope steepest in
+   * the middle, checks with a nose-up pulse, the airbrake and a deep beat, a weave or a final turn when there is room),
+   * then a decisive flare (the hover law with the body pitched far back, wings reaching forward and powerful
+   * backstrokes whose force points up and back) that takes out the sink rate and nearly all the speed, and a short
+   * settle onto the hind feet. It never goes around: holding height is the most it does.
    */
   private landingLaw(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets): void {
     // Approach and flare judge height against the ground coming up ahead (rising terrain, roofs), the
@@ -693,9 +702,11 @@ export class FlightController {
     const V = sim.airspeed;
     const v = sim.body.velocity;
     const groundSpeed = Math.hypot(v.x, v.z);
+    const style = this.landingStyle;
     if (this.runOutApproach === null) {
       const water = sim.overWater || sim.aheadWater.some((w) => w);
       this.runOutApproach = !water && !this.flare && !this.hoverDescent && groundSpeed >= RUNOUT.approachMinSpeed && clearance <= RUNOUT.approachMaxHeight;
+      style.begin(sim, this.runOutApproach, clearance);
     }
     if (this.runOutApproach && sim.overWater) {
       // Water under the approach after all: the braked approach and flare (the sea has its own landing).
@@ -705,41 +716,73 @@ export class FlightController {
       this.runOutApproachLaw(sim, cmd, h, t, clearance, groundSpeed);
       return;
     }
+    const sp = style.params;
+    const flareHeight = clamp(
+      (LANDING.flareBase + LANDING_STYLE.flarePerSink * Math.max(0, -v.y) + LANDING.flarePerSpeed * groundSpeed) * sp.flareScale,
+      Math.max(sp.flareMin, LANDING.flareMin),
+      Math.max(sp.flareMax, sp.flareMin, LANDING.flareMin),
+    );
     if (!this.hoverDescent) {
-      const flareHeight = clamp(LANDING.flareBase + LANDING.flarePerSink * Math.max(0, -v.y) + LANDING.flarePerSpeed * groundSpeed, LANDING.flareMin, LANDING.flareMax);
       if (this.flare || clearance < flareHeight || V < LANDING.flareSpeed) {
         this.flare = true;
         this.hoverDescent = true;
         this.hoverIntegral = 0;
       }
     }
+    const quiet = clearance < Math.max(LANDING_STYLE.quietBelow, flareHeight + LANDING_STYLE.quietAboveFlare);
+    style.step(sim, h, quiet, this.openAround(sim));
+    this.countBackstroke(sim);
     if (!this.hoverDescent) {
-      // Steep approach on a glide slope with the airbrake holding a falling speed schedule.
+      // Braked approach on a glide slope that steepens through the middle and rounds out towards the flare, the
+      // airbrake holding a falling speed schedule; checks raise the nose for a moment and beat once.
+      style.updateProgress(clearance, flareHeight);
       const ov = sim.overrides;
       const savedPath = ov.pathTarget;
       const savedSpeed = ov.airspeedTarget;
+      const savedBank = ov.bankTarget;
       const speedTarget = clamp(LANDING.approachSpeed + clearance * LANDING.approachSpeedPerMetre, LANDING.approachSpeedMin, LANDING.approachSpeedMax);
-      ov.pathTarget = -clamp(LANDING.pathBase + clearance / LANDING.pathReach, LANDING.pathMin, LANDING.pathMax);
+      const slope = Math.min(clamp(LANDING.pathBase + clearance / LANDING.pathReach, LANDING.pathMin, LANDING.pathMax) * sp.pathScale * style.pathShape(), sp.pathMax);
+      // A check pulls the path up towards level: the nose rises above the horizon, so the beat's force points up (and
+      // the stalled, cupped wing and the airbrake bleed the speed) instead of driving the dragon forward.
+      ov.pathTarget = -slope + (slope + LANDING_STYLE.checkPath) * style.check;
       ov.airspeedTarget = null;
-      this.pathRateLimit = LANDING.approachPitchRate;
+      if (Math.abs(cmd.roll) < 0.05 && Math.abs(cmd.yaw) < 0.05 && savedBank === null && style.bank !== 0) {
+        ov.bankTarget = style.bank;
+      }
+      this.pathRateLimit = lerp(LANDING.approachPitchRate, LANDING_STYLE.checkPitchRate, style.check);
       this.normalLaw(sim, cmd, h, t, speedTarget);
       this.pathRateLimit = 0.5;
       ov.pathTarget = savedPath;
       ov.airspeedTarget = savedSpeed;
-      t.brake = clamp((V - speedTarget - 1) / 4, 0, 1);
+      ov.bankTarget = savedBank;
+      t.brake = Math.max(clamp((V - speedTarget - 1) / 4, 0, 1), style.check);
       if (t.brake > 0.05) {
-        t.sweep = -t.brake;
-        t.spread = 1;
+        // Wings forward as airbrakes, their sweep and spread working all the time (never a fixed wing).
+        t.sweep = -t.brake * (0.8 + LANDING_STYLE.sweepWave * style.sweepWave);
+        t.spread = 1 - LANDING_STYLE.spreadWave * (0.5 + 0.5 * style.spreadWave) * (1 - style.check);
+      }
+      if (style.check > 0.02) {
+        // A deep braking beat with the stroke tilted forward (hover-like), the body checked nose-up.
+        t.effort = Math.max(t.effort, LANDING_STYLE.checkEffort * style.check * style.beatJitter * smoothstep(-6 * DEG, 8 * DEG, sim.pitch));
+        t.hover = Math.max(t.hover, LANDING_STYLE.checkHover * style.check);
+        t.sweep = Math.min(t.sweep, -0.7 * style.check);
       }
       t.legsOut = clearance < 60 ? 1 : 0.35;
       return;
     }
+    style.startFlare();
     // While still moving, judge height against the ground coming up ahead as well (slopes, roofs).
     const below = groundSpeed > 3 ? Math.min(sim.footClearance, this.clearanceAhead(sim) + 0.5) : sim.footClearance;
     // Sink-rate profile of a constant deceleration the hover stroke can always deliver, ending in a soft touchdown.
-    let vsTarget = -Math.min(Math.sqrt(LANDING.touchdownSink ** 2 + 2 * LANDING.settleDecel * Math.max(below, 0)), LANDING.maxSink);
-    // Forward speed wanted: a few metres per second on touchdown (the feet run it off), W/S adjust it.
-    const vfTarget = clamp(0.5 * LANDING.touchdownSpeed + 0.5 * below, 0.5 * LANDING.touchdownSpeed, LANDING.touchdownSpeed) * (1 + 0.8 * clamp(cmd.pitch, -1, 1));
+    // Once slow and low the sink is capped lower: the stroke alone carries the weight with little margin to spare.
+    const maxSink = lerp(LANDING_STYLE.slowMaxSink, LANDING.maxSink, Math.max(smoothstep(4, 10, groundSpeed), smoothstep(8, 20, below)));
+    const profile = Math.sqrt(LANDING_STYLE.touchdownSink ** 2 + 2 * LANDING_STYLE.settleDecel * Math.max(below, 0));
+    let vsTarget = -Math.min(profile, LANDING_STYLE.nearSink + LANDING_STYLE.nearSinkPerMetre * Math.max(below, 0), maxSink);
+    // Forward speed wanted: almost none on touchdown (the backstrokes stop the dragon), W/S adjust it.
+    const touchdownSpeed = LANDING_STYLE.touchdownSpeed;
+    const vfTarget = clamp(0.5 * touchdownSpeed + 0.35 * below, 0.5 * touchdownSpeed, touchdownSpeed) * (1 + 0.8 * clamp(cmd.pitch, -1, 1));
+    // Still fast: float down slowly while the backstrokes take the speed out, then settle.
+    vsTarget = Math.max(vsTarget, -lerp(-vsTarget, LANDING_STYLE.floatSink, smoothstep(vfTarget + 1, vfTarget + 4, groundSpeed)));
     if (groundSpeed > LANDING.holdSpeed && below < 2) {
       // Still too fast for the feet in the last metres: stop sinking (no climb) until the flare has taken it out.
       vsTarget = Math.max(vsTarget, -0.3);
@@ -758,7 +801,7 @@ export class FlightController {
       }
     }
     const bankLimit = 0.08 + 0.22 * smoothstep(2, 12, below);
-    // Decisive flare: pitch far back while fast (up to ~60°). The last metres belong to the vertical speed: the
+    // Decisive flare: pitch far back while fast (up to ~70°). The last metres belong to the vertical speed: the
     // stroke points nearly straight down again so it can cushion the touchdown (the feet run off what speed is left).
     // The deep tilt lasts while the wing still carries the weight; below ~10 m/s the stroke has to take over and
     // needs to point down again.
@@ -767,54 +810,179 @@ export class FlightController {
     // pushes against the ground speed the airbrake can no longer take out.
     const lowTilt =
       LANDING.touchdownBackTilt +
-      (HOVER.maxBackTilt - LANDING.touchdownBackTilt) * Math.max(smoothstep(0.8, 3, below), smoothstep(4, 7, groundSpeed)) +
-      LANDING.groundSpeedBackTilt * smoothstep(8, 13, groundSpeed) * smoothstep(1, 2.5, below);
-    const backTilt = lowTilt + (LANDING.flareBackTilt - lowTilt) * flareTilt;
-    // Following the sink profile needs a steady upward deceleration on top of the weight.
-    const liftFeed = v.y < -LANDING.touchdownSink ? LANDING.settleDecel / GRAVITY : 0;
+      (HOVER.maxBackTilt - LANDING.touchdownBackTilt) * Math.max(smoothstep(0.8, 3, below), smoothstep(vfTarget + 0.5, vfTarget + 4, groundSpeed)) +
+      LANDING.groundSpeedBackTilt * smoothstep(vfTarget + 1, vfTarget + 5, groundSpeed) * smoothstep(0.6, 2, below);
+    const backTilt = lowTilt + (sp.flareBackTilt - lowTilt) * flareTilt;
+    // Following the sink profile needs a steady upward deceleration on top of the weight (only while sinking faster
+    // than it wants: over the ground the wing-beat bob would otherwise hold the dragon up).
+    const liftFeed = v.y < vsTarget - 0.3 ? LANDING_STYLE.settleDecel / GRAVITY : 0;
     // Rear up quickly: passing slowly through the high-lift angles at speed balloons the dragon back up, a fast
     // pitch into the deep stall turns the wing into an airbrake instead.
     const pitchRateLimit = 0.8 + (LANDING.flarePitchRate - 0.8) * flareTilt;
+    // The last metres: the strongest beats of the landing cushion the touchdown (the take-off's first beats likewise).
+    t.thrustBoost = 1 + LANDING_STYLE.cushionBoost * smoothstep(LANDING_STYLE.cushionHeight, 0.4, below) * smoothstep(6, 3, groundSpeed);
+    // The sink integral wound up while the flare fell behind its profile must not hold the dragon up over the ground.
+    this.hoverIntegral = Math.min(this.hoverIntegral, lerp(LANDING_STYLE.nearIntegral, 0.25, smoothstep(1, 3, below)));
     this.hoverLaw(sim, h, t, vsTarget, vfTarget, cmd.yaw * 3, yawRate, bankLimit, 0, backTilt, LANDING.flareGain, liftFeed, pitchRateLimit);
     // The wings are already beating when the flare's lift fades with the speed (no drop at the end of the flare).
     t.effort = Math.max(t.effort, LANDING.flareEffort * (1 - smoothstep(LANDING.flareTiltFadeSpeed, LANDING.flareTiltFadeSpeed + 6, V)));
+    // Backstrokes: powerful beats while the ground speed is still above the touchdown speed. The body is pitched back,
+    // so their force points up and back and brakes the dragon (the hover law trims the rest through its tilt).
+    // They fade once the dragon stops sinking (no balloon: it floats down while they brake, then settles).
+    // Only once the body has reared up: beating while still nose-level at speed drives the dragon forward and up.
+    const reared = smoothstep(LANDING_STYLE.rearedFrom, LANDING_STYLE.rearedFull, sim.pitch);
+    const braking = smoothstep(vfTarget + 0.5, vfTarget + 3, groundSpeed) * smoothstep(0.3, 1.5, below) * (1 - smoothstep(-0.6, 0.4, v.y)) * reared;
+    // Rearing up at speed, the wing's lift arrests the sink; the stroke joins in as the body comes up.
+    // (A fast sink still gets the stroke's help to arrest it.)
+    const rearCap = Math.max(LANDING_STYLE.rearEffort + (1 - LANDING_STYLE.rearEffort) * reared, smoothstep(3, 7, -v.y));
+    t.effort = Math.min(t.effort, lerp(1, rearCap, smoothstep(10, 15, V)));
+    t.effort = Math.max(t.effort, clamp(sp.beatEffort * braking * style.beatJitter, 0, 1));
     // Lift dump: at speed the flare's lift (and the ground effect) would carry the dragon back up, and a balloon only
     // lengthens the float. The wings partly close while it stops sinking; the cupped membrane keeps braking.
-    t.spread = 1 - LANDING.liftDump * smoothstep(LANDING.liftDumpVy - 1.5, LANDING.liftDumpVy, v.y) * smoothstep(9, 13, V);
+    t.spread = 1 - LANDING_STYLE.liftDump * smoothstep(LANDING.liftDumpVy - 1.5, LANDING.liftDumpVy, v.y) * smoothstep(9, 13, V);
     // Airbrake open while fast; wings raised and reaching forward for the touchdown (tips well clear of the ground).
     t.brake = Math.max(t.brake, smoothstep(4, 12, groundSpeed));
-    t.sweep = -0.55 - 0.45 * Math.max(1 - smoothstep(2, 7, below), smoothstep(5, 12, groundSpeed));
+    t.sweep = -0.55 - 0.45 * Math.max(1 - smoothstep(2, 7, below), smoothstep(5, 12, groundSpeed), braking);
     t.legsOut = 1;
   }
 
   /**
-   * Run-out approach: a shallow glide (at most RUNOUT.approachPath) with the airbrake holding a speed schedule that
+   * Landing: counts the flare's downstrokes (backstrokes while they still brake the ground speed, the rest cushion the
+   * touchdown) and raises the downwash's dust near the ground at each one.
+   */
+  private countBackstroke(sim: FlightSim): void {
+    const style = this.landingStyle;
+    if (!sim.beat.downstrokeStarted || style.flareTime < 0) {
+      return;
+    }
+    const v = sim.body.velocity;
+    style.beats++;
+    if (Math.hypot(v.x, v.z) > LANDING_STYLE.touchdownSpeed + 1) {
+      style.backstrokes++;
+    }
+    if (!sim.overWater && sim.footClearance < LANDING_STYLE.dustHeight && sim.dustTimer > 0.2) {
+      sim.dustTimer = 0;
+      const p = sim.body.position;
+      const strength = clamp(0.25 + 0.5 * sim.beat.effort, 0.2, 0.8) * (1 - sim.footClearance / (LANDING_STYLE.dustHeight + 2));
+      sim.emit({ type: 'dust', point: new THREE.Vector3(p.x, sim.surfaceY, p.z), strength });
+    }
+  }
+
+  /** Open air around the track for a weave or a turn: no deck or ceiling over it, nothing tall ahead. */
+  private openAround(sim: FlightSim): boolean {
+    if (sim.ceilingY < Infinity || sim.farPath > PROXIMITY.farIgnorePath) {
+      return false;
+    }
+    for (const c of sim.aheadCeiling) {
+      if (c < Infinity) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Run-out approach: a shallow glide (at most the variant's path) with the airbrake holding a speed schedule that
    * falls to RUNOUT.touchdownSpeed, a round-out over the last metres (sink touchdownSink + roundOutGain × clearance)
-   * and the legs reaching down. Still too fast close to the ground, it floats at floatHeight until the brake has
-   * taken the speed out, so the feet never meet the ground faster than RUNOUT.maxSpeed.
+   * and the legs reaching down; then a short flare from LANDING_STYLE.runOutFlareHeight (runOutFlare). Still too fast
+   * close to the ground, it floats until the brake has taken the speed out, so the feet never meet the ground faster
+   * than RUNOUT.maxSpeed.
    */
   private runOutApproachLaw(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets, clearance: number, groundSpeed: number): void {
+    const style = this.landingStyle;
+    const sp = style.params;
     const V = Math.max(sim.airspeed, 5);
+    const flareHeight = LANDING_STYLE.runOutFlareHeight * sp.flareScale;
+    style.step(sim, h, clearance < LANDING_STYLE.runOutQuietBelow, this.openAround(sim));
+    this.countBackstroke(sim);
+    // The flare itself bleeds a few m/s: it may start a little faster than the legs take.
+    const fastLow = groundSpeed > RUNOUT.maxSpeed + LANDING_STYLE.runOutFlareBleed;
+    if (style.flareTime < 0 && clearance < flareHeight && !fastLow) {
+      style.startFlare();
+    }
+    if (style.flareTime >= 0) {
+      this.runOutFlare(sim, cmd, h, t, clearance, groundSpeed);
+      return;
+    }
     const speedTarget = RUNOUT.touchdownSpeed + Math.max(clearance, 0) * RUNOUT.approachSpeedPerMetre;
-    let sink = Math.min(V * Math.sin(RUNOUT.approachPath), RUNOUT.touchdownSink + RUNOUT.roundOutGain * Math.max(clearance, 0));
-    if (groundSpeed > RUNOUT.maxSpeed - 3) {
-      sink = Math.min(sink, Math.max(0, clearance - RUNOUT.floatHeight) * 0.8);
+    let sink = Math.min(V * Math.sin(sp.pathMax), RUNOUT.touchdownSink + LANDING_STYLE.runOutRoundOut * Math.max(clearance, 0));
+    if (fastLow) {
+      sink = Math.min(sink, Math.max(0, clearance - Math.max(RUNOUT.floatHeight, 0.8 * flareHeight)) * 0.8);
     }
     const ov = sim.overrides;
     const savedPath = ov.pathTarget;
     const savedSpeed = ov.airspeedTarget;
-    ov.pathTarget = -Math.asin(clamp(sink / V, 0, Math.sin(RUNOUT.approachPath)));
+    const savedBank = ov.bankTarget;
+    ov.pathTarget = -Math.asin(clamp(sink / V, 0, Math.sin(sp.pathMax))) + 0.5 * LANDING_STYLE.checkPath * style.check;
     ov.airspeedTarget = null;
+    if (Math.abs(cmd.roll) < 0.05 && Math.abs(cmd.yaw) < 0.05 && savedBank === null && style.bank !== 0) {
+      ov.bankTarget = style.bank;
+    }
     this.normalLaw(sim, cmd, h, t, speedTarget);
     ov.pathTarget = savedPath;
     ov.airspeedTarget = savedSpeed;
-    t.brake = clamp((V - speedTarget) / 4, 0, 1);
+    ov.bankTarget = savedBank;
+    t.brake = Math.max(clamp((V - speedTarget) / 4, 0, 1), style.check);
     if (t.brake > 0.05) {
       t.effort = 0;
-      t.spread = 1;
-      t.sweep = -0.45 * t.brake;
+      t.spread = 1 - LANDING_STYLE.spreadWave * (0.5 + 0.5 * style.spreadWave);
+      t.sweep = -t.brake * (0.45 + LANDING_STYLE.sweepWave * style.sweepWave);
+    }
+    if (style.check > 0.02) {
+      t.effort = Math.max(t.effort, 0.8 * LANDING_STYLE.checkEffort * style.check);
+      t.hover = Math.max(t.hover, LANDING_STYLE.checkHover * style.check);
     }
     t.legsOut = clearance < 30 ? 1 : 0.35;
+  }
+
+  /**
+   * Run-out flare: the hover law with the body pitched back to the hover attitude + the variant's tilt, holding a sink
+   * that brings the hind feet down within about a second, and no forward-speed hold (the feet take the speed). The
+   * stroke force points up (and a little back): one or two backstrokes carry the weight the stalled, cupped wing gives
+   * up while its drag and the airbrake bleed the speed.
+   */
+  private runOutFlare(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets, clearance: number, groundSpeed: number): void {
+    const style = this.landingStyle;
+    const sp = style.params;
+    const v = sim.body.velocity;
+    let vsTarget = -(LANDING_STYLE.runOutFlareSink + LANDING_STYLE.runOutFlareSinkPerMetre * Math.max(clearance, 0));
+    if (groundSpeed > RUNOUT.maxSpeed - 1 && clearance < 1.5) {
+      vsTarget = Math.max(vsTarget, -0.2);
+    }
+    const bankLimit = 0.06 + 0.12 * smoothstep(1, 4, clearance);
+    // Pitch target: the hover attitude + the variant's tilt, less while still fast (rearing up far at speed would balloon
+    // the dragon away from the ground). Passed to the hover law as a forward error of exactly that tilt at unit gain,
+    // the integral cleared (no forward-speed hold: the feet take the speed).
+    // Sinking slower than wanted (a balloon starting), the nose eases forward again.
+    const tilt = clamp(
+      sp.flareBackTilt - LANDING_STYLE.runOutPitchPerSpeed * Math.max(0, groundSpeed - LANDING_STYLE.runOutPitchSpeed) - LANDING_STYLE.runOutPitchPerClimb * Math.max(0, v.y - vsTarget),
+      -0.55,
+      0.5,
+    );
+    const yaw = sim.axes.yaw();
+    const forward = v.x * -Math.sin(yaw) + v.z * -Math.cos(yaw);
+    this.hoverForwardI = 0;
+    this.hoverLaw(sim, h, t, vsTarget, forward - tilt, cmd.yaw * 2, -cmd.roll * 0.4, bankLimit, 0, Math.max(tilt, 0) + 0.01, 1, 0, 1.8);
+    // One or two backstrokes: strong beats while the body rears (the hover law's effort feeds what lift is missing).
+    // (Only once the body comes up: a beat still nose-level lifts the dragon off the ground it is about to run on.)
+    const reared = smoothstep(LANDING_STYLE.runOutRearedFrom, LANDING_STYLE.runOutRearedFull, sim.pitch);
+    let floor = sp.beatEffort * reared * (1 - smoothstep(0.7, 1.3, style.flareTime)) * (1 - smoothstep(vsTarget - 0.6, vsTarget + 0.2, v.y));
+    // At least one backstroke: once the body starts to come up, a resting wing starts its downstroke now (like a tap).
+    if (style.backstrokes === 0 && style.kickTime < 0 && (reared > LANDING_STYLE.runOutKickAt || style.flareTime > sp.kickLate)) {
+      style.kickTime = 0;
+      if (sim.beat.amplitude < 0.2) {
+        sim.beat.phase = TWO_PI - 0.3;
+      }
+    }
+    if (style.kickTime >= 0 && style.kickTime < LANDING_STYLE.runOutKickTime) {
+      floor = Math.max(floor, sp.beatEffort);
+    }
+    t.effort = Math.max(t.effort, floor);
+    // Lift dump: rearing up at speed must not balloon the dragon away from the ground it is about to run on.
+    t.spread = 1 - LANDING_STYLE.runOutLiftDump * smoothstep(vsTarget - 0.5, vsTarget + 1, v.y);
+    t.brake = 1;
+    t.sweep = -1;
+    t.legsOut = 1;
   }
 
   /**

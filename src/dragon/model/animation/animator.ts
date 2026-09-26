@@ -91,6 +91,14 @@ const HANG_EXTRA = 0.08;
 /** Hanging legs reach forward for a touchdown / trail back after a push-off (m). */
 const REACH_FORWARD = 0.6;
 const REACH_BACK = 0.75;
+/**
+ * Landing flare (DragonPose.landFlare): per-bone neck pitch of the S-curve (base raised back against the rear-up,
+ * the upper neck bent down so the head stays level over the ground), the head's own lift, and the claws opening
+ * (toe pitch up) on the reaching feet.
+ */
+const LAND_NECK_S = [0.1, 0.1, 0.07, 0.02, -0.05, -0.1, -0.13, -0.13, -0.1];
+const LAND_HEAD = 0.12;
+const LAND_CLAWS = 0.45;
 /** Hind feet braced forward in a braking skid (m). */
 const SKID_BRACE = 0.7;
 /** Wrist of a raised wing lifting off the ground, relative to the shoulder (rig, right side). */
@@ -484,7 +492,7 @@ export class DragonAnimator {
       const pov = this.povBlend * povKeep * (i < 5 ? -POV_NECK_DROP * (w / 0.62) : POV_NECK_LIFT * (w / 0.38));
       // Swimming: the lower neck rises with each power stroke's surge, the upper neck keeps the head's line.
       const surgeNeck = SWIM_RIG.neckSurge * swimLift * (i < 3 ? 1 : -0.4);
-      const flightPitch = np * w + osc + lift * w + walkNod * w + pov + SWIM_RIG.neckCurve[i] * swimW + surgeNeck;
+      const flightPitch = np * w + osc + lift * w + walkNod * w + pov + SWIM_RIG.neckCurve[i] * swimW + surgeNeck + LAND_NECK_S[i] * this.landFlare;
       // Swimming: the neck undoes the rest of the body's swing so the head keeps to the course.
       const flightYaw = ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded - swimRoot * (1 - SWIM_RIG.chestCounter) * w;
       const gazePitch = GAZE_PITCH[i] + osc * 0.5;
@@ -499,7 +507,7 @@ export class DragonAnimator {
     const headStab = -bodyPitch * 0.6 - heave * 0.25;
     const povHead = this.povBlend * povKeep * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
     const swimHead = -SWIM_RIG.headLevel * Math.max(0, np) * swimW - 0.6 * SWIM_RIG.neckSurge * swimLift - SWIM_RIG.surgePitch * swimLift;
-    setEuler(this.head, headStab - groundNeck * 0.25 + povHead + swimHead, 0, 0, 'YXZ');
+    setEuler(this.head, headStab - groundNeck * 0.25 + povHead + swimHead + LAND_HEAD * this.landFlare, 0, 0, 'YXZ');
     if (g > 0.001) {
       this.aimHeadAtRider(g, side, pet);
     }
@@ -833,6 +841,7 @@ export class DragonAnimator {
   private heelLift = 0;
   private legReach = 0;
   private skid = 0;
+  private landFlare = 0;
 
   /** Height (rig y) of the ground plane at rig (x, z). */
   private planeY(x: number, z: number): number {
@@ -873,6 +882,7 @@ export class DragonAnimator {
     this.heelLift = THREE.MathUtils.clamp(pose.heelLift ?? 0, 0, 1);
     this.legReach = THREE.MathUtils.clamp(pose.legReach ?? 0, -1, 1);
     this.skid = THREE.MathUtils.clamp(pose.skid ?? 0, 0, 1);
+    this.landFlare = THREE.MathUtils.clamp(pose.landFlare ?? 0, 0, 1);
   }
 
   /**
@@ -955,7 +965,7 @@ export class DragonAnimator {
     // Foot: toes flat on the ground plane (rest toes point forward-down); in the swing the toes curl up so the claws
     // clear the ground; hanging feet point their toes a little.
     const planePitch = Math.atan2(this.planeNz, this.planeNy);
-    _euler.set(FOOT_STANCE_PITCH + planePitch * (1 - air) + 0.45 * this.footSwing * gaitW - 0.35 * air, 0, 0, 'YXZ');
+    _euler.set(FOOT_STANCE_PITCH + planePitch * (1 - air) + 0.45 * this.footSwing * gaitW - 0.35 * air + LAND_CLAWS * this.landFlare * air, 0, 0, 'YXZ');
     _q3.setFromEuler(_euler);
     bones.foot.quaternion.copy(_q2).invert().multiply(_q3);
     const e = grounded * grounded * (3 - 2 * grounded);
