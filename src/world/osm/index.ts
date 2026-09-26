@@ -20,7 +20,6 @@ import { buildWorkerBase } from './shared/foundation';
 import { clipWaysToLand } from './shared/land';
 import { groundLines, linesCrossing, type GroundLine, type GroundLineCrossing } from './shared/ground-lines';
 import { classifyStreets } from './shared/street-field';
-import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
@@ -55,10 +54,13 @@ function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
 /**
  * Streaming distances (m from the camera to a region's rect, horizontal) at the "high" preset: a region loads inside
  * LOAD_DISTANCE and unloads beyond UNLOAD_DISTANCE; at most MAX_LOADED streamed regions are kept (nearest win).
+ * Beyond about 1 km a region adds little over the far OSM layer (the same baked buildings, with near detail out to
+ * 800 m; the region's own facade details, props and crowd end by 800 m), so regions load only as near as their build
+ * time needs and few are kept: each one costs tens to hundreds of MB and per-frame work.
  */
-const LOAD_DISTANCE = 2600;
-const UNLOAD_DISTANCE = 3400;
-const MAX_LOADED = 8;
+const LOAD_DISTANCE = 1800;
+const UNLOAD_DISTANCE = 2400;
+const MAX_LOADED = 5;
 /** Near-only layers (traffic) of a streamed region start inside NEAR_ON and stop beyond NEAR_OFF (m, "high"). */
 const NEAR_ON = 1000;
 const NEAR_OFF = 1400;
@@ -218,7 +220,6 @@ class OsmRegion {
       fade: this.def.fade,
       base,
       surface: new StreetSurface(base),
-      footprints: new FootprintIndex(data.buildings),
     };
     this.ctx = ctx;
     this.data = data;

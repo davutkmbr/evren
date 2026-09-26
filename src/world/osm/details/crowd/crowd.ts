@@ -20,7 +20,7 @@ import { PERSON_COLOR_STRIDE, PERSON_STRIDE, Style, createPeopleMaterial, create
  */
 const NEAR_LOD = 95;
 const MID_LOD = 170;
-const DRAW_DISTANCE = 620;
+export const DRAW_DISTANCE = 620;
 /** Most instances the near / mid meshes hold. */
 const NEAR_CAPACITY = 3000;
 const MID_CAPACITY = 6000;
@@ -439,8 +439,8 @@ export class Crowd {
     return a;
   }
 
-  update(now: number, camera: THREE.Vector3): void {
-    let budget = EVENT_BUDGET;
+  /** `budget`: schedule events handled this frame (more to catch up after the walkers were not stepped a while). */
+  update(now: number, camera: THREE.Vector3, budget = EVENT_BUDGET): void {
     while (budget-- > 0 && this.heap.length && this.heap.peekKey() <= now) {
       const g = this.heap.pop();
       const t = this.endT[g];

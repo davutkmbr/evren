@@ -200,3 +200,30 @@ export function createFoliageAtlas(): THREE.DataTexture {
   tex.needsUpdate = true;
   return tex;
 }
+
+let shared: THREE.DataTexture | null = null;
+let users = 0;
+
+/**
+ * The one foliage atlas every loaded region's trees use (it is the same for all of them); `release` disposes it once
+ * the last region lets go.
+ */
+export function acquireFoliageAtlas(): { texture: THREE.DataTexture; release: () => void } {
+  shared ??= createFoliageAtlas();
+  users++;
+  const texture = shared;
+  let released = false;
+  return {
+    texture,
+    release: () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      if (--users === 0 && shared) {
+        shared.dispose();
+        shared = null;
+      }
+    },
+  };
+}

@@ -21,7 +21,6 @@
 import type * as THREE from 'three';
 import type { EngineContext, GeoQuery, WorldBounds } from '../../core/contracts';
 import type { OsmData } from './data';
-import type { FootprintIndex } from './shared/footprints';
 import type { OsmWorkerBase } from './shared/protocol';
 import type { StreetSurface } from './shared/street-surface';
 
@@ -41,8 +40,6 @@ export interface OsmContext {
   readonly base: OsmWorkerBase;
   /** Main-thread street surface query (same data the workers and the ground shader use). */
   readonly surface: StreetSurface;
-  /** Main-thread building outline index. */
-  readonly footprints: FootprintIndex;
 }
 
 export interface OsmLayer {
