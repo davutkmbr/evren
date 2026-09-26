@@ -35,6 +35,18 @@ export function arcade(b: MeshBuilder, o: ArcadeOptions): void {
   const colR = Math.min(0.42, bw * 0.075);
   const floor = o.floor ?? 0.45;
   const base = b.worldY(0, 0, 0);
+  // stylobate, the roof block over the arches and one collider per column: the bays stay open to walk and fly
+  // through (a solid box stood as an invisible wall between the columns)
+  const colR0 = Math.min(0.42, (o.len / o.bays) * 0.075);
+  const t0 = o.arch ?? Math.min(0.9, (o.len / o.bays) * 0.16);
+  b.colBox(0, 0, -o.depth, o.len, floor, 0.35);
+  b.colBox(0, o.colH, -o.depth, o.len, o.roofH + (o.pitched ? o.depth * 0.25 : 0.1), 0.35, true);
+  for (let i = 0; i <= o.bays; i++) {
+    if ((i === 0 && o.skipFirstColumn) || (i === o.bays && o.skipLastColumn)) {
+      continue;
+    }
+    b.colCylinder((i * o.len) / o.bays, floor, -t0 / 2, colR0 * 1.4, o.colH - floor);
+  }
   if (o.lod === 2) {
     arcadeMassing(b, o, bw, t, floor, base);
     return;
@@ -213,7 +225,8 @@ export function courtyard(b: MeshBuilder, o: CourtOptions): void {
         openings.push({ x0: gx0, x1: gx0 + gateW, y0: 0, y1: h * 0.55, arch: 'pointed', depth: 0.9, back: 'door' });
       }
       wallPanel(b, s.len, -0.5, wallH, openings, { lod, seed: Math.round(s.len * 13) });
-      // inner face (under the revak)
+      // the gates are drawn with closed door leaves, so the wall collider runs through them
+      b.colBox(0, 0, -0.9, s.len, wallH + 0.2, 0);
       b.push();
       b.translate(s.len, 0, -0.9);
       b.rotateY(Math.PI);
@@ -235,8 +248,12 @@ export function courtyard(b: MeshBuilder, o: CourtOptions): void {
       b.pop();
     }
     // Monumental portal block on the far side.
+    const gatePw = Math.min(9, o.w * 0.18);
+    b.colBox(-gatePw / 2, 0, z1 - 0.2, -gatePw / 2 + 1.2, h + 2.2, z1 + 1.1);
+    b.colBox(gatePw / 2 - 1.2, 0, z1 - 0.2, gatePw / 2, h + 2.2, z1 + 1.1);
+    b.colBox(-gatePw / 2, h * 0.55 + 2.2, z1 - 0.2, gatePw / 2, h + 2.2, z1 + 1.1);
     if (lod === 0) {
-      const pw = Math.min(9, o.w * 0.18);
+      const pw = gatePw;
       b.box(-pw / 2, -0.5, z1 - 0.2, -pw / 2 + 1.2, h + 2.2, z1 + 1.1, 'b');
       b.box(pw / 2 - 1.2, -0.5, z1 - 0.2, pw / 2, h + 2.2, z1 + 1.1, 'b');
       b.box(-pw / 2, h * 0.55 + 2.2, z1 - 0.2, pw / 2, h + 2.2, z1 + 1.1, 'b');
@@ -275,6 +292,11 @@ export function sadirvan(b: MeshBuilder, r: number, sides: number, lod: LodLevel
   const base = b.worldY(0, 0, 0);
   const R = r * 1.9;
   const colH = r * 1.35;
+  // basin, eave ring and canopy; the space between the columns stays open
+  b.colCylinder(0, 0, 0, R * 0.9, 1.3);
+  b.colCylinder(0, colH, 0, R * 1.18, 0.45);
+  b.colCylinder(0, colH + 0.45, 0, R * 0.95, R * 0.18);
+  b.colCylinder(0, colH + 0.45 + R * 0.18, 0, R * 0.6, R * 0.44 - 0.45);
   b.with({ mat: Mat.Marble, light: Light.Soffit }, () => {
     b.lathe([R * 0.9, 0, R * 0.9, 0.35, r * 1.02, 0.4, r, 1.2, r * 1.05, 1.28, 0, 1.3], { seg: sides, facets: true });
     if (lod === 0) {

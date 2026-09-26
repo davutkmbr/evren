@@ -142,7 +142,11 @@ export function minaret(b: MeshBuilder, m: MinaretSpec, lod: LodLevel): LocalCol
 
   const cols: LocalCollider[] = [
     { kind: 'box', cx: m.x, cy: y0 + L.baseH / 2, cz: m.z, hx: L.baseW / 2, hy: L.baseH / 2 + 0.3, hz: L.baseW / 2, yaw: 0 },
-    { kind: 'cylinder', x: m.x, y: y0 + L.baseH, z: m.z, r: r * 1.15, h: m.h - L.baseH },
+    // shaft and petek up to the cap, then the lower, wider part of the lead cone (the spire above is too thin to
+    // perch on and a full-height cylinder stood in the air around it)
+    { kind: 'cylinder', x: m.x, y: y0 + L.baseH, z: m.z, r: r * 1.15, h: L.capY - L.baseH },
+    { kind: 'cylinder', x: m.x, y: y0 + L.capY, z: m.z, r: capRadius(m, L), h: (m.h - L.capY) * 0.35 },
+    { kind: 'cylinder', x: m.x, y: y0 + L.capY + (m.h - L.capY) * 0.35, z: m.z, r: capRadius(m, L) * 0.62, h: (m.h - L.capY) * 0.3 },
   ];
   for (const f of L.floors) {
     cols.push({ kind: 'cylinder', x: m.x, y: y0 + f - L.corbelH, z: m.z, r: r + L.ext + 0.2, h: L.corbelH + 1.3 });
@@ -237,6 +241,12 @@ function muqarnasTier(b: MeshBuilder, ra: number, rb: number, y0: number, y1: nu
     const q1: [number, number, number] = [rb * Math.sin(a0), y1, rb * Math.cos(a0)];
     b.quad(p3, p2, q0, q1);
   }
+}
+
+/** Radius of the lead cap's eave (mirrors the per-balcony shaft taper in minaret()). */
+function capRadius(m: MinaretSpec, L: Layout): number {
+  const taper = (m.style ?? 'classic') === 'baroque' ? 0.97 : 0.955;
+  return L.r * Math.pow(taper, L.floors.length) * 0.93 * 1.18 * 1.02;
 }
 
 /** Height of the minaret's top (including the alem) for bounds. */
