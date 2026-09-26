@@ -67,11 +67,6 @@ const EXIT_CONFIRM_SECONDS = 4;
 /** Flight modes a speed ring pushes (airborne flight). */
 const BOOST_MODES: ReadonlySet<DragonState['mode']> = new Set(['flying', 'gliding', 'diving', 'stalling']);
 
-/** Optional flight hook for a smooth push (not in contracts yet; see the header). */
-interface VelocityHook {
-  addVelocity?: (dx: number, dy: number, dz: number) => void;
-}
-
 export function createActivitySystem(): System {
   let ctx: EngineContext | null = null;
   let dragon: DragonState | null = null;
@@ -359,7 +354,7 @@ export function createActivitySystem(): System {
     audio('whoosh', 0.9);
     // Next frame: a teleport re-snaps the camera this frame, which clears any shake added before it.
     pendingShake = BOOST_SHAKE;
-    const hook = (d as unknown as VelocityHook).addVelocity;
+    const hook = d.addVelocity;
     if (typeof hook === 'function') {
       boost.start(d.airspeed);
       return;
@@ -383,7 +378,7 @@ export function createActivitySystem(): System {
     if (!d || !boost.active) {
       return;
     }
-    const hook = (d as unknown as VelocityHook).addVelocity;
+    const hook = d.addVelocity;
     if (typeof hook !== 'function' || !BOOST_MODES.has(d.mode)) {
       boost.cancel();
       return;

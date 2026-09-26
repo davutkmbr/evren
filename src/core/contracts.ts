@@ -339,6 +339,14 @@ export interface DragonState {
   firing: boolean;
   /** Set true for one frame when touching water surface at speed (splash). */
   touchingWater: boolean;
+  /** Remaining roar cooldown as a fraction 0..1 (0 = ready). */
+  roarCooldown?: number;
+  /** Adds a world velocity change (m/s) to the physics body (speed rings, future powers). */
+  addVelocity?(dx: number, dy: number, dz: number): void;
+  /** Roars when allowed (not cooling down, not breathing fire); returns true when it roared. */
+  requestRoar?(): boolean;
+  /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
+  fireBurst?(seconds: number): void;
 }
 
 export interface DragonPose {
