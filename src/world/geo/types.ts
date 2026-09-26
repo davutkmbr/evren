@@ -142,6 +142,12 @@ export interface BuildInput {
    * into them, so a procedural mosque never replaces mapped buildings (the OSM mosques are drawn there instead).
    */
   siteExclusion: { minX: number; maxX: number; minZ: number; maxZ: number }[];
+  /**
+   * The far OSM layer's coverage mask (city/osm/mask.ts; 1 = the baked OSM buildings stand there): no neighbourhood
+   * mosque site reaches into those cells (the real mosques stand there), and the OSM land use is stamped only there
+   * (osm-land.ts).
+   */
+  siteMask: Uint8Array;
 }
 
 export interface MosqueSite {

@@ -1,3 +1,4 @@
+import { BAKE_HALF, MASK_CELL, MASK_SIZE } from '../../city/osm/format';
 import { LandUse } from '../../../core/contracts';
 import { hash2i } from '../../../core/math/noise';
 import type { BuildInput, MosqueSite } from '../types';
@@ -107,8 +108,18 @@ function useAt(landUse: Uint8Array, x: number, z: number): number {
 /** Clearance (m) of a mosque pad from the OSM rects (the pad's trees, yard and street stubs stay out of them too). */
 const SITE_EXCLUSION_MARGIN = 20;
 
-/** True when the disc (x, z, r) reaches into one of `rects`. */
-function inSiteExclusion(rects: BuildInput['siteExclusion'], x: number, z: number, r: number): boolean {
+/** True when the disc (x, z, r) reaches into one of `rects` or into an OSM cell of `mask` (city/osm/format.ts). */
+function inSiteExclusion(rects: BuildInput['siteExclusion'], mask: Uint8Array, x: number, z: number, r: number): boolean {
+  for (let k = 0; k <= 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const px = k === 8 ? x : x + Math.cos(a) * r;
+    const pz = k === 8 ? z : z + Math.sin(a) * r;
+    const i = Math.floor((px + BAKE_HALF) / MASK_CELL);
+    const j = Math.floor((pz + BAKE_HALF) / MASK_CELL);
+    if (i >= 0 && j >= 0 && i < MASK_SIZE && j < MASK_SIZE && mask[j * MASK_SIZE + i]) {
+      return true;
+    }
+  }
   for (const b of rects) {
     const dx = Math.max(b.minX - x, 0, x - b.maxX);
     const dz = Math.max(b.minZ - z, 0, z - b.maxZ);
@@ -122,7 +133,7 @@ function inSiteExclusion(rects: BuildInput['siteExclusion'], x: number, z: numbe
 /**
  * Deterministic neighborhood mosque sites: jittered candidates on buildable urban land, scored by local
  * prominence (hilltops) and density, then greedily thinned with a density-dependent minimum spacing. No site
- * reaches into the OSM rects (BuildInput.siteExclusion).
+ * reaches into the OSM rects or the far OSM layer's cells (BuildInput.siteExclusion, siteMask).
  */
 export function selectMosqueSites(input: BuildInput, height: Float32Array, landUse: Uint8Array, density: Uint8Array, qibla: number): MosqueSite[] {
   const step = 200;
@@ -178,7 +189,7 @@ export function selectMosqueSites(input: BuildInput, height: Float32Array, landU
         const clear = d.radius + radius + 40;
         nearLandmark = (d.x - x) ** 2 + (d.z - z) ** 2 < clear * clear;
       }
-      if (nearLandmark || inSiteExclusion(input.siteExclusion, x, z, radius + SITE_EXCLUSION_MARGIN)) {
+      if (nearLandmark || inSiteExclusion(input.siteExclusion, input.siteMask, x, z, radius + SITE_EXCLUSION_MARGIN)) {
         continue;
       }
       const historic = use === LandUse.HistoricUrban;

@@ -27,6 +27,9 @@
  */
 
 export const CITY_BAKE_FORMAT = 1;
+/** Bake files under the site's base URL. */
+export const OSM_CITY_DIR = 'data/osm/city/';
+export const OSM_LAND_URL = `${OSM_CITY_DIR}land.bin.gz`;
 export const BAKE_BLOCK = 2000;
 export const BAKE_HALF = 24000;
 export const BAKE_BLOCKS = (BAKE_HALF * 2) / BAKE_BLOCK;
@@ -140,6 +143,8 @@ export interface CoverageMaskFile {
   osmBase: string | null;
   rule: string;
   bits: string;
+  /** Same layout: cells holding at least one baked building (the city streams tiles there even off geo-buildable land). */
+  built: string;
 }
 
 const CTORS = { u8: Uint8Array, i16: Int16Array, u16: Uint16Array, i32: Int32Array, f32: Float32Array, f64: Float64Array } as const;
@@ -300,4 +305,36 @@ export function decodeBuildings(bytes: Uint8Array): DecodedBuildings {
     roofTint: u16('roofTint'),
     id,
   };
+}
+
+/** A decoded land.bin.gz: polygons with world-space rings (ring 0 outer, the rest holes; all counter-clockwise). */
+export interface DecodedLand {
+  cls: Uint8Array;
+  /** Rings per polygon. */
+  rings: Uint8Array;
+  /** Vertices per ring. */
+  nv: Uint16Array;
+  /** World-space vertices (x, z pairs, metres) of every ring in order. */
+  xy: Float32Array;
+}
+
+/** Decodes a (gunzipped) land.bin.gz. */
+export function decodeLand(bytes: Uint8Array): DecodedLand {
+  const { header, arrays } = unpackContainer<LandFileHeader>(bytes);
+  const rings = arrays.rings as Uint8Array;
+  const nv = arrays.nv as Uint16Array;
+  const org = arrays.org as Float32Array;
+  const src = arrays.xy as Int16Array;
+  const xy = new Float32Array(src.length);
+  let r = 0;
+  let v = 0;
+  for (let p = 0; p < header.polygons; p++) {
+    for (let k = 0; k < rings[p]; k++, r++) {
+      for (let q = 0; q < nv[r]; q++, v++) {
+        xy[v * 2] = org[p * 2] + src[v * 2] * LAND_UNIT;
+        xy[v * 2 + 1] = org[p * 2 + 1] + src[v * 2 + 1] * LAND_UNIT;
+      }
+    }
+  }
+  return { cls: arrays.cls as Uint8Array, rings, nv, xy };
 }

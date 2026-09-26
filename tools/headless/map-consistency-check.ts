@@ -24,13 +24,15 @@
  * 6. Far layer (phase 24): the city bake (public/data/osm/city, scripts/data/osm-city-bake.ts), the regions and the
  *    street areas come from one OSM snapshot, and inside every region the bake holds exactly the buildings the region
  *    layer draws (infill included), with the same wall and bottom heights. A stale bake fails here.
+ * 7. Real land use: the OSM parks, woods and cemeteries in the far OSM cells are green in the geo land use (the
+ *    land.bin.gz stamp, geo/build/osm-land.ts), so terrain, trees and the procedural city see the real parks.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import type { WorldBounds } from '../../src/core/contracts';
 import { latLonToLocal } from '../../src/core/geo-coords';
-import { type CityBakeIndex, decodeBuildings } from '../../src/world/city/osm/format';
+import { type CityBakeIndex, decodeBuildings, LandClass } from '../../src/world/city/osm/format';
 import { buildLandmarkDefs } from '../../src/world/geo/prepare';
 import { buildBuildings, collectSolids, planSolid } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
@@ -47,7 +49,10 @@ import { STREET_TILE_SIZE, streetAreaRects } from '../../src/world/osm/street-ar
 import { makeSolids } from '../world-compiler/src/buildings';
 import { landmarkOf, setLandmarkClaims, useDistrict } from '../world-compiler/src/district';
 import { readAreas, ROOT } from '../world-compiler/lib/areas.mjs';
-import { buildHeadlessGeo } from './geo';
+import { buildHeadlessGeo, readOsmLand } from './geo';
+import { isOsmCell } from '../../src/world/city/osm/mask';
+import { LandUse } from '../../src/core/contracts';
+import { pointInRing } from '../../src/world/osm/shared/geometry';
 
 const args = process.argv.slice(2);
 const ONLY = args.includes('--area') ? args[args.indexOf('--area') + 1] : null;
@@ -330,8 +335,11 @@ console.log('5. Invented content stays out of the real map');
         bad.push(`mosque site at ${m.x.toFixed(0)}, ${m.z.toFixed(0)} (r ${m.radius.toFixed(0)} m) reaches into region ${r.id}`);
       }
     }
+    if (isOsmCell(m.x, m.z)) {
+      bad.push(`mosque site at ${m.x.toFixed(0)}, ${m.z.toFixed(0)} stands in a far OSM cell (city/osm/mask.json)`);
+    }
   }
-  check(bad.length === 0, `${geo.smallMosqueSites.length} neighbourhood mosque sites, none in the ${regions.length} OSM regions`, bad);
+  check(bad.length === 0, `${geo.smallMosqueSites.length} neighbourhood mosque sites, none in the ${regions.length} OSM regions or the far OSM cells`, bad);
 }
 {
   const bad: string[] = [];
@@ -426,6 +434,75 @@ console.log('6. Far layer: the city bake draws what the regions draw');
       }
     }
     check(bad.length === 0, `${compared} region buildings: same set and heights in the bake (stale bake: re-run the bake after changing buildings/)`, [...bad, ...lines]);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+console.log('7. Real parks and woods in the land use (geo/build/osm-land.ts)');
+{
+  const land = readOsmLand();
+  if (!land) {
+    check(false, 'OSM land use present (npm run bake:city)');
+  } else {
+    // Sample every sizeable park, wood and cemetery in an OSM cell on a 20 m lattice: the geo land use must say so
+    // (or keep its reserved ground: water, roads, landmark pads, beaches, the airport).
+    const TARGET: Record<number, number> = { [LandClass.Park]: LandUse.Park, [LandClass.Grass]: LandUse.Park, [LandClass.Forest]: LandUse.Forest, [LandClass.Cemetery]: LandUse.Cemetery };
+    const RESERVED = new Set<number>([LandUse.Water, LandUse.Road, LandUse.Landmark, LandUse.Airport, LandUse.Beach]);
+    let samples = 0;
+    let hits = 0;
+    let polys = 0;
+    const lines: string[] = [];
+    let r = 0;
+    let v = 0;
+    for (let p = 0; p < land.cls.length; p++) {
+      const target = TARGET[land.cls[p]];
+      const n = land.nv[r];
+      const ring = land.xy.subarray(v * 2, (v + n) * 2);
+      for (let k = 0; k < land.rings[p]; k++, r++) {
+        v += land.nv[r];
+      }
+      if (target === undefined || land.rings[p] !== 1) {
+        continue;
+      }
+      let area = 0;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (let q = 0; q < n; q++) {
+        const j = (q + 1) % n;
+        area += ring[q * 2] * ring[j * 2 + 1] - ring[j * 2] * ring[q * 2 + 1];
+        minX = Math.min(minX, ring[q * 2]);
+        maxX = Math.max(maxX, ring[q * 2]);
+        minZ = Math.min(minZ, ring[q * 2 + 1]);
+        maxZ = Math.max(maxZ, ring[q * 2 + 1]);
+      }
+      if (Math.abs(area / 2) < 20000) {
+        continue;
+      }
+      let ps = 0;
+      let ph = 0;
+      for (let z = minZ + 10; z < maxZ; z += 20) {
+        for (let x = minX + 10; x < maxX; x += 20) {
+          if (!isOsmCell(x, z) || !pointInRing(ring, x, z)) {
+            continue;
+          }
+          const u = geo.landUseAt(x, z);
+          ps++;
+          // Later, more specific polygons may paint over (a park inside a wood): any green class counts.
+          ph += u === target || RESERVED.has(u) || u === LandUse.Park || u === LandUse.Forest || u === LandUse.Cemetery ? 1 : 0;
+        }
+      }
+      if (ps) {
+        polys++;
+        samples += ps;
+        hits += ph;
+        if (ph / ps < 0.8) {
+          lines.push(`polygon ${p} (class ${land.cls[p]}) at ${minX.toFixed(0)}, ${minZ.toFixed(0)}: ${((ph / ps) * 100).toFixed(0)} % green in the land use`);
+        }
+      }
+    }
+    check(samples > 0 && hits / samples >= 0.95, `${polys} OSM parks, woods and cemeteries over 2 ha: ${((hits / Math.max(1, samples)) * 100).toFixed(1)} % of ${samples} samples green in the land use (>= 95 %)`, lines);
   }
 }
 

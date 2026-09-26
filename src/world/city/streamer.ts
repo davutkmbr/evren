@@ -362,7 +362,8 @@ export class CityStreamer {
       const win = this.cutter.cut(n.x0 - WINDOW_MARGIN, n.z0 - WINDOW_MARGIN, n.x0 + n.size + WINDOW_MARGIN, n.z0 + n.size + WINDOW_MARGIN);
       n.state = 'loading';
       const gen = n.gen;
-      this.pool.submit(route, { type: 'tile', level: n.level, ix: n.ix, iz: n.iz, densityScale: this.params.densityScale, win }, (res) => {
+      const exclude = this.cutter.excludedIn(n.x0, n.z0, n.x0 + n.size, n.z0 + n.size);
+      this.pool.submit(route, { type: 'tile', level: n.level, ix: n.ix, iz: n.iz, densityScale: this.params.densityScale, win, exclude }, (res) => {
         if (res.type !== 'tile' || this.nodes.get(n.key) !== n || n.gen !== gen) {
           return;
         }
