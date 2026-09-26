@@ -10,8 +10,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as THREE from 'three';
-import { buildGullGeometry, buildSimitPieceGeometry } from '../../src/moments/actors/gull-simit/geometry';
-import { GullFlock, GullState, PieceState, type FerryFrame } from '../../src/moments/actors/gull-simit/flock';
+import { buildGullGeometry, buildSimitPieceGeometry } from '../../src/moments/gull-simit/geometry';
+import { GullFlock, GullState, PieceState, type FerryFrame } from '../../src/moments/gull-simit/flock';
 import { encodePng } from './pose/sheet';
 
 const OUT = resolve('.shots/moments/gulls');

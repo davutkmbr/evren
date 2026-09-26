@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildBirdGeometry } from '../../../world/life/birds/bird-geometry';
+import { buildBirdGeometry } from '../../world/life/birds/bird-geometry';
 
 /**
  * The ambient gull (world/life/birds, wingspan 1.35 m, forward -Z) with a yellow bill added: a small four-sided

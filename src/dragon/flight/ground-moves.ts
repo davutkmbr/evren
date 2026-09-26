@@ -226,7 +226,6 @@ export function enterRunOut(sim: FlightSim): void {
   sim.brake = 0;
   sim.attachment = 1;
   sim.leapCharge = 0;
-  sim.runTakeoff = 0;
   sim.maneuvers.cancel(sim);
   enterStance(sim, true);
   b.velocity.y = 0;
@@ -315,7 +314,6 @@ export function startLeap(sim: FlightSim, variant: LeapVariant, gather?: number)
   m.leapStartFore = m.foreGround;
   m.lastVariant = variant;
   sim.leapCharge = m.leap.crouch + m.leap.push;
-  sim.runTakeoff = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -380,7 +378,7 @@ function stepSettle(m: GroundMoves, h: number): void {
 
 /**
  * Quadruped on terrain and rooftops (W/S walk, A/D turn, Shift run), the run-out after a fast touchdown, and the
- * leaping take-off (Space / L: crouch and push-off; V: a galloping run into a running leap).
+ * leaping take-off (Space / L: crouch and push-off; from a run, Shift + W, the running leap).
  */
 export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const m = sim.moves;
@@ -401,18 +399,9 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
         startLeap(sim, pickVariant(sim));
       }
     } else {
-      if (cmd.urgePressed && sim.runTakeoff <= 0 && sim.maneuvers.tryUrge(sim)) {
-        sim.runTakeoff = h;
-      }
-      if (sim.runTakeoff <= 0 && (cmd.flapPressed || cmd.flap || cmd.landPressed)) {
+      if (cmd.flapPressed || cmd.flap || cmd.landPressed) {
         startLeap(sim, pickVariant(sim));
       }
-    }
-  }
-  if (sim.runTakeoff > 0 && !m.leap) {
-    sim.runTakeoff += h;
-    if (sim.runTakeoff > GROUND.runTakeoffTime || sim.groundSpeed > GROUND.runTakeoffSpeed - 0.5) {
-      startLeap(sim, 'running');
     }
   }
   const leap = m.leap;
@@ -438,9 +427,6 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
     } else if (!leap.moving) {
       sim.groundSpeed *= 1 - Math.min(1, 2.5 * h);
     }
-  } else if (sim.runTakeoff > 0) {
-    // Galloping run-up: accelerate hard whatever W/S say.
-    sim.groundSpeed = Math.min(GROUND.runTakeoffSpeed, sim.groundSpeed + GROUND.runTakeoffAccel * h);
   } else if (m.runOut) {
     m.runTime += h;
     m.skid = approach(m.skid, cmd.brake ? 1 : 0, RUNOUT.skidRate, h);
@@ -589,20 +575,6 @@ export function stepStance(sim: FlightSim, cmd: PilotCommand, h: number): void {
   // --- wings and stance cues -------------------------------------------------------------------
   if (leap) {
     leapWings(sim, leap, kCrouch, kPush, h);
-  } else if (sim.runTakeoff > 0) {
-    // The wings open and start beating over the last strides.
-    const k = smoothstep(0.3, GROUND.runTakeoffTime, sim.runTakeoff);
-    sim.spread = approach(sim.spread, 0.3 + 0.6 * k, 2, h);
-    sim.sweep = approach(sim.sweep, 0.2 * (1 - k), 2, h);
-    sim.legsOut = 1;
-    sim.brake = 0;
-    sim.attachment = 1;
-    sim.updateInertia();
-    sim.beat.update(h, 0.25 + 0.6 * k, 0.3);
-    m.foreGround = approach(m.foreGround, foreTarget(sim.spread), FORE_RATE, h);
-    m.wingRaise = approach(m.wingRaise, 0, 3, h);
-    m.heelLift = approach(m.heelLift, 0, 4, h);
-    m.crouch = approach(m.crouch, 0, 4, h);
   } else if (m.runOut) {
     // Wings half open for balance while fast (raised, air brakes when skidding), folded as the speed drops.
     const open = Math.max(smoothstep(RUNOUT.foldSpeed, RUNOUT.openSpeed, speed), m.runTime < RUNOUT.foreDelay ? 0.8 : 0);
@@ -699,7 +671,6 @@ function liftOff(sim: FlightSim, leap: LeapPlan): void {
   m.sinceLiftOff = 0;
   m.heelLift = 1;
   sim.leapCharge = 0;
-  sim.runTakeoff = 0;
   sim.legsOut = 1;
   sim.spread = Math.max(sim.spread, 0.9);
   sim.hoverBlend = leap.variant === 'touchgo' ? 0.2 : 0.8;

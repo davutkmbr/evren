@@ -81,7 +81,6 @@ export class PoseDriver {
     riderReinLeft: 0,
     riderReinRight: 0,
     riderTuck: 0,
-    riderUrge: 0,
     riderPoint: 0,
     riderCheer: 0,
   };
@@ -516,8 +515,6 @@ export class PoseDriver {
     pose.riderReinRight = clamp(this.reinRight + pump, -1, 1);
     pose.riderTuck = this.tuck;
 
-    // The "dehh": the animator runs the rein snaps and heel kicks inside this envelope.
-    pose.riderUrge = m.urgeEnvelope;
     this.point = follow(this.point, sim.firing || cmd?.fire ? 1 : 0, ARM_RATE, dt);
     pose.riderPoint = this.point;
     const roarCheer = this.roarAge < ROAR_CHEER ? smoothstep(0, 0.2, this.roarAge) * (1 - smoothstep(ROAR_CHEER * 0.65, ROAR_CHEER, this.roarAge)) : 0;

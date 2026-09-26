@@ -4,23 +4,26 @@
  * the snapshot to the pure MomentRunner (./runtime.ts) with the player's settings, and renders what the runner asks for
  * (subtitle line, closing card, the coastal ambience lift) through the HUD zone director.
  *
- * Debug / discoverability: `?moment=<id>` puts the dragon at the moment's start waypoint once the game starts and plays
- * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`). A moment anchored to a
- * moving object (`?moment=ferry-gull-simit`) waits for one in service and puts the dragon next to it instead.
+ * Moments with a scene actor (./actors.ts, e.g. the stork flock) spawn it when they start; the actor is updated every
+ * running frame while it is alive and may outlive its lines. With no actor alive nothing is simulated or drawn.
  *
- * Moving anchors (./anchors.ts: the ferries in service) are read from the 'life' service every frame; a moment with an
- * actor (./actors: procedural scene content such as the ferry's gull flock) builds it when it starts and disposes it
- * once the actor has wound down.
+ * Debug / discoverability: `?moment=<id>` puts the dragon at the moment's start waypoint once the game starts and plays
+ * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`,
+ * `?moment=storks-bosphorus-migration`). A moment anchored to a moving object (`?moment=ferry-gull-simit`) waits for
+ * one in service and puts the dragon next to it instead.
+ *
+ * Moving anchors (./anchors.ts: the ferries in service) are read from the 'life' service every frame; the runner hands
+ * the anchor a moment started at to its actor (the ferry's gull flock follows that ferry).
  */
 import type { DragonState, EngineContext, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
-import { MOMENT_ACTORS, actorSounds, type MomentActor } from './actors';
+import { createMomentActor, type MomentActor } from './actors';
 import { AnchorFeed, ferryShortcut } from './anchors';
 import { ALL_MOMENTS } from './data';
 import { loadMomentPrefs, onMomentPrefsChange, type MomentPrefs } from './prefs';
 import { momentStartPose, MomentRunner, type MomentFrame, type MomentSink } from './runtime';
 import type { MomentContext } from './triggers';
-import type { Moment } from './types';
+import { SourcePromptController } from './source-prompt';
 import { MomentView } from './view';
 
 /** Seconds of running game after the ?moment= teleport before the forced moment starts (the camera settles). */
@@ -38,19 +41,36 @@ export function createMomentSystem(): System {
   let forceId: string | null = null;
   let forceTimer = -1;
   const disposers: Array<() => void> = [];
+  /** Scene actors by moment id (created on first use, kept for reuse). */
+  const actors = new Map<string, MomentActor>();
 
   const sink: MomentSink = {
     showLine: (_m, line) => view?.showLine(line),
     hideLine: (_m, how) => view?.hideLine(how === 'fade'),
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
+    startMoment: (m, forced, anchorId) => {
+      if (!ctxRef || !m.content.actorId) {
+        return;
+      }
+      let actor = actors.get(m.id);
+      if (!actor) {
+        const created = createMomentActor(m.content.actorId);
+        if (!created) {
+          return;
+        }
+        actor = created;
+        actors.set(m.id, actor);
+      }
+      actor.start(m, ctxRef, forced, anchorId);
+    },
+    endMoment: (m, reason) => actors.get(m.id)?.end(reason),
   };
-  const runner = new MomentRunner(ALL_MOMENTS, sink, { availableSounds: actorSounds() });
+  const runner = new MomentRunner(ALL_MOMENTS, sink);
+  const sources = new SourcePromptController();
   const anchorFeed = new AnchorFeed();
   let forceAnchor: number | undefined;
   let forceWait = 0;
-  let actor: MomentActor | null = null;
-  let actorMoment: Moment | null = null;
 
   const worldContext: Omit<MomentContext, 'session'> = {
     position: { x: 0, z: 0 },
@@ -146,30 +166,6 @@ export function createMomentSystem(): System {
     }
   }
 
-  /** Builds the playing moment's actor when it starts; runs it until it has wound down. */
-  function updateActor(ctx: EngineContext, dt: number): void {
-    const current = runner.current;
-    if (current && current !== actorMoment) {
-      const factory = current.content.actorId ? MOMENT_ACTORS[current.content.actorId] : undefined;
-      if (factory) {
-        actor?.dispose();
-        actor = factory.create(ctx, runner.currentAnchor);
-      }
-      actorMoment = current;
-    }
-    if (!current && !actor) {
-      actorMoment = null;
-    }
-    if (!actor) {
-      return;
-    }
-    actor.update(dt, current !== null && current === actorMoment);
-    if (actor.done) {
-      actor.dispose();
-      actor = null;
-    }
-  }
-
   return {
     name: 'moments',
     // Before the UI (800): the lines requested this frame settle in the same frame's zone update.
@@ -217,7 +213,12 @@ export function createMomentSystem(): System {
       frame.prefs = prefs;
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
-      updateActor(ctx, dt);
+      for (const actor of actors.values()) {
+        if (actor.active) {
+          actor.update(dt, ctx);
+        }
+      }
+      sources.update(dt, ctx, runner.current, frame.racing, view);
     },
 
     dispose(): void {
@@ -225,8 +226,11 @@ export function createMomentSystem(): System {
         fn();
       }
       ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(0);
-      actor?.dispose();
-      actor = null;
+      for (const actor of actors.values()) {
+        actor.dispose();
+      }
+      actors.clear();
+      sources.dispose(ctxRef);
       view?.dispose();
       view = null;
     },

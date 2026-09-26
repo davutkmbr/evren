@@ -4,7 +4,8 @@ Milestone: E · Variety · Effort: L · Depends on: 01 (bug fixes), 05 (thermals
 
 Status: in progress. Planned with the user on 25 September 2026. Built: the record format, the pure trigger evaluator,
 the settings (Ayarlar → Oyun → Anlar) and, since 26 September 2026, the **runtime**: moments play in the game. Playable
-today: the Orhan Veli poem and the gull and simit on a ferry (procedural flock anchored to the ferries in service); every
+today: the Orhan Veli poem, the stork migration over the Bosphorus (procedural flock, see "Storks" below) and the gull
+and simit on a ferry (procedural flock anchored to the ferries in service, see "Gull and simit on a ferry"); every
 other record waits for its assets (see "Runtime" below).
 
 ## Goal
@@ -31,7 +32,8 @@ Data-driven points on the map, one record per moment, so new ones are data, not 
 - **Content:** a character or object (model, idle and reaction animations), Turkish subtitled lines, sound, an
   optional camera hint, an optional discovery card.
 - **External media:** an optional official video (YouTube embed of the rights holder's upload, start/end seconds),
-  played in a small in-game panel. The media is streamed from YouTube, never stored in the repository.
+  played in a small in-game panel. The media is streamed from YouTube, never stored in the repository. Built as the
+  moment's `sources` and the source sheet (see "Sources" below).
 - **Provenance:** every model, sound and text records its source and licence (CLAUDE.md rules); unapproved content
   cannot be referenced.
 
@@ -51,10 +53,6 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
   Each anchor point carries the vessel id; the runner remembers the anchor nearest to the dragon when a moment starts
   (`MomentRunner.currentAnchor`), and while it plays the anchor radius gets 100 m of hysteresis (the ferry pulls away
   while the dragon watches). `moments-check` accepts an anchored `ready` record only for anchors the game supplies.
-- **Actors** (`src/moments/actors/`). Procedural scene content registered by the record's `actorId`: built when the
-  moment starts, updated every running frame, told when the lines are over, and disposed once it has wound down. Nothing
-  exists (no meshes, no simulation) while no moment with an actor plays. An actor that plays its own sound counts as the
-  moment's sound (no ambience lift for it).
 - **Pacing.** One moment at a time. A moment starts after its trigger held for 1 s; after a moment another may start
   only after a 180 s gap; records keep their own once-per-session / cooldown rules. Nothing starts or continues during a
   race, and nothing advances while the game is paused (menus, map, photo mode). The settings gate playback: a category
@@ -66,15 +64,26 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
 - **Screen.** Subtitle lines go through the HUD zone director in the `lowerCenter` zone (priority 45: below maneuver
   captions, above flight and start hints; deferred by a race): italic, shadowed, no box, slow fades. The closing card
   uses the discovery card's look in the `corner` zone ("Yeni an", category, title, text; 9 s). Design language updated.
-- **Sound.** For a moment whose sound is missing the runtime asks the audio service to lift the existing coastal
-  ambience (`setAmbienceLift`: surf forward, city back), so no new external asset is needed. Actors place their own
-  sounds through `audio.playAt()` (the ferry gulls: the approved CC0 gull calls and synthesized wing beats).
-- **Playability decision.** A `ready` record plays. A `draft` record plays only when its content is complete for what
-  it is: a subtitle-only moment (no character, object or animation) whose single need is `sound` plays, because the
-  soft bed is optional there and the ambience lift stands in for it. Anything needing a model, an animation, a video
-  link, a runtime anchor or text approval waits; in dev the console logs each skipped record once with its reason.
-- **Shortcut.** `?moment=<id>` puts the dragon at the record's `start` waypoint (heading for the next waypoint) once
-  the game starts and plays that moment once, whatever the conditions (still not during a race). For an anchored
+- **Sound.** Moment sounds are synthesised or reuse the already approved CC0 recordings (the gull calls);
+  `src/moments/content.ts` lists the ones that exist (the storks' and the ferry gulls'). For a moment whose sound is missing the runtime asks the audio service to lift the
+  existing coastal ambience (`setAmbienceLift`: surf forward, city back), so no new external asset is needed. The
+  audio service also takes positional moment cues (`momentCue`: the storks' clatter, wing beats and pass; the ferry
+  gulls' `gull-call` and `gull-wingbeat`) and a soft open-air wind bed (`setMomentBed`).
+- **Procedural content and actors.** `src/moments/content.ts` names every actor, animation and sound built in code;
+  `src/moments/actors.ts` maps actor ids to scene implementations. When a moment with an actor starts, the system
+  spawns the actor (sink `startMoment`), tells it when the lines end (`endMoment`) and updates it every running frame
+  while it is alive; an actor may outlive its lines (the storks glide away and fade; the ferry gulls linger while the
+  dragon stays near the ferry). `startMoment` also passes the moving anchor the moment started at, so an anchored
+  actor follows that object. With no actor alive nothing is simulated or drawn.
+- **Playability decision.** A `ready` record plays when its actor and animations resolve to procedural content
+  (moments-check also requires its sound to resolve). A `draft` record plays only when its content is complete for
+  what it is: a subtitle-only moment (no character, object or animation) whose single need is `sound` plays, because
+  the soft bed is optional there and the ambience lift stands in for it. Anything needing a model, an animation, a
+  video link, a runtime anchor or text approval waits; in dev the console logs each skipped record once with its
+  reason.
+- **Shortcut.** `?moment=<id>` puts the dragon at the record's `start` waypoint (heading for the next waypoint, inside
+  the altitude band: 70 % of a ceiling, or a fifth of the way up a band with a floor) once the game starts and plays
+  that moment once, whatever the conditions (date, time, weather, place; still not during a race). For an anchored
   moment it waits (up to 90 s, the fleet loads late) for an anchor in service, puts the dragon beside it and plays the
   moment at that anchor.
 - **Checks.** `tools/headless/moments-runtime-check.ts` flies a scripted low glide along the European shore from
@@ -82,15 +91,16 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
   (4 s lines, 0.5 s gaps) and the card at the end; it does not fire high, inland, in rain or storm, while flapping,
   during a race or with its category off; pause, hysteresis, fade-out, retry, race / settings cut-off, the global gap
   and the shortcut are covered; the corridor polygon is verified to cover all of the strait's water and both shores
-  (its north end was extended to the Black Sea mouth, 41.24° N). Its section 5 covers the ferry moment on the real
-  geography with the anchor feed (see below). `tools/headless/moments-gulls-check.ts` covers the gull flock.
+  (its north end was extended to the Black Sea mouth, 41.24° N). Section 5 covers the storks, section 7 the ferry
+  moment on the real geography with the anchor feed (below); `tools/headless/moments-gulls-check.ts` covers the gull
+  flock.
 
 ### Playable now vs waiting
 
 | Moment | Plays now? | Why |
 |---|---|---|
 | Orhan Veli, "İstanbul'u Dinliyorum" (#14) | yes | subtitle-only; its soft shore bed is replaced by the lifted coastal ambience |
-| Storks over the Bosphorus (#2) | no | needs the stork flock model, animations and sound |
+| Storks over the Bosphorus (#2) | yes | procedural white-stork flock, wing poses and synthesised sounds (`ready`) |
 | Hezarfen Ahmed Çelebi (#3) | no | needs the ghost glider model, animations and sound |
 | Gull and simit on a ferry (#4) | yes | procedural gull flock and simit pieces at the ferries in service; CC0 gull calls |
 | Galata Bridge anglers (#4) | no | needs the angler models, animations and sound |
@@ -111,7 +121,7 @@ ferry's slipstream, peel off and snatch them in the air, and pick the ones that 
   dragon with a 20 m wingspan; while playing the radius grows to 350 m.
 - **Lines** (Turkish, own text): "Vapurun arkasında biri simidini bölüp martılara atıyor." · "Martılar rüzgârda asılı
   duruyor, parçayı havada kapıyorlar." · Martı: "Yanında çay da var mı?"; the card "Martı ve Simit" at the end.
-- **Actor** (`src/moments/actors/gull-simit/`): `flock.ts` is the pure simulation (no three.js), `actor.ts` renders it
+- **Actor** (`src/moments/gull-simit/`, registered in `src/moments/actors.ts` as `moments/ferry-gull-flock`): `flock.ts` is the pure simulation (no three.js), `actor.ts` renders it
   (one instanced mesh of gulls with the ambient bird shader, one of simit pieces) and places the sounds, `geometry.ts`
   builds the gull (the ambient gull plus a yellow bill with the red gonys spot, region 5 of the bird shader: grey mantle,
   white body, black wingtips) and the simit piece (a ~100° arc of a sesame ring, crust with seeds, pale crumb on the
@@ -135,7 +145,7 @@ ferry's slipstream, peel off and snatch them in the air, and pick the ones that 
   catches call more often, calls ≥ 0.9 s apart), placed at the calling bird; soft synthesized wing beats of the gull
   nearest to the camera when one flaps hard within 24 m. The ferry's engine and wake beds are untouched.
 - **Cost:** CPU 0.02–0.05 ms per frame for 36 gulls (headless), zero while no ferry moment plays.
-- **Checks:** `moments-runtime-check` section 5 (fires gliding, hovering or perched near a ferry in service and names
+- **Checks:** `moments-runtime-check` section 7 (fires gliding, hovering or perched near a ferry in service and names
   it; not 300 m or 1 km away, not at a stopped ferry, not at night or before dawn, in rain or storm, high above, diving,
   swimming, in a race or with city life off, not along a shore without ferries; hold, fade-out, cooldown, forced anchor,
   shortcut pose). `moments-gulls-check` (scripted vapur with a 170° turn and heave: gulls stay by the stern anchor, catches
@@ -157,6 +167,113 @@ appears after a second of steady low gliding. Once per session. Or open the game
 `?moment=orhan-veli-istanbulu-dinliyorum`: after the start screen the dragon is placed off Beşiktaş, heading up the
 shore, and the poem plays.
 
+## Storks over the Bosphorus (playable, 26 September 2026)
+
+"Boğaz'da Leylek Göçü" (record `storks-bosphorus-migration`, `src/moments/data/city-life.ts`). Everything is built in
+code: no external model, texture or recording.
+
+**Where, when, how to see it.** Fly (any flight mode) at **150–1500 m above sea level** anywhere over the Bosphorus
+corridor (Sarayburnu to the Black Sea mouth, both shores), between **15 August and 15 October**, **09:00–17:00**, in
+**clear or hazy** weather. After a second in the band the first line appears and a kettle of storks rises 320–1000 m
+ahead of the dragon (it picks the strongest thermal of the lift field in view). Repeatable every 30 minutes (and the
+global 3-minute gap between moments applies). The game starts on 23 September at 18:00, so set the clock to daytime
+first (`[` / `]`, or `?t=11`). Shortcut: `?moment=storks-bosphorus-migration` puts the dragon mid-strait off Kandilli
+at 420 m, heading for the Rumelihisarı narrows, and plays the moment 2.5 s later whatever the date, time and weather
+(add `&t=11` for daylight if the clock is late).
+
+**The stork** (`src/moments/storks/stork-model.ts`, material `stork-material.ts`): real size (2.0 m wingspan, bill tip
+to tail 1.15 m), long neck held out and a little low, long red bill, red legs trailing ~0.2 m past the short white
+tail; broad arm, six separated "fingered" primaries. White body and coverts, black secondaries (a jagged covert
+edge) and a black hand. Wing pose in the vertex shader: shoulder and wrist dihedral, arm and hand sweep, finger fan
+and upward tip curl under load; soaring (flat, fingers fanned and curled), gliding (hands swept back, fingers closed),
+slow deep flaps (~2 Hz); idle flutter of the tips. No plastic look: per-bird brightness and warmth, soft body
+feathering and a greyer belly, feather striation on the black flight feathers, high roughness on the plumage, a
+glossier bill; about a third of the flock are juveniles (duller flight feathers, dark bill, paler legs). LODs: near
+602 triangles, far 112 (from 240 m); birds shrink away 2.3–2.9 km from the camera. Pose sheet:
+`npx tsx tools/headless/storks-sheet.ts` → `.shots/moments/storks/` (poses × views, LODs, the kettle).
+
+**Behaviour** (`flock-sim.ts`): the kettle is a rotating column; every stork circles the column's axis on its own
+circle (18–72 m, 11.5 m/s airspeed, banked into the turn, all turning one way), climbing with the thermal minus its
+sink (1–3 m/s; ~2 m/s typical). The column drifts with the game's wind (`env.wind`) and leans downwind with height;
+every 2 s the flock re-centres on the lift field's thermal core. Near the top storks peel off when heading along the
+course and glide in a loose stream to the south (185° ± 15°, the eastern flyway continues south to south-east over
+Anatolia) at 15 m/s, sinking 1.25 m/s (glide ratio ~12), crabbing into the wind and drifting with it. Flaps are
+occasional (~3 % of bird-frames): at the thermal's base, to regain a place in the stream, and when frightened.
+Separation through a spatial hash plus a hard 2.6 m minimum distance (no intersections). The dragon: storks within
+~60 m (and on its predicted path, 3 s ahead) spread away, drop and flap; nobody gets inside 22 m of its centre; they
+calm down within ~6–8 s and drift back into their circles.
+
+**Moment content.** Four lines (improved wording) and the card; the flock lives on after the lines (the kettle empties
+into the stream over ~2–3 minutes), fades out far away and is removed when nothing is visible (at most 7 minutes). A
+race or switching city life off fades it out in 3 s.
+
+**Sound** (`src/audio/sfx/storks.ts`, `src/audio/voices/moment.ts`), deliberately sparse because storks have no song
+and are almost silent in flight: a soft open-air wind bed while the flock is near (or the lines play), a faint wing
+beat when a flapping stork is within ~45 m, an air rush when one passes within ~14 m, and every 18–45 s a short bill
+clatter (the stork's only real voice, a wooden rattle speeding up and slowing down) from a stork within ~220 m.
+
+**Performance.** Up to 400 birds on high and ultra (220 medium, 120 low); simulation + instance buffers ~0.15–0.2 ms per
+frame for 400 in Node (budget 0.3 ms); two instanced draws (near + far LOD); nothing simulated or in the scene while
+no flock is alive.
+
+**Checks.** `tools/headless/storks-check.ts`: model size and poses, instance matrices vs three.js, kettle rotation
+(period ~28 s), climb (~2 m/s), glide ratio (~12), occasional flapping, no intersections and no NaNs over 4 minutes,
+dragon fly-through / dive / circling in the kettle / hovering (closest ≥ 22 m, the soft dodge does the work, calm
+again after), dt robustness from 4 to 144 fps and jitter, the budget. `moments-runtime-check` section 5 covers the
+trigger windows, the cooldown, the shortcut and the kettle sites on the real geography.
+
+**Tunables.** `STORK` in `flock-sim.ts` (speeds, sinks, climb band, orbit radii, lean, separation, dragon radii, alarm
+decay, flap rate), `STORK_SITE` in `site.ts` (search ring and cone, kettle depth, minimum updraft, course),
+`STORK_COUNT` / `LIFE` in `stork-actor.ts` (flock size per quality, lifetime and fades), `STORK_LOD` in
+`stork-instances.ts` (LOD and fade distances), the `SOUND` ranges in `stork-actor.ts`, and `MIX.stork*` /
+`MOMENT_BED_LEVEL` in the audio engine.
+
+## Sources: "Kaynağa bak" (built 26 September 2026)
+
+Owner request: when a moment quotes something, one key takes the player to the original (a text, a video, an image...).
+
+Code: `src/moments/sources.ts` (pure: validation, what may be embedded, embed URLs, the prompt window),
+`src/moments/source-prompt.ts` (prompt + key in the moments system), `src/moments/seen.ts` (moments seen, per viewer),
+`src/moments/data/sources.ts` (the lists), `src/ui/moments/` (source sheet, pause menu → Anlar, shared detail view).
+
+- **Data.** A record may carry `sources: MomentSource[]` (`src/moments/types.ts`). Each item: `kind` (`text`, `image`,
+  `video`, `audio`, `link`), a Turkish `title`, the canonical https `url` (Vikikaynak / Wikisource, Project
+  Gutenberg, a Wikimedia Commons file page, the rights holder's official YouTube upload, a museum page), an optional
+  `embed` (`{ kind: 'youtube', videoId, startSec?, endSec? }` or `{ kind: 'image', src, width, height }` with `src` on
+  `upload.wikimedia.org`), `attribution`, `licence`, `approved` and a developer `note`. Only URLs verified to exist are
+  added; wished-for items stay as TODO comments.
+- **Approval (CLAUDE.md).** `approved: true` means the owner approved the item for the game. Approved items must name
+  their attribution and licence, and only approved items that validate are **embedded**. An unapproved item is still
+  **listed as a plain external link** (title, domain, "Tarayıcıda aç"), never embedded, so the game itself loads nothing
+  from it; a link only leaves the game when the player chooses it. To approve: the owner confirms the item, set
+  `approved: true`, fill `attribution` / `licence`, and run `tools/headless/moment-sources-check.ts`.
+- **Prompt.** While a moment with sources plays, a quiet "[I] Kaynağa bak" rides under its subtitle line (the line owns
+  the hint zone then); for 10 s after the moment ends (the closing card's 9 s and a little more) it is a hint-line item
+  with the moment's title as caption (`HUD_PRIORITY.momentSource` = 35: below flight hints and moment lines, joinable,
+  deferred by a race). Never during a race; a race also ends the window. Key **I** (input button `source`; V stays
+  reserved, I is free in flight, races and the editor; the race picker's own I works only inside that sheet).
+- **Source sheet.** I pauses the game and opens a centred sheet ("Kaynak · oyun duraklatıldı", "[Esc] Kapat"): title,
+  category and author with dates, the full excerpt (the subtitle lines together), the card text, and the sources. Each
+  source shows its kind, title, attribution · licence, an approved embed (YouTube via `youtube-nocookie.com`, sandboxed
+  iframe, no autoplay, start/end; an image with its credit) and a key-first link "[1] Tarayıcıda aç  tr.wikisource.org"
+  (`target=_blank`, `rel="noopener noreferrer"`). Digits 1–9 open the links, Esc or I closes and resumes, the scrim
+  closes it too; mouse works everywhere.
+- **Pause menu → Anlar.** A fourth tab lists the moments seen (newest first, stored in localStorage
+  `evren.moments.seen.v1` when a moment starts, like the discoveries) with the same detail view; arrow keys move the
+  selection, digits open links.
+- **Privacy.** Nothing third-party is requested before the player opens the sheet or the tab (no preloading); embeds
+  are created when the detail renders and removed when it closes (the video stops). Iframes use `sandbox`,
+  `referrerpolicy` and a minimal `allow`; images `referrerpolicy="no-referrer"`. The site has no CSP today; the embed
+  hosts are fixed in code (`youtube-nocookie.com`, `upload.wikimedia.org`), so a CSP can allow exactly those
+  (`frame-src https://www.youtube-nocookie.com; img-src 'self' https://upload.wikimedia.org`). Offline
+  (`navigator.onLine` false) embeds are replaced by a calm note; a failed image shows a short message.
+- **First example.** The Orhan Veli poem: the poem on Vikikaynak (text) and Orhan Veli's Vikikaynak page (link), both
+  unapproved links for now (the pages were confirmed through a search index; the container cannot reach Wikimedia).
+  An official video and a Commons image are TODO comments until the owner picks them.
+- **Checks.** `moment-sources-check.ts` (validation rules, never embedding unapproved items, the embed URL, every
+  record's sources); `moments-runtime-check.ts` section 6 (the prompt window during and after a moment, not otherwise,
+  not during races; the hint item's priority and race deferral).
+
 ## Rights
 
 The game is non-commercial, open source on GitHub and played in the browser.
@@ -169,10 +286,10 @@ The game is non-commercial, open source on GitHub and played in the browser.
 
 ## Backlog (in order)
 
-1. **Moments system:** the data format, triggers, subtitles, discovery-card integration (built), the video panel (not
-   built yet).
+1. **Moments system:** the data format, triggers, subtitles, discovery-card integration (built), sources with the
+   "[I] Kaynağa bak" sheet and pause menu → Anlar (built; approved YouTube videos play in the sheet, see "Sources").
 2. **Stork and raptor migration over the Bosphorus** (autumn): flocks circling in thermals the dragon can join
-   (brings the thermal lift of phase 05).
+   (brings the thermal lift of phase 05). (Storks playable; raptors not built yet.)
 3. **Hezarfen Ahmed Çelebi:** a ghost glider leaving the Galata Tower for Üsküdar; race it across the Bosphorus.
 4. **Gull and simit, ferry moments:** gulls snatching simit behind a ferry (playable; the dragon snatching one too is
    future gameplay), dolphins jumping beside ferries, anglers on the Galata Bridge holding their hats when the dragon

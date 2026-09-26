@@ -9,8 +9,8 @@ import type { FlightSim } from './sim';
 import type { ManeuverId, MoveId, MoveRecord, PilotCommand } from './types';
 
 /**
- * Tricks that replace the normal control law while they run. The urge and the power stroke run on top of the normal
- * law; the surface skim is automatic (skim.ts).
+ * Tricks that replace the normal control law while they run. The power stroke runs on top of the normal law; the
+ * surface skim is automatic (skim.ts).
  */
 export type TrickKind = 'none' | 'roll' | 'loop' | 'drop' | 'catch' | 'dart' | 'slip' | 'wingover' | 'immelmann' | 'splits';
 
@@ -21,7 +21,6 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   loop: 'Looping',
   freefall: 'Serbest düşüş',
   catch: 'Kanatlar açıldı',
-  urge: 'Dehh!',
   takeoff: 'Kalkış',
   land: 'İniş',
   runout: 'Koşarak iniş',
@@ -200,9 +199,9 @@ function yawFeed(sim: FlightSim): number {
 }
 
 /**
- * Rider-driven maneuvers: the barrel roll, the loop, the free-fall drop and its catch, the urge ("dehh"), the stage B
- * moves (power stroke, dart, side-slip) and the stage C reversals (wingover, Immelmann, Split-S). Starts them from
- * pilot edges (double taps, V, the roll axis during a loop) and automatic triggers, runs their control laws in place
+ * Rider-driven maneuvers: the barrel roll, the loop, the free-fall drop and its catch, the stage B moves (power
+ * stroke, dart, side-slip) and the stage C reversals (wingover, Immelmann, Split-S). Starts them from pilot edges
+ * (double taps, the roll axis during a loop) and automatic triggers, runs their control laws in place
  * of the normal law, and exposes cue envelopes for the pose driver. Announcements and sounds go out as sim events.
  */
 export class Maneuvers {
@@ -211,8 +210,6 @@ export class Maneuvers {
   time = 0;
   /** Full revolutions of the current roll so far (continuous spin). */
   revolutions = 0;
-  /** Seconds since the urge started (large when idle). */
-  urgeTime = 99;
   /** Seconds since a trick finished (the rider cheers). */
   cheerTime = 99;
 
@@ -241,8 +238,6 @@ export class Maneuvers {
   /** Height the pull-out would need if it started now (m), refreshed at 20 Hz while falling. */
   pullOutNeed = 0;
 
-  private urgeCooldown = 0;
-  private urgeSpeed = 0;
   private hintTimer = 0;
 
   /** Finished stage B moves, newest last (at most MOVE_LOG). */
@@ -298,11 +293,9 @@ export class Maneuvers {
     this.kind = 'none';
     this.time = 0;
     this.revolutions = 0;
-    this.urgeTime = 99;
     this.cheerTime = 99;
     this.diveTime = 0;
     this.diveSuppressed = false;
-    this.urgeCooldown = 0;
     this.pullOutNeed = 0;
     this.powerActive = false;
     this.powerTime = 99;
@@ -336,23 +329,11 @@ export class Maneuvers {
     return this.diveSuppressed;
   }
 
-  /** 0..1 envelope of the rider's "dehh" gesture. */
-  get urgeEnvelope(): number {
-    const t = this.urgeTime;
-    const d = TRICKS.urgeGesture;
-    return t >= d ? 0 : smoothstep(0, 0.12, t) * (1 - smoothstep(d * 0.55, d, t));
-  }
-
   /** 0..1 envelope of the rider's joy after a finished trick. */
   get cheer(): number {
     const t = this.cheerTime;
     const d = TRICKS.cheer;
     return t >= d ? 0 : smoothstep(0, 0.2, t) * (1 - smoothstep(d * 0.6, d, t));
-  }
-
-  /** The urge is driving the wings (strong beats and a surge). */
-  get urging(): boolean {
-    return this.urgeTime < TRICKS.urgeDuration;
   }
 
   /** Display mode while a trick runs (null = the normal mode logic decides). */
@@ -377,10 +358,8 @@ export class Maneuvers {
 
   /** Timers; every substep in every mode. */
   tick(h: number, sim?: FlightSim): void {
-    this.urgeTime += h;
     this.cheerTime += h;
     this.powerTime += h;
-    this.urgeCooldown = Math.max(0, this.urgeCooldown - h);
     this.powerCooldown = Math.max(0, this.powerCooldown - h);
     this.hintTimer = Math.max(0, this.hintTimer - h);
     if (this.kind !== 'none') {
@@ -410,23 +389,6 @@ export class Maneuvers {
     return ceiling - sim.body.position.y;
   }
 
-  /**
-   * The urge ("dehh", V). Airborne it drives strong beats and a surge; hovering it flies out, landing it goes around.
-   * Grounded and swimming take-offs are started by the locomotion. Returns false while cooling down.
-   */
-  tryUrge(sim: FlightSim): boolean {
-    if (this.urgeCooldown > 0) {
-      return false;
-    }
-    this.urgeCooldown = TRICKS.urgeCooldown;
-    this.urgeTime = 0;
-    this.urgeSpeed = Math.max(sim.airspeed, 18);
-    sim.stamina = Math.max(0, sim.stamina - TRICKS.urgeStamina);
-    // The rein crack is played by the rider animation when the fists snap down (dragon/model).
-    this.announce(sim, 'urge');
-    return true;
-  }
-
   /** Starts tricks from pilot edges and automatic triggers (airborne substeps, before the mode logic). */
   begin(sim: FlightSim, cmd: PilotCommand, h: number): void {
     if (!cmd.dive) {
@@ -439,16 +401,6 @@ export class Maneuvers {
     }
     const mode = sim.mode;
     const cruising = mode === 'flying' || mode === 'gliding' || mode === 'diving' || mode === 'stalling';
-    if (cmd.urgePressed && this.tryUrge(sim)) {
-      if (mode === 'hovering') {
-        sim.controller.holdPath(0.05);
-        sim.setMode('takeoff');
-      } else if (mode === 'landing') {
-        sim.controller.holdPath(Math.max(sim.gamma, 0.1));
-        sim.setMode(sim.airspeed < 12 ? 'takeoff' : 'flying');
-      }
-    }
-
     if (this.kind === 'drop') {
       this.updateDrop(sim, cmd, h);
       return;
@@ -609,19 +561,6 @@ export class Maneuvers {
       default:
         break;
     }
-  }
-
-  /** Normal-law hook: the urge drives strong beats and a capped surge (kept level by the path hold). */
-  applyUrge(sim: FlightSim, t: ControlTargets, wingsFree: boolean): void {
-    if (!this.urging || !wingsFree) {
-      return;
-    }
-    const fade = 1 - smoothstep(TRICKS.urgeDuration * 0.75, TRICKS.urgeDuration, this.urgeTime);
-    t.effort = Math.max(t.effort, 0.3 + 0.7 * fade);
-    const room = this.urgeSpeed + TRICKS.urgeGain - sim.airspeed;
-    t.thrustBoost = Math.max(t.thrustBoost, 1 + (TRICKS.urgeThrust - 1) * smoothstep(0, 3, room) * fade);
-    t.spread = Math.max(t.spread, 0.95);
-    t.sweep = Math.min(t.sweep, 0.05);
   }
 
   /** 0..1 envelope of the running power stroke (pose and rider cues). */

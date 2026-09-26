@@ -378,18 +378,12 @@ export class DragonAnimator {
   }
 
   /** First-person eye anchor offset in the riderHead bone frame (see RiderAnimator.povOffset). */
-  /** True once per rein crack of the rider's urge gesture. */
-  consumeReinSnap(): boolean {
-    return this.rider.consumeReinSnap();
-  }
-
   get povEyeOffset(): THREE.Vector3 {
     return this.rider.povOffset;
   }
 
-  /** Debug (screenshots): freeze the urge snap phase (0..1) and the petting stroke phase (rad); null = animate. */
-  setDebugPhases(urge: number | null, stroke: number | null): void {
-    this.rider.debugUrgePhase = urge;
+  /** Debug (screenshots): freeze the petting stroke phase (rad); null = animate. */
+  setDebugStrokePhase(stroke: number | null): void {
     this.rider.debugStrokePhase = stroke;
   }
 
