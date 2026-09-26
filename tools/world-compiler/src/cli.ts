@@ -66,6 +66,7 @@ import { placeLamps } from './lamps';
 import { isBench, isPoi, isTree } from './pois';
 import { PropBaker, propDef } from './props';
 import { type AreaContext, type PlaceOptions, PROP_SETS, registerAll, stepsFor, type TileContext } from './registry';
+import { edgeKeeps, edgeSolids } from './edge-keeps';
 import { intersects, readStrip } from './strip';
 import { type BakedSet, DEFAULT_TEXTURES, TextureBaker, tilingOf } from './textures';
 import { validateGlb, type ValidationSummary } from './validate';
@@ -183,7 +184,8 @@ async function main(): Promise<void> {
   const piers = new PierField(data);
   const land = landField(f, piers);
   const heights = groundHeights(f.surface);
-  const solids = timedSync('setup.solids', () => makeSolids(data.buildings, heights).filter((s) => inRect(s.cx, s.cz)));
+  const allSolids = timedSync('setup.solids', () => makeSolids(data.buildings, heights));
+  const solids = allSolids.filter((s) => inRect(s.cx, s.cz));
   const landmarkOsmIds = new Set(landmarkClasses(data.buildings).keys());
   // Building passages (rule walk.passage): opened in the emitted buildings, walked by the walk network. Landmarks drawn
   // as plain blocks (--landmarks block) keep their walls, so no passage runs through them.
@@ -258,6 +260,10 @@ async function main(): Promise<void> {
       const b = tileBounds(i, j);
       manifests.set(id, { format, area: area.id, id, i, j, bounds: b, origin: [b.minX + TILE_SIZE / 2, 0, b.minZ + TILE_SIZE / 2], content: { min: [0, 0, 0], max: [0, 0, 0] }, glb: `${id}.glb`, triangles: 0, buildings: [], doors: [], pois: [], lamps: [], trees: [], benches: [], spawns: [] });
     }
+  }
+  // Buildings straddling the grid's edge with their centroid outside: their flight-scale twin stays (edge-keeps.ts).
+  for (const [id, keep] of edgeKeeps(edgeSolids(allSolids, rect), manifests, landmarkClasses(data.buildings))) {
+    manifests.get(id)!.keep = keep;
   }
   const tileOfSolid = new Map<Solid, string>();
   for (const s of solids) {

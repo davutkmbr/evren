@@ -20,7 +20,6 @@ import { buildWorkerBase } from './shared/foundation';
 import { clipWaysToLand } from './shared/land';
 import { groundLines, linesCrossing, type GroundLine, type GroundLineCrossing } from './shared/ground-lines';
 import { classifyStreets } from './shared/street-field';
-import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
@@ -55,10 +54,19 @@ function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
 /**
  * Streaming distances (m from the camera to a region's rect, horizontal) at the "high" preset: a region loads inside
  * LOAD_DISTANCE and unloads beyond UNLOAD_DISTANCE; at most MAX_LOADED streamed regions are kept (nearest win).
+ * Beyond about 1 km a region adds little over the far OSM layer (the same baked buildings, with near detail out to
+ * 800 m; the region's own facade details, props and crowd end by 800 m), so regions load only as near as their build
+ * time needs and few are kept: each one costs tens to hundreds of MB and per-frame work.
  */
-const LOAD_DISTANCE = 2600;
-const UNLOAD_DISTANCE = 3400;
-const MAX_LOADED = 8;
+const LOAD_DISTANCE = 1800;
+const UNLOAD_DISTANCE = 2400;
+const MAX_LOADED = 5;
+/**
+ * A loaded region takes over from the far layer (city swap + fade in) only inside this distance: between it and
+ * LOAD_DISTANCE the region is built but hidden, so the far layer keeps drawing the same buildings in one merged set
+ * of chunks instead of the region's own draws and shadow casters.
+ */
+const ACTIVATE_DISTANCE = 1200;
 /** Near-only layers (traffic) of a streamed region start inside NEAR_ON and stop beyond NEAR_OFF (m, "high"). */
 const NEAR_ON = 1000;
 const NEAR_OFF = 1400;
@@ -218,7 +226,6 @@ class OsmRegion {
       fade: this.def.fade,
       base,
       surface: new StreetSurface(base),
-      footprints: new FootprintIndex(data.buildings),
     };
     this.ctx = ctx;
     this.data = data;
@@ -302,7 +309,8 @@ class OsmRegion {
   update(dt: number): void {
     this.stepFade();
     const ctx = this.ctx;
-    if (!ctx) {
+    // Built but not yet taken over from the far layer (hidden): nothing of it is drawn, so its LODs need no streaming.
+    if (!ctx || !this.group.visible) {
       return;
     }
     for (const l of this.layers) {
@@ -450,7 +458,7 @@ class OsmSystem implements System {
       } else if (dist > NEAR_OFF * scale) {
         r.setNear(false);
       }
-      if (!r.active && r.buildingsDrawn()) {
+      if (!r.active && r.buildingsDrawn() && dist < ACTIVATE_DISTANCE * scale) {
         r.active = true;
         void withTimeout(setOsmRegionActive(r.def, true)).then((t0) => r.beginFadeIn(t0));
       }

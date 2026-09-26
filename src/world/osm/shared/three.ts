@@ -14,6 +14,21 @@ function releaseArray(this: THREE.BufferAttribute): void {
   (this as unknown as { array: ArrayLike<number> | null }).array = null;
 }
 
+/**
+ * A data texture only the GPU reads drops its pixels once uploaded (same rule and `?keepGeometry=1` switch as the
+ * geometry). Only for textures that are never updated again.
+ */
+export function releaseAfterUpload<T extends THREE.DataTexture>(texture: T): T {
+  if (!KEEP_CPU) {
+    texture.onUpdate = () => {
+      const img = texture.image as { data: unknown; width: number; height: number };
+      texture.image = { data: null, width: img.width, height: img.height } as unknown as T['image'];
+      texture.onUpdate = null;
+    };
+  }
+  return texture;
+}
+
 export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const attr = (a: THREE.BufferAttribute): THREE.BufferAttribute => (KEEP_CPU ? a : a.onUpload(releaseArray));
