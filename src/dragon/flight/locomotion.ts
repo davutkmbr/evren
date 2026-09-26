@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../../core/math/noise';
 import { enterStance, stepStance } from './ground-moves';
 import { MANEUVER_LABELS } from './maneuvers';
-import { FLAP, GRAVITY, GROUND, SWIM, SWIM_POSE } from './params';
+import { FLAP, GRAVITY, GROUND, SWIM, SWIM_POSE, SWIM_SEA } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 
@@ -17,7 +17,7 @@ const _extraQ = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _column = { floor: 0, ceiling: Infinity };
 const _waterVelocity = new THREE.Vector3();
-const _float = { height: 0, slopeForward: 0, slopeRight: 0, vx: 0, vy: 0, vz: 0 };
+const _float = { height: 0, centre: 0, saddle: 0, slopeForward: 0, slopeRight: 0, vx: 0, vy: 0, vz: 0 };
 
 /** Where the floating body samples the water, as fractions of the rig length: forward, right. */
 const FLOAT_POINTS: ReadonlyArray<readonly [number, number]> = [
@@ -110,6 +110,12 @@ export function enterSwimming(sim: FlightSim): void {
   sim.attachment = 1;
   sim.leapCharge = 0;
   sim.runTakeoff = 0;
+  sim.runDuration = 0;
+  // The rocking starts level and picks up the waves (the settle-in blends the body toward it).
+  sim.seaPitch = 0;
+  sim.seaRoll = 0;
+  sim.seaPitchRate = 0;
+  sim.seaRollRate = 0;
   sim.maneuvers.cancel(sim);
   sim.setMode('swimming');
 }
@@ -150,6 +156,8 @@ function sampleFloat(sim: FlightSim, fx: number, fz: number): typeof _float {
   const p = sim.body.position;
   if (!water) {
     f.height = 0;
+    f.centre = 0;
+    f.saddle = 0;
     f.slopeForward = 0;
     f.slopeRight = 0;
     f.vx = 0;
@@ -178,13 +186,16 @@ function sampleFloat(sim: FlightSim, fx: number, fz: number): typeof _float {
     vx += _waterVelocity.x;
     vy += _waterVelocity.y;
     vz += _waterVelocity.z;
-    if (i === 1) front = height;
+    if (i === 0) f.centre = height;
+    else if (i === 1) front = height;
     else if (i === 2) back = height;
     else if (i === 3) right = height;
     else if (i === 4) left = height;
   }
   const n = FLOAT_POINTS.length;
   f.height = hSum / n;
+  // Under the saddle (between the chest and the head-end point, approximately): the rider's water.
+  f.saddle = Math.max(f.centre, 0.5 * (f.centre + front));
   f.vx = vx / n;
   f.vy = vy / n;
   f.vz = vz / n;
@@ -220,24 +231,33 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const b = sim.body;
   const p = b.position;
   const v = b.velocity;
-  // Space / L: the take-off run on the surface (wings beating the water), then the leap.
+  // The sea the dragon swims in (phase 21 stage 6): the local significant wave height (0 on flat stand-in water).
+  const hs = sim.world.water?.significantHeightAt?.(p.x, p.z) ?? 0;
+  sim.seaHs = Number.isFinite(hs) ? Math.max(hs, 0) : 0;
+  const rough = seaRoughness(sim.seaHs);
+  // Space / L: the take-off run on the surface (wings beating the water), then the leap. Rough seas make it longer.
   if (sim.runTakeoff <= 0 && (cmd.flapPressed || cmd.flap || cmd.landPressed)) {
     sim.runTakeoff = h;
+    sim.runDuration = waterRunDuration(sim.seaHs);
   }
   const running = sim.runTakeoff > 0;
-  const run = running ? clamp(sim.runTakeoff / SWIM_POSE.runTime, 0, 1) : 0;
+  const runLength = sim.runDuration > 0 ? sim.runDuration : SWIM_POSE.runTime;
+  const run = running ? clamp(sim.runTakeoff / runLength, 0, 1) : 0;
   if (running) {
     sim.runTakeoff += h;
-    if (sim.runTakeoff >= SWIM_POSE.runTime) {
+    // Beating through big waves costs stamina on top of the beats' own effort.
+    sim.stamina = Math.max(0, sim.stamina - (SWIM_SEA.runStamina * rough * h) / runLength);
+    const crest = crestLift(sim, runLength);
+    if (sim.runTakeoff >= runLength || crest >= 0) {
       sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, sim.waterY, p.z), strength: 1.2 });
-      leap(sim, SWIM.leapUp, SWIM.leapForward);
+      leap(sim, SWIM.leapUp + Math.max(crest, 0), SWIM.leapForward);
       return;
     }
   }
   const fast = cmd.dive;
   const fwd = clamp(cmd.pitch, -1, 1);
   if (running) {
-    sim.groundSpeed = Math.min(SWIM_POSE.runSpeed, sim.groundSpeed + SWIM_POSE.runAccel * h);
+    sim.groundSpeed = Math.min(SWIM_POSE.runSpeed, sim.groundSpeed + SWIM_POSE.runAccel * (1 - SWIM_SEA.runAccelLoss * rough) * h);
   } else {
     const target = fwd > 0 ? fwd * (fast ? SWIM.fastSpeed : SWIM.paddleSpeed) : fwd * 1;
     sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * 0.9));
@@ -277,6 +297,13 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   }
   p.addScaledVector(v, h);
   p.y = Math.max(p.y, float.height - 2.5);
+  // A crest passing under the chest and saddle lifts the body (the body-averaged float lags a short steep crest): the
+  // rider stays dry.
+  const dryY = float.saddle - depth - SWIM_SEA.dryMargin;
+  if (sim.modeTime >= SWIM_POSE.settleTime && p.y < dryY) {
+    p.y = dryY;
+    v.y = Math.max(v.y, float.vy);
+  }
 
   sim.sampleSurface();
   if (!running && wadesHere(sim)) {
@@ -288,9 +315,13 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     return;
   }
 
-  // Attitude: the plane through the sampled surface, a slight head-up trim (more while running on the water).
-  _up.set(-float.slopeForward * fx + float.slopeRight * fz, 1, -float.slopeForward * fz - float.slopeRight * fx).normalize();
-  alignBody(sim, _up, 0.06 + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : 5, h);
+  // Attitude: the body rocks about the plane through the sampled surface (a damped oscillator: big long waves rock it
+  // more than their slope, short chop less), a slight head-up trim (more while running on the water).
+  rockOnWaves(sim, float.slopeForward, float.slopeRight, h);
+  const tp = Math.tan(sim.seaPitch);
+  const tr = Math.tan(sim.seaRoll);
+  _up.set(-tp * fx + tr * fz, 1, -tp * fz - tr * fx).normalize();
+  alignBody(sim, _up, 0.06 + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : SWIM_SEA.alignRate, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   const collision = sim.world.collision;
@@ -343,6 +374,62 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     relaxWings(sim, 0, 0.3, h);
   }
   fillLocomotionTelemetry(sim);
+}
+
+/** 0..1 how rough the sea is for a water take-off (local significant wave height, SWIM_SEA.roughLo..roughHi). */
+export function seaRoughness(hs: number): number {
+  return Number.isFinite(hs) ? smoothstep(SWIM_SEA.roughLo, SWIM_SEA.roughHi, hs) : 0;
+}
+
+/** Length (s) of a water take-off run in a sea of significant wave height `hs` (m): longer in rough seas. */
+export function waterRunDuration(hs: number): number {
+  return SWIM_POSE.runTime * (1 + SWIM_SEA.runLonger * seaRoughness(hs));
+}
+
+/**
+ * A wave crest under the running dragon: once the run is old enough (SWIM_SEA.crestMinRun of the calm run) in a sea
+ * with real crests, riding one (the body-averaged surface high and not falling fast) gives the leap early. Returns the
+ * extra upward speed the rising water adds to the leap (m/s, >= 0), or -1 without a crest.
+ */
+function crestLift(sim: FlightSim, runLength: number): number {
+  if (sim.seaHs < SWIM_SEA.crestMinHs || sim.runTakeoff < SWIM_SEA.crestMinRun * SWIM_POSE.runTime || sim.runTakeoff >= runLength) {
+    return -1;
+  }
+  const f = _float;
+  if (f.height > SWIM_SEA.crestShare * sim.seaHs && f.vy > -SWIM_SEA.crestSink) {
+    return SWIM_SEA.crestLift * Math.max(f.vy, 0);
+  }
+  return -1;
+}
+
+/**
+ * The floating body's rocking on the waves: pitch and roll as lightly damped oscillators (natural periods and damping
+ * of SWIM_SEA) driven by the slope of the plane through the body-averaged surface; bounded (the rider stays on top).
+ */
+function rockOnWaves(sim: FlightSim, slopeForward: number, slopeRight: number, h: number): void {
+  const wp = TWO_PI / SWIM_SEA.pitchPeriod;
+  const wr = TWO_PI / SWIM_SEA.rollPeriod;
+  const z = SWIM_SEA.damping;
+  const tp = Number.isFinite(slopeForward) ? Math.atan(slopeForward) : 0;
+  const tr = Number.isFinite(slopeRight) ? Math.atan(slopeRight) : 0;
+  sim.seaPitchRate += (wp * wp * (tp - sim.seaPitch) - 2 * z * wp * sim.seaPitchRate) * h;
+  sim.seaRollRate += (wr * wr * (tr - sim.seaRoll) - 2 * z * wr * sim.seaRollRate) * h;
+  sim.seaPitch += sim.seaPitchRate * h;
+  sim.seaRoll += sim.seaRollRate * h;
+  if (!Number.isFinite(sim.seaPitch + sim.seaRoll + sim.seaPitchRate + sim.seaRollRate)) {
+    sim.seaPitch = 0;
+    sim.seaRoll = 0;
+    sim.seaPitchRate = 0;
+    sim.seaRollRate = 0;
+  }
+  if (Math.abs(sim.seaPitch) > SWIM_SEA.maxPitch) {
+    sim.seaPitch = Math.sign(sim.seaPitch) * SWIM_SEA.maxPitch;
+    sim.seaPitchRate = 0;
+  }
+  if (Math.abs(sim.seaRoll) > SWIM_SEA.maxRoll) {
+    sim.seaRoll = Math.sign(sim.seaRoll) * SWIM_SEA.maxRoll;
+    sim.seaRollRate = 0;
+  }
 }
 
 /** True when the phase stepped across `at` (radians, both in [0, 2pi)), including across the wrap. */

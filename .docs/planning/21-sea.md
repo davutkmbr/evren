@@ -7,7 +7,9 @@ flight), awaiting the owner's GPU review; stage 3 built (plunge, under water, br
 and the feel test; stage 4 built (underwater camera, look and audio), awaiting the owner's GPU review; stage 5 swimming
 part built, awaiting the pose-sheet approval and the feel test; stage 7b built (vessels as floating rigid bodies),
 awaiting the owner's look in game; stage 7a built (wind-wave spectrum, wave particles), awaiting the owner's GPU
-review; stage 7c built (foam and spray from the water's state), awaiting the owner's GPU review.
+review; stage 7c built (foam and spray from the water's state), awaiting the owner's GPU review; stage 6 built (the
+weather and the sea: storm seas, rocking in waves, rough-sea take-offs, rain rings, sea fog banks), awaiting the owner's
+GPU review and feel test.
 
 ## Goal
 
@@ -295,7 +297,7 @@ with no ground plane, so the rig walked its legs on its default standing plane u
   body rises onto the surface (float depth 0.6 → 0.05 m), the wings open (spread 0.85) and beat hard with the stroke
   amplitude limited to 0.7, each downstroke slapping the water with a splash at both wingtips; the hind legs paddle
   quickly (1.5 Hz); then the leap (`SWIM.leapUp` / `leapForward` on top of the run's speed: it leaves the water at
-  ~10 m/s). (The instant V leap was removed with the urge on 26 Sep, see [20](20-movement.md).) Not yet: a longer run in rough seas (strand 6).
+  ~10 m/s). (The instant V leap was removed with the urge on 26 Sep, see [20](20-movement.md).) Since stage 6 the run is longer in rough seas and a wave crest can cut it short (see "Stage 6 as built").
 - **Plunge / breach:** surfacing from `underwater` enters swimming through the same settle and blend; a breach leaves
   as before.
 - **Shore (wading):** swimming turns into `grounded` where the seabed is within the legs' reach
@@ -378,13 +380,148 @@ tail reversal. The swim is now a whole-body stroke, readable from the chase came
   top and three-quarter; the new `swim-turn` scenario. The clearest sheets: `swim-fast-chase`, `swim-fast-top`,
   `swim-top` and `swim-turn-top`.
 - Not yet: visual water from the strokes (a churn of foam and droplets at each paddle and the tail); the swim is
-  still unaffected by waves beyond the float (strand 6).
+  still unaffected by waves beyond the float (strand 6; since stage 6 the body rocks on the waves, see there).
 
 ## Strand 6 — Weather and the sea
 
 - Lodos: big waves, spray blown off crests, harder water take-offs, the dragon rocks more while swimming.
 - Poyraz: choppy, cold light; fog banks sitting on the water in the morning (phase 13).
 - Rain: rings on the water; storms: whitecaps everywhere.
+
+### Stage 6 as built (GPU review and feel test needed)
+
+**Storm seas** (`src/world/water/weather/`, `sea-state.ts`, `water/index.ts`):
+- The environment wind is 3–12 m/s at 100 m (U10 ≤ 9.4) whatever the weather, so a storm preset left the sea at ~0.8 %
+  whitecaps. The water system now hands the weather's smoothed `rain` / `storm` to the `SeaState`, and the sea is built
+  from `seaWindU10` = max(the wind's U10, `SEA_WEATHER.stormU10` (15) × storm) × (1 + 0.12 × rain), capped at 16. The
+  sea still lags it by ~40 s (a storm builds its sea: U10 3.9 → 8.7 after 20 s, 13.3 after 60 s, 15.4 after 2 min),
+  and everything downstream follows with no special case: the spectrum (open-sea Hs 0.4 → 1.9 m), the 7c whitecaps
+  (open sea 0.04 % → 4.9 %: whitecaps everywhere), spindrift (from U10 12), the swimming dragon's rocking and its
+  take-offs. `?wu10=` still overrides everything. The rain preset alone gusts the sea only a little (U10 +12 %).
+
+**Swimming in waves** (`locomotion.ts` swimming branch, `SWIM_SEA` in `params.ts`, `sim.seaPitch` / `seaRoll` /
+`seaHs` / `runDuration`):
+- The body still floats on the body-averaged wave surface (five points over its length and beam, so chop much
+  shorter than the dragon hardly moves it), but its pitch and roll now follow the plane through those points as a
+  lightly damped oscillator (natural periods 2.8 s pitch, 3.4 s roll, damping ratio 0.3) instead of a first-order lag:
+  long lodos waves (periods near and above the body's) rock it a little more than their slope, short chop less, and it
+  keeps swaying for a moment after a big wave. Bounded at 16° pitch / 20° roll. Rocking vs the local Hs (Marmara,
+  lodos, the real FlightSim on the real sea, sea-weather-check section 2):
+
+  | U10 | local Hs | pitch rms (peak) | roll rms (peak) | rocking / surface plane |
+  |---|---|---|---|---|
+  | 2 | 0.17 m | 0.05° (0.1°) | 0.4° (0.9°) | 0.96 |
+  | 6 | 0.69 m | 1.2° (2.8°) | 3.4° (8.1°) | 1.50 |
+  | 10 | 1.19 m | 1.7° (4.8°) | 4.3° (13.7°) | 1.31 |
+  | 13 | 1.56 m | 2.0° (4.8°) | 5.6° (16.5°) | 1.32 |
+  | 16 | 1.91 m | 2.1° (5.9°) | 6.4° (17.6°) | 1.26 |
+
+  (90 s windows after settling; before stage 6 the body followed the surface plane with a 0.2 s lag, i.e. a ratio just under 1.)
+
+  The roll is larger than the pitch: the body is 18.5 m long but only ~4 m wide, so it filters the waves along its
+  length much more than across.
+- **Rider on top:** a short steep crest passing under the chest lifts the body (its centre never sits deeper than
+  `floatDepth + SWIM_SEA.dryMargin` under the local surface); with the real rig in a U10 16 lodos the rider's head,
+  chest and spine stay 0.34 m or more above the local water (calm: ≥ 0.63 m, unchanged).
+- The local significant wave height comes from the water service (`WaterService.significantHeightAt`, a new optional
+  method: the spectrum slots with the local fetch weights, ~1 µs); flat stand-in water reads as calm, so the calm-water
+  swim, landing, take-off and shore behaviour are unchanged (movement-check passes as before).
+
+**Water take-offs in rough seas** (same files):
+- The run lasts `runTime` × (1 + 0.9 × rough), rough = smoothstep(0.3, 2.0 m, local Hs), accelerates up to 30 % less and
+  costs up to 0.12 stamina on top of the beats: 1.2 s in calm water, 1.55 s at Hs 0.95 m, 2.1 s at 1.56 m, 2.27 s in
+  the full lodos.
+- **Crest leap:** once the run is 0.72 s old (0.6 of the calm run) in a sea of Hs ≥ 0.5 m, riding a crest (the
+  body-averaged surface above 0.2 × Hs, not falling faster than 0.3 m/s) gives the leap at once, and the rising water
+  adds its vertical speed to it. In the check about one run in six hits a crest (0.72–1.53 s instead of 1.55–2.27 s); timing Space as a crest
+  approaches is a skill, not a special score. The pose's float blend uses the run's real length (`sim.runDuration`).
+
+**Rain on the water** (`weather/shaders.glsl.ts`, `water-fragment.glsl.ts`, `fx/emitters/rain-splash-emitter.ts`,
+`audio/voices/rain.ts`):
+- *Drop rings:* a procedural ripple normal in the water fragment, no geometry and no textures: two staggered layers of
+  0.8 m cells, one drop per cell and 1.1 s cycle at a random point (density 0.85 √rain), its ring (a crest outside, a
+  trough inside, 2.5 mm × 1.8 cm, steepest slope ~0.1) running out to 0.22 m while it fades; sampled at the surface
+  point, so the rings ride the waves. Finer than the pixel (from 0.8 to 3 ring widths per pixel) they fade into GGX
+  roughness (+0.004 mean square slope at full rain: the dull, pitted look of a sea in rain). All behind one uniform
+  branch (`uRainParams.x > 0`).
+- *Damped roughness:* rain damps the short waves (the detail bands) by up to 30 % (`SEA_WEATHER.rainDamp`).
+- *Splashes near the camera:* `RainSplashEmitter` throws tiny droplet crowns (2–4 drops, 0.5–1.1 cm, 0.2–0.4 s) off the
+  water within 1.5–16 m of the camera (denser near it), up to 220 splashes/s at full rain × the particle budget, only
+  with the camera less than 40 m above the water; none over land or under water.
+- *Sound:* the rain voice gets a third layer, a soft bright hiss of drops on open water (pink noise band-passed around
+  4.6 / 5.4 kHz, L/R decorrelated) scaled by the rain, the water fraction under the listener and its height (full below
+  15 m, gone by 140 m), muted under water. Offline analysis case `rain-sea` (first-pass window −28..−20 LUFS, to be
+  balanced by ear).
+
+**Fog banks on the sea** (`src/render/weather/sea-fog.ts`, `weather-pass.ts`, `weather/index.ts`):
+- A second, thin exponential fog layer from sea level (scale height 16 m, extinction 0.009/m at full amount, ~330 m
+  visibility on the water) in the weather pass's composite, with banks (fbm, 420 m) drifting with half the wind,
+  sampled where the view ray runs lowest through the layer: the water and the quays disappear, hills, domes and the
+  bridge towers rise out of it; seen from above it lies on the sea in patches.
+- *When* (`seaFogTarget`, pure): fog weather gives a full bank in the morning window (forming 02:00–05:00, lifting
+  08:30–11:30) and 30 % of it all day; humid air alone (env humidity 0.72 → 0.86, e.g. haze on a poyraz morning) up to
+  0.6 in the morning only; a lodos (regime 0.35 → 0.65), a strong wind (U10 7 → 12) and rain (0.15 → 0.5) clear it.
+  Clear weather has none. While it lifts, the layer thins (−55 %) and rises (×2.2 scale height).
+- `SeaFogModel` eases the amount with τ = 20 s and switches the layer with hysteresis (on above a target of 0.08, off
+  once the amount is below 0.02): a lodos arriving on a foggy morning clears it in ~80 s. Off, the pass gets density 0
+  and skips the branch (zero cost); the pass counts it in `active`. Debug `?seafog=0..1` forces the target;
+  `__weather.seaFog` shows the model.
+
+**Race / flow tie-in:** nothing special was added. The flow harmony's surface proximity already reads
+`sim.footClearance`, which over the sea is measured to the local wave height (the water service), so skimming low along
+a crest line counts as a tight use of the world by itself (sea-weather-check section 6: level flight at 7 m over a
+lodos sea sees 4.3–6.9 m of clearance and a proximity of 0.89–0.99, rising over the crests). Rough seas make water
+take-offs slower (a longer run), which matters only for races that start in or pass through a swim.
+
+**Cost** (estimates, no GPU here):
+- Rain rings: ~120 ALU per resolved pixel (the near ~25 % of the screen), a uniform branch elsewhere: ≈ 0.01–0.03 ms on
+  "high" (budget 0.1 ms); 0 without rain.
+- Sea fog: ~90 ALU per pixel (3 exp + one 3-octave fbm) in the existing weather composite while active: ≈ 0.02–0.05 ms
+  at 1600 × 900 (budget 0.2 ms); 0 when off.
+- Rain splashes: ≤ 120 droplets a frame from the existing sharp particle pool, a few water queries per frame.
+- CPU: a swimming step with the rocking and the local Hs query ≈ 13 µs; the fog model and the sea's weather input are a
+  few multiplications per frame.
+
+**Tunables:** `SEA_WEATHER` (stormU10, rainGust, rainDamp) and `RAIN_RINGS` (cell, period, ringMax, width, amplitude,
+density, unresolvedVar, fadeStart / fadeEnd) in `src/world/water/weather/config.ts`; `SWIM_SEA` (pitchPeriod,
+rollPeriod, damping, maxPitch / maxRoll, alignRate, dryMargin, roughLo / roughHi, runLonger, runAccelLoss, runStamina,
+crest*) in `src/dragon/flight/params.ts`; `SEA_FOG` (density, height, lift*, morning window, fog / humidity / lodos /
+wind / rain ramps, on / off hysteresis, tau, patches, bankSize, drift) in `src/render/weather/sea-fog.ts`;
+`RAIN_SPLASH` in `src/fx/emitters/rain-splash-emitter.ts`; `RAIN_ON_SEA` in `src/audio/voices/rain.ts`.
+
+**Checks:** `tools/headless/sea-weather-check.ts` (`--quick`): storm U10 and its build-up, whitecap coverage and Hs,
+`?wu10` precedence; rocking vs Hs on the real sea (grows, bounded, long waves rock it 0.8–1.8× their slope, float
+tracking, no NaNs) and the rider on the real rig in a U10 16 lodos; take-offs per sea state (1.2 s in calm water, longer
+with Hs, more stamina, crest leaps sometimes and never before 0.72 s, every run leaves the water); the rain ring
+uniforms and the JS port of the ring slope (zero without rain, growing with it, visible peak slopes, clock wrap, bad
+inputs); the sea fog logic (weather, time, regime, wind, rain, humidity; lifting; hysteresis without flicker; zero
+density when off; clearing time; NaN inputs); the flow's clearance over waves; shader structure and cost estimates. The
+water fragment, water vertex and weather composite shaders parse with @shaderfrog/glsl-parser (scratch directory, not
+a dependency). The waves, foam (`--quick`), water (`--quick`), lowflight, underwater, movement, flow and races checks
+pass.
+
+**What the owner should look at (GPU):**
+
+1. Storm (`?weather=storm`, open Marmara or the Black Sea mouth): within a minute or two the sea builds up to a storm
+   sea with whitecaps everywhere and spindrift; back to clear it calms over ~1–2 min. Tunables:
+   `SEA_WEATHER.stormU10`, `rainGust`.
+2. Swim in a lodos (`?wind=lodos&wu10=16`, land on the open Marmara with L): the dragon rolls and pitches with the long
+   waves (roll up to ~18°, pitch ~6°), keeps swaying a moment after a big one, the rider stays dry; in calm water
+   (`?wu10=3`) it lies nearly still. Tunables: `SWIM_SEA.rollPeriod`, `pitchPeriod`, `damping`, `maxRoll`, `dryMargin`.
+3. Water take-off in the same lodos: the run is visibly longer (~2.3 s of beating) and drains a little stamina; press
+   Space as a crest lifts the dragon and it leaps early. In calm water it is 1.2 s as before. Tunables: `runLonger`,
+   `runStamina`, `crestMinRun`, `crestShare`.
+4. Rain (`?weather=rain&wu10=3`, hover 5–10 m over calm water): drop rings dotting the water near the camera, a duller,
+   less glittery sea further out, small droplet crowns jumping off the water around the camera, a soft hiss of rain on
+   water under the rain wash. Look for tiling (the rings live in 0.8 m cells, two staggered layers) and for rings
+   shimmering at the fade distance. Tunables: `RAIN_RINGS.amplitude`, `density`, `width`, `fadeStart` / `fadeEnd`,
+   `SEA_WEATHER.rainDamp`, `RAIN_SPLASH.rate`, `RAIN_ON_SEA`.
+5. Sea fog (`?weather=fog&t=6.5&wind=poyraz`, or `?seafog=1`): low fog lying on the Bosphorus and the Golden Horn in
+   drifting banks, the bridge towers, minarets and hills rising out of it; from 300 m up it lies on the water in
+   patches; at `t=10` it is thinner and higher; `?weather=haze&t=7` gives light banks; with `&wind=lodos` there is none.
+   Tunables: `SEA_FOG.density`, `height`, `patches`, `bankSize`, the morning window.
+6. Cost with `?stats=1` on "high": rain rings ≤ 0.1 ms (`?weather=rain` vs `?weather=clear` over water), sea fog
+   ≤ 0.2 ms (`?seafog=1` vs `?seafog=0`); nothing measurable with both off.
 
 ## Strand 7 — A physical sea: vessels, wakes and foam from the simulation
 
@@ -852,7 +989,7 @@ only as the far LOD and as a fallback on "low".
 | 3 | Plunge, under-water movement, breach, safety | Plunge/breach checks pass; pose sheets approved; feel test OK |
 | 4 | Underwater rendering: camera follows under, underwater look, waterline and droplets, underwater audio (built) | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company (swimming pose and stroke, take-off run, wading built) | Checks and sheets approved; feel test OK |
-| 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
+| 6 | Weather coupling and race/flow tie-ins (storm seas, rocking, rough-sea take-offs, rain rings, sea fog built) | Race balance report; feel test OK; owner GPU review |
 | 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes (built) | Wake-angle and energy checks pass; budgets met; owner GPU review |
 | 7b | Vessels as floating rigid bodies with LOD; propulsion/rudder forces; moorings | Period, stability and interaction checks pass; CPU ≤ 1 ms |
 | 7c | Foam and spray from breaking, propellers and impacts; advected foam texture (built) | Owner GPU review; ≤ 0.3 ms |
