@@ -96,8 +96,9 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   language's contextual reveal: only while a chain is alive) and the chain length as a small "×3" at its right end;
   chain captions reuse the maneuver caption. No score numbers flying around.
 - **Races:** speed rings, gates under bridges and skim-friendly legs are placed so chains pay off. Medal targets
-  (stage D v2): bronze reachable with plain flying, silver needs some chaining, gold needs sustained flow (target: a
-  skilled chained run 15–25 % faster than a clean unchained run on each built-in course; stage D had 6–10 %).
+  (owner decision 26 Sep, replacing stage D v2's "plain bronze, some chaining silver"): bronze for finishing the course,
+  silver for clean flying without moves, gold needs sustained flow (target: a skilled chained run 15–25 % faster than a
+  clean unchained run on each built-in course; stage D had 6–10 %).
 
 ## Tooling and verification (no GPU needed for most of it)
 
@@ -593,6 +594,12 @@ first links were half size at low flow. Nothing on screen said when to act or wh
   Medals (gold = best chained + 3 %): Boğaz turu 3:58 / 4:28 / 5:09, Haliç kıvrımı 1:41 / 2:03 / 2:22, Adalar turu
   4:58 / 6:08 / 7:05; default paces gold 49 / silver 41 / bronze 36 m/s. Plain bronze, some chaining silver, chained
   gold on every course.
+- **Medals retuned (owner decision, 26 Sep):** finishing earns bronze, clean flying silver, flow gold. Default paces
+  gold 49 / silver 36 / bronze 24 m/s; the built-in silver takes the old bronze time and bronze the 24 m/s default:
+  Boğaz turu 3:58 / 5:09 / 7:35, Haliç kıvrımı 1:41 / 2:22 / 3:39, Adalar turu 4:58 / 7:05 / 10:31 (the chain
+  practice's hidden targets follow the default paces). The plain racer now earns silver with ~10 % margin (a run 10 %
+  slower still earns it), a 1.4× slower finish earns bronze, some chaining earns silver, chained gold (`race-balance`
+  rules updated).
 - **Checks:** `flow-check.ts` section 5 now tests the rule step by step (begin, link in the window, a repeat, a kind
   among the last two, a third kind; the window running out, an unclean end and a contact breaking the chain; a move
   started during another linking); the fuzz: repeated gesture macros keep a longest chain of 1 (worst 7.6 m/s of

@@ -57,7 +57,8 @@ export interface CourseDef {
   lesson?: boolean;
   /**
    * Medal target times (s, whole seconds). Defaults come from defaultMedalTimes(); built-in courses are tuned by
-   * tools/headless/race-balance.ts (plain run: silver, chained run: gold), within 10 % of the defaults.
+   * tools/headless/race-balance.ts (a clean run without moves: silver; sustained chaining: gold), within 10 % of the
+   * defaults.
    */
   medals: MedalTimes;
 }
@@ -73,11 +74,11 @@ export interface MedalTimes {
 
 /**
  * Average speeds (m/s) the default medal targets ask for, over the timed distance (course + rest of the lead-in).
- * Phase 20 stage D v2 (flow and chain bursts, no speed button): bronze is within reach of clean flying without moves (a
- * scripted plain racer averages ~40–42 m/s); silver asks for some chaining; gold for sustained flow, i.e. chained moves
- * on every leg and the world used well (~47–54 m/s). See tools/headless/race-balance.ts.
+ * Owner decision (26 Sep): bronze is for finishing the course (a slow, wandering finish still earns it); silver for
+ * clean flying without moves (a scripted plain racer averages ~40 m/s, ~10 % margin); gold for sustained flow, i.e.
+ * chained moves on every leg and the world used well (~47–54 m/s). See tools/headless/race-balance.ts.
  */
-export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 49, silver: 41, bronze: 36 };
+export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 49, silver: 36, bronze: 24 };
 
 /** Medals from best to worst. */
 export const MEDAL_ORDER: readonly Medal[] = ['gold', 'silver', 'bronze'];
@@ -140,7 +141,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'bogaz',
     name: 'Boğaz turu',
     description: 'Kız Kulesi’nden 15 Temmuz Şehitler Köprüsü’nün altından Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
-    medals: { gold: 238, silver: 268, bronze: 309 },
+    medals: { gold: 238, silver: 309, bronze: 455 },
     gates: [
       { lat: 41.0135, lon: 28.9996, alt: 70, radius: 32, label: 'Başlangıç' },
       { lat: 41.0216, lon: 28.9998, alt: 60, radius: 30, label: 'Kız Kulesi' },
@@ -166,7 +167,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'halic',
     name: 'Haliç kıvrımı',
     description: 'Karaköy’den köprülerin üstünden Haliç’in kıvrımını izleyerek Eyüp’e.',
-    medals: { gold: 101, silver: 123, bronze: 142 },
+    medals: { gold: 101, silver: 142, bronze: 219 },
     gates: [
       { lat: 41.0202, lon: 28.9807, alt: 55, radius: 26, label: 'Başlangıç' },
       { lat: 41.022, lon: 28.97, alt: 95, radius: 24, label: 'Galata Köprüsü' },
@@ -185,7 +186,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'adalar',
     name: 'Adalar turu',
     description: 'Kınalıada ile Burgaz arasından Heybeli’nin güneyinden dolaşıp Büyükada’nın çevresinden güney ucuna.',
-    medals: { gold: 298, silver: 368, bronze: 425 },
+    medals: { gold: 298, silver: 425, bronze: 631 },
     gates: [
       { lat: 40.8919, lon: 29.0569, alt: 55, radius: 32, label: 'Başlangıç' },
       { lat: 40.8802, lon: 29.0498, alt: 55, radius: 30, label: 'Burgazada' },
@@ -219,7 +220,7 @@ export const LESSON_COURSE: CourseDef = {
   name: 'Zincir antrenmanı',
   description: 'Açık denizde adım adım zincir: hareket, pencere, farklı hareket, hız halkası ve sıyırma. Süre tutulmaz.',
   lesson: true,
-  medals: { gold: 239, silver: 286, bronze: 325 },
+  medals: { gold: 231, silver: 314, bronze: 471 },
   gates: [
     { lat: 40.965, lon: 29.01, alt: 55, radius: 34, label: 'Başlangıç' },
     { lat: 40.955, lon: 29.0, alt: 55, radius: 32 },

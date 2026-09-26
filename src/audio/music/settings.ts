@@ -1,4 +1,4 @@
-/** Persisted music settings ("Müzik" volume and "Uyarlanabilir müzik"), next to the master volume (../settings.ts). */
+/** Persisted music settings ("Müzik" volume, "Uyarlanabilir müzik", "Müzik tarzı"), next to the master volume (../settings.ts). */
 const VOLUME_KEY = 'ejderha.audio.music.volume';
 const ADAPTIVE_KEY = 'ejderha.audio.music.adaptive';
 export const DEFAULT_MUSIC_VOLUME = 0.8;
@@ -35,4 +35,27 @@ export function loadAdaptiveMusic(): boolean {
 
 export function saveAdaptiveMusic(on: boolean): void {
   write(ADAPTIVE_KEY, on ? '1' : '0');
+}
+
+/**
+ * "Müzik tarzı": `sparse` ("Seyrek") = mostly silence with a short phrase now and then (sprinkle mode, ./sprinkle.ts);
+ * `continuous` ("Sürekli") = the looping stem sets. Unset = automatic: sparse when the manifest has sprinkle phrases,
+ * continuous otherwise.
+ */
+export type MusicStyle = 'sparse' | 'continuous';
+const STYLE_KEY = 'ejderha.audio.music.style';
+
+/** The stored style, or null while the player never chose one (automatic). */
+export function loadMusicStyle(): MusicStyle | null {
+  const raw = read(STYLE_KEY);
+  return raw === 'sparse' || raw === 'continuous' ? raw : null;
+}
+
+export function saveMusicStyle(style: MusicStyle): void {
+  write(STYLE_KEY, style);
+}
+
+/** The style in effect: the stored choice, else sparse when sprinkle phrases exist. */
+export function effectiveMusicStyle(stored: MusicStyle | null, hasPhrases: boolean): MusicStyle {
+  return stored ?? (hasPhrases ? 'sparse' : 'continuous');
 }
