@@ -8,17 +8,23 @@
  * Placement rules (PERCH_RULES, checked by validatePerch at load and by tools/headless/perches-check.ts): a perch
  * stands on top of a structure (there is no ground placement: a hill top is not enough, trees and buildings grow
  * over the dragon and the camera), high above the ground and clear of every neighbour around it, with an open view.
- * Left out on purpose: minaret balconies and the Beyazıt Kulesi roof (too small for the 24 m wingspan, the signal pole
- * would pierce the dragon), Rumeli Hisarı (no built towers yet, and the hillside woods stand over its tower tops),
- * the hill tops (trees). City-wall towers join once the walls module ships them.
+ * Left out on purpose (the dragon's rig spheres: body r 1.7 m, tail 8.8 m behind, 20 m of spread wings):
+ * - minaret balconies, tower galleries and terraces: body and tail reach into the storeys above;
+ * - the Beyazıt Kulesi: its stone roof is 2.3 m wide around the 11 m signal pole, no grip keeps the body off the pole;
+ * - the Çamlıca Kulesi: no ledge, the crown slopes straight into the 5 m antenna mast;
+ * - Rumeli Hisarı: no built towers yet, and the hillside woods stand over its tower tops;
+ * - hill tops (trees) and the city-wall towers (18-20 m over the ground: trees and houses around them are as tall).
  */
 import type { PerchSurface } from '../../core/contracts';
 
 export type PerchPlacement =
   /** Top portal beam (portal towers) or concrete apex (A towers) of a Bosphorus suspension bridge tower. */
   | { kind: 'bridge-tower'; landmarkId: string; tower: 0 | 1 }
-  /** Tip of the Galata Kulesi lead cone (base of the finial). */
-  | { kind: 'galata-cap' }
+  /**
+   * Roof of a round tower (the Galata cone tip): `height` m over the builder's base, `radius` m out from the axis
+   * toward the perch heading.
+   */
+  | { kind: 'tower-roof'; landmarkId: string; height: number; radius: number }
   /** Top of the Kız Kulesi cupola (base of the finial). */
   | { kind: 'kiz-cupola' }
   /**
@@ -79,7 +85,8 @@ export const PERCH_DATA: readonly PerchData[] = [
     surface: 'tower',
     gripRadius: 2,
     landmarkId: 'galata-kulesi',
-    placement: { kind: 'galata-cap' },
+    // The tip of the lead cone (65.6 m, the base of the finial).
+    placement: { kind: 'tower-roof', landmarkId: 'galata-kulesi', height: 65.6, radius: 0 },
   },
   {
     id: 'suleymaniye-kubbe',

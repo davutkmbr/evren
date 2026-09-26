@@ -76,16 +76,28 @@ function bridgeTower(geo: GeoQuery, id: string, tower: 0 | 1): Grip {
   return { x: c.x, y, z: c.z };
 }
 
-/** Mirrors buildGalataTower: y0 = lowest ground on the shaft circle - 0.5, cone tip 65.6 m above y0. */
-function galataCap(geo: GeoQuery): Grip {
-  const def = landmark(geo, 'galata-kulesi');
-  const R = 8.225;
+/**
+ * Round stone towers: the builder's base ring (radius on which it samples the lowest ground) and how far it sinks the
+ * base below that (builder constants).
+ */
+const ROUND_TOWERS: Record<string, { ring: number; sink: number }> = {
+  'galata-kulesi': { ring: 8.225, sink: 0.5 }, // buildGalataTower
+};
+
+/** Roof of a round tower: `height` m over the builder's base, `radius` m out from the axis along the heading. */
+function towerRoof(geo: GeoQuery, id: string, height: number, radius: number, headingDeg: number): Grip {
+  const def = landmark(geo, id);
+  const base = ROUND_TOWERS[id];
+  if (!base) {
+    throw new Error(`"${id}" is not a round tower`);
+  }
   let ground = Infinity;
   for (let k = 0; k < 8; k++) {
     const a = (k / 8) * Math.PI * 2;
-    ground = Math.min(ground, geo.heightAt(def.x + Math.cos(a) * R, def.z + Math.sin(a) * R));
+    ground = Math.min(ground, geo.heightAt(def.x + Math.cos(a) * base.ring, def.z + Math.sin(a) * base.ring));
   }
-  return { x: def.x, y: ground - 0.5 + 65.6, z: def.z };
+  const h = headingDeg * DEG;
+  return { x: def.x + Math.sin(h) * radius, y: ground - base.sink + height, z: def.z - Math.cos(h) * radius };
 }
 
 /**
@@ -182,8 +194,8 @@ function resolveGrip(geo: GeoQuery, p: PerchPlacement, headingDeg: number): Grip
   switch (p.kind) {
     case 'bridge-tower':
       return bridgeTower(geo, p.landmarkId, p.tower);
-    case 'galata-cap':
-      return galataCap(geo);
+    case 'tower-roof':
+      return towerRoof(geo, p.landmarkId, p.height, p.radius, headingDeg);
     case 'kiz-cupola':
       return kizCupola(geo);
     case 'mosque-dome':

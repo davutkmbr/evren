@@ -1,7 +1,7 @@
 /**
  * Viewpoints (phase 03): spots where the dragon can land and watch the city, always on top of a structure — bridge
- * tower tops, the Galata and Beyazıt tower caps, mosque domes, the Kız Kulesi cupola, Rumeli Hisarı, the Sapphire roof. Data + service layer only:
- * waits for 'geo', resolves every catalogue entry to a grip point and provides the 'perches' service.
+ * tower tops, the Galata Kulesi cone, mosque domes, the Kız Kulesi cupola, the Sapphire roof. Data + service layer
+ * only: waits for 'geo', resolves every catalogue entry to a grip point and provides the 'perches' service.
  */
 import type { EngineContext, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';

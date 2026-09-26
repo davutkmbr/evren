@@ -12,12 +12,21 @@ export const PERCH_RULES = {
   neighbourRadius: 40,
   neighbourMargin: 3,
   /**
-   * Radius (m) within which the perch's own structure may not rise over the grip (the camera boom's reach); slender
-   * parts farther out (minarets beside a dome) are allowed, the perch camera keeps them out of the line of sight.
+   * Radius (m) within which the perch's own structure may not rise over the grip in front of the dragon (within
+   * ±`frontAngle` degrees of the heading). Behind it the structure may rise (a lantern or a pier beside the grip);
+   * slender parts farther out (minarets beside a dome) are allowed, the perch camera keeps them out of its sight line.
    */
   ownRadius: 28,
-  /** The view along the heading: terrain from `viewFrom` to `viewTo` m stays below the eye (grip + `eye` m). */
+  frontAngle: 75,
+  /**
+   * The view cone: `viewRays` rays across ±`viewSpread` degrees of the heading. From `viewFrom` to `viewTo` m the
+   * terrain stays below the eye (grip + `eye` m); within `viewNear` m the land-use obstacle allowance (trees,
+   * buildings) does too. Landmarks in the view are what the perch looks at, not blockers.
+   */
+  viewSpread: 30,
+  viewRays: 5,
   viewFrom: 40,
+  viewNear: 150,
   viewTo: 1500,
   viewStep: 25,
   eye: 3,
@@ -57,15 +66,31 @@ export function validatePerch(geo: GeoQuery, p: PerchPoint): string[] {
   if (p.y < top.height + R.neighbourMargin) {
     out.push(`below the neighbour envelope ${f1(top.height)} m (${top.what}) within ${R.neighbourRadius} m (grip ${f1(p.y)})`);
   }
-  const h = (p.headingDeg * Math.PI) / 180;
-  for (let d = R.viewFrom; d <= R.viewTo; d += R.viewStep) {
-    const t = geo.heightAt(p.x + Math.sin(h) * d, p.z - Math.cos(h) * d);
-    if (t >= p.y + R.eye) {
-      out.push(`view blocked by terrain ${f1(t)} m at ${d} m`);
-      break;
-    }
+  const blocker = viewBlocker(geo, p);
+  if (blocker) {
+    out.push(`view blocked by ${blocker.what} ${f1(blocker.height)} m at ${blocker.at} m, ${blocker.bearing}° off the heading`);
   }
   return out;
+}
+
+/** First thing rising over the eye inside the view cone (rules above), or null when the view is open. */
+export function viewBlocker(geo: GeoQuery, p: PerchPoint): { height: number; at: number; bearing: number; what: string } | null {
+  const R = PERCH_RULES;
+  const eye = p.y + R.eye;
+  for (let i = 0; i < R.viewRays; i++) {
+    const bearing = R.viewRays > 1 ? -R.viewSpread + (2 * R.viewSpread * i) / (R.viewRays - 1) : 0;
+    const h = ((p.headingDeg + bearing) * Math.PI) / 180;
+    for (let d = R.viewFrom; d <= R.viewTo; d += R.viewStep) {
+      const x = p.x + Math.sin(h) * d;
+      const z = p.z - Math.cos(h) * d;
+      const t = geo.heightAt(x, z);
+      const near = d <= R.viewNear && t > 0 ? (OBSTACLE[geo.landUseAt(x, z)] ?? 30) : 0;
+      if (t + near >= eye) {
+        return { height: t + near, at: d, bearing, what: near > 0 ? `terrain + ${LandUse[geo.landUseAt(x, z)]} allowance` : 'terrain' };
+      }
+    }
+  }
+  return null;
 }
 
 /**
