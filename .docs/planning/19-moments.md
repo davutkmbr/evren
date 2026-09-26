@@ -5,8 +5,9 @@ Milestone: E · Variety · Effort: L · Depends on: 01 (bug fixes), 05 (thermals
 Status: in progress. Planned with the user on 25 September 2026. Built: the record format, the pure trigger evaluator,
 the settings (Ayarlar → Oyun → Anlar) and, since 26 September 2026, the **runtime**: moments play in the game. Playable
 today: the Orhan Veli poem, the stork migration over the Bosphorus (procedural flock, see "Storks" below) and the gull
-and simit on a ferry (procedural flock anchored to the ferries in service, see "Gull and simit on a ferry"); every
-other record waits for its assets (see "Runtime" below).
+and simit on a ferry (procedural flock anchored to the ferries in service, see "Gull and simit on a ferry") and, since
+26 September 2026, eight literary moments (backlog 16, see "Literary moments"); two more literary records wait for the
+owner's text check and every other record waits for its assets (see "Runtime" below).
 
 ## Goal
 
@@ -43,7 +44,9 @@ Code: `src/moments/runtime.ts` (pure: playability, pacing, subtitle timeline), `
 system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (subtitle line and closing card).
 
 - **Context.** Every frame the system reads the dragon (position → coast distance from geo, AGL, ASL, flight mode,
-  grounded), the clock (time of day, day of year), the weather preset, the race context and the **moving anchors**, and
+  grounded), the clock (time of day, day of year), the weather preset and the sea fog amount (`WeatherService.seaFog`,
+  for the record condition `seaFog`: foggy mornings come with the clear or haze preset), the race context and the
+  **moving anchors**, and
   hands it to the pure evaluator with the player's settings. Positions stay in world meters; the records' lat/lon are
   projected with `latLonToLocal()`.
 - **Moving anchors** (`src/moments/anchors.ts`). A record's place may name an anchor instead of (or besides) a centre:
@@ -109,6 +112,8 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
 | Lagari Hasan Çelebi (#7) | no | needs the rocket model, animations and sound |
 | Ships over land, 1453 (#8) | no | needs the galley model, animations and sound |
 | Kız Kulesi legend (#9) | no | needs the snake model, animations and sound |
+| Literary moments (#16): Nedim, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Kuyrukluyıldız, Prokopios, De Amicis | yes | subtitle-only, text confirmed or ours (`ready`) |
+| Literary moments (#16): Sinan's tomb inscription, Ahmet Haşim | no | text provenance pending: the owner checks the wording |
 
 ### Gull and simit on a ferry (built 26 September 2026)
 
@@ -167,6 +172,48 @@ shore, anywhere from Beşiktaş past Ortaköy and Kuruçeşme toward Bebek, in c
 appears after a second of steady low gliding. Once per session. Or open the game with
 `?moment=orhan-veli-istanbulu-dinliyorum`: after the start screen the dragon is placed off Beşiktaş, heading up the
 shore, and the poem plays.
+
+## Literary moments (built 26 September 2026)
+
+Ten texts chosen from `.docs/moments/candidates.md` (the owner delegated the choice) for variety of place, mood, genre
+and time and for a low rights risk. Records: `src/moments/data/literature.ts`; sources ("Kaynağa bak"):
+`src/moments/data/sources.ts`. The candidates file lists what was chosen, built and left pending, and why.
+
+- **Subtitle-only.** No model, animation or sound of their own; no ambience lift. The moment music chooses a piece by
+  category and `musicMood` (existing tags only: `solemn`, `history`, `tender`, `joyful`, `sea`, `nostalgic`,
+  `mystic`). Lines hold 4 s (older Turkish 5 s, long lines at ≤ 16 characters per second) with half-second gaps.
+- **Category.** All but "Atı alan Üsküdar'ı geçti" (a folk tale, `legend`) are `poem`; the settings call that category
+  "Şiir ve edebiyat" and the card and the source sheet "Edebiyat".
+- **Rare.** Every one plays once per session, only in its place and in a narrow time or weather window, and the global
+  3-minute gap applies.
+- **Text gate.** Traditional texts, our retelling and our translations (MIT, PD original named) play now. A quoted
+  public-domain Turkish text plays only when two independent sources gave the same wording; the two that did not
+  (Sinan's inscription, Haşim) stay drafts with `pending` provenance and `text-approval`. Quotations are verbatim.
+- **New condition.** `seaFog: { min?, max? }` (0..1, the sea fog layer of `src/render/weather/sea-fog.ts`), for De
+  Amicis's arrival in the fog on the foggy mornings of about 30 % of game days.
+
+| Moment | `?moment=` | Where and when | Plays? |
+|---|---|---|---|
+| Bu Şehr-i Sıtanbûl (Nedim) | `nedim-bu-sehr-i-sitanbul` | 250–600 m ASL over Sarayburnu, 07–11 h, clear or haze | yes |
+| Pîr-i Mi'mârân Sinan (Sâî) | `sinan-turbe-kitabesi` | at Sinan's tomb by the Süleymaniye, ≤ 90 m AGL, 16:30–20:30, clear or haze | pending |
+| Kâtibim | `katibim-uskudar-yagmur` | ≤ 80 m AGL over Üsküdar square and shore, in rain | yes |
+| Atı Alan Üsküdar'ı Geçti | `ati-alan-uskudari-gecti` | diving over the strait mouth between Sarayburnu and Üsküdar, 06–21 h | yes |
+| Perde: Karagöz ile Hacivat | `karagoz-sehzadebasi` | ≤ 60 m AGL over Şehzadebaşı, 20–24 h | yes |
+| Yağmur (Tevfik Fikret) | `fikret-yagmur-asiyan` | at Aşiyan above Rumelihisarı, ≤ 80 m AGL, in rain | yes |
+| Bir Günün Sonunda Arzu (Haşim) | `hasim-bir-gunun-sonunda-arzu` | gliding ≤ 35 m AGL off the Göksu mouth, 17–20:30 h (Göksu fallback: Küçükçekmece Lake is at the map edge and not water in the game) | pending |
+| Kuyrukluyıldız (Hüseyin Rahmi) | `huseyin-rahmi-kuyrukluyildiz` | 150–900 m ASL over Heybeliada, 22–04 h, clear | yes |
+| Gökten Asılı Kubbe (Prokopios) | `prokopios-gokten-asili-kubbe` | gliding or flying 150–450 m ASL around the Hagia Sophia dome, 10–16 h | yes |
+| Sis Kalkınca (De Amicis) | `de-amicis-sis-kalkinca` | ≤ 90 m AGL over the Marmara south of Sarayburnu, 05–11 h, on a foggy morning | yes |
+
+The `?moment=` shortcut starts the dragon at each record's `start` waypoint (over water or low ground, heading for the
+target) and plays the moment whatever the time and weather; a pending record logs that it cannot play yet.
+
+**Checks.** `moments-check` section 4: every record's place inside the flight's soft boundary with an altitude that
+fits its bands, the shore band met inside the place; the literary records' intended playability, subtitle-only content,
+music mood, sources, card and rarity; the crossing polygon is open strait water, Üsküdar, Heybeliada, Aşiyan on its
+hill, the Marmara approach, the Göksu fallback off Anadolu Hisarı. `moments-runtime-check` section 8: each playable one
+fires once in its situation on the real geography and not far away, outside its hours, weather, sea fog, band or flight
+mode, on the ground, in a race or with its category off; the start pose and the forced play; the sources validate.
 
 ## Storks over the Bosphorus (playable, 26 September 2026)
 
@@ -313,3 +360,6 @@ The game is non-commercial, open source on GitHub and played in the browser.
 15. **Days and seasons** (with phase 13): Ramadan cannon and iftar lights, New Year fireworks, lodos waves on the
     Kadıköy shore, foghorns on misty mornings, match-day crowd sounds near stadiums (CC0 recordings, no real chants
     or club symbols).
+16. **Literary moments:** ten texts from `.docs/moments/candidates.md` (divan poetry, an inscription, a türkü, a
+    proverb tale, Karagöz, modern poems, a novel, Byzantine history, travel writing) as subtitle-only moments; eight
+    playable, two waiting for the owner's text check (see "Literary moments").
