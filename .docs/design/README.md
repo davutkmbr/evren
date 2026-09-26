@@ -76,7 +76,8 @@ stamina, the next gate).
 ## 3. Layout
 
 - **HUD (flight):** compass as a bare tape top centre; bottom centre cluster: speed (left), stamina wings + hotbar
-  (centre), altitude (right); minimap bottom right (132 px circle). Everything transient is placed by the zones below.
+  (centre; the flow line, a 2 px line under the wings, appears only while there is flow), altitude (right); minimap
+  bottom right (132 px circle). Everything transient is placed by the zones below.
 - **HUD zones (`src/ui/zones`):** the HUD composes itself. Every transient message (area title, race intro /
   countdown / warnings / callouts, discovery card, maneuver and shot captions, hover and start hints, the race's
   "[Y] iptal", toasts, the compass landmark label) asks the zone director (`hudZones` service) for a zone with a

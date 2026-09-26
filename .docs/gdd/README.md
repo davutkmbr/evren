@@ -58,9 +58,13 @@ Secondary loops: tune the day (time, weather), take photos, build and share ring
 - Rider: every command shows on the rider; petting, standing, the dragon's gaze back. Humans are MetaHuman +
   Mixamo (private asset store).
 - Hooks for other systems: `addVelocity` (speed rings, powers), `requestRoar`, `fireBurst`.
-- Phase 20: run-out landings and touch-and-go, leaping take-offs and the stage B air moves are built; planned are
-  wingover, Immelmann / Split-S and a flow system that rewards clean chains with capped speed — the skill ceiling for
-  races.
+- Phase 20: run-out landings and touch-and-go, leaping take-offs, the stage B air moves and the reversals (wingover,
+  Immelmann, Split-S) are built, and **flow ("akış")**: consecutive motions that harmonise physically (energy kept
+  against plain gliding, no jerk across the handover, momentum carried, started on the beat, the world used low and
+  clean, variety) build a flow value that pays back as capped speed (up to −8 % drag, ~+5 m/s top cruise, a stronger
+  power stroke). No combo tables: any move, and unnamed hand-flown manoeuvring, takes part; repeating one pattern
+  wears out, wasting energy never builds flow. Shown as a thin line under the stamina wings, "Kusursuz …" captions
+  when a harmony peaks — the skill ceiling for races.
 - Planned (phase 21): the sea as a place — physics on the real waves, downwash and wakes when flying low, plunge
   dives and breaches, reworked swimming (waves, currents, water take-off runs, short dives), underwater view.
 
@@ -78,8 +82,9 @@ the viewing mode are next.
 
 ### 5.4 Ring races — phase 13 (`src/activities/`)
 - Built-in courses: Boğaz turu (under the 15 Temmuz deck), Haliç kıvrımı, Adalar turu; speed rings give a short push.
-- Medals from course length (gold ≈ 44 m/s average, silver 38, bronze 32); records, per-gate splits and ghost
-  replays stored per player.
+- Medals from course length (gold ≈ 50 m/s average, silver 44, bronze 37): bronze and silver are reachable with clean
+  flying alone, gold needs flow (a chained run is ~6–8 % faster, checked by a scripted pilot); records, per-gate splits
+  and ghost replays stored per player.
 - Course editor: place gates and speed rings in flight, save, race, share as a code (`EVR1.…`).
 - Screens: picker, countdown, in-race readout, result with per-gate chart, editor (design language, section 3).
 

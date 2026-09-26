@@ -2,7 +2,7 @@
 
 Milestone: B · Chill loop (with a skill ceiling) · Effort: L · Depends on: 05 (flight feel), 13 (ring races)
 
-Status: stages A, B and C built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
+Status: stages A, B, C and D built, awaiting the owner's feel test (plan agreed with the owner on 26 September 2026).
 
 ## Goal
 
@@ -76,14 +76,17 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
 
 ## Strand 3 — Flow ("Akış") and speed
 
-- **Chain:** a move that ends cleanly (no stall, no contact, exit speed ≥ entry speed − small tolerance) within
-  `chainWindow` (≈ 2.5 s) of the previous clean move extends the chain. Each chain step adds to a flow value
-  (0–1); flow decays slowly in steady flight and drops on a stall or contact.
+- **Harmony, not a combo table** (owner, 26 September: more moves will come; combinations should work because
+  everything harmonises with everything, not through tables): flow is built from the physical harmony between
+  consecutive motions, measured from the state (energy kept against plain gliding, no jerk across the handover,
+  momentum carried, the natural beat, the world used, variety). Any move, and unnamed hand-flown manoeuvring, takes
+  part without a pair table or a per-move score. Flow (0–1) decays slowly in steady flight and drops on a stall,
+  contact or wasted energy. As built: stage D below.
 - **Payback:** flow lowers drag slightly (up to −8 %) and raises the power stroke's surge; the effective top cruise
   speed rises by up to ~5 m/s at full flow. Capped, so it rewards execution without breaking the energy model.
-- **Timing bonuses ("Kusursuz"):** a catch at the ideal pull-out moment, a dart exited right at a gate, a skim
-  held through a speed ring give a small extra flow step and a short caption. Windows are tight but readable
-  (0.2–0.3 s, telegraphed by sound and the rider's posture).
+- **Timing bonuses ("Kusursuz"):** generic: when a harmony term peaks (near-perfect energy stewardship, a move
+  started exactly on the beat, a seamless handover, a clean pass at the lowest safe clearance or through a snug ring)
+  a small extra flow step and a short caption.
 - **Readability:** the HUD shows flow as a thin line under the stamina wings (same visual family, the design
   language's contextual reveal: only while a chain is alive); chain captions reuse the maneuver caption. No score
   numbers flying around.
@@ -260,7 +263,115 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   < 1° off; refusals; collisions; the spinning dive), gesture resolvers and the axis press in section 1. Pose
   scenarios `wingover`, `immelmann`, `splits`.
 - **Not yet:** a wingover entry faster than ~43 m/s keeps less than 90 % of its energy (unclean, still flies); the
-  flow system that consumes the clean flags (stage D).
+  flow system that consumes the clean flags (stage D, built below).
+
+### Stage D as built (awaiting the owner's feel test)
+
+Owner direction (26 September): more moves will come; combinations should work because everything harmonises with
+everything, not through constants or tables. So flow has **no pair table and no per-move score**: every motion is
+judged by the same physical harmony terms, measured from the state, and a new move (or unnamed hand-flown
+manoeuvring) takes part without registering anything.
+
+- **Code:** `src/dragon/flight/flow/` — `params.ts` (the global knobs, `FLOW`), `types.ts` (`MotionSnapshot`,
+  `MotionDescriptor`, `HarmonyTerms`), `harmony.ts` (the terms, pure functions), `segmenter.ts` (motions from the state,
+  energy bookkeeping, `referenceGlideRate`), `flow.ts` (`FlowSystem`: flow value, payback, moments, debug lines),
+  `debug-overlay.ts` (`?flowdebug=1`). Hooks (additive): `FlightSim.flow` stepped at the end of `FlightSim.step`, fed
+  by `FlightSim.emit` (maneuver events) and reset on teleport; `FlightSim.musclePower` (airborne.ts: the wing beats' and
+  pushes' power into the motion through the air); all aerodynamic drag × `flow.dragScale` and the flap force ×
+  `flow.thrustScale` in `airborne.ts`; the power stroke's surge × `flow.powerGainScale` / `powerThrustScale` in
+  `maneuvers.ts`; `DragonState.flow` and `notePass()` (gates and speed rings, `passTightness()` in
+  `activities/race.ts`); `addVelocity` re-bases the energy integration (a speed ring's push is not the dragon's).
+  HUD: `src/ui/hud/flow-line.ts`. Maneuver id `'flow'` (caption "Kusursuz …").
+- **Motions (segmenter):** a *named* motion starts on the sim's `maneuver` event (any id but hints, `land`, `takeoff`
+  and the flow's own captions) and ends on the move's `ended` event, on the next named start, or once the maneuver
+  system is idle and the manoeuvring has settled. An *unnamed* motion opens when the activity
+  max(|ω| / 0.4 rad/s, |n − 1| / 0.55, |γ| / 20°) (low-passed 0.15 s, lift load only so the beat's own force does not
+  count) stays above 1 for 0.2 s, and closes below 0.6 for 0.4 s; shorter than 0.5 s or turning less than 25° (and
+  changing little height and speed) is not a motion. Each descriptor: entry / exit snapshots (air path, speed, total
+  specific energy ½V² + g·h, attitude, low-passed body rates and lift load, the active rhythm's phase / strength /
+  frequency and its natural breaks, clearance, ceiling gap, updraft, stamina), the energy integrals over the motion and
+  the gap before it, rotation amounts, heading change, mean load, the handover jerks, entry / exit rates, the early
+  path, the recent peak speed, the world proximity and the tightest pass, contact / stall and the move's own verdict.
+- **Energy bookkeeping:** every substep the specific energy change net of the muscle work (`musclePower`) is
+  integrated against the reference loss of *plain gliding* at the same airspeed and height from the sim's own drag
+  model (`referenceGlideRate`: lift = weight, the cruise wing the normal law picks for that speed, no ground effect, no
+  brake). In plain flight the two agree to < 0.5 %; drag cuts (dart, skim, flow), the ground effect and rising air show
+  up as saved energy, hard pulls and brakes as lost energy. Neutral on the ground, in the water and in the deliberately
+  slow modes (landing approach, hover).
+- **Harmony terms** (0..1, `harmony.ts`), for the transition from the previous motion A into motion B:
+  - *energy* e = 1 / (1 + exp((x − 0.5) / 0.3)), x = (net loss − reference loss) / reference loss over B and the gap
+    before it (x = 0, as plain gliding: 0.84; x ≤ −0.5, half the loss or a gain: ~1; x = 1: 0.16).
+  - *continuity* c = exp(−½((j_n / 12 g/s)² + (j_ω / 25 rad/s²)²)) from the largest jerk of the low-passed lift load and
+    body rates within ±0.3 s of the handover; an abrupt reversal earns back up to half of the rest when it is itself
+    energy-efficient (e > 0.8).
+  - *alignment* a = 0.4 · exp(−(θ / 22°)²) + 0.3 · rate agreement + 0.3 · (V_entry / V_peak)⁶: θ between the handover
+    velocity and B's mean path over its first 0.6 s, the agreement of A's exit and B's entry body rates (1 same sense,
+    0 reversed, 0.6 when either hardly rotates), the entry speed against the peak of the last 1.5 s.
+  - *rhythm* r = exp(−½(Δt / 70 ms)²), Δt from B's entry phase to the nearest natural break of the active rhythm (wing
+    beat: top and bottom of the stroke; swim stroke and gait: the two strokes / footfalls); 0.6 without a rhythm
+    (gliding). The entry snapshot is the substep before the move changed anything.
+  - *world* w = max(½ peak + ½ mean proximity, pass tightness), 0 after any contact. Proximity: surface clearance full
+    at 3 m, none from 22 m (fading back out below 0.6 m: contact is never rewarded), a deck overhead full at 5 m of gap,
+    none from 40 m, an updraft full from 3 m/s, all only at 18 m/s or more. Pass tightness = max((12 m / r)², offset / r)
+    for a ring of radius r passed `offset` from its centre.
+  - *novelty* v = 1 − Σ similarity × exp(−age / 12 s) over the last 8 motions, similarity exp(−|Δs|² / (2 · 0.35²)) of the
+    signature s = (rotation about the three body axes / π, |heading change| / π, Δh / 80 m, ΔKE / (g · 60 m),
+    duration / 3 s, mean load − 1). A motion repeated at once scores ~0.08; a 3-motion cycle wears out within ~18 s.
+  - *chain* k = exp(−(gap / 2.6 s)²), 0 past 6 s: the handover terms only mean something between close motions.
+  - Total H = 0.35 e + k · (0.2 c + 0.2 a + 0.15 r) + 0.2 w (clamped to 1). A lone motion out of steady flight tops out
+    near 0.55, a chained one near 1.
+- **Flow value:** each finished motion changes flow by 0.9 · (H − 0.58) · smoothstep(0.15, 0.75, v) ·
+  smoothstep(0.3, 0.65, e) above the threshold and by 0.3 · (H − 0.58) · k below it (a clumsy handover costs, a lone
+  motion does not); a motion with contact or a stall costs 30 % of the flow, a move's own unclean verdict forbids a gain.
+  Flow leaks 0.005 /s in the air and decays 0.02 /s after 2.5 s without a motion (0.15 /s on the ground or in the
+  water); the start of a stall halves it, the start of a contact keeps 35 %; sustained waste (net loss faster than 2.5 ×
+  plain gliding, low-passed 0.8 s: braking, mushing) drains 0.12 /s.
+- **Payback (capped, physical):** all aerodynamic drag × (1 − 0.08 f), the flap force × (1 + 0.2 f), the power stroke's
+  surge gain × (1 + 0.4 f) and its thrust × (1 + 0.25 f). At full flow: drag −8 %, top cruise 48.3 → 53.1 m/s (+4.8),
+  a 20 s glide still loses energy (−978 vs −1008 J/kg), the power stroke surges +6.5 instead of +3.9 m/s. Without flow
+  every scale is exactly 1: plain flight is bit-identical with the flow system on or off (checked).
+- **"Kusursuz" moments** (generic; one per transition at most, at least 3 s apart, only with H ≥ 0.55 and novelty
+  ≥ 0.5): *ritim*, started within 35 ms of a natural break while beating, chained; *enerji*, x ≤ −0.5 over a motion of
+  1 s or more; *geçiş*, chained with continuity and alignment ≥ 0.9; *çizgi*, a clean pass at ≤ 3.5 m clearance at
+  speed or through a ring with tightness ≥ 0.85. +0.06 flow and the caption ("Kusursuz ritim / enerji / geçiş / çizgi")
+  on the maneuver caption (zones director, maneuver priority). Random flying sees ~0.5 per minute.
+- **HUD:** a 2 px line under the stamina wings in their colour and width, growing from the centre outward with flow,
+  out of the layout (in the gap above the hotbar), faded in only while there is flow (contextual reveal). No numbers.
+  `?flowdebug=1` lists the flow value, payback, the open motion, activity, proximity, waste and the last transition's
+  terms live (top left, monospace).
+- **Global knobs** (`FLOW` in `flow/params.ts`; none names a move): the term weights (0.35 / 0.2 / 0.2 / 0.15 / 0.2),
+  response scales (energy mid / width, jerk scales, path angle, speed-use exponent, rhythm σ, proximity distances,
+  signature σ, history size and forgetting), the chain gap, segmentation thresholds, threshold / gain / loss, leak /
+  decay / drops / waste drain, the payback caps and the moment thresholds.
+- **How to add a move:** emit the usual `maneuver` start event with the move's id (its caption) and, when the move
+  knows when it ends, the `ended` event with its `clean` verdict (`Maneuvers.endMove` with a `MoveTracker` record does
+  both), or call `sim.flow.beginMotion(id)` / `endMotion(id, clean)` for a silent move. That is all: the descriptor
+  (entry / exit state, energy, rotation, rhythm, world) is measured from the state, so the move harmonises (or not)
+  with every other move at once. A move that does neither still counts as an unnamed motion once it rotates, loads or
+  dives enough. Tune only the global knobs; never add per-move or per-pair numbers.
+- **Races:** medal paces (defaults) gold 50 / silver 44 / bronze 37 m/s over the timed distance (were 44 / 38 / 32);
+  targets Boğaz turu 3:36 / 4:00 / 4:45, Haliç kıvrımı 1:40 / 1:51 / 2:12, Adalar turu 4:57 / 5:35 / 6:40. The Boğaz
+  speed ring of leg 2 moved to leg 9 (the long climb to the Fatih Sultan Mehmet deck, where no low line fits), so the
+  other water legs are skim-friendly.
+- **Checks:** `tools/headless/flow-check.ts` (harmony unit tests; baseline identity and payback; chains through the real
+  sim with key gestures; random chain search) and `tools/headless/race-balance.ts` (plain vs chained pilot on every
+  built-in course); helpers in `tools/headless/flow/` (`key-pilot.ts`: keys → gestures → pilot commands like the game's
+  input; `chains.ts`; `fuzz.ts`; `race-pilot.ts`).
+  - Chains (mean H of the chained transitions, chained vs spaced by 4–7 s of steady flight): Split-S → dart → power
+    stroke 0.67 vs 0.32; wingover → power stroke 0.66 vs 0.32; loop → Immelmann → dive → dart 0.68 vs 0.49; dart →
+    power → slip → roll → power 0.64 vs 0.34 (flow 0.20 vs 0); skim → run-out → touch-and-go 0.70 vs 0.55 from a plain
+    approach; a side-slip started on the beat: rhythm 0.97, half-way down the stroke 0.10.
+  - Fuzz (2000 random runs of 60 s, random gestures and timing, half of them chained): mean flow p50 0.07, p90 0.21,
+    max 0.59; every gesture macro repeated back to back stays below a mean flow of 0.07; wasteful runs (> 1.3 × plain
+    gliding's loss) stay under 0.5; the runs reaching 0.8 all fly within 1.12 × plain gliding's loss; the muscle-free
+    energy never rises over 3 s without contact (also with full flow forced); top speed < 80 m/s; no NaN.
+  - Race balance (scripted pilots, real terrain, calm noon air; both urge the dragon on with V whenever they can and
+    beat the wings as stamina allows; the chained pilot also dives to a low line over the water legs and zooms back to
+    the gates, darts on the descents, strokes in the urges' gaps and takes the gates on the inside): Boğaz 227.3 →
+    212.6 s (−6.5 %), Haliç 104.9 → 98.1 s (−6.5 %), Adalar 318.3 → 291.7 s (−8.4 %); mean flow plain 0.03–0.11,
+    chained 0.89–0.92. The plain run earns silver, the chained run gold on every course.
+- **Not yet:** a sound for the moments (they reuse the caption only), the rider's reaction to high flow, tuning in the
+  game (feel test). The balance numbers move with any flight-model change: rerun `race-balance.ts` after one.
 
 ## Controls summary (additions)
 

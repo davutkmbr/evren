@@ -80,6 +80,8 @@ export type ManeuverId =
   | 'wingover'
   | 'immelmann'
   | 'splits'
+  /** A "Kusursuz" flow moment (flow/flow.ts; the label names the term that peaked). */
+  | 'flow'
   | 'hint';
 
 /** Phase 20 stage B and C moves that report a clean or unclean end (flow hooks). */

@@ -183,6 +183,8 @@
 }
 
 .hud-cluster-mid {
+  --stw-w: 190px;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -293,6 +295,40 @@
   50% {
     opacity: 0.55;
   }
+}
+
+/* Flow ("akış"): a thin line under the stamina wings, growing from the centre outward; out of the layout (it sits in
+   the gap above the hotbar), shown only while there is flow. */
+.hud-flow {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  width: calc(2 * var(--stw-w) + 42px);
+  height: 2px;
+  transform: translateX(-50%);
+  color: var(--accent);
+  opacity: 0.9;
+  transition: opacity 500ms var(--ease-out);
+  pointer-events: none;
+}
+
+.hud-flow.is-idle {
+  opacity: 0;
+  transition: opacity 900ms var(--ease-in-out);
+}
+
+.flw-fill {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  transform-origin: 50% 50%;
+  will-change: transform;
+  transition: transform 220ms linear;
+}
+
+.hud-flow.is-full .flw-fill {
+  box-shadow: 0 0 14px currentColor;
 }
 
 /* Hotbar */
@@ -783,6 +819,10 @@
     width: 150px;
   }
 
+  .hud-cluster-mid {
+    --stw-w: 150px;
+  }
+
   .fr-val {
     font-size: 30px;
   }
@@ -807,6 +847,10 @@
 
   .stw-bar {
     width: 118px;
+  }
+
+  .hud-cluster-mid {
+    --stw-w: 118px;
   }
 
   .at-title {
