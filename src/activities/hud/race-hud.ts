@@ -1,17 +1,22 @@
 /**
- * Race HUD (race UI v2, DOM overlay appended to ctx.uiRoot). Plain text over the scene with text shadows, no boxes:
+ * Race HUD (race UI v2, DOM overlay appended to ctx.uiRoot). Plain text over the scene with text shadows, no boxes.
+ * Every text piece asks the HUD zone director (the `hudZones` service, src/ui/zones) for its zone, so it never
+ * collides with the area title, the compass label or the start hints:
  *
- * - Start screen (countdown): the course name, gate / speed ring counts and the medal targets at the top, a huge
- *   centred 3 / 2 / 1 and a gold "Başla!", a subline, and the ghost line with [Y] iptal above the HUD cluster.
- * - Running: the big clock under the compass, "Kapı n/total", the split delta at each gate (blue faster, amber
- *   slower), the ghost gap, one warning line, a brief teal "+10 m/s" when a speed ring pushes, and the next-gate
- *   marker (distance under the gate, or a gold arrow on the screen edge).
+ * - Start screen (title zone): the course name small, the huge 3 / 2 / 1 (and the gold "Başla!") under it, then one
+ *   line with gate / speed ring counts, the medal targets and the ghost. The centre stays clear for the first gate.
+ *   The shared hint line (lowerCenter) carries "İlk kapıya doğru uç · [Y] iptal".
+ * - Running: the big clock under the compass (top zone, replacing the landmark line), "Kapı n/total", the split delta
+ *   at each gate (blue faster, amber slower), the ghost gap; warnings and the teal "+10 m/s" in the title zone; the
+ *   next-gate marker (distance under the gate, or a gold arrow on the screen edge).
  * - The result screen (finish-screen.ts).
  *
  * Built once; per-frame calls only write text / transforms that changed. The activity system calls update() only while
  * something is on screen, so an idle race HUD costs nothing.
  */
-import { keyHint, medalDot } from '../../ui/components';
+import type { HudZoneRequest, HudZonesService } from '../../core/contracts';
+import { medalDot } from '../../ui/components';
+import { fadeBinding, HudDirector, HUD_PRIORITY, ZONE_CLASS } from '../../ui/zones';
 import { MEDAL_ORDER, type MedalTimes } from '../courses';
 import { RACE_TEXT, deltaTone, formatGateDistance, formatRaceTime, formatSplitDelta, formatTargetTime, ghostGapText } from '../text';
 import { Text, Transform, h, show, toggle } from './dom';
@@ -35,6 +40,15 @@ const ABORT_SECONDS = 2.5;
 /** Edge inset (px) for the off-screen gate arrow. */
 const EDGE_MARGIN = 54;
 
+/** Zone item ids. */
+const ID = {
+  intro: 'race.intro',
+  hints: 'race.hints',
+  readout: 'race.readout',
+  warn: 'race.warn',
+  boost: 'race.boost',
+} as const;
+
 export interface RaceIntro {
   name: string;
   gates: number;
@@ -47,31 +61,33 @@ export interface RaceIntro {
 export class RaceHud {
   readonly root = h('div', 'ejd race-ui race-hud');
 
-  // Start screen.
-  private readonly intro = h('div', 'race-intro');
+  // Start screen (title zone): name, countdown numeral, counts · targets · ghost.
+  private readonly intro = h('div', `${ZONE_CLASS.title} race-intro`);
   private readonly introName = new Text(h('span', 'race-intro-name'));
-  private readonly introInfo = h('span', 'race-intro-info ejd-num');
-  private readonly introFoot = h('div', 'race-intro-foot');
   private readonly count = h('div', 'race-count');
-  private countLeft = 0;
+  private readonly introInfo = h('span', 'race-intro-info ejd-num');
+  private readonly introBinding = fadeBinding(this.intro);
   private introOn = false;
 
-  // Running readout.
-  private readonly readout = h('div', 'race-readout');
+  // Running readout (top zone).
+  private readonly readout = h('div', `${ZONE_CLASS.topReadout} race-readout`);
+  private readonly readoutBinding = fadeBinding(this.readout);
   private readonly clock = new Text(h('span', 'race-clock ejd-num'));
   private readonly gateNum = new Text(h('span', 'race-gate ejd-num'));
   private readonly split = h('span', 'race-split ejd-num');
   private readonly splitText = new Text(this.split);
   private readonly ghostRow = h('span', 'race-ghost ejd-num');
   private readonly ghostText = new Text(h('span'));
-  private readonly warnRow = h('span', 'race-warn');
-  private readonly warnText = new Text(this.warnRow);
-  private readonly boostNode = h('span', 'race-boost ejd-num');
   private splitLeft = 0;
-  private warnLeft = 0;
-  private boostLeft = 0;
   private readoutOn = false;
   private abortLeft = 0;
+
+  // Warning line and speed ring callout (title zone).
+  private readonly warnNode = h('div', `${ZONE_CLASS.title} race-warn-zone`);
+  private readonly warnText = new Text(h('span', 'race-warn'));
+  private readonly warnBinding = fadeBinding(this.warnNode);
+  private readonly boostNode = h('div', `${ZONE_CLASS.title} race-boost`);
+  private readonly boostBinding = fadeBinding(this.boostNode);
 
   // Result screen.
   private readonly finish: FinishScreen;
@@ -88,25 +104,45 @@ export class RaceHud {
   private markerOn = false;
 
   private visible = true;
+  /** Used only when no UI provides `hudZones` (sandboxes): ticked by update(). */
+  private readonly localZones = new HudDirector();
 
-  constructor(parent: HTMLElement, handlers: FinishHandlers) {
+  constructor(
+    parent: HTMLElement,
+    handlers: FinishHandlers,
+    private readonly sharedZones: () => HudZonesService | undefined = () => undefined,
+  ) {
     this.root.setAttribute('lang', 'tr');
-    this.intro.append(this.introName.node, this.introInfo);
+    this.intro.append(this.introName.node, this.count, this.introInfo);
     this.ghostRow.append(h('i', 'race-ghost-dot'), this.ghostText.node);
-    this.readout.append(this.clock.node, h('span', 'race-line', [this.gateNum.node, this.split, this.ghostRow]), this.warnRow);
+    this.readout.append(this.clock.node, h('span', 'race-line', [this.gateNum.node, this.split, this.ghostRow]));
+    this.warnNode.append(this.warnText.node);
     this.arrow.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 4l10 8-10 8z"/></svg>';
     this.marker.append(this.arrow, this.distNode);
-    this.root.append(this.marker, this.intro, this.count, this.introFoot, this.readout, this.boostNode);
+    this.root.append(this.marker, this.intro, this.readout, this.warnNode, this.boostNode);
     this.finish = new FinishScreen(this.root, handlers);
-    for (const n of [this.intro, this.count, this.introFoot, this.readout, this.boostNode, this.marker, this.split, this.ghostRow, this.warnRow]) {
+    for (const n of [this.marker, this.split, this.ghostRow]) {
       n.hidden = true;
     }
     parent.append(this.root);
   }
 
+  private get zones(): HudZonesService {
+    return this.sharedZones() ?? this.localZones;
+  }
+
+  private request(id: string, zone: HudZoneRequest['zone'], priority: number, rest: Partial<HudZoneRequest>): void {
+    this.zones.request({ id, zone, priority, ...rest });
+  }
+
   /** Anything that needs update() this frame (timers, readout, result screen, marker). */
   get busy(): boolean {
-    return this.readoutOn || this.introOn || this.countLeft > 0 || this.finishLeft > 0 || this.abortLeft > 0 || this.boostLeft > 0 || this.markerOn;
+    return this.readoutOn || this.introOn || this.finishLeft > 0 || this.abortLeft > 0 || this.markerOn || this.splitLeft > 0;
+  }
+
+  /** The race owns the screen (start screen, run, abort message or result): the zones' 'race' context. */
+  get holdsScreen(): boolean {
+    return this.introOn || this.readoutOn || this.abortLeft > 0 || this.finish.open;
   }
 
   get finishOpen(): boolean {
@@ -131,46 +167,46 @@ export class RaceHud {
   begin(info: RaceIntro): void {
     const t = RACE_TEXT.countdown;
     this.introName.set(info.name);
+    this.count.replaceChildren();
     this.introInfo.replaceChildren(
       h('span', undefined, t.counts(info.gates, info.rings)),
       ...MEDAL_ORDER.map((m) => h('span', 'race-intro-target', [medalDot(m, 's').root, formatTargetTime(info.medals[m])])),
-    );
-    this.introFoot.replaceChildren(
       ...(info.ghostBest !== undefined ? [h('span', 'race-intro-ghost', [h('i', 'race-ghost-dot is-glow'), t.ghost(formatRaceTime(info.ghostBest))])] : []),
-      keyHint('Y', t.cancel, 'quiet').root,
     );
     this.clock.set(formatRaceTime(0));
     this.gateNum.set(RACE_TEXT.hud.gate(0, info.gates));
     this.setGhostGap(null);
     this.splitLeft = 0;
     show(this.split, false);
-    this.warnLeft = 0;
-    show(this.warnRow, false);
-    this.boostLeft = 0;
-    show(this.boostNode, false);
+    this.zones.release(ID.warn);
+    this.zones.release(ID.boost);
     this.abortLeft = 0;
     this.closeFinish();
     this.readoutOn = false;
-    show(this.readout, false);
+    this.zones.release(ID.readout);
     this.introOn = true;
-    show(this.intro, true);
-    show(this.introFoot, true);
+    this.request(ID.intro, 'title', HUD_PRIORITY.raceCountdown, { ...this.introBinding });
+    // The race's line of the shared hint line: what to do and how to back out, one row.
+    this.request(ID.hints, 'lowerCenter', HUD_PRIORITY.raceCountdown, { caption: t.sub, hints: [['Y', t.cancel]] });
   }
 
   /** 3, 2, 1 or 'go' ("Başla!"). A new node per tick restarts the pop animation. */
   showCountdown(value: number | 'go'): void {
     const t = RACE_TEXT.countdown;
     const go = value === 'go';
-    this.count.replaceChildren(h('span', `race-count-val${go ? ' is-go' : ''}`, go ? t.go : String(value)), h('span', 'race-count-sub', go ? t.goSub : t.sub));
-    show(this.count, true);
-    this.countLeft = go ? GO_SECONDS : 1.2;
+    this.count.replaceChildren(h('span', `race-count-val${go ? ' is-go' : ''}`, go ? t.go : String(value)));
     if (go) {
+      // "Başla!" holds the title zone for a second, then the zone frees itself; the clock takes the top zone.
       this.introOn = false;
-      show(this.intro, false);
-      show(this.introFoot, false);
-      this.readoutOn = true;
-      show(this.readout, true);
+      this.request(ID.intro, 'title', HUD_PRIORITY.raceCountdown, { duration: GO_SECONDS, ...this.introBinding });
+      this.request(ID.hints, 'lowerCenter', HUD_PRIORITY.raceCountdown, { duration: GO_SECONDS, caption: t.goSub });
+      this.showReadout();
     }
+  }
+
+  private showReadout(): void {
+    this.readoutOn = true;
+    this.request(ID.readout, 'top', HUD_PRIORITY.raceCountdown, { ...this.readoutBinding });
   }
 
   /* ---------------- running ---------------- */
@@ -192,10 +228,9 @@ export class RaceHud {
   }
 
   /** The warning line (missed gate, wrong way, straying, landing); repeated calls keep it up. */
-  warn(text: string): void {
+  warn(text: string, seconds = WARN_SECONDS): void {
     this.warnText.set(text);
-    show(this.warnRow, true);
-    this.warnLeft = WARN_SECONDS;
+    this.request(ID.warn, 'title', HUD_PRIORITY.raceWarning, { duration: seconds, maxWait: 0.5, ...this.warnBinding });
   }
 
   /** At a gate: the delta against the record's split (blue faster, amber slower), or the split time on a first run. */
@@ -216,24 +251,26 @@ export class RaceHud {
 
   /** A speed ring pushed the dragon: the brief teal callout. */
   boost(dv: number): void {
-    // A new node restarts the fade animation.
-    const node = h('span', 'race-boost-val', RACE_TEXT.hud.boost(dv));
-    this.boostNode.replaceChildren(node);
-    show(this.boostNode, true);
-    this.boostLeft = BOOST_SECONDS;
+    const text = RACE_TEXT.hud.boost(dv);
+    this.request(ID.boost, 'title', HUD_PRIORITY.raceCallout, {
+      duration: BOOST_SECONDS,
+      maxWait: 0.3,
+      onShow: () => {
+        // A new node restarts the fade animation.
+        this.boostNode.replaceChildren(h('span', 'race-boost-val', text));
+        this.boostBinding.onShow();
+      },
+      onHide: this.boostBinding.onHide,
+    });
   }
 
   /** Race aborted: the reason in the warning line, then the readout fades out. */
   abort(reason: string): void {
     this.introOn = false;
-    show(this.intro, false);
-    show(this.introFoot, false);
-    this.countLeft = 0;
-    show(this.count, false);
-    this.readoutOn = true;
-    show(this.readout, true);
-    this.warn(reason);
-    this.warnLeft = ABORT_SECONDS;
+    this.zones.release(ID.intro);
+    this.zones.release(ID.hints);
+    this.showReadout();
+    this.warn(reason, ABORT_SECONDS);
     this.abortLeft = ABORT_SECONDS;
     this.setMarker(null);
   }
@@ -243,13 +280,11 @@ export class RaceHud {
     this.readoutOn = false;
     this.introOn = false;
     this.abortLeft = 0;
-    show(this.readout, false);
-    show(this.intro, false);
-    show(this.introFoot, false);
+    for (const id of Object.values(ID)) {
+      this.zones.release(id);
+    }
     this.splitLeft = 0;
     show(this.split, false);
-    this.boostLeft = 0;
-    show(this.boostNode, false);
     this.setMarker(null);
   }
 
@@ -313,6 +348,7 @@ export class RaceHud {
     this.distPos.set(`translate(calc(-50% - ${(dx * 44).toFixed(1)}px), calc(-50% - ${(dy * 30).toFixed(1)}px))`);
   }
 
+
   /* ---------------- timers ---------------- */
 
   /** Advances the timers (call every frame while busy, with real seconds; pass 0 while hidden to hold them). */
@@ -320,28 +356,13 @@ export class RaceHud {
     if (dt <= 0) {
       return;
     }
-    if (this.countLeft > 0) {
-      this.countLeft -= dt;
-      if (this.countLeft <= 0) {
-        show(this.count, false);
-      }
+    if (!this.sharedZones()) {
+      this.localZones.update(dt);
     }
     if (this.splitLeft > 0) {
       this.splitLeft -= dt;
       if (this.splitLeft <= 0) {
         show(this.split, false);
-      }
-    }
-    if (this.warnLeft > 0) {
-      this.warnLeft -= dt;
-      if (this.warnLeft <= 0) {
-        show(this.warnRow, false);
-      }
-    }
-    if (this.boostLeft > 0) {
-      this.boostLeft -= dt;
-      if (this.boostLeft <= 0) {
-        show(this.boostNode, false);
       }
     }
     if (this.abortLeft > 0) {
@@ -360,13 +381,12 @@ export class RaceHud {
 
   /** Everything off (race cancelled with no message, dispose). */
   reset(): void {
-    this.countLeft = 0;
-    show(this.count, false);
     this.end();
     this.closeFinish();
   }
 
   dispose(): void {
+    this.end();
     this.root.remove();
   }
 }

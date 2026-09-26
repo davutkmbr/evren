@@ -24,6 +24,7 @@ import { StatsOverlay } from './overlays/stats-overlay';
 import { Toasts } from './overlays/toasts';
 import { loadPrefs, savePrefs, type UiPrefs } from './prefs';
 import { createSnapshot } from './types';
+import { applyZoneBands, HudDirector } from './zones';
 import './styles/base.css';
 import './styles/loading.css';
 import './styles/hud.css';
@@ -48,10 +49,12 @@ export class UiSystem implements System {
   private readonly prefs: UiPrefs = loadPrefs();
   private readonly snapshot = createSnapshot();
   private readonly raster = new MapRaster();
-  private readonly toasts = new Toasts();
-  private readonly hints = new FlightHints();
-  private readonly hoverHints = new HoverHints();
-  private readonly shotCaption = new ShotCaption();
+  /** Decides which transient HUD message owns each screen zone; provided as the `hudZones` service. */
+  private readonly zones = new HudDirector();
+  private readonly toasts = new Toasts(this.zones);
+  private readonly hints = new FlightHints(this.zones);
+  private readonly hoverHints = new HoverHints(this.zones);
+  private readonly shotCaption = new ShotCaption(this.zones);
   /** Flight mode seen last frame (null without a dragon): entering a hover shows its controls. */
   private lastFlightMode: string | null = null;
   private readonly photoHint = new PhotoHint();
@@ -90,11 +93,14 @@ export class UiSystem implements System {
       this.root.classList.add('is-nohud');
     }
     ctx.uiRoot.append(this.root);
+    // Zone bands on the shared UI root, so the race overlays (their own .ejd roots) use the same bands.
+    applyZoneBands(ctx.uiRoot, ctx.uiRoot.clientWidth || window.innerWidth, ctx.uiRoot.clientHeight || window.innerHeight);
+    ctx.services.provide('hudZones', this.zones);
 
     this.loading = new LoadingScreen(this.root, { autoStart: this.autoStart, onStart: () => this.onStart() });
 
     this.tracker = new DiscoveryTracker(ctx);
-    this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hints, this.hoverHints, this.shotCaption);
+    this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hoverHints, this.shotCaption, this.zones);
     ctx.services.provide('hotbar', this.hud.hotbar);
     this.abilities = new DragonAbilities(this.hud.hotbar, () => ctx.services.tryGet('dragon'));
     this.statusToasts = new StatusToasts(this.toasts);
@@ -167,7 +173,6 @@ export class UiSystem implements System {
       events.on('loading-done', () => this.onLoadingDone()),
       events.on('toast', ({ text, kind }) => this.toasts.push(text, kind)),
       this.hud.maneuver.connect(events),
-      this.hud.area.connect(events),
     );
 
     void services.when('geo').then((geo) => {
@@ -235,13 +240,16 @@ export class UiSystem implements System {
       this.hud.update(this.snapshot, realDt);
     }
     this.tracker.update(this.snapshot, realDt, hudVisible);
+    // Last: every request of this frame (UI and activities) is in; zones settle and fade.
+    this.zones.update(realDt);
   }
 
   pending(): number {
     return this.raster.pending ? 1 : 0;
   }
 
-  onResize(): void {
+  onResize(width: number, height: number): void {
+    applyZoneBands(this.ctx.uiRoot, width, height);
     if (this.hudShown) {
       this.hud.measure();
     }
@@ -256,6 +264,7 @@ export class UiSystem implements System {
     this.tracker?.dispose();
     this.hud?.dispose();
     this.ctx?.services.withdraw('hotbar');
+    this.ctx?.services.withdraw('hudZones');
     this.fullMap?.dispose();
     this.raster.dispose();
     this.root?.remove();

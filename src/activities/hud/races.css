@@ -1,6 +1,7 @@
 /* Ring race screens, race UI v2 (src/activities/hud). Layout only: keys, actions, options, values, medals, lists,
    fields, the route map and the chart are shared components (src/ui/components, styles/components.css).
-   The roots carry .ejd for the shared tokens (base.css). Over the scene: plain text with shadows, no boxes. */
+   The roots carry .ejd for the shared tokens (base.css). Over the scene: plain text with shadows, no boxes.
+   In-flight texts are placed by the HUD zones (src/ui/zones/zones.css: .hud-zone-*), never by their own offsets. */
 
 .race-ui {
   z-index: 2;
@@ -15,28 +16,21 @@
   --race-sheet: rgba(17, 19, 24, 0.95);
 }
 
-/* ---------------- start screen ---------------- */
+/* ---------------- start screen (title zone) ---------------- */
 
+/* Course name small above, the countdown numeral large below it, the counts and targets as one line. */
 .race-intro {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(var(--gutter) + 68px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  gap: 4px;
   color: var(--race-ink);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
-  animation: race-fade-in 260ms var(--ease-out);
 }
 
 .race-intro-name {
   font-family: var(--font-display);
-  font-size: 30px;
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .race-intro-info {
@@ -44,6 +38,7 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 16px;
+  margin-top: 4px;
   font-size: 14px;
   color: var(--race-ink-2);
 }
@@ -55,21 +50,18 @@
 }
 
 .race-count {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 57.5%;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  color: var(--race-ink);
+  justify-content: center;
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+
+.race-count:empty {
+  display: none;
 }
 
 .race-count-val {
   font-family: var(--font-display);
-  font-size: clamp(72px, 13.4vh, 120px);
+  font-size: clamp(64px, 10.5vh, 112px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -78,14 +70,10 @@
 }
 
 .race-count-val.is-go {
-  font-size: clamp(56px, 9.8vh, 88px);
+  font-size: clamp(52px, 8.6vh, 88px);
+  line-height: 1.2;
   color: var(--race-gold);
   animation-name: race-go-pop;
-}
-
-.race-count-sub {
-  font-size: 15px;
-  color: var(--race-ink-2);
 }
 
 @keyframes race-count-pop {
@@ -98,20 +86,6 @@
   0% { opacity: 0; transform: scale(0.85); }
   22% { opacity: 1; transform: scale(1.04); }
   100% { opacity: 1; transform: scale(1); }
-}
-
-.race-intro-foot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 176px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 22px;
-  font-size: 13.5px;
-  color: var(--race-ink-2);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
 }
 
 .race-intro-ghost {
@@ -135,16 +109,9 @@
   box-shadow: 0 0 8px var(--race-ghost);
 }
 
-/* ---------------- running readout ---------------- */
+/* ---------------- running readout (top zone, replaces the landmark line) ---------------- */
 
 .race-readout {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(var(--gutter) + 72px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 4px;
   color: var(--race-ink);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
@@ -186,20 +153,16 @@
   gap: 6px;
 }
 
+/* ---------------- warning line and speed ring callout (title zone) ---------------- */
+
+.race-warn-zone {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
 .race-warn {
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 500;
   color: var(--race-warn);
-}
-
-.race-boost {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 57.5%;
-  text-align: center;
-  pointer-events: none;
 }
 
 .race-boost-val {

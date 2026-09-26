@@ -60,7 +60,8 @@ Numbers are always tabular (`font-variant-numeric: tabular-nums`, class `ejd-num
 
 | Role | Size / weight |
 |---|---|
-| Result time, countdown | 88–120 px / 700, letter-spacing −0.03 em |
+| Result time | 88–120 px / 700, letter-spacing −0.03 em |
+| Countdown (title zone) | 64–112 px (10.5 vh) / 700, letter-spacing −0.03 em |
 | Race time, HUD headline numbers | 34–44 px / 600 |
 | Area title | 46 px / 300 |
 | Sheet title | 20–28 px / 600 |
@@ -75,13 +76,36 @@ stamina, the next gate).
 ## 3. Layout
 
 - **HUD (flight):** compass as a bare tape top centre; bottom centre cluster: speed (left), stamina wings + hotbar
-  (centre), altitude (right); minimap bottom right (132 px circle); area title in the upper third; discovery card top
-  right as shadowed text. Race readouts replace nothing: they appear under the compass.
+  (centre), altitude (right); minimap bottom right (132 px circle). Everything transient is placed by the zones below.
+- **HUD zones (`src/ui/zones`):** the HUD composes itself. Every transient message (area title, race intro /
+  countdown / warnings / callouts, discovery card, maneuver and shot captions, hover and start hints, the race's
+  "[Y] iptal", toasts, the compass landmark label) asks the zone director (`hudZones` service) for a zone with a
+  priority and a duration. Per zone the highest priority shows; the others wait and are dropped once stale (their
+  `maxWait`); a zone fades out the old item before the new one fades in. One item per zone. Nothing positions itself
+  with its own `top:`; bands come from the viewport (`bands.ts`, checked from 1280 × 720 to 2560 × 1440 by
+  `tools/headless/hud-zones-check.ts`).
+
+  | Zone | Band | Holds |
+  |---|---|---|
+  | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while racing the race readout (gutter + 72 px) replaces it |
+  | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
+  | `center` | between title and lowerCenter (≥ 25 % of the height) | reserved for the aim and the ring: no text except small labels next to world markers (gate distance) |
+  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption), maneuver and shot captions, hover controls |
+  | `bottom` | gutter + 10 px, 146 px tall | the static cluster (not a zone item) |
+  | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card / one toast at a time |
+
+  Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
+  race callouts (85) > discovery card (70) > area title (60) > maneuver captions (50) > hover hints and shot caption
+  (40) > start-of-game hints and the compass label (30) > toasts (10); ties go to the newer message (a toast replaces
+  the current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
+  (dropped after 8 s) and the compass landmark label (the next gate is the target). Start hints and "[Y] iptal" are
+  items of the same hint line and never share it; only hints marked `joinable` ride along on a higher line.
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
   prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
 - **Full-screen overlays (map, result):** content directly on a scrim or the map, chrome in the corners: title top
   left, close top right, controls bottom right, scale/attribution bottom left, hints bottom centre.
-- **On-scene prompts (countdown, editor):** centred text, key strip on the left edge, nothing boxed.
+- **On-scene prompts (countdown, editor):** horizontally centred text (the countdown in the `title` zone, never over
+  the dragon or the ring), key strip on the left edge, nothing boxed.
 
 ## 4. Components (`src/ui/components/`)
 
