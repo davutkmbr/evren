@@ -9,8 +9,8 @@ import type { Placement } from '../sfx/voice';
 export const SEA_LAYERS = {
   /** Continuous rumble of the downwash beating on the water (hover / slow low flight). */
   buffet: 0.55,
-  /** Each downstroke's gust slapping the water: a low thump and a spray patter after it. */
-  gustThump: 0.9,
+  /** Each downstroke's gust on the water: a soft, swelling rush (not a slap) and a spray patter after it. */
+  gustThump: 0.35,
   gustPatter: 0.4,
   /** Skim: water tearing along the belly (fast, rough band noise) and the low furrow rush. */
   tear: 0.5,
@@ -221,8 +221,9 @@ export class SeaVoice {
     const t = Math.max(when, this.ctx.currentTime);
     const th = this.thump.gain;
     th.cancelScheduledValues(t);
-    th.setTargetAtTime(SEA_LAYERS.gustThump * s, t, 0.018);
-    th.setTargetAtTime(0, t + 0.09, 0.14);
+    // A slow swell (~60 ms rise) so the gust reads as air pushing the water, not a blow on a hard surface.
+    th.setTargetAtTime(SEA_LAYERS.gustThump * s, t, 0.06);
+    th.setTargetAtTime(0, t + 0.16, 0.2);
     const pa = this.patter.gain;
     pa.cancelScheduledValues(t);
     pa.setTargetAtTime(SEA_LAYERS.gustPatter * s, t + 0.07, 0.05);
