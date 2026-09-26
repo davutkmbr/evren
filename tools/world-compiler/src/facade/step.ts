@@ -5,8 +5,9 @@
  * - Format 1, prepare: building parts inherit their outline's levels / height (Simple 3D Buildings), every building
  *   of a full-detail tile gets a FacadePlan (typology, storeys from the district profile's spec rows, OSM tags or a
  *   hash) and its manifest record's topY / height follow the plan, so colliders and the other lanes see the real
- *   heights. Landmarks (district.ts landmarkOf: places of worship, tombs, fountains, hamams, the profile's list) get
- *   `landmark` in their record and no plan; so do footprints lying (70 %+) inside another one (no plan).
+ *   heights. Landmarks (district.ts landmarkClasses: places of worship, tombs, fountains, hamams, the profile's list,
+ *   and the building:parts standing in their outlines) get `landmark` in their record and no plan; so do footprints
+ *   lying (70 %+) inside another one (no plan).
  * - Format 1, full-detail tiles: real façade geometry (facade/build.ts) and shopfronts (shopfront/); landmarks are
  *   simple stone massing (every LOD), contained footprints and hero buildings stay blocks with door recesses. The
  *   hero lane can take a building over entirely by adding its id to the Set in `AreaContext.shared` under FACADE_SKIP
@@ -20,7 +21,7 @@ import { LOD0, LOD1, type TileMesh, type Vec3 } from '../mesh';
 import { lin, scale } from './frame';
 import type { AreaContext, CompileStep } from '../registry';
 import { osmWords } from '../shopfront/names';
-import { district, landmarkBlocksEnabled, landmarkOf } from '../district';
+import { district, landmarkBlocksEnabled, landmarkClasses } from '../district';
 import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
 import { type FacadePlan, parentOf, planFacade, planTop } from './plan';
@@ -58,11 +59,12 @@ function prepare(a: AreaContext): void {
   const f = a.foundation;
   const dp = district();
   const inside = containedIn(a.solids);
+  const landmarks = landmarkClasses(a.data.buildings);
   for (const s of a.solids) {
     const osm = byId.get(s.rec.osmId);
     const parent = s.rec.part && s.rec.heightSource === 'default' ? parentOf(s, a.data.buildings) : null;
     const full = a.detailOf(a.tileOfSolid.get(s) ?? '') === 'full';
-    const landmark = osm ? landmarkOf(osm) : null;
+    const landmark = landmarks.get(s.rec.osmId) ?? null;
     if (landmark && !dp.buildings.heroIds.has(s.rec.osmId)) {
       s.rec.landmark = landmark;
       sh.massing.add(s);

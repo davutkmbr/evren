@@ -132,7 +132,9 @@ export function buildAyasofya(b: MeshBuilder, lod: LodLevel): StyleResult {
       const ops = lod === 2 ? [] : tympanumOpenings(len, AISLE_H + 0.8, DOME_BASE - 1.2, 'clear');
       wallPanel(b, len, AISLE_H - 1, top, ops, { lod, seed: 3 + sx });
     });
-    b.with({ color: TRIM }, () => b.at(sx * (BAY + 1.8), 0, 0, sx > 0 ? Math.PI / 2 : -Math.PI / 2, () => archRing(b, BAY - 0.2, BAY + 1.4, springY, 1.8, lod)));
+    // the great arch stands 15 cm proud of the dome-base platform wall (plat = BAY + 1.8): in its plane the two
+    // faces z-fought where the arch crown crosses the platform band
+    b.with({ color: TRIM }, () => b.at(sx * (BAY + 1.95), 0, 0, sx > 0 ? Math.PI / 2 : -Math.PI / 2, () => archRing(b, BAY - 0.2, BAY + 1.4, springY, 1.95, lod)));
   }
 
   // Dome base platform, corner pier turrets and the buttress towers.
