@@ -17,8 +17,9 @@
  *
  * Building records (one per solid of the flight-scale layer, buildings/build.ts collectSolids + planSolid, so a
  * building is the same before and after its region loads), struct of arrays:
- * - nv (u8): outline vertex count; xy (i16 pairs, XY_UNIT m): each outline's first vertex relative to the block
- *   centre, then the step to each next vertex. Counter-clockwise (positive shoelace area in x / z); no courtyards.
+ * - rings (u8): ring count (1 outline + courtyards); nv (u8 per ring): vertex count; xy (i16 pairs, XY_UNIT m): a
+ *   building's first vertex relative to the block centre, then the step to each next vertex, through all its rings.
+ *   The outline is counter-clockwise (positive shoelace area in x / z), courtyards clockwise.
  * - wallH, minH (u16, dm): wall height and bottom height (building:part min_height) above the reference ground.
  * - rise (u8, dm): roof rise; roof (u8, RoofClass); arch (u8, buildings/archetypes.ts Arch); floors (u8);
  *   floorH (u8, m x 50); flags (u8, FLAG); tint, roofTint (u16, sRGB 565).
@@ -26,7 +27,7 @@
  * decodeBuildings() undoes all of it.
  */
 
-export const CITY_BAKE_FORMAT = 1;
+export const CITY_BAKE_FORMAT = 2;
 /** Bake files under the site's base URL. */
 export const OSM_CITY_DIR = 'data/osm/city/';
 export const OSM_LAND_URL = `${OSM_CITY_DIR}land.bin.gz`;
@@ -74,7 +75,7 @@ export interface BakeTile {
   count: number;
 }
 
-/** Header of a block file. Blobs: nv, xy, wallH, minH, rise, roof, arch, floors, floorH, flags, tint, roofTint, id. */
+/** Header of a block file. Blobs: rings, nv, xy, wallH, minH, rise, roof, arch, floors, floorH, flags, tint, roofTint, id. */
 export interface BuildingFileHeader {
   format: number;
   block: [number, number];
@@ -90,8 +91,11 @@ export interface BuildingFileHeader {
 /** A decoded block file. */
 export interface DecodedBuildings {
   header: BuildingFileHeader;
+  /** Rings of record k: ringStart[k] .. ringStart[k + 1] (the first is the outline). */
+  ringStart: Uint32Array;
+  /** Vertices per ring. */
   nv: Uint8Array;
-  /** Record k's first vertex index into xy / 2. */
+  /** Ring r's first vertex index into xy / 2 (start[r + 1] ends it). */
   start: Uint32Array;
   /** Absolute vertices (x, z pairs, metres, world space). */
   xy: Float32Array;
@@ -264,23 +268,30 @@ export function unpack565(c: number): [number, number, number] {
 export function decodeBuildings(bytes: Uint8Array): DecodedBuildings {
   const { header, arrays } = unpackContainer<BuildingFileHeader>(bytes);
   const u16 = (name: string): Uint16Array => unshuffle16(arrays[name] as Uint8Array, Uint16Array);
+  const rings = arrays.rings as Uint8Array;
   const nv = arrays.nv as Uint8Array;
   const dxy = unshuffle16(arrays.xy as Uint8Array, Int16Array);
-  const start = new Uint32Array(header.count + 1);
+  const ringStart = new Uint32Array(header.count + 1);
+  const start = new Uint32Array(nv.length + 1);
   const xy = new Float32Array(dxy.length);
   let v = 0;
+  let r = 0;
   for (let k = 0; k < header.count; k++) {
-    start[k] = v;
+    ringStart[k] = r;
     let x = 0;
     let z = 0;
-    for (let q = 0; q < nv[k]; q++, v++) {
-      x += dxy[v * 2];
-      z += dxy[v * 2 + 1];
-      xy[v * 2] = header.origin[0] + x * XY_UNIT;
-      xy[v * 2 + 1] = header.origin[1] + z * XY_UNIT;
+    for (let q = 0; q < rings[k]; q++, r++) {
+      start[r] = v;
+      for (let e = 0; e < nv[r]; e++, v++) {
+        x += dxy[v * 2];
+        z += dxy[v * 2 + 1];
+        xy[v * 2] = header.origin[0] + x * XY_UNIT;
+        xy[v * 2 + 1] = header.origin[1] + z * XY_UNIT;
+      }
     }
   }
-  start[header.count] = v;
+  ringStart[header.count] = r;
+  start[r] = v;
   const idDelta = arrays.id as Int32Array;
   const id = new Float64Array(header.count);
   let prev = 0;
@@ -290,6 +301,7 @@ export function decodeBuildings(bytes: Uint8Array): DecodedBuildings {
   }
   return {
     header,
+    ringStart,
     nv,
     start,
     xy,

@@ -110,7 +110,8 @@ export interface OsmPlacement {
 export function placeOsm(d: DecodedBuildings, k: number, geo: GeoSampler): OsmPlacement {
   let gMin = Infinity;
   let gMax = -Infinity;
-  for (let v = d.start[k]; v < d.start[k + 1]; v++) {
+  const r0 = d.ringStart[k];
+  for (let v = d.start[r0]; v < d.start[r0 + 1]; v++) {
     const x = d.xy[v * 2];
     const z = d.xy[v * 2 + 1];
     const g = osmGroundHeight(geo.height(x, z), geo.coast(x, z));
@@ -132,8 +133,9 @@ export function osmFadeClass(d: DecodedBuildings, k: number): number {
  * the skyline).
  */
 export function emitOsm(d: DecodedBuildings, k: number, w: MeshWriter, level: number, geo: GeoSampler): void {
-  const n = d.nv[k];
-  const v0 = d.start[k];
+  const r0 = d.ringStart[k];
+  const n = d.nv[r0];
+  const v0 = d.start[r0];
   if (n < 3) {
     return;
   }
@@ -161,43 +163,23 @@ export function emitOsm(d: DecodedBuildings, k: number, w: MeshWriter, level: nu
   part.flags = (Math.min(127, d.floors[k]) << Face.FloorsShift) | Face.WorldU | Face.RoleSide | (OLD.has(arch) ? Face.Old : 0);
   w.part(part);
 
-  // Walls: the ring reversed to the winding emit.ts compactBox uses (negative shoelace area), bottom and top loops.
-  w.reserve(n * 2, n * 6 + (n - 2) * 3);
-  const base = w.vcount;
-  let cx = 0;
-  let cz = 0;
-  for (let q = 0; q < n; q++) {
-    cx += d.xy[(v0 + q) * 2];
-    cz += d.xy[(v0 + q) * 2 + 1];
+  // Walls of every ring: the outline facing out, courtyards facing into the courtyard (topLoop: first top vertex of
+  // each ring's loop, written in reverse vertex order).
+  const topLoop: number[] = [];
+  for (let r = r0; r < d.ringStart[k + 1]; r++) {
+    topLoop.push(ringWalls(w, d.xy, d.start[r], d.nv[r], pl.bottom, pl.top, pl.gRef));
   }
-  cx /= n;
-  cz /= n;
-  for (let level2 = 0; level2 < 2; level2++) {
-    const y = level2 === 0 ? pl.bottom : pl.top;
-    for (let q = 0; q < n; q++) {
-      const v = v0 + (n - 1 - q);
-      const x = d.xy[v * 2];
-      const z = d.xy[v * 2 + 1];
-      const ox = x - cx;
-      const oz = z - cz;
-      const ol = Math.hypot(ox, oz) || 1;
-      w.vertex(x, y, z, (ox / ol) * (level2 ? 0.57 : 1), level2 ? 0.6 : 0, (oz / ol) * (level2 ? 0.57 : 1), 0, y - pl.gRef);
-    }
-  }
-  for (let c = 0; c < n; c++) {
-    const nx = (c + 1) % n;
-    w.tri(base + c, base + nx, base + n + nx);
-    w.tri(base + c, base + n + nx, base + n + c);
-  }
-
   // Roof.
   const pitchedGeometry = level <= 1 && pitched && rect >= RECT_MIN && d.rise[k] > 3;
   if (!pitchedGeometry) {
-    cap(w, d, v0, n, base + n);
+    cap(w, d, k, topLoop);
   } else {
     w.setKind(Kind.RoofTile, rgbOf(d.roofTint[k]));
-    cap(w, d, v0, n, base + n);
+    cap(w, d, k, topLoop);
     pitchedRoof(w, obb, pl.top, d.rise[k] / 10, roof);
+  }
+  if (level === 0) {
+    nearDetail(w, d, k, pl, obb, area, pitchedGeometry);
   }
   if (level <= 1 && (roof === RoofClass.Dome || roof === RoofClass.Domes)) {
     w.setKind(Kind.RoofMetal, rgbOf(d.roofTint[k]));
@@ -219,27 +201,69 @@ export function emitOsm(d: DecodedBuildings, k: number, w: MeshWriter, level: nu
   }
 }
 
-/** Flat top over the (reversed) top loop starting at vertex `top0`. */
-function cap(w: MeshWriter, d: DecodedBuildings, v0: number, n: number, top0: number): void {
-  if (n === 3 || n === 4) {
-    for (let i = 1; i < n - 1; i++) {
-      w.tri(top0, top0 + i, top0 + i + 1);
+/**
+ * Walls of one ring (emit.ts compactBox winding: the ring is written in reverse order, so an outline (counter-
+ * clockwise) faces out and a courtyard (clockwise) faces into the courtyard). Returns the first top-loop vertex.
+ */
+function ringWalls(w: MeshWriter, xy: Float32Array, v0: number, n: number, bottom: number, top: number, gRef: number): number {
+  w.reserve(n * 2, n * 6);
+  const base = w.vcount;
+  let cx = 0;
+  let cz = 0;
+  for (let q = 0; q < n; q++) {
+    cx += xy[(v0 + q) * 2];
+    cz += xy[(v0 + q) * 2 + 1];
+  }
+  cx /= n;
+  cz /= n;
+  const sign = ringArea(xy, v0, n) >= 0 ? 1 : -1;
+  for (let level = 0; level < 2; level++) {
+    const y = level === 0 ? bottom : top;
+    for (let q = 0; q < n; q++) {
+      const v = v0 + (n - 1 - q);
+      const x = xy[v * 2];
+      const z = xy[v * 2 + 1];
+      const ox = (x - cx) * sign;
+      const oz = (z - cz) * sign;
+      const ol = Math.hypot(ox, oz) || 1;
+      w.vertex(x, y, z, (ox / ol) * (level ? 0.57 : 1), level ? 0.6 : 0, (oz / ol) * (level ? 0.57 : 1), 0, y - gRef);
+    }
+  }
+  for (let c = 0; c < n; c++) {
+    const nx = (c + 1) % n;
+    w.tri(base + c, base + nx, base + n + nx);
+    w.tri(base + c, base + n + nx, base + n + c);
+  }
+  return base + n;
+}
+
+/** Flat top of record k over its rings' top loops, courtyards left open. */
+function cap(w: MeshWriter, d: DecodedBuildings, k: number, topLoop: readonly number[]): void {
+  const r0 = d.ringStart[k];
+  const rings = d.ringStart[k + 1] - r0;
+  const n0 = d.nv[r0];
+  if (rings === 1 && (n0 === 3 || n0 === 4)) {
+    for (let i = 1; i < n0 - 1; i++) {
+      w.tri(topLoop[0], topLoop[0] + i, topLoop[0] + i + 1);
     }
     return;
   }
-  const pts: Vector2[] = [];
-  for (let q = 0; q < n; q++) {
-    const v = v0 + (n - 1 - q);
-    pts.push(new Vector2(d.xy[v * 2], d.xy[v * 2 + 1]));
-  }
-  for (const [a, b, c] of ShapeUtils.triangulateShape(pts, [])) {
-    // Up-facing triangles have a negative shoelace area in x / z (mesh-writer.ts flat).
-    const area = (pts[b].x - pts[a].x) * (pts[c].y - pts[a].y) - (pts[c].x - pts[a].x) * (pts[b].y - pts[a].y);
-    if (area < 0) {
-      w.tri(top0 + a, top0 + b, top0 + c);
-    } else {
-      w.tri(top0 + a, top0 + c, top0 + b);
+  // triangulateShape wants the contour counter-clockwise and the holes clockwise (x, z as x, y): the stored order,
+  // so its indices are stored vertex indices. Loop vertex of stored index q is topLoop + (n - 1 - q).
+  const map: number[] = [];
+  const ringPts: Vector2[][] = [];
+  for (let r = 0; r < rings; r++) {
+    const v0 = d.start[r0 + r];
+    const n = d.nv[r0 + r];
+    const pts: Vector2[] = [];
+    for (let q = 0; q < n; q++) {
+      pts.push(new Vector2(d.xy[(v0 + q) * 2], d.xy[(v0 + q) * 2 + 1]));
+      map.push(topLoop[r] + (n - 1 - q));
     }
+    ringPts.push(pts);
+  }
+  for (const [a, b, c] of ShapeUtils.triangulateShape(ringPts[0], ringPts.slice(1))) {
+    upTri(w, map[a], map[b], map[c]);
   }
 }
 
@@ -358,12 +382,272 @@ function minaret(w: MeshWriter, x: number, z: number, y0: number, y1: number, le
 
 /** Collider box of record k: its oriented box from the bottom to the wall top (+ the roof rise). */
 export function osmCollider(d: DecodedBuildings, k: number, geo: GeoSampler, out: number[]): void {
-  const n = d.nv[k];
+  const r0 = d.ringStart[k];
+  const n = d.nv[r0];
   if (n < 3) {
     return;
   }
   const pl = placeOsm(d, k, geo);
-  const o = orientedBox(d.xy, d.start[k], n);
+  const o = orientedBox(d.xy, d.start[r0], n);
   const top = pl.top + (d.roof[k] === RoofClass.Flat ? 0 : (d.rise[k] / 10) * 0.6);
   out.push(o.cx, (pl.bottom + top) * 0.5, o.cz, o.hl, (top - pl.bottom) * 0.5, o.hw, -Math.atan2(o.dz, o.dx));
+}
+
+/* ------------------------------------------------------------------ */
+/* Near detail (level 0, outside the regions)                          */
+/* ------------------------------------------------------------------ */
+
+type P3 = readonly [number, number, number];
+
+/** Quad p0..p3 wound to face along (nx, ny, nz); u / v as the city's facade expects (v = height above gRef). */
+function face(w: MeshWriter, p: readonly P3[], nx: number, ny: number, nz: number, gRef: number): void {
+  w.reserve(4, 6);
+  const b = w.vcount;
+  for (const q of p) {
+    w.vertex(q[0], q[1], q[2], nx, ny, nz, 0, q[1] - gRef);
+  }
+  const ux = p[1][0] - p[0][0];
+  const uy = p[1][1] - p[0][1];
+  const uz = p[1][2] - p[0][2];
+  const vx = p[2][0] - p[0][0];
+  const vy = p[2][1] - p[0][1];
+  const vz = p[2][2] - p[0][2];
+  const d = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
+  if (d >= 0) {
+    w.tri(b, b + 1, b + 2);
+    w.tri(b, b + 2, b + 3);
+  } else {
+    w.tri(b, b + 2, b + 1);
+    w.tri(b, b + 3, b + 2);
+  }
+}
+
+/** Box on (cx, cz) with long axis (dx, dz), half extents hl x hw, from y0 to y1 (no bottom). */
+function box(w: MeshWriter, cx: number, cz: number, dx: number, dz: number, hl: number, hw: number, y0: number, y1: number, gRef: number): void {
+  const P = (a: number, b: number, y: number): P3 => [cx + dx * a - dz * b, y, cz + dz * a + dx * b];
+  const c = [
+    [hl, hw],
+    [-hl, hw],
+    [-hl, -hw],
+    [hl, -hw],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const [a0, b0] = c[i];
+    const [a1, b1] = c[(i + 1) % 4];
+    const mx = (a0 + a1) / 2;
+    const mz = (b0 + b1) / 2;
+    const nl = Math.hypot(mx, mz) || 1;
+    const nx = (dx * mx - dz * mz) / nl;
+    const nz = (dz * mx + dx * mz) / nl;
+    face(w, [P(a0, b0, y0), P(a1, b1, y0), P(a1, b1, y1), P(a0, b0, y1)], nx, 0, nz, gRef);
+  }
+  face(w, c.map(([a, b]) => P(a, b, y1)), 0, 1, 0, gRef);
+}
+
+/** The outline's vertices moved `dist` m outwards (negative: inwards), mitred, as flat x, z pairs. */
+function offsetRing(xy: Float32Array, v0: number, n: number, dist: number): number[] {
+  const out: number[] = [];
+  const sign = ringArea(xy, v0, n) >= 0 ? 1 : -1;
+  for (let q = 0; q < n; q++) {
+    const p = (v0 + ((q + n - 1) % n)) * 2;
+    const c = (v0 + q) * 2;
+    const nx0 = (v0 + ((q + 1) % n)) * 2;
+    let ax = xy[c] - xy[p];
+    let az = xy[c + 1] - xy[p + 1];
+    let bx = xy[nx0] - xy[c];
+    let bz = xy[nx0 + 1] - xy[c + 1];
+    const la = Math.hypot(ax, az) || 1;
+    const lb = Math.hypot(bx, bz) || 1;
+    ax /= la;
+    az /= la;
+    bx /= lb;
+    bz /= lb;
+    // Outward normals (dz, -dx) of a counter-clockwise ring, averaged into a mitre.
+    let mx = (az + bz) * sign;
+    let mz = (-ax - bx) * sign;
+    const ml = Math.hypot(mx, mz);
+    if (ml < 1e-6) {
+      mx = az * sign;
+      mz = -ax * sign;
+    } else {
+      mx /= ml;
+      mz /= ml;
+    }
+    const cos = Math.max(0.5, mx * az * sign - mz * ax * sign);
+    out.push(xy[c] + (mx * dist) / cos, xy[c + 1] + (mz * dist) / cos);
+  }
+  return out;
+}
+
+/** A band around the outline between `inner` and `outer` (flat x, z rings, same vertex order) from y0 to y1. */
+function band(w: MeshWriter, outer: number[], inner: number[] | null, y0: number, y1: number, gRef: number, top: boolean, under: boolean): void {
+  const n = outer.length / 2;
+  for (let q = 0; q < n; q++) {
+    const j = (q + 1) % n;
+    const ax = outer[q * 2];
+    const az = outer[q * 2 + 1];
+    const bx = outer[j * 2];
+    const bz = outer[j * 2 + 1];
+    const ex = bx - ax;
+    const ez = bz - az;
+    const el = Math.hypot(ex, ez);
+    if (el < 0.05) {
+      continue;
+    }
+    // Outward: away from the inner ring (or from the outline's inside, found from the inner ring's matching edge).
+    let nx = ez / el;
+    let nz = -ex / el;
+    const ref = inner ?? outer;
+    const mx = (ref[q * 2] + ref[j * 2]) / 2;
+    const mz = (ref[q * 2 + 1] + ref[j * 2 + 1]) / 2;
+    const cx = outer.reduce((s, v, i) => (i % 2 ? s : s + v), 0) / n;
+    const cz = outer.reduce((s, v, i) => (i % 2 ? s + v : s), 0) / n;
+    if (nx * (mx - cx) + nz * (mz - cz) < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    face(w, [[ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az]], nx, 0, nz, gRef);
+    if (inner) {
+      const ix = inner[q * 2];
+      const iz = inner[q * 2 + 1];
+      const jx = inner[j * 2];
+      const jz = inner[j * 2 + 1];
+      face(w, [[ix, y0, iz], [jx, y0, jz], [jx, y1, jz], [ix, y1, iz]], -nx, 0, -nz, gRef);
+      if (top) {
+        face(w, [[ax, y1, az], [bx, y1, bz], [jx, y1, jz], [ix, y1, iz]], 0, 1, 0, gRef);
+      }
+      if (under) {
+        face(w, [[ax, y0, az], [bx, y0, bz], [jx, y0, jz], [ix, y0, iz]], 0, -1, 0, gRef);
+      }
+    }
+  }
+}
+
+/** Stable per-building random in [0, 1). */
+function rnd(id: number, salt: number): number {
+  const x = Math.sin((id % 1e6) * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** True when (x, z) lies inside the outline of record k and outside its courtyards. */
+function insideRecord(d: DecodedBuildings, k: number, x: number, z: number): boolean {
+  let inside = false;
+  for (let r = d.ringStart[k]; r < d.ringStart[k + 1]; r++) {
+    const v0 = d.start[r];
+    const n = d.nv[r];
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = d.xy[(v0 + i) * 2];
+      const zi = d.xy[(v0 + i) * 2 + 1];
+      const xj = d.xy[(v0 + j) * 2];
+      const zj = d.xy[(v0 + j) * 2 + 1];
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+/**
+ * Close-range dressing of record k (the procedural city's near level has the same kinds, emit.ts emitNear): a parapet
+ * on flat roofs, a cornice on historic facades, rooftop tanks, solar heaters and antennas, chimneys on pitched roofs,
+ * balconies on the longest walls of apartment blocks. Fine parts go to the detail index list (shadows skip them).
+ */
+function nearDetail(w: MeshWriter, d: DecodedBuildings, k: number, pl: OsmPlacement, o: Obb, area: number, pitched: boolean): void {
+  const r0 = d.ringStart[k];
+  const v0 = d.start[r0];
+  const n = d.nv[r0];
+  const arch = d.arch[k];
+  const id = Math.abs(d.id[k]);
+  const floors = d.floors[k];
+  const floorH = d.floorH[k] / 50 || 3;
+  const flat = !pitched && d.roof[k] === RoofClass.Flat;
+  const faceFlags = (Math.min(127, floors) << Face.FloorsShift) | Face.WorldU | Face.RoleParty;
+  const tint = rgbOf(d.tint[k]);
+  if (n > 64 || area < 12) {
+    return;
+  }
+  // Blank facade (column spacing 0) for trims.
+  w.setFace(0, faceFlags);
+  if (OLD.has(arch) && floors >= 2) {
+    w.setKind(Kind.Stone, tint);
+    band(w, offsetRing(d.xy, v0, n, 0.28), offsetRing(d.xy, v0, n, 0), pl.top - 0.45, pl.top - 0.12, pl.gRef, false, true);
+  }
+  if (flat) {
+    w.setKind(WALL_KIND[arch] ?? Kind.Wall, tint);
+    band(w, offsetRing(d.xy, v0, n, 0), offsetRing(d.xy, v0, n, -0.22), pl.top, pl.top + 0.9, pl.gRef, true, false);
+  }
+  w.detail = true;
+  if (flat && area > 50) {
+    const count = 1 + Math.floor(rnd(id, 1) * Math.min(5, area / 60));
+    for (let i = 0; i < count; i++) {
+      const a = (rnd(id, 10 + i) - 0.5) * 2 * Math.max(0, o.hl - 1.5);
+      const b = (rnd(id, 20 + i) - 0.5) * 2 * Math.max(0, o.hw - 1.5);
+      const x = o.cx + o.dx * a - o.dz * b;
+      const z = o.cz + o.dz * a + o.dx * b;
+      if (!insideRecord(d, k, x, z)) {
+        continue;
+      }
+      const kind = rnd(id, 30 + i);
+      if (kind < 0.45) {
+        // Water tank on legs.
+        w.setKind(Kind.Metal, 0xc9c6c0);
+        box(w, x, z, o.dx, o.dz, 0.6, 0.6, pl.top + 0.35, pl.top + 1.55, pl.gRef);
+      } else if (kind < 0.75) {
+        // Solar water heater: tilted panel and tank.
+        w.setKind(Kind.Solar, 0x1d2a3a);
+        box(w, x, z, o.dx, o.dz, 1.0, 0.55, pl.top + 0.2, pl.top + 0.75, pl.gRef);
+        w.setKind(Kind.Metal, 0xd8d8d4);
+        box(w, x + o.dz * 0.7, z - o.dx * 0.7, o.dx, o.dz, 0.9, 0.22, pl.top + 0.75, pl.top + 1.2, pl.gRef);
+      } else {
+        // Antenna mast.
+        w.setKind(Kind.Metal, 0x8a8d90);
+        box(w, x, z, o.dx, o.dz, 0.05, 0.05, pl.top, pl.top + 2.8, pl.gRef);
+      }
+    }
+  }
+  if (pitched && floors <= 6) {
+    w.setKind(Kind.Chimney, tint);
+    const count = 1 + Math.floor(rnd(id, 2) * 2);
+    for (let i = 0; i < count; i++) {
+      const a = (rnd(id, 40 + i) - 0.5) * 1.2 * o.hl;
+      const b = (rnd(id, 50 + i) - 0.5) * 0.8 * o.hw;
+      const rise = d.rise[k] / 10;
+      box(w, o.cx + o.dx * a - o.dz * b, o.cz + o.dz * a + o.dx * b, o.dx, o.dz, 0.3, 0.3, pl.top, pl.top + rise * 0.75 + 0.7, pl.gRef);
+    }
+  }
+  if ((arch === Arch.Plain || arch === Arch.Modern) && floors >= 3 && rnd(id, 3) < 0.7) {
+    // Balconies on the two longest walls (party walls hide theirs inside the neighbour).
+    const edges: { i: number; len: number }[] = [];
+    for (let q = 0; q < n; q++) {
+      const a = (v0 + q) * 2;
+      const b = (v0 + ((q + 1) % n)) * 2;
+      edges.push({ i: q, len: Math.hypot(d.xy[b] - d.xy[a], d.xy[b + 1] - d.xy[a + 1]) });
+    }
+    edges.sort((p, q) => q.len - p.len);
+    const sign = ringArea(d.xy, v0, n) >= 0 ? 1 : -1;
+    for (const e of edges.slice(0, 2)) {
+      if (e.len < 6) {
+        continue;
+      }
+      const a = (v0 + e.i) * 2;
+      const b = (v0 + ((e.i + 1) % n)) * 2;
+      const tx = (d.xy[b] - d.xy[a]) / e.len;
+      const tz = (d.xy[b + 1] - d.xy[a + 1]) / e.len;
+      // Outward normal of a counter-clockwise outline edge.
+      const nx = tz * sign;
+      const nz = -tx * sign;
+      const half = Math.min(e.len * 0.5 - 0.8, 2.4);
+      const mx = (d.xy[a] + d.xy[b]) * 0.5 + nx * 0.55;
+      const mz = (d.xy[a + 1] + d.xy[b + 1]) * 0.5 + nz * 0.55;
+      for (let f = 1; f < floors; f++) {
+        const y = pl.gRef + f * floorH;
+        w.setKind(Kind.Slab, 0xb8b4ac);
+        box(w, mx, mz, tx, tz, half, 0.55, y - 0.15, y, pl.gRef);
+        w.setKind(Kind.Railing, 0x3a3a3a);
+        box(w, mx + nx * 0.52, mz + nz * 0.52, tx, tz, half, 0.03, y, y + 1.0, pl.gRef);
+      }
+    }
+  }
+  w.detail = false;
 }
