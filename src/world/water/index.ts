@@ -159,12 +159,16 @@ export function createWaterSystem(): System {
     }
   }
 
+  /** Main camera field of view the mirror was last sized for (the mirror covers a margin beyond it). */
+  let viewFov = 60;
+
   function resizeReflection(): void {
     if (!reflection) {
       return;
     }
     const res = globalUniforms.uResolution.value as THREE.Vector2;
-    reflection.setSize(res.x * quality.reflectionScale, res.y * quality.reflectionScale, anisotropy, quality.reflectionSamples);
+    const scale = quality.reflectionScale * PlanarReflection.coverage(viewFov);
+    reflection.setSize(res.x * scale, res.y * scale, anisotropy, quality.reflectionSamples);
   }
 
   return {
@@ -312,6 +316,7 @@ export function createWaterSystem(): System {
       // Under water the surface shows its underside (Snell's window), which never samples the mirror.
       const planar = quality.planar && shadowReady && !underwater.state.under && PlanarReflection.seesWater(cam);
       if (planar) {
+        viewFov = cam.fov;
         resizeReflection();
         reflection.render(ctx.renderer, ctx.scene, cam, mesh);
         uniforms.uReflTex.value = reflection.target.texture;
