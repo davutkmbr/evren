@@ -221,6 +221,8 @@ export interface TileResultMsg {
   mesh: ChunkArrays | null;
   /** Tile-local bounding sphere [x, y, z, r]. */
   sphere: [number, number, number, number];
+  /** Height (m, absolute) of the highest vertex; the shadow cascades skip the chunk where it cannot shade anything. */
+  top: number;
   /** World positions of street lights / beacons (x, y, z). */
   lampPos: Float32Array;
   /** Lamp colour (sRGB) + type byte (1 street, 2 road, 3 beacon, 4 shop). */

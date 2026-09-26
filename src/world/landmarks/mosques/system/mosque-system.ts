@@ -17,7 +17,7 @@ export interface MosqueSystemOptions {
   forceLod?: LodLevel;
 }
 
-interface LodDistances {
+export interface LodDistances {
   landmark0: number;
   landmark1: number;
   landmarkShadow0: number;
@@ -58,7 +58,7 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-function lodDistances(q: QualitySettings): LodDistances {
+export function lodDistances(q: QualitySettings): LodDistances {
   const detail = q.landmarkDetailDistance;
   return {
     landmark0: clamp(detail * 0.32, 320, 1300),
@@ -66,7 +66,9 @@ function lodDistances(q: QualitySettings): LodDistances {
     landmarkShadow0: clamp(detail * 0.14, 160, 480),
     small0: clamp(detail * 0.2, 220, 800),
     small1: clamp(detail * 1.3, 1200, 5200),
-    small2: clamp(detail * 6.5, 6000, 22000),
+    // Neighbourhood mosques end with the city fabric around them (the city's skyline class fades out at 1.18 x its
+    // draw distance); beyond it a small mosque is a 1-2 px dot of 300-2000 triangles standing on the bare carpet.
+    small2: Math.min(clamp(detail * 6.5, 6000, 22000), q.cityDrawDistance * 1.18),
   };
 }
 
@@ -103,6 +105,8 @@ export class MosqueSystem implements System {
   private warmup: THREE.Mesh | null = null;
   /** Smoothed CPU time of the per-frame LOD selection (ms, runs in preRender). */
   private lodMs = 0;
+  private lodFor: QualitySettings | null = null;
+  private lod: LodDistances = { landmark0: 0, landmark1: 0, landmarkShadow0: 0, small0: 0, small1: 0, small2: 0 };
 
   constructor(private readonly options: MosqueSystemOptions = {}) {}
 
@@ -317,7 +321,13 @@ export class MosqueSystem implements System {
   private updateLods(): void {
     const ctx = this.ctx!;
     const batch = this.batch!;
-    const D = lodDistances(ctx.quality.settings);
+    const q = ctx.quality.settings;
+    if (this.lodFor !== q) {
+      // QualityManager replaces the settings object on every change: recompute only then (no per-frame object).
+      this.lodFor = q;
+      this.lod = lodDistances(q);
+    }
+    const D = this.lod;
     _cam.setFromMatrixPosition(ctx.camera.matrixWorld);
     const forced = this.options.forceLod;
 
@@ -356,16 +366,16 @@ export class MosqueSystem implements System {
     const shadow0 = D.landmarkShadow0 * 0.6;
     for (const s of this.sites) {
       const d = Math.max(0, _cam.distanceTo(s.center) - s.radius);
+      // Hysteresis: the current level reaches 10 % further (no closure per site and frame).
       const cur = s.stateKey;
-      const h = (lod: number): number => (cur === lod ? 1.1 : 1);
       let lod: number;
       if (forced !== undefined) {
         lod = forced;
-      } else if (d < D.small0 * h(0)) {
+      } else if (d < D.small0 * (cur === 0 ? 1.1 : 1)) {
         lod = 0;
-      } else if (d < D.small1 * h(1)) {
+      } else if (d < D.small1 * (cur === 1 ? 1.1 : 1)) {
         lod = 1;
-      } else if (d < D.small2 * h(2)) {
+      } else if (d < D.small2 * (cur === 2 ? 1.1 : 1)) {
         lod = 2;
       } else {
         lod = 3;
@@ -376,7 +386,9 @@ export class MosqueSystem implements System {
       } else if (lod === 1) {
         batch.setInstanceLods(s.instance, g[1], g[2], g[2]);
       } else if (lod === 2) {
-        batch.setInstanceLods(s.instance, g[2], g[2], g[2]);
+        // No mirror image in the far band: like the city's far chunks, which keep only skyline and large buildings in
+        // the water reflection, a small mosque kilometres away is not worth its triangles there.
+        batch.setInstanceLods(s.instance, g[2], g[2], -1);
       } else {
         batch.setInstanceLods(s.instance, -1, -1, -1);
       }

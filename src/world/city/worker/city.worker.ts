@@ -39,7 +39,7 @@ self.onmessage = (ev: MessageEvent<CityWorkerRequest>) => {
   } catch (err) {
     console.error('[city.worker] job failed', err);
     if (msg.type === 'tile') {
-      const empty: CityWorkerResult = { type: 'tile', id: msg.id, mesh: null, sphere: [0, 0, 0, 0], lampPos: new Float32Array(0), lampCol: new Uint8Array(0), buildings: 0, classEnds: [0, 0, 0, 0], detailStart: 0, nearWater: false, ms: 0 };
+      const empty: CityWorkerResult = { type: 'tile', id: msg.id, mesh: null, sphere: [0, 0, 0, 0], top: 0, lampPos: new Float32Array(0), lampCol: new Uint8Array(0), buildings: 0, classEnds: [0, 0, 0, 0], detailStart: 0, nearWater: false, ms: 0 };
       self.postMessage(empty);
     } else {
       self.postMessage({ type: 'colliders', id: msg.id, boxes: new Float32Array(0), ms: 0 } satisfies CityWorkerResult);
