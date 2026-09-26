@@ -403,6 +403,14 @@ export interface DragonPose {
   legReach?: number;
   /** 0..1 braking skid: hind feet braced forward, claws dug in. */
   skid?: number;
+  /**
+   * Swimming at the surface (optional, 0 = not swimming): 0..1 weight of the floating posture (neck raised, wings folded
+   * tight along the back, hind legs kicking under the body, no ground plane), the stroke phase (rad) of the body / tail
+   * undulation and the leg kicks, and the stroke strength 0..1.
+   */
+  swim?: number;
+  swimPhase?: number;
+  swimStroke?: number;
 
   /*
    * Rider cues and dragon attention (optional, 0 = neutral). Every command the player gives shows on the rider.

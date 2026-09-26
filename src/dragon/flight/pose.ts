@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY } from './params';
+import { ENVELOPE, GRAVITY, SWIM_POSE } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 
@@ -70,6 +70,9 @@ export class PoseDriver {
     heelLift: 0,
     legReach: 0,
     skid: 0,
+    swim: 0,
+    swimPhase: 0,
+    swimStroke: 0,
     riderLeanPitch: 0,
     riderLeanRoll: 0,
     riderReinLeft: 0,
@@ -90,6 +93,10 @@ export class PoseDriver {
   private tuck = 0;
   private point = 0;
   private cheer = 0;
+  /* Swimming idle look-around: seconds to the next head turn, the current turn target (rad), a deterministic seed. */
+  private lookTimer = 4;
+  private lookYaw = 0;
+  private lookSeed = 7;
 
   roar(): void {
     this.roarAge = 0;
@@ -132,7 +139,12 @@ export class PoseDriver {
     let neckYaw = clamp(turnRate * 0.55 + sim.beta * 0.6, -0.55, 0.55);
     let neckPitch: number;
     const moves = sim.moves;
-    if (onSurface) {
+    if (sim.mode === 'swimming') {
+      // Floating: the neck raised out of the water, head forward (it pushes forward a little with a strong stroke);
+      // at rest it looks around now and then.
+      neckPitch = SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * sim.swimStroke - sim.pitch * 0.4;
+      neckYaw += this.swimLook(sim, dt);
+    } else if (onSurface) {
       neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount - 0.22 * moves.crouch + 0.12 * moves.skid;
       neckYaw += 0.06 * Math.sin(time * 0.37) * (1 - sim.walkAmount);
     } else if (sim.mode === 'landing' || sim.mode === 'hovering') {
@@ -163,7 +175,7 @@ export class PoseDriver {
       tailYaw += 0.16 * Math.sin(sim.walkPhase + 0.9) * sim.walkAmount * (1 - 0.5 * gallop) + 0.07 * Math.sin(time * 0.6);
       tailPitch =
         sim.mode === 'swimming'
-          ? -0.08
+          ? SWIM_POSE.tailPitch
           : 0.06 +
             0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount * (1 - gallop) -
             0.08 * gallop * Math.sin(sim.walkPhase - 2.2) * sim.walkAmount -
@@ -190,7 +202,13 @@ export class PoseDriver {
     pose.tailPitch = follow(pose.tailPitch, tailPitch, tailPitch < pose.tailPitch ? 6 : 2.5, dt);
 
     pose.walkPhase = sim.walkPhase;
-    pose.walkAmount = follow(pose.walkAmount, onSurface ? sim.walkAmount : 0, moves.runOut ? 20 : 6, dt);
+    // No walk cycle while floating: the swim stroke drives the rig instead (the take-off run fades the float out).
+    pose.walkAmount = follow(pose.walkAmount, onSurface && sim.mode !== 'swimming' ? sim.walkAmount : 0, moves.runOut ? 20 : sim.mode === 'swimming' ? 12 : 6, dt);
+    const swimming = sim.mode === 'swimming';
+    const swimTarget = swimming ? 1 - 0.55 * Math.min(1, sim.runTakeoff / SWIM_POSE.runTime) : 0;
+    pose.swim = follow(pose.swim ?? 0, swimTarget, swimTarget > (pose.swim ?? 0) ? SWIM_POSE.blendIn : SWIM_POSE.blendOut, dt);
+    pose.swimPhase = sim.swimPhase;
+    pose.swimStroke = follow(pose.swimStroke ?? 0, swimming ? sim.swimStroke : 0, 3, dt);
     this.updateGroundCues(sim, dt);
 
     // Exertion drives breathing and panting.
@@ -266,6 +284,21 @@ export class PoseDriver {
     pose.heelLift = ease(pose.heelLift, heel);
     pose.legReach = ease(pose.legReach, reach, k * 0.5);
     pose.skid = ease(pose.skid, onGround ? m.skid : 0);
+  }
+
+  /** Swimming idle: an occasional slow head turn to one side and back (rad, added to the neck yaw). */
+  private swimLook(sim: FlightSim, dt: number): number {
+    this.lookTimer -= dt;
+    if (this.lookTimer <= 0) {
+      // A small LCG keeps the turns varied but deterministic (headless pose sheets).
+      this.lookSeed = (Math.imul(this.lookSeed, 1103515245) + 12345) >>> 0;
+      const r = this.lookSeed / 4294967296;
+      const [a, b] = SWIM_POSE.lookEvery;
+      this.lookTimer = a + (b - a) * r;
+      this.lookYaw = this.lookYaw !== 0 ? 0 : (r < 0.5 ? -1 : 1) * SWIM_POSE.lookYaw * (0.6 + 0.8 * Math.abs(r - 0.5));
+    }
+    // Swimming ahead the head keeps to the course.
+    return this.lookYaw * (1 - smoothstep(0.8, 2.2, Math.abs(sim.groundSpeed)));
   }
 
   /**
