@@ -48,7 +48,7 @@ export const BURST = {
 } as const;
 
 /** Moves that never take part in chains: hints, the plain take-off, flow's own captions, the automatic wing catch. */
-export const CHAIN_IGNORED: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow', 'catch']);
+export const CHAIN_IGNORED: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow', 'catch', 'hardland']);
 
 /** Why a link landed. */
 export type LinkSource = 'motion' | 'ring' | 'gate';
