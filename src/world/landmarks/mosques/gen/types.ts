@@ -66,7 +66,35 @@ export type LocalCollider =
   /** `open`: an arcade drawn as columns under a roof (portico), not a solid wall; neighbourhood mosques skip it. */
   | { kind: 'box'; cx: number; cy: number; cz: number; hx: number; hy: number; hz: number; yaw: number; open?: boolean }
   | { kind: 'cylinder'; x: number; y: number; z: number; r: number; h: number }
-  | { kind: 'sphere'; x: number; y: number; z: number; r: number };
+  | { kind: 'sphere'; x: number; y: number; z: number; r: number }
+  /** Vertical prism over a convex footprint `ring` (x, z pairs, building space) from `bottom` to `top`. */
+  | { kind: 'prism'; ring: number[]; bottom: number; top: number };
+
+/** The collider moved by dz along building z. */
+export function shiftColliderZ(c: LocalCollider, dz: number): LocalCollider {
+  if (c.kind === 'box') {
+    return { ...c, cz: c.cz + dz };
+  }
+  if (c.kind === 'prism') {
+    return { ...c, ring: c.ring.map((v, i) => (i % 2 === 1 ? v + dz : v)) };
+  }
+  return { ...c, z: c.z + dz };
+}
+
+/** Horizontal distance from the building origin to the collider's far edge. */
+export function colliderReach(c: LocalCollider): number {
+  if (c.kind === 'box') {
+    return Math.hypot(c.cx, c.cz) + Math.hypot(c.hx, c.hz);
+  }
+  if (c.kind === 'prism') {
+    let r = 0;
+    for (let i = 0; i < c.ring.length; i += 2) {
+      r = Math.max(r, Math.hypot(c.ring[i], c.ring[i + 1]));
+    }
+    return r;
+  }
+  return Math.hypot(c.x, c.z) + c.r;
+}
 
 export interface BuiltModel {
   id: string;

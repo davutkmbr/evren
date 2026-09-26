@@ -1,12 +1,15 @@
 import { CONTROL_HELP, type ControlGroup } from '../../core/input';
-import { interactive, keyCap, setKeyCapState } from '../components';
+import { padKeys } from '../../core/pad-keys';
+import { interactive, keyCap, keyCombo, setKeyCapState } from '../components';
 import { el } from '../dom';
+import { onPadHints, padLayout } from '../zones';
 
 /** Group order and titles (the hover block right after flight: it is how the brake key is used). */
 const GROUPS: ReadonlyArray<{ id: ControlGroup; title: string }> = [
   { id: 'flight', title: 'Uçuş' },
   { id: 'hover', title: 'Havada asılı kalma' },
   { id: 'ground', title: 'Yerde' },
+  { id: 'water', title: 'Suda' },
   { id: 'tricks', title: 'Hız ve figürler' },
   { id: 'dragon', title: 'Ejderha ve binici' },
   { id: 'camera', title: 'Kamera ve dünya' },
@@ -100,10 +103,46 @@ const entriesOf = (group: ControlGroup): Entry[] =>
 /** Title of the gold dot on a move the player has not tried yet (the tutorial hints' progress). */
 const UNTRIED = 'Henüz denemedin';
 
+/** Title of a row's gamepad buttons (core/pad-keys.ts; rows without a pad binding show none). */
+const PAD_TITLE = 'Oyun kolu';
+
+/** Every row's pad line with its keys: refilled when a pad of the other layout (Xbox / PlayStation) shows up. */
+const padLines: Array<[HTMLElement, string]> = [];
+let padLinesLayout = padLayout();
+onPadHints(() => {
+  if (padLayout() === padLinesLayout) {
+    return;
+  }
+  padLinesLayout = padLayout();
+  for (const [node, keys] of padLines) {
+    fillPadLine(node, keys);
+  }
+});
+
+function fillPadLine(node: HTMLElement, keys: string): void {
+  const pad = padKeys(keys, padLayout()) ?? '';
+  node.replaceChildren(keyCombo(pad, 'quiet', { size: 's' }));
+  node.setAttribute('aria-label', `${PAD_TITLE}: ${pad}`);
+}
+
+const padLine = (keys: string): HTMLElement[] => {
+  if (!padKeys(keys)) {
+    return [];
+  }
+  const node = el('span', 'ctl-pad', undefined, { title: PAD_TITLE });
+  fillPadLine(node, keys);
+  padLines.push([node, keys]);
+  return [node];
+};
+
 const bindRow = (entry: Entry, untried = false): HTMLElement =>
   el('div', untried ? 'ctl-row is-untried' : 'ctl-row', [
     keycaps(entry.parsed),
-    el('span', 'ctl-action', [entry.action, ...(untried ? [el('i', 'ctl-untried', undefined, { title: UNTRIED, 'aria-label': UNTRIED, role: 'img' })] : [])]),
+    el('span', 'ctl-action', [
+      entry.action,
+      ...(untried ? [el('i', 'ctl-untried', undefined, { title: UNTRIED, 'aria-label': UNTRIED, role: 'img' })] : []),
+      ...padLine(entry.keys),
+    ]),
   ]);
 
 /** Is this row's move not yet tried? (src/ui/tutorial; rows without a catalogued move: false) */

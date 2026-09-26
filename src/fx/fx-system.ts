@@ -128,6 +128,12 @@ export class FxSystem implements System, FxService {
     }
   }
 
+  worldSplash(position: THREE.Vector3, strength: number): void {
+    if (this.emit && this.vol) {
+      this.surface.worldSplash(this.emit, position, strength);
+    }
+  }
+
   dust(position: THREE.Vector3, strength: number): void {
     if (this.emit && this.vol) {
       this.surface.dust(this.emit, position, strength);

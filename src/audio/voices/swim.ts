@@ -17,8 +17,8 @@ export const SWIM_LAYERS = {
   cluck: 0.32,
 } as const;
 
-/** Swim speed (m/s) at which the bed reaches its full level (the fast swim). */
-const FULL_SPEED = 4.5;
+/** Swim speed (m/s) at which the bed reaches its full level (the fast swim, SWIM.fastSpeed). */
+const FULL_SPEED = 8.5;
 
 /** Frame input of the swim voice. */
 export interface SwimVoiceParams {

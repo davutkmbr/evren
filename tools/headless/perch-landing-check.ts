@@ -20,7 +20,8 @@
  *     (spheres and skinned mesh) until 14 m away;
  *   - the perch camera (src/camera/modes/perch-rig.ts) runs 100 s in both styles: the eye never in geometry, the
  *     dragon visible and framed in the lower part of the frame, the view open from the searched placement;
- * plus the prompt state machine on synthetic states (reach / cone / speed / height, hysteresis).
+ * plus the prompt state machine on synthetic states (reach / cone / speed / height, hysteresis), and no run ever turning
+ * into a hard landing (phase 04).
  */
 import * as THREE from 'three';
 import type { CollisionWorld } from '../../src/core/collision';
@@ -50,6 +51,9 @@ const only = args.includes('--perch') ? args[args.indexOf('--perch') + 1] : null
 const dump = args.includes('--dump') ? [Number(args[args.indexOf('--dump') + 1]), Number(args[args.indexOf('--dump') + 2])] : null;
 
 const failures: string[] = [];
+/** Hard landings over every simulated run (phase 04: a perch landing never is one). */
+let hardLandings = 0;
+let hardRuns = 0;
 const f2 = (v: number): string => (Number.isFinite(v) ? v.toFixed(2) : 'n/a');
 const f1 = (v: number): string => (Number.isFinite(v) ? v.toFixed(1) : 'n/a');
 
@@ -110,6 +114,8 @@ async function simulate(scene: PerchScene, world: CollisionWorld, place: (rt: Po
   logState();
   run.records = records;
   run.meshes = collectMeshes(rig.root, run.boneNames);
+  hardLandings += rt.sim.hard.count;
+  hardRuns++;
   return run;
 }
 
@@ -463,6 +469,7 @@ async function main(): Promise<void> {
     }
     cameraRun(scene, p);
   }
+  check(hardLandings === 0, `no perch run turns into a hard landing (${hardLandings} in ${hardRuns} runs)`);
   console.log(`\n${failures.length} failure(s) (${Math.round((performance.now() - t0) / 1000)} s)`);
   for (const f of failures) {
     console.log(`FAIL ${f}`);

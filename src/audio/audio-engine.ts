@@ -1,4 +1,4 @@
-import type { AudioOneShot, BondAudioCue, CameraMode, MomentAudioCue } from '../core/contracts';
+import type { AudioOneShot, BondAudioCue, CameraMode, DolphinAudioCue, MomentAudioCue } from '../core/contracts';
 import { clamp, clamp01, finiteOr, lerp, smoothstep } from './dsp/math';
 import { createNoiseBank, type NoiseBank } from './dsp/noise';
 import { SmoothParam } from './dsp/param';
@@ -14,9 +14,10 @@ import { playChainCue, playDiscover, playFlowMoment, playUiClick, type FlowMomen
 import { playChirp, playGrumble, playHuff, playPurr, playPurrDeep, playShortRoar, playSnap, playSneeze, playTrill, playYawn } from './sfx/bond';
 import { playBurstRush, playWhoosh, playWingSnap } from './sfx/maneuver';
 import { playThunder } from './sfx/weather';
-import { playGull } from './sfx/ambient';
+import { playFerryHorn, playGull } from './sfx/ambient';
 import { playBirdFlap } from './sfx/bird-flap';
 import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
+import { playDolphinSample } from './sfx/dolphins';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
 import { placeSource, type ListenerPose, type PlaceOptions, type Vec3 } from './spatial';
@@ -200,6 +201,14 @@ export const MIX = {
   storkWing: 0.75,
   storkPass: 0.6,
   momentBed: 1.0,
+  /**
+   * Dolphins (world/life/dolphins, recorded sounds pending approval): whistles are faint above the water (they are
+   * made under it) and clear for an under-water listener; the breath is a short "pff"; the leap splash.
+   */
+  dolphinWhistle: 0.35,
+  dolphinWhistleUnder: 1.0,
+  dolphinBreath: 0.7,
+  dolphinSplash: 1.0,
 } as const;
 
 /** Under water: the airflow bed and the ambience (city, waves, rain from the air) keep only this much level. */
@@ -313,7 +322,16 @@ const BOND_SPACING: Record<BondAudioCue, number> = {
   huff: 0.3,
   'roar-short': 1,
 };
-const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5 };
+/** A dolphin as a sound source (breath, whistle, a leap's splash) and the shortest gap between two cues of a kind (s). */
+const DOLPHIN_POINT: PlaceOptions = { refDistance: 14, reverb: 0.14, size: 3, delayAbove: 80 };
+const DOLPHIN_SPACING: Record<DolphinAudioCue, number> = { whistle: 1.2, breath: 0.25, splash: 0.2 };
+/** Longest phrase per cue (s). */
+const DOLPHIN_MAX: Record<DolphinAudioCue, number> = { whistle: 3.5, breath: 1.2, splash: 2.2 };
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5, 'ferry-horn': 8 };
+/** A vapur's whistle as a sound source: a big ship, heard far, with the hills' echo. */
+const FERRY_HORN_POINT: PlaceOptions = { refDistance: 90, reverb: 0.35, size: 20, delayAbove: 200 };
+/** The escort's arrival horn is softer than the ambience's distant horns at the same distance. */
+const FERRY_HORN_MIX = 0.55;
 /** A paddle sits this far out from the body's centre line (m), beside the shoulder. */
 const PADDLE_OFFSET = 4;
 /** Seconds between two snorts while swimming (random within). */
@@ -392,7 +410,8 @@ export class AudioEngine {
   private lastPaddle = -1e9;
   private momentBedLevel = 0;
   private readonly lastBond: Partial<Record<BondAudioCue, number>> = {};
-  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9 };
+  private readonly lastDolphin: Record<DolphinAudioCue, number> = { whistle: -1e9, breath: -1e9, splash: -1e9 };
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9, 'ferry-horn': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -739,7 +758,7 @@ export class AudioEngine {
       return;
     }
     this.lastCue[cue] = now;
-    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : STORK_POINT, this.place);
+    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : cue === 'ferry-horn' ? FERRY_HORN_POINT : STORK_POINT, this.place);
     const vol = clamp(finiteOr(volume, 1), 0, 1.5);
     switch (cue) {
       case 'stork-clatter':
@@ -763,6 +782,51 @@ export class AudioEngine {
       case 'gull-wingbeat':
         playBirdFlap(this.amb, now, Math.min(1, vol), pl);
         break;
+      case 'ferry-horn':
+        // On the ambience bus, like the distant horns of the harbour.
+        pl.gain *= FERRY_HORN_MIX * Math.min(1, vol);
+        playFerryHorn(this.amb, now, pl);
+        break;
+    }
+  }
+
+  /**
+   * A dolphin sound at `position` (world): a whistle / click phrase, a surfacing breath or a leap's splash, from the
+   * recorded 'dolphin' sample group (requested on first use; silent until approved recordings exist). A splash without
+   * a recording plays the generic water splash; under water the whistles come through clearly on the water bus.
+   */
+  dolphinCue(cue: DolphinAudioCue, position: Vec3, volume = 1): void {
+    const now = this.now;
+    if (this.paused || this.stats.active > this.maxVoices || now - this.lastDolphin[cue] < DOLPHIN_SPACING[cue]) {
+      return;
+    }
+    if (!Number.isFinite(position.x + position.y + position.z)) {
+      return;
+    }
+    this.lastDolphin[cue] = now;
+    this.samples?.request('dolphin');
+    const vol = clamp(finiteOr(volume, 1), 0, 1.5);
+    const under = this.underwaterLevel > 0.5;
+    const pl = placeSource(this.frame.listener, position, DOLPHIN_POINT, this.place);
+    switch (cue) {
+      case 'whistle':
+        pl.gain *= vol * (under ? MIX.dolphinWhistleUnder : MIX.dolphinWhistle);
+        playDolphinSample(under ? this.water : this.amb, this.samples?.dolphinCalls, now, pl, 1, DOLPHIN_MAX.whistle);
+        break;
+      case 'breath':
+        pl.gain *= vol * MIX.dolphinBreath;
+        playDolphinSample(this.amb, this.samples?.dolphinBreaths, now, pl, 1, DOLPHIN_MAX.breath);
+        break;
+      case 'splash': {
+        const rec = this.samples?.dolphinSplashes;
+        if (rec) {
+          pl.gain *= Math.min(1, vol) * MIX.dolphinSplash;
+          playDolphinSample(this.sfx, rec, now, pl, 1, DOLPHIN_MAX.splash);
+        } else {
+          this.splashAt(position, vol);
+        }
+        break;
+      }
     }
   }
 

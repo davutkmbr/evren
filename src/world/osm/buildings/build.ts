@@ -15,17 +15,15 @@ import type { StreetSurface } from '../shared/street-surface';
 import { Arch, Balcony, Flag, groundRow, Kind } from './archetypes';
 import { DetailSink } from './details';
 import { emitLining, emitPlane, type EmitContext, layoutFor, type Plane, planeFrom } from './facade';
-import { cleanRing, footprintInfo, orientedBox } from './footprint';
+import { cleanRing, footprintInfo, type Obb, orientedBox } from './footprint';
 import { bayWindow, type Edge, mouldings } from './massing';
 import { FACADE_STATE, RecordList, ROOF_STATE, StateMesh } from './mesh';
-import { clearanceOf, planBuilding, wallHeight } from './plan';
+import { type BuildingPlan, clearanceOf, type FootprintInfo, planBuilding, wallHeight } from './plan';
 import { encodePrism } from './protocol';
 import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
-import { ringTouchesLineBody, type LandmarkClaims } from '../../landmarks/claim-shapes';
-
-/** building=* values that are not solid buildings (canopies, ruins, bridge decks). */
-const SKIP_KINDS = new Set(['roof', 'ruins', 'collapsed', 'bridge', 'construction', 'no', 'carport']);
+import type { LandmarkClaims } from '../../landmarks/claim-shapes';
+import { CANOPY_KINDS, NON_SOLID_KINDS, onLandmarkClaim } from './selection';
 
 /** POI point kinds (x, z, kind triples): 1 shop, 2 food and drink (awnings), 3 services (banks, pharmacies). */
 export const Poi = { Shop: 1, Food: 2, Service: 3, Hotel: 4 } as const;
@@ -51,10 +49,12 @@ export interface BuildOutput {
   colliders: Float32Array;
   /** OSM id per collider record (debug labels). */
   colliderIds: Float64Array;
+  /** OSM id of every building record (outline or part) that got geometry; infill parcels excluded. */
+  drawnIds: Float64Array;
   stats: Record<string, number>;
 }
 
-interface Solid {
+export interface Solid {
   b: OsmBuilding;
   ring: number[];
   holes: number[][];
@@ -118,27 +118,6 @@ class PoiIndex {
   }
 }
 
-function padHit(pads: Float32Array, x: number, z: number): boolean {
-  for (let k = 0; k < pads.length; k += 3) {
-    const dx = x - pads[k];
-    const dz = z - pads[k + 1];
-    if (dx * dx + dz * dz < pads[k + 2] * pads[k + 2]) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Fraction of ring vertices (and the centroid) inside a landmark pad. */
-function padCover(pads: Float32Array, r: readonly number[], cx: number, cz: number): number {
-  let hit = padHit(pads, cx, cz) ? 1 : 0;
-  const n = r.length / 2;
-  for (let i = 0; i < n; i++) {
-    hit += padHit(pads, r[i * 2], r[i * 2 + 1]) ? 1 : 0;
-  }
-  return hit / (n + 1);
-}
-
 /** building:part with the parent outline's tags filled in where the part leaves them open (S3DB inheritance). */
 function inherit(part: OsmBuilding, parent: OsmBuilding): OsmBuilding {
   return {
@@ -155,41 +134,13 @@ function inherit(part: OsmBuilding, parent: OsmBuilding): OsmBuilding {
   };
 }
 
-export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: WorldBounds): BuildOutput {
-  const geo = surface.geo;
-  const facade = new StateMesh(FACADE_STATE);
-  const roof = new StateMesh(ROOF_STATE);
-  const details = new DetailSink(rect);
-  const props = createPropSink();
-  const colliders: number[] = [];
-  const colliderIds: number[] = [];
-  const stats: Record<string, number> = {
-    built: 0,
-    infill: 0,
-    parts: 0,
-    skippedLandmark: 0,
-    skippedWater: 0,
-    party: 0,
-    streetWalls: 0,
-    shopWalls: 0,
-    windows: 0,
-    balconies: 0,
-    signs: 0,
-    awnings: 0,
-    cornices: 0,
-    cumba: 0,
-    cikma: 0,
-    pitched: 0,
-    gabled: 0,
-    domes: 0,
-    minarets: 0,
-    stairHouses: 0,
-    courtyards: 0,
-  };
-  const archStats: Record<string, number> = {};
-
-  // 1. Solids: parts replace outlines that have them (and inherit their tags and colour seed); everything outside
-  // the rect, on water or on a landmark goes.
+/**
+ * Solids of the flight-scale layer: parts replace outlines that have them (and inherit their tags and colour seed);
+ * the shared rule (selection.ts) drops non-solid kinds, canopies and landmark claims; only solids whose centroid lies
+ * in `rect` stay (every building is drawn by the layer that owns its centroid). The far city bake
+ * (scripts/data/osm-city-bake.ts) calls this too, so both draw the same set.
+ */
+export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | 'extra'>, rect: WorldBounds, stats?: Record<string, number>): Solid[] {
   const parents = input.buildings.filter((b) => b.hasParts);
   const parentOf = (b: OsmBuilding): OsmBuilding | null => {
     const n = b.ring.length / 2;
@@ -203,7 +154,8 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   };
   const solids: Solid[] = [];
   const consider = (src: OsmBuilding, infill: boolean): void => {
-    if (src.hasParts || SKIP_KINDS.has(src.kind)) {
+    // The shared rule (selection.ts): the street tiles draw the same set up close.
+    if (src.hasParts || NON_SOLID_KINDS.has(src.kind) || CANOPY_KINDS.has(src.kind)) {
       return;
     }
     const parent = src.part ? parentOf(src) : null;
@@ -231,12 +183,10 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     if (cx < rect.minX || cx > rect.maxX || cz < rect.minZ || cz > rect.maxZ) {
       return;
     }
-    if (geo.isWater(cx, cz)) {
-      stats.skippedWater++;
-      return;
-    }
-    if (padCover(input.claims.pads, ring, cx, cz) > 0.5 || ringTouchesLineBody(input.claims.lines, ring)) {
-      stats.skippedLandmark++;
+    if (onLandmarkClaim(input.claims, ring)) {
+      if (stats) {
+        stats.skippedLandmark = (stats.skippedLandmark ?? 0) + 1;
+      }
       return;
     }
     const holes = (b.holes ?? [])
@@ -260,6 +210,59 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   for (const b of input.extra ?? []) {
     consider(b, true);
   }
+  return solids;
+}
+
+/** Plan, footprint and wall height of a solid (heights relative to its reference ground; see buildBuildings). */
+export function planSolid(s: Solid): { box: Obb; info: FootprintInfo; plan: BuildingPlan; rise: number; wallH: number } {
+  const box = orientedBox(s.ring);
+  const info = footprintInfo(s.ring, box);
+  const plan = planBuilding(s.b, info, s.id);
+  if (s.holes.length && plan.roof !== 'flat') {
+    plan.roof = 'flat';
+    plan.parapet = 0.9;
+    plan.bay = plan.bay === 'cikma' ? 'none' : plan.bay;
+    plan.clearance = clearanceOf(plan);
+  }
+  const rise = Math.min(5, box.hw * plan.pitch);
+  const wallH = wallHeight(s.b, plan, rise);
+  plan.wallH = wallH;
+  return { box, info, plan, rise, wallH };
+}
+
+export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: WorldBounds): BuildOutput {
+  const facade = new StateMesh(FACADE_STATE);
+  const roof = new StateMesh(ROOF_STATE);
+  const details = new DetailSink(rect);
+  const props = createPropSink();
+  const colliders: number[] = [];
+  const colliderIds: number[] = [];
+  const stats: Record<string, number> = {
+    built: 0,
+    infill: 0,
+    parts: 0,
+    skippedLandmark: 0,
+    party: 0,
+    streetWalls: 0,
+    shopWalls: 0,
+    windows: 0,
+    balconies: 0,
+    signs: 0,
+    awnings: 0,
+    cornices: 0,
+    cumba: 0,
+    cikma: 0,
+    pitched: 0,
+    gabled: 0,
+    domes: 0,
+    minarets: 0,
+    stairHouses: 0,
+    courtyards: 0,
+  };
+  const archStats: Record<string, number> = {};
+
+  // 1. Solids (collectSolids).
+  const solids = collectSolids(input, rect, stats);
   const index = new SolidIndex(solids);
   const pois = new PoiIndex(input.pois);
   const passagesOf = new Map<number, Passage[]>();
@@ -272,30 +275,20 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   solids.forEach((s, si) => {
     const { b, ring: r, holes } = s;
     const n = r.length / 2;
-    const box = orientedBox(r);
-    const info = footprintInfo(r, box);
-    const plan = planBuilding(b, info, s.id);
-    if (holes.length && plan.roof !== 'flat') {
-      plan.roof = 'flat';
-      plan.parapet = 0.9;
-      plan.bay = plan.bay === 'cikma' ? 'none' : plan.bay;
-      plan.clearance = clearanceOf(plan);
-    }
+    const { box, info, plan, rise, wallH } = planSolid(s);
     archStats[plan.arch] = (archStats[plan.arch] ?? 0) + 1;
 
     const ground: number[] = [];
     let gMin = Infinity;
     let gMax = -Infinity;
     for (let i = 0; i < n; i++) {
-      const g = geo.height(r[i * 2], r[i * 2 + 1]);
+      // The OSM ground (quay raise included), like the street tiles' buildings: shore buildings stand on the quay.
+      const g = surface.baseAt(r[i * 2], r[i * 2 + 1]);
       ground.push(g);
       gMin = Math.min(gMin, g);
       gMax = Math.max(gMax, g);
     }
     const gRef = gMin + 0.5 * (gMax - gMin);
-    const rise = Math.min(5, box.hw * plan.pitch);
-    const wallH = wallHeight(b, plan, rise);
-    plan.wallH = wallH;
     const top = gRef + wallH;
     const yBase = plan.minH > 0.5 ? gRef + plan.minH : gMin - 1.5;
     const wallTopV = top - gMin;
@@ -347,7 +340,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
       if (court) {
         stats.courtyards++;
         for (let i = 0; i < m; i++) {
-          rg.push(geo.height(ring[i * 2], ring[i * 2 + 1]));
+          rg.push(surface.baseAt(ring[i * 2], ring[i * 2 + 1]));
         }
       }
       for (let i = 0; i < m; i++) {
@@ -472,5 +465,5 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   for (const [k, v] of Object.entries(archStats)) {
     stats[`arch${k}`] = v;
   }
-  return { facade, roof, details, props, colliders: new Float32Array(colliders), colliderIds: new Float64Array(colliderIds), stats };
+  return { facade, roof, details, props, colliders: new Float32Array(colliders), colliderIds: new Float64Array(colliderIds), drawnIds: new Float64Array(solids.filter((s) => !s.infill).map((s) => s.b.id)), stats };
 }

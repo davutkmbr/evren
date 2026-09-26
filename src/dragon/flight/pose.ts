@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
-import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE } from './params';
+import { ENVELOPE, GRAVITY, LANDING_POSE, REVERSAL_POSE, SKIM, SWIM_POSE, SWIM_SEA } from './params';
 import type { FlightSim } from './sim';
+import { surfShare } from './locomotion';
 import { tailPitchForClearance } from './skim';
 import type { PilotCommand } from './types';
 
@@ -13,6 +14,28 @@ const ARM_RATE = 5;
 /** A Space tap pumps the reins forward for this long (s). */
 const PUMP_TIME = 0.45;
 const ROAR_CHEER = 1.5;
+/**
+ * The rider's reaction to flow (phase 20 stage D): low on the neck into the speed while flow runs high and through a
+ * chain burst's surge, a fist pumped at chain link RIDER_FLOW.cheerLink and every second link after it, and a short
+ * laugh on a "Kusursuz" moment. Pure body language: no sound, no HUD.
+ */
+export const RIDER_FLOW = {
+  /**
+   * Flow from which the rider starts to crouch, the crouch at flow 1 while a chain is open and outside one (under the
+   * 0.2 at which standing and petting give way, rider-behavior.ts, so both stay available in calm high-flow gliding),
+   * and the extra crouch at a burst's peak surge.
+   */
+  tuckFrom: 0.7,
+  tuck: 0.4,
+  calmTuck: 0.15,
+  surgeTuck: 0.3,
+  /** First chain link that earns a cheer (then every second one), and the least time between two flow cheers (s). */
+  cheerLink: 3,
+  cheerGap: 2.5,
+  /** Length of a flow cheer and of a moment's laugh (s). */
+  cheerTime: 1.3,
+  laughTime: 1.1,
+} as const;
 
 const _omegaWorld = new THREE.Vector3();
 const _accelBody = new THREE.Vector3();
@@ -34,6 +57,11 @@ export interface LookTarget {
   yaw: number;
   pitch: number;
   weight: number;
+}
+
+/** A short gesture's rise and fall over `length` seconds (0..1), `t` seconds in. */
+function envelope(t: number, length: number): number {
+  return smoothstep(0, 0.2, t) * (1 - smoothstep(length * 0.65, length, t));
 }
 
 function follow(current: number, target: number, rate: number, dt: number): number {
@@ -83,6 +111,7 @@ export class PoseDriver {
     riderTuck: 0,
     riderPoint: 0,
     riderCheer: 0,
+    riderLaugh: 0,
   };
 
   private roarAge = 99;
@@ -95,6 +124,11 @@ export class PoseDriver {
   private tuck = 0;
   private point = 0;
   private cheer = 0;
+  /** Flow reactions: time since the last flow cheer and moment laugh (s), and the flow counters seen last frame. */
+  private flowCheerAge = 99;
+  private laughAge = 99;
+  private seenLinks = 0;
+  private seenMoments = 0;
   /* Swimming idle look-around: seconds to the next head turn, the current turn target (rad), a deterministic seed. */
   private lookTimer = 4;
   private lookYaw = 0;
@@ -161,7 +195,8 @@ export class PoseDriver {
     if (sim.mode === 'swimming') {
       // Floating: the neck raised out of the water, head forward (it pushes forward a little with a strong stroke);
       // at rest it looks around now and then.
-      neckPitch = SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * sim.swimStroke - sim.pitch * 0.4;
+      // Riding a wave it stretches its neck forward and down the face.
+      neckPitch = SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * sim.swimStroke - sim.pitch * 0.4 + SWIM_SEA.surfNeck * surfShare(sim);
       neckYaw += this.swimLook(sim, dt);
     } else if (onSurface) {
       neckPitch = -0.05 - sim.pitch * 0.4 - 0.04 * Math.sin(sim.walkPhase * 2) * sim.walkAmount - 0.22 * moves.crouch + 0.12 * moves.skid;
@@ -195,10 +230,18 @@ export class PoseDriver {
       neckYaw += clamp(look.yaw, -1, 1) * 0.6 * look.weight;
       neckPitch += clamp(look.pitch, -0.8, 0.6) * 0.45 * look.weight;
     }
+    const hard = sim.hard;
+    const tumbling = hard.active && hard.stage === 'tumble';
+    if (tumbling) {
+      // Hard landing: the neck held straight through a roll, the head up off the ground in a plow or a belly skid (the
+      // sim models the head where this raise holds it).
+      neckPitch = hard.neckRaise;
+      neckYaw *= 0.2;
+    }
     pose.neckYaw = follow(pose.neckYaw, clamp(neckYaw, -0.9, 0.9), 4, dt);
     // The flare's neck bends further down (the rig adds an S-curve on top so the head stays level over the ground).
     const neckLow = 0.7 + (LANDING_POSE.neckLowFlare - 0.7) * (pose.landFlare ?? 0);
-    pose.neckPitch = follow(pose.neckPitch, clamp(neckPitch, -neckLow, 0.6), 4, dt);
+    pose.neckPitch = tumbling ? neckPitch : follow(pose.neckPitch, clamp(neckPitch, -neckLow, 0.6), 4, dt);
 
     // Tail: trails inside the turn, weathervanes into sideslip, lifts in pull-ups, drops as an airbrake.
     let tailYaw = clamp(-turnRate * 0.5 - sim.beta * 0.8, -0.6, 0.6);
@@ -214,7 +257,7 @@ export class PoseDriver {
       }
       tailPitch =
         sim.mode === 'swimming'
-          ? SWIM_POSE.tailPitch
+          ? SWIM_POSE.tailPitch + SWIM_SEA.surfTail * surfShare(sim)
           : 0.06 +
             0.04 * Math.sin(sim.walkPhase * 2 + 0.5) * sim.walkAmount * (1 - gallop) -
             0.08 * gallop * Math.sin(sim.walkPhase - 2.2) * sim.walkAmount -
@@ -260,6 +303,11 @@ export class PoseDriver {
     // it down to its kiss height instead (over the water it may touch).
     const tailLimit = skim > 0.01 ? this.tailKissLimit(sim) : -this.tailClearCurl(sim);
     tailPitch = Math.min(clamp(tailPitch, -0.5, Math.max(0.5, SKIM.tailMax * skim)), tailLimit);
+    if (tumbling) {
+      // The tail straight out behind through a roll, thrashing while the wings flail.
+      tailPitch = lerp(tailPitch, 0, 1 - hard.flail);
+      tailYaw += 0.35 * Math.sin(time * 9) * hard.flail;
+    }
     pose.tailYaw = follow(pose.tailYaw, clamp(tailYaw, -0.7, 0.7), 2.5, dt);
     pose.tailPitch = follow(pose.tailPitch, tailPitch, tailPitch < pose.tailPitch ? 6 : 2.5, dt);
 
@@ -286,6 +334,12 @@ export class PoseDriver {
       jaw = Math.max(jaw, 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(time * 5.5)));
     }
     jaw = Math.max(jaw, roar * (0.92 + 0.05 * Math.sin(time * 17)));
+    // Riding a wave: the jaw a little open in delight.
+    if (sim.mode === 'swimming') {
+      jaw = Math.max(jaw, SWIM_SEA.surfJaw * surfShare(sim));
+    }
+    // A hard landing's impact: jaw open in surprise while the wings flail.
+    jaw = Math.max(jaw, tumbling ? 0.5 * hard.flail : 0);
     pose.jawOpen = follow(pose.jawOpen, clamp(jaw, 0, 1), 14, dt);
 
     // Rider: spring-damper driven by the specific force felt in the saddle, plus a speed tuck and turn lean.
@@ -441,6 +495,12 @@ export class PoseDriver {
     left += both;
     right += both;
     let tuck = airborne ? smoothstep(45, 85, sim.airspeed) * 0.45 : 0;
+    if (airborne) {
+      // High flow: down into the speed, and lower still through a chain burst's surge.
+      const chaining = sim.flow.burst.open(sim.time);
+      const flowTuck = (chaining ? RIDER_FLOW.tuck : RIDER_FLOW.calmTuck) * smoothstep(RIDER_FLOW.tuckFrom, 1, sim.flow.value);
+      tuck = Math.max(tuck, flowTuck + RIDER_FLOW.surgeTuck * 0.5 * sim.flow.burst.rate);
+    }
 
     // Under water the rider lies flat on the neck and holds on, like in a fall.
     const falling = trick === 'drop' || (airborne && dive && sim.spread < 0.6) || sim.mode === 'underwater';
@@ -499,6 +559,13 @@ export class PoseDriver {
       left = right = -0.45;
       tuck = Math.max(tuck, 0.35);
     }
+    if (sim.hard.active && sim.hard.hold > 0) {
+      // Hard landing: the rider holds on tight, low on the neck, both reins at the chest.
+      const hold = sim.hard.hold;
+      left = lerp(left, 1, hold);
+      right = lerp(right, 1, hold);
+      tuck = Math.max(tuck, hold);
+    }
     this.reinLeft = follow(this.reinLeft, clamp(left, -1, 1), REIN_RATE, dt);
     this.reinRight = follow(this.reinRight, clamp(right, -1, 1), REIN_RATE, dt);
     this.tuck = follow(this.tuck, clamp(tuck, 0, 1), TUCK_RATE, dt);
@@ -518,7 +585,37 @@ export class PoseDriver {
     this.point = follow(this.point, sim.firing || cmd?.fire ? 1 : 0, ARM_RATE, dt);
     pose.riderPoint = this.point;
     const roarCheer = this.roarAge < ROAR_CHEER ? smoothstep(0, 0.2, this.roarAge) * (1 - smoothstep(ROAR_CHEER * 0.65, ROAR_CHEER, this.roarAge)) : 0;
-    this.cheer = follow(this.cheer, Math.max(roarCheer, m.cheer), ARM_RATE * 1.6, dt);
+    const flowCheer = this.flowReaction(sim, dt, airborne && !falling);
+    this.cheer = follow(this.cheer, Math.max(roarCheer, m.cheer, flowCheer), ARM_RATE * 1.6, dt);
     pose.riderCheer = this.cheer;
+    pose.riderLaugh = this.laughAge < RIDER_FLOW.laughTime ? envelope(this.laughAge, RIDER_FLOW.laughTime) : 0;
+  }
+
+  /**
+   * Chain links and "Kusursuz" moments since the last frame start the rider's cheer and laugh (only in free air, not
+   * while falling or under water); returns this frame's flow cheer (0..1).
+   */
+  private flowReaction(sim: FlightSim, dt: number, free: boolean): number {
+    const burst = sim.flow.burst;
+    const links = burst.totalLinks;
+    const moments = sim.flow.moments;
+    this.flowCheerAge += dt;
+    this.laughAge += dt;
+    if (links < this.seenLinks || moments < this.seenMoments) {
+      // The flow system was reset (a new race, a respawn).
+      this.flowCheerAge = this.laughAge = 99;
+    } else if (free) {
+      const n = burst.links;
+      const cheerLink = links > this.seenLinks && n >= RIDER_FLOW.cheerLink && (n - RIDER_FLOW.cheerLink) % 2 === 0;
+      if (cheerLink && this.flowCheerAge > RIDER_FLOW.cheerGap) {
+        this.flowCheerAge = 0;
+      }
+      if (moments > this.seenMoments) {
+        this.laughAge = 0;
+      }
+    }
+    this.seenLinks = links;
+    this.seenMoments = moments;
+    return this.flowCheerAge < RIDER_FLOW.cheerTime ? envelope(this.flowCheerAge, RIDER_FLOW.cheerTime) : 0;
   }
 }

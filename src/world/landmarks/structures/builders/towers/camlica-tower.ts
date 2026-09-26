@@ -112,6 +112,39 @@ export function buildCamlicaTower(b: StructureBuild): void {
           mb.cylinder(x, y0 + h, z, 3.4 - (h - 232) * 0.02, 3.4 - (h - 232) * 0.02, 0.8, 14, true, true);
         }
       }
+      // floor slabs banding the glazed bud and the frames of the lift shafts
+      mb.surface(mat(0xe4e1d9, Surf.Concrete, 0.55, 0, 4.5));
+      const floorStep = lod === 0 ? 4.5 : 9;
+      for (let h = 128.5; h < 198; h += floorStep) {
+        const r = profileRadius(BUD, h) + 0.18;
+        mb.lathe(
+          [
+            { r: r - 0.3, y: y0 + h - 0.22 },
+            { r, y: y0 + h - 0.16, crease: true },
+            { r, y: y0 + h + 0.16, crease: true },
+            { r: r - 0.3, y: y0 + h + 0.22, crease: true },
+          ],
+          seg,
+          { cx: x, cz: z, sz: MINOR },
+        );
+      }
+      mb.surface(mat(0xcfd2d3, Surf.Steel, 0.4, 0.5, 4.5));
+      for (const side of [-1, 1]) {
+        const cz = z + side * (8.05 * MINOR + 1.2);
+        if (lod === 0) {
+          for (const [dx, dz] of [
+            [-1, -1],
+            [1, -1],
+            [1, 1],
+            [-1, 1],
+          ]) {
+            mb.box(x + dx * 1.88, y0 + 80, cz + dz * 1.48, 0.1, 58, 0.1, 0, true, false);
+          }
+        }
+        for (let h = 26; h < 138; h += lod === 0 ? 4.5 : 13.5) {
+          mb.box(x, y0 + h, cz, 1.97, 0.12, 1.57, 0, false, false);
+        }
+      }
       mb.vBase = 0;
     },
     { detailScale: 1.6 },
@@ -162,4 +195,16 @@ export function buildCamlicaTower(b: StructureBuild): void {
   b.cylinderCollider(x, y0 + 200, z, 8, 16);
   b.cylinderCollider(x, y0 + 216, z, 2.8, 153);
   b.cylinderCollider(x, y0, z, 22, 12);
+}
+
+/** Radius of a [height, radius] profile at height h (linear between samples). */
+function profileRadius(list: ReadonlyArray<[number, number]>, h: number): number {
+  for (let i = 0; i < list.length - 1; i++) {
+    const [h0, r0] = list[i];
+    const [h1, r1] = list[i + 1];
+    if (h >= h0 && h <= h1) {
+      return r0 + ((r1 - r0) * (h - h0)) / (h1 - h0);
+    }
+  }
+  return list[list.length - 1][1];
 }

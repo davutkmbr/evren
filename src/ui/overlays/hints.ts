@@ -1,6 +1,6 @@
 import { keyText } from '../components';
 import { el } from '../dom';
-import { fadeBinding, hintRow, HUD_PRIORITY, ZONE_CLASS, type HudDirector } from '../zones';
+import { fadeBinding, hintKeys, hintRow, HUD_PRIORITY, onPadHints, padHints, ZONE_CLASS, type HudDirector } from '../zones';
 
 /** Start-of-game key reminder: an item of the shared hint line, shown once nothing more important is on it. */
 export class FlightHints {
@@ -30,12 +30,17 @@ export class FlightHints {
   }
 }
 
+const HOVER_EXIT_KEYS = 'Uçuşa dönmek için freni bırak, [W] tuşuna bas';
+const HOVER_EXIT_PAD = 'Uçuşa dönmek için freni bırak, sol çubuğu aşağı it';
+
 /**
  * Hover controls (lowerCenter, growing upwards), shown on entering a hover: full length for the first few hovers of a
  * session, then briefly.
  */
 export class HoverHints {
   static readonly ID = 'hints.hover';
+  /** The way back to flight, in the words of the device in use (W on the keyboard, the left stick on a pad). */
+  private readonly exit = el('p', 'hint-exit', keyText(HOVER_EXIT_KEYS));
   readonly root = el('div', `${ZONE_CLASS.lowerCenter} hud-hints hud-hints-hover`, [
     el('p', 'hint-caps', 'Havada asılı'),
     // Two short rows: one long row would crowd the bottom-centre cluster on narrower screens.
@@ -50,12 +55,14 @@ export class HoverHints {
         ['L', 'Kon'],
       ]),
     ]),
-    el('p', 'hint-exit', keyText('Uçuşa dönmek için freni bırak, [W] tuşuna bas')),
+    this.exit,
   ]);
   private readonly binding = fadeBinding(this.root);
   private shown = 0;
 
-  constructor(private readonly zones: HudDirector) {}
+  constructor(private readonly zones: HudDirector) {
+    onPadHints(() => this.exit.replaceChildren(...keyText(padHints() ? `${HOVER_EXIT_PAD} [${hintKeys('W')}]` : HOVER_EXIT_KEYS)));
+  }
 
   show(): void {
     this.shown++;

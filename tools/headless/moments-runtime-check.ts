@@ -28,17 +28,23 @@
  *    storm, high above, diving or swimming, during a race or with city life off, not along a shore without ferries;
  *    the hold follows the ferry as it pulls away, flying off ends it, the 600 s cooldown, the forced anchor and the
  *    ?moment= placement beside the ferry.
+ * 8. The literary moments (backlog 16, src/moments/data/literature.ts): the eight playable ones fire once in their
+ *    situation on the real geography (every line, the card, no ambience lift) and stay silent far away, outside their
+ *    hours, weather, sea fog, altitude band or flight mode, on the ground, in a race or with their category off; the
+ *    ?moment= start pose heads for the target clear of the surface and the forced moment plays anywhere; the two
+ *    pending ones do not play; every record's sources validate.
  * Exits non-zero on any failure.
  */
 import { latLonToLocal, localToLatLon, WORLD_ORIGIN } from '../../src/core/geo-coords';
 import type { FlightMode, WeatherPreset } from '../../src/core/contracts';
 import { ALL_MOMENTS } from '../../src/moments/data';
+import { LITERATURE } from '../../src/moments/data/literature';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
 import { defaultMomentPrefs, onMomentPrefsChange, saveMomentPrefs, type MomentPrefs } from '../../src/moments/prefs';
 import { momentPlayability, MomentRunner, momentStartPose, type MomentFrame, type MomentSink } from '../../src/moments/runtime';
 import { pointInPolygon, type MomentContext, type XZ } from '../../src/moments/triggers';
 import type { Moment, SubtitleLine } from '../../src/moments/types';
-import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, type SourcePromptState } from '../../src/moments/sources';
+import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, validateMomentSources, type SourcePromptState } from '../../src/moments/sources';
 import { HUD_PRIORITY, HudDirector } from '../../src/ui/zones/director';
 import { buildHeadlessGeo } from './geo';
 import { AnchorFeed, ferryShortcut, inService } from '../../src/moments/anchors';
@@ -153,8 +159,9 @@ console.log('2. playability');
   check(ps.playable && !ps.soundFallback, `the storks play now (ready, procedural flock and synthesised sound, no ambience fallback) ${ps.reason ?? ''}`);
   const gp = momentPlayability(gull);
   check(gull.status === 'ready' && gp.playable && !gp.soundFallback, `the ferry gull moment plays now (ready; procedural flock, its own gull calls, no ambience fallback) ${gp.reason ?? ''}`);
+  // The literary moments (backlog 16) are covered in section 8.
   for (const m of ALL_MOMENTS) {
-    if (m === poem || m === storks || m === gull) continue;
+    if (m === poem || m === storks || m === gull || LITERATURE.includes(m)) continue;
     const p = momentPlayability(m);
     check(!p.playable && !!p.reason, `${m.id} waits (${p.reason})`);
   }
@@ -952,6 +959,138 @@ console.log('7. gull and simit on a ferry');
       for (let k = 0; k < 2 * FPS; k++) r.update(DT, ctx);
       check(!!r.current, 'the shortcut pose satisfies the trigger on its own');
     }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. The literary moments (backlog 16)                                  */
+/* ------------------------------------------------------------------ */
+console.log('8. literary moments');
+{
+  const litPlayable = LITERATURE.filter((m) => momentPlayability(m).playable);
+  check(litPlayable.length === 8, `8 literary moments play now (${litPlayable.map((m) => m.id).join(', ')})`);
+  for (const id of ['sinan-turbe-kitabesi', 'hasim-bir-gunun-sonunda-arzu']) {
+    const m = LITERATURE.find((x) => x.id === id)!;
+    const p = momentPlayability(m);
+    check(!p.playable && /pending|text-approval/.test(p.reason ?? ''), `${id} waits for the owner's text check (${p.reason})`);
+  }
+
+  /** A situation that meets every condition of `m`'s trigger at its target (centre or area centroid). */
+  const situation = (m: Moment): Omit<MomentContext, 'session'> => {
+    const t = m.trigger;
+    const pl = t.place;
+    let ll = pl.center ?? { lat: 0, lon: 0 };
+    if (!pl.center && pl.area) {
+      ll = { lat: pl.area.reduce((a, v) => a + v.lat, 0) / pl.area.length, lon: pl.area.reduce((a, v) => a + v.lon, 0) / pl.area.length };
+    }
+    let p = latLonToLocal(ll.lat, ll.lon);
+    // A shore band: walk out from the target to the nearest point that meets it.
+    if (t.shoreDistance) {
+      const sd = t.shoreDistance;
+      const ok = (q: XZ) => {
+        const cd = geo.coastDistance(q.x, q.z);
+        return (sd.min === undefined || cd >= sd.min) && (sd.max === undefined || cd <= sd.max);
+      };
+      for (let i = 0; i < 2000 && !ok(p); i++) {
+        const a = i * 2.399963;
+        const r = (pl.radius ?? 300) * Math.sqrt(i / 2000);
+        const q = latLonToLocal(ll.lat, ll.lon);
+        const cand = { x: q.x + Math.cos(a) * r, z: q.z + Math.sin(a) * r };
+        if (ok(cand)) p = cand;
+      }
+    }
+    const ground = Math.max(0, geo.heightAt(p.x, p.z));
+    let lo = ground + 5;
+    let hi = ground + 600;
+    for (const b of t.altitude ?? []) {
+      const off = b.ref === 'agl' ? ground : 0;
+      if (b.min !== undefined) lo = Math.max(lo, b.min + off);
+      if (b.max !== undefined) hi = Math.min(hi, b.max + off);
+    }
+    const altitude = (lo + hi) / 2;
+    const tw = t.timeOfDay;
+    const timeOfDay = tw ? (tw.from + (((tw.to - tw.from + 24) % 24) / 2)) % 24 : 12;
+    return {
+      position: p,
+      altitude,
+      agl: altitude - ground,
+      grounded: false,
+      flightMode: t.flightModes?.[0] ?? 'gliding',
+      coastDistance: geo.coastDistance(p.x, p.z),
+      timeOfDay,
+      dayOfYear: 269,
+      weather: t.weather?.[0] ?? 'clear',
+      seaFog: t.seaFog ? Math.min(1, (t.seaFog.min ?? 0) + 0.3) : 0,
+    };
+  };
+  const runFor = (moments: readonly Moment[], ctx: Omit<MomentContext, 'session'>, seconds: number, over: Partial<MomentFrame> = {}) => {
+    const h = harness(moments);
+    const frame: MomentFrame = { context: ctx, prefs: defaultMomentPrefs(), racing: false, ...over };
+    for (let k = 0; k < seconds * FPS; k++) h.runner.update(DT, frame);
+    return h;
+  };
+
+  for (const m of litPlayable) {
+    const ctx = situation(m);
+    const subs = m.content.subtitles;
+    const length = subs[subs.length - 1].at + subs[subs.length - 1].duration;
+    // Alone: fires after the dwell, shows every line and the card, once per session.
+    const { runner, log } = runFor([m], ctx, length + 30);
+    const h = runner.history[0];
+    check(runner.history.length === 1 && h?.reason === 'complete' && !h.forced, `${m.id}: fires once in its situation and plays to the end (${runner.history.length}×, ${h?.reason})`);
+    check(log.shows.length === subs.length && log.cards.length === 1, `${m.id}: all ${subs.length} lines and the card (${log.shows.length}, ${log.cards.length})`);
+    check(Math.max(0, ...log.lift) === 0, `${m.id}: no ambience lift (subtitle-only, the moment music plays)`);
+    const again = runFor([m], ctx, 2 * length + runner.pacing.minGapSec + 60).runner;
+    check(again.history.length === 1, `${m.id}: once per session (${again.history.length}× in ${Math.round(2 * length + runner.pacing.minGapSec + 60)} s)`);
+    // With every record: something plays there (nearest first; an area-only moment such as the storks may win).
+    const all = runFor(ALL_MOMENTS, ctx, 5).runner;
+    check(!!all.current || all.history.length > 0, `${m.id}: its situation starts a moment with every record loaded (${all.current?.id ?? all.history[0]?.id ?? 'none'})`);
+
+    // Outside its conditions: nothing.
+    const t = m.trigger;
+    const negatives: Array<[string, Partial<Omit<MomentContext, 'session'>>]> = [];
+    const far = latLonToLocal(41.2, 28.8);
+    negatives.push(['far away (Kilyos forests)', { position: far, coastDistance: geo.coastDistance(far.x, far.z) }]);
+    if (t.timeOfDay) negatives.push(['outside its hours', { timeOfDay: (t.timeOfDay.to + 1) % 24 }]);
+    if (t.weather && !t.weather.includes('storm')) negatives.push(['in a storm', { weather: 'storm' }]);
+    if (t.weather && !t.weather.includes('clear')) negatives.push(['in clear weather', { weather: 'clear' }]);
+    if (t.seaFog) negatives.push(['without sea fog', { seaFog: 0 }]);
+    if (t.altitude?.some((b) => b.max !== undefined)) negatives.push(['far above its band', { altitude: ctx.altitude + 1200, agl: ctx.agl + 1200 }]);
+    if (t.altitude?.some((b) => b.min !== undefined)) negatives.push(['below its band', { altitude: Math.max(0, ctx.altitude - ctx.agl) + 10, agl: 10 }]);
+    if (t.flightModes) negatives.push(['in another flight mode', { flightMode: 'hovering' }]);
+    if (t.surface === 'air') negatives.push(['on the ground', { grounded: true, flightMode: 'grounded', agl: 0 }]);
+    for (const [label, over] of negatives) {
+      const r = runFor([m], { ...ctx, ...over }, 10).runner;
+      check(r.history.length === 0 && !r.current, `${m.id}: silent ${label}`);
+    }
+    const race = runFor([m], ctx, 10, { racing: true }).runner;
+    check(race.history.length === 0 && !race.current, `${m.id}: silent during a race`);
+    const off = defaultMomentPrefs();
+    off.categories[m.category] = false;
+    const disabled = runFor([m], ctx, 10, { prefs: off }).runner;
+    check(disabled.history.length === 0 && !disabled.current, `${m.id}: silent with its category off`);
+
+    // The ?moment= shortcut: a start pose inside the world, then the forced moment plays whatever the conditions.
+    const pose = momentStartPose(m);
+    check(!!pose && Math.abs(pose.x) < 22_500 && Math.abs(pose.z) < 22_500, `${m.id}: ?moment= start pose inside the playable map`);
+    if (pose) {
+      const wps = m.content.waypoints ?? [];
+      const target = latLonToLocal(wps[1].lat, wps[1].lon);
+      const toTarget = (Math.atan2(target.x - pose.x, -(target.z - pose.z)) * 180) / Math.PI;
+      const diff = Math.abs(((pose.headingDeg - toTarget + 540) % 360) - 180);
+      const clearance = pose.y - Math.max(0, geo.heightAt(pose.x, pose.z));
+      check(diff < 1 && clearance > 20, `${m.id}: start pose heads for '${wps[1].id}' (${diff.toFixed(1)}° off) ${clearance.toFixed(0)} m above the surface`);
+    }
+    const forced = harness([m]);
+    check(forced.runner.force(m.id), `${m.id}: force accepts it`);
+    const noon = { ...ctx, position: far, timeOfDay: 12, weather: 'storm' as const, seaFog: 0 };
+    for (let k = 0; k < (length + 5) * FPS; k++) forced.runner.update(DT, { context: noon, prefs: defaultMomentPrefs(), racing: false });
+    check(forced.runner.history[0]?.forced === true && forced.runner.history[0]?.reason === 'complete', `${m.id}: forced, it plays to the end anywhere`);
+  }
+
+  // The sources sheet has something for every literary moment.
+  for (const m of LITERATURE) {
+    check(validateMomentSources(m).length === 0 && (m.sources?.length ?? 0) > 0, `${m.id}: its sources validate (${validateMomentSources(m).join('; ')})`);
   }
 }
 

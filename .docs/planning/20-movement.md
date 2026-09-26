@@ -206,12 +206,13 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   above 30 m/s from about level flight; slower, or already diving steeply, it stays the free fall. Shift held on after
   the dart's second tap is ignored until released (the wings reopen as planned), like after a catch. The dart's
   shallow path never arms a plunge. Q / E held after the double tap keep the rudder once the slip ends. A / D ×2 and
-  S ×2 are unchanged.
+  S ×2 are unchanged. Space and Shift held together (owner feedback 26 Sep: folded wings still beat and climbed):
+  the one pressed last wins (`pilot.ts`): Space pressed while Shift is held opens the wings and beats, Shift pressed
+  while Space is held folds them and stops the beats; releasing the later key hands back to the one still held.
 - **Checks:** `tools/headless/air-moves-check.ts` (gesture unit tests, collisions in the flight model, per-move
   envelopes and refusals, skim drag and clearance on the rig mesh); the mesh part measurements moved to
   `tools/headless/pose/parts.ts`. Pose scenarios `power`, `dart`, `slip`, `skim`, `skim-water`.
-- **Not yet:** audio beyond the existing whoosh / wing-snap / splash cues; the flow system that consumes the clean
-  flags (stage D).
+- **Later (built):** the move sounds and the flow system that consumes the clean flags came with stage D.
 
 ### Stage C as built (awaiting the owner's feel test)
 
@@ -268,8 +269,14 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   (24–27 m/s) and past knife-edge over the top; Immelmann +46–60 m, ≤ 3° off; Split-S −150 to −200 m, +13–15 m/s,
   < 1° off; refusals; collisions; the spinning dive), gesture resolvers and the axis press in section 1. Pose
   scenarios `wingover`, `immelmann`, `splits`.
-- **Not yet:** a wingover entry faster than ~43 m/s keeps less than 90 % of its energy (unclean, still flies); the
-  flow system that consumes the clean flags (stage D, built below).
+- **Fast wingovers** (26 Sep): above `WINGOVER.loadSpeed` (40 m/s) the turn loads grow with (V / 40)², up to × 2.4,
+  so the turn keeps about its 40 m/s radius instead of growing with V² (a 60 m/s entry took ~12 s against the drag and
+  kept ×0.64). The clean bar falls from 90 % at 40 m/s to 72 % at 62 m/s (`wingoverCleanEnergy`): the drag grows with
+  V² and most of the loss comes on the climb, while still fast; a straight glide over the same seconds keeps less.
+  Entries 44 / 50 / 58 / 66 m/s (≈ 41 / 46 / 53 / 60 m/s at the S ×2) now keep ×0.99 / 0.94 / 0.85 / 0.78 (before
+  ×0.95 / 0.85 / 0.73 / 0.64) in 8.7 / 7.9 / 7.2 / 6.6 s and end higher the faster they enter (−9 / +12 / +36 / +57 m,
+  ~41 m/s out); up to 38 m/s nothing changed. `air-moves-check.ts` section 7 flies all seven speeds.
+- The flow system that consumes the clean flags is stage D, built below.
 
 ### Stage D as built (awaiting the owner's feel test)
 
@@ -386,7 +393,19 @@ manoeuvring) takes part without registering anything.
   (`audio/analysis/scenarios.ts`): −27.6 LUFS momentary (target −31..−25; the discovery chime −21.7, the cruise wind
   bed ~−28), the four figures within 2 dB of each other; case `chain-links` (the burst rush and the rising link tone):
   −27.2 LUFS (target −28..−18).
-- **Not yet:** the rider's reaction to high flow, tuning in the game (feel test). The balance numbers move with any
+- **Rider reaction to high flow** (added 26 Sep, owner request): the rider shows the flow with body language only,
+  from the existing cues (`RIDER_FLOW` in `flight/pose.ts`, fed by `sim.flow`):
+  - **crouch into the speed:** from flow 0.7 the rider goes lower on the neck, up to tuck 0.4 at flow 1 while a chain
+    is open; a burst's surge adds up to 0.3 more at its peak. Outside a chain the crouch stays at most 0.15, under
+    the 0.2 at which standing (T) and petting (G) give way (`rider-behavior.ts`), so calm high-flow gliding keeps them;
+  - **a fist pumped** (the trick cheer) at chain link 3 and every second link after it (3, 5, 7 …), at most once per
+    2.5 s;
+  - **a short laugh** (the bond laugh, 1.1 s) on each "Kusursuz" moment; the bond core's laugh and this one combine
+    (`bondPose` takes the larger).
+
+  Not while falling, under water or on the ground; a flow reset (a new race, a respawn) starts nothing. Check:
+  `flow-check.ts` section 6 (the crouch with and without a chain, the surge, the cheer by link, the laugh, the reset).
+- **Not yet:** tuning in the game (feel test). The balance numbers move with any
   flight-model change: rerun `race-balance.ts` after one.
 
 ### Urge removed (owner decision 26 Sep)
@@ -761,8 +780,27 @@ few times until the move is used), quietly and key first, on the shared hint lin
   rows ("Henüz denemediğin hareket"); the H overlay's compact list is unmarked.
 - **Checks:** `tools/headless/tutorial-check.ts` (every entry fires in its situation, pacing, hold, cooldown, max
   shows, tried / learned, relevance, gates, one at a time, persistence round trip, sense).
-- **Not yet:** gamepad key names in the hints (the hints name keyboard keys, like `CONTROL_HELP`); the plunge,
-  breach and swimming rows in `CONTROL_HELP`.
+- **Water rows and gamepad names** (added 26 Sep, owner request):
+  - `CONTROL_HELP` has a "Suda" group (Kontroller, after "Yerde"): the plunge (Shift, steep toward deep water),
+    swimming (W / S, Shift + W fast, A / D turn), the take-off from the water (Space / L), under water (W / S pitch,
+    Space stroke, near the surface the breach). The plunge, breach and water take-off hints mark these rows.
+  - Every trick now works on a gamepad: pad buttons press and double-tap like the keys (`core/input.ts`): A / RT =
+    Space (power stroke A ×2; A also counts as a press now, so the touch-and-go, the water take-off and the breach
+    work from the pad), LT = Shift (dart LT ×2), LB / RB = Q / E (slip), a left-stick flick up / down = S / W (loop
+    and wingover: two flicks, `AxisPress` 0.6 / 0.25), the D-pad ◀ / ▶ stays the roll's one-press double tap.
+  - `core/pad-keys.ts` translates the key syntax to pad names ("Space ×2" → "A ×2", "A / D ×2" → "D-pad ◀ / D-pad
+    ▶", "S ×2" → "LS ▲ ×2", conditions kept); keys without a pad binding keep the keyboard name. While the player uses
+    a pad (`Input.lastDevice`), every hint row (the hint line: move hints, the lesson, the next-move hint, the start
+    and hover hints) shows the pad's buttons (`ui/zones/key-device.ts`); Kontroller and the H overlay show each row's
+    pad buttons in small quiet caps under the action.
+  - Check: `tools/headless/pad-keys-check.ts` (the translations, every move hint and every flight / ground / water /
+    trick row has a pad name, the catalogue's Kontroller rows exist, and a stub gamepad through `Input`: A, RT, LT,
+    LB / RB and stick flicks double-tap, the D-pad rolls, a held button is one press, slow or far-apart presses are
+    not double taps).
+  - PlayStation pads (Sony's vendor id 054c or "DualShock" / "DualSense" in the pad's id, `padLayoutOf`) get their
+    names: ✕ ○ □ △, L1 / R1, L2 / R2, Options, Share; the Kontroller pad lines follow the last pad seen. The hover
+    panel's way back to flight says "sol çubuğu aşağı it [LS ▼]" on a pad.
+- **Not yet:** the pad names in the game (feel test; no gamepad in the container).
 
 ## Controls summary (additions)
 

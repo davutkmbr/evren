@@ -15,7 +15,7 @@ import { MomentSourceDetail } from './source-detail';
 const CATEGORY_LABEL: Record<MomentCategory, string> = {
   legend: 'Efsane',
   'city-life': 'Şehir hayatı',
-  poem: 'Şiir',
+  poem: 'Edebiyat',
 };
 
 const EMPTY_TEXT =

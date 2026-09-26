@@ -2,7 +2,8 @@
  * Structures sandbox (bridges, towers, skyscrapers) with the real geo, sky, terrain and water.
  *   /sandbox/structures.html?id=bogazici-koprusu&az=200&el=12&dist=1400&t=17.5
  *   ?id=a,b          build only these landmarks (default: all structures)
- *   &az &el &dist    orbit camera around the structure (degrees, metres); &tx &ty &tz override the target,
+ *   &az &el &dist    orbit camera around the structure (degrees, metres); &tx &ty &tz override the target (&tyr: height
+ *                    above the landmark base),
  *                    &anchor=<i> targets the landmark's i-th anchor (bridge towers, cluster towers)
  *   &view=<preset>   camera at a VIEW_PRESET;  &x &y &z &h &p explicit camera (heading/pitch degrees)
  *   &fov=60 &clouds=1 &water=real|flat|0 &terrain=0 &q=<quality preset>
@@ -88,7 +89,7 @@ function createSandboxCamera(): System {
           const anchor = params.has('anchor') ? def.anchors?.[num('anchor', 0)] : undefined;
           pose.tx = num('tx', anchor?.x ?? def.x);
           pose.tz = num('tz', anchor?.z ?? def.z);
-          pose.ty = num('ty', def.y + def.height * 0.35);
+          pose.ty = num('ty', def.y + num('tyr', def.height * 0.35));
         }
         targetReady = true;
       });

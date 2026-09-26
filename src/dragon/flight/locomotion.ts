@@ -111,6 +111,7 @@ export function enterSwimming(sim: FlightSim): void {
   sim.leapCharge = 0;
   sim.runTakeoff = 0;
   sim.runDuration = 0;
+  sim.surfSpeed = 0;
   // The rocking starts level and picks up the waves (the settle-in blends the body toward it).
   sim.seaPitch = 0;
   sim.seaRoll = 0;
@@ -263,7 +264,9 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * 0.9));
   }
   const turn = clamp(cmd.roll + cmd.yaw, -1, 1);
-  sim.groundYawRate = -turn * SWIM.turnRate * (running ? 0.5 : 1);
+  // Surfing, the body is carried by the wave: it turns more lazily.
+  const surfing = surfShare(sim);
+  sim.groundYawRate = -turn * SWIM.turnRate * (running ? 0.5 : 1) * (1 - 0.35 * surfing);
   sim.groundYaw += sim.groundYawRate * h;
   const fx = -Math.sin(sim.groundYaw);
   const fz = -Math.cos(sim.groundYaw);
@@ -271,8 +274,14 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
 
   // Swimming toward the target velocity through the water (which itself moves: orbital motion + current); quadratic
   // hydrodynamic drag bleeds a fast plunge in ~0.4 s.
-  const dx = fx * sim.groundSpeed + float.vx - v.x;
-  const dz = fz * sim.groundSpeed + float.vz - v.z;
+  // Wave surfing: gravity along a front face pushes the dragon on; the speed it gains stays while it rides the face.
+  const downhill = Number.isFinite(float.slopeForward) ? clamp(-float.slopeForward, -0.5, 0.5) : 0;
+  // It has to be swimming on to catch the wave (a floating body just bobs as the wave passes under it).
+  const surfPush = running ? 0 : SWIM_SEA.surfGain * GRAVITY * downhill * smoothstep(0.3 * SWIM.paddleSpeed, SWIM.paddleSpeed, sim.groundSpeed);
+  sim.surfSpeed = clamp(sim.surfSpeed + (surfPush - SWIM_SEA.surfDecay * sim.surfSpeed) * h, 0, SWIM_SEA.surfMax);
+  const swimSpeed = sim.groundSpeed + sim.surfSpeed;
+  const dx = fx * swimSpeed + float.vx - v.x;
+  const dz = fz * swimSpeed + float.vz - v.z;
   const drag = 1 - Math.exp(-h * (1.6 + 0.15 * Math.hypot(dx, dz)));
   v.x += dx * drag;
   v.z += dz * drag;
@@ -286,7 +295,10 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   }
   // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave. The
   // take-off run lifts the body onto the surface.
-  const depth = SWIM.floatDepth + (SWIM_POSE.runRiseDepth - SWIM.floatDepth) * run * run * (3 - 2 * run);
+  // Swimming on, the chest rides up on its bow wave.
+  const speedK = smoothstep(0, SWIM.fastSpeed, Math.abs(sim.groundSpeed));
+  const swimDepth = SWIM.floatDepth - SWIM_POSE.speedRise * speedK;
+  const depth = swimDepth + (SWIM_POSE.runRiseDepth - swimDepth) * run * run * (3 - 2 * run);
   const floatY = float.height - depth;
   const vDrag = 1 - Math.exp(-h * (4 + 0.4 * Math.abs(v.y - float.vy)));
   v.y += 10 * (floatY - p.y) * h;
@@ -321,7 +333,7 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const tp = Math.tan(sim.seaPitch);
   const tr = Math.tan(sim.seaRoll);
   _up.set(-tp * fx + tr * fz, 1, -tp * fz - tr * fx).normalize();
-  alignBody(sim, _up, 0.06 + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : SWIM_SEA.alignRate, h);
+  alignBody(sim, _up, 0.06 + SWIM_POSE.speedTrim * speedK + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : SWIM_SEA.alignRate, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   const collision = sim.world.collision;
@@ -334,20 +346,30 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
   const speed = Math.abs(sim.groundSpeed);
   const fastK = smoothstep(SWIM.paddleSpeed, SWIM.fastSpeed, speed);
   const freq = running ? SWIM_POSE.runFreq : (SWIM_POSE.freqIdle + SWIM_POSE.freqPerSpeed * speed) * (1 + (SWIM_POSE.fastFreq - 1) * fastK);
+  // Riding a wave it eases off the stroke and lets the wave carry it.
   const strokeTarget = running
     ? SWIM_POSE.strokeFast
-    : SWIM_POSE.strokeIdle + (SWIM_POSE.strokePaddle - SWIM_POSE.strokeIdle) * smoothstep(0, SWIM.paddleSpeed, speed) + (SWIM_POSE.strokeFast - SWIM_POSE.strokePaddle) * fastK;
+    : (SWIM_POSE.strokeIdle + (SWIM_POSE.strokePaddle - SWIM_POSE.strokeIdle) * smoothstep(0, SWIM.paddleSpeed, speed) + (SWIM_POSE.strokeFast - SWIM_POSE.strokePaddle) * fastK) *
+      (1 - SWIM_SEA.surfEase * surfing);
   sim.swimStroke += (strokeTarget - sim.swimStroke) * (1 - Math.exp(-h * SWIM_POSE.strokeRate));
   sim.swimFreq = freq;
   const prevPhase = sim.swimPhase;
   sim.swimPhase = (sim.swimPhase + TWO_PI * freq * h) % TWO_PI;
   if (!running) {
     paddleSpray(sim, prevPhase, sim.swimPhase, fx, fz, fastK);
+    // Riding: spray bursts off the chest as it cuts down the face.
+    sim.surfSpray += h;
+    if (surfing > 0.3 && sim.surfSpray >= SWIM_SEA.surfSprayEvery) {
+      sim.surfSpray = 0;
+      const ax = p.x + fx * SWIM_SEA.surfSprayForward * sim.rigLength;
+      const az = p.z + fz * SWIM_SEA.surfSprayForward * sim.rigLength;
+      sim.emit({ type: 'spray', point: new THREE.Vector3(ax, sim.waterHeight(ax, az), az), strength: SWIM_SEA.surfSpray * surfing });
+    }
   }
   sim.walkAmount = 0;
   // No splash events while swimming: the stroke's water sounds (the wing paddles, the lapping along the flanks) are the
   // audio system's, driven from the pose.
-  sim.touchingWater = speed > 1.5 || running;
+  sim.touchingWater = speed > 1.5 || running || surfing > 0.3;
 
   if (running) {
     // Wings open and beat, the downstrokes slapping the water at both tips.
@@ -374,6 +396,11 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     relaxWings(sim, 0, 0.3, h);
   }
   fillLocomotionTelemetry(sim);
+}
+
+/** 0..1 how much the swimming dragon is riding a wave (its surf speed, SWIM_SEA.surfLo..surfHi). */
+export function surfShare(sim: FlightSim): number {
+  return smoothstep(SWIM_SEA.surfLo, SWIM_SEA.surfHi, sim.surfSpeed);
 }
 
 /** 0..1 how rough the sea is for a water take-off (local significant wave height, SWIM_SEA.roughLo..roughHi). */

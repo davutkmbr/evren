@@ -37,7 +37,7 @@ export function isModelled(l: LandmarkDef): boolean {
 }
 
 /** Ground claims of the modelled landmarks; `grow` widens pads and line bodies (m). */
-export function landmarkClaims(geo: GeoQuery, grow = 0): LandmarkClaims {
+export function landmarkClaims(geo: Pick<GeoQuery, 'landmarks' | 'smallMosqueSites'>, grow = 0): LandmarkClaims {
   const pads: number[] = [];
   const lines: number[] = [];
   for (const l of geo.landmarks) {
