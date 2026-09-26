@@ -1,6 +1,6 @@
 # Candidates: human base for the rider (and later NPCs)
 
-Status: **pending approval** (asked 2026-09-26). Nothing below is in `public/` or referenced by code.
+Status: **approved 2026-09-26** (all three packs; see the decision below).
 
 ## Why
 
@@ -36,3 +36,8 @@ GPL; the characters it produces from CC0 assets are not GPL). CC-BY packs on the
 3. The runtime loads the base + chosen parts, sets morph weights and palette colours; the appearance model, skeleton
    names and the menu design from the procedural work carry over.
 4. Every integrated asset is recorded in `public/models/LICENSES.md` / `public/textures/LICENSES.md`.
+
+## Decision 2026-09-26
+
+The owner approved candidates 1–3 and asked for the Akıncı to be built with this pipeline first, rendered on the dragon next
+to the procedural attempt.
