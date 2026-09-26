@@ -9,7 +9,7 @@ import { corniceProfile, rectPath, tileRoof } from '../parts/details';
 import { arcade } from '../parts/arcade';
 import { minaret, minaretTop, type MinaretSpec } from '../parts/minaret';
 import { rowOpenings } from '../parts/wall';
-import { Light, Mat, type LocalCollider, type LodLevel, type RGB } from '../types';
+import { Light, Mat, shiftColliderZ, type LocalCollider, type LodLevel, type RGB } from '../types';
 import { boxFacades, buildImperial, type ImperialSpec, type StyleResult } from './imperial';
 
 export interface PitchedSpec {
@@ -163,15 +163,12 @@ function buildPitched(b: MeshBuilder, s: PitchedSpec, lod: LodLevel): StyleResul
     b.at(-s.w / 2 + 0.6, 0, s.d / 2 + pd, 0, () => arcade(b, { len: s.w - 1.2, bays: 3, depth: pd, colH: 3.2, roofH: 4.4, lod, pitched: true }));
   }
   b.with({ mat: Mat.Stone, color: s.plaster ? [0.8, 0.78, 0.74] : s.stone }, () => {
-    cols.push(...minaret(b, s.minaret, lod).map((c) => shiftZ(c, shift)));
+    cols.push(...minaret(b, s.minaret, lod).map((c) => shiftColliderZ(c, shift)));
   });
   b.pop();
   return { colliders: cols, radius: Math.hypot(s.w / 2, s.d / 2 + pd) + 2, height: minaretTop(s.minaret) };
 }
 
-function shiftZ(c: LocalCollider, dz: number): LocalCollider {
-  return c.kind === 'box' ? { ...c, cz: c.cz + dz } : { ...c, z: c.z + dz };
-}
 
 export function buildNeighborhood(b: MeshBuilder, v: NeighborhoodVariant, lod: LodLevel): StyleResult {
   if (v.style === 'pitched') {

@@ -17,7 +17,10 @@ import type { FlightMode, WeatherPreset } from '../core/contracts';
  */
 export type MomentStatus = 'draft' | 'ready';
 
-/** Player-facing groups; each can be switched off in the settings (see prefs.ts). */
+/**
+ * Player-facing groups; each can be switched off in the settings (see prefs.ts). 'poem' covers every quoted literary
+ * text (poems, songs, inscriptions, prose, travel writing, shadow theatre); the settings call it "Şiir ve edebiyat".
+ */
 export type MomentCategory = 'legend' | 'city-life' | 'poem';
 
 export interface LatLon {
@@ -108,6 +111,12 @@ export interface MomentTrigger {
   dateRange?: DateRange;
   /** Allowed weather presets; omitted = any weather. A 'custom' weather never matches a list. */
   weather?: readonly WeatherPreset[];
+  /**
+   * Amount 0..1 of the fog layer lying on the sea (src/render/weather/sea-fog.ts: the foggy mornings of about a third
+   * of the game days, and fog weather), read from WeatherService.seaFog. Independent of `weather`: a foggy morning
+   * usually comes with the 'clear' or 'haze' preset.
+   */
+  seaFog?: { min?: number; max?: number };
   repeat: MomentRepeat;
 }
 
@@ -181,7 +190,7 @@ export interface ExternalMedia {
  * a public-domain source (legend, chronicle, a poem whose author died more than 70 years ago) is named explicitly.
  */
 export interface TextProvenance {
-  /** Which text this entry covers: 'subtitles', 'card', or 'subtitles:3' for a single line. */
+  /** Which text this entry covers: 'subtitles', 'card', or 'subtitles:3' for a single line (1-based, as on screen). */
   covers: string;
   kind: 'original' | 'public-domain';
   /** 'MIT' for our own writing, 'public domain' for PD works. */

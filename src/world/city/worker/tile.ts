@@ -7,6 +7,9 @@ import { GeoSampler } from './geo-sampler';
 import { layoutCell, type CellLayout } from './layout';
 import { MeshWriter } from './mesh-writer';
 import type { WorldData } from './world-data';
+import type { DecodedBuildings } from '../osm/format';
+import { osmCoverageMask } from '../osm/mask';
+import { emitOsm, osmCollider, osmFadeClass } from './osm-emit';
 
 const WORLD_HALF = 24000;
 const CELLS = (WORLD_HALF * 2) / BASE_CELL;
@@ -48,6 +51,96 @@ export function forgetCells(rect: { minX: number; maxX: number; minZ: number; ma
   }
 }
 
+/** Whether the far OSM layer draws base cell (ci, cj) (its buildings replace the procedural lots there). */
+function osmCell(world: WorldData, ci: number, cj: number): boolean {
+  return world.osm !== null && osmCoverageMask()[cj * CELLS + ci] === 1;
+}
+
+/**
+ * Records of the far OSM block inside the tile [x0, x0 + size) x [z0, z0 + size): owned by their centroid, in an OSM
+ * cell, not owned by a loaded region (exclude rects), thinned like the procedural lots (small buildings only).
+ */
+function osmRecords(block: DecodedBuildings, x0: number, z0: number, size: number, exclude: readonly number[], densityScale: number): number[] {
+  const out: number[] = [];
+  const mask = osmCoverageMask();
+  const tile0 = LEVEL_SIZES[0];
+  const i0 = Math.round((x0 + WORLD_HALF) / tile0);
+  const j0 = Math.round((z0 + WORLD_HALF) / tile0);
+  const span = size / tile0;
+  for (const t of block.header.tiles) {
+    if (t.i < i0 || t.i >= i0 + span || t.j < j0 || t.j >= j0 + span) {
+      continue;
+    }
+    for (let k = t.first; k < t.first + t.count; k++) {
+      // Centroid of the outline (the record's first ring).
+      const r0 = block.ringStart[k];
+      let cx = 0;
+      let cz = 0;
+      for (let v = block.start[r0]; v < block.start[r0 + 1]; v++) {
+        cx += block.xy[v * 2];
+        cz += block.xy[v * 2 + 1];
+      }
+      cx /= block.nv[r0];
+      cz /= block.nv[r0];
+      const ci = Math.floor((cx + WORLD_HALF) / BASE_CELL);
+      const cj = Math.floor((cz + WORLD_HALF) / BASE_CELL);
+      if (ci < 0 || cj < 0 || ci >= CELLS || cj >= CELLS || mask[cj * CELLS + ci] !== 1) {
+        continue;
+      }
+      let owned = false;
+      for (let e = 0; e < exclude.length && !owned; e += 4) {
+        owned = cx >= exclude[e] && cx < exclude[e + 2] && cz >= exclude[e + 1] && cz < exclude[e + 3];
+      }
+      if (owned) {
+        continue;
+      }
+      if (osmFadeClass(block, k) === FadeClass.Small && hash01(Math.abs(block.id[k]) % 65536, Math.floor(Math.abs(block.id[k]) / 65536), 91) >= densityScale) {
+        continue;
+      }
+      out.push(k);
+    }
+  }
+  return out;
+}
+
+/**
+ * Street lights of the far OSM block inside the tile, in OSM cells, not in a loaded region (it draws its own); far
+ * tiles keep every road light and half of the street lights, like the procedural ones.
+ */
+function osmLamps(block: DecodedBuildings, x0: number, z0: number, size: number, exclude: readonly number[], far: boolean, sink: LampSink): void {
+  const mask = osmCoverageMask();
+  const tile0 = LEVEL_SIZES[0];
+  const i0 = Math.round((x0 + WORLD_HALF) / tile0);
+  const j0 = Math.round((z0 + WORLD_HALF) / tile0);
+  const span = size / tile0;
+  const pos = block.lampPos;
+  const col = block.lampCol;
+  for (const t of block.header.lampTiles) {
+    if (t.i < i0 || t.i >= i0 + span || t.j < j0 || t.j >= j0 + span) {
+      continue;
+    }
+    for (let k = t.first; k < t.first + t.count; k++) {
+      const x = pos[k * 3];
+      const z = pos[k * 3 + 2];
+      const ci = Math.floor((x + WORLD_HALF) / BASE_CELL);
+      const cj = Math.floor((z + WORLD_HALF) / BASE_CELL);
+      if (ci < 0 || cj < 0 || ci >= CELLS || cj >= CELLS || mask[cj * CELLS + ci] !== 1) {
+        continue;
+      }
+      let owned = false;
+      for (let e = 0; e < exclude.length && !owned; e += 4) {
+        owned = x >= exclude[e] && x < exclude[e + 2] && z >= exclude[e + 1] && z < exclude[e + 3];
+      }
+      const type = col[k * 4 + 3];
+      if (owned || (far && type === 1 && hash01(ci, cj, k, 77) < 0.5)) {
+        continue;
+      }
+      sink.pos.push(x, pos[k * 3 + 1], z);
+      sink.col.push(col[k * 4] * 16777216 + ((col[k * 4 + 1] << 16) | (col[k * 4 + 2] << 8) | type));
+    }
+  }
+}
+
 function kept(b: BuildingRec, densityScale: number): boolean {
   return b.keep < densityScale;
 }
@@ -62,7 +155,7 @@ function fadeClassOf(b: BuildingRec): number {
   return b.height >= 12 ? FadeClass.Mid : FadeClass.Small;
 }
 
-export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg {
+export function buildTile(req: TileRequestMsg, world: WorldData, block: DecodedBuildings | null = null): TileResultMsg {
   const t0 = performance.now();
   const size = LEVEL_SIZES[req.level];
   const x0 = -WORLD_HALF + req.ix * size;
@@ -76,15 +169,20 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
   const cj0 = Math.round((z0 + WORLD_HALF) / BASE_CELL);
   const far = req.level === 2;
   const buckets: BuildingRec[][] = [];
+  const osmBuckets: number[][] = [];
   for (let k = 0; k < FADE_CLASS_COUNT; k++) {
     buckets.push([]);
+    osmBuckets.push([]);
   }
+  const geo = new GeoSampler(req.win, world.landUseSpec, world.heightSpec);
   let buildings = 0;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const layout = cellLayout(ci0 + i, cj0 + j, req.win, world);
+      // Far OSM cells: the real buildings below replace the lots (the street lights stay).
+      const osm = osmCell(world, ci0 + i, cj0 + j);
       for (const b of layout.buildings) {
-        if (!kept(b, req.densityScale)) {
+        if (osm || !kept(b, req.densityScale)) {
           continue;
         }
         buildings++;
@@ -96,7 +194,8 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
           emitCompact(b, writer, 1, sink);
         }
       }
-      for (let k = 0; k < layout.lampCol.length; k++) {
+      // Far OSM cells light their real streets (the bake's lamps, below) instead of the layout's.
+      for (let k = 0; !osm && k < layout.lampCol.length; k++) {
         const col = layout.lampCol[k];
         // Far tiles keep every road light but only half of the neighbourhood street lights.
         if (far && (col & 255) === 1 && hash01(ci0 + i, cj0 + j, k, 77) < 0.5) {
@@ -107,12 +206,26 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
       }
     }
   }
+  if (block) {
+    osmLamps(block, x0, z0, size, req.exclude, far, sink);
+    for (const k of osmRecords(block, x0, z0, size, req.exclude, req.densityScale)) {
+      buildings++;
+      if (far) {
+        osmBuckets[osmFadeClass(block, k)].push(k);
+      } else {
+        emitOsm(block, k, writer, req.level, geo);
+      }
+    }
+  }
   const classEnds = [0, 0, 0, 0];
   if (far) {
     for (let k = 0; k < FADE_CLASS_COUNT; k++) {
       writer.fadeClass = k;
       for (const b of buckets[k]) {
         emitCompact(b, writer, 2, sink);
+      }
+      for (const r of osmBuckets[k]) {
+        emitOsm(block!, r, writer, 2, geo);
       }
       classEnds[k] = writer.icount;
     }
@@ -121,7 +234,6 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
   }
   const detailStart = writer.icount;
   const mesh = writer.finish();
-  const geo = new GeoSampler(req.win, world.landUseSpec, world.heightSpec);
   let nearWater = false;
   for (let j = 0; j <= 6 && !nearWater; j++) {
     for (let i = 0; i <= 6; i++) {
@@ -200,7 +312,7 @@ function pushBuildingColliders(b: BuildingRec, out: number[]): void {
   box(lz, b.baseY, top + (b.roof === Roof.Flat ? (b.flags & BF.Parapet ? 0.8 : 0) : 1.5), hw, hd);
 }
 
-export function buildColliders(req: ColliderRequestMsg, world: WorldData): ColliderResultMsg {
+export function buildColliders(req: ColliderRequestMsg, world: WorldData, block: DecodedBuildings | null = null): ColliderResultMsg {
   const t0 = performance.now();
   const x0 = -WORLD_HALF + req.ix * req.size;
   const z0 = -WORLD_HALF + req.iz * req.size;
@@ -210,12 +322,21 @@ export function buildColliders(req: ColliderRequestMsg, world: WorldData): Colli
   const out: number[] = [];
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
+      if (osmCell(world, ci0 + i, cj0 + j)) {
+        continue;
+      }
       const layout = cellLayout(ci0 + i, cj0 + j, req.win, world);
       for (const b of layout.buildings) {
         if (kept(b, req.densityScale)) {
           pushBuildingColliders(b, out);
         }
       }
+    }
+  }
+  if (block) {
+    const geo = new GeoSampler(req.win, world.landUseSpec, world.heightSpec);
+    for (const k of osmRecords(block, x0, z0, req.size, req.exclude, req.densityScale)) {
+      osmCollider(block, k, geo, out);
     }
   }
   const boxes = new Float32Array(out);

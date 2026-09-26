@@ -35,6 +35,7 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   immelmann: 'Immelmann',
   splits: 'Split-S',
   flow: 'Kusursuz',
+  hardland: 'Sert iniş',
 };
 
 /** Moves kept in the log of finished moves (headless checks, diagnostics). */

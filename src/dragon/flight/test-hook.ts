@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { DragonPose } from '../../core/contracts';
 import { VIEW_PRESETS } from '../../core/debug';
 import { headingToYaw, yawToHeading } from '../../core/geo-coords';
+import { triggerHardLanding, type HardLandingVariant } from './hard-landing';
 import { DEG, PHYSICS_DT } from './params';
 import type { FlightSim } from './sim';
 import type { AssistOverrides, PilotCommand, PilotEdge, SimEvent, SimOptions } from './types';
@@ -192,6 +193,17 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
       host.snap();
       return snapshot(sim);
     },
+    /**
+     * A hard landing right here (phase 04): as if the dragon had just met the ground below it `speed` m/s fast (default
+     * its speed, at least 20) sinking `sink` m/s; `variant` 'front' | 'side' | 'belly' forces one. False when it cannot.
+     */
+    hardLanding: (variant?: HardLandingVariant, speed?: number, sink?: number): boolean => {
+      const ok = triggerHardLanding(sim, variant, speed, sink);
+      host.snap();
+      return ok;
+    },
+    /** State of the running (or last) hard landing. */
+    hardState: () => ({ active: sim.hard.active, phase: sim.hard.phase, variant: sim.hard.variant, time: sim.hard.time, count: sim.hard.count, sink: sim.hard.sink, horizontal: sim.hard.horizontal }),
     /** Lands chain link number `link` now (flow's chain bursts: push, camera kick, sounds, HUD counter). */
     chainLink: (link = 3): void => sim.flow.debugLink(sim, link),
     setStamina: (value: number): void => {

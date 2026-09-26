@@ -114,6 +114,20 @@ export const DRAGON_FOAM = {
   strokeRadius: 1.6,
   strokeFoam: 0.7,
   strokeDepth: 0.35,
+  /**
+   * The fast swim (from swimFastFrom to swimFastTo m/s: the dragon's paddle and Shift speeds, SWIM in the flight params)
+   * churns more: the body wash widens to swimFastBeam x swimBeam and thickens (swimFastBoost more foam, bubbles and
+   * slick), and the chest cuts a white bow wave on both sides (bowRadius m, bowFoam level, bowForward x swimLength ahead
+   * of the centre, bowOut x swimBeam out to each side).
+   */
+  swimFastFrom: 5,
+  swimFastTo: 8.5,
+  swimFastBeam: 0.6,
+  swimFastBoost: 0.4,
+  bowRadius: 1.3,
+  bowFoam: 0.6,
+  bowForward: 0.38,
+  bowOut: 0.45,
   /** Splash events: radius = splashRadius + splashRadiusPer x strength (m), foam level = min(1, splashFoam x strength). */
   splashRadius: 1.2,
   splashRadiusPer: 2.2,

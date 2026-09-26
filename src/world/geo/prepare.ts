@@ -10,6 +10,8 @@ import { BATHYMETRY, BEACHES, BURIED_VALLEYS, SHORE_FLATS, STEEP_CHANNELS, SUMMI
 import { RIVER_VALLEYS } from './data/rivers';
 import { ROADS } from './data/roads';
 import { SPOT_HEIGHTS } from './data/spot-heights';
+import { osmCoverageMask } from '../city/osm/mask';
+import { osmStaticExclusion } from '../osm/regions';
 import WALL_CORRIDORS from '../landmarks/walls/data/corridors.json';
 import type { BuildInput, FlatRing } from './types';
 
@@ -266,6 +268,8 @@ export function prepareBuildInput(): PreparedInput {
     })),
     landmarkMosques: LANDMARKS.filter((l) => l.builder === 'mosques').map((l) => ({ ...latLonToLocal(l.lat, l.lon), radius: l.radius })),
     mosqueTarget: MOSQUE_SITE_TARGET,
+    siteExclusion: osmStaticExclusion().map((r) => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ })),
+    siteMask: osmCoverageMask(),
   };
   return { input, padIndex };
 }

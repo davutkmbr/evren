@@ -103,7 +103,9 @@ export function createMomentSystem(): System {
     c.coastDistance = geo.coastDistance(p.x, p.z);
     c.timeOfDay = ctx.time.timeOfDay;
     c.dayOfYear = ctx.time.dayOfYear;
-    c.weather = ctx.services.tryGet('weather')?.preset ?? 'clear';
+    const weather = ctx.services.tryGet('weather');
+    c.weather = weather?.preset ?? 'clear';
+    c.seaFog = weather?.seaFog ?? 0;
     c.anchors = anchorFeed.update(ctx.services.tryGet('life'));
     return c;
   }

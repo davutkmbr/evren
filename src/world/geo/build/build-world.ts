@@ -1,3 +1,5 @@
+import type { DecodedLand } from '../../city/osm/format';
+import { stampOsmLand } from './osm-land';
 import { WORLD_ORIGIN } from '../../../core/geo-coords';
 import type { BuildInput, BuildOutput } from '../types';
 import { buildDensityGrid, buildDistrictGrid, qiblaBearing, selectMosqueSites } from './areas';
@@ -176,7 +178,7 @@ export interface LandUseStage {
   district: Uint8Array;
 }
 
-export function stageLandUse(input: BuildInput, coast: Float32Array, timings: Timings): LandUseStage {
+export function stageLandUse(input: BuildInput, coast: Float32Array, timings: Timings, osmLand?: DecodedLand | null): LandUseStage {
   const lap = stopwatch(timings);
   const district = buildDistrictGrid(input);
   lap('districts');
@@ -184,6 +186,11 @@ export function stageLandUse(input: BuildInput, coast: Float32Array, timings: Ti
   lap('noiseTileA');
   const landUse = buildLandUse(input, coast, noise);
   lap('landUse');
+  // Real parks and woods where the far OSM layer draws the buildings (osm-land.ts).
+  if (osmLand) {
+    stampOsmLand(landUse, osmLand, input.siteMask);
+    lap('osmLand');
+  }
   const density = buildDensityGrid(input, landUse, district, noise.medium);
   lap('density');
   return { landUse, density, district };
@@ -263,12 +270,12 @@ export function stageSites(input: BuildInput, height: Float32Array, coast: Float
   return out;
 }
 
-/** Builds every geo grid sequentially. Pure and deterministic. */
-export function buildWorld(input: BuildInput): BuildOutput {
+/** Builds every geo grid sequentially. Pure and deterministic. `osmLand`: the far city bake's land use (osm-land.ts). */
+export function buildWorld(input: BuildInput, osmLand?: DecodedLand | null): BuildOutput {
   const timings: Timings = {};
   const coastStage = stageCoast(input, timings);
   const relief = stageRelief(input, timings);
-  const lu = stageLandUse(input, coastStage.coast, timings);
+  const lu = stageLandUse(input, coastStage.coast, timings, osmLand);
   const { height, padHeights } = stageHeight(input, coastStage, relief, timings);
   const mosqueSites = stageSites(input, height, coastStage.coast, lu, timings);
   return { height, coast: coastStage.coast, landUse: lu.landUse, density: lu.density, district: lu.district, padHeights, mosqueSites, timings };

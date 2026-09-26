@@ -124,7 +124,7 @@ console.log('1. start eligibility');
   pr.sync(t);
   zones.update(0.05);
   const line = zones.hintLine();
-  check(zones.isShown(ESCORT_IDS.prompt) && !!line && line.hints.some(([k, l]) => k === 'Z' && l === 'Vapura eşlik et'), 'the hint line shows "[Z] Vapura eşlik et"');
+  check(zones.isShown(ESCORT_IDS.prompt) && !!line && line.hints.some(([k, l]) => k === 'L' && l === 'Vapura eşlik et'), 'the hint line shows "[L] Vapura eşlik et"');
   t.update(0.1, { dragon: dragonAt(40, 0), racing: true, ferries: [far, near] });
   pr.sync(t);
   zones.update(0.05);
@@ -177,7 +177,7 @@ console.log('2. keeping and losing the escort');
   });
   const hl = zones.hintLine();
   check(awayAt > 0 && t.active, `hovering behind: 'away' after ${f1(awayAt)} s, the escort still runs (away ${f1(t.away)} s)`);
-  check(noteAt > 0 && noteAt - awayAt < 0.5 && hl?.caption === 'Vapurdan uzaklaşıyorsun' && hl.hints.some(([k]) => k === 'Z'), 'the note "Vapurdan uzaklaşıyorsun · [Z] Eşliği bırak" takes the hint line');
+  check(noteAt > 0 && noteAt - awayAt < 0.5 && hl?.caption === 'Vapurdan uzaklaşıyorsun' && hl.hints.some(([k]) => k === 'L'), 'the note "Vapurdan uzaklaşıyorsun · [L] Eşliği bırak" takes the hint line');
   // Catch up: back within 200 m.
   let back = false;
   run(t, 24, dt, input, (ev) => {
@@ -447,6 +447,36 @@ if (!QUICK) {
     check(leg?.type === 'leg' && leg.leg.from === firstTo && t.active && t.phase === 'escorting', `after the dwell (${f1(legAt - arrivedAt)} s) the escort carries on: ${leg?.type === 'leg' ? `${shortPierName(leg.leg.fromName)} → ${shortPierName(leg.leg.toName)}` : 'no next leg'}`);
     check(!events.some((e) => e.type === 'ended'), 'flying along, the escort never ends');
   }
+}
+
+console.log('8. the land key doubles as the escort key');
+{
+  // Input needs a window and a canvas for its listeners; stubs are enough to drive a key press.
+  const g = globalThis as unknown as { window?: Record<string, unknown> };
+  g.window ??= {};
+  g.window.addEventListener ??= () => {};
+  g.window.removeEventListener ??= () => {};
+  const gd = globalThis as unknown as { document?: Record<string, unknown> };
+  gd.document ??= {};
+  gd.document.addEventListener ??= () => {};
+  const { Input } = await import('../../src/core/input');
+  const canvas = { addEventListener() {}, removeEventListener() {} } as unknown as HTMLElement;
+  const inp = new Input(canvas);
+  const press = (): void => {
+    const onKeyDown = (inp as unknown as { onKeyDown: (e: unknown) => void }).onKeyDown;
+    const onKeyUp = (inp as unknown as { onKeyUp: (e: unknown) => void }).onKeyUp;
+    onKeyDown({ code: 'KeyL', repeat: false, target: null, ctrlKey: false, preventDefault() {} });
+    onKeyUp({ code: 'KeyL', target: null, preventDefault() {} });
+    inp.update(1 / 24);
+  };
+  press();
+  check(inp.wasPressed('land') && !inp.wasClaimedPress('land'), 'unclaimed: L lands (the flight reads it, the escort does not)');
+  inp.claim('land', true);
+  press();
+  check(!inp.wasPressed('land') && inp.wasClaimedPress('land'), 'claimed while the offer shows: L starts the escort and does not land');
+  inp.claim('land', false);
+  press();
+  check(inp.wasPressed('land'), 'released again: L lands');
 }
 
 console.log(`escort-check: ${checks} checks, ${failures} failed`);

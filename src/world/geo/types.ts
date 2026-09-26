@@ -137,6 +137,17 @@ export interface BuildInput {
   /** Landmark mosques: neighbourhood mosque sites keep clear of them. */
   landmarkMosques: { x: number; z: number; radius: number }[];
   mosqueTarget: number;
+  /**
+   * Rects where the real OSM map is drawn (osm/regions.ts osmStaticExclusion): no neighbourhood mosque site may reach
+   * into them, so a procedural mosque never replaces mapped buildings (the OSM mosques are drawn there instead).
+   */
+  siteExclusion: { minX: number; maxX: number; minZ: number; maxZ: number }[];
+  /**
+   * The far OSM layer's coverage mask (city/osm/mask.ts; 1 = the baked OSM buildings stand there): no neighbourhood
+   * mosque site reaches into those cells (the real mosques stand there), and the OSM land use is stamped only there
+   * (osm-land.ts).
+   */
+  siteMask: Uint8Array;
 }
 
 export interface MosqueSite {

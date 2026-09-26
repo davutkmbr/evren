@@ -48,6 +48,15 @@ export function worldColliders(local: readonly LocalCollider[], p: Placement, fi
       out.push({ kind: 'box', center: toWorld(p, c.cx, c.cy, c.cz, new THREE.Vector3()), halfSize: new THREE.Vector3(c.hx * k, c.hy * k, c.hz * k), yaw: p.yaw + c.yaw });
     } else if (c.kind === 'cylinder') {
       out.push({ kind: 'cylinder', base: toWorld(p, c.x, c.y, c.z, new THREE.Vector3()), radius: c.r * k, height: c.h * k });
+    } else if (c.kind === 'prism') {
+      const ring = new Float32Array(c.ring.length);
+      const v = new THREE.Vector3();
+      for (let i = 0; i < c.ring.length; i += 2) {
+        toWorld(p, c.ring[i], 0, c.ring[i + 1], v);
+        ring[i] = v.x;
+        ring[i + 1] = v.z;
+      }
+      out.push({ kind: 'prism', rings: [ring], bottom: p.y + c.bottom * k, top: p.y + c.top * k });
     } else {
       out.push({ kind: 'sphere', center: toWorld(p, c.x, c.y, c.z, new THREE.Vector3()), radius: c.r * k });
     }

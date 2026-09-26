@@ -5,6 +5,7 @@
  *
  *   node scripts/data/fetch-osm.mjs [--area galata|kadikoy] [--cache /tmp/overpass-<area>.json] [--out <file>]
  *   node scripts/data/fetch-osm.mjs --region <id>      # a flight-scale region of src/world/osm/regions.json
+ *   node scripts/data/fetch-osm.mjs --bbox s,w,n,e --out <file>   # any rectangle, region profile (far city bake)
  *
  * --source local (default): the queries below run against the local Geofabrik extract index
  * (scripts/data/lib/osm-local.mjs; build it once with `node scripts/data/osm-extract.mjs all`), in seconds.
@@ -30,7 +31,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
-import { overpassLocal, sourceArg } from './lib/osm-local.mjs';
+import { extractSource, overpassLocal, sourceArg } from './lib/osm-local.mjs';
 
 const args = process.argv.slice(2);
 const argOf = (name) => {
@@ -38,7 +39,11 @@ const argOf = (name) => {
   return i >= 0 ? args[i + 1] : null;
 };
 const REGION = argOf('--region');
-const AREA = REGION ? readRegion(REGION) : readArea(argOf('--area') ?? 'galata');
+/** `--bbox s,w,n,e --out <file>`: any rectangle with the region profile (the far city bake's 2 km blocks). */
+const BBOX_ARG = argOf('--bbox');
+const AREA = BBOX_ARG ? readBboxArg(BBOX_ARG) : REGION ? readRegion(REGION) : readArea(argOf('--area') ?? 'galata');
+/** Regions and bbox blocks estimate the storeys of untagged buildings (fillLevels). */
+const FILL = !!(REGION || BBOX_ARG);
 const STREET = AREA.profile === 'street';
 const SOURCE = sourceArg(args);
 const OUT = resolve(ROOT, argOf('--out') ?? AREA.dataFile);
@@ -143,6 +148,15 @@ const STREET_POINT_KEYS = [['entrance', null], ...POINT_KEYS, ['craft', null], [
 const POINT_KEYS_ACTIVE = STREET ? STREET_POINT_KEYS : POINT_KEYS;
 
 const cachePath = argOf('--cache');
+
+/** A `--bbox s,w,n,e` rectangle as an area definition (profile 'slice', written to `--out`). */
+function readBboxArg(text) {
+  const [south, west, north, east] = text.split(',').map(Number);
+  if (![south, west, north, east].every(Number.isFinite) || !argOf('--out')) {
+    throw new Error('--bbox needs four numbers s,w,n,e and --out <file>');
+  }
+  return { id: 'bbox', bbox: { south, west, north, east }, dataFile: argOf('--out'), profile: 'slice' };
+}
 
 /** A region of src/world/osm/regions.json (scripts/data/osm-regions.mjs) as an area definition. */
 function readRegion(id) {
@@ -1165,13 +1179,13 @@ async function main() {
     }
   }
 
-  const fill = REGION ? fillLevels(buildings) : null;
+  const fill = FILL ? fillLevels(buildings) : null;
 
   const [x0, z1] = project(BBOX.south, BBOX.west);
   const [x1, z0] = project(BBOX.north, BBOX.east);
   const out = {
     version: SCHEMA_VERSION,
-    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? 'Geofabrik extract' : 'Overpass API'})`,
+    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})`,
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
