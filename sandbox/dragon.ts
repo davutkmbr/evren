@@ -14,7 +14,7 @@ import type { DragonPose, DragonRig, DragonState, System } from '../src/core/con
 import { UpdateOrder } from '../src/core/contracts';
 import { createDragonModelSystem } from '../src/dragon/model';
 import { STANDING_ROOT_HEIGHT } from '../src/dragon/model/constants';
-import { SWIM, SWIM_POSE } from '../src/dragon/flight/params';
+import { SWIM, SWIM_POSE, SWIM_SEA } from '../src/dragon/flight/params';
 import { createSkySystem } from '../src/render/sky';
 import { createRenderPipeline } from '../src/render/post';
 import { SHARED_GLSL } from '../src/render/shaders';
@@ -49,7 +49,9 @@ const POSES: Record<string, PoseFn> = {
   half: () => ({ flapAmplitude: 0, wingSpread: 0.5, wingSweep: 0, legsTuck: 1 }),
   // Swimming at the surface: ?stroke= strength (0.22 idle, 0.7 paddle, 1 fast), ?freq= stroke cycle (Hz).
   swim: (t) => {
-    const stroke = Number(params.get('stroke') ?? 0.7);
+    // ?surf=1: riding a wave (SWIM_SEA.surf*: the stroke eased off, neck forward, tail up, jaw a little open).
+    const surf = Number(params.get('surf') ?? 0);
+    const stroke = Number(params.get('stroke') ?? 0.7) * (1 - SWIM_SEA.surfEase * surf);
     const freq = Number(params.get('freq') ?? SWIM_POSE.freqIdle + SWIM_POSE.freqPerSpeed * SWIM.paddleSpeed * Math.min(1, stroke / SWIM_POSE.strokePaddle));
     return {
       swim: 1,
@@ -58,9 +60,10 @@ const POSES: Record<string, PoseFn> = {
       flapAmplitude: 0,
       wingSpread: 0,
       legsTuck: 0,
-      neckPitch: SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * stroke,
+      neckPitch: SWIM_POSE.neckRaise + SWIM_POSE.neckStroke * stroke + SWIM_SEA.surfNeck * surf,
       neckYaw: Number(params.get('yaw') ?? 0),
-      tailPitch: SWIM_POSE.tailPitch,
+      tailPitch: SWIM_POSE.tailPitch + SWIM_SEA.surfTail * surf,
+      jawOpen: SWIM_SEA.surfJaw * surf,
       breath: 0.5,
     };
   },

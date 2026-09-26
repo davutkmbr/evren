@@ -138,6 +138,9 @@ export class FlightSim {
   swimPhase = 0;
   swimStroke = 0;
   swimFreq = 0;
+  /** Wave surfing: extra forward speed (m/s) the dragon rides on a wave's front face, and a timer for its bow spray. */
+  surfSpeed = 0;
+  surfSpray = 0;
   touchingWater = false;
   /** Seconds since the last splash event while skimming. */
   splashTimer = 0;
@@ -278,6 +281,8 @@ export class FlightSim {
     this.seaPitchRate = 0;
     this.seaRollRate = 0;
     this.seaHs = 0;
+    this.surfSpeed = 0;
+    this.surfSpray = 0;
     this.moves.reset();
     this.hard.reset();
     this.perch.reset();

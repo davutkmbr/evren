@@ -867,6 +867,25 @@ export const SWIM_SEA = {
   crestShare: 0.2,
   crestSink: 0.3,
   crestLift: 1,
+  /**
+   * Wave surfing: on a wave's front face (the surface falling away ahead) gravity along the slope pushes the swimming
+   * dragon on (surfGain x g x slope, m/s²); the extra speed builds up while it stays on the face (a wave moving with it)
+   * and bleeds away at surfDecay (1/s) behind the crest, up to surfMax m/s. From surfLo to surfHi m/s of it the dragon
+   * rides: it eases off its stroke (surfEase), stretches its neck forward and down (surfNeck, rad), lifts its tail
+   * (surfTail) and opens its jaw a little in delight (surfJaw); spray bursts off its chest every surfSprayEvery s.
+   */
+  surfGain: 1.3,
+  surfDecay: 0.45,
+  surfMax: 7,
+  surfLo: 0.6,
+  surfHi: 3,
+  surfEase: 0.7,
+  surfNeck: -0.18,
+  surfTail: -0.12,
+  surfJaw: 0.1,
+  surfSpray: 0.5,
+  surfSprayEvery: 0.3,
+  surfSprayForward: 0.3,
 } as const;
 
 /** Body collision spheres as fractions of the rig length (x, y, z, radius). */
