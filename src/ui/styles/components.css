@@ -1,0 +1,281 @@
+/* Shared UI components (src/ui/components). Palette tokens come from base.css (.ejd). */
+
+.ui-keycap {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border: 1px solid;
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  font: 700 11.5px/1 var(--font-ui, system-ui);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.ui-keycap-gold {
+  background: var(--accent, #e8b872);
+  color: #1a1408;
+  border-color: #a97c3c;
+}
+
+.ui-keycap-ink {
+  background: rgba(243, 238, 229, 0.1);
+  color: var(--ink, #f3eee5);
+  border-color: rgba(243, 238, 229, 0.38);
+}
+
+.ui-keycap-quiet {
+  background: transparent;
+  color: rgba(243, 238, 229, 0.72);
+  border-color: rgba(243, 238, 229, 0.24);
+}
+
+.ui-keycap-warn {
+  background: rgba(255, 145, 104, 0.12);
+  color: #ffb89c;
+  border-color: rgba(255, 145, 104, 0.45);
+}
+
+.ui-keycombo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.ui-keysep {
+  font-size: 11px;
+  color: var(--ink-4, rgba(243, 238, 229, 0.3));
+}
+
+/* Prompt: key + verb, no pill */
+
+.ui-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: var(--ink, #f3eee5);
+  white-space: nowrap;
+  transition: color 140ms, background-color 140ms;
+}
+
+.ui-prompt-label {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: rgba(243, 238, 229, 0.86);
+}
+
+.ui-prompt-primary .ui-prompt-label {
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--ink, #f3eee5);
+}
+
+.ui-prompt-danger .ui-prompt-label {
+  color: #ffb89c;
+}
+
+.ui-prompt:hover .ui-prompt-label,
+.ui-prompt:focus-visible .ui-prompt-label {
+  color: var(--ink, #f3eee5);
+  text-decoration: underline;
+  text-decoration-color: rgba(243, 238, 229, 0.35);
+  text-underline-offset: 4px;
+}
+
+.ui-prompt:focus-visible {
+  outline: 2px solid var(--accent, #e8b872);
+  outline-offset: 2px;
+}
+
+.ui-prompt:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Switch: key, name, written state */
+
+.ui-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.ui-switch-label {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: rgba(243, 238, 229, 0.86);
+}
+
+.ui-switch-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(243, 238, 229, 0.5);
+}
+
+.ui-switch-dot {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid rgba(243, 238, 229, 0.4);
+}
+
+.ui-switch.is-on .ui-switch-state {
+  color: var(--ink, #f3eee5);
+}
+
+.ui-switch.is-on .ui-switch-dot {
+  border: 0;
+  background: var(--accent-switch);
+  box-shadow: 0 0 8px var(--accent-switch);
+}
+
+.ui-switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-switch:focus-visible {
+  outline: 2px solid var(--accent, #e8b872);
+  outline-offset: 2px;
+}
+
+/* Stat */
+
+.ui-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-stat-label {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.55);
+}
+
+.ui-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-stat-l .ui-stat-value {
+  font-size: 26px;
+}
+
+/* Medal ladder */
+
+.ui-ladder {
+  position: relative;
+  height: 84px;
+  margin: 0 36px;
+}
+
+.ui-ladder-track,
+.ui-ladder-earned {
+  position: absolute;
+  top: 34px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.ui-ladder-track {
+  left: -36px;
+  right: -36px;
+  background: rgba(243, 238, 229, 0.16);
+}
+
+.ui-ladder-earned {
+  right: 0;
+  background: rgba(232, 184, 114, 0.7);
+}
+
+.ui-ladder-mark {
+  position: absolute;
+  top: 27px;
+  width: 80px;
+  margin-left: -40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  --medal: var(--accent, #e8b872);
+}
+
+.ui-medal-silver {
+  --medal: #c9ccd3;
+}
+
+.ui-medal-bronze {
+  --medal: #c98d5e;
+}
+
+.ui-ladder-dot {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  margin-bottom: 2px;
+  border-radius: 50%;
+  background: #111318;
+  border: 2px solid var(--medal);
+  opacity: 0.7;
+}
+
+.ui-ladder-mark.is-earned .ui-ladder-dot {
+  background: var(--medal);
+  border: 0;
+  opacity: 1;
+  box-shadow: 0 0 0 3px #111318;
+}
+
+.ui-ladder-name {
+  font-size: 12.5px;
+  color: rgba(243, 238, 229, 0.62);
+}
+
+.ui-ladder-time {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ui-ladder-best {
+  position: absolute;
+  top: 0;
+  width: 140px;
+  margin-left: -70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ui-ladder-best-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ui-ladder-best-tick {
+  width: 2px;
+  height: 18px;
+  border-radius: 1px;
+  background: var(--ink, #f3eee5);
+}
+
+.ui-ladder [hidden] {
+  display: none;
+}
