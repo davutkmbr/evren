@@ -74,7 +74,10 @@ export class FlightSim {
   /** Lowest bottom of a structure entirely above the body (bridge deck, arch, overhang), Infinity when open sky. */
   ceilingY = Infinity;
   terrainY = 0;
+  /** The surface below is the sea (surfaceY is then the wave height there). */
   overWater = false;
+  /** Water surface height under the center of mass while over water (m; 0 on land or without a water service). */
+  waterY = 0;
   /** Height of the center of mass above the surface below (m). */
   agl = 0;
   /** Height of the lowest point (feet when extended, belly when tucked) above the surface. */
@@ -244,8 +247,15 @@ export class FlightSim {
     }
   }
 
+  /** The surface below is the sea (valid after sampleSurface). */
   surfaceIsWater(): boolean {
-    return this.terrainY < -0.4 && this.surfaceY < 0.05;
+    return this.overWater;
+  }
+
+  /** Sea surface height at x, z: the water service's waves, or the flat sea at y = 0 without one. */
+  waterHeight(x: number, z: number): number {
+    const water = this.world.water;
+    return water ? water.heightAt(x, z) : 0;
   }
 
   sampleSurface(): void {
@@ -263,7 +273,12 @@ export class FlightSim {
       this.surfaceY = 0;
       this.ceilingY = Infinity;
     }
-    this.overWater = this.surfaceIsWater();
+    // The collision world knows the sea only as a flat floor at y = 0; over it the surface is the wave height.
+    this.overWater = this.terrainY < -0.4 && this.surfaceY < 0.05;
+    this.waterY = this.overWater ? this.waterHeight(p.x, p.z) : 0;
+    if (this.overWater) {
+      this.surfaceY = this.waterY;
+    }
     this.agl = p.y - this.surfaceY;
     this.footClearance = this.agl - this.footDepth();
   }
@@ -480,11 +495,12 @@ export class FlightSim {
         const terrain = col.terrainHeight(x, z);
         this.sampleColumn(col, x, z, Math.max(p.y, p.y + v.y * t) + above, gapNeed, under);
         const surface = this.column.floor;
-        this.aheadSurface[i] = surface;
+        const water = terrain < -0.4 && surface < 0.05;
+        this.aheadSurface[i] = water ? this.waterHeight(x, z) : surface;
         this.aheadCeiling[i] = this.column.ceiling;
-        this.aheadWater[i] = terrain < -0.4 && surface < 0.05;
+        this.aheadWater[i] = water;
       } else {
-        this.aheadSurface[i] = 0;
+        this.aheadSurface[i] = this.waterHeight(x, z);
         this.aheadCeiling[i] = Infinity;
         this.aheadWater[i] = true;
       }
@@ -562,10 +578,11 @@ export class FlightSim {
       const x = p.x + ux * d;
       const z = p.z + uz * d;
       this.sampleColumn(col, x, z, band, gapNeed, under);
-      this.farSurface[k] = this.column.floor;
+      const water = col.terrainHeight(x, z) < -0.4 && this.column.floor < 0.05;
+      this.farSurface[k] = water ? this.waterHeight(x, z) : this.column.floor;
       this.farCeiling[k] = this.column.ceiling;
       this.farDistance[k] = d;
-      this.farWater[k] = col.terrainHeight(x, z) < -0.4 && this.column.floor < 0.05;
+      this.farWater[k] = water;
     }
     // Steepest climb to clear a sample with the hands-off clearance (ceilings squeeze it into the gap).
     const feet = p.y - this.footDepth();

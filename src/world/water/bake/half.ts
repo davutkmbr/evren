@@ -37,3 +37,17 @@ export function toHalf(value: number): number {
   }
   return sign | (exp << 10) | mant;
 }
+
+/** float16 bits -> number (exact). */
+export function fromHalf(bits: number): number {
+  const sign = bits & 0x8000 ? -1 : 1;
+  const exp = (bits >>> 10) & 0x1f;
+  const mant = bits & 0x3ff;
+  if (exp === 0) {
+    return sign * mant * 2 ** -24;
+  }
+  if (exp === 31) {
+    return mant ? NaN : sign * Infinity;
+  }
+  return sign * (1 + mant / 1024) * 2 ** (exp - 15);
+}
