@@ -71,7 +71,11 @@ export function leadDome(b: MeshBuilder, o: DomeOptions): void {
   }
   const sheets = Math.max(8, Math.round((Math.PI * 2 * r) / (o.sheetWidth ?? 0.95)));
   const seg = segCount(r, o.lod, frac);
-  domeCollider(b, o.y, r, rise, shape);
+  if (frac > 0.99) {
+    domeCollider(b, o.y, r, rise, shape);
+  } else {
+    halfDomeCollider(b, prof, a0, a1);
+  }
   b.with({ mat: Mat.Lead, light: Light.Dome, lightBase: b.worldY(0, o.y, 0), ao: 1 }, () => {
     if (shape === 'pumpkin' && o.lod === 0) {
       pumpkin(b, prof, o.lobes ?? 16, seg);
@@ -115,6 +119,45 @@ function domeCollider(b: MeshBuilder, y: number, r: number, rise: number, shape:
     b.colSphere(0, y + rise * 0.45, 0, Math.min(r, rise * 0.5));
   } else {
     b.colSphere(0, y + rise - r, 0, r);
+  }
+}
+
+/** Footprint [x, z, ...] of a disc sector of radius r over lathe angles a0..a1 (point = (r sin a, r cos a)). */
+function sector(r: number, a0: number, a1: number): number[] {
+  const out = [0, 0];
+  const n = 10;
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + ((a1 - a0) * i) / n;
+    out.push(r * Math.sin(a), r * Math.cos(a));
+  }
+  return out;
+}
+
+/**
+ * Semi-domes and apses: stacked sector prisms following the shell profile, so nothing stands behind the open side
+ * (a full sphere put a hidden bump over the roof behind an apse).
+ */
+function halfDomeCollider(b: MeshBuilder, prof: readonly number[], a0: number, a1: number): void {
+  const y0 = prof[1];
+  const y1 = prof[prof.length - 1];
+  const radiusAt = (y: number): number => {
+    for (let i = 0; i < prof.length - 2; i += 2) {
+      const ya = prof[i + 1];
+      const yb = prof[i + 3];
+      if (y >= ya && y <= yb) {
+        return prof[i] + ((prof[i + 2] - prof[i]) * (y - ya)) / Math.max(yb - ya, 1e-6);
+      }
+    }
+    return prof[0];
+  };
+  if (prof[0] < 0.6) {
+    return;
+  }
+  const tiers = Math.min(10, Math.max(3, Math.ceil((y1 - y0) / 1.4)));
+  for (let k = 0; k < tiers; k++) {
+    const ya = y0 + ((y1 - y0) * k) / tiers;
+    const yb = y0 + ((y1 - y0) * (k + 1)) / tiers;
+    b.colPrism(sector(radiusAt(ya), a0, a1), k === 0 ? ya - 0.3 : ya, yb);
   }
 }
 
@@ -216,7 +259,11 @@ export function windowDrum(b: MeshBuilder, o: DrumOptions): void {
   const sill = o.sill ?? Math.min(0.6, h * 0.12);
   const archRise = winW * 0.62;
   const winH = Math.max(0.3, h - sill - archRise - Math.max(0.25, h * 0.09));
-  b.colCylinder(0, o.y0, 0, o.r + (o.buttress ?? 0) * 0.5, h);
+  if (half) {
+    b.colPrism(sector(o.r + (o.buttress ?? 0) * 0.5, phase - Math.PI / 2, phase + Math.PI / 2), o.y0, o.y1);
+  } else {
+    b.colCylinder(0, o.y0, 0, o.r + (o.buttress ?? 0) * 0.5, h);
+  }
   b.with({ light: Light.Facade, lightBase: b.worldY(0, o.y0, 0) - 2 }, () => {
     if (o.lod === 2) {
       const n2 = Math.min(n, 16);

@@ -148,6 +148,18 @@ function showColliders(scene: THREE.Scene, world: CollisionWorld): void {
     } else if (c.kind === 'sphere') {
       mesh = new THREE.Mesh(new THREE.SphereGeometry(c.radius, 16, 8), mat);
       mesh.position.copy(c.center);
+    } else if (c.kind === 'prism') {
+      // outline at the bottom and the top
+      const lines = new THREE.LineBasicMaterial({ color: 0xff3355, fog: false });
+      for (const y of [c.bottom, c.top]) {
+        const pts: THREE.Vector3[] = [];
+        const ring = c.rings[0];
+        for (let i = 0; i <= ring.length; i += 2) {
+          pts.push(new THREE.Vector3(ring[i % ring.length], y, ring[(i + 1) % ring.length]));
+        }
+        scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lines));
+      }
+      continue;
     } else {
       continue;
     }
