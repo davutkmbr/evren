@@ -466,6 +466,7 @@ export class UiSystem implements System {
     if (kind === 'pause') {
       this.settings.refresh();
       this.pauseMenu.setProgress(this.tracker.count, this.tracker.total);
+      this.pauseMenu.setMood(ctx.services.tryGet('bond')?.moodLine ?? '');
       this.pauseMenu.open(tab);
     } else if (kind === 'source') {
       const moment = ALL_MOMENTS.find((m) => m.id === this.sourceMomentId);

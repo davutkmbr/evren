@@ -14,7 +14,8 @@
  * Buttons (pressed this frame):
  *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U, source I (a moment's sources)
  * Rider and maneuvers:
- *   pet G held / D-pad down, stand T, weather N (V and gamepad D-pad up are unbound: reserved for the bond phase)
+ *   pet G held / D-pad down, stand T, weather N, encourage V / D-pad up (the rider pats the neck and calls to the
+ *   dragon: a bond interaction with no effect on speed or physics)
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
  *   yawLeft / yawRight: Q / E as buttons, for the side-slip double tap
@@ -45,6 +46,7 @@ export type ButtonName =
   | 'land'
   | 'pet'
   | 'stand'
+  | 'encourage'
   | 'weather'
   | 'source'
   | 'rollLeft'
@@ -63,7 +65,7 @@ export type ButtonName =
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', ...HOTBAR_BUTTONS]);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'encourage', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -86,6 +88,7 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyL: 'land',
   KeyG: 'pet',
   KeyT: 'stand',
+  KeyV: 'encourage',
   KeyN: 'weather',
   KeyI: 'source',
   KeyA: 'rollLeft',
@@ -154,6 +157,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'R', action: 'Kükre', group: 'dragon' },
   { keys: 'G', action: 'Ejderhayı sev (basılı tut)', group: 'dragon' },
   { keys: 'T', action: 'Eyerde ayağa kalk / otur', group: 'dragon' },
+  { keys: 'V', action: 'Ejderhayı yüreklendir: boynunu sıvazla, ona seslen', group: 'dragon' },
   { keys: 'Sağ tık', action: 'Etrafa bak (basılı tut)', group: 'camera' },
   { keys: 'C', action: 'Kamera: 3. şahıs, binici, sinematik', group: 'camera' },
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
@@ -239,6 +243,24 @@ export class Input {
     if (document.pointerLockElement) {
       document.exitPointerLock();
     }
+  }
+
+  /**
+   * A light gamepad rumble (0..1 strength for `ms`), when the pad supports it; keyboard players get nothing. Calls
+   * closer than the rumble's own length are merged by the browser.
+   */
+  rumble(strength: number, ms: number): void {
+    if (this.lastDevice !== 'gamepad' || !(strength > 0.01)) {
+      return;
+    }
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = pads && Array.from(pads).find((p) => p && p.connected);
+    const actuator = (gp as unknown as { vibrationActuator?: { playEffect?: (type: string, params: Record<string, number>) => Promise<unknown> } } | null)?.vibrationActuator;
+    if (!actuator?.playEffect) {
+      return;
+    }
+    const s = Math.min(1, strength);
+    actuator.playEffect('dual-rumble', { duration: Math.max(16, ms), strongMagnitude: s, weakMagnitude: s * 0.5 }).catch(() => undefined);
   }
 
   axis(name: AxisName): number {
@@ -334,6 +356,7 @@ export class Input {
       [8, 'map', true],
       [10, 'roar', true],
       [11, 'land', true],
+      [12, 'encourage', true],
       [13, 'pet', false],
       [14, 'rollLeft', true],
       [15, 'rollRight', true],
