@@ -29,6 +29,8 @@ export const HUD_PRIORITY = {
   perch: 45,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,
+  /** "[I] Kaynağa bak" for a few seconds after a moment (src/moments/source-prompt.ts): quiet, joinable. */
+  momentSource: 35,
   /** Start-of-game key hints and the compass landmark label. */
   startHint: 30,
   toast: 10,
