@@ -21,13 +21,33 @@
  * `continuous` plays the loop cycle and no sprinkles. Moment pieces play in both.
  *
  * Debug: `?music=debug` overlay, `?music=test` procedural test sets and phrases (combine: `?music=test,debug`),
- * `?music=sparse` / `?music=continuous` force the style for the session, `?music=off` no music; `window.__evrenMusic`
- * (state, play / stop / force a set or a state, sprinkle now, style, adaptive on/off, pause / resume).
+ * `?music=sparse` / `?music=continuous` force the style for the session, `?music=off` no music, `?music=raw` /
+ * `?music=denoised` play that version of every restored 78 rpm piece (A/B listening; default: each piece's own
+ * `variant`); `window.__evrenMusic` (state, play / stop / force a set or a state, sprinkle now, style, adaptive on/off,
+ * pause / resume).
+ *
+ * Manifests: public/audio/music/manifest.json, plus the optional private one (audio/music/private/manifest.json,
+ * served from the gitignored private-assets/audio/moments/ when present; US-risky historic recordings).
  */
 import type { EngineContext } from '../../core/contracts';
 import { positionAt } from './clock';
 import { DEFAULT_DIRECTOR, MusicDirector, type DirectorCommand } from './director';
-import { EMPTY_MANIFEST, MUSIC_BASE, roleOf, stemsOf, validateManifest, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
+import {
+  applyPhraseVariant,
+  EMPTY_MANIFEST,
+  mergePrivatePhrases,
+  MUSIC_BASE,
+  PRIVATE_MANIFEST,
+  roleOf,
+  stemsOf,
+  validateManifest,
+  type MusicManifest,
+  type MusicPhraseDef,
+  type MusicSetDef,
+  type PhraseVariant,
+  type StemRole,
+  type StingerKind,
+} from './manifest';
 import { MomentMusicDirector, type MomentMusicRequest } from './moment-music';
 import { emptySourceMix, type SourceEnv, type SourceMix } from './moment-source';
 import { MomentSourceSession, type MomentSourceFrame } from './moment-source-session';
@@ -161,6 +181,8 @@ export class MusicController {
   private sprinklePhrases: MusicPhraseDef[] = [];
   private storedStyle: MusicStyle | null = loadMusicStyle();
   private urlStyle: MusicStyle | null = null;
+  /** `?music=raw` / `?music=denoised`: the version of the restored historic pieces to play (null = each piece's default). */
+  private urlVariant: PhraseVariant | null = null;
   private appliedStyle: MusicStyle | null = null;
   private momentSeq = 0;
   private srcFrame: MomentSourceFrame = { current: null, focus: null, nearby: null };
@@ -272,6 +294,7 @@ export class MusicController {
     this.disabled = modes.includes('off');
     this.testMode = modes.includes('test');
     this.urlStyle = modes.includes('sparse') || modes.includes('sprinkle') ? 'sparse' : modes.includes('continuous') || modes.includes('loops') ? 'continuous' : null;
+    this.urlVariant = modes.includes('raw') ? 'raw' : modes.includes('denoised') ? 'denoised' : null;
     if (modes.includes('debug')) {
       void import('./debug-overlay').then(({ MusicDebugOverlay }) => {
         this.overlay = new MusicDebugOverlay(document.body);
@@ -325,23 +348,41 @@ export class MusicController {
     }
   }
 
-  private async loadManifest(): Promise<void> {
-    let raw: unknown = EMPTY_MANIFEST;
+  private async fetchJson(path: string): Promise<unknown> {
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}${MUSIC_BASE}manifest.json`, { cache: 'no-cache' });
-      if (res.ok) {
-        raw = await res.json();
+      const res = await fetch(`${import.meta.env.BASE_URL}${MUSIC_BASE}${path}`, { cache: 'no-cache' });
+      // The dev server answers unknown paths with index.html: only JSON counts.
+      if (res.ok && (res.headers.get('content-type') ?? '').includes('json')) {
+        return await res.json();
       }
     } catch {
-      /* no manifest: no music */
+      /* missing or not JSON */
     }
-    const report = validateManifest(raw);
+    return null;
+  }
+
+  private async loadManifest(): Promise<void> {
+    const [pubRaw, privRaw] = await Promise.all([this.fetchJson('manifest.json'), this.fetchJson(PRIVATE_MANIFEST)]);
+    const report = validateManifest(pubRaw ?? EMPTY_MANIFEST, { publicManifest: true });
     for (const e of report.errors) {
       console.warn(`[music] manifest ${e.path}: ${e.message}`);
     }
+    let manifest: MusicManifest = report.manifest;
+    if (privRaw) {
+      // Private pieces (US-risky historic recordings) exist only in builds made with private-assets/ present.
+      const priv = validateManifest(privRaw);
+      for (const e of priv.errors) {
+        console.warn(`[music] private manifest ${e.path}: ${e.message}`);
+      }
+      const merged = mergePrivatePhrases(manifest, priv.manifest);
+      for (const why of merged.skipped) {
+        console.warn(`[music] private manifest: ${why}`);
+      }
+      manifest = merged.manifest;
+    }
     if (!this.testMode) {
-      this.sets = [...report.manifest.sets];
-      this.setPhrases(report.manifest.phrases ?? []);
+      this.sets = [...manifest.sets];
+      this.setPhrases((manifest.phrases ?? []).map((p) => applyPhraseVariant(p, this.urlVariant)));
     }
     this.manifestLoaded = true;
   }
