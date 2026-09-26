@@ -47,7 +47,12 @@ const ID = {
   readout: 'race.readout',
   warn: 'race.warn',
   boost: 'race.boost',
+  lesson: 'race.lesson',
+  praise: 'race.praise',
 } as const;
+
+/** Seconds a lesson step's praise stays up. */
+const PRAISE_SECONDS = 2;
 
 export interface RaceIntro {
   name: string;
@@ -56,6 +61,8 @@ export interface RaceIntro {
   medals: MedalTimes;
   /** Best time of the ghost raced against (undefined: no ghost). */
   ghostBest?: number;
+  /** The guided chain practice: no medal targets, no clock. */
+  lesson?: boolean;
 }
 
 export class RaceHud {
@@ -88,6 +95,10 @@ export class RaceHud {
   private readonly warnBinding = fadeBinding(this.warnNode);
   private readonly boostNode = h('div', `${ZONE_CLASS.title} race-boost`);
   private readonly boostBinding = fadeBinding(this.boostNode);
+  // Guided chain practice: the step's praise (title zone) and the step label in place of the clock.
+  private readonly praiseNode = h('div', `${ZONE_CLASS.title} race-praise`);
+  private readonly praiseBinding = fadeBinding(this.praiseNode);
+  private lessonLabel: string | null = null;
 
   // Result screen.
   private readonly finish: FinishScreen;
@@ -119,7 +130,7 @@ export class RaceHud {
     this.warnNode.append(this.warnText.node);
     this.arrow.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 4l10 8-10 8z"/></svg>';
     this.marker.append(this.arrow, this.distNode);
-    this.root.append(this.marker, this.intro, this.readout, this.warnNode, this.boostNode);
+    this.root.append(this.marker, this.intro, this.readout, this.warnNode, this.boostNode, this.praiseNode);
     this.finish = new FinishScreen(this.root, handlers);
     for (const n of [this.marker, this.split, this.ghostRow]) {
       n.hidden = true;
@@ -168,9 +179,10 @@ export class RaceHud {
     const t = RACE_TEXT.countdown;
     this.introName.set(info.name);
     this.count.replaceChildren();
+    this.lessonLabel = null;
     this.introInfo.replaceChildren(
       h('span', undefined, t.counts(info.gates, info.rings)),
-      ...MEDAL_ORDER.map((m) => h('span', 'race-intro-target', [medalDot(m, 's').root, formatTargetTime(info.medals[m])])),
+      ...(info.lesson ? [h('span', undefined, t.lesson)] : MEDAL_ORDER.map((m) => h('span', 'race-intro-target', [medalDot(m, 's').root, formatTargetTime(info.medals[m])]))),
       ...(info.ghostBest !== undefined ? [h('span', 'race-intro-ghost', [h('i', 'race-ghost-dot is-glow'), t.ghost(formatRaceTime(info.ghostBest))])] : []),
     );
     this.clock.set(formatRaceTime(0));
@@ -213,7 +225,7 @@ export class RaceHud {
 
   /** Per running frame: clock and gate count (passed gates). */
   setRunning(elapsed: number, passed: number, total: number): void {
-    this.clock.set(formatRaceTime(elapsed));
+    this.clock.set(this.lessonLabel ?? formatRaceTime(elapsed));
     this.gateNum.set(RACE_TEXT.hud.gate(passed, total));
   }
 
@@ -247,6 +259,29 @@ export class RaceHud {
     }
     show(this.split, true);
     this.splitLeft = SPLIT_SECONDS;
+  }
+
+  /**
+   * Guided chain practice: the step's instruction and keys own the shared hint line (only maneuver captions briefly
+   * cover it) and `label` ("Adım 2/7") replaces the clock.
+   */
+  lessonStep(caption: string, hints: readonly (readonly [string, string])[], label: string): void {
+    this.lessonLabel = label;
+    this.clock.set(label);
+    this.request(ID.lesson, 'lowerCenter', HUD_PRIORITY.lesson, { caption, hints });
+  }
+
+  /** A lesson step is done: short praise in the title zone. */
+  lessonPraise(text: string): void {
+    this.request(ID.praise, 'title', HUD_PRIORITY.raceCallout, {
+      duration: PRAISE_SECONDS,
+      maxWait: 0.5,
+      onShow: () => {
+        this.praiseNode.replaceChildren(h('span', 'race-praise-val', text));
+        this.praiseBinding.onShow();
+      },
+      onHide: this.praiseBinding.onHide,
+    });
   }
 
   /** A speed ring pushed the dragon: the brief teal callout. */
