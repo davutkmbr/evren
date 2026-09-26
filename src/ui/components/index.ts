@@ -6,6 +6,7 @@ import '../styles/components.css';
 
 export { keyCap, keyCombo, type KeyCapTone } from './keycap';
 export { prompt, type Prompt, type PromptVariant } from './prompt';
+export { linkPrompt, type LinkPrompt } from './link-prompt';
 export { interactive, bindKeyPress, flashPressed, keyToken, type InteractionFamily } from './interaction';
 export { optionSwitch, type OptionSwitch } from './switch';
 export { stat, type Stat } from './stat';
