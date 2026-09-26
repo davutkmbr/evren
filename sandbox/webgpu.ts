@@ -28,7 +28,8 @@ import { countTriangles } from '../src/world/osm/shared/three';
 import { LodTiledMesh } from '../src/world/osm/shared/lod-tiles';
 import { InstanceLod, type InstanceLodOptions } from '../src/world/osm/shared/instance-lod';
 import { loadPbrArrays, loadTexture, REPEAT_M, type TextureSet } from '../src/world/osm/shared/textures';
-import { landmarkPads, poiTriples } from '../src/world/osm/buildings/index';
+import { poiTriples } from '../src/world/osm/buildings/index';
+import { landmarkClaims } from '../src/world/landmarks/claims';
 import type { BuildingsRequest, BuildingsResult } from '../src/world/osm/buildings/protocol';
 import { FACADE_LAYERS } from '../src/world/osm/buildings/materials';
 import { antennaGeometry, chimneyGeometry, dishGeometry, minaretGeometry, solarGeometry, tankGeometry } from '../src/world/osm/buildings/props';
@@ -364,7 +365,7 @@ async function main(): Promise<void> {
   mark('foundationMs', t);
   t = performance.now();
   const worker = new Worker(new URL('../src/world/osm/buildings/buildings.worker.ts', import.meta.url), { type: 'module', name: 'osm-buildings' });
-  const request: BuildingsRequest = { base, buildings: data.buildings, pois: poiTriples(data.points), pads: landmarkPads(geo), infill: { roads: data.roads, areas: data.areas, rails: data.rails } };
+  const request: BuildingsRequest = { base, buildings: data.buildings, pois: poiTriples(data.points), claims: landmarkClaims(geo), infill: { roads: data.roads, areas: data.areas, rails: data.rails } };
   const job = runWorker<BuildingsRequest, BuildingsResult>(worker, request);
 
   // Textures in parallel with the worker.

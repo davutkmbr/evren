@@ -6,7 +6,8 @@
  *
  * 1. Geography: the Bosphorus corridor polygon covers the strait's water and both shores in world coordinates; the
  *    poem's waypoints and the ?moment= start pose sit where they should.
- * 2. Playability: which records play now (the poem, subtitle-only with a missing optional sound) and which wait.
+ * 2. Playability: which records play now (the poem, subtitle-only with a missing optional sound; the storks, ready
+ *    with procedural content) and which wait.
  * 3. The poem on a low glide along the European shore from Beşiktaş toward Bebek: fires exactly once per session,
  *    after the dwell time, with the subtitle timeline of the record (4 s lines, 0.5 s gaps), the card at the end and
  *    the ambience lift; it does not fire when high, inland, in rain or storm, while flapping, during a race, or with
@@ -14,7 +15,19 @@
  * 4. Pacing while playing: pause freezes it, a few wing beats or a small climb do not end it, leaving the band fades
  *    the line out (and a moment cut short early may try again later, one cut late is spent), a race or the settings
  *    end it, the global gap keeps moments apart, and the ?moment= shortcut forces one.
- *
+ * 5. The stork migration over the strait: the ?moment= start pose; fires once (with its actor started and ended, no
+ *    ambience fallback) on a 420 m glide on 5 September at 11:00; stays silent outside 15 Aug – 15 Oct, 09–17 h,
+ *    clear / haze, 150–1500 m ASL, on the ground, in a race, with city life off or outside the corridor; climbing out
+ *    ends the lines; the 30 min cooldown; forcing ignores every gate; the kettle site is ahead, in view, around the
+ *    dragon's altitude and often on a real thermal of the lift field.
+ * 6. The "[I] Kaynağa bak" prompt (src/moments/sources.ts): offered on every frame of a moment with sources and for
+ *    SOURCE_PROMPT_AFTER_S after it, not before, not after the window, not for a moment without sources, not while a
+ *    race runs (a race also ends the window); the after-moment hint item is deferred by a race and ranks low.
+ * 7. The gull and simit on a ferry (moving anchor 'ferry' from the anchor feed): fires gliding, hovering or perched
+ *    near a ferry in service and names that ferry; not far from it, not at a stopped ferry, not at night, in rain or
+ *    storm, high above, diving or swimming, during a race or with city life off, not along a shore without ferries;
+ *    the hold follows the ferry as it pulls away, flying off ends it, the 600 s cooldown, the forced anchor and the
+ *    ?moment= placement beside the ferry.
  * Exits non-zero on any failure.
  */
 import { latLonToLocal, localToLatLon, WORLD_ORIGIN } from '../../src/core/geo-coords';
@@ -25,7 +38,14 @@ import { defaultMomentPrefs, onMomentPrefsChange, saveMomentPrefs, type MomentPr
 import { HOLD, momentPlayability, MomentRunner, momentStartPose, type MomentFrame, type MomentSink } from '../../src/moments/runtime';
 import { pointInPolygon, type MomentContext, type XZ } from '../../src/moments/triggers';
 import type { Moment, SubtitleLine } from '../../src/moments/types';
+import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, type SourcePromptState } from '../../src/moments/sources';
+import { HUD_PRIORITY, HudDirector } from '../../src/ui/zones/director';
 import { buildHeadlessGeo } from './geo';
+import { AnchorFeed, ferryShortcut, inService } from '../../src/moments/anchors';
+import type { LifeService, VesselPose } from '../../src/core/contracts';
+import * as THREE from 'three';
+import { chooseKettleSite, STORK_SITE } from '../../src/moments/storks/site';
+import { dayOfYearOf } from '../../src/moments/triggers';
 
 let failures = 0;
 let checks = 0;
@@ -39,6 +59,10 @@ function check(cond: boolean, msg: string): void {
 
 const POEM_ID = 'orhan-veli-istanbulu-dinliyorum';
 const poem = ALL_MOMENTS.find((m) => m.id === POEM_ID)!;
+const GULL_ID = 'ferry-gull-simit';
+const gull = ALL_MOMENTS.find((m) => m.id === GULL_ID)!;
+const STORKS_ID = 'storks-bosphorus-migration';
+const storks = ALL_MOMENTS.find((m) => m.id === STORKS_ID)!;
 const FPS = 24;
 const DT = 1 / FPS;
 const STRAIT = 'İstanbul Boğazı';
@@ -125,8 +149,12 @@ console.log('2. playability');
 {
   const pp = momentPlayability(poem);
   check(pp.playable && pp.soundFallback, 'the poem plays now (draft, only its optional sound missing → ambience fallback)');
+  const ps = momentPlayability(storks);
+  check(ps.playable && !ps.soundFallback, `the storks play now (ready, procedural flock and synthesised sound, no ambience fallback) ${ps.reason ?? ''}`);
+  const gp = momentPlayability(gull);
+  check(gull.status === 'ready' && gp.playable && !gp.soundFallback, `the ferry gull moment plays now (ready; procedural flock, its own gull calls, no ambience fallback) ${gp.reason ?? ''}`);
   for (const m of ALL_MOMENTS) {
-    if (m === poem) continue;
+    if (m === poem || m === storks || m === gull) continue;
     const p = momentPlayability(m);
     check(!p.playable && !!p.reason, `${m.id} waits (${p.reason})`);
   }
@@ -134,6 +162,7 @@ console.log('2. playability');
   check(!momentPlayability({ ...base, content: { ...base.content, actorId: 'moments/x' } }).playable, 'a draft with a character is not playable while its sound is missing');
   check(!momentPlayability({ ...base, needs: ['sound', 'text-approval'] }).playable, 'a draft waiting for text approval is not playable');
   check(momentPlayability({ ...base, status: 'ready', needs: [] }).playable, 'a ready moment is playable');
+  check(!momentPlayability({ ...storks, content: { ...storks.content, actorId: 'moments/unknown-actor' } }).playable, 'a ready moment whose actor has no procedural implementation is not playable');
   check(momentPlayability({ ...base, needs: [], content: { ...base.content, soundId: 'moments/x' } }, new Set(['moments/x'])).soundFallback === false, 'an available sound needs no fallback');
 }
 
@@ -183,16 +212,20 @@ interface Log {
   hides: { t: number; how: 'end' | 'fade' }[];
   cards: number[];
   lift: number[];
+  starts: { id: string; forced: boolean; t: number }[];
+  ends: { id: string; reason: string; t: number }[];
 }
 
 function harness(moments: readonly Moment[] = ALL_MOMENTS, pacing = {}) {
-  const log: Log = { shows: [], hides: [], cards: [], lift: [] };
+  const log: Log = { shows: [], hides: [], cards: [], lift: [], starts: [], ends: [] };
   let runner!: MomentRunner;
   const sink: MomentSink = {
     showLine: (_m, line, index) => log.shows.push({ t: runner.now, index, line }),
     hideLine: (_m, how) => log.hides.push({ t: runner.now, how }),
     showCard: () => log.cards.push(runner.now),
     setAmbienceLift: (v) => log.lift.push(v),
+    startMoment: (m, forced) => log.starts.push({ id: m.id, forced, t: runner.now }),
+    endMoment: (m, reason) => log.ends.push({ id: m.id, reason, t: runner.now }),
   };
   runner = new MomentRunner(moments, sink, { pacing });
   return { runner, log };
@@ -293,7 +326,9 @@ console.log('3. the poem along the shore');
     const r = harness().runner;
     const pos = flyAlong(alt ?? path, SPEED, 300);
     fly(r, pos, (i) => flight(typeof over === 'function' ? over(i) : over));
-    check(r.history.length === 0, `no moment ${label} (fired ${r.history.map((x) => x.id).join(', ') || 'nothing'})`);
+    // Over the inland hills a 25 m glide can be 150 m above the sea: the storks may play there, the poem never.
+    const fired = alt ? r.history.filter((x) => x.id === POEM_ID) : r.history;
+    check(fired.length === 0, `no ${alt ? 'poem' : 'moment'} ${label} (fired ${fired.map((x) => x.id).join(', ') || 'nothing'})`);
   }
   // In fog and haze it may play.
   for (const weather of ['fog', 'haze'] as const) {
@@ -426,6 +461,482 @@ console.log('4. pacing');
     off();
     const got = seen as MomentPrefs | null;
     check(!!got && got.categories.poem === false && got !== prefs, 'saving the settings notifies the runtime with a copy (even without storage)');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. The stork migration                                               */
+/* ------------------------------------------------------------------ */
+console.log('5. storks over the Bosphorus');
+{
+  // Start pose of the ?moment= shortcut: over the strait, inside the band, heading up the strait for the narrows.
+  const pose = momentStartPose(storks);
+  check(!!pose, 'storks have a start pose for ?moment=');
+  if (pose) {
+    check(geo.waterNameAt?.(pose.x, pose.z) === STRAIT && pointInPolygon(pose, corridor), 'storks start over the Bosphorus inside the corridor');
+    check(pose.y >= 300 && pose.y <= 600, `storks start at ${pose.y} m ASL (inside 150–1500, low enough to see the kettle rise)`);
+    check(pose.headingDeg > 5 && pose.headingDeg < 60, `storks start heading north-north-east up the strait (${pose.headingDeg.toFixed(0)}°)`);
+  }
+
+  interface SF {
+    asl: number;
+    doy: number;
+    tod: number;
+    weather: WeatherPreset;
+    mode: FlightMode;
+    racing: boolean;
+    prefs: MomentPrefs;
+  }
+  const sf = (o: Partial<SF> = {}): SF => ({ asl: 420, doy: dayOfYearOf({ month: 9, day: 5 }), tod: 11, weather: 'clear', mode: 'gliding', racing: false, prefs: defaultMomentPrefs(), ...o });
+  const storkFrame = (p: XZ, f: SF): MomentFrame => ({
+    context: {
+      position: p,
+      altitude: f.asl,
+      agl: f.asl - Math.max(0, geo.heightAt(p.x, p.z)),
+      grounded: f.mode === 'grounded',
+      flightMode: f.mode,
+      coastDistance: geo.coastDistance(p.x, p.z),
+      timeOfDay: f.tod,
+      dayOfYear: f.doy,
+      weather: f.weather,
+    },
+    prefs: f.prefs,
+    racing: f.racing,
+  });
+  const flyStorks = (runner: MomentRunner, positions: XZ[], state: (i: number) => SF, dt = DT): void => {
+    positions.forEach((p, i) => runner.update(dt, storkFrame(p, state(i))));
+  };
+  // A flight up and down the strait's axis: Arnavutköy → the narrows → Sarıyer and back.
+  const axis = [latLonToLocal(41.055, 29.04), latLonToLocal(41.07, 29.052), latLonToLocal(41.084, 29.0615), latLonToLocal(41.11, 29.058), latLonToLocal(41.15, 29.07)];
+  check(axis.every((p) => pointInPolygon(p, corridor)), 'the strait axis flight stays inside the corridor');
+  const strait = flyAlong(axis, 25, 400);
+
+  // Fires under its conditions: once, after the dwell, the whole timeline, the card, the actor started and ended.
+  {
+    const { runner, log } = harness();
+    flyStorks(runner, strait.slice(0, 120 * FPS), () => sf());
+    const plays = runner.history.filter((h) => h.id === STORKS_ID);
+    check(plays.length === 1 && plays[0].reason === 'complete' && !plays[0].forced, `storks fire once on a 420 m glide over the strait on 5 September at 11:00 (${plays.length}×, ${plays[0]?.reason})`);
+    check(!!plays[0] && Math.abs(plays[0].start - runner.pacing.dwellSec) <= DT + 1e-6, `after the ${runner.pacing.dwellSec} s dwell (at ${plays[0]?.start.toFixed(2)} s)`);
+    check(log.shows.length === storks.content.subtitles.length && log.cards.length === 1, `all ${storks.content.subtitles.length} lines and the card (${log.shows.length}, ${log.cards.length})`);
+    check(log.starts.length === 1 && log.starts[0].id === STORKS_ID && !log.starts[0].forced, 'the flock actor is started once with the moment');
+    check(log.ends.length === 1 && log.ends[0].reason === 'complete', 'and told when the lines are done');
+    check(!log.lift.some((v) => v > 0), 'no ambience fallback: the storks bring their own synthesised sound');
+  }
+  // Windows: date, time, weather, altitude, surface, race, settings, place.
+  const westLand = latLonToLocal(41.0, 28.8);
+  check(!pointInPolygon(westLand, corridor), 'the far-west test point (Bakırköy side) is outside the corridor');
+  const cases: [string, Partial<SF>, boolean, XZ[]?][] = [
+    ['on 15 August (first day)', { doy: dayOfYearOf({ month: 8, day: 15 }) }, true],
+    ['on 15 October (last day)', { doy: dayOfYearOf({ month: 10, day: 15 }) }, true],
+    ['on 14 August', { doy: dayOfYearOf({ month: 8, day: 14 }) }, false],
+    ['on 16 October', { doy: dayOfYearOf({ month: 10, day: 16 }) }, false],
+    ['in July', { doy: dayOfYearOf({ month: 7, day: 10 }) }, false],
+    ['in spring (April)', { doy: dayOfYearOf({ month: 4, day: 10 }) }, false],
+    ['at 09:00', { tod: 9 }, true],
+    ['at 08:45', { tod: 8.75 }, false],
+    ['at 16:50', { tod: 16.8 }, true],
+    ['at 17:15', { tod: 17.25 }, false],
+    ['at night', { tod: 23 }, false],
+    ['in haze', { weather: 'haze' }, true],
+    ['in fog', { weather: 'fog' }, false],
+    ['in rain', { weather: 'rain' }, false],
+    ['in a storm', { weather: 'storm' }, false],
+    ['at 160 m ASL', { asl: 160 }, true],
+    ['at 140 m ASL', { asl: 140 }, false],
+    ['at 1450 m ASL', { asl: 1450 }, true],
+    ['at 1600 m ASL', { asl: 1600 }, false],
+    ['while flapping (flying)', { mode: 'flying' }, true],
+    ['on the ground', { mode: 'grounded' }, false],
+    ['during a race', { racing: true }, false],
+    ['with city life off', { prefs: { enabled: true, categories: { legend: true, 'city-life': false, poem: true } } }, false],
+    ['outside the corridor (far west)', {}, false, [westLand, { x: westLand.x + 400, z: westLand.z }]],
+  ];
+  for (const [label, over, expected, path2] of cases) {
+    const r = harness().runner;
+    const pos = path2 ? flyAlong(path2, 25, 30) : strait.slice(0, 30 * FPS);
+    flyStorks(r, pos, () => sf(over));
+    const fired = r.history.some((h) => h.id === STORKS_ID);
+    check(fired === expected, `storks ${expected ? 'fire' : 'do not fire'} ${label} (${fired ? 'fired' : 'silent'})`);
+  }
+  // Leaving the band while it plays: climbing to 1600 m fades the lines out (the flock itself lives on).
+  {
+    const { runner, log } = harness();
+    flyStorks(runner, strait.slice(0, 40 * FPS), (i) => sf({ asl: i * DT > 6 ? 1600 : 420 }));
+    check(runner.history[0]?.reason === 'conditions' && log.ends[0]?.reason === 'conditions', `climbing out of the band ends the lines (${runner.history[0]?.reason})`);
+  }
+  // Cooldown: repeatable after 30 minutes, not before (the global 3-minute gap is shorter).
+  {
+    const { runner } = harness();
+    const dt = 0.25;
+    const long = flyAlong(axis, 25, 2400).filter((_, i) => i % 6 === 0);
+    flyStorks(runner, long, () => sf(), dt);
+    const plays = runner.history.filter((h) => h.id === STORKS_ID);
+    check(plays.length === 2, `in 40 minutes over the strait the storks play twice (${plays.length}×)`);
+    if (plays.length >= 2) {
+      const gap = plays[1].start - plays[0].start;
+      check(gap >= 1800 - 1e-6 && gap <= 1800 + runner.pacing.dwellSec + 2 * dt, `the second flock comes when the 30 min cooldown ends (${(gap / 60).toFixed(2)} min after the first)`);
+    }
+  }
+  // Forced (?moment=storks-bosphorus-migration): plays whatever the date, time, weather and place.
+  {
+    const { runner, log } = harness();
+    check(runner.force(STORKS_ID), 'force accepts the storks');
+    const land = { x: -8000, z: 5000 };
+    for (let k = 0; k < 40 * FPS; k++) runner.update(DT, storkFrame(land, sf({ doy: 20, tod: 22, weather: 'rain', asl: 60 })));
+    check(runner.history[0]?.id === STORKS_ID && runner.history[0]?.forced === true && log.starts[0]?.forced === true, 'forced: plays in January at night in the rain, low over land, and starts its actor');
+  }
+  // The kettle site on the real geography: ahead of the dragon, in view, around its altitude; real thermals preferred.
+  {
+    const sun = new THREE.Vector3(-0.35, 0.8, 0.45).normalize();
+    const wind = new THREE.Vector3(3, 0, 1.5);
+    let real = 0;
+    let n = 0;
+    let bad = 0;
+    for (let k = 0; k < axis.length; k++) {
+      const p = axis[k];
+      for (const heading of [20, 110, 200, 290]) {
+        const site = chooseKettleSite(geo, { sunDirection: sun, wind, time: 100 * k }, p.x, p.z, 420, heading, (k * 4 + heading / 90) / 20);
+        n++;
+        if (site.real) real++;
+        const d = Math.hypot(site.x - p.x, site.z - p.z);
+        const bearing = ((Math.atan2(site.x - p.x, -(site.z - p.z)) * 180) / Math.PI + 360) % 360;
+        const off = ((bearing - heading + 540) % 360) - 180;
+        const ground = Math.max(0, geo.heightAt(site.x, site.z));
+        const course = ((Math.atan2(site.courseX, -site.courseZ) * 180) / Math.PI + 360) % 360;
+        const ok =
+          d >= STORK_SITE.minDistance - 1 &&
+          d <= STORK_SITE.maxDistance + 1 &&
+          Math.abs(off) <= STORK_SITE.halfAngleDeg + 1 &&
+          site.baseY <= 420 &&
+          site.topY >= 420 &&
+          site.baseY >= ground + STORK_SITE.clearance - 1e-6 &&
+          Math.abs(course - STORK_SITE.courseDeg) <= STORK_SITE.courseSpreadDeg + 1e-6;
+        if (!ok) {
+          bad++;
+          console.log(`  site from axis point ${k} heading ${heading}°: ${d.toFixed(0)} m at ${off.toFixed(0)}°, ${site.baseY.toFixed(0)}–${site.topY.toFixed(0)} m, course ${course.toFixed(0)}°`);
+        }
+      }
+    }
+    check(bad === 0, `kettle sites: ahead (320–1000 m), in view (±${STORK_SITE.halfAngleDeg}°), around the dragon's altitude, course south (${n - bad} / ${n})`);
+    console.log(`  kettle sites on a real thermal (≥ ${STORK_SITE.realThermal} m/s) on an afternoon: ${real} / ${n}`);
+    // The ?moment= start faces the narrows: morning, noon and afternoon suns all put the kettle on a real thermal.
+    if (pose) {
+      const suns = [new THREE.Vector3(0.3, 0.6, 0.7), new THREE.Vector3(0, 0.85, 0.5), new THREE.Vector3(-0.45, 0.7, 0.5)].map((v) => v.normalize());
+      const sites = suns.map((s) => chooseKettleSite(geo, { sunDirection: s, wind, time: 0 }, pose.x, pose.z, pose.y, pose.headingDeg, 0.5));
+      check(sites.every((s) => s.real), `from the ?moment= start the kettle sits on a real thermal (${sites.map((s) => s.thermal.toFixed(1)).join(', ')} m/s)`);
+    }
+    // Heading along the 1–3 km wide strait the hills are often out of the cone (and the northern forests are weak): then
+    // the flock brings its own column (STORK_SITE.minUpdraft).
+    check(real >= n / 3, `a third or more of the sites over the strait sit on a real thermal of the hills (${real} / ${n})`);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. The "[I] Kaynağa bak" prompt window                               */
+/* ------------------------------------------------------------------ */
+console.log('6. source prompt');
+{
+  const positions = flyAlong(path, SPEED, 120);
+  type Phase = 'none' | 'playing' | 'after';
+  const phaseOf = (s: SourcePromptState): Phase => (s ? s.phase : 'none');
+
+  // A full glide: nothing before the moment, the prompt all through it, then SOURCE_PROMPT_AFTER_S more, then nothing.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    const trace: { t: number; phase: Phase; playing: boolean; id?: string }[] = [];
+    positions.forEach((p) => {
+      runner.update(DT, frameAt(p, flight()));
+      const s = win.update(DT, runner.current, false);
+      trace.push({ t: runner.now, phase: phaseOf(s), playing: !!runner.current, id: s?.moment.id });
+    });
+    const h = runner.history[0];
+    check(!!h && h.reason === 'complete', 'the poem played in the prompt run');
+    if (h) {
+      const before = trace.filter((x) => x.t < h.start - 1e-6);
+      check(before.length > 0 && before.every((x) => x.phase === 'none'), 'no prompt before the moment starts');
+      const during = trace.filter((x) => x.playing);
+      check(during.length > 0 && during.every((x) => x.phase === 'playing' && x.id === POEM_ID), `the prompt is offered on every frame of the moment (${during.length} frames)`);
+      const after = trace.filter((x) => x.phase === 'after');
+      const afterSpan = after.length * DT;
+      check(after.length > 0 && after.every((x) => x.t >= h.end - 1e-6), 'the after-window follows the moment');
+      check(Math.abs(afterSpan - SOURCE_PROMPT_AFTER_S) <= DT + 1e-6, `it lasts ${SOURCE_PROMPT_AFTER_S} s after the moment (${afterSpan.toFixed(2)} s)`);
+      const later = trace.filter((x) => x.t > h.end + SOURCE_PROMPT_AFTER_S + DT);
+      check(later.length > 0 && later.every((x) => x.phase === 'none'), 'no prompt once the window has passed');
+    }
+  }
+
+  // Paused frames do not use up the window.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let i = 0;
+    while ((runner.history.length === 0 || runner.current) && i < positions.length) {
+      runner.update(DT, frameAt(positions[i], flight()));
+      win.update(DT, runner.current, false);
+      i++;
+    }
+    for (let k = 0; k < 60 * FPS; k++) win.update(0, runner.current, false);
+    check(win.current?.phase === 'after', 'a paused minute right after the moment keeps the prompt (menu open)');
+  }
+
+  // A race: no prompt while it runs, and a race ends the window after a moment.
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let raceAt = -1;
+    const phases: Phase[] = [];
+    positions.forEach((p, i) => {
+      if (runner.currentLine === 2 && raceAt < 0) raceAt = i;
+      const racing = raceAt >= 0 && i > raceAt && i < raceAt + 5 * FPS;
+      runner.update(DT, frameAt(p, flight({ racing })));
+      const s = win.update(DT, runner.current, racing);
+      // Up to 15 s after the race began (the cut-short poem may retry after 90 s, with a fresh prompt then).
+      if (raceAt >= 0 && i > raceAt && i < raceAt + 15 * FPS) phases.push(phaseOf(s));
+    });
+    check(runner.history[0]?.reason === 'race', 'the race ended the poem');
+    check(phases.length > 0 && phases.every((x) => x === 'none'), 'no prompt during the race, and none after the race ends it');
+  }
+  {
+    const { runner } = harness();
+    const win = new SourcePromptWindow();
+    let endAt = -1;
+    let seenAfter = false;
+    const afterRace: Phase[] = [];
+    positions.forEach((p, i) => {
+      const racing = endAt >= 0 && i >= endAt + 3 * FPS && i < endAt + 4 * FPS;
+      runner.update(DT, frameAt(p, flight({ racing })));
+      const s = win.update(DT, runner.current, racing);
+      if (runner.history.length > 0 && endAt < 0) endAt = i;
+      if (endAt >= 0 && i < endAt + 3 * FPS && s?.phase === 'after') seenAfter = true;
+      if (endAt >= 0 && i >= endAt + 3 * FPS) afterRace.push(phaseOf(s));
+    });
+    check(seenAfter, 'the prompt shows right after the moment');
+    check(afterRace.length > 0 && afterRace.every((x) => x === 'none'), 'a race starting in the window removes the prompt for good');
+  }
+
+  // A moment without sources offers no prompt.
+  {
+    const bare: Moment = { ...poem, sources: undefined };
+    const { runner } = harness([bare]);
+    const win = new SourcePromptWindow();
+    let any = false;
+    positions.forEach((p) => {
+      runner.update(DT, frameAt(p, flight()));
+      if (win.update(DT, runner.current, false)) any = true;
+    });
+    check(runner.history.length === 1 && !any, 'a moment without sources offers no prompt');
+  }
+
+  // The hint item after a moment: low priority, deferred by a race, never over race lines.
+  {
+    const zones = new HudDirector();
+    const hint = { id: 'moment.source', zone: 'lowerCenter' as const, priority: HUD_PRIORITY.momentSource, duration: 10, maxWait: 10, deferIn: ['race'], hints: [['I', 'Kaynağa bak']] as const, joinable: true };
+    zones.request(hint);
+    zones.update(DT);
+    check(zones.isShown('moment.source'), 'the after-moment hint shows on a free hint line');
+    zones.setContext('race', true);
+    zones.update(DT);
+    check(!zones.isShown('moment.source'), 'it is deferred while a race runs');
+    zones.setContext('race', false);
+    zones.request({ id: 'race.hint', zone: 'lowerCenter', priority: HUD_PRIORITY.raceCountdown, hints: [['Y', 'iptal']] });
+    zones.update(1);
+    check(zones.shownIn('lowerCenter') === 'race.hint', 'a race hint line outranks it');
+    check(HUD_PRIORITY.momentSource < HUD_PRIORITY.flightHint && HUD_PRIORITY.momentSource < HUD_PRIORITY.momentLine, 'its priority sits below flight hints and moment lines');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Gull and simit on a ferry (moving anchor)                         */
+/* ------------------------------------------------------------------ */
+console.log('7. gull and simit on a ferry');
+{
+  // A vapur in service on the open water between Sarayburnu and Kadıköy, 7 m/s heading north-east.
+  const FERRY_ID = 42;
+  const start = latLonToLocal(41.0, 29.0);
+  check(geo.isWater(start.x, start.z) && geo.coastDistance(start.x, start.z) < -300, `the ferry's water is open sea (coast distance ${geo.coastDistance(start.x, start.z).toFixed(0)} m)`);
+  const yaw = (-45 * Math.PI) / 180; // forward (-sin yaw, -cos yaw) = north-east
+  const ferryAt = (t: number): VesselPose => ({
+    id: FERRY_ID,
+    kind: 'vapur',
+    x: start.x - Math.sin(yaw) * 7 * t,
+    z: start.z - Math.cos(yaw) * 7 * t,
+    yaw,
+    heave: 0,
+    speed: 7,
+    underway: true,
+    length: 72,
+    beam: 13.2,
+    draft: 3.1,
+    airDraft: 19.7,
+  });
+
+  // The anchor feed on a stand-in life service: the ferry above, a moored vapur and a tanker (not ferries).
+  let now = 0;
+  let serviceOn = true;
+  const docked: VesselPose = { ...ferryAt(0), id: 7, x: start.x + 90, speed: 0, underway: false };
+  const tanker: VesselPose = { ...ferryAt(0), id: 8, kind: 'tanker', x: start.x - 90 };
+  const life: LifeService = {
+    vessels(kinds, out) {
+      const all = [serviceOn ? ferryAt(now) : { ...ferryAt(now), speed: 0.5 }, docked, tanker].filter((p) => kinds.includes(p.kind));
+      out.length = 0;
+      out.push(...all);
+      return out;
+    },
+    vessel: (id, out) => (id === FERRY_ID ? Object.assign(out, ferryAt(now)) : null),
+  };
+  const feed = new AnchorFeed();
+  const pts = feed.update(life);
+  check(pts.ferry.length === 1 && pts.ferry[0].id === FERRY_ID, `the 'ferry' anchor lists the vapur in service only (not the moored one, not the tanker): ${pts.ferry.map((a) => a.id).join(', ')}`);
+  check(inService(ferryAt(0)) && !inService(docked), 'in service = underway and going ahead');
+
+  interface FerryFlight extends Flight {
+    /** Dragon offset from the ferry: along its heading and to starboard (m). */
+    along: number;
+    side: number;
+    service: boolean;
+  }
+  const ferryFlight = (over: Partial<FerryFlight> = {}): FerryFlight => ({ ...flight({ agl: 20, mode: 'gliding' }), along: -60, side: 80, service: true, ...over });
+  /** Runs `seconds` with the dragon riding along the ferry at an offset (or where `state` puts it). */
+  function flyFerry(runner: MomentRunner, seconds: number, state: (t: number) => FerryFlight, t0 = 0): void {
+    for (let k = 0; k < seconds * FPS; k++) {
+      const t = t0 + k * DT;
+      now = t;
+      const s = state(t);
+      serviceOn = s.service;
+      const fp = ferryAt(t);
+      const fx = -Math.sin(fp.yaw);
+      const fz = -Math.cos(fp.yaw);
+      const rx = Math.cos(fp.yaw);
+      const rz = -Math.sin(fp.yaw);
+      const p = { x: fp.x + fx * s.along + rx * s.side, z: fp.z + fz * s.along + rz * s.side };
+      const fr = frameAt(p, s);
+      fr.context!.anchors = feed.update(life);
+      runner.update(DT, fr);
+    }
+  }
+  const gullOnly = (): ReturnType<typeof harness> => harness([gull]);
+
+  // Fires near the ferry, under its conditions.
+  {
+    const { runner, log } = gullOnly();
+    flyFerry(runner, 30, () => ferryFlight());
+    const h = runner.history[0];
+    check(!!h && h.id === GULL_ID && h.reason === 'complete' && Math.abs(h.start - runner.pacing.dwellSec) <= DT + 1e-6, `gliding 20 m up, 100 m off the stern quarter: fires after the dwell and plays to the end (${h?.reason}, at ${h?.start.toFixed(2)} s)`);
+    check(log.shows.length === gull.content.subtitles.length && log.cards.length === 1, `all ${gull.content.subtitles.length} lines and the card (${log.shows.length}, ${log.cards.length})`);
+  }
+  {
+    const { runner } = gullOnly();
+    let anchor: number | undefined;
+    for (let k = 0; k < 3 && anchor === undefined; k++) {
+      flyFerry(runner, 2, () => ferryFlight({ mode: 'hovering', agl: 30, along: -120, side: 40 }), k * 2);
+      anchor = runner.currentAnchor;
+    }
+    check(anchor === FERRY_ID, `hovering by the stern: fires and names its ferry as the anchor (${anchor})`);
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ mode: 'grounded', agl: 0, along: 25, side: 0 }));
+    check(runner.history.length === 1 || !!runner.current, 'perched on the ferry: fires');
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ along: -200, side: 0, agl: 45 }));
+    check(!!runner.current || runner.history.length === 1, 'gliding 45 m up 164 m behind the stern (within 250 m of its centre): fires');
+  }
+  const noFire: Array<[string, Partial<FerryFlight>]> = [
+    ['300 m abeam (beyond 250 m)', { side: 300, along: 0 }],
+    ['1 km away', { side: 1000 }],
+    ['the ferry not in service (alongside, stopped)', { service: false }],
+    ['at night (22:00)', { timeOfDay: 22 }],
+    ['before dawn (05:30)', { timeOfDay: 5.5 }],
+    ['in rain', { weather: 'rain' }],
+    ['in a storm', { weather: 'storm' }],
+    ['high above it (150 m AGL)', { agl: 150 }],
+    ['diving past it', { mode: 'diving' }],
+    ['swimming beside it', { mode: 'swimming', agl: 0 }],
+    ['during a race', { racing: true }],
+    ['with the city-life category off', { prefs: { enabled: true, categories: { legend: true, 'city-life': false, poem: true } } }],
+  ];
+  for (const [label, over] of noFire) {
+    const { runner } = gullOnly();
+    flyFerry(runner, 20, () => ferryFlight(over));
+    check(runner.history.length === 0 && !runner.current, `no ferry moment ${label}`);
+  }
+  // Not away from ferries: the same glide along the European shore where no ferry runs.
+  {
+    const { runner } = gullOnly();
+    positionsLoop: for (const p of flyAlong(path, SPEED, 60)) {
+      const fr = frameAt(p, flight({ agl: 20 }));
+      fr.context!.anchors = feed.update(life);
+      runner.update(DT, fr);
+      if (runner.history.length > 0) break positionsLoop;
+    }
+    check(runner.history.length === 0, 'no ferry moment gliding along the shore away from the ferry');
+  }
+  // Fog and haze are fine.
+  for (const weather of ['fog', 'haze'] as const) {
+    const { runner } = gullOnly();
+    flyFerry(runner, 5, () => ferryFlight({ weather }));
+    check(!!runner.current || runner.history.length === 1, `fires in ${weather}`);
+  }
+  // Hold: the ferry pulls away while the dragon hovers; within the 250 + 100 m hold it goes on, leaving ends it.
+  {
+    const { runner, log } = gullOnly();
+    let leftAt = -1;
+    flyFerry(runner, 30, (t) => {
+      if (runner.currentLine === 1 && leftAt < 0) leftAt = t;
+      return ferryFlight(leftAt >= 0 ? { side: 700 } : {});
+    });
+    check(runner.history[0]?.reason === 'conditions' && log.hides[log.hides.length - 1]?.how === 'fade', `flying 700 m away mid-moment fades it out (${runner.history[0]?.reason})`);
+  }
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 30, () => ferryFlight({ side: 240, along: 0, mode: 'hovering' }));
+    check(runner.history[0]?.reason === 'complete', 'hovering 240 m abeam while the ferry sails on (beyond 250 m after a few seconds, inside the 350 m hold): plays to the end');
+  }
+  // Cooldown: repeatable after 600 s (and the global gap), not before.
+  {
+    const { runner } = gullOnly();
+    flyFerry(runner, 700, () => ferryFlight());
+    const plays = runner.history.filter((x) => x.id === GULL_ID);
+    const cd = gull.trigger.repeat.kind === 'repeatable' ? gull.trigger.repeat.cooldownSec : Infinity;
+    check(plays.length === 2, `staying by the ferry for 700 s: plays twice (${plays.length}×)`);
+    if (plays.length === 2) {
+      const gap = plays[1].start - plays[0].start;
+      check(gap >= cd - 1e-6 && gap <= cd + runner.pacing.dwellSec + 2 * DT, `the second time after the ${cd} s cooldown (${gap.toFixed(1)} s)`);
+    }
+  }
+  // The shortcut: forced with an explicit anchor.
+  {
+    const { runner } = gullOnly();
+    check(runner.force(GULL_ID, FERRY_ID), 'force accepts the ferry moment with its anchor');
+    flyFerry(runner, 2, () => ferryFlight({ side: 3000, weather: 'rain' }));
+    check(runner.currentAnchor === FERRY_ID && !!runner.current, 'forced: plays at the given ferry whatever the conditions');
+  }
+  // The ?moment= placement next to a ferry in service.
+  {
+    now = 0;
+    serviceOn = true;
+    feed.update(life);
+    const sc = ferryShortcut(feed.vesselsOf('ferry'), (x, z) => geo.coastDistance(x, z));
+    check(!!sc && sc.anchorId === FERRY_ID, `?moment=${GULL_ID} picks the vapur in service (${sc?.anchorId})`);
+    if (sc) {
+      const fp = ferryAt(0);
+      const d = Math.hypot(sc.pose.x - fp.x, sc.pose.z - fp.z);
+      check(geo.isWater(sc.pose.x, sc.pose.z) && d > 30 && d < 90, `it hovers over the water beside the ferry (${d.toFixed(0)} m from its centre)`);
+      check(sc.pose.speed === 0 && sc.pose.y >= 10 && sc.pose.y <= 30, `hovering (speed 0) at ${sc.pose.y} m, inside the 60 m band`);
+      const toShip = (Math.atan2(fp.x - sc.pose.x, -(fp.z - sc.pose.z)) * 180) / Math.PI;
+      const diff = Math.abs(((sc.pose.headingDeg - toShip + 540) % 360) - 180);
+      check(diff < 60, `facing the ship's stern quarter (${diff.toFixed(0)}° off the line to its centre)`);
+      // And from there the trigger would fire by itself.
+      const r = gullOnly().runner;
+      const ctx = frameAt({ x: sc.pose.x, z: sc.pose.z }, flight({ agl: sc.pose.y, mode: 'hovering' }));
+      ctx.context!.anchors = feed.update(life);
+      for (let k = 0; k < 2 * FPS; k++) r.update(DT, ctx);
+      check(!!r.current, 'the shortcut pose satisfies the trigger on its own');
+    }
   }
 }
 

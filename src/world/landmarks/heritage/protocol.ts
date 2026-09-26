@@ -11,6 +11,10 @@ export interface SiteDef {
   radius: number;
   height: number;
   anchors: { x: number; z: number }[];
+  /** Full width (m) of a line landmark's body (LandmarkDef.bodyWidth). */
+  bodyWidth?: number;
+  /** Stations (m along the anchors) where OSM ways pass through a line landmark (data/crossings.json). */
+  crossings: number[];
 }
 
 /** Axis-aligned grid window (cell-centred, same layout as the geo height grid). */

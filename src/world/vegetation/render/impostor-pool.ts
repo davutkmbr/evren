@@ -4,8 +4,12 @@ import { INSTANCE_STRIDE } from '../species';
 import type { InstanceStream } from './tree-geometry';
 import { createPoolGeometry, InstanceStream as Stream } from './tree-geometry';
 
-/** Instances per allocation unit. */
-export const CHUNK = 64;
+/**
+ * Instances per allocation unit. Every tile rounds its instance count up to whole chunks and the zeroed tail still
+ * runs the vertex shader (collapsed quads), so small chunks matter: most far tiles hold only a few thinned trees
+ * (with 64, 30-77 % of the drawn impostor slots were empty at the probe views of tools/headless/scene-budget.ts; 16: 9-42 %).
+ */
+export const CHUNK = 16;
 
 /**
  * One instanced draw of impostor quads for many streaming tiles. Tiles own whole chunks of the instance buffer;

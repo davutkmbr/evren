@@ -9,9 +9,9 @@ import { PHYSICS_DT } from '../../../src/dragon/flight/params';
 import type { FlightSim } from '../../../src/dragon/flight/sim';
 import { clearPilotEdges, createPilotCommand, type PilotCommand } from '../../../src/dragon/flight/types';
 
-export type Key = 'W' | 'S' | 'A' | 'D' | 'Q' | 'E' | 'Space' | 'Shift' | 'Ctrl' | 'V' | 'L';
+export type Key = 'W' | 'S' | 'A' | 'D' | 'Q' | 'E' | 'Space' | 'Shift' | 'Ctrl' | 'L';
 
-type Button = 'flap' | 'dive' | 'brake' | 'urge' | 'land' | 'pitchUp' | 'pitchDown' | 'rollLeft' | 'rollRight' | 'yawLeft' | 'yawRight';
+type Button = 'flap' | 'dive' | 'brake' | 'land' | 'pitchUp' | 'pitchDown' | 'rollLeft' | 'rollRight' | 'yawLeft' | 'yawRight';
 
 const KEY_BUTTON: Record<Key, Button> = {
   W: 'pitchDown',
@@ -23,7 +23,6 @@ const KEY_BUTTON: Record<Key, Button> = {
   Space: 'flap',
   Shift: 'dive',
   Ctrl: 'brake',
-  V: 'urge',
   L: 'land',
 };
 
@@ -142,7 +141,6 @@ export class KeyPilot {
     c.rollRightPressed = this.doubled.has('rollRight');
     c.loopPressed = this.doubled.has('pitchUp');
     c.dropPressed = this.doubled.has('dive');
-    c.urgePressed = this.pressed.has('urge');
     c.powerPressed = this.doubled.has('flap');
     c.slipLeftPressed = this.doubled.has('yawLeft');
     c.slipRightPressed = this.doubled.has('yawRight');

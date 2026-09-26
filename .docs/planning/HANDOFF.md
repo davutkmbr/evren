@@ -54,6 +54,30 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
      Dolmabahçe garden walls (castle_wall) as walls; mapped land-wall gate openings are 11+ m (breaches, no gate
      pieces); street lamps / OSM trees are not kept out of the walls. Compiled street areas need a recompile to drop
      wall-owned buildings.
+   - Roads (owner report: supplement walls stood in the Kennedy Cd median): carriageways (with their width + 0.5 m),
+     rail / tram beds and the medians of divided major roads (< 35 m) are now obstacles like buildings (`buildings.ts`
+     road quads, `fit.ts`); supplement (OHM) traces are snapped to the land side of major roads within 40 m before
+     the fit (`plan.ts snapRoadside`, 7.2 km moved); where there is no room the wall breaks (Road opening, crumbled).
+     Check now reports `check.roadMetres` = 0 (all stretches, OSM ones too). Placed 18.9 km (was 19.9; Golden Horn
+     fragments 1.3 km, Marmara 5.5 km). Before / after: `.shots/walls/debug/kennedy-*`.
+3. **Bozdoğan Kemeri not visible** (owner report): the aqueduct landmark (`bozdogan-kemeri`) does not show over
+   Atatürk Bulvarı; earlier its arches ran through buildings. Work in progress (uncommitted): landmark claims
+   (`src/world/landmarks/claims.ts`, `claim-shapes.ts`, `visible-ground.ts`, `heritage/build/sites/aqueduct.ts`,
+   `heritage/data/crossings.json`, `scripts/data/landmark-crossings.ts`, `src/world/osm/shared/landmark-passages.ts`,
+   edits in `src/world/osm/{buildings,details,index.ts}`, `geo/*`, `site-planner.ts`). Goal: every hand-made landmark
+   renders inside OSM regions and street-layer areas, buildings inside a landmark footprint are skipped, roads pass
+   under arches; per-landmark visibility audit. Bisect with `?osmregions=0` / `?street=0`.
+   **Done (ce05db7):** the aqueduct had no builder at all; now modelled + generic landmark ground claims. Follow-ups:
+   the aqueduct material reads flat grey/plastic — reuse the city-wall kit's stone/brick material and weathering;
+   11 heritage landmarks still have no builder (Topkapı, Dolmabahçe, Çırağan, Rumeli/Anadolu Hisarı, Yedikule,
+   Haydarpaşa, Selimiye, Kuleli, Sirkeci, Hipodrom) — their OSM buildings show instead; model them one by one.
+4. **Perches** (owner report): many perch points are hidden by trees and have bad camera angles. Rule: perches only on
+   elevated structures (Galata Tower, bridge towers, Kız Kulesi, Beyazıt/Çamlıca towers, wall towers), never ground or
+   bare hilltops; clear the tallest neighbour within ~40 m; perch camera frames the dragon in the lower third against
+   an unobstructed view, occluders fade. Audit shots in `.shots/perches/audit/`. Files: `src/world/perches/*`,
+   `src/dragon/flight/perch.ts`, `src/ui/perch-*` (the cloud session also edits perch code).
+5. Owner wants bigger race payoffs from chains (15–25 %, felt bursts, perceived-speed effects) — given to the cloud
+   session as a prompt; not ours.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
 
 ## Next, in order (agreed with the owner)
@@ -74,3 +98,4 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 - Before bulk fan-out, pick the tool that fits the scale (local extract, parallel compiler).
 - Commit per area; verify HEAD in an isolated `git worktree` typecheck before pushing; when merging the cloud branch,
   stash only overlapping dirty files and pop afterwards.
+- 2026-09-26 landmarks agent (uncommitted): Bozdoğan Kemeri was never built (the heritage `SITE_BUILDERS` held only Beylerbeyi) → new aqueduct builder (`heritage/build/sites/aqueduct.ts`, arches centred on OSM crossings from `scripts/data/landmark-crossings.ts` → `heritage/data/crossings.json`), anchors from the OSM way 23276526; generic landmark ground claims (`src/world/landmarks/claims.ts`: only modelled landmarks claim ground, line bodies drop touching OSM buildings, infill/trees/props respect them), OSM `building_passage` pieces under a line landmark become ground roads (`osm/shared/landmark-passages.ts`), heritage sites sample the visible (OSM) ground. 12 heritage landmarks still have no builder (OSM buildings now show there instead of empty pads). Shots: `.shots/landmarks/bozdogan/after-*`.

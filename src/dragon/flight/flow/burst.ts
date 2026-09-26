@@ -31,7 +31,7 @@ export const BURST = {
   qualityMin: 0.75,
   qualityFull: 0.85,
   /** Largest push of one burst (m/s) and the airspeed a burst never pushes past (under the folded-wing dive envelope). */
-  maxDv: 13,
+  maxDv: 12,
   speedCap: 74,
   /** Seconds the push is spread over (sin² rate). */
   time: 1.2,
@@ -39,6 +39,11 @@ export const BURST = {
   alive: 2.6,
   /** A gate counts as a link when passed at least this tight (speed rings always do). */
   passTightness: 0.7,
+  /**
+   * The chain's recent kinds are remembered this long (s) after it was last fed, across breaks: a pattern of long
+   * moves (a wingover and its roll-out, repeated) cannot relink after every pause.
+   */
+  kindMemory: 20,
   /** A ring or gate link pushes this fraction of a motion link of the same count. */
   passShare: 0.8,
   /** No speed push below this airspeed (m/s): slow flight, hover, the ground. */
@@ -126,8 +131,16 @@ export class ChainBurst {
     return this.active ? clamp(this.t / BURST.time, 0, 1) : 1;
   }
 
-  /** The chain breaks (a poor handover, a stall, contact, a long pause). */
+  /**
+   * The chain breaks (a poor handover, a stall, contact). The recent kinds are kept: a chain restarted right away
+   * still cannot link a kind it just had (two moves alternated never pay, broken or not).
+   */
   breakChain(): void {
+    this.links = 0;
+  }
+
+  /** A long pause (BURST.kindMemory): the chain and its recent kinds are forgotten. */
+  forget(): void {
     this.links = 0;
     this.kinds.length = 0;
   }
@@ -135,7 +148,7 @@ export class ChainBurst {
   /** A motion that did not link starts a new chain (the next motion may link to it). */
   begin(kind: string, now: number): void {
     this.breakChain();
-    this.kinds.push(kind);
+    this.pushKind(kind);
     this.lastFed = now;
   }
 
@@ -145,14 +158,18 @@ export class ChainBurst {
     this.lastFed = now;
   }
 
+  /** Records a kind; a repeat of the last one is one entry (the last two kinds are the last two different ones). */
   private pushKind(kind: string): void {
+    if (this.kinds[this.kinds.length - 1] === kind) {
+      return;
+    }
     this.kinds.push(kind);
     if (this.kinds.length > 4) {
       this.kinds.shift();
     }
   }
 
-  /** True when a motion of this kind adds variety to the chain (not one of its last two kinds). */
+  /** True when a motion of this kind adds variety to the chain (not one of its last two different kinds). */
   fresh(kind: string): boolean {
     const n = this.kinds.length;
     return this.kinds[n - 1] !== kind && this.kinds[n - 2] !== kind;

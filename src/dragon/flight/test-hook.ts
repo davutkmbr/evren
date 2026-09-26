@@ -100,7 +100,7 @@ export function snapshot(sim: FlightSim): FlightSnapshot {
 export interface TestControl {
   command: PilotCommand | null;
   readonly overrides: AssistOverrides;
-  /** One-frame presses (edges), e.g. 'rollRight' = a D double tap, 'drop' = a Shift double tap, 'urge' = V, 'power' = a Space double tap, 'slipLeft' = a Q double tap. */
+  /** One-frame presses (edges), e.g. 'rollRight' = a D double tap, 'drop' = a Shift double tap, 'power' = a Space double tap, 'slipLeft' = a Q double tap. */
   pressed: Record<PilotEdge, boolean>;
 }
 
@@ -165,8 +165,8 @@ export function installFlightTestHook(sim: FlightSim, control: TestControl, host
       control.pressed[name] = true;
     },
     state: (): FlightSnapshot => snapshot(sim),
-    /** The running trick (roll / loop / drop / catch), its progress and the urge / cheer envelopes. */
-    maneuver: () => ({ ...sim.maneuvers.describe(), urge: sim.maneuvers.urgeEnvelope, cheer: sim.maneuvers.cheer }),
+    /** The running trick (roll / loop / drop / catch), its progress and the cheer envelope. */
+    maneuver: () => ({ ...sim.maneuvers.describe(), cheer: sim.maneuvers.cheer }),
     pose: (): DragonPose => ({ ...host.pose() }),
     snapCamera: (): void => host.snapCamera(),
     options: (o?: Partial<SimOptions>): SimOptions => {

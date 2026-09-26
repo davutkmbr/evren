@@ -207,7 +207,6 @@ export class MotionSegmenter {
     return (
       m.active ||
       m.powerActive ||
-      m.urging ||
       sim.skim.active ||
       sim.mode === 'takeoff' ||
       sim.mode === 'landing' ||

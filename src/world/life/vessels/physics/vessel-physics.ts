@@ -373,11 +373,14 @@ export class VesselPhysics {
 
   /**
    * Bow and stern waves (stage 7a): every moving, non-kinematic hull near the camera hands its motion through the water
-   * to the wave particles, which turn it into the Kelvin pattern other hulls and the dragon then float on.
+   * to the wave particles, which turn it into the Kelvin pattern other hulls and the dragon then float on. The same
+   * hulls feed the foam (stage 7c): bow roll, stern turbulence and the propeller wash from their speed, thrust, planing
+   * and the bow's vertical motion (bow spray when slamming).
    */
   private emitWaves(camPos: THREE.Vector3): void {
     const dyn = this.water?.dynamic;
-    if (!dyn) return;
+    const foam = this.water?.foam;
+    if (!dyn && !foam) return;
     const P = VESSEL_PHYSICS;
     const range2 = P.emitRange * P.emitRange;
     for (const s of this.slots) {
@@ -393,7 +396,12 @@ export class VesselPhysics {
       const m = s.v.model;
       // Planing hulls ride up out of the water: less draft, less wave making.
       const draft = Math.max(0.05, b.hull.draft - b.hull.lift) * (1 - 0.6 * b.planing);
-      dyn.hull(s.v.id, b.x, b.z, ux / u, uz / u, u, m.length, m.beam, draft);
+      dyn?.hull(s.v.id, b.x, b.z, ux / u, uz / u, u, m.length, m.beam, draft);
+      if (foam) {
+        const thrust = b.hull.thrustMax > 0 ? Math.min(1, Math.abs(b.thrust) / b.hull.thrustMax) : 0;
+        // Forward axis of the hull (Object3D yaw, forward = -Z); the bow's vertical speed from heave and pitch rates.
+        foam.hull(s.v.id, b.x, b.z, -Math.sin(b.yaw), -Math.cos(b.yaw), u, m.length, m.beam, draft, thrust, b.planing, b.vh + 0.5 * m.length * b.vp);
+      }
     }
   }
 

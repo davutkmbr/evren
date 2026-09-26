@@ -12,6 +12,7 @@ import type { StreetSurface } from '../../shared/street-surface';
 import { CoverChannel, LotHint, LotStyle, isGreenArea, streetClearance, vnoise, type CoverBuild } from '../cover/cover';
 import { decodeSdf } from '../raster';
 import { TREE_SPECIES, type TreeSpecies } from './species';
+import { onLineBody } from '../../../landmarks/claim-shapes';
 
 interface Planter {
   surface: StreetSurface;
@@ -22,6 +23,8 @@ interface Planter {
    */
   area: { minX: number; maxX: number; minZ: number; maxZ: number };
   pads: readonly number[];
+  /** Line landmark bodies (landmarks/claim-shapes.ts). */
+  lines: readonly number[];
   /** Mosque pads (x, z, radius): their yards get a loose ring of cypresses and planes. */
   mosques: readonly number[];
 }
@@ -100,6 +103,9 @@ class Forest {
   }
 
   private onPad(x: number, z: number): boolean {
+    if (onLineBody(this.p.lines, x, z, 2)) {
+      return true;
+    }
     const p = this.p.pads;
     for (let k = 0; k < p.length; k += 3) {
       const r = p[k + 2] * 0.75;

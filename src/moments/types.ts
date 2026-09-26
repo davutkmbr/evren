@@ -202,4 +202,43 @@ export interface Moment {
   needs: readonly MomentNeed[];
   /** English notes for developers (historical caveats, design intent). */
   notes?: string;
+  /** Original sources behind the moment ("Kaynak": the poem's text, a scan, an official video...), see ./sources.ts. */
+  sources?: readonly MomentSource[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Sources ("Kaynak")                                                   */
+/* ------------------------------------------------------------------ */
+
+/** What a source is: a text page, an image, a video, a recording or any other page. */
+export type MomentSourceKind = 'text' | 'image' | 'video' | 'audio' | 'link';
+
+/** How an approved source is shown inside the game (only approved items are ever embedded). */
+export type MomentSourceEmbed =
+  /** The rights holder's own YouTube upload, played through youtube-nocookie.com; seconds are optional. */
+  | { kind: 'youtube'; videoId: string; startSec?: number; endSec?: number }
+  /** A direct https image file URL (e.g. upload.wikimedia.org) with its pixel size, loaded only when the sheet opens. */
+  | { kind: 'image'; src: string; width: number; height: number };
+
+/**
+ * One original source behind a moment, reached with the "Kaynağa bak" key (./sources.ts). `url` is the canonical page
+ * (Vikikaynak / Wikisource, Project Gutenberg, a Wikimedia Commons file page, the rights holder's official YouTube
+ * upload, a museum page...). Only items with `approved: true` (the owner approved them, CLAUDE.md) are ever embedded;
+ * an unapproved item is shown as a plain external link and never embedded.
+ */
+export interface MomentSource {
+  kind: MomentSourceKind;
+  /** Turkish title shown in the source sheet ("Şiirin tam metni"). */
+  title: string;
+  /** Canonical https URL, opened in a new tab. */
+  url: string;
+  embed?: MomentSourceEmbed;
+  /** Who made or holds the work ("Orhan Veli Kanık", the channel name). Required when approved. */
+  attribution?: string;
+  /** Licence as the source states it ("kamu malı", "CC BY-SA 4.0"). Required when approved. */
+  licence?: string;
+  /** The owner approved this item for the game (required before anything is embedded). */
+  approved: boolean;
+  /** English note for developers (how the URL was verified, what is still to confirm). */
+  note?: string;
 }

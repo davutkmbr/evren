@@ -71,12 +71,11 @@ export interface MedalTimes {
 
 /**
  * Average speeds (m/s) the default medal targets ask for, over the timed distance (course + rest of the lead-in).
- * Phase 20 stage D (flow and chain bursts): bronze is within reach of clean flying without moves (a scripted plain
- * racer averages ~48–51 m/s over the course, ~47–50 m/s over the timed distance); silver asks for some chaining; gold
- * for sustained flow, i.e. chained moves on every leg and the world used well (~58–61 m/s). See
- * tools/headless/race-balance.ts.
+ * Phase 20 stage D v2 (flow and chain bursts, no speed button): bronze is within reach of clean flying without moves (a
+ * scripted plain racer averages ~40–42 m/s); silver asks for some chaining; gold for sustained flow, i.e. chained moves
+ * on every leg and the world used well (~47–54 m/s). See tools/headless/race-balance.ts.
  */
-export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 58, silver: 50, bronze: 43 };
+export const MEDAL_PACE: Readonly<Record<Medal, number>> = { gold: 48, silver: 41, bronze: 36 };
 
 /** Medals from best to worst. */
 export const MEDAL_ORDER: readonly Medal[] = ['gold', 'silver', 'bronze'];
@@ -139,7 +138,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'bogaz',
     name: 'Boğaz turu',
     description: 'Kız Kulesi’nden 15 Temmuz Şehitler Köprüsü’nün altından Fatih Sultan Mehmet Köprüsü’ne, Boğaz boyunca.',
-    medals: { gold: 195, silver: 218, bronze: 252 },
+    medals: { gold: 235, silver: 268, bronze: 309 },
     gates: [
       { lat: 41.0135, lon: 28.9996, alt: 70, radius: 32, label: 'Başlangıç' },
       { lat: 41.0216, lon: 28.9998, alt: 60, radius: 30, label: 'Kız Kulesi' },
@@ -165,7 +164,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'halic',
     name: 'Haliç kıvrımı',
     description: 'Karaköy’den köprülerin üstünden Haliç’in kıvrımını izleyerek Eyüp’e.',
-    medals: { gold: 90, silver: 102, bronze: 117 },
+    medals: { gold: 100, silver: 123, bronze: 142 },
     gates: [
       { lat: 41.0202, lon: 28.9807, alt: 55, radius: 26, label: 'Başlangıç' },
       { lat: 41.022, lon: 28.97, alt: 95, radius: 24, label: 'Galata Köprüsü' },
@@ -184,7 +183,7 @@ export const COURSES: readonly CourseDef[] = [
     id: 'adalar',
     name: 'Adalar turu',
     description: 'Kınalıada ile Burgaz arasından Heybeli’nin güneyinden dolaşıp Büyükada’nın çevresinden güney ucuna.',
-    medals: { gold: 260, silver: 305, bronze: 353 },
+    medals: { gold: 329, silver: 368, bronze: 425 },
     gates: [
       { lat: 40.8919, lon: 29.0569, alt: 55, radius: 32, label: 'Başlangıç' },
       { lat: 40.8802, lon: 29.0498, alt: 55, radius: 30, label: 'Burgazada' },

@@ -13,6 +13,7 @@ import { VesselLights } from './lights/vessel-lights';
 import { buildPiers, type PierLamp } from './piers/pier-builder';
 import { globalUniforms } from '../../core/uniforms';
 import { Flocks } from './birds/flocks';
+import { createLifeService } from './life-service';
 import { CarTraffic } from './traffic/car-traffic';
 import { osmStaticExclusion } from '../osm/regions';
 
@@ -81,6 +82,7 @@ export class LifeSystem implements System {
       this.colliderIds = ctx.services.get('collision').addMany(piers.colliders, 'pier', piers.colliders.map(() => 'life:pier'));
       const t2 = performance.now();
       this.rebuildFleet(ctx.quality.settings);
+      ctx.services.provide('life', createLifeService(this));
       this.rebuildTraffic(ctx.quality.settings);
       // Bridge decks arrive with the structures module; re-lay the roads onto them once they do.
       if (!ctx.services.has('roadSurface')) {
@@ -178,6 +180,9 @@ export class LifeSystem implements System {
     const time = this.clock;
     if (this.wakes) {
       this.fleet.feedWakes(this.wakes, time);
+      // The water's foam field draws the near wakes (phase 21 stage 7c); the ribbons stay as the far level of detail.
+      const fw = ctx.services.tryGet('water')?.foam?.window;
+      this.wakes.setNearFade(fw ? fw.x : 0, fw ? fw.z : 0, fw ? fw.halfExtent : 0);
     }
     this.traffic?.update(dt, time, ctx.time.timeOfDay, this.camPos);
     if (this.flocks) {

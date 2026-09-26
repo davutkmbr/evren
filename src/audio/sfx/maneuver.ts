@@ -117,21 +117,3 @@ export function playBurstRush(env: SfxEnv, when: number, strength: number, place
   return dur;
 }
 
-/** The rider snapping the reins: two quick leather cracks. Returns the duration in seconds. */
-export function playReinSnap(env: SfxEnv, when: number, strength: number, place: Placement): number {
-  const s = clamp(strength, 0.1, 1.2);
-  const rng = env.rng;
-  const v = new Voice(env, { ...place, reverb: place.reverb * 0.5 }, when, 1);
-  const t = v.t;
-  for (let i = 0; i < 2; i++) {
-    const at = i * (0.11 + rng() * 0.03);
-    const src = v.noise(env.noise.white, at);
-    const bp = v.filter('bandpass', 2600 + rng() * 900, 1.4);
-    const e = v.gain(0);
-    percEnv(e.gain, t + at, (i === 0 ? 0.7 : 0.45) * s, 0.001, 0.05);
-    src.connect(bp).connect(e);
-    v.toInput(e, (rng() - 0.5) * 0.4);
-  }
-  v.end(0.4);
-  return 0.4;
-}

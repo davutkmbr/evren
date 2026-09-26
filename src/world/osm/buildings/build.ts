@@ -22,6 +22,7 @@ import { clearanceOf, planBuilding, wallHeight } from './plan';
 import { encodePrism } from './protocol';
 import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
+import { ringTouchesLineBody, type LandmarkClaims } from '../../landmarks/claim-shapes';
 
 /** building=* values that are not solid buildings (canopies, ruins, bridge decks). */
 const SKIP_KINDS = new Set(['roof', 'ruins', 'collapsed', 'bridge', 'construction', 'no', 'carport']);
@@ -33,8 +34,8 @@ export interface BuildInput {
   buildings: readonly OsmBuilding[];
   /** x, z, Poi kind triples. */
   pois: Float32Array;
-  /** Landmark / mosque pads: x, z, radius triples (bridges excluded). */
-  pads: Float32Array;
+  /** Ground claims of the modelled landmarks and neighbourhood mosques (landmarks/claims.ts). */
+  claims: LandmarkClaims;
   /** Extra footprints (infill parcels) built like building=yes. */
   extra?: readonly OsmBuilding[];
   /** Building passages (shared/passages.ts findPassages): arched openings, a lined passage and a free collider. */
@@ -234,7 +235,7 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
       stats.skippedWater++;
       return;
     }
-    if (padCover(input.pads, ring, cx, cz) > 0.5) {
+    if (padCover(input.claims.pads, ring, cx, cz) > 0.5 || ringTouchesLineBody(input.claims.lines, ring)) {
       stats.skippedLandmark++;
       return;
     }

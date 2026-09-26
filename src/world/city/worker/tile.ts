@@ -149,6 +149,7 @@ export function buildTile(req: TileRequestMsg, world: WorldData): TileResultMsg 
     id: req.id,
     mesh,
     sphere: mesh ? [bx, by, bz, r] : [0, 0, 0, 0],
+    top: mesh ? writer.maxY : 0,
     lampPos,
     lampCol,
     buildings,

@@ -98,13 +98,16 @@ stamina, the next gate).
 
   Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
   race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > moment
-  subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) >
+  subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
+  after it (35, joinable; while the moment plays the prompt rides quietly under its subtitle line) >
   start-of-game hints and the compass label (30) > toasts (10); ties go to the newer message (a toast replaces the
   current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
   (dropped after 8 s), the compass landmark label (the next gate is the target) and moment lines and cards (no moment
   starts during a race). Start hints and "[Y] iptal" are items of the same hint line and never share it; only hints
   marked `joinable` ride along on a higher line. While perched on a viewpoint (the viewing mode, phase 03) the compass,
   the bottom cluster and the minimap fade out: only the zones remain (the perch title, the viewing hint line, toasts).
+- **Small sheets (a moment's sources):** the same sheet look at ≈760 px wide, one column that scrolls, a top bar with
+  the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
   prompt; content in two columns (list left, detail right). Scales down under 1440 × 820.
 - **Full-screen overlays (map, result):** content directly on a scrim or the map, chrome in the corners: title top
@@ -122,6 +125,7 @@ Every screen builds these from the library; styles in `src/ui/styles/components.
 | Key text | `keyText('Konmak için [L]')` | a sentence whose `[X]` parts become small key caps (toasts, hint sentences) |
 | Key hint | `keyHint(keys, label, tone)` | a key and what it does as plain text, not a button (key strips, HUD and loading hints) |
 | Prompt | `prompt(label, key, variant, onPress)`, `.setDisabled(on, reason)` | key + verb, the only action button; variants `primary` (gold key), `secondary`, `danger`; key `''` for a pointer-only action (verb alone) |
+| Link prompt | `linkPrompt(label, key, href, domain)`, `.open()` | a prompt that leaves the game: key, verb, then the destination's domain, quieter ("[1] Tarayıcıda aç  tr.wikisource.org"); a real link to a new tab (`rel="noopener noreferrer"`) |
 | Option switch | `optionSwitch(label, key, on, accent, onToggle)` | key, name, written state "açık/kapalı" with a coloured dot |
 | Stat | `stat(label, value, size)` | a value under its name, tabular |
 | Medal ladder | `medalLadder(format).set(targets, best)` | medal targets on a time line with the best time as a marker |
