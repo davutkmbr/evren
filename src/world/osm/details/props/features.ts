@@ -15,15 +15,17 @@
  * - tourism=artwork / historic=memorial: a statue on its plinth; tourism=viewpoint: a coin telescope.
  * - landuse=cemetery: rows of Ottoman headstones along the area's axis; amenity=marketplace: rows of stalls.
  * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges.
+ * - untagged lots (cover.ts LotStyle): shrubs on garden lots, stones and weedy scrub on vacant lots (the verges and
+ *   leftover land along the big roads are mostly these).
  */
 import type { OsmArea, OsmData, OsmLine, OsmPoint } from '../../data';
 import { hash, pointInRing } from '../../shared/geometry';
 import { Zone } from '../../shared/street-surface';
-import { CoverChannel } from '../cover/cover';
+import { CoverChannel, LotStyle } from '../cover/cover';
 import type { Placer } from './placement';
 
 /** Per-slice budgets (instances). */
-const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500, tombstone: 2000, marketStall: 150 } as const;
+const BUDGET = { shrub: 2500, flowers: 1500, rock: 700, awning: 1500, tombstone: 2000, marketStall: 150, lotShrub: 1500, lotRock: 600 } as const;
 
 /** Brand colours by name (lower case, Turkish folded); anything else takes a neutral palette colour. */
 const BRANDS: [RegExp, [number, number, number]][] = [
@@ -522,6 +524,60 @@ function placeHedges(pl: Placer, lines: readonly OsmLine[]): void {
   }
 }
 
+/** Samples per m² of lot and what they become. */
+const LOT_RULE: Partial<Record<LotStyle, { per: number; shrub: number; rock: number }>> = {
+  [LotStyle.Garden]: { per: 1 / 70, shrub: 0.75, rock: 0.05 },
+  [LotStyle.Vacant]: { per: 1 / 60, shrub: 0.35, rock: 0.4 },
+  [LotStyle.Yard]: { per: 1 / 150, shrub: 0.4, rock: 0.1 },
+};
+/** Weedy scrub on vacant ground: drier greens. */
+const WEED_TINTS: [number, number, number][] = [
+  [0.3, 0.33, 0.16],
+  [0.36, 0.36, 0.2],
+  [0.26, 0.3, 0.15],
+];
+
+function placeLots(pl: Placer): void {
+  const { grid, lots } = pl.ctx.cover;
+  const s = pl.ctx.surface;
+  let shrubs = BUDGET.lotShrub;
+  let rocks = BUDGET.lotRock;
+  lots.forEach((lot, li) => {
+    const rule = LOT_RULE[lot.style];
+    if (!rule || lot.area < 60) {
+      return;
+    }
+    const n = Math.min(40, Math.floor(lot.area * rule.per));
+    for (let q = 0; q < n; q++) {
+      const h = hash(li * 7.31 + q * 1.93);
+      const k = lot.cells[Math.floor(h * lot.cells.length)];
+      const i = k % grid.w;
+      const x = grid.cx(i) + (hash(h * 17) - 0.5) * grid.px;
+      const z = grid.cz((k - i) / grid.w) + (hash(h * 29) - 0.5) * grid.px;
+      const r = hash(h * 43);
+      const kind = r < rule.shrub ? 'shrub' : r < rule.shrub + rule.rock ? 'rock' : null;
+      if (!kind || (kind === 'shrub' ? shrubs : rocks) <= 0) {
+        continue;
+      }
+      if (!pl.inArea(x, z, 2) || pl.wall(x, z) < 1.5 || s.distance(x, z) < 1.5 || s.zone(x, z) === Zone.Carriageway || pl.onPad(x, z)) {
+        continue;
+      }
+      // Shrubs where the lot paints green, stones anywhere on it.
+      if (kind === 'shrub' && pl.channel(x, z, CoverChannel.Green) < -0.3) {
+        continue;
+      }
+      const tint = kind === 'shrub' ? (lot.style === LotStyle.Vacant ? pick(WEED_TINTS, r) : pick(SHRUB_TINTS, r)) : undefined;
+      if (pl.props.add(kind, x, pl.y(x, z), z, h * Math.PI * 2, kind === 'rock' ? 0.4 + r * 1.2 : 0.6 + r * 0.9, tint)) {
+        if (kind === 'shrub') {
+          shrubs--;
+        } else {
+          rocks--;
+        }
+      }
+    }
+  });
+}
+
 export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas' | 'lines'>): void {
   placeFuel(pl, data.points);
   placePitches(pl, data.areas);
@@ -539,4 +595,5 @@ export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'
   placeCemeteries(pl, data.areas);
   placeHedges(pl, data.lines);
   placeGreen(pl, data.areas);
+  placeLots(pl);
 }
