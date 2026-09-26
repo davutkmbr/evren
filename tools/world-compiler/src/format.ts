@@ -6,7 +6,11 @@
  * Format 0: greybox (flat colours, one glb per tile). Format 1 adds textured PBR materials with shared external
  * textures, UV0/UV1, LOD glbs with distance bands, prop instances, a light list and a strip at full detail.
  * Format 1.1 (additive, `format` stays 1): the `_WEATHER` vertex attribute, material variants and weather layers.
+ * Format 1.2 (additive): façade module slots per tile (`slots`) and the module library reference (`modules`), see
+ * src/street/modules/format.ts.
  */
+import type { ModulesRef, SlotsRef } from '../../../src/street/modules/format';
+
 export type FormatVersion = 0 | 1;
 /** Default output format of the compiler (`--format 0|1` picks one). */
 export const FORMAT: FormatVersion = 1;
@@ -30,6 +34,8 @@ export interface TileRef {
   lods?: { level: number; glb: string; hash: string; bytes: number; triangles: number }[];
   instances?: number;
   lights?: number;
+  /** Format 1.2: the tile's façade module slots (src/street/modules/format.ts). */
+  slots?: SlotsRef;
   i: number;
   j: number;
   bounds: Bounds2;
@@ -71,6 +77,8 @@ export interface IndexManifest {
   assets?: AssetCreditRec[];
   /** Totals of the output (format 1). */
   totals?: { tiles: number; lod0Triangles: number; lod1Triangles: number; instances: number; lights: number; textureBytes: number; propBytes: number; glbBytes: number };
+  /** Format 1.2: the façade module library and this area's palette for it. */
+  modules?: ModulesRef;
 }
 
 /* ------------------------------------------------------------------------------------------------------------- */

@@ -52,7 +52,8 @@ export const OSM_SEAM = 40;
  */
 export { OWNS_PARK_TREES as OSM_OWNS_PARK_TREES } from './details/policy';
 
-export const OSM_DATA_URL = `${import.meta.env.BASE_URL}data/osm/slice.json`;
+// `?.`: modules are also imported by the Node checks in tools/headless, where import.meta.env does not exist.
+export const OSM_DATA_URL = `${import.meta.env?.BASE_URL ?? "/"}data/osm/slice.json`;
 
 /** Local-metre rectangle of OSM_AREA itself (no seam). */
 export function osmAreaRect(): WorldBounds {

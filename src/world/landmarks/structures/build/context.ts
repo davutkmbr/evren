@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { createRng, hashString } from '../../../../core/math/noise';
-import type { ColliderData, DeckData, PartData, SiteDef, SiteInput, StructureResult } from '../types';
+import type { ColliderData, DeckData, DeckEnd, JointGround, PartData, SiteDef, SiteInput, StructureResult } from '../types';
 import { BatchKind } from '../types';
 import { HeightSampler } from './height-sampler';
 import { LightList } from './light-list';
@@ -23,17 +23,22 @@ export type PartFn = (mb: MeshBuilder, lod: number) => void;
 export class StructureBuild {
   readonly def: SiteDef;
   readonly terrain: HeightSampler;
+  /** Exact drawn ground across landed deck ends, when the main thread sampled it (second build). */
+  readonly jointGrounds: readonly JointGround[];
   readonly wires = new WireList();
   readonly lights = new LightList();
   readonly colliders: ColliderData[] = [];
   /** Road decks for the 'roadSurface' service. */
   readonly decks: DeckData[] = [];
+  /** Ends of every deck (joint checks). */
+  readonly ends: DeckEnd[] = [];
   readonly rng: () => number;
   private readonly parts: PartData[] = [];
 
   constructor(site: SiteInput) {
     this.def = site.def;
     this.terrain = new HeightSampler(site.patches);
+    this.jointGrounds = site.joints ?? [];
     this.rng = createRng(hashString(site.def.id));
   }
 
@@ -110,6 +115,7 @@ export class StructureBuild {
       id: this.def.id,
       parts: this.parts,
       decks: this.decks,
+      ends: this.ends,
       wires: this.wires.build(),
       lights: this.lights.build(),
       colliders: this.colliders,

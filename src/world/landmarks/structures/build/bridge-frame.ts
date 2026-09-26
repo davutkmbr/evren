@@ -34,6 +34,31 @@ export class BridgeFrame {
     return new BridgeFrame((a.x + b.x) / 2, (a.z + b.z) / 2, b.x, b.z);
   }
 
+  /**
+   * Frame of a bridge from its anchors [main pier A, main pier B, deck end A, deck end B]: the axis runs along the
+   * longer of the two baselines (usually the deck ends, several hundred metres apart) and the origin is the midpoint of
+   * the main piers on that line. The pier pair alone is only 70-80 m long on the Golden Horn bridges: anchors rounded
+   * to 1e-5 deg turned its axis by ~0.4 deg, which put the deck ends 1.5 m beside the streets they join.
+   */
+  static fromAnchors(anchors: ReadonlyArray<{ x: number; z: number }>): BridgeFrame {
+    const [a, b, c, d] = anchors;
+    if (!c || !d || Math.hypot(d.x - c.x, d.z - c.z) <= Math.hypot(b.x - a.x, b.z - a.z)) {
+      return BridgeFrame.fromPoints(a, b);
+    }
+    // Ends ordered like the piers (A to B).
+    const flip = (d.x - c.x) * (b.x - a.x) + (d.z - c.z) * (b.z - a.z) < 0;
+    const [p, q] = flip ? [d, c] : [c, d];
+    const len = Math.hypot(q.x - p.x, q.z - p.z);
+    const ux = (q.x - p.x) / len;
+    const uz = (q.z - p.z) / len;
+    const mx = (a.x + b.x) / 2;
+    const mz = (a.z + b.z) / 2;
+    const t = (mx - p.x) * ux + (mz - p.z) * uz;
+    const ox = p.x + ux * t;
+    const oz = p.z + uz * t;
+    return new BridgeFrame(ox, oz, ox + ux, oz + uz);
+  }
+
   point(s: number, x: number, y: number, out = new THREE.Vector3()): THREE.Vector3 {
     return out.set(this.ox + this.ax * s + this.rx * x, y, this.oz + this.az * s + this.rz * x);
   }

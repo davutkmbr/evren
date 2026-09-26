@@ -42,7 +42,8 @@ calm and luminous, the sky at dusk, never heavy, metallic or aggressive.
 - **Crest** (`titleLogoSvg()`, on by default): the dome of the sky in seventeen hairlines, from the horizon at the
   foot of SKIES up to the eight-pointed star, closer together as they rise and warmer near the horizon. The lines
   part around the letters and leave the SEVENTEEN row clear. Use the crest for the loading screen, share images,
-  store art and anything above ~300 px wide; below that use `crest: false` (the pause menu uses it at 150 px).
+  store art and anything above ~300 px wide; below that use `crest: false`. Where the logo does not fit (the pause
+  menu header) the name is set as text in the UI font.
 - **Monogram** (`monogramSvg()`): the nib S inside the same dome of seventeen layers, under the star, on a
   night-blue tile warmed from below. App icons, favicons, avatars.
 

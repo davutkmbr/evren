@@ -51,13 +51,6 @@ export const CAMERA_MODE_LABELS: Record<CameraMode, string> = {
   free: 'Serbest',
 };
 
-export const CAMERA_MODE_SHORT: Record<CameraMode, string> = {
-  third: '3. şahıs',
-  pov: 'POV',
-  cinematic: 'Sinematik',
-  free: 'Serbest',
-};
-
 export const LANDMARK_KIND_LABELS: Record<LandmarkKind, string> = {
   mosque: 'Cami',
   bridge: 'Köprü',

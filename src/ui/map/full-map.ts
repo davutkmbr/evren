@@ -1,9 +1,13 @@
-import type { GeoQuery, LandmarkDef } from '../../core/contracts';
-import { localToLatLon, WORLD_HALF_SIZE } from '../../core/geo-coords';
+import { COURSES } from '../../activities/courses';
+import type { GeoQuery, LandmarkDef, PerchPoint } from '../../core/contracts';
+import type { ViewPreset } from '../../core/debug';
+import { latLonToLocal, WORLD_HALF_SIZE } from '../../core/geo-coords';
+import { hintLine, hoverCard, layerGroup, layerToggle, prompt, scaleBar, zoomCluster, type LayerToggle } from '../components';
 import { el } from '../dom';
-import { formatInt, formatYear } from '../format';
-import { ICONS } from '../icons';
-import { LANDMARK_KIND_LABELS, shortLandmarkName } from '../labels';
+import { formatDecimal, formatInt, formatYear } from '../format';
+import { LANDMARK_KIND_LABELS } from '../labels';
+import { perchTeleportView } from '../perch-teleport';
+import { loadMapLayers, saveMapLayers, type MapLayers } from '../prefs';
 import { bearingTo, type FlightSnapshot } from '../types';
 import type { MapRaster } from './map-raster';
 
@@ -19,6 +23,10 @@ export interface TeleportTarget {
 
 export interface FullMapOptions {
   onTeleport(target: TeleportTarget): void;
+  /** Teleport next to a perch (the same flow as the pause menu's "Oraya kon ve izle"). */
+  onPerch(view: ViewPreset): void;
+  /** Current perch points (the 'perches' service), read when the map opens. */
+  perches(): readonly PerchPoint[] | undefined;
   onClose(): void;
 }
 
@@ -29,10 +37,40 @@ interface LabelBox {
   y1: number;
 }
 
+/** One map pin: a landmark (with its perch, if the perch sits on it) or a perch without a landmark. */
+interface MapPin {
+  id: string;
+  x: number;
+  z: number;
+  name: string;
+  landmark?: LandmarkDef;
+  perch?: PerchPoint;
+}
+
 const MAX_SCALE = 0.34;
 const DRAG_THRESHOLD_PX = 5;
-const SCALE_STEPS_M = [100, 200, 500, 1000, 2000, 5000, 10000];
-const COORD_FORMAT = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const HIT_RADIUS_PX = 14;
+const GOLD = '#e8b872';
+const PIN_RING = '#111318';
+const RACE_COLOR = '#7fd1c0';
+const ATTRIBUTION = '© OpenStreetMap katkıcıları (ODbL) · NASA SRTM';
+
+/** Water body names and where they are written (drawn only where the point really is water). */
+const WATER_LABELS: ReadonlyArray<{ name: string; lat: number; lon: number }> = [
+  { name: 'İstanbul Boğazı', lat: 41.083, lon: 29.07 },
+  { name: 'Haliç', lat: 41.038, lon: 28.943 },
+  { name: 'Marmara Denizi', lat: 40.955, lon: 28.955 },
+  { name: 'Karadeniz', lat: 41.245, lon: 29.14 },
+];
+
+const BUILT_IN_COURSES = COURSES.filter((c) => !c.custom);
+let raceLines: Array<Array<{ x: number; z: number }>> | null = null;
+
+/** Built-in race courses as local-space polylines through their gates (computed once). */
+function racePolylines(): Array<Array<{ x: number; z: number }>> {
+  raceLines ??= BUILT_IN_COURSES.map((c) => c.gates.map((g) => latLonToLocal(g.lat, g.lon)));
+  return raceLines;
+}
 
 function overlaps(boxes: LabelBox[], b: LabelBox): boolean {
   for (const o of boxes) {
@@ -43,20 +81,23 @@ function overlaps(boxes: LabelBox[], b: LabelBox): boolean {
   return false;
 }
 
-/** Full-screen map (M): pan/zoom, district names, landmarks, current position, click to teleport. */
+/**
+ * Full-screen map (M): the shared raster with pan/zoom, water and district names, landmark and perch pins, race
+ * courses and the player's arrow; a layers panel toggles the marker groups; click a pin (or anywhere) to teleport.
+ */
 export class FullMap {
   readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly tooltip: HTMLElement;
-  private readonly tooltipTitle: HTMLElement;
-  private readonly tooltipMeta: HTMLElement;
-  private readonly tooltipAction: HTMLElement;
-  private readonly coords: HTMLElement;
-  private readonly scaleBar: HTMLElement;
-  private readonly scaleLabel: HTMLElement;
+  private readonly where: HTMLElement;
+  private readonly card = hoverCard();
+  private readonly scaleIndicator = scaleBar(ATTRIBUTION);
+  private readonly layers: MapLayers = loadMapLayers();
+  private readonly toggles: Record<keyof MapLayers, LayerToggle>;
   private geo: GeoQuery | null = null;
   private discovered: ReadonlySet<string> = new Set();
+  private pins: MapPin[] = [];
+  private perchCount = -1;
   private centerX = 0;
   private centerZ = 0;
   private scale = 0.08;
@@ -67,7 +108,7 @@ export class FullMap {
   private raf = 0;
   private isOpen = false;
   private player: FlightSnapshot | null = null;
-  private hovered: LandmarkDef | null = null;
+  private hovered: MapPin | null = null;
   private pointer = { id: -1, startX: 0, startY: 0, lastX: 0, lastY: 0, dragging: false };
   private hoverX = -1;
   private hoverY = -1;
@@ -80,60 +121,61 @@ export class FullMap {
     this.canvas = el('canvas', 'map-canvas');
     this.ctx = this.canvas.getContext('2d', { alpha: false })!;
 
-    this.tooltipTitle = el('span', 'map-tip-title');
-    this.tooltipMeta = el('span', 'map-tip-meta');
-    this.tooltipAction = el('span', 'map-tip-action');
-    this.tooltip = el('div', 'map-tip ejd-glass', [this.tooltipTitle, this.tooltipMeta, this.tooltipAction]);
-    this.tooltip.hidden = true;
+    this.where = el('span', 'map-where');
+    const close = prompt('Kapat', 'M', 'secondary', () => this.options.onClose());
+    close.root.setAttribute('aria-label', 'Haritayı kapat');
 
-    const closeButton = el('button', 'map-close ejd-glass', undefined, { type: 'button', 'aria-label': 'Haritayı kapat' });
-    closeButton.innerHTML = `<span>Kapat</span><kbd>M</kbd>`;
-    closeButton.addEventListener('click', () => this.options.onClose());
-
-    const zoomButton = (icon: string, label: string, fn: () => void): HTMLButtonElement => {
-      const b = el('button', 'map-zoom-btn', undefined, { type: 'button', 'aria-label': label, title: label });
-      b.innerHTML = icon;
-      b.addEventListener('click', fn);
-      return b;
+    const toggle = (key: keyof MapLayers, label: string, color: string, mark: 'fill' | 'ring' | 'halo'): LayerToggle =>
+      layerToggle(label, {
+        color,
+        mark,
+        on: this.layers[key],
+        onToggle: (on) => {
+          this.layers[key] = on;
+          saveMapLayers(this.layers);
+          // the hovered pin may be hidden now, or change its action (perch layer): the pointer re-picks it
+          this.setHovered(null);
+          this.invalidate();
+        },
+      });
+    this.toggles = {
+      known: toggle('known', 'Keşfedilenler', GOLD, 'fill'),
+      unknown: toggle('unknown', 'Keşfedilmeyenler', GOLD, 'ring'),
+      perches: toggle('perches', 'Seyir noktaları', GOLD, 'halo'),
+      races: toggle('races', 'Yarış parkurları', RACE_COLOR, 'fill'),
     };
-    const controls = el('div', 'map-controls ejd-glass', [
-      zoomButton(ICONS.plus, 'Yakınlaştır', () => this.zoomBy(1.6)),
-      zoomButton(ICONS.minus, 'Uzaklaştır', () => this.zoomBy(1 / 1.6)),
-      el('i', 'map-controls-sep'),
-      zoomButton(ICONS.locate, 'Konumuma dön', () => this.recenter()),
-    ]);
+    this.toggles.races.setCount(String(BUILT_IN_COURSES.length));
 
-    this.coords = el('span', 'map-coords ejd-num', '');
-    this.scaleBar = el('i', 'map-scale-bar');
-    this.scaleLabel = el('span', 'map-scale-label ejd-num', '');
-    const legendItem = (cls: string, text: string): HTMLElement => el('span', 'map-legend-item', [el('i', cls), text]);
+    const zoom = zoomCluster({
+      onZoomIn: () => this.zoomBy(1.6),
+      onZoomOut: () => this.zoomBy(1 / 1.6),
+      onRecenter: () => this.recenter(),
+    });
 
-    this.root = el('section', 'ejd-map ejd-interactive', [
-      this.canvas,
-      el('div', 'map-vignette'),
-      el('header', 'map-head', [
-        el('p', 'ejd-caps map-eyebrow', 'Harita'),
-        el('h2', 'map-title', 'İstanbul'),
-        el('p', 'map-hint', [
-          el('span', undefined, [el('b', undefined, 'Sürükle'), ' kaydır']),
-          el('span', undefined, [el('b', undefined, 'Tekerlek'), ' yakınlaştır']),
-          el('span', undefined, [el('b', undefined, 'Tıkla'), ' ışınlan']),
+    this.root = el(
+      'section',
+      'ejd-map ejd-interactive',
+      [
+        this.canvas,
+        el('div', 'map-vignette'),
+        el('div', 'map-title', [el('span', 'map-city', 'İstanbul'), this.where]),
+        el('div', 'map-close', [close.root]),
+        el('div', 'map-layers', [
+          layerGroup('Harita katmanları', [this.toggles.known, this.toggles.unknown, this.toggles.perches, this.toggles.races]),
         ]),
-      ]),
-      closeButton,
-      el('footer', 'map-foot', [
-        el('div', 'map-scale', [this.scaleBar, this.scaleLabel]),
-        el('div', 'map-legend', [
-          legendItem('lg-known', 'Keşfedildi'),
-          legendItem('lg-unknown', 'Keşfedilmedi'),
-          legendItem('lg-you', 'Konumun'),
+        this.card.root,
+        el('div', 'map-zoom', [zoom.root]),
+        el('div', 'map-scale', [this.scaleIndicator.root]),
+        el('div', 'map-hint', [
+          hintLine([
+            ['Sürükle', 'kaydır'],
+            ['Tekerlek', 'yakınlaştır'],
+            ['Tıkla', 'ışınlan'],
+          ]),
         ]),
-        this.coords,
-        el('span', 'map-attrib', '© OpenStreetMap katkıcıları (ODbL) · NASA SRTM'),
-      ]),
-      controls,
-      this.tooltip,
-    ], { 'aria-label': 'İstanbul haritası' });
+      ],
+      { 'aria-label': 'İstanbul haritası' },
+    );
     this.root.hidden = true;
 
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -152,18 +194,23 @@ export class FullMap {
   setGeo(geo: GeoQuery, discovered: ReadonlySet<string>): void {
     this.geo = geo;
     this.discovered = discovered;
+    this.perchCount = -1;
+    this.buildPins();
   }
 
   open(player: FlightSnapshot): void {
     this.player = player;
     this.isOpen = true;
     this.root.hidden = false;
+    this.buildPins();
+    this.updateCounts();
+    this.where.textContent = this.whereText(player);
     this.resize();
     this.centerX = player.x;
     this.centerZ = player.z;
     this.scale = Math.max(this.minScale(), 0.085);
     this.hovered = null;
-    this.tooltip.hidden = true;
+    this.card.hide();
     this.invalidate();
   }
 
@@ -218,6 +265,80 @@ export class FullMap {
     }
   }
 
+  /* ---------------- data ---------------- */
+
+  /** Landmarks (each with the perch standing on it, if any) plus the perches that belong to no landmark. */
+  private buildPins(): void {
+    const geo = this.geo;
+    if (!geo) {
+      return;
+    }
+    const perches = this.options.perches() ?? [];
+    if (perches.length === this.perchCount && this.pins.length > 0) {
+      return;
+    }
+    this.perchCount = perches.length;
+    const byLandmark = new Map<string, PerchPoint>();
+    const loose: PerchPoint[] = [];
+    const landmarkIds = new Set(geo.landmarks.map((l) => l.id));
+    for (const p of perches) {
+      if (p.landmarkId && landmarkIds.has(p.landmarkId)) {
+        if (!byLandmark.has(p.landmarkId)) {
+          byLandmark.set(p.landmarkId, p);
+        }
+      } else {
+        loose.push(p);
+      }
+    }
+    this.pins = [
+      ...geo.landmarks.map((l): MapPin => ({ id: l.id, x: l.x, z: l.z, name: l.name, landmark: l, perch: byLandmark.get(l.id) })),
+      ...loose.map((p): MapPin => ({ id: `perch:${p.id}`, x: p.x, z: p.z, name: perchTeleportView(p).label, perch: p })),
+    ];
+    this.toggles.perches.setCount(String(perches.length));
+  }
+
+  private updateCounts(): void {
+    const landmarks = this.geo?.landmarks ?? [];
+    let known = 0;
+    for (const l of landmarks) {
+      if (this.discovered.has(l.id)) {
+        known++;
+      }
+    }
+    this.toggles.known.setCount(`${known}/${landmarks.length}`);
+    this.toggles.unknown.setCount(String(landmarks.length - known));
+  }
+
+  /** "<water or district> üzerinde · <altitude> m", the same lookups as the HUD's area title. */
+  private whereText(p: FlightSnapshot): string {
+    const geo = this.geo;
+    let name = '';
+    if (geo) {
+      const district = geo.isWater(p.x, p.z) ? null : geo.districtAt(p.x, p.z);
+      name = district?.name ?? geo.waterNameAt?.(p.x, p.z) ?? '';
+    }
+    const altitude = `${formatInt(Math.max(0, p.altitude))} m`;
+    return name ? `${name} üzerinde · ${altitude}` : altitude;
+  }
+
+  private isKnown(pin: MapPin): boolean {
+    return !!pin.landmark && this.discovered.has(pin.landmark.id);
+  }
+
+  /** A perch counts as a perch only while its layer is on (then it is drawn larger and clicks perch-teleport). */
+  private perchShown(pin: MapPin): boolean {
+    return !!pin.perch && this.layers.perches;
+  }
+
+  private pinVisible(pin: MapPin): boolean {
+    if (this.perchShown(pin)) {
+      return true;
+    }
+    return !!pin.landmark && (this.isKnown(pin) ? this.layers.known : this.layers.unknown);
+  }
+
+  /* ---------------- view ---------------- */
+
   private minScale(): number {
     return (Math.min(this.width, this.height) / (WORLD_HALF_SIZE * 2)) * 1.02;
   }
@@ -266,6 +387,8 @@ export class FullMap {
     });
   }
 
+  /* ---------------- pointer ---------------- */
+
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) {
       return;
@@ -283,7 +406,7 @@ export class FullMap {
       if (!p.dragging && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > DRAG_THRESHOLD_PX) {
         p.dragging = true;
         this.root.classList.add('is-dragging');
-        this.tooltip.hidden = true;
+        this.setHovered(null);
       }
       if (p.dragging) {
         this.panBy(-(e.clientX - p.lastX) / this.scale, -(e.clientY - p.lastY) / this.scale);
@@ -312,12 +435,7 @@ export class FullMap {
 
   private readonly onPointerLeave = (): void => {
     this.hoverX = -1;
-    this.tooltip.hidden = true;
-    if (this.hovered) {
-      this.hovered = null;
-      this.invalidate();
-    }
-    this.coords.textContent = '';
+    this.setHovered(null);
   };
 
   private readonly onWheel = (e: WheelEvent): void => {
@@ -328,86 +446,78 @@ export class FullMap {
     this.updateHover();
   };
 
-  private hitLandmark(sx: number, sy: number): LandmarkDef | null {
-    if (!this.geo) {
-      return null;
-    }
-    let best: LandmarkDef | null = null;
-    let bestD = 13 * 13;
-    for (const landmark of this.geo.landmarks) {
-      const pos = this.screenPos.get(landmark.id);
+  private hitPin(sx: number, sy: number): MapPin | null {
+    let best: MapPin | null = null;
+    let bestD = HIT_RADIUS_PX * HIT_RADIUS_PX;
+    for (const pin of this.pins) {
+      const pos = this.screenPos.get(pin.id);
       if (!pos) {
         continue;
       }
       const d = (pos.x - sx) ** 2 + (pos.y - sy) ** 2;
       if (d < bestD) {
         bestD = d;
-        best = landmark;
+        best = pin;
       }
     }
     return best;
   }
 
   private updateHover(): void {
-    if (this.hoverX < 0 || !this.geo) {
+    if (this.hoverX < 0) {
       return;
     }
-    const world = this.toWorld(this.hoverX, this.hoverY);
-    const ll = localToLatLon(world.x, world.z);
-    this.coords.textContent = `${COORD_FORMAT.format(ll.lat)}° K   ${COORD_FORMAT.format(ll.lon)}° D`;
-    const hit = this.hitLandmark(this.hoverX, this.hoverY);
-    if (hit !== this.hovered) {
-      this.hovered = hit;
-      this.invalidate();
-    }
-    const outside = Math.abs(world.x) > WORLD_HALF_SIZE || Math.abs(world.z) > WORLD_HALF_SIZE;
-    if (outside) {
-      this.tooltip.hidden = true;
-      return;
-    }
-    if (hit) {
-      this.tooltipTitle.textContent = hit.name;
-      const kind = LANDMARK_KIND_LABELS[hit.kind];
-      this.tooltipMeta.textContent = hit.year !== undefined ? `${kind} · ${formatYear(hit.year)}` : kind;
-      this.tooltipAction.textContent = this.discovered.has(hit.id) ? 'Keşfedildi · Tıkla, yakınına ışınlan' : 'Tıkla, yakınına ışınlan';
-    } else {
-      const water = this.geo.isWater(world.x, world.z);
-      const district = water ? null : this.geo.districtAt(world.x, world.z);
-      this.tooltipTitle.textContent = district ? district.name : water ? 'Su üzeri' : 'İstanbul';
-      const ground = Math.max(0, this.geo.heightAt(world.x, world.z));
-      this.tooltipMeta.textContent = water ? 'Deniz seviyesi' : `Rakım ${formatInt(ground)} m`;
-      this.tooltipAction.textContent = 'Tıkla, buraya ışınlan';
-    }
-    const tipX = Math.min(this.width - 240, this.hoverX + 18);
-    const tipY = Math.min(this.height - 90, this.hoverY + 18);
-    this.tooltip.style.transform = `translate3d(${tipX.toFixed(0)}px, ${tipY.toFixed(0)}px, 0)`;
-    this.tooltip.hidden = false;
+    this.setHovered(this.hitPin(this.hoverX, this.hoverY));
   }
+
+  private setHovered(pin: MapPin | null): void {
+    if (pin === this.hovered) {
+      return;
+    }
+    this.hovered = pin;
+    this.root.classList.toggle('is-over-pin', !!pin);
+    if (pin) {
+      this.card.set(pin.name, this.pinMeta(pin), this.perchShown(pin) ? 'Tıkla: ışınlan · konulabilir' : 'Tıkla: ışınlan');
+    } else {
+      this.card.hide();
+    }
+    this.invalidate();
+  }
+
+  /** "<kind> · <year> · <distance> km · keşfedildi / keşfedilmedi". */
+  private pinMeta(pin: MapPin): string {
+    const parts: string[] = [];
+    if (pin.landmark) {
+      parts.push(LANDMARK_KIND_LABELS[pin.landmark.kind]);
+      if (pin.landmark.year !== undefined) {
+        parts.push(formatYear(pin.landmark.year));
+      }
+    } else if (pin.perch) {
+      parts.push(pin.perch.surface === 'hill' ? 'Tepe' : 'Seyir noktası');
+    }
+    if (this.player) {
+      parts.push(`${formatDecimal(Math.hypot(pin.x - this.player.x, pin.z - this.player.z) / 1000)} km`);
+    }
+    if (pin.landmark) {
+      parts.push(this.isKnown(pin) ? 'keşfedildi' : 'keşfedilmedi');
+    }
+    return parts.join(' · ');
+  }
+
+  /* ---------------- teleport ---------------- */
 
   private teleportAt(sx: number, sy: number): void {
     const geo = this.geo;
     if (!geo) {
       return;
     }
-    const landmark = this.hitLandmark(sx, sy);
-    if (landmark) {
-      const from = this.player ?? { x: landmark.x, z: landmark.z + 1 };
-      let dx = from.x - landmark.x;
-      let dz = from.z - landmark.z;
-      const len = Math.hypot(dx, dz);
-      if (len < 1) {
-        dx = 0;
-        dz = 1;
-      } else {
-        dx /= len;
-        dz /= len;
-      }
-      const distance = Math.max(650, landmark.radius * 1.5 + 320);
-      const x = landmark.x + dx * distance;
-      const z = landmark.z + dz * distance;
-      const ground = Math.max(0, geo.heightAt(x, z));
-      const y = Math.max(ground + 130, landmark.y + Math.max(landmark.height * 1.25, 120));
-      this.options.onTeleport({ x, y, z, headingDeg: bearingTo(x, z, landmark), pitchDeg: -6, label: landmark.name });
+    const pin = this.hitPin(sx, sy);
+    if (pin && this.perchShown(pin)) {
+      this.options.onPerch(perchTeleportView(pin.perch!));
+      return;
+    }
+    if (pin?.landmark) {
+      this.teleportToLandmark(geo, pin.landmark);
       return;
     }
     const world = this.toWorld(sx, sy);
@@ -426,6 +536,29 @@ export class FullMap {
       label: district?.name ?? 'Su üzeri',
     });
   }
+
+  /** A spot off the landmark on the player's side, high enough to clear it, facing it. */
+  private teleportToLandmark(geo: GeoQuery, landmark: LandmarkDef): void {
+    const from = this.player ?? { x: landmark.x, z: landmark.z + 1 };
+    let dx = from.x - landmark.x;
+    let dz = from.z - landmark.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1) {
+      dx = 0;
+      dz = 1;
+    } else {
+      dx /= len;
+      dz /= len;
+    }
+    const distance = Math.max(650, landmark.radius * 1.5 + 320);
+    const x = landmark.x + dx * distance;
+    const z = landmark.z + dz * distance;
+    const ground = Math.max(0, geo.heightAt(x, z));
+    const y = Math.max(ground + 130, landmark.y + Math.max(landmark.height * 1.25, 120));
+    this.options.onTeleport({ x, y, z, headingDeg: bearingTo(x, z, landmark), pitchDeg: -6, label: landmark.name });
+  }
+
+  /* ---------------- drawing ---------------- */
 
   private draw(): void {
     const ctx = this.ctx;
@@ -461,178 +594,200 @@ export class FullMap {
       ctx.lineWidth = 1.3 / this.scale;
       ctx.stroke(this.raster.highwayPath);
     }
+    if (this.layers.races) {
+      this.drawRaces(ctx);
+    }
     ctx.restore();
 
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1;
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, size - 1, size - 1);
 
+    // screen areas the chrome covers: names are not written under it
     const boxes: LabelBox[] = [
-      { x0: 0, y0: 0, x1: 390, y1: 112 },
-      { x0: w - 160, y0: 0, x1: w, y1: 72 },
-      { x0: 0, y0: h - 58, x1: 660, y1: h },
-      { x0: w - 84, y0: h - 170, x1: w, y1: h },
+      { x0: 0, y0: 0, x1: 340, y1: 84 },
+      { x0: 0, y0: 96, x1: 272, y1: 300 },
+      { x0: w - 180, y0: 0, x1: w, y1: 80 },
+      { x0: 0, y0: h - 76, x1: w, y1: h },
+      { x0: w - 90, y0: h - 190, x1: w, y1: h },
     ];
-    this.drawPlayer(ctx, boxes);
-    this.drawLandmarks(ctx, boxes);
-    this.drawDistricts(ctx, boxes);
-    this.updateScaleBar();
-  }
-
-  private drawPlayer(ctx: CanvasRenderingContext2D, boxes: LabelBox[]): void {
-    const p = this.player;
-    if (!p) {
-      return;
+    this.placePins();
+    this.drawNames(ctx, boxes);
+    this.drawPins(ctx);
+    this.drawPlayer(ctx);
+    this.scaleIndicator.set(this.scale);
+    if (this.hovered) {
+      const pos = this.screenPos.get(this.hovered.id);
+      if (pos) {
+        this.card.showAt(pos.x, pos.y, w, h);
+      } else {
+        this.card.hide();
+      }
     }
-    const x = this.toScreenX(p.x);
-    const y = this.toScreenY(p.z);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.beginPath();
-    ctx.arc(0, 0, 18, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(232, 184, 114, 0.16)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(232, 184, 114, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.rotate((p.headingDeg * Math.PI) / 180);
-    ctx.beginPath();
-    ctx.moveTo(0, -11);
-    ctx.lineTo(8, 9);
-    ctx.lineTo(0, 4.6);
-    ctx.lineTo(-8, 9);
-    ctx.closePath();
-    ctx.fillStyle = '#fff6e8';
-    ctx.fill();
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = 'rgba(10, 12, 16, 0.8)';
-    ctx.stroke();
-    ctx.restore();
-    boxes.push({ x0: x - 20, y0: y - 20, x1: x + 20, y1: y + 20 });
   }
 
-  private drawLandmarks(ctx: CanvasRenderingContext2D, boxes: LabelBox[]): void {
-    const geo = this.geo;
+  /** Teal dashed polylines through the built-in courses' gates (world transform set by the caller). */
+  private drawRaces(ctx: CanvasRenderingContext2D): void {
+    const k = 1 / this.scale;
+    ctx.strokeStyle = RACE_COLOR;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 2.5 * k;
+    ctx.setLineDash([7 * k, 6 * k]);
+    for (const line of racePolylines()) {
+      ctx.beginPath();
+      line.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.z) : ctx.lineTo(p.x, p.z)));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  private placePins(): void {
     this.screenPos.clear();
-    if (!geo) {
-      return;
-    }
-    const showLabels = this.scale > 0.055;
-    ctx.font = '600 12px system-ui, -apple-system, sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    const sorted = [...geo.landmarks].sort((a, b) => Number(b.id === this.hovered?.id) - Number(a.id === this.hovered?.id) || b.height - a.height);
-    for (const landmark of sorted) {
-      const x = this.toScreenX(landmark.x);
-      const y = this.toScreenY(landmark.z);
+    for (const pin of this.pins) {
+      if (!this.pinVisible(pin)) {
+        continue;
+      }
+      const x = this.toScreenX(pin.x);
+      const y = this.toScreenY(pin.z);
       if (x < -20 || y < -20 || x > this.width + 20 || y > this.height + 20) {
         continue;
       }
-      this.screenPos.set(landmark.id, { x, y });
+      this.screenPos.set(pin.id, { x, y });
     }
-    for (const landmark of sorted) {
-      const pos = this.screenPos.get(landmark.id);
-      if (!pos) {
-        continue;
-      }
-      const known = this.discovered.has(landmark.id);
-      const hovered = landmark === this.hovered;
-      const r = hovered ? 6.5 : 4.5;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = known ? '#e8b872' : 'rgba(14, 16, 20, 0.9)';
-      ctx.fill();
-      ctx.lineWidth = known ? 1.5 : 1.6;
-      ctx.strokeStyle = known ? 'rgba(12, 12, 14, 0.85)' : 'rgba(243, 211, 160, 0.95)';
-      ctx.stroke();
-      if (hovered) {
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(243, 211, 160, 0.5)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
-    const markerBoxes: LabelBox[] = [];
-    for (const pos of this.screenPos.values()) {
-      markerBoxes.push({ x0: pos.x - 6, y0: pos.y - 6, x1: pos.x + 6, y1: pos.y + 6 });
-    }
-    for (const landmark of sorted) {
-      const pos = this.screenPos.get(landmark.id);
-      const hovered = landmark === this.hovered;
-      if (!pos || (!showLabels && !hovered)) {
-        continue;
-      }
-      const known = this.discovered.has(landmark.id);
-      const text = shortLandmarkName(landmark);
-      const tw = ctx.measureText(text).width;
-      const right = { x0: pos.x + 9, y0: pos.y - 9, x1: pos.x + 13 + tw, y1: pos.y + 9 };
-      const left = { x0: pos.x - 13 - tw, y0: pos.y - 9, x1: pos.x - 9, y1: pos.y + 9 };
-      const fits = (b: LabelBox): boolean =>
-        b.x0 > 4 && b.x1 < this.width - 4 && b.y0 > 4 && b.y1 < this.height - 4 && !overlaps(boxes, b) && !overlaps(markerBoxes, b);
-      const box = hovered || fits(right) ? right : fits(left) ? left : null;
-      if (!box) {
-        continue;
-      }
-      boxes.push(box);
-      const textX = box.x0 + 2;
-      ctx.lineWidth = 3.5;
-      ctx.strokeStyle = 'rgba(8, 10, 14, 0.72)';
-      ctx.strokeText(text, textX, pos.y + 0.5);
-      ctx.fillStyle = hovered ? '#fff8ee' : known ? 'rgba(248, 231, 204, 0.96)' : 'rgba(243, 238, 229, 0.82)';
-      ctx.fillText(text, textX, pos.y + 0.5);
-    }
-    boxes.push(...markerBoxes);
   }
 
-  private drawDistricts(ctx: CanvasRenderingContext2D, boxes: LabelBox[]): void {
+  /** Water names in italic blue-grey, then district names in muted ink where they fit (the raster has no names). */
+  private drawNames(ctx: CanvasRenderingContext2D, boxes: LabelBox[]): void {
     const geo = this.geo;
-    if (!geo || this.scale < 0.03) {
+    if (!geo) {
       return;
     }
-    const alpha = Math.min(0.62, 0.3 + (this.scale - 0.03) * 5);
-    ctx.font = '600 10.5px system-ui, -apple-system, sans-serif';
-    const spacing = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-    if ('letterSpacing' in spacing) {
-      spacing.letterSpacing = '1.4px';
+    for (const pos of this.screenPos.values()) {
+      boxes.push({ x0: pos.x - 8, y0: pos.y - 8, x1: pos.x + 8, y1: pos.y + 8 });
+    }
+    if (this.player) {
+      const px = this.toScreenX(this.player.x);
+      const py = this.toScreenY(this.player.z);
+      boxes.push({ x0: px - 16, y0: py - 16, x1: px + 16, y1: py + 16 });
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const district of geo.districts) {
-      const x = this.toScreenX(district.x);
-      const y = this.toScreenY(district.z);
-      if (x < 0 || y < 0 || x > this.width || y > this.height) {
+    ctx.lineJoin = 'round';
+    const spacing = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+    const hasSpacing = 'letterSpacing' in spacing;
+
+    ctx.font = 'italic 500 15px system-ui, -apple-system, sans-serif';
+    if (hasSpacing) {
+      spacing.letterSpacing = '0.3px';
+    }
+    for (const water of WATER_LABELS) {
+      const local = latLonToLocal(water.lat, water.lon);
+      if (!geo.isWater(local.x, local.z)) {
         continue;
       }
-      const text = district.name.toLocaleUpperCase('tr-TR');
-      const tw = ctx.measureText(text).width;
-      const box = { x0: x - tw / 2 - 6, y0: y - 9, x1: x + tw / 2 + 6, y1: y + 9 };
-      if (box.x0 < 4 || box.x1 > this.width - 4 || box.y1 > this.height - 4 || overlaps(boxes, box)) {
+      const x = this.toScreenX(local.x);
+      const y = this.toScreenY(local.z);
+      const tw = ctx.measureText(water.name).width;
+      const box = { x0: x - tw / 2 - 4, y0: y - 10, x1: x + tw / 2 + 4, y1: y + 10 };
+      if (box.x0 < 4 || box.y0 < 4 || box.x1 > this.width - 4 || box.y1 > this.height - 4 || overlaps(boxes, box)) {
         continue;
       }
       boxes.push(box);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(8, 10, 14, 0.55)';
-      ctx.strokeText(text, x, y);
-      ctx.fillStyle = `rgba(243, 238, 229, ${alpha.toFixed(2)})`;
-      ctx.fillText(text, x, y);
+      ctx.fillStyle = 'rgba(170, 190, 215, 0.6)';
+      ctx.fillText(water.name, x, y);
     }
-    if ('letterSpacing' in spacing) {
+    if (hasSpacing) {
       spacing.letterSpacing = '0px';
+    }
+
+    if (this.scale >= 0.03) {
+      ctx.font = '500 13px system-ui, -apple-system, sans-serif';
+      for (const district of geo.districts) {
+        const x = this.toScreenX(district.x);
+        const y = this.toScreenY(district.z);
+        if (x < 0 || y < 0 || x > this.width || y > this.height) {
+          continue;
+        }
+        const tw = ctx.measureText(district.name).width;
+        const box = { x0: x - tw / 2 - 5, y0: y - 9, x1: x + tw / 2 + 5, y1: y + 9 };
+        if (box.x0 < 4 || box.y0 < 4 || box.x1 > this.width - 4 || box.y1 > this.height - 4 || overlaps(boxes, box)) {
+          continue;
+        }
+        boxes.push(box);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(8, 10, 14, 0.35)';
+        ctx.strokeText(district.name, x, y);
+        ctx.fillStyle = 'rgba(243, 238, 229, 0.5)';
+        ctx.fillText(district.name, x, y);
+      }
     }
     ctx.textAlign = 'start';
   }
 
-  private updateScaleBar(): void {
-    const targetPx = 120;
-    let meters = SCALE_STEPS_M[0];
-    for (const step of SCALE_STEPS_M) {
-      if (step * this.scale <= targetPx) {
-        meters = step;
+  /** Discovered: filled gold with a dark ring; undiscovered: hollow gold ring; perches larger with a soft halo. */
+  private drawPins(ctx: CanvasRenderingContext2D): void {
+    const draw = (pin: MapPin): void => {
+      const pos = this.screenPos.get(pin.id)!;
+      const perch = this.perchShown(pin);
+      const filled = this.isKnown(pin) || !pin.landmark;
+      const r = pin === this.hovered ? 8 : perch ? 6.5 : 5.5;
+      if (perch) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r + 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232, 184, 114, 0.3)';
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = filled ? GOLD : 'rgba(17, 19, 24, 0.9)';
+      ctx.fill();
+      ctx.lineWidth = filled ? 1.5 : 2;
+      ctx.strokeStyle = filled ? PIN_RING : GOLD;
+      ctx.stroke();
+    };
+    for (const pin of this.pins) {
+      if (pin !== this.hovered && this.screenPos.has(pin.id)) {
+        draw(pin);
       }
     }
-    this.scaleBar.style.width = `${Math.round(meters * this.scale)}px`;
-    this.scaleLabel.textContent = meters >= 1000 ? `${meters / 1000} km` : `${meters} m`;
+    if (this.hovered && this.screenPos.has(this.hovered.id)) {
+      draw(this.hovered);
+    }
+  }
+
+  /** White arrow in the heading direction with a soft view cone ahead of it. */
+  private drawPlayer(ctx: CanvasRenderingContext2D): void {
+    const p = this.player;
+    if (!p) {
+      return;
+    }
+    ctx.save();
+    ctx.translate(this.toScreenX(p.x), this.toScreenY(p.z));
+    ctx.rotate((p.headingDeg * Math.PI) / 180);
+    const reach = 120;
+    const cone = ctx.createRadialGradient(0, 0, 0, 0, 0, reach);
+    cone.addColorStop(0, 'rgba(246, 241, 231, 0.2)');
+    cone.addColorStop(1, 'rgba(246, 241, 231, 0)');
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, reach, -Math.PI / 2 - 0.46, -Math.PI / 2 + 0.46);
+    ctx.closePath();
+    ctx.fillStyle = cone;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(8, 9);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-8, 9);
+    ctx.closePath();
+    ctx.fillStyle = '#f6f1e7';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = PIN_RING;
+    ctx.stroke();
+    ctx.restore();
   }
 
   dispose(): void {

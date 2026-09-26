@@ -134,5 +134,5 @@ export function buildGalataTower(b: StructureBuild): void {
   b.lights.obstruction(new THREE.Vector3(x, Y(67.1), z));
   b.cylinderCollider(x, y0, z, R + 0.3, 56.9);
   b.cylinderCollider(x, Y(56.9), z, 5.5, 5);
-  b.cylinderCollider(x, Y(61.9), z, 2.5, 4.5);
+  b.cylinderCollider(x, Y(61.9), z, 2.5, 3.7); // ends at the cone tip (65.6)
 }

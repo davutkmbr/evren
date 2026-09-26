@@ -9,11 +9,17 @@
  * - track: the flush tram track bed where rails leave the carriageway (common.ts trackBed), at road level;
  * - pedestrianLane: carriageway raster of a pedestrian street (slabs / küp taş, no traffic);
  * - pavement: everything walkable off the carriageway (raised sidewalks, kerbless paving, squares, paths, lots);
- * - building, water.
+ * - building, water (the compiler's land field, piers included, is <= 0).
+ * Every standing prop also keeps SHORE_MARGIN m from the water (the runtime placers share the same rule,
+ * src/world/placement/stand.ts): a spot on the water or the shore band is moved inland within the prop's reach or
+ * dropped, counted under `stand.water`. After placement, audit() checks every placed instance of a standing prop once
+ * more (on land, base on the ground) and counts `stand.audit` kept / flagged, so a regression shows in the summary.
  * README "Placement rules" lists the rules and their predicates.
  */
 import { BoxGrid } from '../../../../src/world/osm/shared/geometry';
+import { POLE_KERB } from '../../../../src/world/placement/stand';
 import { Ground } from '../../../../src/world/osm/shared/street-field';
+import { TRAM_PAINT_CLEAR, trackBedClearanceIndex } from '../../../../src/world/osm/shared/tram-tracks';
 import type { AreaContext } from '../registry';
 import { GUTTER_WIDTH, KERB_WIDTH, streetContext, type StreetContext } from './common';
 
@@ -68,7 +74,7 @@ export function propRule(prop: string): { rule: string; spec: StandSpec; reach: 
     return { rule: 'prop.bollard', spec: { kerb: 0.2, wall: 0.3, carriage: 'pedestrian', door: true }, reach: 1.2 };
   }
   if (/^(st_signal|st_stop_pole|lamp_mast.*|street_lamp_01)$/.test(prop)) {
-    return { rule: 'prop.pole', spec: { kerb: 0.3, wall: 0.3, carriage: 'pedestrian', door: true }, reach: 1.5 };
+    return { rule: 'prop.pole', spec: { kerb: POLE_KERB, wall: 0.3, carriage: 'pedestrian', door: true }, reach: 1.5 };
   }
   if (/^(st_bench|st_bin|st_cabinet|st_planter|st_twin_lantern|st_umbrella|outdoor_table_chair_set_01|plastic_monobloc_chair_01|standing_chalkboard_01)$/.test(prop)) {
     return { rule: 'prop.furniture', spec: { kerb: 0.45, wall: 0.2, carriage: 'pedestrian', door: true }, reach: 1.5 };
@@ -76,11 +82,16 @@ export function propRule(prop: string): { rule: string; spec: StandSpec; reach: 
   return null;
 }
 
+/** Minimum compiler land (m) under a standing prop: clear of the quay edge / shoreline. */
+export const SHORE_MARGIN = 0.3;
+/** Base height (m) a standing prop may differ from the ground it stands on before the audit flags it. */
+const BASE_TOLERANCE = 0.4;
+
 /** Door approach kept free: up to DOOR_REACH m out from the façade, the door's half width plus DOOR_SIDE m to each side. */
 const DOOR_REACH = 1.3;
 const DOOR_SIDE = 0.2;
-/** Road paint keeps this far (m) from the rails' centre line of a tram track. */
-const TRAM_CLEAR = 1.25;
+/** Extra clearance (m) of lane and edge lines from the gutter band (between-sample tolerance). */
+const LANE_GUTTER_TOL = 0.05;
 /** Carriageway axis and paint direction may differ by this much (rad). */
 const AXIS_TOL = (25 * Math.PI) / 180;
 
@@ -140,7 +151,7 @@ export class PlacementRules {
   /**
    * Road paint may cover (x, z): a vehicular carriageway at least `margin` m inside its edge and 0.3 m clear of
    * pedestrian-street paving. `lane` (lane, centre and edge lines) also keeps out of the gutter, off parking ground
-   * and TRAM_CLEAR m from tram tracks.
+   * and TRAM_PAINT_CLEAR m from tram tracks and off the flush track bed (as the runtime slice, streets/decals.ts).
    */
   paintable(x: number, z: number, margin: number, lane: boolean): boolean {
     const s = this.s;
@@ -151,10 +162,23 @@ export class PlacementRules {
     if (!lane) {
       return true;
     }
-    if (d > -GUTTER_WIDTH && this.kerbStone(x, z)) {
+    // LANE_GUTTER_TOL: the stripe is sampled every EDGE_STEP m, so a kerb curving between two samples may not bring
+    // the painted quad into the gutter.
+    if (d > -GUTTER_WIDTH - LANE_GUTTER_TOL && this.kerbStone(x, z)) {
       return false;
     }
-    return s.groundAt(x, z) !== Ground.Parking && this.sc.tramDist(x, z) >= TRAM_CLEAR;
+    return s.groundAt(x, z) !== Ground.Parking && this.sc.tramDist(x, z) >= TRAM_PAINT_CLEAR && !s.trackBedAt(x, z);
+  }
+
+  private bedClear: ((x: number, z: number) => number) | null = null;
+
+  /**
+   * Inside a tram track bed, where crossing paint stops (rule paint.zebraTrack): the sett inlay / rail reach of a
+   * street track (tram-tracks.ts tramBedHalf, as the runtime slice's decals test it) or the flush track bed.
+   */
+  onTrackBed(x: number, z: number): boolean {
+    this.bedClear ??= trackBedClearanceIndex(this.sc.tram, 1);
+    return this.bedClear(x, z) < 0 || this.s.trackBedAt(x, z);
   }
 
   /** The carriageway that wins the texel runs along `angle` (rad, atan2(dz, dx)) within AXIS_TOL. */
@@ -220,7 +244,10 @@ export class PlacementRules {
     } else if (s.distance(x, z) < spec.kerb) {
       return 'kerb';
     }
-    if (s.buildingDistance(x, z) < spec.wall || this.a.land(x, z) < 0.3) {
+    if (this.a.land(x, z) < SHORE_MARGIN) {
+      return 'shore';
+    }
+    if (s.buildingDistance(x, z) < spec.wall) {
       return 'wall';
     }
     return spec.door && this.doorBlocked(x, z) ? 'door' : null;
@@ -232,9 +259,31 @@ export class PlacementRules {
 
   /** (x, z) when it satisfies `spec`, else the nearest spot that does within `reach` m (0.25 m rings), else null. */
   settle(x: number, z: number, spec: StandSpec, reach: number): [number, number] | null {
-    if (this.standable(x, z, spec)) {
+    const why = this.violation(x, z, spec);
+    if (why === null) {
       return [x, z];
     }
+    const spot = this.search(x, z, spec, reach);
+    if (why === 'water' || why === 'shore') {
+      this.log.note('stand.water', spot ? 'moved' : 'dropped');
+    }
+    return spot;
+  }
+
+  /**
+   * Final check of a placed standing prop (`prop` has a propRule): on land SHORE_MARGIN m from the water and its base
+   * on the ground (street context groundY) within BASE_TOLERANCE. Counted under `stand.audit` (kept / flagged).
+   */
+  audit(prop: string, x: number, y: number, z: number): boolean {
+    if (!propRule(prop)) {
+      return true;
+    }
+    const ok = this.a.land(x, z) >= SHORE_MARGIN && Math.abs(y - this.sc.groundY(x, z)) <= BASE_TOLERANCE;
+    this.log.note('stand.audit', ok ? 'kept' : 'flagged');
+    return ok;
+  }
+
+  private search(x: number, z: number, spec: StandSpec, reach: number): [number, number] | null {
     for (let r = 0.25; r <= reach + 1e-6; r += 0.25) {
       const n = Math.max(8, Math.round((r * Math.PI * 2) / 0.3));
       for (let k = 0; k < n; k++) {

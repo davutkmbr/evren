@@ -5,7 +5,10 @@
  *   node scripts/snap.mjs --url "/?view=galata&t=18&freeze=1" --out .shots/galata.png
  *   node scripts/snap.mjs --url /sandbox/dragon.html --out .shots/dragon.png --eval "window.myHook?.()"
  *   node scripts/snap.mjs --url "/?view=bogaz" --perf 5000          # measure fps for 5 s
- *   node scripts/snap.mjs --batch shots.json                          # [{url,out,eval?,settle?,w?,h?,transparent?}]
+ *   node scripts/snap.mjs --batch shots.json                          # [{url,out,eval?,settle?,w?,h?,trace?,transparent?}]
+ *   (trace: path of a Chrome trace JSON recorded from the eval through the settle window; open in Perfetto)
+ *   (result: path of a JSON file the eval's (awaited) return value is written to, e.g. in-page measurements)
+ *   (transparent: PNG without the page background, e.g. the brand logos; --transparent for a single shot)
  *
  * Waits for window.__evren.ready and __evren.pending() === 0 (or --timeout), then --settle ms more.
  * Prints JSON with console errors/warnings and engine stats. Requires the dev server (npm run dev, port 5199).
@@ -15,7 +18,7 @@
  * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs).
  */
 import { chromium } from 'playwright-core';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { acquireSlot, releaseSlot, CHROME_ARGS } from './lib/gpu-slot.mjs';
 
@@ -125,9 +128,18 @@ async function shoot(browser, job) {
     if (ready && pending === 0) break;
     await page.waitForTimeout(250);
   }
+  if (job.trace) {
+    // Chrome trace (renderer main thread, GPU process, V8 GC, user timing) from the eval through the settle window.
+    await browser.startTracing(page, {
+      path: job.trace,
+      screenshots: false,
+      categories: job.traceCategories ?? ['devtools.timeline', 'disabled-by-default-devtools.timeline.frame', 'blink.user_timing', 'v8', 'v8.gc', 'gpu', 'disabled-by-default-gpu.service', 'viz', 'toplevel', 'cc'],
+    });
+  }
+  let evalResult;
   if (job.eval) {
     try {
-      await page.evaluate(job.eval);
+      evalResult = await page.evaluate(job.eval);
     } catch (e) {
       errors.push(`eval error: ${e.message}`);
     }
@@ -143,6 +155,10 @@ async function shoot(browser, job) {
   await page.evaluate(() => window.__snapFrames?.reset()).catch(() => undefined);
   await page.waitForTimeout(Number(job.settle ?? 1200));
   const frameTimes = await page.evaluate(() => window.__snapFrames?.summary() ?? null).catch(() => null);
+  if (job.trace) {
+    mkdirSync(dirname(job.trace), { recursive: true });
+    await browser.stopTracing();
+  }
   let perf = null;
   if (job.perf) {
     perf = await page.evaluate(async (ms) => {
@@ -168,6 +184,10 @@ async function shoot(browser, job) {
     stats.frameMedianMs = frameTimes.medianMs;
     stats.frameP99Ms = frameTimes.p99Ms;
   }
+  if (job.result) {
+    mkdirSync(dirname(job.result), { recursive: true });
+    writeFileSync(job.result, JSON.stringify(evalResult ?? null, null, 1));
+  }
   if (job.out) {
     mkdirSync(dirname(job.out), { recursive: true });
     await page.screenshot({ path: job.out, type: job.out.endsWith('.jpg') ? 'jpeg' : 'png', quality: job.out.endsWith('.jpg') ? 88 : undefined, omitBackground: !!job.transparent });
@@ -188,7 +208,7 @@ try {
   if (opt('batch')) {
     jobs = JSON.parse(readFileSync(opt('batch'), 'utf8'));
   } else {
-    jobs = [{ url: opt('url', '/'), out: opt('out'), eval: opt('eval'), settle: opt('settle'), timeout: opt('timeout'), w: opt('w'), h: opt('h'), perf: opt('perf'), logs: args.includes('--logs'), transparent: args.includes('--transparent') }];
+    jobs = [{ url: opt('url', '/'), out: opt('out'), eval: opt('eval'), result: opt('result'), settle: opt('settle'), timeout: opt('timeout'), w: opt('w'), h: opt('h'), perf: opt('perf'), logs: args.includes('--logs'), transparent: args.includes('--transparent') }];
   }
   const results = [];
   for (const j of jobs) results.push(await shoot(browser, j));

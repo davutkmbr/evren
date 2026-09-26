@@ -95,11 +95,33 @@ const DECK_STAY = 60;
 /** ...for at least this long (m); shorter touches of a deck end are left alone. */
 const DECK_MIN_RUN = 20;
 
-/** 0 outside `r`, rising to 1 at EXCLUDE_FADE metres inside it. */
-function excludeWeight(x: number, z: number, r: WorldBounds | null): number {
-  if (!r) return 0;
-  const inside = Math.min(x - r.minX, r.maxX - x, z - r.minZ, r.maxZ - z);
-  return inside <= 0 ? 0 : Math.min(1, inside / EXCLUDE_FADE);
+function inAny(rects: readonly WorldBounds[], x: number, z: number): boolean {
+  for (const r of rects) {
+    if (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) return true;
+  }
+  return false;
+}
+
+const FADE_DIRS = Array.from({ length: 8 }, (_, k) => [Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)] as const);
+
+/**
+ * 0 outside the union of `rects`, rising to 1 at EXCLUDE_FADE metres inside it (abutting rects count as one area, so
+ * cars stay hidden across their shared edges): the distance to the union's border, probed in eight directions.
+ */
+function excludeWeight(x: number, z: number, rects: readonly WorldBounds[]): number {
+  if (!inAny(rects, x, z)) return 0;
+  let inside = EXCLUDE_FADE;
+  for (const [dx, dz] of FADE_DIRS) {
+    for (let s = 1; s <= 4; s++) {
+      const d = (s * EXCLUDE_FADE) / 4;
+      if (d >= inside) break;
+      if (!inAny(rects, x + dx * d, z + dz * d)) {
+        inside = d - EXCLUDE_FADE / 8;
+        break;
+      }
+    }
+  }
+  return Math.max(0, Math.min(1, inside / EXCLUDE_FADE));
 }
 
 /** The roadSurface deck record; the structures module also publishes lanes and the full deck half width. */
@@ -257,8 +279,8 @@ function snapToDeck(path: PathPoint[], deck: DeckAxis): { path: PathPoint[]; alo
  * Resamples geo.roads into a float texture (ROAD_SAMPLE_TEXELS texels per point at ROAD_STEP spacing: centreline
  * point, hide weight and the lateral surface profile) and lays out right-hand traffic lanes with car phases.
  * Bridge decks come only from the core 'roadSurface' service: the roads are re-aligned onto the published deck
- * centre lines and take their surface heights (and lanes) from there. `hide` is 1 inside the optional `exclude`
- * rectangle (the OSM slice, which runs its own traffic) and 0 elsewhere.
+ * centre lines and take their surface heights (and lanes) from there. `hide` is 1 inside the `exclude` rectangles
+ * (the OSM regions, which run their own traffic) and 0 elsewhere.
  */
 export class RoadNetwork {
   readonly tracks: RoadTrack[] = [];
@@ -271,14 +293,14 @@ export class RoadNetwork {
   readonly kinds: Uint8Array;
   private readonly lanes: TrackLane[][] = [];
 
-  constructor(geo: GeoQuery, densityScale: number, exclude: WorldBounds | null = null, surface: RoadSurfaceService | null = null) {
+  constructor(geo: GeoQuery, densityScale: number, exclude: readonly WorldBounds[] = [], surface: RoadSurfaceService | null = null) {
     const decks = (surface?.decks ?? []).filter((d) => d.points.length >= 2).map((d) => new DeckAxis(d as ServiceDeck));
     const ground = (x: number, z: number): number => Math.max(geo.heightAt(x, z), MIN_ROAD_HEIGHT);
     const pts: number[] = [];
     const kinds: number[] = [];
     for (const def of geo.roads) {
-      // Roads wholly inside the excluded rectangle (e.g. İstiklal in the OSM slice) would only carry hidden cars.
-      if (def.points.length < 2 || (exclude && def.points.every((p) => p.x >= exclude.minX && p.x <= exclude.maxX && p.z >= exclude.minZ && p.z <= exclude.maxZ))) continue;
+      // Roads wholly inside the excluded rectangles (e.g. İstiklal in the OSM slice) would only carry hidden cars.
+      if (def.points.length < 2 || def.points.every((p) => inAny(exclude, p.x, p.z))) continue;
       let path = densify(def.points);
       const crossed: DeckAxis[] = [];
       let deckLength = 0;

@@ -8,6 +8,8 @@ import type { WorldBounds } from '../../../src/core/contracts';
 import { buildCover } from '../../../src/world/osm/details/cover/cover';
 import { buildWalkGraph, poiDensity } from '../../../src/world/osm/details/crowd/graph';
 import type { OsmData } from '../../../src/world/osm/data';
+import type { Passage } from '../../../src/world/osm/shared/passages';
+import { streetRasterInput } from '../../../src/world/osm/shared/street-field';
 import type { StreetSurface } from '../../../src/world/osm/shared/street-surface';
 import { buildNetwork } from '../../../src/world/osm/traffic/network';
 import { SAMPLE_STRIDE } from '../../../src/world/osm/traffic/protocol';
@@ -33,7 +35,26 @@ export interface WalkExport {
   network: NetworkStats;
 }
 
-export function exportWalkGraph(area: string, data: OsmData, surface: StreetSurface, rect: WorldBounds, heights: GroundHeights, tileOf: (x: number, z: number) => string): WalkExport {
+/**
+ * The OSM data the graphs follow: every way plus the pieces of bridge ways over land as ground-level streets, exactly
+ * as the street raster draws them (foundation.ts). A short road bridge over a stream or a canal that the geo coast
+ * counts as land (the Göksu at Anadolu Hisarı) is then walked and driven like the street it carries, instead of
+ * cutting the walk graph in two where the drawn carriageway runs on.
+ */
+function graphData(data: OsmData, surface: StreetSurface): { data: OsmData; landed: { ways: number; m: number } } {
+  const roads = streetRasterInput(data, (x, z) => surface.geo.coast(x, z)).roads;
+  const added = roads.slice(data.roads.length);
+  let m = 0;
+  for (const r of added) {
+    for (let k = 2; k < r.pts.length; k += 2) {
+      m += Math.hypot(r.pts[k] - r.pts[k - 2], r.pts[k + 1] - r.pts[k - 1]);
+    }
+  }
+  return { data: { ...data, roads }, landed: { ways: added.length, m: Math.round(m) } };
+}
+
+export function exportWalkGraph(area: string, osm: OsmData, surface: StreetSurface, rect: WorldBounds, heights: GroundHeights, tileOf: (x: number, z: number) => string, passages: readonly Passage[] = []): WalkExport {
+  const { data, landed } = graphData(osm, surface);
   const walkArea = { minX: rect.minX - WALK_AREA_MARGIN, maxX: rect.maxX + WALK_AREA_MARGIN, minZ: rect.minZ - WALK_AREA_MARGIN, maxZ: rect.maxZ + WALK_AREA_MARGIN };
   const poi = poiDensity(data.points, rect);
   const cover = buildCover(data, data.buildings, surface, [], poi);
@@ -44,7 +65,8 @@ export function exportWalkGraph(area: string, data: OsmData, surface: StreetSurf
     }
   }
   const walk = buildWalkGraph(data, { surface, cover, area: walkArea, pads: [], poi, deck: null, trunks: Float32Array.from(trunks) });
-  const net = walkNetwork(data, walk.graph, { surface, cover, rect, poi });
+  const net = walkNetwork(data, walk.graph, { surface, cover, rect, poi, passages });
+  net.stats.bridgeLanded = landed;
   const n = net.x.length;
   const file: WalkGraphFile = { format: FORMAT, area, vertices: [], halfWidth: [], edges: net.edges, density: net.density.map((d) => Math.round(d * 1000) / 1000), tile: [] };
   const dir = new Float32Array(n * 2);
@@ -60,8 +82,8 @@ export function exportWalkGraph(area: string, data: OsmData, surface: StreetSurf
   return { file, dir, lanes: walk.lanes, squares: walk.squares, runtimeCrossings: walk.crossings, runtime: { vertices: walk.vertices, edges: walk.graph.nbr.length / 2 }, network: net.stats };
 }
 
-export function exportLaneGraph(area: string, data: OsmData, surface: StreetSurface, rect: WorldBounds, heights: GroundHeights): LaneGraphFile {
-  const net = buildNetwork(data, surface, rect, []);
+export function exportLaneGraph(area: string, osm: OsmData, surface: StreetSurface, rect: WorldBounds, heights: GroundHeights): LaneGraphFile {
+  const net = buildNetwork(graphData(osm, surface).data, surface, rect, []);
   const samples = net.pool.samples.take();
   const points = (path: number): number[] => {
     const out: number[] = [];

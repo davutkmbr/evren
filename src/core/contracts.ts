@@ -339,6 +339,14 @@ export interface DragonState {
   firing: boolean;
   /** Set true for one frame when touching water surface at speed (splash). */
   touchingWater: boolean;
+  /** Remaining roar cooldown as a fraction 0..1 (0 = ready). */
+  roarCooldown?: number;
+  /** Adds a world velocity change (m/s) to the physics body (speed rings, future powers). */
+  addVelocity?(dx: number, dy: number, dz: number): void;
+  /** Roars when allowed (not cooling down, not breathing fire); returns true when it roared. */
+  requestRoar?(): boolean;
+  /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
+  fireBurst?(seconds: number): void;
 }
 
 export interface DragonPose {
@@ -514,6 +522,24 @@ export interface RoadSurfaceService {
   readonly decks: readonly { id: string; points: { x: number; y: number; z: number }[]; width: number }[];
 }
 
+/**
+ * The drawn street ground of the OSM slice (carriageways, raised kerbs and sidewalks, tram platforms, quays), exactly
+ * as the ground mesh is built. Provided by world/osm as 'streetGround' once its street raster is ready; structures
+ * use it to land bridge decks on the street they join.
+ */
+export interface StreetGroundService {
+  /** Whether (x, z) lies on the OSM ground. */
+  covers(x: number, z: number): boolean;
+  /** Height (m) of the drawn ground at (x, z) (bridge decks excluded). */
+  heightAt(x: number, z: number): number;
+  /**
+   * Tram track centrelines and painted lane lines of the drawn ground crossing the segment a-b, as distances (m) from
+   * a along it; a line stopping up to `reach` m short of the segment is extended along its last segment. Decks landing
+   * on the street continue these lines.
+   */
+  linesAcross?(ax: number, az: number, bx: number, bz: number, reach: number): { t: number; kind: 'track' | 'lane' }[];
+}
+
 /* ------------------------------------------------------------------ */
 /* Weather (owned by render/weather) — service key: 'weather'           */
 /* ------------------------------------------------------------------ */
@@ -546,6 +572,88 @@ export interface WeatherService {
   cycle(): WeatherPreset;
 }
 
+/* ------------------------------------------------------------------ */
+/* Viewpoints (phase 03) — service key: 'perches'                        */
+/* ------------------------------------------------------------------ */
+
+export type PerchSurface = 'tower' | 'dome' | 'hill' | 'roof' | 'rock';
+
+/** A spot where the dragon can land and watch the city. */
+export interface PerchPoint {
+  /** Stable id, e.g. "galata-kulesi". */
+  id: string;
+  /** Turkish name shown in UI. */
+  name: string;
+  /** Grip point in local meters: where the claws hold (top surface of the structure or the ground on hills). */
+  x: number;
+  y: number;
+  z: number;
+  /** Compass heading the dragon faces while perched (toward the view). */
+  headingDeg: number;
+  surface: PerchSurface;
+  /** Radius (m) of the area the claws may grip around the point. */
+  gripRadius: number;
+  /** One or two sentence Turkish info text for the viewing screen. */
+  info: string;
+  /** Landmark this perch sits on, if any (LandmarkDef.id). */
+  landmarkId?: string;
+}
+
+export interface PerchService {
+  readonly points: readonly PerchPoint[];
+  get(id: string): PerchPoint | undefined;
+  /** Closest perch within `maxDistance` m (horizontal), or null. */
+  nearest(x: number, z: number, maxDistance?: number): { point: PerchPoint; distance: number } | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hotbar: abilities and items (owned by ui) — service key: 'hotbar'    */
+/* ------------------------------------------------------------------ */
+
+/** Icon ids the HUD can draw for hotbar slots (add new ones together with their drawing in src/ui/hud). */
+export type HotbarIcon = 'fire' | 'roar' | 'potion' | 'feather' | 'lantern' | 'gift' | 'unknown';
+
+/**
+ * One slot of the bottom-centre hotbar. Abilities (fire, roar, later special powers) and items (inventory) register
+ * here; the HUD draws them and, when the slot's number key (1..size) is pressed, calls `activate`.
+ */
+export interface HotbarSlot {
+  /** Stable id, e.g. "fire", "roar", "item:simit". */
+  id: string;
+  kind: 'ability' | 'item';
+  /** Turkish name shown under the hotbar while selected/used. */
+  label: string;
+  icon: HotbarIcon;
+  /** Extra shortcut shown next to the name (e.g. "F" for fire, which also works from its own key). */
+  hotkey?: string;
+  /** Items: stack size (hidden when undefined). */
+  count?: number;
+  /** Remaining cooldown as a fraction 0..1 (0 = ready). The owner updates it. */
+  cooldown?: number;
+  /** In use right now (held fire, a running power). */
+  active?: boolean;
+  /** False greys the slot out (not usable right now, e.g. no stamina). Default true. */
+  enabled?: boolean;
+  /** Called when the player presses the slot's number key (or clicks it while the pointer is free). */
+  activate?(): void;
+}
+
+export type HotbarSlotState = Partial<Pick<HotbarSlot, 'label' | 'count' | 'cooldown' | 'active' | 'enabled'>>;
+
+export interface HotbarService {
+  /** Number of slots (number keys 1..size). */
+  readonly size: number;
+  readonly slots: readonly (HotbarSlot | null)[];
+  /** Puts a slot at `index` (0-based), or clears it with null. */
+  set(index: number, slot: HotbarSlot | null): void;
+  /** First free index, or -1. */
+  firstFree(): number;
+  /** Updates the live state of the slot with `id` (cheap; call every frame if needed). */
+  update(id: string, state: HotbarSlotState): void;
+  /** Removes the slot with `id` wherever it is. */
+  remove(id: string): void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -557,7 +665,10 @@ export interface Services {
   fx: FxService;
   audio: AudioService;
   roadSurface: RoadSurfaceService;
+  streetGround: StreetGroundService;
   weather: WeatherService;
+  perches: PerchService;
+  hotbar: HotbarService;
 }
 
 /* ------------------------------------------------------------------ */
@@ -586,6 +697,19 @@ export interface GameEvents {
   maneuver: { id: string; label: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
   teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
+  /**
+   * Activity progress (src/activities: ring races…). Emitted on start, every checkpoint, finish and abort.
+   * Times in seconds; `label` is the Turkish caption for the HUD.
+   */
+  activity: {
+    activityId: string;
+    state: 'started' | 'checkpoint' | 'finished' | 'aborted';
+    checkpoint: number;
+    total: number;
+    elapsed: number;
+    best?: number;
+    label: string;
+  };
 }
 
 /* ------------------------------------------------------------------ */

@@ -14,12 +14,13 @@ import { BoxGrid, bounds, hash, pointInRing, ringArea, segDist } from '../shared
 import type { StreetSurface } from '../shared/street-surface';
 import { Arch, Balcony, Flag, groundRow, Kind } from './archetypes';
 import { DetailSink } from './details';
-import { emitPlane, type EmitContext, layoutFor, type Plane, planeFrom } from './facade';
+import { emitLining, emitPlane, type EmitContext, layoutFor, type Plane, planeFrom } from './facade';
 import { cleanRing, footprintInfo, orientedBox } from './footprint';
 import { bayWindow, type Edge, mouldings } from './massing';
 import { FACADE_STATE, RecordList, ROOF_STATE, StateMesh } from './mesh';
 import { clearanceOf, planBuilding, wallHeight } from './plan';
 import { encodePrism } from './protocol';
+import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
 
 /** building=* values that are not solid buildings (canopies, ruins, bridge decks). */
@@ -36,6 +37,8 @@ export interface BuildInput {
   pads: Float32Array;
   /** Extra footprints (infill parcels) built like building=yes. */
   extra?: readonly OsmBuilding[];
+  /** Building passages (shared/passages.ts findPassages): arched openings, a lined passage and a free collider. */
+  passages?: readonly Passage[];
 }
 
 export interface BuildOutput {
@@ -258,6 +261,11 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   }
   const index = new SolidIndex(solids);
   const pois = new PoiIndex(input.pois);
+  const passagesOf = new Map<number, Passage[]>();
+  for (const p of input.passages ?? []) {
+    passagesOf.set(p.building, [...(passagesOf.get(p.building) ?? []), p]);
+  }
+  stats.passages = 0;
 
   // 2. Build every solid.
   solids.forEach((s, si) => {
@@ -292,13 +300,47 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     const wallTopV = top - gMin;
     const pitched = plan.roof !== 'flat' && plan.roof !== 'domes';
     const ctx: EmitContext = { mesh: facade, details, plan, poi: 0, stats };
+    // Passages through this building (rule walk.passage): the arch fits under the walls and both portal walls take it.
+    const passages = s.infill
+      ? []
+      : (passagesOf.get(b.id) ?? []).flatMap((p) => {
+          const walls = portalWalls(p, [r, ...holes]);
+          const yA = surface.heightAt(p.ax, p.az);
+          const yB = surface.heightAt(p.bx, p.bz);
+          const arch = passageArch(p, top - Math.max(yA, yB));
+          const len = Math.hypot(p.bx - p.ax, p.bz - p.az) || 1;
+          return walls && arch ? [{ p, walls, arch, floorAt: (q: number): number => yA + (yB - yA) * Math.max(0, Math.min(1, q / len)) }] : [];
+        });
+    stats.passages += passages.length;
+    /** Openings of the passages in wall edge `edge` of ring `ri`, in the coordinates of plane `pl`. */
+    const portalsOf = (ri: number, edge: number, pl: Pick<Plane, 'ax' | 'az' | 'tx' | 'tz'>): NonNullable<Plane['portals']> => {
+      const out: NonNullable<Plane['portals']> = [];
+      for (const q of passages) {
+        const prof = passageProfile(q.p, q.arch);
+        for (const w of q.walls as readonly Wall[]) {
+          if (w.ring !== ri || w.edge !== edge) {
+            continue;
+          }
+          const po = portalOnWall(q.p, prof, w);
+          const arc: [number, number][] = [];
+          for (let k = prof.arc0; k <= prof.arc1; k++) {
+            const x = w.ax + w.ux * po.t[k];
+            const z = w.az + w.uz * po.t[k];
+            arc.push([(x - pl.ax) * pl.tx + (z - pl.az) * pl.tz, q.floorAt(wallHit(q.p, prof.o[k], w)) + prof.h[k] - gMin]);
+          }
+          const us = arc.map((a) => a[0]);
+          out.push({ u0: Math.min(...us), u1: Math.max(...us), arc, crownV: Math.max(...arc.map((a) => a[1])) });
+        }
+      }
+      return out;
+    };
     const baseFlags = (pitched ? Flag.Pitched : 0) | (plan.shutters ? Flag.Shutters : 0) | (plan.roller ? Flag.Roller : 0) | (plan.office ? Flag.Office : 0) | (plan.plinthOn ? Flag.Plinth : 0) | (plan.banded ? Flag.Banded : 0) | (plan.clapboard ? Flag.Clapboard : 0);
 
     // Walls of the outer ring and courtyards.
     const outerEdges: Edge[] = [];
     let bayDone = 0;
     const rings: [number[], boolean][] = [[r, false], ...holes.map((h): [number[], boolean] => [h, true])];
-    for (const [ring, court] of rings) {
+    for (const [ri, [ring, court]] of rings.entries()) {
       const m = ring.length / 2;
       const rg: number[] = court ? [] : ground;
       if (court) {
@@ -371,7 +413,13 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
           balcony: windowed ? balcony : Balcony.None,
         };
         ctx.poi = poi;
-        if (!court && street && windowed && plan.bay !== 'none' && bayDone < (plan.bay === 'cikma' ? 1 : 2) && len >= 4.5) {
+        const portals = portalsOf(ri, i, plane);
+        if (portals.length) {
+          // A passage opening: no shopfront or bay window on this wall.
+          plane.portals = portals;
+          plane.flags &= ~Flag.Shop;
+        }
+        if (!portals.length && !court && street && windowed && plan.bay !== 'none' && bayDone < (plan.bay === 'cikma' ? 1 : 2) && len >= 4.5) {
           const range = bayWindow(ctx, plane, top, pitched);
           if (range) {
             plane.skip = range;
@@ -385,6 +433,10 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
       }
     }
 
+    for (const q of passages) {
+      emitLining(ctx, q.p, q.arch, q.walls, q.floorAt, gMin, wallTopV);
+    }
+
     // Cornices and string courses along the exposed outer walls.
     if (plan.cornice !== 'none' || plan.courses) {
       const gMid = ground.reduce((a, g) => a + g, 0) / n - gMin;
@@ -395,8 +447,18 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
     const peak = buildRoof({ roof, facade, plan, ring: r, holes, box, top, gMin, props, stats });
 
     // The drawn footprint itself (an oriented box over an L-shaped or concave outline blocks streets and squares).
-    encodePrism(colliders, yBase, peak, [r, ...holes]);
-    colliderIds.push(s.id);
+    if (passages.length) {
+      // The passages stay free under their vaults (shared/passages.ts passageColliders).
+      for (const piece of passageColliders([r, ...holes], passages.map((q) => q.p))) {
+        const q = piece.vault ? passages.find((w) => w.p === piece.vault) : undefined;
+        const bottom = q ? Math.max(q.floorAt(0), q.floorAt(Infinity)) + q.arch.crown : yBase;
+        encodePrism(colliders, bottom, peak, piece.rings);
+        colliderIds.push(s.id);
+      }
+    } else {
+      encodePrism(colliders, yBase, peak, [r, ...holes]);
+      colliderIds.push(s.id);
+    }
     stats.built++;
     if (s.infill) {
       stats.infill++;

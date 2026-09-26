@@ -1,3 +1,4 @@
+import { keyHint, prompt } from '../components';
 import { el, setVisible, TextSlot } from '../dom';
 import { LOADING_TIPS, loadingLabel } from '../labels';
 import { SkylineBackdrop } from './skyline-backdrop';
@@ -13,9 +14,10 @@ export interface LoadingScreenOptions {
 const percentFormat = new Intl.NumberFormat('tr-TR', { style: 'percent', maximumFractionDigits: 0 });
 const TIP_INTERVAL_MS = 6500;
 
-const MOUSE_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="6.2" y="3" width="11.6" height="18" rx="5.8"/><path d="M12 3v6.4"/><path d="M6.4 9.4H12V3.2A5.8 5.8 0 0 0 6.4 8.6Z" fill="currentColor" stroke="none" opacity="0.9"/></svg>`;
-
-/** Full-screen loading screen with the animated skyline, per-system progress and the "click to fly" prompt. */
+/**
+ * Full-screen loading screen with the animated skyline, per-system progress and the start prompt ("[Enter] Uçmaya
+ * başla"); Enter, Space or a click anywhere starts.
+ */
 export class LoadingScreen {
   readonly root: HTMLElement;
   private readonly backdrop = new SkylineBackdrop();
@@ -52,26 +54,21 @@ export class LoadingScreen {
     this.progressBlock = el('div', 'ld-progress ejd-fade', [
       el('div', 'ld-row', [labelNode, percentNode]),
       el('div', 'ld-track', [this.fill], { role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Yükleniyor' }),
-      el('p', 'ld-tip', [el('span', 'ejd-caps ld-tip-caps', 'İpucu'), this.tipText]),
+      el('p', 'ld-tip', [this.tipText]),
     ]);
 
-    this.cta = el('button', 'ld-cta', undefined, { type: 'button' });
-    this.cta.innerHTML = `<span class="ld-cta-icon">${MOUSE_ICON}</span><span>Uçmak için tıkla</span>`;
-    this.cta.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.start();
-    });
+    this.cta = prompt('Uçmaya başla', 'Enter', 'primary', () => this.start()).root;
+    this.cta.classList.add('ld-cta');
 
-    const keyHint = (keys: string[], action: string): HTMLElement =>
-      el('li', 'ld-key', [...keys.map((k) => el('kbd', undefined, k)), el('span', 'ld-key-label', action)]);
+    const hint = (keys: string, action: string): HTMLElement => el('li', 'ld-key', [keyHint(keys, action).root]);
     this.startBlock = el('div', 'ld-start ejd-fade is-out', [
       this.cta,
       el('ul', 'ld-keys', [
-        keyHint(['W', 'A', 'S', 'D'], 'Yönlendir'),
-        keyHint(['Space'], 'Kanat çırp'),
-        keyHint(['Shift'], 'Dalış'),
-        keyHint(['C'], 'Kamera'),
-        keyHint(['H'], 'Yardım'),
+        hint('W / A / S / D', 'Yönlendir'),
+        hint('Space', 'Kanat çırp'),
+        hint('Shift', 'Dalış'),
+        hint('C', 'Kamera'),
+        hint('H', 'Yardım'),
       ]),
     ]);
 
@@ -98,7 +95,7 @@ export class LoadingScreen {
   private title(): HTMLElement {
     const logo = el('h1', 'ld-logo', undefined, { lang: 'en', 'aria-label': BRAND.name });
     logo.innerHTML = titleLogoSvg({ id: 'ld-logo' });
-    return el('header', 'ld-title', [logo, el('p', 'ld-line', BRAND.lineTr)]);
+    return el('header', 'ld-title', [logo, el('p', 'ld-sub', BRAND.lineTr)]);
   }
 
   get visible(): boolean {

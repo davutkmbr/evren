@@ -17,6 +17,7 @@
  *   urge V / gamepad D-pad up (the "dehh": speed burst), pet G held / D-pad down, stand T, weather N
  *   rollLeft / rollRight: A / D (and arrows) as buttons, for double-tap tricks (gamepad D-pad left/right = a double tap)
  *   pitchUp / pitchDown: S / W (and arrows) as buttons, for double-tap tricks
+ * Hotbar: slot1..slot5 = Digit1..Digit5 (and the numpad digits); the digit keys are reserved for the hotbar.
  * Double taps: wasDoubleTapped(name) is true for one frame when a button is pressed twice within DOUBLE_TAP_MS.
  */
 export type AxisName = 'pitch' | 'roll' | 'yaw';
@@ -43,13 +44,21 @@ export type ButtonName =
   | 'rollLeft'
   | 'rollRight'
   | 'pitchUp'
-  | 'pitchDown';
+  | 'pitchDown'
+  | 'slot1'
+  | 'slot2'
+  | 'slot3'
+  | 'slot4'
+  | 'slot5';
+
+/** Hotbar slot buttons in slot order (number keys 1..5). */
+export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Two presses of the same button within this window count as a double tap (ms). */
 export const DOUBLE_TAP_MS = 300;
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather']);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -82,33 +91,64 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   ArrowDown: 'pitchUp',
   KeyW: 'pitchDown',
   ArrowUp: 'pitchDown',
+  Digit1: 'slot1',
+  Digit2: 'slot2',
+  Digit3: 'slot3',
+  Digit4: 'slot4',
+  Digit5: 'slot5',
+  Numpad1: 'slot1',
+  Numpad2: 'slot2',
+  Numpad3: 'slot3',
+  Numpad4: 'slot4',
+  Numpad5: 'slot5',
 };
 
-export const CONTROL_HELP: Array<{ keys: string; action: string }> = [
-  { keys: 'W / S', action: 'Burun aşağı / yukarı' },
-  { keys: 'A / D', action: 'Sola / sağa yatış' },
-  { keys: 'Q / E', action: 'Sola / sağa dönüş (dümen)' },
-  { keys: 'Space', action: 'Kanat çırp (tırmanış, hız)' },
-  { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan' },
-  { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş' },
-  { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes' },
-  { keys: 'A / D çift dokun', action: 'Takla at (basılı tut: dönmeye devam et)' },
-  { keys: 'S çift dokun', action: 'Looping' },
-  { keys: 'Ctrl / X', action: 'Fren, havada asılı kal' },
-  { keys: 'F / Sol tık', action: 'Ateş püskür' },
-  { keys: 'R', action: 'Kükre' },
-  { keys: 'L', action: 'İniş / kalkış' },
-  { keys: 'G (basılı)', action: 'Ejderhayı sev' },
-  { keys: 'T', action: 'Eyerde ayağa kalk / otur' },
-  { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına' },
-  { keys: 'Fare', action: 'Etrafa bak (sağ tık basılı / POV)' },
-  { keys: 'C', action: 'Kamera: üçüncü şahıs / POV / sinematik' },
-  { keys: '[ / ]', action: 'Günün saatini değiştir' },
-  { keys: 'M', action: 'Harita' },
-  { keys: 'O', action: 'Fotoğraf modu' },
-  { keys: 'U', action: 'Arayüzü gizle' },
-  { keys: 'H', action: 'Yardım' },
-  { keys: 'Esc / P', action: 'Duraklat' },
+/** Groups of the key list (pause menu → Kontroller, H overlay). */
+export type ControlGroup = 'flight' | 'hover' | 'tricks' | 'dragon' | 'camera' | 'game';
+
+/**
+ * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
+ * alternatives, "Ctrl + W" are held together, a trailing "×2" is a double tap; single letters, Space, Shift, Ctrl, Esc,
+ * "[", "]", "Sol tık" and "Sağ tık" light up on the keyboard and mouse drawing (extra words such as "bırak" are kept
+ * on the key cap).
+ */
+export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlGroup }> = [
+  { keys: 'W / S', action: 'Burun aşağı / yukarı', group: 'flight' },
+  { keys: 'A / D', action: 'Sola / sağa yatış', group: 'flight' },
+  { keys: 'Q / E', action: 'Dümen: sola / sağa dön', group: 'flight' },
+  { keys: 'Space', action: 'Kanat çırp: tırman, hızlan', group: 'flight' },
+  { keys: 'Ctrl / X', action: 'Fren, havada asılı kal', group: 'flight' },
+  { keys: 'L', action: 'İniş / kalkış', group: 'flight' },
+  { keys: 'Ctrl / X', action: 'Yavaşla ve havada asılı kal', group: 'hover' },
+  { keys: 'Ctrl + W / S', action: 'Yavaşça ileri, geri', group: 'hover' },
+  { keys: 'A / D', action: 'Olduğun yerde dön', group: 'hover' },
+  { keys: 'Space / Shift', action: 'Yüksel / alçal', group: 'hover' },
+  { keys: 'W', action: 'Freni bırak, uçuşa geç', group: 'hover' },
+  { keys: 'L', action: 'Olduğun yere kon', group: 'hover' },
+  { keys: 'V', action: 'Dehh! Dizginleri şaklat, hızlan', group: 'tricks' },
+  { keys: 'Shift', action: 'Kanatları kapat: dalış, serbest düşüş', group: 'tricks' },
+  { keys: 'Shift bırak / Space', action: 'Kanatları aç, düşüşü kes', group: 'tricks' },
+  { keys: 'A / D ×2', action: 'Takla at (basılı tut: dönmeye devam et)', group: 'tricks' },
+  { keys: 'S ×2', action: 'Looping', group: 'tricks' },
+  { keys: 'F / Sol tık', action: 'Ateş püskür', group: 'dragon' },
+  { keys: 'R', action: 'Kükre', group: 'dragon' },
+  { keys: 'G', action: 'Ejderhayı sev (basılı tut)', group: 'dragon' },
+  { keys: 'T', action: 'Eyerde ayağa kalk / otur', group: 'dragon' },
+  { keys: 'Sağ tık', action: 'Etrafa bak (basılı tut)', group: 'camera' },
+  { keys: 'C', action: 'Kamera: 3. şahıs, binici, sinematik', group: 'camera' },
+  { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
+  { keys: '[ / ]', action: 'Saati yarım saat geri / ileri', group: 'camera' },
+  { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
+  { keys: '1–5', action: 'Hotbar: yetenek / eşya kullan', group: 'game' },
+  { keys: 'Y', action: 'Halka yarışı: parkur seç, parkur editörü (yarışta: iptal et, editörde: çık)', group: 'game' },
+  { keys: 'B', action: 'Parkur editöründe: halka koy', group: 'game' },
+  { keys: 'Backspace', action: 'Parkur editöründe: son halkayı sil', group: 'game' },
+  { keys: 'K / J', action: 'Parkur editöründe: kapı ↔ hız halkası / kapı boyutu', group: 'game' },
+  { keys: 'Enter', action: 'Parkur editöründe: kaydet', group: 'game' },
+  { keys: 'M', action: 'Harita', group: 'game' },
+  { keys: 'U', action: 'Arayüzü gizle', group: 'game' },
+  { keys: 'H', action: 'Yardım', group: 'game' },
+  { keys: 'Esc / P', action: 'Duraklat', group: 'game' },
 ];
 
 interface AxisState {

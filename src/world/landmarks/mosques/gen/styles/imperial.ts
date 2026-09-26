@@ -448,7 +448,7 @@ export function buildImperial(b: MeshBuilder, s: ImperialSpec, lod: LodLevel): S
     b.at(-len / 2, 0, hall.d / 2 + p.depth, 0, () =>
       arcade(b, { len, bays: p.bays, depth: p.depth, colH: p.h * 0.64, roofH: p.h, lod, pitched: p.pitched, domeScale: 1.1 }),
     );
-    cols.push({ kind: 'box', cx: 0, cy: p.h / 2, cz: hall.d / 2 + p.depth / 2, hx: len / 2, hy: p.h / 2, hz: p.depth / 2, yaw: 0 });
+    cols.push({ kind: 'box', cx: 0, cy: p.h / 2, cz: hall.d / 2 + p.depth / 2, hx: len / 2, hy: p.h / 2, hz: p.depth / 2, yaw: 0, open: true });
   }
 
   // Annex blocks.

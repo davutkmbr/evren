@@ -174,6 +174,50 @@ export const PROXIMITY = {
   idleHorizon: 3,
   lookahead: [0.8, 1.7, 2.8] as readonly number[],
   sampleInterval: 0.05,
+  /**
+   * Overhead structures (bridge decks, arches, overhangs): height of the raised wings above the center of mass and
+   * the safety margin kept below a ceiling. Anything reaching down into that band along the path is an obstacle to
+   * climb over; anything entirely above it is a ceiling to pass under.
+   */
+  headroom: 5,
+  ceilingMargin: 3,
+  /**
+   * Clearance the assist keeps between the raised wings and a ceiling it flies under; larger than ceilingMargin so
+   * a dragon held there does not flicker between "pass under" and "climb over".
+   */
+  ceilingKeep: 6,
+  /** Least clearance (lowest body point above the floor) a gap under a ceiling must leave to fly through it. */
+  passClearance: 2,
+  /**
+   * Far look-ahead (hands-off only): tall obstacles (towers, cliffs) beyond the near samples. The track is scanned
+   * from the last near sample out to clamp(max(V × farTime, climb needed / tan(farPlanPath)), farMin, farMax) m at
+   * farSamples evenly spaced points, farPerUpdate of them per look-ahead refresh (a full sweep every few refreshes).
+   */
+  farTime: 14,
+  farMin: 150,
+  farMax: 600,
+  farSamples: 20,
+  farPerUpdate: 5,
+  /** Climb angle the far look-ahead plans with when sizing its reach (rad). */
+  farPlanPath: 12 * DEG,
+  /**
+   * Climb angle to an obstacle's top (plus the hands-off clearance) at which the far samples start to lift the held
+   * path, and where they lift it fully: gentler slopes (rolling hills) are left to the near look-ahead, so cruising
+   * over terrain keeps its height.
+   */
+  farIgnorePath: 6 * DEG,
+  farFullPath: 10 * DEG,
+  /**
+   * Climb angle beyond which an obstacle cannot be out-climbed once the dragon's own climb has fallen short of it by
+   * farTurnLag for farTurnDelay s: the dragon also turns toward the side with more free space (two probes along
+   * headings farProbeAngle to either side), up to farTurnBank at farTurnFullPath.
+   */
+  farTurnPath: 13 * DEG,
+  farTurnLag: 4 * DEG,
+  farTurnDelay: 1,
+  farTurnFullPath: 20 * DEG,
+  farTurnBank: 35 * DEG,
+  farProbeAngle: 25 * DEG,
   /** Lower wingtip must stay this far above the surface when banking. */
   wingtipMargin: 1,
   /** Wingtip clearance kept at the bottom of the downstroke (limits the stroke amplitude). */

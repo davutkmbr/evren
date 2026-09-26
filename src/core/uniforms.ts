@@ -39,7 +39,8 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uFogHeightFalloff: { value: 0.0012 },
   uFogColor: { value: new THREE.Color(0.62, 0.68, 0.78) },
   /**
-   * Street layer (src/world/street): hole mask over uStreetHoleRect (minX, minZ, sizeX, sizeZ); red = ground materials,
+   * Street layer (src/world/street): hole mask valid inside uStreetHoleRect (minX, minZ, sizeX, sizeZ) and addressed by
+   * world xz / size with repeat wrapping (it follows the camera without being moved); red = ground materials,
    * green = building materials (streetHole). A texel holds the fade slot (byte value, 0 = no hole) of the street tile
    * that replaces the geometry there; uStreetFade maps slots to that tile's fade (see street/fade.ts).
    */
@@ -99,6 +100,8 @@ export function patchMaterial<T extends THREE.Material>(material: T, cacheKey: s
 }
 
 let installed = false;
+/** three's own clipping chunk, extended by installGlobalShaderHooks (kept so a second install cannot stack). */
+const CLIPPING_PLANES_FRAGMENT = THREE.ShaderChunk.clipping_planes_fragment;
 
 /**
  * Installs:
@@ -150,22 +153,35 @@ ${SHARED_GLSL}
   #endif
 #endif
 `;
-  THREE.ShaderChunk.fog_fragment = /* glsl */ `
-#ifdef USE_FOG
-  #ifdef STREET_HOLE
+  /**
+   * Street hole test: fragments of flight-scale materials under a live street tile are discarded. It runs at the start
+   * of the fragment shader (after three's clipping planes, where its own alpha-test-like discards sit), so the
+   * geometry the street tiles replace is not lit and fogged before it is thrown away; the fog chunk keeps it for
+   * shaders without the clipping chunk.
+   */
+  const streetHoleTest = /* glsl */ `
+#if defined(USE_FOG) && defined(STREET_HOLE) && !defined(STREET_HOLE_DONE)
+  #define STREET_HOLE_DONE
   {
     #ifdef STREET_HOLE_AT
-    vec2 streetUv = (STREET_HOLE_AT - uStreetHoleRect.xy) / uStreetHoleRect.zw;
+    vec2 streetW = STREET_HOLE_AT;
     #else
-    vec2 streetUv = (vFogWorldPos.xz - uStreetHoleRect.xy) / uStreetHoleRect.zw;
+    vec2 streetW = vFogWorldPos.xz;
     #endif
+    vec2 streetUv = (streetW - uStreetHoleRect.xy) / uStreetHoleRect.zw;
     if (all(greaterThan(streetUv, vec2(0.0))) && all(lessThan(streetUv, vec2(1.0)))) {
-      float streetSlot = floor(texture2D(uStreetHoleMask, streetUv)[STREET_HOLE] * 255.0 + 0.5);
+      // The mask wraps (world position over its size, street/index.ts HoleMask); the window test above bounds it.
+      float streetSlot = floor(texture2D(uStreetHoleMask, streetW / uStreetHoleRect.zw)[STREET_HOLE] * 255.0 + 0.5);
       // Complementary to the street tile's own dither (street/fade.ts): each pixel shows one of the two.
       if (streetSlot > 0.5 && streetFadeAt(uStreetFade, streetSlot) > streetDither()) discard;
     }
   }
-  #endif
+#endif
+`;
+  THREE.ShaderChunk.clipping_planes_fragment = CLIPPING_PLANES_FRAGMENT + streetHoleTest;
+  THREE.ShaderChunk.fog_fragment = /* glsl */ `
+${streetHoleTest}
+#ifdef USE_FOG
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);
 #endif
 `;

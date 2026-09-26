@@ -90,8 +90,9 @@ export function buildBarriers(m: MeshBuf, data: Pick<OsmData, 'lines' | 'areas'>
   const stats: Record<string, number> = { walls: 0, cityWalls: 0, retaining: 0, fences: 0, hoardings: 0 };
   const fenced = new Set<OsmArea>();
 
-  // Keep clear of the rect's fade-out margin, where the OSM ground dissolves into the procedural city.
-  const inside = (x: number, z: number): boolean => Math.min(x - rect.minX, rect.maxX - x, z - rect.minZ, rect.maxZ - z) > 40;
+  // Keep clear of the fade-out margin, where the OSM ground dissolves into the procedural city (`rect` is the fade
+  // rect: pushed far out on sides shared with another region, whose own walls continue beyond the build rect).
+  const inside = (x: number, z: number): boolean => surface.covers(x, z) && Math.min(x - rect.minX, rect.maxX - x, z - rect.minZ, rect.maxZ - z) > 40;
   const open = (x: number, z: number): boolean =>
     !inside(x, z) || surface.distance(x, z) < 0.3 || surface.pathDistance(x, z) < -0.2 || surface.geo.isWater(x, z) || padded(x, z);
 

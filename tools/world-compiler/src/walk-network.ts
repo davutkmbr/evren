@@ -12,6 +12,9 @@
  * 4. Lane ends are linked to the nearest vertex of another lane within LINK_RADIUS (off carriageways).
  * 5. Crossings: highway=crossing nodes without a crossing way, and every arm of a junction on streets with pavement on
  *    both sides, get a kerb-to-kerb crossing.
+ *    A foot way that runs through a building for at most PASSAGE_MAX m (a gate house mapped without tunnel / covered,
+ *    Dolmabahçe's Hazine Kapısı) links its vertices on both sides where the building opens for it (ctx.passages,
+ *    src/world/osm/shared/passages.ts: an arched opening and a lined passage in the compiled and runtime buildings).
  * 6. Remaining fragments are joined by the shortest clear links (Kruskal over vertex pairs within 12 m, then 25 m),
  *    links that stay off carriageways first. Links never pass through buildings or water.
  */
@@ -19,6 +22,7 @@ import type { CoverBuild } from '../../../src/world/osm/details/cover/cover';
 import { VERT_STRIDE, type WalkGraph } from '../../../src/world/osm/details/protocol';
 import type { OsmData, OsmRoad } from '../../../src/world/osm/data';
 import { segDist } from '../../../src/world/osm/shared/geometry';
+import { PASSAGE_MAX, type Passage } from '../../../src/world/osm/shared/passages';
 import { classifyStreets, type Street, Surf } from '../../../src/world/osm/shared/street-field';
 import { type StreetSurface, Zone } from '../../../src/world/osm/shared/street-surface';
 
@@ -29,12 +33,17 @@ const MAX_SEG = 9;
 const MERGE_RADIUS = 0.05;
 const LINK_RADIUS = 8;
 const CROSSING_LINK_RADIUS = 5;
-/** Stitch rounds (m): short links first, then a wider round for fragments the first could not reach. */
-const STITCH_RADII = [12, 25];
+/** Stitch rounds (m): short links first, then wider rounds for fragments the earlier ones could not reach (small village spots: building rows between lanes). */
+const STITCH_RADII = [12, 25, 40];
 const LINK_DENSITY = 0.02;
 const CELL = 4;
 
 export interface NetworkStats {
+  /**
+   * Rule walk.bridgeLanded: pieces of OSM bridge ways over land (the same pieces the street raster draws as
+   * ground-level streets, street-field.ts streetRasterInput) that the walk and lane graphs follow too (count, metres).
+   */
+  bridgeLanded?: { ways: number; m: number };
   merged: number;
   healed: number;
   addedLanes: number;
@@ -47,6 +56,8 @@ export interface NetworkStats {
    */
   crossings: { mapped: number; footways: number; nodes: number; junctions: number; nodesServed: number; nodesOnLane: number; nodesInRect: number };
   stitched: { offRoad: number; acrossRoad: number };
+  /** Rule walk.passage: foot ways linked through a building they cross (a gate or passage, at most PASSAGE_MAX m). */
+  passages: number;
   components: number;
   largest: number;
   largestShare: number;
@@ -72,6 +83,11 @@ export interface NetworkContext {
   /** Tile-aligned build rect: vertices stay strictly inside it (like the runtime builder's area). */
   rect: { minX: number; maxX: number; minZ: number; maxZ: number };
   poi: (x: number, z: number) => number;
+  /**
+   * Building passages the compiled buildings open (passages.ts attachPassages: an arched opening in both portal walls
+   * and a lined passage); rule walk.passage links a foot way through a building only along one of them.
+   */
+  passages?: readonly Passage[];
 }
 
 class Net {
@@ -255,8 +271,11 @@ function footKind(r: OsmRoad): number {
 
 export function walkNetwork(data: Pick<OsmData, 'roads' | 'points'>, base: WalkGraph, ctx: NetworkContext): WalkNetwork {
   const { surface, cover, rect, poi } = ctx;
+  /** The link (ax, az) -> (bx, bz) of way `road` runs through an opened passage of that way (its chord's middle within the clear half width of the link). */
+  const opened = (road: number, ax: number, az: number, bx: number, bz: number): boolean =>
+    (ctx.passages ?? []).some((p) => p.road === road && segDist((p.ax + p.bx) / 2, (p.az + p.bz) / 2, ax, az, bx, bz) < p.hw);
   const net = new Net();
-  const stats: NetworkStats = { merged: 0, healed: 0, addedLanes: 0, endLinks: 0, crossings: { mapped: 0, footways: 0, nodes: 0, junctions: 0, nodesServed: 0, nodesOnLane: 0, nodesInRect: 0 }, stitched: { offRoad: 0, acrossRoad: 0 }, components: 0, largest: 0, largestShare: 0, isolated: 0 };
+  const stats: NetworkStats = { merged: 0, healed: 0, addedLanes: 0, endLinks: 0, crossings: { mapped: 0, footways: 0, nodes: 0, junctions: 0, nodesServed: 0, nodesOnLane: 0, nodesInRect: 0 }, stitched: { offRoad: 0, acrossRoad: 0 }, passages: 0, components: 0, largest: 0, largestShare: 0, isolated: 0 };
 
   const inRect = (x: number, z: number): boolean => x > rect.minX && x < rect.maxX && z > rect.minZ && z < rect.maxZ;
   const wallClear = (x: number, z: number, c: number): boolean => {
@@ -338,6 +357,9 @@ export function walkNetwork(data: Pick<OsmData, 'roads' | 'points'>, base: WalkG
     const ids: number[] = [];
     let prev = -1;
     let across = false;
+    // Building passage: the last vertex before a run of samples inside buildings (dry, in the rect) and the run length.
+    let last = -1;
+    let inside = 0;
     for (let k = 0; k < pts.length; k += 2) {
       const x = pts[k];
       const z = pts[k + 1];
@@ -371,8 +393,19 @@ export function walkNetwork(data: Pick<OsmData, 'roads' | 'points'>, base: WalkG
         }
         if (prev >= 0) {
           net.link(prev, id, density);
+        } else if (last >= 0 && inside > 0 && inside <= PASSAGE_MAX && opened(r.id, net.x[last], net.z[last], net.x[id], net.z[id]) && net.link(last, id, density)) {
+          // Rule walk.passage: the way runs through a building (a gate, an arcade) mapped without tunnel / covered.
+          stats.passages++;
         }
         ids.push(id);
+        last = id;
+        inside = 0;
+      } else if (last >= 0) {
+        const k0 = Math.max(0, k - 2);
+        inside = inRect(x, z) && dry(x, z, 0.8) && !wallClear(x, z, 0.2) && inside >= 0 ? inside + Math.hypot(x - pts[k0], z - pts[k0 + 1]) : -1;
+        if (inside < 0) {
+          last = -1;
+        }
       }
       prev = id;
     }

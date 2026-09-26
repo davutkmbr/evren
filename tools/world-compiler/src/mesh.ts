@@ -48,6 +48,8 @@ export interface EmitOptions {
   weather?: Weather | readonly Weather[];
   /** LOD mask of the emitted triangles (default: the mesh's lodMask). */
   lod?: number;
+  /** Shading normal per vertex (flatPolygon / flatTriangles; the face normal still fixes winding and UVs), e.g. a vault's curve. */
+  normals?: readonly Vec3[];
 }
 
 /** A decal quad: size, placement in the surface plane and its image rectangle. */
@@ -262,7 +264,8 @@ export class TileMesh {
     const x = v[0] - this.ox;
     const z = v[2] - this.oz;
     p.pos.push(x, v[1], z);
-    p.nrm.push(n[0], n[1], n[2]);
+    const sn = opts?.normals?.[k] ?? n;
+    p.nrm.push(sn[0], sn[1], sn[2]);
     const su = x * f.ux + v[1] * f.uy + z * f.uz;
     const sv = x * f.vx + v[1] * f.vy + z * f.vz;
     if (opts?.uv) {

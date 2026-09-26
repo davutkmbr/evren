@@ -29,8 +29,15 @@ id; areas without their own profile use the generic one.
 | `--no-compress` | off | format 1: writes plain float glbs instead of quantized, meshopt-compressed ones |
 | `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); manifest records stay |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
+| `--jobs N\|auto` | `auto` | tile worker threads ([Parallel and incremental compiles](#parallel-and-incremental-compiles)); `auto` = cores − 1, capped by memory and tile count; `1` compiles in the main thread |
+| `--cache strict\|local\|off` | `strict` | incremental compile: area stamp, per-step tile effects and assembled tiles; `local` keys tiles on nearby OSM features only |
+| `--force` | off | ignores the caches (still refills them) |
+| `--check` | off | compiles again serially without the cache into a temporary folder and compares every output file byte for byte (summary `check`; a difference fails the run) |
 
-The compiler runs the renderer-independent code of the OSM slice in Node (via `tsx`):
+The compiler runs the renderer-independent code of the OSM slice in Node. `npm run compile:world` starts
+`run.mjs`, which bundles `src/cli.ts` with esbuild (without `keepNames`, which tsx sets and which costs the hot
+closures of ground and façades ~25–35 %) and runs the bundle; `npx tsx tools/world-compiler/src/cli.ts` still works
+and gives the same bytes:
 
 - terrain: the flight world's geo build (`src/world/geo/build`);
 - street raster and `StreetSurface` (`src/world/osm/shared`): carriageways, sidewalks, kerbs, paths, ground cover;
@@ -126,8 +133,11 @@ Geometry rules:
     parts leave gaps, under buildings outside the tile rect, in courtyards and between two blocks stays, so ground and
     blocks cover the area without holes. Format 0 keeps the S0 rule (any OSM outline, courtyards included).
   - Tram platforms are not raised in format 0.
-- **Terrain and shore.** Heights come from the geo build (a 23 m grid) and are held at least at 0.95 m on OSM land.
-  The shoreline is the OSM coastline, not the geo coast grid, which misses the reclaimed Kadıköy quays by up to 90 m.
+- **Terrain and shore.** Heights are the flight game's OSM ground, input for input: the geo height and geo coast
+  windows (the quay raise follows the geo coast and levels reclaimed quays at 0.95 m) over a rect on the global 5 m
+  ground lattice (`groundRect`), so compiled tiles and the runtime OSM ground are one surface wherever both exist
+  (bridge decks join both). The shoreline (land and water, quay walls) is the OSM coastline, not the geo coast grid,
+  which misses the reclaimed Kadıköy quays by up to 90 m.
 
 ### Tile manifest (`tiles/<i>_<j>.json`)
 
@@ -188,6 +198,17 @@ them in the compiler:
    - A sample that crosses a kerbed road (its way runs more than 45° off the road axis) stays where it is and
      becomes a crossing. So does a sample at a `highway=crossing` node.
    - Samples at a shared OSM node become one vertex, so crossing ways join their sidewalks.
+   - A foot way that runs through a building for at most 16 m (a gate house or passage mapped without `tunnel` /
+     `covered`, e.g. Dolmabahçe's Hazine Kapısı into the palace grounds) links its vertices on both sides, but only
+     where the building opens for it (`network.passages`: `opened` / `linked`). The rule is shared with the runtime
+     OSM buildings (`src/world/osm/shared/passages.ts`): the way crosses both walls within 55° of square with room
+     for the opening on each wall, the building stands tall enough for a round arch (springing at 2.1-2.6 m, clear
+     width 2.4-4.5 m from the way's width tag, else 3.2 m, 0.8 m of wall over the crown), and no other building
+     stands right outside either portal. Both the plain blocks (`buildings.ts`) and the façade kit
+     (`facade/build.ts`) cut the arch into both portal walls (shop units, windows and a çıkma that would reach below
+     the crown give way), line the passage with side walls, a barrel vault and a cobbled floor
+     (`src/passages.ts`); the runtime buildings cut the same arch and leave the collider free under the vault.
+     Landmarks drawn as plain blocks (`--landmarks block`) get no passage.
 3. Some streets get no runtime lanes: kerbless asphalt streets, that is pedestrian and living streets (for example
    Bahariye south of Nail Bey Sk) and service roads. They get full-width lanes.
 4. Lane ends are linked to the nearest vertex of another lane within 8 m (5 m for crossings), off carriageways.
@@ -199,8 +220,12 @@ them in the compiler:
    Each synthesised crossing runs from the pavement to the kerb, across the road to the other kerb, and onto the
    pavement again.
 6. The fragments that remain are joined by the shortest clear links (Kruskal). Links within 12 m are tried first,
-   then links within 25 m. In each round, links that stay off carriageways go first. No link passes through a
+   then links within 25 m, then within 40 m (small village spots, where rows of houses stand between two lanes). In each round, links that stay off carriageways go first. No link passes through a
    building or water.
+
+The walk and lane graphs follow the same roads as the street raster: pieces of OSM bridge ways over land (a short road
+bridge over a stream the coast does not know, like the Göksu at Anadolu Hisarı) are walked and driven like the street
+they carry (`walkGraph.network.bridgeLanded`: ways and metres).
 
 The summary reports the result: `walkGraph.components`, `largestShare`, `isolated`, the crossings by source, and
 counts for each step. The run **fails** (exit code 1) when the largest component holds less than 90% of the vertices
@@ -245,32 +270,50 @@ Surfaces (`PlacementRules.surface`) follow what `street/ground.ts` draws:
 | rule | emitter | predicate | on failure |
 |---|---|---|---|
 | `crossing.span` | `street/common.ts` | a marked crossing runs from kerb to kerb, has no building or water 0.8 m past either end and is no more than 30 m long | an end inside the carriageway is extended to the kerb line, up to 6 m (`moved`). An end with no edge within 6 m (a traffic island, a junction) stays open (`flagged`). A crossing that fails the checks is `dropped`. Dropped kerbs go only where an end lies within 0.3 m of the kerb line |
-| `paint.zebraBar` | `street/markings.ts` | both long edges of the bar are paintable: carriageway 0.05 m inside the edge, 0.3 m clear of pedestrian paving | clipped outwards from the bar's middle (`shortened`); `dropped` when less than 1 m is left |
-| `paint.laneLine` | markings | every corner of the 0.3 m stripe is paintable, out of the gutter band, off parking ground, 1.25 m from tram tracks, and the carriageway that wins the texel runs the stripe's way (within 25°) | the 1.5 m segment is `dropped` |
+| `paint.zebraBar` | `street/markings.ts` | both long edges of the bar are paintable: carriageway 0.05 m inside the edge, 0.3 m clear of pedestrian paving; the emitted quad is the checked 0.5 m bar (the image's painted band only), so no transparent margin reaches over the kerb | clipped outwards from the bar's middle (`shortened`); `dropped` when less than 1 m is left |
+| `paint.zebraTrack` | markings | crossing paint stops at a tram track bed, as on the T1 crossings: neither long edge of a bar lies within `tramBedHalf` of a track centre (the sett inlay of standard-gauge tracks, else the rails plus 0.55 m; `tram-tracks.ts`, shared with the runtime zebras in `streets/decals.ts`) or in the flush track bed | the bar is cut into the pieces beside the bed (`shortened`); pieces under 1 m are left out, a bar with none is `dropped`. The runtime slice leaves out every 3.2 m stripe that touches the bed (stat `zebraTrack`) |
+| `paint.laneLine` | markings | both long edges and the centre line of the 0.3 m stripe (ends and every 0.5 m between) are paintable, out of the gutter band (plus 0.05 m, since a kerb may curve in between two samples), off parking ground, 2 m from tram track centres (`TRAM_PAINT_CLEAR`, the tram body plus 0.7 m; the runtime lane paint keeps the same clearance), off the flush track bed, and the carriageway that wins the texel runs the stripe's way (within 25°) | the 1.5 m segment is `dropped` |
 | `paint.edgeLine` | markings | as `paint.laneLine`. The offset comes from the kerb line found along the normal (gutter plus 0.3 m inside a kerb, 0.35 m inside a kerbless edge), not from the tagged width. Where no edge lies within the half width plus 4 m (a divided road's other half, a merge), the tagged offset stays | `moved` when the offset differs from the tagged one by more than 0.1 m; `dropped` when the stripe fails the checks or its offset jumps by more than 0.6 m within a segment |
 | `tactile.pad` | markings | blister pads 0.6 m deep follow the kerb line, found from each 0.25 m station along the dropped kerb. The whole depth of a station is `pavement`, behind the kerb stone, 0.2 m off façades and out of door approaches | stations that fail are left out (`shortened`); a pad with fewer than 3 stations is `dropped` |
 | `tactile.guide` | markings (arrival square) | guide pavers on `pavement` or `pedestrianLane` only | 0.6 m quads `dropped` |
 | `manhole` | markings | at least 1.45 m from a tram track centre line (and, as before, 0.6 m inside the carriageway, off junctions and zebras) | `dropped` |
-| `rail.corrected` | common.ts | tram track samples OSM draws on the pavement or too close to the kerb (within 5 m of the carriageway) | `moved` onto the carriageway (1 m samples) |
-| `track.bedM` | common.ts | metres of corrected track (whole area) that get a flush bed | (a length, counted as `kept`) |
+| `rail.corrected` | `street-field.ts` / `tram-tracks.ts` (shared with the runtime slice) | single kerb-lane tram tracks OSM draws on the pavement or too close to a real kerb (within 5 m of the carriageway, not on the seam of two carriageways that meet); median, double and own right-of-way tracks (the raster's track bed, `street-field.ts` `classifyTracks`) stay on the OSM line and the move tapers off next to them (0.12 m per m); the tracks are first clipped to the built ground (the foundation rect), since OSM ways run on past the fetched area | `moved` onto the carriageway, `kept` on the OSM line in the track bed (1 m samples) |
+| `track.bedM` | `street-field.ts` | metres of track (whole built area) that get a flush bed | (a length, counted as `kept`) |
 | `rail.track` | markings | both rails of each 1 m segment stand at carriageway level (on the carriageway or the bed) | `flagged` |
 | `crowd.track` | `street/crowd.ts` | nobody stands or walks on the track bed | candidate spots `dropped` (counted per rejected candidate) |
 | `prop.tree` | `street/furniture.ts` | off the carriageway, 0.6 m behind the kerb line, 0.8 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 2.5 m, else `dropped` |
 | `prop.bollard` | furniture | 0.2 m behind the kerb line, 0.3 m off façades, out of door approaches; on pedestrian paving only, never on a vehicular carriageway | moved up to 1.2 m, else `dropped` |
 | `prop.bollardMouth` | furniture | the bollard row across a pedestrian lane's mouth stands 0.8 m inside the lane's own paving, not where the OSM end node lies in the crossing road | `moved` inwards (up to 12 m along the lane); `dropped` when the lane never leaves the carriageway |
-| `prop.pole` | furniture, `street/lights.ts` | signals, stop poles, lamp masts and post lanterns: off every carriageway, 0.3 m behind the kerb line, 0.3 m off façades, out of door approaches | moved up to 1.5 m, else `dropped` (wall brackets are exempt) |
+| `prop.pole` | furniture, `street/lights.ts` | signals, stop poles, lamp masts and post lanterns: off every carriageway, 0.3 m (`POLE_KERB`) behind the kerb line, 0.3 m off façades, out of door approaches | moved up to 1.5 m, else `dropped` (wall brackets are exempt). Lamp records come from the runtime rules (`src/world/osm/streets/lamps.ts`), whose kerb masts keep the same `POLE_KERB` (`src/world/placement/stand.ts`) and step out up to 0.6 m at corners; the rule runs on lite tiles too |
+| `prop.pendant` | furniture | a span-wire pendant hangs over `pedestrianLane` or `pavement`, not over a vehicular carriageway where the lane opens onto a street | the span is `dropped` |
 | `prop.furniture` | furniture | benches, bins, cabinets, planters, lantern columns, parasols, café sets, chairs and A-frames: 0.45 m behind the kerb line, 0.2 m off façades, out of door approaches (pedestrian paving allowed) | moved up to 1.5 m, else `dropped` |
 | `railing` | `street/barriers.ts` | the ends and middle of each 2.4 m railing piece stand off the carriageway and gutter, out of buildings and door approaches | `dropped` |
+| `stand.water` | every `prop.*` rule | on land (the land field, piers included) at least 0.3 m from the water; the runtime placers share the rule (`src/world/placement/stand.ts`) | moved inland within the rule's reach, else `dropped` |
+| `stand.audit` | `TileContext.place` | every placed standing prop (one with a `prop.*` rule) is on land 0.3 m from the water with its base within 0.4 m of `groundY`: none in the water, none in the air | `flagged` (must stay 0) |
+| `ground.areaEdge` | `street/ground.ts` | the ground material of a mapped car park or green follows the OSM outline (signed-distance fields `R`, `G`), never the street raster's texel | m² of ground an outline decided: `kept` where the texel agrees, `moved` where the outline corrected it (the 1 m saw teeth the raster would draw) |
+| `ground.streetEdge` | `street/ground.ts` | the carriageway paving (setts / pavers, main-road asphalt, plain asphalt) changes along the border between the winning streets (`winMargin` fields `C`, `M`, cut like the kerb line), not per 1 m cell | m² of carriageway: `moved` where the nearest street at the piece's centre would have picked another paving |
 
-- **Track bed.** Where the rails of a corrected tram track leave the carriageway (a separate right-of-way, a
-  square, a pavement: either rail within 0.05 m of the carriageway edge or off it), `StreetContext.trackBed` marks a
-  bed 1.2 m past each rail (half the gauge plus 1.2 m either side of the centre line). The bed runs on 3 m into the
-  carriageway past each such stretch. `street/ground.ts` cuts the ground along the bed's edge. Inside the bed the
-  ground lies at carriageway level: asphalt where it cuts through raised pavement, the surrounding paving where the
-  ground around it is level. Where the pavement beside the bed is raised, a kerb stone and a kerb step line the bed.
-  The carriageway kerb stops at the bed, so no kerb step runs across the track. `groundY` follows the bed, so rails,
-  props and people stand on it. Every placement rule treats the bed as `track`: no props, tactile pads, railings or
-  people on it, and no lane paint within 1.25 m of the rails.
+- **Track bed.** The shared street raster (`src/world/osm/shared/street-field.ts` `stampTrackBeds`, so the runtime
+  OSM ground and the compiled tiles draw the same bed) classifies every OSM tram track sample off the carriageway:
+  on a median (a vehicular carriageway along it or another track on both sides within 14 m), on its own
+  right-of-way (a double track, a twin across a narrow carriageway, or 5 m or more off it) or a single kerb-lane
+  track. Median and right-of-way stretches get a bed 1.2 m past each rail as part of the carriageway distance field
+  (`StreetSurface.trackBedAt`): at carriageway level in `heightAt`, the runtime ground mesh and the compiled ground,
+  with the kerbs following its edge; raised strips under 2.5 m between a bed and a carriageway or another bed join it
+  (a steep cut, so a strip whose width crosses 2.5 m ends cleanly), raised tram platforms keep their edge 1.35 m off
+  the track centre. Then the kerb-lane move runs once on that field (`src/world/osm/shared/tram-tracks.ts`
+  `correctTramTracks`, rule `rail.corrected`); the corrected tracks travel with the raster (`StreetRaster.tracks`,
+  `StreetSurface.tramTracks`), so the runtime slice (rails, sett inlay, catenary, platforms, bridge joints) and the
+  compiler (`StreetContext.tram`) draw the same rails. Where the rails of a corrected track still leave the carriageway
+  (a separate right-of-way, a square, a pavement: either rail within 0.05 m of the carriageway edge or off it), the
+  raster adds the same bed around it (`stampOffRoadBeds`, 3 m on into the carriageway past each such stretch). Tram
+  platform ground within 1.35 m of a corrected track falls back to plain paving, and the runtime platform masonry is
+  clipped to the same clearance (`clipPlatformRing`, `platformClearance`). The carriageway kerb stops at the bed, so
+  no kerb step runs across the track. `groundY` follows the bed, so rails, props and people stand on it. Every
+  placement rule treats the bed as `track`: no props, tactile pads, railings or people on it, and no lane paint on it
+  or within 2 m of a track centre. Standard-gauge tracks (T1, T5) lie in a granite sett inlay 0.95 m past each rail
+  with a lighter edging course, in both layers (`tramInlayHalf`: markings `st_kup` / `st_kerb`, runtime
+  `streets/decals.ts`); the metre-gauge heritage lines run in the street's own surface.
 - A door approach is the area in front of a door, up to 1.3 m out and 0.2 m past each jamb.
 - Props placed from reference photos (the Kadıköy S1 fits, e.g. the c05 stop and the gate A plaza) are never moved.
   A violation is counted as `flagged`.
@@ -507,6 +550,27 @@ shop units leave out stretches of wall with a neighbour less than 1 m in front.
    server (`&eye=<m>` raises the camera for an oblique overview). Take screenshots with `node scripts/snap.mjs`.
 5. `npm run typecheck:world` and `npm run typecheck`; the glTF validator runs with every compile.
 
+### Landing spots
+
+The dragon lands at a few places across the city; only those get compiled street tiles, the automatic city covers
+the rest. `districts/landing-spots.json` lists them: `id`, Turkish `name`, the landing point `lat` / `lon`, `radius`
+(half side, m, of the square compiled around it), `profile` (the base profile, `PROFILES` in `districts/index.ts`:
+`generic`, `historic` for the historic peninsula and old Pera, `bosphorus` for the Bosphorus and island villages,
+`eminonu`) and `placeWords` (place words of the fictional shop names). A spot with `area` is covered by an
+`OSM_AREAS` entry (Eminönü, Kadıköy), whose own bbox and profile win.
+
+- `lib/areas.mjs` turns every other spot into a street area: the square around the point through the local
+  projection, data file `data/osm/<id>.json`. `fetch-osm.mjs --area <id>`, `compile:world -- --area <id>`, the
+  placement scan and the sandbox (`?area=<id>`) take the spot id like any area id; `src/world/osm/area.ts` is not
+  touched.
+- `useDistrict` derives the spot's profile from its base: id and label from the spot, the whole square as the
+  full-detail strip, the spot's place words first in the shop names, no hand-authored steps or per-building rows.
+
+```sh
+node scripts/data/fetch-osm.mjs --area ortakoy     # one spot at a time: five Overpass queries, 2.5 s apart
+npm run compile:world -- --area ortakoy            # -> public/world/ortakoy/ (gitignored)
+```
+
 ### Adding to the compiler (lanes)
 
 Everything the compiler runs is listed in `src/registry.ts`; a lane adds **one line** to a list there and keeps the
@@ -556,6 +620,54 @@ into it. Light helpers: `kelvinToRgb`, `spotCandela`, `pointCandela`, `lightRang
 
 The compile must keep working after every change: `npm run compile:world -- --area kadikoy`,
 `npm run typecheck:world`, `npx tsc --noEmit`.
+
+Rules for steps, so parallel and cached compiles give the serial bytes (`--check` tells):
+
+- A step's `tile()` changes only its own tile (`TileContext`: mesh, instances, lights, records, the tile manifest)
+  and area statistics (`shared` ground totals, placement log). It never depends on which tiles ran before it: a
+  random stream or a spacing grid shared across tiles makes the output depend on the tile order (worker threads
+  compile tiles in any order). Seed per tile instead (`street/crowd.ts` browsers: `rng(tileSeed(t.id))`).
+- A step that really uses up area state tile by tile (the soul layer's quotas) declares
+  `ordered: { state(a), restore(a, s) }`: threads hand that state from tile to tile in tile order.
+- Everything the step's code reads is found through its imports (value imports; `import type` does not count) and
+  the `shared.set(key)` producers of the `shared.get(key)` it reads, or through the global inputs of
+  `src/sources.ts`. A new run-time input file (read with `readFileSync`) goes into `INPUT_FILES` there.
+
+### Parallel and incremental compiles
+
+- **Worker threads** (`--jobs`, `src/parallel/pool.ts`). The main thread builds the heavy plain-data part of the
+  setup once and shares it (`src/parallel/share.ts`; large typed arrays in SharedArrayBuffers): the foundation
+  (terrain windows, the OSM coast grids, whose rows the waiting threads compute for it, and the street raster) and
+  the walk and lane graphs. Each thread builds the rest itself (solids, doors, passages, lamps, manifests, the
+  steps' `prepare`), deterministic and a few seconds. Tiles go out one at a time from a queue in tile order; a thread writes the tile's glbs and manifest and returns a
+  record (`TileOut`, `src/parallel/tile-out.ts`) that the main thread applies in tile order: refs, validation,
+  used materials and props (baked once in the main thread, in serial order; threads ask it for props),
+  statistics. Ordered steps pass their state along (`src/parallel/ordered.ts`). The web profile gzips on the libuv
+  thread pool.
+- **Area stamp** (`src/cache.ts`). The hash of every input (sources, data file, texture sources, options); when it
+  matches the last compile into the same `--out` and that output is intact, the run prints the stored summary
+  (`upToDate: true`) and stops.
+- **Stage cache** (`src/stage-cache.ts`, `src/sources.ts`). A tile compiles as a chain: its inputs, each step,
+  assembly. Each step's effect is stored per tile (the `TileMesh` calls, replayed exactly; the instances, lights,
+  records and manifest after it; its statistics). A step's key covers the chain so far, the **step's own source
+  closure** and, for ordered steps, the entry state; the chain continues with the effect's digest, not the code.
+  Editing a lane-paint rule therefore re-runs `streetMarkings` in every tile, replays ground and façades, re-runs
+  later steps only in the tiles whose markings changed, and re-assembles only those tiles.
+- **Tile cache** (`src/cache.ts` `TileCache`). Assembled tiles (glbs, manifest, record) under the final chain and
+  the assembly code (`mesh`, `gltf`, `compress`, `lod`, `validate`, `web`, `materials`, `textures`, `props`); what
+  assembly reads from the material and prop registries is compared per tile on restore.
+- Keys include the whole data file (`--cache strict`): area-wide plans (crowd seats, street furniture, shop names)
+  draw from one random stream, so an OSM edit far away can shift a tile. `--cache local` keys a tile on the OSM
+  features within 150 m and the tile as the setup made it (after an OSM refetch only the tiles around the edits
+  rebuild; check with `--check`).
+- **Faster glb writing** (`src/quantize.ts`): gltf-transform's `quantize()` and `meshopt()` (which quantizes once
+  more) with their per-vertex loops on typed arrays instead of accessor calls; same algorithm, same bytes (other
+  document shapes fall back to the library).
+- **Benchmarks on a scratch area**: `EVREN_SCRATCH_SPOTS=<file.json>` adds landing spots of the
+  `landing-spots.json` shape for the tools run with it (`fetch-osm.mjs`, the compiler), never for the game.
+- The caches live in `node_modules/.cache/evren-world/` (`stages/`, `tiles/`, `areas/`, `build/`), one entry per
+  tile and step for the last compile of each area and option set (older ones are pruned). Budget ~10 MB of stage
+  effects and ~4 MB of tiles per full-detail tile.
 
 ### Blender and other runtimes
 

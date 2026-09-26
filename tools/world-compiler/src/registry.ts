@@ -107,6 +107,12 @@ export interface CompileStep {
   formats?: FormatVersion[];
   /** Tiles the step runs on (default 'all'). */
   tiles?: 'all' | Detail;
+  /**
+   * The step's tile() uses up area state tile by tile (quotas): `state` reads that state, `restore` sets it. Worker
+   * threads pass it from tile to tile in tile order (parallel/ordered.ts). Steps without it must give the same tile
+   * output whatever tiles were compiled before (`--check` compares against a serial compile).
+   */
+  ordered?: { state(a: AreaContext): unknown; restore(a: AreaContext, state: unknown): void };
   prepare?(a: AreaContext): void | Promise<void>;
   tile?(t: TileContext): void | Promise<void>;
   finish?(a: AreaContext): void | Promise<void>;

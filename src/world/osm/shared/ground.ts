@@ -9,6 +9,16 @@ export const GROUND_STEP = 5;
 /** Height of the ground mesh above the terrain (covers terrain LOD z-fighting). */
 export const GROUND_LIFT = 0.12;
 
+/**
+ * `rect` grown outward to the global GROUND_STEP lattice. Every OSM ground (the runtime slice, the compiled street
+ * tiles) is built over such a rect, so their grid vertices and street raster texels coincide wherever both exist and
+ * the same inputs give the same heights (a grid anchored elsewhere triangulates the terrain differently).
+ */
+export function groundRect(rect: WorldBounds): WorldBounds {
+  const s = GROUND_STEP;
+  return { minX: Math.floor(rect.minX / s) * s, maxX: Math.ceil(rect.maxX / s) * s, minZ: Math.floor(rect.minZ / s) * s, maxZ: Math.ceil(rect.maxZ / s) * s };
+}
+
 export class GroundGrid {
   readonly x0: number;
   readonly z0: number;

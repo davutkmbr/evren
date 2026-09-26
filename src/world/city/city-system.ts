@@ -7,7 +7,7 @@ import type { EngineContext, GeoQuery, System } from '../../core/contracts';
 import { RenderLayers, UpdateOrder } from '../../core/contracts';
 import type { QualitySettings } from '../../core/quality';
 import { CityColliders } from './colliders';
-import { osmExclusionRect } from '../osm/area';
+import { onOsmExclusionChange, osmActiveExclusion } from '../osm/regions';
 import { GeoWindowCutter, buildInitMessage, buildOccupancy } from './geo-window';
 import { LampPool } from './lamps';
 import { CityMaterials } from './materials/building-material';
@@ -92,7 +92,9 @@ export class CitySystem implements System {
   private setup(ctx: EngineContext, geo: GeoQuery): void {
     const t0 = performance.now();
     this.masks = levelMasks(buildOccupancy(geo, BASE_CELL));
-    this.cutter = new GeoWindowCutter(geo, osmExclusionRect());
+    // OSM regions replace the procedural city while they are drawn: chunks and colliders over a region's rect are
+    // rebuilt whenever it enters or leaves the active list.
+    this.cutter = new GeoWindowCutter(geo, osmActiveExclusion());
     this.pool = new CityWorkerPool(workerCount());
     this.pool.init(buildInitMessage(geo));
 
@@ -111,15 +113,26 @@ export class CitySystem implements System {
       return ix >= 0 && iz >= 0 && ix < m.n && iz < m.n && m.data[iz * m.n + ix] === 1;
     };
     this.streamer = new CityStreamer(this.pool, this.cutter, this.materials, this.lamps, occupied, lodParams(q));
+    this.streamer.keepCpuGeometry = ctx.debug.params.get('keepGeometry') === '1';
     ctx.scene.add(this.streamer.group);
 
     this.colliders = new CityColliders(ctx.services.get('collision'), (ix, iz) => occupied(0, ix, iz));
     this.colliders.setRadius(2800);
 
-    this.unsubscribe = ctx.quality.onChange((s) => {
+    const offQuality = ctx.quality.onChange((s) => {
       this.densityScale = s.cityDensityScale;
       this.streamer?.setParams(lodParams(s));
     });
+    const offExclusion = onOsmExclusionChange((rect) => {
+      // Workers cache cell layouts: forget those first (posted ahead of the new requests).
+      this.pool?.broadcast({ type: 'forget', ...rect });
+      this.streamer?.refresh(rect);
+      this.colliders?.invalidate(rect);
+    });
+    this.unsubscribe = () => {
+      offQuality();
+      offExclusion();
+    };
 
     const api: CityDebugApi = {
       stats: () => ({

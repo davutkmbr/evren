@@ -5,7 +5,19 @@
  */
 import { createRng } from '../../core/math/noise';
 import { prefersReducedMotion } from '../dom';
-import { createStars, drawDragon, drawGull, paintSky, paintSkyline, type Light, type SkylineLayout } from './skyline-painter';
+import {
+  createStars,
+  designFrame,
+  drawDragon,
+  drawGull,
+  foregroundWaterY,
+  paintForeground,
+  paintSky,
+  paintSkyline,
+  SUN_DESIGN_X,
+  type Light,
+  type SkylineLayout,
+} from './skyline-painter';
 
 interface Glint {
   x: number;
@@ -77,7 +89,8 @@ export class SkylineBackdrop {
     const h = Math.round(cssH * this.dpr);
     this.canvas.width = w;
     this.canvas.height = h;
-    this.layout = { width: w, height: h, horizon: Math.round(h * 0.665), sunX: w * 0.615 };
+    this.layout = { width: w, height: h, horizon: Math.round(h * 0.665), sunX: 0 };
+    this.layout.sunX = designFrame(this.layout).x(SUN_DESIGN_X);
     this.stars = createStars(this.layout, Math.round(160 * (w / 1600)));
     this.windows = [];
     this.base = this.bake();
@@ -119,14 +132,16 @@ export class SkylineBackdrop {
     ctx.fillRect(0, horizon, w * 3, h - horizon);
     ctx.restore();
 
-    const rng = createRng(77);
-    const band = Math.max(2, Math.round(h * 0.004));
+    // Reflection: the city mirrored in one-pixel rows, each shifted by a smooth ripple that grows toward the viewer,
+    // fading with depth (no random jitter: that reads as noise, not water).
+    const rowH = Math.max(1, Math.round(this.dpr));
     ctx.save();
-    for (let y = 0; y < h - horizon; y += band) {
+    for (let y = 0; y < h - horizon; y += rowH) {
       const depth = y / (h - horizon);
-      const wobble = Math.sin(y * 0.09 + rng() * 2.5) * (1.5 + depth * 9) * this.dpr + (rng() - 0.5) * 2 * this.dpr;
-      ctx.globalAlpha = 0.5 * (1 - depth * 0.7);
-      ctx.drawImage(city, 0, horizon - y - band, w, band, wobble, horizon + y, w, band);
+      const amp = (0.6 + depth * 7) * this.dpr;
+      const wobble = Math.sin(y * 0.21 / this.dpr) * amp * 0.7 + Math.sin(y * 0.057 / this.dpr + 1.3) * amp * 0.5;
+      ctx.globalAlpha = 0.55 * Math.pow(1 - depth, 1.6);
+      ctx.drawImage(city, 0, horizon - y - rowH, w, rowH, wobble, horizon + y, w, rowH);
     }
     ctx.restore();
 
@@ -144,6 +159,24 @@ export class SkylineBackdrop {
 
     ctx.drawImage(city, 0, 0);
 
+    // Foreground (Kız Kulesi) with its own short, rippled reflection below its water line.
+    const fg = document.createElement('canvas');
+    fg.width = w;
+    fg.height = h;
+    const fgCtx = fg.getContext('2d')!;
+    paintForeground(fgCtx, this.layout, this.windows);
+    const waterY = Math.round(foregroundWaterY(this.layout));
+    const reach = Math.round(h * 0.09);
+    ctx.save();
+    for (let y = 0; y < reach; y += rowH) {
+      const depth = y / reach;
+      const wobble = Math.sin(y * 0.33 / this.dpr) * (0.6 + depth * 3) * this.dpr;
+      ctx.globalAlpha = 0.5 * (1 - depth);
+      ctx.drawImage(fg, 0, waterY - y - rowH, w, rowH, wobble, waterY + y, w, rowH);
+    }
+    ctx.restore();
+    ctx.drawImage(fg, 0, 0);
+
     const haze = ctx.createLinearGradient(0, horizon - h * 0.05, 0, horizon + h * 0.012);
     haze.addColorStop(0, 'rgba(230, 140, 110, 0)');
     haze.addColorStop(0.8, 'rgba(230, 140, 110, 0.07)');
@@ -151,7 +184,8 @@ export class SkylineBackdrop {
     ctx.fillStyle = haze;
     ctx.fillRect(0, horizon - h * 0.05, w, h * 0.062);
 
-    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.55, h * 0.3, w * 0.5, h * 0.55, w * 0.75);
+    const span = Math.max(w, h);
+    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.55, span * 0.25, w * 0.5, h * 0.55, span * 0.8);
     vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
     vignette.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
     ctx.fillStyle = vignette;
@@ -229,13 +263,14 @@ export class SkylineBackdrop {
       drawGull(ctx, gx, gy, w * 0.0045, 0.5 + 0.5 * Math.sin(t * 7 + i * 1.7));
     }
 
+    // The dragon crosses from right to left, gliding with raised wings and a few slow beats now and then.
     const cross = 46;
-    const phase = ((t + 14) % cross) / cross;
+    const phase = ((t + 30) % cross) / cross;
     const dx = w * (1.12 - phase * 1.3);
-    const dy = h * (0.395 + 0.025 * Math.sin(phase * Math.PI * 1.4)) + Math.sin(t * 0.9) * h * 0.004;
+    const dy = h * (0.385 + 0.025 * Math.sin(phase * Math.PI * 1.4)) + Math.sin(t * 0.9) * h * 0.004;
     const burst = Math.max(0, Math.sin(t * 0.45));
-    const flap = 0.25 + burst * Math.sin(t * 2.6) * 0.75;
-    ctx.fillStyle = 'rgba(11, 9, 17, 0.94)';
-    drawDragon(ctx, dx, dy, w * 0.027, flap);
+    const flap = 0.66 + burst * Math.sin(t * 2.4) * 0.34;
+    ctx.fillStyle = 'rgba(11, 9, 17, 0.95)';
+    drawDragon(ctx, dx, dy, Math.min(h * 0.055, w * 0.08), flap);
   }
 }

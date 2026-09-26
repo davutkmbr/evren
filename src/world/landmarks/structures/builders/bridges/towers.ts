@@ -261,8 +261,9 @@ export function buildATower(b: StructureBuild, frame: BridgeFrame, t: ATowerSpec
       b.columnCollider(frame.point(t.s, legAt(leg, y0).x, y0), frame.point(t.s, legAt(leg, y1).x, y1), l0.da / 2, l0.dt / 2, frame.yaw);
     }
   }
-  const head = frame.point(t.s, 0, (t.yMerge + t.yTop) / 2);
-  b.boxCollider(head.x, head.y, head.z, t.daTop / 2, (t.yTop - t.yMerge) / 2 + 6, headW / 2, frame.yaw);
+  // head: from 6 m below the leg merge (overlapping the leg colliders) up to the apex, not above it
+  const head = frame.point(t.s, 0, (t.yMerge - 6 + t.yTop) / 2);
+  b.boxCollider(head.x, head.y, head.z, t.daTop / 2, (t.yTop - t.yMerge + 6) / 2, headW / 2, frame.yaw);
   const beam = frame.point(t.s, 0, t.beamY);
   b.boxCollider(beam.x, beam.y, beam.z, t.daTop / 2, t.beamH / 2, legAt(legs[1], t.beamY).x, frame.yaw);
   const saddles = [-1, 1].map((side) => frame.point(t.s, side * headW * 0.22, t.yTop - 4));

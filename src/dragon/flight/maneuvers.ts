@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { FlightMode } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DEG, GRAVITY, MASS, TRICKS, WING } from './params';
+import { DEG, GRAVITY, MASS, PROXIMITY, TRICKS, WING } from './params';
 import type { ControlTargets } from './controller';
 import type { FlightSim } from './sim';
 import type { ManeuverId, PilotCommand } from './types';
@@ -188,6 +188,15 @@ export class Maneuvers {
     return c;
   }
 
+  /** Free height above the center of mass under the ceilings now and along the track ahead (Infinity: open sky). */
+  headroom(sim: FlightSim): number {
+    let ceiling = sim.ceilingY;
+    for (let i = 0; i < sim.aheadCeiling.length; i++) {
+      ceiling = Math.min(ceiling, sim.aheadCeiling[i]);
+    }
+    return ceiling - sim.body.position.y;
+  }
+
   /**
    * The urge ("dehh", V). Airborne it drives strong beats and a surge; hovering it flies out, landing it goes around.
    * Grounded and swimming take-offs are started by the locomotion. Returns false while cooling down.
@@ -259,23 +268,26 @@ export class Maneuvers {
 
     if (cmd.rollLeftPressed || cmd.rollRightPressed) {
       const dir = cmd.rollRightPressed ? 1 : -1;
-      if (cruising && V >= TRICKS.rollMinSpeed && clearance >= TRICKS.rollMinClearance && !cmd.brake) {
+      // The upper wingtip sweeps up to half a span above the body: no roll right under a bridge deck.
+      const room = this.headroom(sim) >= 0.5 * sim.wing.span + PROXIMITY.ceilingMargin;
+      if (cruising && V >= TRICKS.rollMinSpeed && clearance >= TRICKS.rollMinClearance && room && !cmd.brake) {
         this.startRoll(sim, dir);
         return;
       }
       if (cruising && !cmd.brake) {
-        this.hint(sim, V < TRICKS.rollMinSpeed ? 'Takla için hızlan' : 'Takla için yüksel');
+        this.hint(sim, V < TRICKS.rollMinSpeed ? 'Takla için hızlan' : room ? 'Takla için yüksel' : 'Takla için yer yok');
       }
     }
     if (cmd.loopPressed) {
-      const fit = !sim.tired && V >= TRICKS.loopMinSpeed && clearance >= TRICKS.loopMinClearance;
+      const room = this.headroom(sim) >= TRICKS.loopMinClearance;
+      const fit = !sim.tired && V >= TRICKS.loopMinSpeed && clearance >= TRICKS.loopMinClearance && room;
       const level = Math.abs(sim.gamma) < TRICKS.loopMaxEntryPath && Math.abs(sim.bank) < 50 * DEG;
       if (cruising && fit && level && !cmd.brake) {
         this.startLoop(sim);
         return;
       }
       if (cruising && !cmd.brake) {
-        const why = sim.tired ? 'Ejderha yorgun' : V < TRICKS.loopMinSpeed ? 'Looping için hızlan' : !level ? 'Looping için düz uç' : 'Looping için yüksel';
+        const why = sim.tired ? 'Ejderha yorgun' : V < TRICKS.loopMinSpeed ? 'Looping için hızlan' : !level ? 'Looping için düz uç' : !room ? 'Looping için yer yok' : 'Looping için yüksel';
         this.hint(sim, why);
       }
     }

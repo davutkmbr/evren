@@ -13,7 +13,7 @@ import { buildPiers, type PierLamp } from './piers/pier-builder';
 import { globalUniforms } from '../../core/uniforms';
 import { Flocks } from './birds/flocks';
 import { CarTraffic } from './traffic/car-traffic';
-import { osmExclusionRect } from '../osm/area';
+import { osmStaticExclusion } from '../osm/regions';
 
 const TRAFFIC_DENSITY: Record<string, number> = { low: 0.35, medium: 0.6, high: 1.0, ultra: 1.25 };
 import { buildStraitLanes, placeBerths, type Berth, type StraitLanes } from './vessels/routes';
@@ -95,7 +95,7 @@ export class LifeSystem implements System {
       this.traffic.dispose();
     }
     this.trafficPreset = s.preset;
-    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1, osmExclusionRect(), this.ctx?.services.tryGet('roadSurface') ?? null);
+    this.traffic = new CarTraffic(this.geo, TRAFFIC_DENSITY[s.preset] ?? 1, osmStaticExclusion(), this.ctx?.services.tryGet('roadSurface') ?? null);
     this.root.add(this.traffic.group);
   }
 

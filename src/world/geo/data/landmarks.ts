@@ -103,6 +103,8 @@ const MOSQUES: LandmarkData[] = [
   },
 ];
 
+// Bridge anchors: [main pier A, main pier B, deck end A, deck end B]. Bridges crossing the OSM slice are fitted to the
+// OSM ways they carry (node scripts/data/fit-bridge-anchors.mjs), so their decks line up with the streets they join.
 const STRUCTURES: LandmarkData[] = [
   {
     id: 'bogazici-koprusu', name: '15 Temmuz Şehitler Köprüsü', kind: 'bridge', builder: 'structures', lat: 41.04546, lon: 29.03433, headingDeg: 141.8, radius: 560, height: 165, year: 1973,
@@ -125,19 +127,19 @@ const STRUCTURES: LandmarkData[] = [
   {
     id: 'galata-koprusu', name: 'Galata Köprüsü', kind: 'bridge', builder: 'structures', lat: 41.02001, lon: 28.97329, headingDeg: 208.7, radius: 240, height: 14, year: 1994,
     footprint: 'none',
-    anchors: [41.02033, 28.97352, 41.01969, 28.97306, 41.02182, 28.9746, 41.0182, 28.97198],
+    anchors: [41.020371, 28.973427, 41.019729, 28.972962, 41.021859, 28.974503, 41.018217, 28.971868],
     info: "Karaköy ile Eminönü'nü bağlayan, alt katındaki lokantaları ve üstündeki oltacılarıyla ünlü açılır kapanır köprü; bugünkü köprü 1994'te tamamlanan beşincisidir.",
   },
   {
     id: 'ataturk-koprusu', name: 'Atatürk Köprüsü', kind: 'bridge', builder: 'structures', lat: 41.02423, lon: 28.96512, headingDeg: 238.3, radius: 260, height: 12, year: 1940,
     footprint: 'none',
-    anchors: [41.0244, 28.96547, 41.02406, 28.96476, 41.02543, 28.96769, 41.02303, 28.96254],
+    anchors: [41.024363, 28.965498, 41.024029, 28.96478, 41.025396, 28.967719, 41.022999, 28.962563],
     info: "Azapkapı ile Unkapanı arasında Haliç'i geçen köprü; 1940'ta hizmete girdi, halk arasında Unkapanı Köprüsü diye bilinir.",
   },
   {
     id: 'halic-metro-koprusu', name: 'Haliç Metro Köprüsü', kind: 'bridge', builder: 'structures', lat: 41.02242, lon: 28.96645, headingDeg: 216, radius: 250, height: 65, year: 2014,
     footprint: 'none',
-    anchors: [41.02308, 28.96708, 41.02177, 28.96582, 41.02424, 28.96819, 41.02061, 28.9647],
+    anchors: [41.023091, 28.967058, 41.021782, 28.965797, 41.024248, 28.968174, 41.020621, 28.964678],
     info: "M2 metro hattını Haliç üzerinden geçiren eğik askılı köprü; 65 m'lik iki pilonu ve ortasındaki Haliç istasyonuyla 2014'te açıldı.",
   },
   {

@@ -1,8 +1,11 @@
 import * as THREE from 'three';
-import { clamp, createRng, SimplexNoise, smoothstep } from '../../core/math/noise';
+import { clamp, createRng, smoothstep } from '../../core/math/noise';
 import type { EnvironmentState, GeoQuery } from '../../core/contracts';
+import { createLiftSample, sampleLift } from './lift';
 
 const DEFAULT_WIND = new THREE.Vector3(4, 0, 2);
+/** Afternoon sun used without an environment (tests, sandboxes). */
+const DEFAULT_SUN = new THREE.Vector3(-0.45, 0.72, 0.53).normalize();
 const _normal = new THREE.Vector3();
 
 export interface WindSample {
@@ -18,8 +21,9 @@ export interface WindSample {
 
 /**
  * Local wind model: environment wind with a boundary-layer profile, Ornstein-Uhlenbeck gusts
- * (intensity from wind speed, urban roughness, slopes and convection), daytime thermals over land
- * drifting with the wind, and orographic (ridge) lift on windward slopes.
+ * (intensity from wind speed, urban roughness, slopes and convection), and the vertical air motion of
+ * the lift field (./lift.ts): daytime thermals from sun-heated ground, released at summits and in
+ * drifting cells, and orographic (ridge) lift on windward slopes.
  */
 export class WindField implements WindSample {
   readonly velocity = new THREE.Vector3();
@@ -35,7 +39,6 @@ export class WindField implements WindSample {
   readonly mean = new THREE.Vector3();
 
   private readonly gust = new THREE.Vector3();
-  private readonly noise = new SimplexNoise(9127);
   private rng = createRng(4711);
   private spareGaussian = 0;
   private hasSpare = false;
@@ -43,7 +46,10 @@ export class WindField implements WindSample {
   private roughness = 0;
   private slope = 0;
   private ridge = 0;
-  private thermalCore = 0;
+  private thermal = 0;
+  private readonly lift = createLiftSample();
+  private readonly liftWind = new THREE.Vector3();
+  private readonly liftConditions = { sunDirection: DEFAULT_SUN, wind: this.liftWind, time: 0 };
 
   reseed(seed: number): void {
     this.rng = createRng(seed);
@@ -74,13 +80,15 @@ export class WindField implements WindSample {
     this.slowTimer -= h;
     if (this.slowTimer <= 0) {
       this.slowTimer = 0.05;
-      this.sampleTerrain(position, agl, overWater, time, geo);
+      this.liftWind.set(envWind.x, 0, envWind.z).multiplyScalar(this.baseEnabled ? 1 : 0);
+      this.liftConditions.sunDirection = env ? env.sunDirection : DEFAULT_SUN;
+      this.liftConditions.time = time;
+      this.sampleTerrain(position, agl, overWater, geo);
     }
 
+    // Convection drives the gust level (kept independent of the lift field's cells).
     const convective = this.thermalsEnabled ? sun * (overWater ? 0 : 1) * smoothstep(20, 150, agl) * (1 - smoothstep(1400, 2400, agl)) : 0;
-    const thermal = 3.2 * this.thermalCore * convective - (overWater && this.thermalsEnabled ? 0.25 * sun * smoothstep(20, 200, agl) : 0);
-    const ridgeLift = overWater ? 0 : this.ridge * Math.exp(-agl / 180) * 0.85;
-    this.updraft = thermal + ridgeLift;
+    this.updraft = (this.thermalsEnabled ? this.thermal : 0) + this.ridge;
 
     const sigma =
       0.18 +
@@ -112,31 +120,30 @@ export class WindField implements WindSample {
     return this;
   }
 
-  private sampleTerrain(position: THREE.Vector3, agl: number, overWater: boolean, time: number, geo: GeoQuery | undefined): void {
+  private sampleTerrain(position: THREE.Vector3, agl: number, overWater: boolean, geo: GeoQuery | undefined): void {
     const x = position.x;
     const z = position.z;
-    // Thermal cells drift downwind; cores are the peaks of a coarse noise field.
-    const n =
-      this.noise.noise2((x - this.mean.x * time * 0.8) / 850, (z - this.mean.z * time * 0.8) / 850) * 0.75 +
-      this.noise.noise2(x / 310 + 17.3, z / 310 - 4.1) * 0.25;
-    this.thermalCore = smoothstep(0.35, 0.8, n) - 0.12 * smoothstep(0.0, -0.6, n);
-
-    if (!geo || overWater) {
+    if (!geo) {
       this.roughness = 0;
       this.slope = 0;
       this.ridge = 0;
+      this.thermal = 0;
+      return;
+    }
+    sampleLift(geo, x, z, agl, this.liftConditions, this.lift);
+    this.thermal = this.lift.thermal;
+    this.ridge = this.lift.ridge;
+    if (overWater) {
+      this.roughness = 0;
+      this.slope = 0;
       return;
     }
     this.roughness = agl < 400 ? geo.densityAt(x, z) : 0;
     if (agl < 900) {
       geo.normalAt(x, z, _normal);
-      const ny = Math.max(_normal.y, 0.3);
-      this.slope = 1 - ny;
-      // Air following the surface: w = wind · ∇h = -(wind_h · n_h) / n_y
-      this.ridge = -(this.mean.x * _normal.x + this.mean.z * _normal.z) / ny;
+      this.slope = 1 - Math.max(_normal.y, 0.3);
     } else {
       this.slope = 0;
-      this.ridge = 0;
     }
   }
 

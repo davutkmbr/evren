@@ -134,6 +134,22 @@ export class CityColliders {
     }
   }
 
+  /** Drops the tiles overlapping `rect` (their boxes leave the collision world); update() requests them again. */
+  invalidate(rect: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+    for (const [key, tile] of this.tiles) {
+      const x0 = -WORLD_HALF + tile.ix * TILE;
+      const z0 = -WORLD_HALF + tile.iz * TILE;
+      if (x0 > rect.maxX || x0 + TILE < rect.minX || z0 > rect.maxZ || z0 + TILE < rect.minZ) {
+        continue;
+      }
+      if (tile.ids.length) {
+        this.removals.push(tile.ids);
+      }
+      tile.state = 'discard';
+      this.tiles.delete(key);
+    }
+  }
+
   /** Tiles still loading or being registered. */
   pending(): number {
     let n = 0;

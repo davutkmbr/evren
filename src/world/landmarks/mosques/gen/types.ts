@@ -63,7 +63,8 @@ export interface GeomData {
 }
 
 export type LocalCollider =
-  | { kind: 'box'; cx: number; cy: number; cz: number; hx: number; hy: number; hz: number; yaw: number }
+  /** `open`: an arcade drawn as columns under a roof (portico), not a solid wall; neighbourhood mosques skip it. */
+  | { kind: 'box'; cx: number; cy: number; cz: number; hx: number; hy: number; hz: number; yaw: number; open?: boolean }
   | { kind: 'cylinder'; x: number; y: number; z: number; r: number; h: number }
   | { kind: 'sphere'; x: number; y: number; z: number; r: number };
 

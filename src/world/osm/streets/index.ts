@@ -153,7 +153,7 @@ class StreetsLayer extends LayerBase {
 
   private upload(ctx: OsmContext, res: StreetsResult, materials: StreetMaterials, workerMs: number): void {
     const t1 = performance.now();
-    materials.setStreetMask(ctx.base.street, res.pool, ctx.rect);
+    materials.setStreetMask(ctx.base.street, res.pool, ctx.fade);
     // Flat streets barely show in the water's mirror image, but ~2 M triangles went into it every frame.
     if (res.meshes.ground?.index.length) {
       this.ground = new LodTiledMesh(this.group, 'osm-ground', res.meshes.ground, res.groundTiles, materials.ground, { distance: GROUND_FAR_DISTANCE });

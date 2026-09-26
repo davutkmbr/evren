@@ -116,7 +116,7 @@ export function buildKizKulesi(b: StructureBuild): void {
   const bc = W(6, 0, 0);
   b.boxCollider(bc.x, terraceY + 4.5, bc.z, 10, 4.5, 8, boxYaw);
   const tc = W(-1, 0, 0);
-  b.boxCollider(tc.x, 0.5, tc.z, 22, terraceY - 0.5 + 1, 11, boxYaw);
+  b.boxCollider(tc.x, 0, tc.z, 22, terraceY, 11, boxYaw); // sea floor side up to the terrace paving
 }
 
 function building(mb: MeshBuilder, W: (u: number, v: number, y: number) => THREE.Vector3, yaw: number, y0: number, lod: number): void {

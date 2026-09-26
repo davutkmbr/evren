@@ -1,9 +1,10 @@
 /**
  * Core 'roadSurface' service built from the road decks the structures worker generated (DeckData): the exact road
  * surface profile of every bridge deck, including its approach viaducts, as drawn (crest curve, side-span ramps,
- * raised walkways).
+ * raised walkways, the twist of landed ends into the street ground).
  */
 import type { RoadSurfaceService } from '../../../../core/contracts';
+import { jointOffset } from '../build/deck-joint';
 import type { DeckData } from '../types';
 
 /** A published deck: carriageway centre line with per-point surface heights, plus its traffic lanes. */
@@ -51,7 +52,7 @@ export class RoadSurface implements RoadSurfaceService {
       const points: PublishedDeck['points'] = [];
       for (let i = 0; i < d.heights.length; i++) {
         const s = d.s0 + i * d.step;
-        points.push({ x: d.ox + d.ax * s - d.az * c, y: d.heights[i], z: d.oz + d.az * s + d.ax * c });
+        points.push({ x: d.ox + d.ax * s - d.az * c, y: d.heights[i] + jointOffset(d.joints, s, c), z: d.oz + d.az * s + d.ax * c });
       }
       return {
         id: d.id,
@@ -76,7 +77,8 @@ export class RoadSurface implements RoadSurfaceService {
       if (Math.abs(l) > d.halfWidth) {
         continue;
       }
-      const f = (dx * d.ax + dz * d.az - d.s0) / d.step;
+      const s = dx * d.ax + dz * d.az;
+      const f = (s - d.s0) / d.step;
       const last = d.heights.length - 1;
       if (f < 0 || f > last) {
         continue;
@@ -84,12 +86,14 @@ export class RoadSurface implements RoadSurfaceService {
       const i = Math.min(Math.floor(f), last - 1);
       const t = f - i;
       let h = d.heights[i] + (d.heights[i + 1] - d.heights[i]) * t;
+      let level = 0;
       for (let k = 0; k < d.raised.length; k += 3) {
         if (l >= d.raised[k] && l <= d.raised[k + 1]) {
-          h += d.raised[k + 2];
+          level = d.raised[k + 2];
           break;
         }
       }
+      h += level + jointOffset(d.joints, s, l, level);
       if (best === null || h > best) {
         best = h;
       }

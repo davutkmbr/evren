@@ -11,6 +11,8 @@ export interface UiPrefs {
   volume?: number;
   quality?: QualityPreset;
   hudHidden?: boolean;
+  /** Last opened page of the settings panel. */
+  settingsPage?: string;
 }
 
 function read(key: string): string | null {
@@ -61,4 +63,38 @@ export function loadDiscovered(): Set<string> {
 
 export function saveDiscovered(ids: Set<string>): void {
   write(DISCOVERED_KEY, JSON.stringify([...ids]));
+}
+
+const MAP_LAYERS_KEY = 'ejderha.ui.map-layers.v1';
+
+/** Which marker layers the full map shows (all on by default). */
+export interface MapLayers {
+  known: boolean;
+  unknown: boolean;
+  perches: boolean;
+  races: boolean;
+}
+
+export function loadMapLayers(): MapLayers {
+  const layers: MapLayers = { known: true, unknown: true, perches: true, races: true };
+  const raw = read(MAP_LAYERS_KEY);
+  if (!raw) {
+    return layers;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    for (const key of Object.keys(layers) as Array<keyof MapLayers>) {
+      const value = parsed?.[key];
+      if (typeof value === 'boolean') {
+        layers[key] = value;
+      }
+    }
+  } catch {
+    /* corrupt value: defaults */
+  }
+  return layers;
+}
+
+export function saveMapLayers(layers: MapLayers): void {
+  write(MAP_LAYERS_KEY, JSON.stringify(layers));
 }

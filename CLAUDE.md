@@ -47,7 +47,9 @@ Already approved: the CC0 Poly Haven texture sets listed in `public/textures/LIC
 (ODbL, attribution shown in the UI), MetaHuman characters + Mixamo animations for humans, Epic's free MetaHuman wardrobe on Fab (private store), and — for the S1 realism pass (user approval 2026-09-24) — CC0
 textures, decals and HDRI skies from Poly Haven and ambientCG, each one recorded in `tools/assets/approved.json`, and the
 18 CC0 Freesound recordings for wind, wing flaps, thunder and rain plus 4 gull recordings (user approval 2026-09-24,
-`.docs/assets/candidates/sounds.md` and `gulls.md`).
+`.docs/assets/candidates/sounds.md` and `gulls.md`), and the CC0 OpenHistoricalMap trace of the Walls of Constantinople for sea-wall stretches OSM does
+not map (user approval 2026-09-26, `.docs/assets/candidates/sea-walls-data.md`), and the four CC0 city-wall sets Bricks102,
+castle_brick_broken_06, Rocks025 and LeafSet029 (user approval 2026-09-26, `.docs/assets/candidates/wall-scans.md`).
 
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy
