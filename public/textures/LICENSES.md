@@ -31,6 +31,21 @@ CC0 1.0 sets for the city-wall kit (`src/world/landmarks/walls`), approved 2026-
 | `wall_core/` | [Rocks 025](https://ambientcg.com/view?id=Rocks025) (ambientCG) | Lennart Demes | albedo, normal, rough | 1.9 m | CC0 1.0 |
 | `wall_ivy/` | [Leaf Set 029](https://ambientcg.com/view?id=LeafSet029) (ambientCG) | Lennart Demes | albedo, opacity (3 × 3 leaf atlas) | 0.25 m per atlas | CC0 1.0 |
 
+
+## Rider garment textures
+
+CC0 1.0 cloth, leather and mail scans for the rider's garments (`src/dragon/model/rider/human.ts`, sampled triplanar in
+object space), under the Poly Haven / ambientCG CC0 texture approval (CLAUDE.md; recorded in `tools/assets/approved.json`).
+1k JPG: albedo (`_diff`), OpenGL normal (`_nor`), roughness (`_rough`), ambient occlusion (`_ao`; mail: `_opacity`).
+
+| Files (`rider/`) | Source | Author | Real size | Used for | Licence |
+| --- | --- | --- | --- | --- | --- |
+| `velour_velvet_*` | [velour_velvet](https://polyhaven.com/a/velour_velvet) (Poly Haven) | colormass, Rico Cilliers | 0.28 m | dolama, cape | CC0 1.0 |
+| `rough_linen_*` | [rough_linen](https://polyhaven.com/a/rough_linen) (Poly Haven) | colormass, Rico Cilliers | 0.27 m | şalvar, shirt | CC0 1.0 |
+| `brown_leather_*` | [brown_leather](https://polyhaven.com/a/brown_leather) (Poly Haven) | Rob Tuytel | 0.4 m | boots, gloves, straps | CC0 1.0 |
+| `crepe_satin_*` | [crepe_satin](https://polyhaven.com/a/crepe_satin) (Poly Haven) | colormass, Rico Cilliers | 0.27 m | sash | CC0 1.0 |
+| `chainmail002_*` | [Chainmail 002](https://ambientcg.com/view?id=Chainmail002) (ambientCG) | Lennart Demes | 0.25 m (assumed) | mail | CC0 1.0 |
+
 <!-- GENERATED:street-assets (tools/world-compiler/src/street/licences.ts) -->
 
 ## Street layer textures and decals
