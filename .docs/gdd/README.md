@@ -108,7 +108,9 @@ place, altitude, time, date, weather; once per session or with a cooldown; playe
 (Ayarlar → Oyun → Anlar). Rights: no ripped media; official embeds only; stylised, original characters.
 Runtime built (`src/moments/system.ts`, pure logic in `runtime.ts`): one moment at a time, rare (a global gap), never
 taking control; subtitles in the lowerCenter zone fade with the glide. Playable today: the Orhan Veli poem (subtitle
-only; the coastal ambience lifts in place of its sound). The others wait for their characters, animations and sounds.
+only; the coastal ambience lifts in place of its sound) and the stork migration over the Bosphorus (15 Aug – 15 Oct,
+09–17 h, 150–1500 m ASL: a procedural kettle of up to 400 white storks rises ahead on a real thermal the dragon can
+join, then glides off south; sparse synthesised sounds). The others wait for their characters, animations and sounds.
 `?moment=<id>` jumps to a moment's start and plays it once.
 
 ### 5.6 Hotbar, abilities and items
