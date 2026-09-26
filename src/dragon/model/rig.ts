@@ -80,6 +80,7 @@ function makeSkinned(geometry: THREE.BufferGeometry, material: THREE.Material, s
 
 /** The procedural dragon + rider: skinned meshes sharing one skeleton, animated procedurally from DragonPose. */
 const _airflowWorld = new THREE.Vector3();
+const _dragonHead = new THREE.Vector3();
 
 export class DragonRigImpl implements DragonRig {
   readonly root = new THREE.Group();
@@ -299,6 +300,18 @@ export class DragonRigImpl implements DragonRig {
     this.riderUniforms.uAirflow.value.copy(o.airflow);
     if (this.human) {
       this.riderRetarget?.update();
+      // Face: laughs with the dragon, shouts with the roar, set jaw in a tuck, a soft smile while petting; meets the
+      // dragon's eyes when it looks back.
+      const pose = this.pose;
+      const lookBack = (pose.gazeRider ?? 0) > 0.3;
+      if (lookBack) {
+        this.skel.bone('head').getWorldPosition(_dragonHead);
+      }
+      this.human.face.update(
+        dt,
+        { laugh: pose.riderLaugh ?? 0, shout: pose.riderCheer ?? 0, effort: (pose.riderTuck ?? 0) * 0.8, smile: (pose.riderPet ?? 0) * 0.6 },
+        lookBack ? _dragonHead : null,
+      );
       _airflowWorld.copy(o.airflow).transformDirection(this.root.matrixWorld);
       this.human.wind.update(dt, o.airspeed, _airflowWorld);
     }
