@@ -37,7 +37,7 @@ import {
   worldUse,
   type SignatureEntry,
 } from '../../src/dragon/flight/flow/harmony';
-import { BURST, ChainBurst, burstProgress, isLink, linkDv } from '../../src/dragon/flight/flow/burst';
+import { BURST, ChainBurst, burstProgress, linkDv } from '../../src/dragon/flight/flow/burst';
 import { FLOW } from '../../src/dragon/flight/flow/params';
 import { FLOW_MOMENT_LABELS } from '../../src/dragon/flight/flow/flow';
 import { createSnapshot, createTerms, type MotionDescriptor } from '../../src/dragon/flight/flow/types';
@@ -522,17 +522,13 @@ function fuzz(): void {
   note('fuzz.linksPerMinuteP90', q(linksPerMin, 0.9));
   note('fuzz.bestChainP99', chainsP99);
   note('fuzz.burstMax', burstMax);
-  // Random gestures, half of them chained at the best timing, do link now and then, but they build little flow, so
-  // their links push at about half size (the flow factor); the chained race pilot earns ~30–35 m/s of bursts a minute
-  // at ~7 m/s a link (race-balance.ts).
+  // Random gestures, half of them chained at the best timing, do link: that is the rule (a different move inside the
+  // window). They still earn far less than a chaining racer (race-balance.ts: ~60 m/s of bursts a minute): a random
+  // move is often a repeat, often late and often unclean.
   const dvPerMin = runs.map((r) => r.burstDv);
-  const linkSum = runs.reduce((a, r) => a + r.links, 0);
-  const perLink = linkSum > 0 ? runs.reduce((a, r) => a + r.burstDv, 0) / linkSum : 0;
   note('fuzz.burstPerMinuteP50', q(dvPerMin, 0.5));
   note('fuzz.burstPerMinuteP90', q(dvPerMin, 0.9));
-  note('fuzz.burstPerLink', perLink);
-  check(q(dvPerMin, 0.9) <= 35, `(e) random gestures never out-push a chaining racer: ${f2(q(dvPerMin, 0.5))} / ${f2(q(dvPerMin, 0.9))} m/s of bursts per minute at p50 / p90`);
-  check(perLink < 5, `(e) their links are small: ${f2(perLink)} m/s a link on average (little flow: the flow factor halves them)`);
+  check(q(dvPerMin, 0.9) <= 40, `(e) random gestures push less than a chaining racer: ${f2(q(dvPerMin, 0.5))} / ${f2(q(dvPerMin, 0.9))} m/s of bursts per minute at p50 / p90`);
   const bigBurst = runs.filter((r) => r.burstDv > 20);
   const bigDominated = bigBurst.filter((r) => r.topMacroShare > 0.8).length;
   check(bigBurst.length === 0 || bigDominated / bigBurst.length < 0.1, `(e) in runs earning > 20 m/s of bursts, one macro brings > 80 % of the flow in ${bigDominated} of ${bigBurst.length}`);
@@ -550,20 +546,17 @@ function fuzz(): void {
 /* ------------------------------------------------------------------ */
 
 function bursts(): void {
-  console.log('\n5. Chain bursts (instant push per clean chain link)');
+  console.log('\n5. Chain bursts (a different move inside the window after a clean end links at once)');
   // Size by link: link 1 small, link 3 and on the full size, capped in m/s.
-  const at40 = [1, 2, 3, 4].map((n) => linkDv(n, 40, 0.9, 1));
+  const at40 = [1, 2, 3, 4].map((n) => linkDv(n, 40));
   check(
     at40[0] < at40[1] && at40[1] < at40[2] && at40[2] === at40[3] && Math.abs(at40[0] / 40 - BURST.fraction[0]) < 1e-9 && Math.abs(at40[2] / 40 - BURST.fraction[2]) < 1e-9,
     `size grows with the chain at 40 m/s: +${at40.map((v) => f2(v)).join(' / +')} m/s (+${at40.map((v) => Math.round((v / 40) * 100)).join(' / +')} %)`,
   );
-
-  check(linkDv(5, 70, 1, 1) === BURST.maxDv && linkDv(1, 10, 1, 1) === 0, `capped at +${BURST.maxDv} m/s (70 m/s, link 5), none below ${BURST.minSpeed} m/s`);
-  check(linkDv(1, 50, BURST.linkHarmony, 1) < linkDv(1, 50, 1, 1), 'a better handover pushes harder');
-  check(Math.abs(linkDv(3, 40, 1, 0) - BURST.flowFloor * linkDv(3, 40, 1, 1)) < 1e-9, `without flow a link pushes ${Math.round(BURST.flowFloor * 100)} % of its full size`);
+  check(linkDv(5, 70) === BURST.maxDv && linkDv(1, 10) === 0, `capped at +${BURST.maxDv} m/s (70 m/s, link 5), none below ${BURST.minSpeed} m/s`);
   // Envelope: smooth, sums to the total, never past the speed cap.
   const b = new ChainBurst();
-  b.link(0, 12, 'a');
+  b.link(0, 10, 'a');
   let sum = 0;
   let peak = 0;
   let steps = 0;
@@ -574,7 +567,7 @@ function bursts(): void {
     peak = Math.max(peak, dv / h);
     steps++;
   }
-  check(Math.abs(sum - 12) < 1e-6 && Math.abs(steps * h - BURST.time) < 2 * h && Math.abs(peak - (2 * 12) / BURST.time) < 0.2, `envelope: +12 m/s over ${f2(steps * h)} s, peak ${f2(peak)} m/s² (sin², twice the mean)`);
+  check(Math.abs(sum - 10) < 1e-6 && Math.abs(steps * h - BURST.time) < 2 * h && Math.abs(peak - (2 * 10) / BURST.time) < 0.2, `envelope: +10 m/s over ${f2(steps * h)} s, peak ${f2(peak)} m/s² (sin², twice the mean)`);
   check(burstProgress(0, 1) === 0 && burstProgress(1, 1) === 1 && burstProgress(0.5, 1) === 0.5, 'envelope progress 0 → ½ → 1');
   const capped = new ChainBurst();
   capped.link(0, 12, 'a');
@@ -583,21 +576,39 @@ function bursts(): void {
     v += capped.step(h, v);
   }
   check(v <= BURST.speedCap + 1e-9, `never pushes past ${BURST.speedCap} m/s (${f2(BURST.speedCap - 3)} → ${f2(v)})`);
-  // Variety: a kind among the chain's last two does not pay.
-  const k = new ChainBurst();
-  k.begin('dart', 0);
-  const fresh1 = k.fresh('power');
-  k.link(1, 5, 'power');
-  const repeatA = k.fresh('dart');
-  const repeatB = k.fresh('power');
-  const third = k.fresh('roll');
-  check(fresh1 && !repeatA && !repeatB && third, 'variety: dart → power links; dart or power again does not; a third kind does');
-  // Link test on the harmony terms: every threshold matters.
-  const good = { ...createTerms(), total: 0.8, chain: 1, novelty: 0.9, energy: 0.9 };
-  check(
-    isLink(good) && !isLink({ ...good, novelty: 0.2 }) && !isLink({ ...good, chain: 0.1 }) && !isLink({ ...good, total: 0.5 }) && !isLink({ ...good, energy: 0.3 }),
-    'link test: harmony, chain, novelty and energy each required',
-  );
+  // The rule, step by step (the state machine, landing links the way FlowSystem does).
+  const c = new ChainBurst();
+  const start = (kind: string, t: number): string => {
+    const r = c.start(kind, t);
+    if (r === 'link') {
+      c.link(t, 5, kind);
+    }
+    return r;
+  };
+  const r1 = start('dart', 0);
+  c.end('dart', true, 1);
+  const r2 = start('power', 1 + BURST.window * 0.8);
+  c.end('power', true, 4);
+  const r3 = start('power', 4.5);
+  c.end('power', true, 5);
+  const r4 = start('dart', 5.5);
+  c.end('dart', true, 6);
+  const r5 = start('roll', 6.5);
+  check(r1 === 'begin' && r2 === 'link' && r3 === 'repeat' && r4 === 'repeat' && r5 === 'link' && c.links === 2, `rule: dart ${r1}, power in the window ${r2}, power again ${r3}, dart (one of the last two) ${r4}, roll ${r5}`);
+  c.end('roll', true, 7);
+  c.tick(7 + BURST.window + 0.01);
+  const expired = c.links === 0 && c.broke && start('slip', 10) === 'begin';
+  c.end('slip', false, 11);
+  const unclean = start('dart', 11.2) === 'begin';
+  c.end('dart', true, 12);
+  const linked = start('power', 12.4) === 'link';
+  c.spoil();
+  const spoiled = c.links === 0 && !c.open(12.5 + BURST.window);
+  check(expired && unclean && linked && spoiled, 'the window running out, an unclean end and a contact or stall break the chain');
+  const o = new ChainBurst();
+  o.start('dart', 0);
+  const overlap = o.start('power', 0.4);
+  check(overlap === 'link', 'a different move started while one still runs links too');
   // Through the sim: a varied chain links and bursts, the same moves spaced out do not.
   const steps5 = [STEP.dart, STEP.power, STEP.slip, STEP.roll, STEP.power];
   const chained = flyChain({ alt: 400, speed: 36 }, steps5, (i) => (i === 0 ? 0 : 0.1));
