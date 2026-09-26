@@ -13,18 +13,35 @@
  * The browser waits in the machine-wide GPU queue (scripts/lib/gpu-slot.mjs) like snap.mjs. Requires the dev server
  * (port 5199) and compiled tiles (npm run compile:world -- --area kadikoy). Writes <out>/walk-test.json too.
  *
- * --dragon: collision walk instead (scripts/lib/collision-walk.mjs). The dragon walks Eminönü streets, the square, the
- * tram line and the quay in the full game; every blocking contact is logged with its collider, and colliders with no
- * rendered mesh at the contact are reported as phantoms (exit code 1 when any is found).
+ * --dragon: collision walk instead (scripts/lib/collision-walk.mjs, routes from scripts/lib/walk-routes.mjs). The dragon
+ * walks planned routes in the full game; every blocking contact is logged with its collider, colliders with no rendered
+ * mesh at the contact are phantoms, and every stuck spot is classified (phantom / narrow street / rendered obstacle /
+ * step / no contact). Routes are built from the area's own OSM data, so any district works without hand-picked points:
+ * seeded coverage-greedy walks over its street graph, chords across its squares and the coastline 10 m inland.
+ * Exit code 1 on any phantom (outside the per-area known list in walk-routes.mjs KNOWN) or page error.
  *
- *   node scripts/walk-test.mjs --dragon                          # all Eminönü routes
+ *   node scripts/walk-test.mjs --dragon                          # the Eminönü routes of commit 7c71997 (preset eminonu-streets)
+ *   node scripts/walk-test.mjs --dragon --area galata            # the area's default preset (auto, AREA_DEFAULTS)
+ *   node scripts/walk-test.mjs --dragon --area galata,kadikoy --street
+ *   node scripts/walk-test.mjs --dragon --bbox -4300,2900,-3900,3200 --routes 6 --length 2500 --seed 7
+ *   node scripts/walk-test.mjs --dragon --area eminonu --plan    # print the planned routes only (no browser)
  *   node scripts/walk-test.mjs --dragon --route square,quay --url "/?view=galata&street=1"
  *   node scripts/walk-test.mjs --dragon --legacy-boxes           # old oriented-box building colliders (comparison)
+ *
+ *   --area <ids>      OSM_AREAS ids (src/world/osm/area.ts), comma separated; routes from each area's data file
+ *   --bbox a,b,c,d    minX,minZ,maxX,maxZ in local metres instead (data from the area covering most of it)
+ *   --preset <name>   auto (default with --area/--bbox) or eminonu-streets (default without)
+ *   --routes <n>      street routes (auto); --length <m> total planned length; --seed <n> (same seed, same routes)
+ *   --budget <s>      wall-clock walking budget per area (default 1800); routes past it are listed as skipped
+ *   --route <ids>     only these route ids; --street adds ?street=1 (street layer); --url overrides the page URL
+ *   --probe "x,z[,r];..."  diagnostics: rendered front / back-face ray hits in 16 directions and the colliders there
+ *   --out <dir>       report folder (default .shots/collision-walk): collision-walk.json with one entry per area
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { runDragonWalk } from './lib/collision-walk.mjs';
+import { runDragonWalk, runProbe } from './lib/collision-walk.mjs';
+import { planRoutes, resolveArea } from './lib/walk-routes.mjs';
 import { launchGpuBrowser, releaseSlot } from './lib/gpu-slot.mjs';
 
 const args = process.argv.slice(2);
@@ -181,23 +198,77 @@ async function runRoute(browser, id) {
 
 async function dragonMain() {
   const out = opt('out', '.shots/collision-walk');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const num = (name) => (args.includes(`--${name}`) ? Number(opt(name)) : undefined);
+  const areaArg = opt('area', undefined);
+  const bbox = opt('bbox', undefined);
+  // Without --area / --bbox: the hand-picked Eminönü routes on the runtime slice (the original --dragon run).
+  const preset = opt('preset', areaArg || bbox ? undefined : 'eminonu-streets');
+  const targets = bbox ? [{ bbox }] : (areaArg ?? 'galata').split(',').map((a) => ({ area: a.trim() }));
+  const only = args.includes('--route') ? ROUTES : [];
+  const plans = targets.map((t) => {
+    const area = resolveArea(root, t);
+    const p = planRoutes(area, { preset, routes: num('routes'), lengthM: num('length'), seed: num('seed') });
+    const routes = p.routes.filter((r) => !only.length || only.includes(r.id));
+    log(`${area.id}: preset ${p.plan.preset}${p.plan.preset === 'auto' ? ` (seed ${p.plan.seed}, ${p.plan.routes} street routes, ${p.plan.lengthM} m)` : ''}: ${routes.length} routes, ${routes.reduce((a, r) => a + r.lengthM, 0)} m; street graph ${p.graph.lengthM} m${p.graph.coveragePct != null ? `, ${p.graph.coveragePct}% planned` : ''}`);
+    return { area, plan: p.plan, graph: p.graph, routes };
+  });
+  if (args.includes('--plan')) {
+    const report = plans.map((p) => ({ area: p.area.id, rect: p.area.rect, plan: p.plan, graph: p.graph, routes: p.routes.map((r) => ({ id: r.id, label: r.label, kind: r.kind, lengthM: r.lengthM, start: r.legs[0].slice(0, 2), legs: r.legs.length })) }));
+    console.log(JSON.stringify(report, null, 1));
+    return;
+  }
+  let url = opt('url', '/?view=galata&nohud=1');
+  if (args.includes('--street') && !/[?&]street=/.test(url)) url += `${url.includes('?') ? '&' : '?'}street=1`;
+  if (args.includes('--probe')) {
+    const points = opt('probe').split(';').map((p) => p.split(',').map(Number));
+    const browser = await launchGpuBrowser(chromium);
+    try {
+      const res = await runProbe(browser, { base: BASE, url, points, log });
+      mkdirSync(out, { recursive: true });
+      writeFileSync(`${out}/probe.json`, JSON.stringify(res, null, 1));
+      log(`probe report: ${out}/probe.json`);
+    } finally {
+      await browser.close();
+      releaseSlot();
+    }
+    return;
+  }
+  try {
+    const r = await fetch(BASE + '/');
+    if (!r.ok) throw new Error(String(r.status));
+  } catch {
+    console.error(`Dev server not reachable at ${BASE}`);
+    process.exit(2);
+  }
   log('waiting for a GPU slot...');
   const browser = await launchGpuBrowser(chromium);
-  let report;
+  const areas = [];
   try {
-    const only = args.includes('--route') ? ROUTES : [];
-    const res = await runDragonWalk(browser, { base: BASE, root: fileURLToPath(new URL('..', import.meta.url)), only, log, url: opt('url', undefined), legacyBoxes: args.includes('--legacy-boxes') });
-    report = { date: new Date().toISOString(), ...res };
+    for (const p of plans) {
+      const res = await runDragonWalk(browser, { base: BASE, area: p.area, routes: p.routes, graph: p.graph, log, url, legacyBoxes: args.includes('--legacy-boxes'), budgetS: num('budget') ?? 1800 });
+      areas.push({ ...res, plan: p.plan });
+    }
   } finally {
     await browser.close();
     releaseSlot();
   }
+  const report = {
+    date: new Date().toISOString(),
+    url,
+    phantoms: areas.reduce((a, r) => a + (r.phantoms ?? 0), 0),
+    errors: areas.reduce((a, r) => a + (r.errors?.length ?? 0), 0),
+    areas,
+  };
   mkdirSync(out, { recursive: true });
   writeFileSync(`${out}/collision-walk.json`, JSON.stringify(report, null, 1));
   log(`report: ${out}/collision-walk.json`);
+  for (const a of areas) {
+    log(`== ${a.area}: ${a.error ?? `${a.phantoms} phantom, ${a.unverified} unverified, ${a.known} known, ${a.colliders.length} blocking colliders; stuck ${JSON.stringify(a.stuckBy)}; walked ${a.coverage.walkedM}/${a.coverage.plannedM} m (${a.coverage.waypointsReachedPct}% waypoints); ${a.errors.length} page errors`}`);
+  }
   if (JSON_ONLY) console.log(JSON.stringify(report, null, 1));
   // Stuck spots against rendered walls (18 m dragon in a 4 m alley) are reported but do not fail the run.
-  if (report.error || report.phantoms > 0 || report.errors?.length) process.exitCode = 1;
+  if (areas.some((a) => a.error) || report.phantoms > 0 || report.errors > 0) process.exitCode = 1;
 }
 
 async function main() {
