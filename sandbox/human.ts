@@ -48,7 +48,7 @@ const VIEWS: Record<string, ViewDef> = {
   front: { pos: [0, 1.1, 4.2], target: [0, 0.9, 0] },
   back: { pos: [0, 1.3, -4.2], target: [0, 0.9, 0] },
   q: { pos: [3.0, 1.6, 3.0], target: [0, 0.9, 0] },
-  close: { pos: [1.2, 1.7, 1.6], target: [0, 1.5, 0] },
+  close: { pos: [0.35, 1.72, 0.85], target: [0, 1.66, 0] },
   feet: { pos: [1.6, 0.35, 0.6], target: [0, 0.15, 0] },
   top: { pos: [0.01, 5, 0], target: [0, 0, 0] },
 };
@@ -257,6 +257,16 @@ const bench: System = {
       model.mixer.update(fixedT !== undefined ? 0 : dt * rate);
     }
     model.root.updateMatrixWorld(true);
+    if (controller) {
+      // Effort when sprinting, taking off and landing hard; the eyes on the way ahead.
+      const sp = controller.speed;
+      const st = controller.state;
+      const effort = THREE.MathUtils.smoothstep(sp, 3.5, 5.2) * 0.55 + (st === 'takeoff' || st === 'land' ? 0.8 : 0);
+      const ahead = new THREE.Vector3(Math.sin(controller.yaw) * 6, 1.4, Math.cos(controller.yaw) * 6).add(holder.position);
+      model.face.update(dt, { effort, shout: st === 'takeoff' ? 0.3 : 0 }, ahead);
+    } else {
+      model.face.update(dt, { [params.get('expr') ?? 'none']: Number(params.get('exprw') ?? 1) });
+    }
     model.wind.captureRest();
     // Air past the body: the wind plus its own motion.
     const v = controller ? new THREE.Vector3(-controller.velocity.x, -(controller.vy ?? 0), -controller.velocity.y) : new THREE.Vector3();

@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
 import { WindBones } from './wind-bones';
+import { FaceLife } from './face';
 
 /** Where the hips joint sits on the saddle (rig space). */
 export const SEAT_HIPS = new THREE.Vector3(0, 1.2, -2.52);
@@ -22,6 +23,8 @@ export interface HumanRider {
   clips: Map<string, THREE.AnimationClip>;
   /** Skirt panels and sash ends in the wind. */
   wind: WindBones;
+  /** Blinks, gaze and expressions. */
+  face: FaceLife;
 }
 
 /**
@@ -64,7 +67,8 @@ export async function loadHumanModel(url: string): Promise<HumanRider> {
   }
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
-  const human = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones) };
+  const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife };
+  human.face = new FaceLife(human);
   applyGarmentMaterials(human);
   return human;
 }

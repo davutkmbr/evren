@@ -127,11 +127,19 @@ def preview(tag_prefix=""):
 
 
 
-# --- Bake the body / face targets and the asset masks into the meshes (runtime morphs come later); the rest pose stays
-# the neutral standing pose so the same skin works for riding, gliding, walking and running clips.
+# --- Bake the body / face targets and the asset masks into the meshes; the face units stay as shape keys (runtime
+# morphs: blink, brows, jaw, smile ...). The rest pose stays the neutral standing pose so the same skin works for
+# riding, gliding, walking and running clips.
+import face  # noqa: E402
+FACE_KEYS = face.load_units(basemesh, TargetService) if os.environ.get("RIDER_FACE", "1") == "1" else []
+print("FACE UNITS", len(FACE_KEYS))
 for o in bpy.data.objects:
     if o.type == "MESH":
         bpy.context.view_layer.objects.active = o
+        if o == basemesh:
+            face.bake_keeping(o, FACE_KEYS)
+            face.apply_masks(o)
+            continue
         if o.data.shape_keys:
             bpy.ops.object.shape_key_remove(all=True, apply_mix=True)
         for m in list(o.modifiers):
@@ -162,6 +170,14 @@ def key_clip(name):
             pb.keyframe_insert(rot, frame=f)
     return act
 
+
+# Face: the eyelashes and eyebrows follow the face keys; eye bones for gaze.
+_named = lambda *keys: [o for o in bpy.data.objects if o.type == "MESH" and any(k in o.name.lower() for k in keys)]
+if FACE_KEYS:
+    face.transfer_keys(basemesh, _named("eyelash", "eyebrow"), FACE_KEYS)
+for eyes in _named("high-poly", "eyes"):
+    print("EYE BONES", face.add_eye_bones(rig, eyes))
+    break
 
 # On-foot clips (idle, walk, run, stop, crouch, jump, glide): procedural, see anim.py.
 import anim  # noqa: E402
@@ -236,7 +252,7 @@ for o in [rig] + list(rig.children_recursive):
     o.select_set(True)
 os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True, export_skins=True, export_animations=True,
-                          export_animation_mode="ACTIONS", export_force_sampling=True, export_morph=False, export_apply=False,
+                          export_animation_mode="ACTIONS", export_force_sampling=True, export_morph=True, export_morph_normal=False, export_apply=False,
                           export_yup=True, export_image_format="JPEG", export_jpeg_quality=88,
                           export_vertex_color="NAME", export_vertex_color_name="ao")
 print("EXPORTED", OUT, os.path.getsize(OUT))
