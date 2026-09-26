@@ -34,7 +34,7 @@ import type { WorldBounds } from '../../src/core/contracts';
 import { latLonToLocal } from '../../src/core/geo-coords';
 import { type CityBakeIndex, decodeBuildings, LandClass } from '../../src/world/city/osm/format';
 import { buildLandmarkDefs } from '../../src/world/geo/prepare';
-import { buildBuildings, collectSolids, planSolid } from '../../src/world/osm/buildings/build';
+import { buildBuildings, collectSolids, planSolid, solidGround } from '../../src/world/osm/buildings/build';
 import { findInfill } from '../../src/world/osm/buildings/infill';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { CANOPY_KINDS, ringCentroid } from '../../src/world/osm/buildings/selection';
@@ -267,7 +267,7 @@ function flightBuild(r: OsmRegionDef): FlightBuild {
   const out = buildBuildings({ buildings, pois: new Float32Array(), claims: layerClaims, extra: infill.parcels }, surface, base.rect);
   const heights: FlightBuild['heights'] = [];
   for (const sol of collectSolids({ buildings, claims: layerClaims, extra: infill.parcels }, base.rect)) {
-    const { plan, wallH } = planSolid(sol);
+    const { plan, wallH } = planSolid(sol, layerClaims.settings, solidGround(sol.ring, (x, z) => surface.baseAt(x, z)));
     const n = sol.ring.length / 2;
     let cx = 0;
     let cz = 0;

@@ -16,6 +16,7 @@
 import type { GeoQuery, LandmarkDef } from '../../core/contracts';
 import { SITE_BUILDERS } from './heritage/build/registry';
 import type { LandmarkClaims } from './claim-shapes';
+import { settingSites } from './monument-setting';
 
 export { LINE_STRIDE, onLineBody, ringTouchesLineBody, type LandmarkClaims } from './claim-shapes';
 
@@ -66,6 +67,6 @@ export function landmarkClaims(geo: Pick<GeoQuery, 'landmarks' | 'smallMosqueSit
   for (const m of geo.smallMosqueSites) {
     pads.push(m.x, m.z, m.radius);
   }
-  return { pads: new Float32Array(pads), lines: new Float32Array(lines) };
+  return { pads: new Float32Array(pads), lines: new Float32Array(lines), settings: settingSites(geo.landmarks, isModelled) };
 }
 

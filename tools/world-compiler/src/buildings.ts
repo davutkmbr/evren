@@ -13,7 +13,8 @@ import type { BuildingRec, DoorRec, XYZ } from './format';
 import type { GroundHeights } from './ground';
 import type { TileMesh, Vec3 } from './mesh';
 import type { OsmStreetPoint } from './osm-street';
-import { district } from './district';
+import { district, settingSites } from './district';
+import { settingTop } from '../../../src/world/landmarks/monument-setting';
 import { emitLining, emitPiece, portalsOn, spandrels, type SolidPassage } from './passages';
 import { entranceSize, INFERRED_DOOR, isEntrance, isStorefront } from './pois';
 
@@ -112,6 +113,12 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
       heightSource = 'levels';
     } else {
       h = b.kind === 'roof' ? 4 : defaultLevels(b, area) * LEVEL_HEIGHT;
+      // Historic mosque settings (landmarks/monument-setting.ts): untagged buildings stay low around the monument.
+      const sites = settingSites();
+      const top = settingTop(sites, cx, cz, groundY, (k) => heights.at(sites![k], sites![k + 1]));
+      if (b.kind !== 'roof') {
+        h = Math.min(h, top - groundY);
+      }
     }
     let minH = b.minHeight ?? (b.minLevel ? b.minLevel * LEVEL_HEIGHT : 0);
     if (b.kind === 'roof' && !minH) {
