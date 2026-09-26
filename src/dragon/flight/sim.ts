@@ -112,6 +112,20 @@ export class FlightSim {
   leapCharge = 0;
   /** Seconds into the take-off run on the water (Space / L while swimming; 0 = none). */
   runTakeoff = 0;
+  /**
+   * Length (s) of the current water take-off run: SWIM_POSE.runTime in calm water, longer in rough seas (phase 21
+   * stage 6, SWIM_SEA); set when the run starts. The leap can come earlier from a wave crest.
+   */
+  runDuration = 0;
+  /**
+   * Swimming in waves (phase 21 stage 6): the body's rocking about the wave-slope plane as a damped oscillator (pitch,
+   * roll in rad and their rates), and the local significant wave height it swims in (m).
+   */
+  seaPitch = 0;
+  seaRoll = 0;
+  seaPitchRate = 0;
+  seaRollRate = 0;
+  seaHs = 0;
   groundSpeed = 0;
   groundYaw = 0;
   groundYawRate = 0;
@@ -255,6 +269,12 @@ export class FlightSim {
     this.dive.resetLook();
     this.leapCharge = 0;
     this.runTakeoff = 0;
+    this.runDuration = 0;
+    this.seaPitch = 0;
+    this.seaRoll = 0;
+    this.seaPitchRate = 0;
+    this.seaRollRate = 0;
+    this.seaHs = 0;
     this.moves.reset();
     this.perch.reset();
     this.aheadTimer = 0;
