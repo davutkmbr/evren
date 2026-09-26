@@ -108,13 +108,16 @@ export class UiSystem implements System {
         ctx.services.tryGet('env')?.setTimeOfDay(preset.time);
       }
       this.teleport({ x: preset.x, y: preset.y, z: preset.z, headingDeg: preset.headingDeg, pitchDeg: preset.pitchDeg, label: preset.label });
-    });
+    }, () => this.openModal('map'));
     this.pauseMenu = new PauseMenu({
-      panels: { settings: this.settings.root, teleport: teleportPanel.root, controls: el('div', 'menu-controls', [buildControlsList()]) },
+      panels: { settings: this.settings.root, teleport: teleportPanel.root, controls: el('div', 'menu-controls', [el('p', 'menu-lede', 'Oyun sırasında H tuşuyla da bu listeyi açabilirsin.'), buildControlsList()]) },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
           this.settings.refresh();
+        } else if (tab === 'teleport') {
+          teleportPanel.setPerches(ctx.services.tryGet('perches')?.points);
+          teleportPanel.reset();
         }
       },
       onClick: () => this.click(),
