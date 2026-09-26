@@ -15,7 +15,8 @@
  * - tourism=artwork / historic=memorial: a statue on its plinth; tourism=viewpoint: a coin telescope.
  * - landuse=cemetery: rows of Ottoman headstones along the area's axis; amenity=marketplace: rows of stalls.
  * - small street kit: fire hydrants, recycling containers, bicycle racks, outdoor fitness stations, hedges, metro
- *   entrances (railway=subway_entrance) and taxi stands (amenity=taxi).
+ *   entrances (railway=subway_entrance), taxi stands (amenity=taxi), GSM masts (man_made=mast) and lattice towers
+ *   (man_made=tower).
  * - untagged lots (cover.ts LotStyle): shrubs on garden lots, stones and weedy scrub on vacant lots (the verges and
  *   leftover land along the big roads are mostly these).
  */
@@ -592,6 +593,9 @@ export function placeFeatures(pl: Placer, data: Pick<OsmData, 'points' | 'areas'
   placeAt(pl, data, ['leisure=fitness_station'], 'fitness', 6, 2, 3);
   placeAt(pl, data, ['railway=subway_entrance'], 'metroEntrance', 4, 1.5, 4);
   placeAt(pl, data, ['amenity=taxi'], 'taxiStand', 6, 1, 3);
+  // Masts and towers mapped on the ground (rooftop masts sit inside a building footprint: the stand rule skips them).
+  placeAt(pl, data, ['man_made=mast'], 'gsmMast', 3, 2, 3);
+  placeAt(pl, data, ['man_made=tower'], 'latticeTower', 3, 3, 4);
   placeMarkets(pl, data);
   placeFronts(pl, data.points);
   placeAtms(pl, data.points);
