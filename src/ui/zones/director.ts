@@ -25,6 +25,8 @@ export const HUD_PRIORITY = {
   maneuver: 50,
   /** A moment's subtitle line (src/moments): yields to maneuver captions, outranks flight and start hints. */
   momentLine: 45,
+  /** Perching (phase 03): the "[L] Kon" prompt, the approach and viewing-mode hint lines. */
+  perch: 45,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,
   /** Start-of-game key hints and the compass landmark label. */

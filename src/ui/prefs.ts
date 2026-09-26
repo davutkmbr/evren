@@ -65,6 +65,26 @@ export function saveDiscovered(ids: Set<string>): void {
   write(DISCOVERED_KEY, JSON.stringify([...ids]));
 }
 
+const PERCHES_KEY = 'ejderha.ui.perches.v1';
+
+/** Viewpoints the dragon has perched on (phase 03: the first perch on each is its discovery). */
+export function loadVisitedPerches(): Set<string> {
+  const raw = read(PERCHES_KEY);
+  if (!raw) {
+    return new Set();
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveVisitedPerches(ids: Set<string>): void {
+  write(PERCHES_KEY, JSON.stringify([...ids]));
+}
+
 const MAP_LAYERS_KEY = 'ejderha.ui.map-layers.v1';
 
 /** Which marker layers the full map shows (all on by default). */
