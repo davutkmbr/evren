@@ -330,6 +330,7 @@ async function cachedRecordingOk(item, dest) {
   if (!item.sha256) {
     item.file.sha256 = sha;
     item.file.bytes = statSync(dest).size;
+    delete item.file.note; // "sha256 pending: …"
     shaFilled.push(`${item.path} ${sha}`);
     return true;
   }
