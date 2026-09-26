@@ -23,6 +23,8 @@ export const HUD_PRIORITY = {
   discovery: 70,
   areaTitle: 60,
   maneuver: 50,
+  /** A moment's subtitle line (src/moments): yields to maneuver captions, outranks flight and start hints. */
+  momentLine: 45,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,
   /** Start-of-game key hints and the compass landmark label. */
