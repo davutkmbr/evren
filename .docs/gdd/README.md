@@ -107,7 +107,8 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 
 | Group | Keys |
 |---|---|
-| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off |
+| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
+| On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off, V galloping take-off; in a run-out Ctrl/X skid to a stop, Space touch-and-go |
 | Speed and tricks | V urge, Shift fold wings (dive), A/D ×2 roll, S ×2 loop |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up |
 | Camera and world | right mouse look, C camera, O photo mode, [ ] time of day, N weather |

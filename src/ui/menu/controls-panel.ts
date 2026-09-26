@@ -6,6 +6,7 @@ import { el } from '../dom';
 const GROUPS: ReadonlyArray<{ id: ControlGroup; title: string }> = [
   { id: 'flight', title: 'Uçuş' },
   { id: 'hover', title: 'Havada asılı kalma' },
+  { id: 'ground', title: 'Yerde' },
   { id: 'tricks', title: 'Hız ve figürler' },
   { id: 'dragon', title: 'Ejderha ve binici' },
   { id: 'camera', title: 'Kamera ve dünya' },
