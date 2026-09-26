@@ -24,6 +24,9 @@
  * - rise (u8, dm): roof rise; roof (u8, RoofClass); arch (u8, buildings/archetypes.ts Arch); floors (u8);
  *   floorH (u8, m x 50); flags (u8, FLAG); tint, roofTint (u16, sRGB 565).
  * - id (i32): OSM id minus the previous record's (parts carry their own id; infill parcels 2e9 + n).
+ * Street lights (the flight layer's own placement, osm/streets/lamps.ts buildLamps, so the far city lights the same
+ * streets as the region does), sorted by 500 m tile (lampTiles): lampXZ (i16 pairs, XY_UNIT m from the block centre),
+ * lampY (u16, (height + LAMP_Y0) in dm), lampCol (u8 x 4: sRGB colour, city lamp type 1 street / 2 road).
  * decodeBuildings() undoes all of it.
  */
 
@@ -42,7 +45,7 @@ export const MASK_SIZE = (BAKE_HALF * 2) / MASK_CELL;
 const MAGIC = 0x3142434f; // 'OCB1'
 
 /** 16-bit blobs stored as byte planes. */
-export const SHUFFLED = ['xy', 'wallH', 'minH', 'tint', 'roofTint'] as const;
+export const SHUFFLED = ['xy', 'wallH', 'minH', 'tint', 'roofTint', 'lampXZ', 'lampY'] as const;
 
 export const RoofClass = { Flat: 0, Hipped: 1, Gabled: 2, Pyramidal: 3, Skillion: 4, Dome: 5, Domes: 6 } as const;
 export type RoofClass = (typeof RoofClass)[keyof typeof RoofClass];
@@ -75,7 +78,7 @@ export interface BakeTile {
   count: number;
 }
 
-/** Header of a block file. Blobs: rings, nv, xy, wallH, minH, rise, roof, arch, floors, floorH, flags, tint, roofTint, id. */
+/** Header of a block file. Blobs: rings, nv, xy, wallH, minH, rise, roof, arch, floors, floorH, flags, tint, roofTint, id, lampXZ, lampY, lampCol. */
 export interface BuildingFileHeader {
   format: number;
   block: [number, number];
@@ -85,8 +88,14 @@ export interface BuildingFileHeader {
   vertices: number;
   /** Level 0 (500 m) tiles, in record order. */
   tiles: BakeTile[];
+  /** Street lights per level 0 tile, in lamp order. */
+  lampTiles: BakeTile[];
+  lamps: number;
   blobs: Record<string, BlobRef>;
 }
+
+/** Offset (m) of the stored lamp heights (lampY). */
+export const LAMP_Y0 = 50;
 
 /** A decoded block file. */
 export interface DecodedBuildings {
@@ -110,6 +119,10 @@ export interface DecodedBuildings {
   tint: Uint16Array;
   roofTint: Uint16Array;
   id: Float64Array;
+  /** Street lights: world x, y, z per lamp. */
+  lampPos: Float32Array;
+  /** sRGB colour and city lamp type per lamp (city/lamps.ts). */
+  lampCol: Uint8Array;
 }
 
 /** Header of land.bin.gz. Blobs: cls (u8 per polygon), rings (u8 ring count per polygon), nv (u16 per ring), org (f32 x, z per polygon), xy (i16 pairs, LAND_UNIT m). */
@@ -299,8 +312,18 @@ export function decodeBuildings(bytes: Uint8Array): DecodedBuildings {
     prev += idDelta[k];
     id[k] = prev;
   }
+  const lampXZ = unshuffle16(arrays.lampXZ as Uint8Array, Int16Array);
+  const lampY = u16('lampY');
+  const lampPos = new Float32Array(header.lamps * 3);
+  for (let i = 0; i < header.lamps; i++) {
+    lampPos[i * 3] = header.origin[0] + lampXZ[i * 2] * XY_UNIT;
+    lampPos[i * 3 + 1] = lampY[i] / 10 - LAMP_Y0;
+    lampPos[i * 3 + 2] = header.origin[1] + lampXZ[i * 2 + 1] * XY_UNIT;
+  }
   return {
     header,
+    lampPos,
+    lampCol: arrays.lampCol as Uint8Array,
     ringStart,
     nv,
     start,

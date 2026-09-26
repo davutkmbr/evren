@@ -14,7 +14,7 @@ import type { EngineContext, GeoQuery, StreetGroundService, System } from '../..
 import { UpdateOrder } from '../../core/contracts';
 import type { QualityPreset } from '../../core/quality';
 import { loadOsmData, type OsmData } from './data';
-import { osmRegions, setOsmRegionActive, type OsmRegionDef } from './regions';
+import { notifyOsmTreesChange, osmRegions, setOsmRegionActive, type OsmRegionDef } from './regions';
 import { acquireOsmFade, OSM_FADE_SECONDS, releaseOsmFade, setOsmFade, tagOsmFade } from './fade';
 import { buildWorkerBase } from './shared/foundation';
 import { clipWaysToLand } from './shared/land';
@@ -79,6 +79,7 @@ class OsmRegion {
   active = false;
   /** Handover (fade.ts): slot while fading, start time and direction of the running fade. */
   private fadeSlot: number | null = null;
+  private casting = true;
   private fadeFrom: number | null = null;
   private fadeOut = false;
   /** Faded out: ready to be disposed. */
@@ -113,9 +114,33 @@ class OsmRegion {
     }
     this.fadeSlot ??= acquireOsmFade(this.def.rect);
     tagOsmFade(this.group);
-    this.fadeFrom = t0;
     this.group.visible = true;
+    if (this.fadeSlot === null) {
+      // No slot free: the region pops in, as before the handover existed.
+      notifyOsmTreesChange(this.def.rect);
+      return;
+    }
+    this.fadeFrom = t0;
     this.stepFade();
+  }
+
+  /** Turns the region's shadow casters off or back to what they were built with. */
+  private setCasting(on: boolean): void {
+    if (on === this.casting) {
+      return;
+    }
+    this.casting = on;
+    this.group.traverse((o) => {
+      if (on) {
+        if (o.userData.osmCastShadow !== undefined) {
+          o.castShadow = o.userData.osmCastShadow as boolean;
+          delete o.userData.osmCastShadow;
+        }
+      } else if (o.castShadow) {
+        o.userData.osmCastShadow = true;
+        o.castShadow = false;
+      }
+    });
   }
 
   /** Keeps the region fully drawn on a slot until beginFadeOut (called when it stops being active). */
@@ -130,12 +155,15 @@ class OsmRegion {
   /** Starts fading out from `t0`; the region is `gone` when done. */
   beginFadeOut(t0: number): void {
     if (this.fadeSlot === null || !this.group.visible) {
+      notifyOsmTreesChange(this.def.rect);
       this.gone = true;
       return;
     }
     tagOsmFade(this.group);
     this.fadeOut = true;
     this.fadeFrom = t0;
+    // The procedural trees come back in the pixels the region gives up (OSM_FADE_OUT).
+    notifyOsmTreesChange(this.def.rect);
     this.stepFade();
   }
 
@@ -147,16 +175,18 @@ class OsmRegion {
     if (this.fadeSlot !== null) {
       setOsmFade(this.fadeSlot, this.fadeOut ? 1 - f : f, this.fadeOut);
     }
+    // The shadow switches at the middle of the dither, like the city chunks it replaces (city/streamer.ts).
+    this.setCasting(this.fadeOut ? f < 0.5 : f >= 0.5);
     if (f < 1) {
       return;
     }
     this.fadeFrom = null;
     if (this.fadeOut) {
       this.gone = true;
-    } else if (this.fadeSlot !== null) {
-      // Fully drawn: the slot is free for the next handover (no slot, no dither).
-      releaseOsmFade(this.fadeSlot);
-      this.fadeSlot = null;
+    } else {
+      // Fully drawn. The slot stays at 1 while the region is loaded: the procedural trees under it stay hidden
+      // (OSM_FADE_OUT) until the vegetation has rebuilt its tiles without them, and it is ready for the fade out.
+      notifyOsmTreesChange(this.def.rect);
     }
   }
 
@@ -514,6 +544,7 @@ class OsmSystem implements System {
     if (r.active) {
       r.active = false;
       void setOsmRegionActive(r.def, false);
+      notifyOsmTreesChange(r.def.rect);
     }
     r.dispose();
   }

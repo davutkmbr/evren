@@ -142,10 +142,12 @@ export class CityStreamer {
       this.frameOther += Math.max(c.reflect, 0) / 3;
     }
   };
-  private readonly beforeShadow = (_r: unknown, _o: unknown, _c: unknown, _sc: unknown, geometry: THREE.BufferGeometry): void => {
+  private readonly beforeShadow = (_r: unknown, object: THREE.Object3D, _c: unknown, _sc: unknown, geometry: THREE.BufferGeometry): void => {
     const c = geometry.userData as PassCounts;
-    geometry.drawRange.count = c.shadow;
-    this.frameShadow += Math.max(c.shadow, 0) / 3;
+    // Handover (osm/fade.ts): the shadow switches from the old chunk to the new one at the middle of the dither.
+    const count = object.userData.handoverNoShadow ? 0 : c.shadow;
+    geometry.drawRange.count = count;
+    this.frameShadow += Math.max(count, 0) / 3;
   };
   params: CityLodParams;
 
@@ -738,6 +740,7 @@ export class CityStreamer {
       const g = this.ghosts[i];
       const f = Math.min(1, (now - g.t0) / (FADE_SECONDS * 1000));
       g.handle.fade.value = 1 - f;
+      g.mesh.userData.handoverNoShadow = f >= 0.5;
       if (f >= 1) {
         this.group.remove(g.mesh);
         g.mesh.geometry.dispose();
@@ -749,6 +752,9 @@ export class CityStreamer {
       if (n.timedFrom !== null) {
         // Handover: the same clock as the region fading in or out (osm/fade.ts).
         n.fade = Math.min(1, (now - n.timedFrom) / (FADE_SECONDS * 1000));
+        if (n.mesh) {
+          n.mesh.userData.handoverNoShadow = n.fade < 0.5;
+        }
         if (n.fade >= 1) {
           n.timedFrom = null;
         }

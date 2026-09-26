@@ -251,19 +251,27 @@ hour for homes and offices, the far-field cell colour and strength. The procedur
 and so do the OSM facades now: their occupancy curve and far cells follow it. Busy streets still light more windows
 up close, as before.
 
-**Known limits:**
-- Level 0 outside the regions draws the compact geometry: real footprints and roofs, but not the procedural near
-  detail (balconies, rooftop clutter).
-- Courtyards are filled.
-- Street lights stay procedural in OSM cells.
-- Shadows and the procedural trees still switch without a dither at a handover.
+**Known limits (fixed, bake format 2):**
+- Level 0 outside the regions draws the near detail on the real footprints (`worker/osm-emit.ts nearDetail`):
+  cornices on old buildings, parapets and rooftop tanks, solar panels, antennas and chimneys on flat roofs, balconies
+  on the two longest walls. The fine parts sit in the detail range, so shadows and reflections skip them.
+- Courtyards stay open: the bake keeps the inner rings (clockwise, simplified to at most 255 vertices), and the caps
+  are triangulated with their holes.
+- Street lights in OSM cells come from the bake: the flight layer's lamp placement (`buildLamps` on the clipped
+  street network) runs per region and per block, and the worker skips the procedural lamps there.
+- Shadows switch at the middle of a handover (city ghosts and new chunks via `handoverNoShadow`, region casters in
+  `osm/index.ts`). The procedural trees dither out under a region (`OSM_FADE_OUT`, the complement of the region's
+  dither) and the vegetation rebuilds its tiles once the fade is done (`onOsmTreesChange`).
+
+**Still open:**
 - Infill ids repeat across regions (the check matches them by place).
 
 **Owner checks on the reference machine:**
 - Fly from 9 km into a landing region and out again, by day and by night. There should be no pop, and the window
   light should match (S5).
 - `node scripts/snap.mjs --perf` on `?view=levent`, `camlica` and `yuksek`, with and without `?osmfar=0`.
-- The first frames of a handover: shader compiles for the `OSM_FADE` variants.
+- The first frames of a handover: shader compiles for the `OSM_FADE` and `OSM_FADE_OUT` variants.
+- The near detail, courtyards and baked street lights up close outside the regions (`?view=kadikoy`, `?view=fatih`).
 
 ## Decisions (user, 2026-09-26)
 
