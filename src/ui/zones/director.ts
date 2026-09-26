@@ -29,9 +29,9 @@ export const HUD_PRIORITY = {
   momentLine: 45,
   /** Perching (phase 03): the "[L] Kon" prompt, the approach and viewing-mode hint lines. */
   perch: 45,
-  /** Ferry escort (src/activities/escort): "Vapurdan uzaklaşıyorsun · [Z] Eşliği bırak" while drifting away. */
+  /** Ferry escort (src/activities/escort): "Vapurdan uzaklaşıyorsun · [L] Eşliği bırak" while drifting away. */
   escortNote: 43,
-  /** Ferry escort: the quiet "[Z] Vapura eşlik et" offer beside a ferry in service (joinable). */
+  /** Ferry escort: the quiet "[L] Vapura eşlik et" offer beside a ferry in service (joinable). */
   escortPrompt: 42,
   /** Contextual flight hints (hover controls, the cinematic shot caption). */
   flightHint: 40,

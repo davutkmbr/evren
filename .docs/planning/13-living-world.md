@@ -51,12 +51,12 @@ A different Istanbul on every flight: changing weather, real natural phenomena, 
   the gulls. No timer, no fail state, no medals.
   - *Start:* beside a vapur or city ferry in service (the moments' 'ferry' anchor kinds: underway and going ahead,
     within 120 m, direction of travel within 50° of the dragon's heading, no race) the hint line offers
-    "[Z] Vapura eşlik et" (`HUD_PRIORITY.escortPrompt`, joinable). Z is the input button `escort` (free key; E is the
+    "[L] Vapura eşlik et" (`HUD_PRIORITY.escortPrompt`, joinable). L, the land key, is claimed by the escort while this offer (or the drifting note) shows (owner choice, 26 Sep; was Z; E is the
     rudder), listed in CONTROL_HELP.
   - *During:* the top zone's line under the compass (`HUD_PRIORITY.escortLine`, above the compass landmark label)
     reads "Sıradaki iskele: Kadıköy · 1,4 km" ("Vapur iskelede · Sıradaki iskele: …" alongside) with a closeness line
     (a gold dot from the ferry to the 200 m radius, warm orange while away). Within 200 m the escort goes on; beyond,
-    "Vapurdan uzaklaşıyorsun · [Z] Eşliği bırak" (`HUD_PRIORITY.escortNote`) after 1.5 s, and the escort ends quietly
+    "Vapurdan uzaklaşıyorsun · [L] Eşliği bırak" (`HUD_PRIORITY.escortNote`) after 1.5 s, and the escort ends quietly
     after 30 s away (a toast, no penalty). The ferry's gull flock follows it: `FerryGullHold`
     (`src/moments/gull-simit/actor.ts`) shares one scene per ferry between the escort and the gull-and-simit moment,
     so the moment can still play on the escorted ferry. The dragon glances at the ferry every ~9 s
@@ -68,7 +68,7 @@ A different Istanbul on every flight: changing weather, real natural phenomena, 
     "Eşlik edilen hatlar n/24" ("Yeni hat" the first time). Records (count, best time, last date per directed leg)
     live in localStorage `evren.escort.v1` (guarded; in memory without storage). The 24 routes are the directed legs
     of the vapur and city ferry lines (sea buses excluded).
-  - *Next leg:* staying along through the dwell, the escort carries on when the ferry leaves; Z stops it any time.
+  - *Next leg:* staying along through the dwell, the escort carries on when the ferry leaves; L stops it while drifting away; landing ends it.
   - *Coexistence:* a race (context 'race' or `dragon.racing`) ends it and blocks the offer; a foreign teleport ends
     it; moments are not blocked; pause and photo mode freeze it (dt 0). No `activity` events (their listeners treat
     any started activity as a race).

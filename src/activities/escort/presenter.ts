@@ -2,11 +2,11 @@
  * What the ferry escort puts on screen, through the HUD zone director (src/ui/zones; pure TS, no DOM, so the headless
  * check drives it with the real director). The DOM side (./view.ts) renders the owner-drawn items.
  *
- * - "[Z] Vapura eşlik et": the shared hint line (lowerCenter, HUD_PRIORITY.escortPrompt, joinable) while a ferry is on
+ * - "[L] Vapura eşlik et": the shared hint line (lowerCenter, HUD_PRIORITY.escortPrompt, joinable) while a ferry is on
  *   offer.
  * - "Sıradaki iskele: Kadıköy · 1,4 km" and a small closeness line: the top zone's line under the compass
  *   (HUD_PRIORITY.escortLine, above the compass landmark label) while escorting.
- * - "Vapurdan uzaklaşıyorsun · [Z] Eşliği bırak": the hint line (HUD_PRIORITY.escortNote) while drifting away.
+ * - "Vapurdan uzaklaşıyorsun · [L] Eşliği bırak": the hint line (HUD_PRIORITY.escortNote) while drifting away.
  * - The arrival card: the corner zone, the discovery card's look and priority, 9 s.
  * Every item is deferred while a race holds the screen (context 'race').
  */

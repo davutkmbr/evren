@@ -13,7 +13,8 @@
  *   look    RMB held, or always in POV (mouse look)
  * Buttons (pressed this frame):
  *   camera C / gamepad Y, pause Esc/P / Start, map M, help H, timeFwd ], timeBack [, photo O, hud U, source I (a moment's sources),
- *   escort Z (escort a ferry beside the dragon / stop escorting, src/activities/escort)
+ *   land L also offers the ferry escort: while "[L] Vapura eşlik et" is shown (or "Eşliği bırak" while drifting away)
+ *   the escort claims L (claim()), so that press starts / stops the escort instead of landing (src/activities/escort)
  * Rider and maneuvers:
  *   pet G held / D-pad down, stand T, weather N, encourage V / D-pad up (the rider pats the neck and calls to the
  *   dragon: a bond interaction with no effect on speed or physics)
@@ -50,7 +51,6 @@ export type ButtonName =
   | 'encourage'
   | 'weather'
   | 'source'
-  | 'escort'
   | 'rollLeft'
   | 'rollRight'
   | 'pitchUp'
@@ -67,7 +67,7 @@ export type ButtonName =
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'escort', 'encourage', ...HOTBAR_BUTTONS]);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'encourage', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -93,7 +93,6 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   KeyV: 'encourage',
   KeyN: 'weather',
   KeyI: 'source',
-  KeyZ: 'escort',
   KeyA: 'rollLeft',
   ArrowLeft: 'rollLeft',
   KeyD: 'rollRight',
@@ -181,7 +180,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'K / J', action: 'Parkur editöründe: kapı ↔ hız halkası / kapı boyutu', group: 'game' },
   { keys: 'Enter', action: 'Parkur editöründe: kaydet', group: 'game' },
   { keys: 'I', action: 'Bir an sırasında ve biraz sonrasında: kaynağa bak (şiirin, hikâyenin aslı)', group: 'game' },
-  { keys: 'Z', action: 'Seferdeki bir vapurun yanında aynı yöne uçarken: vapura eşlik et (eşlikte: eşliği bırak)', group: 'game' },
+  { keys: 'L', action: 'Seferdeki bir vapurun yanında aynı yöne uçarken: vapura eşlik et (uzaklaşırken: eşliği bırak; eşlikte L ile inersen eşlik biter)', group: 'game' },
   { keys: 'M', action: 'Harita', group: 'game' },
   { keys: 'U', action: 'Arayüzü gizle', group: 'game' },
   { keys: 'H', action: 'Yardım', group: 'game' },
@@ -208,6 +207,8 @@ export class Input {
   private keys = new Set<string>();
   private held = new Set<ButtonName>();
   private pressedNow = new Set<ButtonName>();
+  /** Buttons whose presses belong to one reader for now (claim()). */
+  private readonly claimed = new Set<ButtonName>();
   private pressedQueue = new Set<ButtonName>();
   private doubleNow = new Set<ButtonName>();
   private doubleQueue = new Set<ButtonName>();
@@ -277,7 +278,25 @@ export class Input {
   }
 
   wasPressed(name: ButtonName): boolean {
-    return this.pressedNow.has(name);
+    return this.pressedNow.has(name) && !this.claimed.has(name);
+  }
+
+  /**
+   * Reserves a button's presses for one reader until released: wasPressed() then reports false for it and the claimant
+   * reads it with wasClaimedPress(). Used when a context gives a key a second meaning (L starts a ferry escort while
+   * one is offered instead of landing). Readers that update earlier in the frame see the claim set last frame.
+   */
+  claim(name: ButtonName, on: boolean): void {
+    if (on) {
+      this.claimed.add(name);
+    } else {
+      this.claimed.delete(name);
+    }
+  }
+
+  /** A press of a claimed button this frame (false while the button is not claimed). */
+  wasClaimedPress(name: ButtonName): boolean {
+    return this.pressedNow.has(name) && this.claimed.has(name);
   }
 
   /** True for one frame after the second press of a double tap (gamepad D-pad left/right count as one). */

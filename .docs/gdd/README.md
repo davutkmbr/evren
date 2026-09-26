@@ -132,14 +132,14 @@ control or costs speed.
 
 ### 5.4b Ferry escort ("Vapur eşliği") — phase 13 (`src/activities/escort/`)
 A chill activity: no timer, no fail state, no medals. Flying beside a vapur or city ferry in service (within 120 m,
-heading its way, not in a race) offers "[Z] Vapura eşlik et" on the hint line. While escorting, one quiet line under
+heading its way, not in a race) offers "[L] Vapura eşlik et" on the hint line. While escorting, one quiet line under
 the compass reads "Sıradaki iskele: Kadıköy · 1,4 km" with a small closeness line (a gold dot that slides toward the
 end as the dragon falls behind); the ferry's gull flock (the gull-and-simit moment's flock, shared) circles the stern
 and the dragon glances at the ferry now and then. Beyond 200 m a gentle "Vapurdan uzaklaşıyorsun" note appears; after
 30 s away the escort ends quietly. When the ferry comes alongside, a soft horn sounds at the ferry and a small card
 appears in the corner ("Vapur eşliği · Eminönü → Kadıköy", the time, a warm line, "Eşlik edilen hatlar 3/24"); each
 directed leg of the vapur and city ferry lines (24) is recorded locally. Staying along, the escort continues with the
-next leg when the ferry leaves; Z stops it any time. Moments keep playing; a race ends it; pause and photo mode freeze
+next leg when the ferry leaves; L stops it while drifting away; landing ends it. Moments keep playing; a race ends it; pause and photo mode freeze
 it. `?escort=1` puts the dragon beside a ferry mid-crossing (`?escort=start` also starts the escort).
 
 ### 5.5 Moments — phase 19 (`src/moments/`)
@@ -201,12 +201,12 @@ Multi-dragon foundation and multiplayer come after the Kadıköy slice ships.
 
 | Group | Keys |
 |---|---|
-| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing) |
+| Flight | W/S pitch, A/D roll, Q/E rudder, Space flap, Ctrl/X brake and hover, L land/take off (fast and low: run-out landing; beside a ferry while "[L] Vapura eşlik et" shows: escort it) |
 | On the ground | W/S walk, Shift + W run, A/D turn, Space/L leaping take-off (running: the running leap); in a run-out Ctrl/X skid to a stop, Space touch-and-go |
 | Speed and tricks | Shift fold wings (dive), Space ×2 power stroke, Shift ×2 dart when fast (free fall when slow), Q/E ×2 side-slip, A/D ×2 roll, S ×2 loop; S ×2 while banked (A/D held) wingover, A/D at the top of a loop Immelmann, A/D ×2 in a steep dive Split-S; low, fast and level over water or flat ground: surface skim (automatic) |
 | Dragon and rider | F / left click fire, R roar, G pet (hold), T stand up, V encourage (pat and call) |
 | Camera and world | right mouse look, C camera, O photo mode (Enter takes a photo for the album), [ ] time of day, N weather |
-| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), Z escort the ferry alongside (stop escorting), M map, U hide HUD, H help, Esc/P pause |
+| Game and interface | 1–5 hotbar, Y races (picker, cancel, editor), M map, U hide HUD, H help, Esc/P pause |
 
 ## 7. Interface
 
