@@ -1,3 +1,5 @@
+import { decodeLand, type DecodedLand, OSM_LAND_URL } from '../city/osm/format';
+import { fetchBytes } from '../../street/format';
 import { buildWorld } from './build/build-world';
 import { prepareBuildInput } from './prepare';
 import type { BuildOutput } from './types';
@@ -57,7 +59,17 @@ class GeoWorkerHandle {
  * Runs the geo pipeline on two workers in parallel (A: coast → districts + land use, B: relief → heights → sites).
  * Wall time ≈ max(coast + land use, relief + heights) + sites.
  */
-async function buildParallel(): Promise<BuildOutput> {
+/** The far city bake's land use (public/data/osm/city/land.bin.gz); null (hand-drawn land use only) when missing. */
+async function fetchOsmLand(): Promise<DecodedLand | null> {
+  try {
+    return decodeLand(new Uint8Array(await fetchBytes(`${import.meta.env?.BASE_URL ?? '/'}${OSM_LAND_URL}`)));
+  } catch (err) {
+    console.warn('[geo] no OSM land use (npm run bake:city)', err);
+    return null;
+  }
+}
+
+async function buildParallel(landP: Promise<DecodedLand | null>): Promise<BuildOutput> {
   const a = new GeoWorkerHandle();
   const b = new GeoWorkerHandle();
   try {
@@ -66,8 +78,9 @@ async function buildParallel(): Promise<BuildOutput> {
     a.send({ type: 'coast' });
     b.send({ type: 'relief' });
     const coast = await coastP;
+    const land = await landP;
     const luP = a.expect('landuse');
-    a.send({ type: 'landuse' });
+    a.send({ type: 'landuse', land });
     await reliefP;
     b.send({ type: 'height', coast: coast.coast, lakeDepth: coast.lakeDepth }, [coast.coast.buffer, coast.lakeDepth.buffer]);
     const lu = await luP;
@@ -87,13 +100,15 @@ async function buildParallel(): Promise<BuildOutput> {
 /** Starts the geography build; falls back to the main thread when module workers are unavailable. */
 export async function buildGeography(): Promise<BuildOutput> {
   const t0 = performance.now();
+  // Fetched while the coast stage runs.
+  const landP = fetchOsmLand();
   try {
-    const out = await buildParallel();
+    const out = await buildParallel(landP);
     out.timings.wall = Math.round(performance.now() - t0);
     return out;
   } catch (err) {
     console.warn('[geo] workers unavailable, building on the main thread', err);
-    const out = buildWorld(prepareBuildInput().input);
+    const out = buildWorld(prepareBuildInput().input, await landP);
     out.timings.wall = Math.round(performance.now() - t0);
     return out;
   }

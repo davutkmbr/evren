@@ -31,7 +31,7 @@ export class SafetyGate {
     const g = BOND.gaze;
     const l = BOND.look;
     const airborne = AIRBORNE.has(inp.mode);
-    const critical = inp.racing || inp.perchBusy || inp.maneuvering || inp.firing || CRITICAL_MODES.has(inp.mode);
+    const critical = inp.racing || inp.perchBusy || inp.maneuvering || inp.firing || inp.hardLanding !== null || CRITICAL_MODES.has(inp.mode);
     if (inp.obstacleTime < g.obstacleBlock) {
       this.obstacleBlocked = true;
     } else if (inp.obstacleTime > g.obstacleRelease) {
@@ -66,7 +66,7 @@ interface Glance {
 }
 
 /** How often the dragon looks back on its own, by mood (multiplies the wait). */
-const GLANCE_WAIT: Record<DragonMood, number> = { content: 1, curious: 1.1, playful: 0.7, tired: 1.6, excited: 0.8 };
+const GLANCE_WAIT: Record<DragonMood, number> = { content: 1, curious: 1.1, playful: 0.7, tired: 1.6, excited: 0.8, embarrassed: 1.4 };
 
 /**
  * Looking back at the rider (DragonPose.gazeRider): while petted, when the rider's POV rests on the neck for
@@ -194,12 +194,12 @@ interface LookState {
   pitch: number;
 }
 
-const PRIORITY: Record<AttentionCandidate['kind'], number> = { landmark: 5, horn: 4, stork: 3, ferry: 2, bird: 2, sound: 1 };
+const PRIORITY: Record<AttentionCandidate['kind'], number> = { landmark: 5, horn: 4, stork: 3, dolphin: 3, ferry: 2, bird: 2, sound: 1 };
 
 /**
- * Glances at the world: at a landmark when its discovery card opens, toward a ferry horn, a stork kettle, a passing
- * ferry or a close flock. One target at a time (higher priority may interrupt), per-target cooldowns so it never
- * stares or twitches between birds; the rider points at landmarks, storks and ferries the dragon looks at.
+ * Glances at the world: at a landmark when its discovery card opens, toward a ferry horn, a stork kettle, dolphins
+ * surfacing, a passing ferry or a close flock. One target at a time (higher priority may interrupt), per-target cooldowns so it never
+ * stares or twitches between birds; the rider points at landmarks, storks, dolphins and ferries the dragon looks at.
  */
 export class AttentionController {
   yaw = 0;
@@ -271,6 +271,8 @@ export class AttentionController {
         return l.ferryTime;
       case 'stork':
         return l.storkTime;
+      case 'dolphin':
+        return l.dolphinTime;
       case 'horn':
       case 'sound':
         return l.hornTime;
@@ -281,7 +283,7 @@ export class AttentionController {
 
   private eligible(c: AttentionCandidate): boolean {
     const l = BOND.look;
-    const range = c.kind === 'bird' ? l.birdRange : c.kind === 'ferry' ? l.ferryRange : c.kind === 'stork' ? l.storkRange : l.hornRange;
+    const range = c.kind === 'bird' ? l.birdRange : c.kind === 'ferry' ? l.ferryRange : c.kind === 'stork' ? l.storkRange : c.kind === 'dolphin' ? l.dolphinRange : l.hornRange;
     if (c.distance > range || !Number.isFinite(c.yaw + c.pitch)) {
       return false;
     }
@@ -300,7 +302,7 @@ export class AttentionController {
     const l = BOND.look;
     this.started = c.kind;
     this.look = { kind: c.kind, key: c.key, time: 0, duration, yaw: c.yaw, pitch: c.pitch };
-    const cd = c.kind === 'bird' ? l.birdCooldown : c.kind === 'ferry' ? l.ferryCooldown : c.kind === 'stork' ? l.storkCooldown : c.kind === 'landmark' ? 30 : l.hornCooldown;
+    const cd = c.kind === 'bird' ? l.birdCooldown : c.kind === 'ferry' ? l.ferryCooldown : c.kind === 'stork' ? l.storkCooldown : c.kind === 'dolphin' ? l.dolphinCooldown : c.kind === 'landmark' ? 30 : l.hornCooldown;
     this.cooldown.set(c.key, this.time + cd);
     this.kindCooldown[c.kind] = this.time + (c.kind === 'bird' ? cd * 0.5 : 4);
   }

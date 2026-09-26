@@ -19,7 +19,7 @@ const CARD_MAX_WAIT_S = 6;
 const CATEGORY_LABEL: Record<MomentCategory, string> = {
   legend: 'Efsane',
   'city-life': 'Şehir hayatı',
-  poem: 'Şiir',
+  poem: 'Edebiyat',
 };
 
 export class MomentView {

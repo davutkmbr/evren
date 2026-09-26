@@ -7,6 +7,10 @@
  * Exits non-zero on any failure. Warnings (placeholders, pending rights) are printed but do not fail.
  */
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
+import { MOMENT_MUSIC_TAGS } from '../../src/audio/music/manifest';
+import { ENVELOPE } from '../../src/dragon/flight/params';
+import { momentPlayability } from '../../src/moments/runtime';
+import { LITERATURE } from '../../src/moments/data/literature';
 import { unresolvedContent } from '../../src/moments/content';
 import { ALL_MOMENTS } from '../../src/moments/data';
 import { createMomentActor } from '../../src/moments/actors';
@@ -72,7 +76,7 @@ function validateRecord(m: Moment): void {
   expect(ID.test(m.id), w, 'id must be kebab-case');
   expect(m.title.trim().length > 0, w, 'title is empty');
   expect(m.status === 'draft' || m.status === 'ready', w, `bad status ${m.status}`);
-  expect(Number.isInteger(m.backlog) && m.backlog >= 1 && m.backlog <= 15, w, 'backlog must be a phase 19 item number (1..15)');
+  expect(Number.isInteger(m.backlog) && m.backlog >= 1 && m.backlog <= 16, w, 'backlog must be a phase 19 item number (1..16)');
 
   // Trigger: place.
   const t = m.trigger;
@@ -118,6 +122,14 @@ function validateRecord(m: Moment): void {
   }
   if (t.weather) {
     expect(t.weather.length > 0, w, 'weather list is empty');
+  }
+  if (t.seaFog) {
+    const f = t.seaFog;
+    expect(f.min !== undefined || f.max !== undefined, w, 'seaFog without min or max');
+    expect(finite(f.min, f.max) && (f.min ?? 0) >= 0 && (f.max ?? 1) <= 1 && (f.min ?? 0) < (f.max ?? 1), w, 'seaFog band must lie in 0..1 with min < max');
+  }
+  for (const tag of m.content.musicMood ?? []) {
+    expect((MOMENT_MUSIC_TAGS as readonly string[]).includes(tag), w, `musicMood tag '${tag}' is not in MOMENT_MUSIC_TAGS`);
   }
   if (t.repeat.kind === 'repeatable') {
     expect(t.repeat.cooldownSec >= 30, w, 'repeatable moments need a cooldown ≥ 30 s');
@@ -186,6 +198,12 @@ function validateRecord(m: Moment): void {
   expect(covered.has('subtitles'), w, 'subtitles have no provenance');
   if (card) expect(covered.has('card'), w, 'card has no provenance');
   for (const pr of m.provenance) {
+    const [part, line] = pr.covers.split(':');
+    expect(part === 'subtitles' || part === 'card', w, `provenance covers '${pr.covers}' (subtitles, card or subtitles:N)`);
+    if (line !== undefined) {
+      const n = Number(line);
+      expect(part === 'subtitles' && Number.isInteger(n) && n >= 1 && n <= subs.length, w, `provenance '${pr.covers}' names no line (1..${subs.length})`);
+    }
     expect(pr.licence.trim().length > 0 && pr.author.trim().length > 0, w, `provenance for ${pr.covers} lacks licence/author`);
     if (pr.kind === 'original') expect(pr.licence === 'MIT', w, `original text for ${pr.covers} must be MIT like the repository`);
     if (pr.kind === 'public-domain') expect(!!pr.basis, w, `public-domain text for ${pr.covers} must name its source`);
@@ -426,6 +444,168 @@ function testTriggers(): void {
   const storkCtx = base({ position: at(41.1, 29.07), altitude: 500, agl: 480, timeOfDay: 11 });
   expect(rejectReason(stork, { ...storkCtx, dayOfYear: dayOfYearOf({ month: 9, day: 10 }) }, opts) === null, T, 'storks on 10 September');
   expect(rejectReason(stork, { ...storkCtx, dayOfYear: dayOfYearOf({ month: 12, day: 10 }) }, opts) === 'date', T, 'no storks in December');
+
+  // Sea fog (foggy mornings, src/render/weather/sea-fog.ts), independent of the weather preset.
+  const foggy = mk({ seaFog: { min: 0.2 } });
+  expect(rejectReason(foggy, base({ seaFog: 0.5 }), opts) === null, T, 'sea fog 0.5 meets a 0.2 floor (clear preset)');
+  expect(rejectReason(foggy, base({ seaFog: 0.1 }), opts) === 'sea-fog' && rejectReason(foggy, base(), opts) === 'sea-fog', T, 'thin or missing sea fog is rejected');
+  const amicis = find('de-amicis-sis-kalkinca');
+  const amicisCtx = base({ position: at(41.0, 28.985), altitude: 40, agl: 40, coastDistance: -600, timeOfDay: 7.5, seaFog: 0.6 });
+  expect(rejectReason(amicis, amicisCtx, opts) === null, T, 'De Amicis over the Marmara on a foggy morning at 07:30');
+  expect(rejectReason(amicis, { ...amicisCtx, seaFog: 0 }, opts) === 'sea-fog', T, 'De Amicis waits for the sea fog');
+  expect(rejectReason(amicis, { ...amicisCtx, timeOfDay: 14 }, opts) === 'time-of-day', T, 'De Amicis is a morning moment');
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Reachability and the literary moments (backlog 16)               */
+/* ------------------------------------------------------------------ */
+
+/** Intended state of each literary record: 'playable' now, or 'pending' (a quoted text waits for the owner's check). */
+const LITERARY_STATUS: Readonly<Record<string, 'playable' | 'pending'>> = {
+  'nedim-bu-sehr-i-sitanbul': 'playable',
+  'sinan-turbe-kitabesi': 'pending',
+  'katibim-uskudar-yagmur': 'playable',
+  'ati-alan-uskudari-gecti': 'playable',
+  'karagoz-sehzadebasi': 'playable',
+  'fikret-yagmur-asiyan': 'playable',
+  'hasim-bir-gunun-sonunda-arzu': 'pending',
+  'huseyin-rahmi-kuyrukluyildiz': 'playable',
+  'prokopios-gokten-asili-kubbe': 'playable',
+  'de-amicis-sis-kalkinca': 'playable',
+};
+
+/** Where a record's trigger is aimed: its centre, else its area's centroid; null for anchor-only places. */
+function targetOf(m: Moment): LatLon | null {
+  const p = m.trigger.place;
+  if (p.center) return p.center;
+  if (p.area) {
+    const n = p.area.length;
+    return { lat: p.area.reduce((a, v) => a + v.lat, 0) / n, lon: p.area.reduce((a, v) => a + v.lon, 0) / n };
+  }
+  return null;
+}
+
+function checkReachability(): void {
+  const geo = buildHeadlessGeo();
+  const soft = ENVELOPE.boundarySoft;
+  const local = (ll: LatLon) => latLonToLocal(ll.lat, ll.lon);
+  const inPlay = (ll: LatLon) => {
+    const q = local(ll);
+    return Math.abs(q.x) <= soft && Math.abs(q.z) <= soft;
+  };
+  for (const m of ALL_MOMENTS) {
+    const target = targetOf(m);
+    if (!target) continue;
+    const w = `${m.id} reach`;
+    // Inside the playable map: the flight turns the dragon back beyond the soft boundary.
+    const pts = [target, ...(m.trigger.place.area ?? []), ...(m.content.waypoints ?? [])];
+    expect(pts.every(inPlay), w, `a point of the place lies beyond the flight's soft boundary (${soft} m)`);
+    // Some altitude satisfies every band above the surface at the target (with ≥ 10 m of room in the air).
+    const q = local(target);
+    const ground = Math.max(0, geo.heightAt(q.x, q.z));
+    const onGround = m.trigger.surface === 'ground';
+    let lo = onGround ? ground : ground + 5;
+    let hi = onGround ? ground : 4000;
+    for (const b of m.trigger.altitude ?? []) {
+      const off = b.ref === 'agl' ? ground : 0;
+      if (b.min !== undefined) lo = Math.max(lo, b.min + off);
+      if (b.max !== undefined) hi = Math.min(hi, b.max + off);
+    }
+    expect(hi - lo >= (onGround ? 0 : 10), w, `no altitude fits the bands over the ${ground.toFixed(0)} m surface (${lo.toFixed(0)}..${hi.toFixed(0)} m ASL)`);
+    // A shore band must be met somewhere inside the place.
+    const sd = m.trigger.shoreDistance;
+    if (sd && m.trigger.place.radius) {
+      let met = false;
+      for (let i = 0; i < 400 && !met; i++) {
+        const a = (i * 2.399963) % (2 * Math.PI);
+        const r = m.trigger.place.radius * Math.sqrt((i + 0.5) / 400);
+        const cd = geo.coastDistance(q.x + Math.cos(a) * r, q.z + Math.sin(a) * r);
+        met = (sd.min === undefined || cd >= sd.min) && (sd.max === undefined || cd <= sd.max);
+      }
+      expect(met, w, 'no point of the place meets its shore-distance band');
+    }
+  }
+
+  // The literary records: the intended playability, subtitle-only content, rarity, a ?moment= start.
+  const byId = new Map(ALL_MOMENTS.map((m) => [m.id, m]));
+  expect(LITERATURE.length === Object.keys(LITERARY_STATUS).length, 'literature', `${LITERATURE.length} records, ${Object.keys(LITERARY_STATUS).length} expected`);
+  for (const [id, want] of Object.entries(LITERARY_STATUS)) {
+    const m = byId.get(id);
+    expect(!!m, 'literature', `record ${id} is missing`);
+    if (!m) continue;
+    const w = `${id} (literature)`;
+    const p = momentPlayability(m);
+    expect(p.playable === (want === 'playable'), w, `should be ${want} (playable ${p.playable}, ${p.reason ?? 'no reason'})`);
+    const pending = m.provenance.some((pr) => pr.pending);
+    expect(pending === (want === 'pending'), w, want === 'pending' ? 'a pending text needs its open questions in provenance.pending' : 'a playable text has nothing pending');
+    if (want === 'pending') expect(m.needs.includes('text-approval') && m.status === 'draft', w, "pending: a draft with 'text-approval' in needs");
+    expect(m.backlog === 16 && !m.content.actorId && !(m.content.animationIds?.length ?? 0), w, 'subtitle-only record of backlog 16');
+    expect((m.content.musicMood?.length ?? 0) > 0, w, 'no musicMood for the moment music');
+    expect((m.sources?.length ?? 0) > 0, w, 'no sources for the "Kaynağa bak" sheet');
+    expect(!!m.content.card, w, 'no closing card');
+    expect(m.trigger.repeat.kind === 'once-per-session', w, 'literary moments play once per session (they stay rare)');
+    expect(!!m.trigger.timeOfDay || !!m.trigger.weather, w, 'needs a time or weather condition (they stay rare)');
+    const wps = m.content.waypoints ?? [];
+    expect(wps[0]?.id === 'start' && wps.length >= 2 && wps.every((x) => x.expect !== undefined), w, "waypoints: 'start' first, then the target, each with land or water expected");
+    expect(m.content.subtitles.every((l) => !l.text.includes('...')), w, 'cuts use … (one character), not "..."');
+  }
+
+  // Place-specific facts.
+  const ati = byId.get('ati-alan-uskudari-gecti')?.trigger.place.area;
+  if (ati) {
+    const poly = ati.map(local);
+    const xs = poly.map((v) => v.x);
+    const zs = poly.map((v) => v.z);
+    const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    let water = 0;
+    let total = 0;
+    const names = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      for (let j = 0; j < 30; j++) {
+        const pt = { x: x0 + ((x1 - x0) * (i + 0.5)) / 30, z: z0 + ((z1 - z0) * (j + 0.5)) / 30 };
+        if (!pointInPolygon(pt, poly)) continue;
+        total++;
+        if (geo.isWater(pt.x, pt.z)) {
+          water++;
+          names.add(geo.waterNameAt?.(pt.x, pt.z) ?? '?');
+        }
+      }
+    }
+    expect(total > 100 && water / total > 0.97, 'ati alan', `the crossing polygon should be open water (${water}/${total})`);
+    expect([...names].every((n) => n === 'İstanbul Boğazı' || n === 'Haliç'), 'ati alan', `water named ${[...names].join(', ')}`);
+  }
+  const usk = byId.get('katibim-uskudar-yagmur')?.content.waypoints?.find((x) => x.id === 'square');
+  if (usk) {
+    const q = local(usk);
+    expect(geo.districtAt(q.x, q.z)?.name === 'Üsküdar', 'katibim', `square in ${geo.districtAt(q.x, q.z)?.name}, expected Üsküdar`);
+  }
+  const hey = byId.get('huseyin-rahmi-kuyrukluyildiz')?.content.waypoints?.find((x) => x.id === 'heybeli');
+  if (hey) {
+    const q = local(hey);
+    expect(geo.districtAt(q.x, q.z)?.name === 'Heybeliada', 'kuyrukluyildiz', `target in ${geo.districtAt(q.x, q.z)?.name}, expected Heybeliada`);
+  }
+  const asiyan = byId.get('fikret-yagmur-asiyan')?.content.waypoints?.find((x) => x.id === 'asiyan');
+  if (asiyan) {
+    const q = local(asiyan);
+    const rh = geo.landmark('rumeli-hisari');
+    expect(!!rh && Math.hypot(rh.x - q.x, rh.z - q.z) < 800, 'yagmur', 'Aşiyan should lie within 800 m of Rumeli Hisarı');
+    expect(geo.heightAt(q.x, q.z) > 30, 'yagmur', `Aşiyan sits on the hill (${geo.heightAt(q.x, q.z).toFixed(0)} m)`);
+  }
+  const amicis = byId.get('de-amicis-sis-kalkinca');
+  if (amicis?.trigger.place.center) {
+    const q = local(amicis.trigger.place.center);
+    expect(geo.waterNameAt?.(q.x, q.z) === 'Marmara Denizi', 'de amicis', `approach centre in ${geo.waterNameAt?.(q.x, q.z)}, expected the Marmara`);
+  }
+  const hasim = byId.get('hasim-bir-gunun-sonunda-arzu');
+  if (hasim?.trigger.place.center) {
+    const q = local(hasim.trigger.place.center);
+    expect(geo.waterNameAt?.(q.x, q.z) === 'İstanbul Boğazı', 'hasim', `the Göksu fallback centre is in ${geo.waterNameAt?.(q.x, q.z)}, expected the Bosphorus`);
+    const ah = geo.landmark('anadolu-hisari');
+    expect(!!ah && Math.hypot(ah.x - q.x, ah.z - q.z) < 700, 'hasim', 'the Göksu fallback lies off Anadolu Hisarı');
+    // Why the fallback: Küçükçekmece Lake is not water in the game and lies at the flight's soft boundary.
+    const lake = latLonToLocal(41.015, 28.765);
+    if (geo.isWater(lake.x, lake.z)) warn('hasim', 'Küçükçekmece Lake is water now: consider the lake instead of the Göksu fallback');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -442,6 +622,8 @@ console.log('2. geography');
 checkGeo();
 console.log('3. trigger evaluator');
 testTriggers();
+console.log('4. reachability and the literary moments');
+checkReachability();
 
 for (const m of ALL_MOMENTS) {
   console.log(`  ${m.status.padEnd(5)} #${String(m.backlog).padStart(2)} ${m.id.padEnd(34)} needs: ${m.needs.join(', ') || '-'}`);

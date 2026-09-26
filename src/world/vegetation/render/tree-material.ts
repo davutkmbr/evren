@@ -84,6 +84,8 @@ export interface TreeMaterialSet {
 
 function createMainMaterial(shared: VegetationSharedUniforms, fade: THREE.Vector4, ditherFlip: number): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
+  // Procedural trees give way to a streamed OSM region's own trees pixel by pixel during its handover (osm/fade.ts).
+  mat.defines = { ...(mat.defines ?? {}), OSM_FADE_OUT: 1 };
   mat.name = 'vegetation-tree';
   const own = { uVegFade: { value: fade }, uVegDitherFlip: { value: ditherFlip } };
   patchMaterial(mat, 'vegetation-tree-v1', (shader) => {

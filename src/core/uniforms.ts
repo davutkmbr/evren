@@ -24,6 +24,9 @@ function defaultStreetFade(): THREE.DataTexture {
  * - sky:    uTimeOfDay, uSunDir, uSunColor, uMoonDir, uAmbient, uNight, uWind, uFog*
  * Modules may ADD their own globals via registerGlobalUniform() (e.g. clouds -> cloud shadow map).
  */
+/** Streamed OSM regions holding a handover slot at once (world/osm/index.ts MAX_LOADED, plus regions fading out). */
+export const OSM_FADE_SLOTS = 12;
+
 export const globalUniforms: Record<string, THREE.IUniform> = {
   uTime: { value: 0 },
   uTimeOfDay: { value: 18.5 },
@@ -51,6 +54,14 @@ export const globalUniforms: Record<string, THREE.IUniform> = {
   uStreetFade: { value: defaultStreetFade() },
   /** Occluder fade (core/occluder-fade.ts): written by the camera system while the perch camera frames the dragon. */
   ...occluderUniforms,
+  /**
+   * Handover of the flight-scale OSM regions (world/osm/fade.ts): per slot a build rect (minX, minZ, maxX, maxZ) and its
+   * fade (x) and direction (y: 1 fading out). Materials with the OSM_FADE define (every material of a streamed region)
+   * dither against it, complementary to the city chunks they replace (city/materials/city.glsl.ts CITY_FADE_FRAGMENT);
+   * OSM_FADE_OUT materials (the procedural trees) draw the complementary pixels.
+   */
+  uOsmFadeRect: { value: Array.from({ length: OSM_FADE_SLOTS }, () => new THREE.Vector4(1e9, 1e9, 1e9, 1e9)) },
+  uOsmFadeVal: { value: Array.from({ length: OSM_FADE_SLOTS }, () => new THREE.Vector2(1, 0)) },
 };
 
 /**
@@ -149,6 +160,10 @@ ${SHARED_GLSL}
     uniform float fogNear;
     uniform float fogFar;
   #endif
+  #if defined(OSM_FADE) || defined(OSM_FADE_OUT)
+    uniform vec4 uOsmFadeRect[${OSM_FADE_SLOTS}];
+    uniform vec2 uOsmFadeVal[${OSM_FADE_SLOTS}];
+  #endif
   #ifdef STREET_HOLE
     uniform sampler2D uStreetHoleMask;
     uniform vec4 uStreetHoleRect;
@@ -183,9 +198,34 @@ ${SHARED_GLSL}
   }
 #endif
 `;
-  THREE.ShaderChunk.clipping_planes_fragment = CLIPPING_PLANES_FRAGMENT + streetHoleTest + OCCLUDER_FADE_GLSL;
+  /**
+   * OSM region handover: fragments of a streamed region's materials dither in (or out) with the region's slot, with the
+   * city chunks' own dither pattern so the two sides fill complementary pixels.
+   */
+  const osmFadeTest = /* glsl */ `
+#if defined(USE_FOG) && (defined(OSM_FADE) || defined(OSM_FADE_OUT)) && !defined(OSM_FADE_DONE)
+  #define OSM_FADE_DONE
+  for (int osmI = 0; osmI < ${OSM_FADE_SLOTS}; osmI++) {
+    vec4 osmR = uOsmFadeRect[osmI];
+    if (vFogWorldPos.x >= osmR.x && vFogWorldPos.x < osmR.z && vFogWorldPos.z >= osmR.y && vFogWorldPos.z < osmR.w) {
+      vec2 osmF = uOsmFadeVal[osmI];
+      float osmDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      bool osmShown = osmF.y > 0.5 ? osmDither >= 1.0 - osmF.x : osmDither < osmF.x;
+      #ifdef OSM_FADE_OUT
+      // What the region replaces (the procedural trees): the complementary pixels.
+      if (osmShown) discard;
+      #else
+      if (!osmShown) discard;
+      #endif
+      break;
+    }
+  }
+#endif
+`;
+  THREE.ShaderChunk.clipping_planes_fragment = CLIPPING_PLANES_FRAGMENT + streetHoleTest + osmFadeTest + OCCLUDER_FADE_GLSL;
   THREE.ShaderChunk.fog_fragment = /* glsl */ `
 ${streetHoleTest}
+${osmFadeTest}
 ${OCCLUDER_FADE_GLSL}
 #ifdef USE_FOG
   gl_FragColor.rgb = applyAtmosphere(gl_FragColor.rgb, vFogWorldPos);

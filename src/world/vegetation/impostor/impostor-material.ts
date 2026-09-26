@@ -193,6 +193,8 @@ export interface ImpostorMaterialSet {
 
 function createImpostorMainMaterial(shared: VegetationSharedUniforms, imp: ImpostorUniforms, fade: THREE.Vector4): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, side: THREE.FrontSide });
+  // Procedural trees give way to a streamed OSM region's own trees pixel by pixel during its handover (osm/fade.ts).
+  mat.defines = { ...(mat.defines ?? {}), OSM_FADE_OUT: 1 };
   mat.name = 'vegetation-impostor';
   // The shadow pass takes its face culling from the main material (FrontSide would become BackSide there).
   mat.shadowSide = THREE.DoubleSide;

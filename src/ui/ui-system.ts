@@ -31,7 +31,7 @@ import { Toasts } from './overlays/toasts';
 import { loadPrefs, savePrefs, type UiPrefs } from './prefs';
 import { TutorialHints } from './tutorial';
 import { createSnapshot } from './types';
-import { applyZoneBands, HudDirector } from './zones';
+import { applyZoneBands, HudDirector, setPadHints } from './zones';
 import './styles/base.css';
 import './styles/loading.css';
 import './styles/hud.css';
@@ -281,6 +281,8 @@ export class UiSystem implements System {
     // Perched, the camera cycle is named on the viewing hint line instead of a toast.
     this.statusToasts.update(ctx, this.modal === 'none' && !this.photo && !this.perchView.viewing);
 
+    // Key hints name the pad's buttons while the player uses a gamepad.
+    setPadHints(ctx.input.lastDevice === 'gamepad', ctx.input.padLayout);
     const hudVisible = !ctx.debug.nohud && !this.hudOff && !this.photo && this.modal === 'none';
     if (hudVisible !== this.hudShown) {
       this.hudShown = hudVisible;

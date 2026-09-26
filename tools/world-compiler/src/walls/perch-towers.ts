@@ -110,7 +110,7 @@ class CityProbe {
       const x0 = -CityProbe.HALF + ix * S;
       const z0 = -CityProbe.HALF + iz * S;
       const win = this.cutter.cut(x0 - M, z0 - M, x0 + S + M, z0 + S + M);
-      boxes = buildColliders({ type: 'colliders', id: 0, ix, iz, size: S, densityScale: 1, win }, this.world).boxes;
+      boxes = buildColliders({ type: 'colliders', id: 0, ix, iz, size: S, densityScale: 1, win, exclude: [] }, this.world).boxes;
       this.tiles.set(key, boxes);
     }
     return boxes;

@@ -44,6 +44,7 @@ import { createSnapshot, createTerms, type MotionDescriptor } from '../../src/dr
 import { MANEUVER_LABELS } from '../../src/dragon/flight/maneuvers';
 import { FLAP } from '../../src/dragon/flight/params';
 import { FlightSim } from '../../src/dragon/flight/sim';
+import { PoseDriver, RIDER_FLOW } from '../../src/dragon/flight/pose';
 import { flyChain, meanHarmony, STEP, type ChainResult, type ChainStep } from './flow/chains';
 import { fuzzRun, macroDouble, macroHold, macroHoldDouble, repeatRun, createSim, type FuzzRun } from './flow/fuzz';
 import { fly, KeyPilot } from './flow/key-pilot';
@@ -642,11 +643,72 @@ function bursts(): void {
   check(off.sim.flow.burst.totalDv === 0, 'payback off: links are counted, no push');
 }
 
+/** The rider's reaction to flow (pose.ts RIDER_FLOW): crouch with flow and the surge, cheer on long chains, laugh on a moment. */
+function riderReaction(): void {
+  console.log('\n6. The rider reacts to high flow');
+  const sim = createSim(300, 50);
+  const driver = new PoseDriver();
+  const dt = 1 / 60;
+  let t = 0;
+  /** Runs the pose driver for `seconds` (the sim stands still: only the flow state changes); returns the peak cues. */
+  const run = (seconds: number): { tuck: number; cheer: number; laugh: number } => {
+    const peak = { tuck: 0, cheer: 0, laugh: 0 };
+    for (let i = 0; i < seconds / dt; i++) {
+      const pose = driver.update(sim, dt, (t += dt), null, null);
+      peak.tuck = Math.max(peak.tuck, pose.riderTuck ?? 0);
+      peak.cheer = Math.max(peak.cheer, pose.riderCheer ?? 0);
+      peak.laugh = Math.max(peak.laugh, pose.riderLaugh ?? 0);
+    }
+    return peak;
+  };
+  sim.flow.value = 0.3;
+  const calm = run(1);
+  sim.flow.value = 0.95;
+  const gliding = run(1.5);
+  check(gliding.tuck > calm.tuck + 0.08 && gliding.tuck < 0.2, `high flow, no chain: a slight crouch that leaves standing and petting available (tuck ${f2(calm.tuck)} at flow 0.3 → ${f2(gliding.tuck)} at 0.95, < 0.2)`);
+  const burst = sim.flow.burst;
+  burst.start('roll', sim.time);
+  const high = run(1.5);
+  check(high.tuck > calm.tuck + 0.2 && high.cheer < 0.05, `high flow with a chain open: the rider crouches into the speed (tuck ${f2(high.tuck)}), no cheer by itself`);
+  const link = (): { tuck: number; cheer: number; laugh: number } => {
+    burst.link(sim.time, 8, null);
+    // The surge: the pose driver sees the burst's rate while the sim applies it (here by hand).
+    let peak = { tuck: 0, cheer: 0, laugh: 0 };
+    for (let i = 0; i < BURST.time / dt; i++) {
+      burst.step(dt, 50);
+      const p = run(dt);
+      peak = { tuck: Math.max(peak.tuck, p.tuck), cheer: Math.max(peak.cheer, p.cheer), laugh: Math.max(peak.laugh, p.laugh) };
+    }
+    const after = run(RIDER_FLOW.cheerGap);
+    return { tuck: peak.tuck, cheer: Math.max(peak.cheer, after.cheer), laugh: Math.max(peak.laugh, after.laugh) };
+  };
+  const l1 = link();
+  const l2 = link();
+  const l3 = link();
+  const l4 = link();
+  const l5 = link();
+  check(l1.tuck > high.tuck + 0.1, `a burst's surge takes the rider lower still (tuck ${f2(high.tuck)} → ${f2(l1.tuck)})`);
+  check(
+    l1.cheer < 0.05 && l2.cheer < 0.05 && l3.cheer > 0.5 && l4.cheer < 0.05 && l5.cheer > 0.5,
+    `a fist pumped at link ${RIDER_FLOW.cheerLink} and every second link after it (cheer by link 1–5: ${[l1, l2, l3, l4, l5].map((p) => f2(p.cheer)).join(' / ')})`,
+  );
+  sim.flow.moments++;
+  const moment = run(RIDER_FLOW.laughTime + 0.5);
+  check(moment.laugh > 0.8 && run(0.5).laugh === 0, `a "Kusursuz" moment: a short laugh (peak ${f2(moment.laugh)})`);
+  sim.flow.reset();
+  sim.flow.value = 0.95;
+  const reset = run(1);
+  check(reset.cheer < 0.05 && reset.laugh === 0, 'a flow reset (new race, respawn) starts no cheer or laugh');
+  note('riderFlowTuck', high.tuck);
+  note('riderSurgeTuck', l1.tuck);
+}
+
 unitTests();
 baseline();
 chains();
 bursts();
 fuzz();
+riderReaction();
 
 if (jsonArg >= 0 && args[jsonArg + 1]) {
   writeFileSync(args[jsonArg + 1], JSON.stringify(results, null, 2));

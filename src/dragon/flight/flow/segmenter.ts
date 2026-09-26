@@ -30,7 +30,7 @@ const NAMED_IDLE = 0.15;
 /** ... and at the latest this long after, even while the manoeuvring goes on (s). */
 const NAMED_SETTLE = 1.5;
 /** Maneuver ids that are not motions (a refused move's hint, the plain take-off, the flow's own captions). */
-const NOT_MOTIONS: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow']);
+const NOT_MOTIONS: ReadonlySet<string> = new Set(['hint', 'takeoff', 'flow', 'hardland']);
 
 const _shape = createWingShape();
 

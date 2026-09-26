@@ -89,18 +89,18 @@ stamina, the next gate).
 
   | Zone | Band | Holds |
   |---|---|---|
-  | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while racing the race readout (gutter + 72 px) replaces it |
+  | `top` | compass (gutter + 2 px, 54 px) and one line under the heading (gutter + 52 px) | landmark label; while escorting a ferry the escort line ("Sıradaki iskele: Kadıköy · 1,4 km" and a 52 px closeness line: a gold dot sliding from the ferry to the 200 m radius, `--warn` while away) replaces it; while racing the race readout (gutter + 72 px) replaces it |
   | `title` | from max(top band + 14 px, 18 %) down 21 % (150–290 px) | area title; a perch's name and info; race intro: course name small, countdown / "Başla!" large, counts and medal targets as one line; race warnings; "+10 m/s" |
   | `center` | between title and lowerCenter (≥ 25 % of the height) | reserved for the aim and the ring: no text except small labels next to world markers (gate distance) |
-  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys; the contextual move hints), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
+  | `lowerCenter` | one line, bottom edge gutter + 158 px (grows upwards for the hover panel) | the shared hint line (key hints, optional caption; the "[L] Kon" prompt and the viewing keys; the ferry escort's "[L] Vapura eşlik et" and "Vapurdan uzaklaşıyorsun · [L] Eşliği bırak"; the contextual move hints), maneuver and shot captions, hover controls, a moment's subtitle line (italic, shadowed, no box, slow fades) |
   | `bottom` | gutter + 10 px, 146 px tall | the static cluster (not a zone item) |
-  | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card (also a moment's closing card, "Yeni an") / one toast at a time |
+  | `corner` / `toast` | top right / top left (top centre over a menu or the map) | discovery card (also a moment's closing card, "Yeni an", and the ferry escort's arrival card, "Vapur eşliği") / one toast at a time |
 
   Priorities, highest first: race countdown, "Başla!", race readout and the race hint line (100) > race warnings (90) >
   race callouts (85) > discovery card and the perch title (70) > area title (60) > maneuver captions (50) > the chain practice's step line (47) > moment
-  subtitle lines and the perch prompt, approach and viewing hint lines (45) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
+  subtitle lines and the perch prompt, approach and viewing hint lines (45) > the ferry escort's drift note (43) and offer (42, joinable) > hover hints and shot caption (40) > a moment's "[I] Kaynağa bak" for 10 s
   after it (35, joinable; while the moment plays the prompt rides quietly under its subtitle line) >
-  start-of-game hints and the compass label (30) > contextual move hints (20, `src/ui/tutorial`) > toasts (10); ties go to the newer message (a toast replaces the
+  the ferry escort's line under the compass (32) > start-of-game hints and the compass label (30) > contextual move hints (20, `src/ui/tutorial`) > toasts (10); ties go to the newer message (a toast replaces the
   current one). The context `race` (a race prepared, running, aborting or its result open) defers the area title
   (dropped after 8 s), the compass landmark label (the next gate is the target) and moment lines and cards (no moment
   starts during a race). Start hints and "[Y] iptal" are items of the same hint line and never share it; only hints
