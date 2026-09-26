@@ -129,8 +129,13 @@ the `hotbar` service (icon, count, cooldown, active state, activate). The invent
 album and "golden hour" badges, bond level with the dragon, unlocks (saddles, armour, dragon variants — phase 12).
 
 ### 5.8 Audio and music
-Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Regional, layered music is planned
-(phase 07); licences recorded per track.
+Recorded CC0 wind, wingbeats, thunder, rain and gulls; synthesised fallbacks. Adaptive music (phase 07, system built,
+pieces pending the owner's approval): each piece is a set of equal-length stems (piano, strings, light motion, an
+Istanbul colour instrument, pads) that a small rules table fades with the flight — sparse on the ground and perched,
+fuller cruising, a pulse when fast or diving, the colour low over the water, a swell in thermals, softer at night —
+with silences between sets, a race set synced to "Başla!", strong ducking under moments and a muffle under water.
+Settings: Müzik volume, Uyarlanabilir müzik on / off. Owner guide: `.docs/audio/music-system.md`. Regional sets
+come later as tags; licences recorded per set.
 
 ### 5.9 On foot and beyond (phases 16–17, 14–15)
 Walkable Kadıköy: land, walk, enter cafés, talk to NPCs, drive (street track S3–S8). Co-op moving game "Hamallar".
