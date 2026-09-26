@@ -3,9 +3,20 @@
  * costs a single draw call however many pieces the slice has.
  */
 import type * as THREE from 'three';
+import { type StandGround, StandLog, type StandRule, standFault } from '../../../placement/stand';
 import { MeshBuf } from '../../shared/buffers';
 import type { MeshArrays } from '../../shared/protocol';
 import { propTemplates, type PropKind } from './models';
+
+/**
+ * Stand rule per prop (src/world/placement/stand.ts): everything stands on land with its base on the ground; the quay
+ * edge furniture (mooring posts, lifebuoys) may stand right at the water's edge.
+ */
+const RULES: Partial<Record<PropKind, StandRule>> = {
+  mooring: { shore: 0.3, building: false },
+  lifebuoy: { shore: 0.3, building: false },
+};
+const DEFAULT_RULE: StandRule = { building: false };
 
 interface Template {
   pos: Float32Array;
@@ -31,8 +42,11 @@ export class PropStamper {
   private readonly templates: Record<PropKind, Template>;
   readonly mesh = new MeshBuf({ position: 3, normal: 3, color: 3, aGlow: 1 });
   readonly counts: Partial<Record<PropKind, number>> = {};
+  /** Stand outcomes per kind (build stats). */
+  readonly log = new StandLog();
 
-  constructor() {
+  /** `ground`: every prop must stand on it (RULES); absent, props are taken as placed. */
+  constructor(private readonly ground?: StandGround) {
     const t = propTemplates();
     this.templates = {} as Record<PropKind, Template>;
     for (const k of Object.keys(t) as PropKind[]) {
@@ -44,7 +58,14 @@ export class PropStamper {
    * Places one prop: base at (x, y, z), front (+Z) turned to yaw (world direction (sin yaw, cos yaw)), uniform
    * `scale` (vertical `sy` when given). White template vertices take `tint` (parasol canopies).
    */
-  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale): void {
+  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale): boolean {
+    if (this.ground) {
+      const fault = standFault(this.ground, x, z, RULES[kind] ?? DEFAULT_RULE, y);
+      this.log.note(kind, fault ?? 'kept');
+      if (fault) {
+        return false;
+      }
+    }
     const t = this.templates[kind];
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
@@ -70,6 +91,7 @@ export class PropStamper {
       m.tri(base + v, base + v + 1, base + v + 2);
     }
     this.counts[kind] = (this.counts[kind] ?? 0) + 1;
+    return true;
   }
 
   take(): MeshArrays | null {

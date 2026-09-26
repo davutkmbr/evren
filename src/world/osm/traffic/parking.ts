@@ -3,9 +3,11 @@
  * streets), and stalls in surface parking lots (amenity=parking). Slots stay clear of junctions, crossings,
  * signals, bus and tram stops, building footprints and anything that is not carriageway / lot.
  */
+import { standFault } from '../../placement/stand';
 import type { OsmData } from '../data';
 import type { FootprintIndex } from '../shared/footprints';
 import { pointInRing } from '../shared/geometry';
+import { osmStandGround } from '../shared/stand';
 import type { StreetSurface } from '../shared/street-surface';
 import { MODEL_LENGTH, Model, paintOf, PARKED_MIX, pickModel } from './catalog';
 import type { Edge } from './network';
@@ -72,6 +74,8 @@ function clearOf(list: readonly number[] | undefined, s: number, gap: number): b
 
 /** Kerbside rows along every edge with a parking strip. */
 export function parkKerbside(edges: readonly Edge[], keepClear: Map<number, number[]>, degree: (node: number) => number, out: ParkedBuffer, surface: StreetSurface, footprints: FootprintIndex, rng: () => number): void {
+  // Shared stand rule (placement/stand.ts): parked cars stay on the OSM ground, on land (network edges run past it).
+  const land = osmStandGround(surface, footprints);
   for (const e of edges) {
     if (e.deck || e.r.tunnel) {
       continue;
@@ -104,8 +108,7 @@ export function parkKerbside(edges: readonly Edge[], keepClear: Map<number, numb
         if (r < occ && clearOf(clear, edgeS, 7 + len / 2)) {
           const p = pointAt(line, sc);
           const ok =
-            !footprints.inside(p[0], p[1]) &&
-            !surface.geo.isWater(p[0], p[1]) &&
+            standFault(land, p[0], p[1]) === null &&
             surface.distance(p[0] + p[2] * len * 0.4, p[1] + p[3] * len * 0.4) < -0.25 &&
             surface.distance(p[0] - p[2] * len * 0.4, p[1] - p[3] * len * 0.4) < -0.25;
           if (ok) {
@@ -130,6 +133,7 @@ export function parkKerbside(edges: readonly Edge[], keepClear: Map<number, numb
 
 /** Stalls in surface parking lots, rows along the lot's longest edge. */
 export function parkLots(data: Pick<OsmData, 'areas'>, out: ParkedBuffer, surface: StreetSurface, footprints: FootprintIndex, rng: () => number): number {
+  const land = osmStandGround(surface, footprints);
   let lots = 0;
   for (const a of data.areas) {
     if (a.kind !== 'amenity=parking' || (a.parking && LOT_SKIP.has(a.parking))) {
@@ -171,7 +175,7 @@ export function parkLots(data: Pick<OsmData, 'areas'>, out: ParkedBuffer, surfac
     const inside = (u: number, v: number): boolean => {
       const x = u * ux + v * vx;
       const z = u * uz + v * vz;
-      return pointInRing(ring, x, z) && !footprints.inside(x, z) && surface.distance(x, z) > 0.3 && !surface.geo.isWater(x, z);
+      return pointInRing(ring, x, z) && surface.distance(x, z) > 0.3 && standFault(land, x, z) === null;
     };
     const STALL_W = 2.5;
     const STALL_D = 5.0;
