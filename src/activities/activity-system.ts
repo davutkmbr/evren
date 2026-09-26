@@ -30,7 +30,8 @@
 import * as THREE from 'three';
 import type { DragonState, EngineContext, GameEvents, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
-import { COURSES, getCourse, medalFor, type CompiledCourse } from './courses';
+import { COURSES, getCourse, LESSON_COURSE, medalFor, type CompiledCourse } from './courses';
+import { LESSON_FINISHED_TEXT, LessonRunner } from './lesson';
 import {
   CUSTOM_LIMIT,
   MIN_GATES,
@@ -92,6 +93,8 @@ export function createActivitySystem(): System {
   /** The teleport being emitted is a speed ring push: the run and its trail continue. */
   let boostTeleport = false;
   let lastCourseId: string | null = null;
+  /** The guided chain practice's steps while its course runs (lesson.ts). */
+  let lesson: LessonRunner | null = null;
   const lastPos = { x: 0, y: 0, z: 0, valid: false };
   const disposers: Array<() => void> = [];
   const boost = new BoostEnvelope();
@@ -215,7 +218,7 @@ export function createActivitySystem(): System {
   }
 
   function allCourseIds(): string[] {
-    return [...COURSES.map((c) => c.id), ...loadCustomCourses().map((c) => c.id)];
+    return [...COURSES.map((c) => c.id), LESSON_COURSE.id, ...loadCustomCourses().map((c) => c.id)];
   }
 
   /* ---------------- race control ---------------- */
@@ -241,9 +244,10 @@ export function createActivitySystem(): System {
     const splitsMatch = rec?.splits.length === course.gates.length;
     referenceSplits = splitsMatch ? rec!.splits.slice() : undefined;
     session = new RaceSession(course, { bestSplits: referenceSplits });
+    lesson = course.def.lesson ? new LessonRunner() : null;
     recorder = new GhostRecorder();
     ghostTrack = null;
-    if (rec?.ghost && loadGhostEnabled()) {
+    if (rec?.ghost && loadGhostEnabled() && !lesson) {
       const samples = decodeGhost(rec.ghost);
       const track = new GhostTrack(samples, splitsMatch ? { course, splits: rec.splits, finishTime: rec.best } : { finishTime: rec.best });
       ghostTrack = track.valid ? track : null;
@@ -265,6 +269,7 @@ export function createActivitySystem(): System {
       rings: course.speedRings.length,
       medals: course.def.medals,
       ghostBest: ghostTrack ? rec?.best : undefined,
+      lesson: !!lesson,
     });
     toast(RACE_TEXT.started(course.def.name));
     handle(session.start());
@@ -300,6 +305,7 @@ export function createActivitySystem(): System {
           hud?.showCountdown('go');
           audio('ui-click', 0.8);
           recorder.reset();
+          showLessonStep();
           emitActivity('started', `${name} · ${RACE_TEXT.label.running(1, s.total)}`);
           break;
         case 'gate': {
@@ -321,6 +327,16 @@ export function createActivitySystem(): System {
           rings.setNext(s.total, true);
           lingerLeft = FINISH_LINGER;
           ghost.hide();
+          if (lesson) {
+            // The practice keeps no time, medal or record: a closing line, then the course fades out.
+            const l = lesson;
+            lesson = null;
+            hud?.end();
+            hud?.lessonPraise(RACE_TEXT.lesson.finished(l.index, l.steps.length));
+            audio('discover', l.done ? 1 : 0.7);
+            emitActivity('finished', `${name} · ${RACE_TEXT.lesson.finished(l.index, l.steps.length)}`);
+            break;
+          }
           const medals = course.def.medals;
           const medal = medalFor(e.time, medals);
           const result = submitRun(course.def.id, e.time, e.splits, recorder.count > 1 ? recorder.encode() : undefined, medal);
@@ -352,6 +368,7 @@ export function createActivitySystem(): System {
           hud?.warn(RACE_TEXT.hud.stray);
           break;
         case 'aborted':
+          lesson = null;
           hud?.abort(RACE_TEXT.aborted[e.reason]);
           ghost.hide();
           emitActivity('aborted', `${name} · ${RACE_TEXT.label.aborted}`);
@@ -624,6 +641,33 @@ export function createActivitySystem(): System {
     editorPanel.setLabels(items);
   }
 
+  /* ---------------- guided chain practice ---------------- */
+
+  /** The current lesson step on the hint line (or the closing line once every step is done). */
+  function showLessonStep(): void {
+    const l = lesson;
+    if (!l || !hud) {
+      return;
+    }
+    const step = l.step;
+    const label = RACE_TEXT.lesson.step(Math.min(l.index + 1, l.steps.length), l.steps.length);
+    if (step) {
+      hud.lessonStep(step.text, step.hints, label);
+    } else {
+      hud.lessonStep(LESSON_FINISHED_TEXT, [['Y', RACE_TEXT.countdown.cancel]], label);
+    }
+  }
+
+  /** A lesson step was done: praise, a chime and the next step. */
+  function lessonAdvanced(done: { done: string } | null): void {
+    if (!done) {
+      return;
+    }
+    hud?.lessonPraise(done.done);
+    audio('discover', 0.6);
+    showLessonStep();
+  }
+
   /* ---------------- picker ---------------- */
 
   function pickerEntry(c: CompiledCourse): PickerEntry {
@@ -640,6 +684,7 @@ export function createActivitySystem(): System {
       medals: c.def.medals,
       runs: recordRuns(rec),
       custom: !!c.def.custom,
+      lesson: !!c.def.lesson,
       hasGhost: !!rec?.ghost,
       route: { gates: c.gates.map((g) => ({ x: g.x, y: g.z })), rings: c.speedRings.map((r) => ({ x: r.x, y: r.z })) },
     };
@@ -648,6 +693,7 @@ export function createActivitySystem(): System {
   function pickerEntries(): PickerEntry[] {
     return [
       ...COURSES.map((def) => pickerEntry(getCourse(def.id)!)),
+      pickerEntry(getCourse(LESSON_COURSE.id)!),
       ...loadCustomCourses().map((custom) => pickerEntry(compileCustomCourse(custom, customDescription(custom)))),
     ];
   }
@@ -1058,6 +1104,16 @@ export function createActivitySystem(): System {
           loadingDone = true;
           findUi();
         }),
+        c.events.on('maneuver', ({ id }) => {
+          if (lesson && session?.phase === 'running') {
+            lessonAdvanced(lesson.move(id));
+          }
+        }),
+        c.events.on('chain-link', ({ link, source }) => {
+          if (lesson && session?.phase === 'running') {
+            lessonAdvanced(lesson.link(link, source));
+          }
+        }),
         c.events.on('teleport', () => {
           if (boostTeleport) {
             // A speed ring push: same place, the run and its trail go on.
@@ -1095,6 +1151,8 @@ export function createActivitySystem(): System {
       // While a race is prepared, run, aborting or its result is open, the HUD zones defer the area title and the
       // compass landmark label (the next gate is the target).
       c.services.tryGet('hudZones')?.setContext('race', !!session?.active || !!hud?.holdsScreen);
+      // The practice shows its own keys: the next-move hint (ui/hud/chain-hint.ts) steps aside.
+      c.services.tryGet('hudZones')?.setContext('lesson', !!lesson && !!session?.active);
       // A running race (countdown included): full-size chain bursts and full-strength speed effects (flight, camera, fx).
       const racing = !!session?.active;
       if (dragon && !!dragon.racing !== racing) {

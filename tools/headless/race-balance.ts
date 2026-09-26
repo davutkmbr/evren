@@ -12,7 +12,8 @@
  * Rules: every run finishes; plain earns bronze but not silver; some chaining earns silver but not gold; the best
  * chained run earns gold and is 15–25 % faster than the plain run.
  */
-import { COURSES, compileCourse, medalFor, type MedalTimes } from '../../src/activities/courses';
+import { COURSES, compileCourse, LESSON_COURSE, medalFor, type MedalTimes } from '../../src/activities/courses';
+import { LESSON_STEPS, LessonRunner } from '../../src/activities/lesson';
 import { formatTargetTime } from '../../src/activities/text';
 import { buildHeadlessGeo } from './geo';
 import { DEFAULT_PILOT, flyRace, SOME_PILOT, type PilotOptions, type RaceRun } from './flow/race-pilot';
@@ -115,6 +116,32 @@ for (const r of results) {
   check(medalFor(r.some.time, r.medals) === 'silver', `${r.course}: some chaining earns silver, not gold (${fmt(r.some.time)} s vs silver ${r.medals.silver} s, gold ${r.medals.gold} s)`);
   check(medalFor(r.chained.time, r.medals) === 'gold', `${r.course}: sustained chaining earns gold (${fmt(r.chained.time)} s vs ${r.medals.gold} s)`);
   check(gap >= GAP_MIN && gap <= GAP_MAX, `${r.course}: the chained run is ${GAP_MIN * 100}–${GAP_MAX * 100} % faster than plain (${(gap * 100).toFixed(1)} %)`);
+}
+// The guided chain practice (lesson.ts): a chaining racer flying its course completes every step (the events come
+// from the real sim: move starts and chain links).
+if (!only || only === LESSON_COURSE.id) {
+  const course = compileCourse(LESSON_COURSE);
+  let bestDone = 0;
+  const lines: string[] = [];
+  for (let s = 1; s <= SEEDS; s++) {
+    const sim = createHeadlessSim(geo, env);
+    const lesson = new LessonRunner();
+    const doneAt: string[] = [];
+    const emit = sim.emit.bind(sim);
+    sim.emit = (e) => {
+      emit(e);
+      if (e.type === 'maneuver' && !e.ended && lesson.move(e.id)) {
+        doneAt.push(`${lesson.index}@${sim.time.toFixed(0)}s`);
+      } else if (e.type === 'chain' && lesson.link(e.link, e.source)) {
+        doneAt.push(`${lesson.index}@${sim.time.toFixed(0)}s`);
+      }
+    };
+    const r = flyRace(sim, course, 'chained', s, 600, DEFAULT_PILOT);
+    bestDone = Math.max(bestDone, lesson.index);
+    lines.push(`  lesson seed ${s}: ${lesson.index}/${lesson.steps.length} steps (${doneAt.join(' ')}), course ${fmt(r.time)} s`);
+  }
+  console.log(lines.join('\n'));
+  check(bestDone === LESSON_STEPS.length, `the chain practice can be completed by a chaining racer (${bestDone}/${LESSON_STEPS.length} steps)`);
 }
 if (args.includes('--json')) {
   console.log(JSON.stringify(results.map((r) => ({ course: r.course, plain: r.plain.time, some: r.some.time, chained: r.chained.time, flow: r.chained.meanFlow }))));

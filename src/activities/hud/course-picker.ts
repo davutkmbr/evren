@@ -24,6 +24,7 @@ import {
   type WaterSampler,
 } from '../../ui/components';
 import type { Medal, MedalTimes } from '../courses';
+import { LESSON_STEPS } from '../lesson';
 import { RACE_TEXT, formatCourseLength, formatRaceTime, formatTargetTime } from '../text';
 import { h, noFocus, show } from './dom';
 
@@ -39,6 +40,8 @@ export interface PickerEntry {
   medals: MedalTimes;
   runs: number;
   custom?: boolean;
+  /** The guided chain practice (no records, medals or ghost). */
+  lesson?: boolean;
   /** A ghost of the best run exists. */
   hasGhost: boolean;
   /** Map-plane route (world x, z): the gates in order and the speed rings. */
@@ -93,6 +96,9 @@ export class CoursePicker {
   private readonly runsStat = stat(RACE_TEXT.picker.runs, '');
   private readonly ladder = medalLadder(ladderTime);
   private readonly ghostSwitch: ReturnType<typeof optionSwitch>;
+  private readonly startPrompt: ReturnType<typeof prompt>;
+  private readonly noteNode = h('span', 'race-detail-note', RACE_TEXT.picker.note);
+  private readonly ladderRow: HTMLElement;
   private rows: ListRow[] = [];
   private entries: PickerEntry[] = [];
   private selected = 0;
@@ -147,15 +153,17 @@ export class CoursePicker {
     );
     this.ghostSwitch = optionSwitch(t.ghost, 'H', true, '#b39cf0', (on) => this.setGhost(on));
     noFocus(this.ghostSwitch.root);
-    const startPrompt = noFocus(prompt(t.start, 'Enter', 'primary', () => this.withSelected((e) => this.handlers.onStart(e.id))).root);
+    this.startPrompt = prompt(t.start, 'Enter', 'primary', () => this.withSelected((e) => this.handlers.onStart(e.id)));
+    const startPrompt = noFocus(this.startPrompt.root);
+    this.ladderRow = h('div', 'race-detail-ladder', [this.ladder.root]);
     this.map.root.classList.add('race-detail-map');
     const detail = h('div', 'race-detail', [
       h('div', 'race-detail-head', [h('div', 'race-detail-titles', [this.name, this.desc]), this.customActions]),
       this.map.root,
       h('div', 'race-detail-stats', [this.lengthStat.root, this.gatesStat.root, this.bestStat.root, this.runsStat.root]),
-      h('div', 'race-detail-ladder', [this.ladder.root]),
+      this.ladderRow,
       h('i', 'race-detail-spacer'),
-      h('div', 'race-detail-foot', [startPrompt, this.ghostSwitch.root, h('span', 'race-detail-note', t.note)]),
+      h('div', 'race-detail-foot', [startPrompt, this.ghostSwitch.root, this.noteNode]),
     ]);
     this.sheet.append(header, h('div', 'race-sheet-body', [listCol, detail]));
     this.root.append(h('div', 'race-picker-shade'), this.sheet);
@@ -182,7 +190,11 @@ export class CoursePicker {
     this.selected = at >= 0 ? at : 0;
     this.rows = entries.map((e, i) => {
       const row = listRow(
-        { label: e.name, sub: t.rowSub(!!e.custom, formatCourseLength(e.lengthM), e.gates), value: e.best !== undefined ? formatRaceTime(e.best) : '—' },
+        {
+          label: e.name,
+          sub: e.lesson ? RACE_TEXT.lesson.rowSub(formatCourseLength(e.lengthM), LESSON_STEPS.length) : t.rowSub(!!e.custom, formatCourseLength(e.lengthM), e.gates),
+          value: e.best !== undefined ? formatRaceTime(e.best) : '—',
+        },
         () => this.select(i),
         undefined,
       );
@@ -352,6 +364,12 @@ export class CoursePicker {
     this.ladder.set([e.medals.gold, e.medals.silver, e.medals.bronze], e.best ?? null);
     this.ghostSwitch.setDisabled(!e.hasGhost, t.ghostNone);
     this.ghostSwitch.set(this.ghostOn);
+    // The guided chain practice keeps no time, medal or ghost.
+    const lesson = !!e.lesson;
+    show(this.ladderRow, !lesson);
+    show(this.ghostSwitch.root, !lesson);
+    this.startPrompt.setLabel(lesson ? RACE_TEXT.lesson.start : t.start);
+    this.noteNode.textContent = lesson ? RACE_TEXT.lesson.note : t.note;
   }
 
   dispose(): void {
