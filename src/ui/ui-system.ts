@@ -351,6 +351,7 @@ export class UiSystem implements System {
       s.agl = dragon.agl;
       s.verticalSpeed = dragon.velocity.y;
       s.stamina = dragon.stamina;
+      s.flow = dragon.flow ?? 0;
       s.mode = dragon.mode;
     } else {
       s.valid = true;
@@ -363,6 +364,7 @@ export class UiSystem implements System {
       s.agl = camera.position.y;
       s.verticalSpeed = 0;
       s.stamina = 1;
+      s.flow = 0;
       s.mode = 'hovering';
     }
     s.viewHeadingDeg = horizontal > 0.15 ? Math.atan2(this.viewDir.x, -this.viewDir.z) * RAD : s.headingDeg;

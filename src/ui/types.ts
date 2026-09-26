@@ -15,6 +15,8 @@ export interface FlightSnapshot {
   agl: number;
   verticalSpeed: number;
   stamina: number;
+  /** Flow 0..1 (phase 20 stage D; 0 without a dragon). */
+  flow: number;
   mode: FlightMode;
 }
 
@@ -31,6 +33,7 @@ export function createSnapshot(): FlightSnapshot {
     agl: 0,
     verticalSpeed: 0,
     stamina: 1,
+    flow: 0,
     mode: 'flying',
   };
 }

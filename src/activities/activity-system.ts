@@ -52,7 +52,7 @@ import { EDITOR_KEYS, EditorPanel, type EditorLabel } from './hud/editor-panel';
 import { GhostOrb } from './hud/ghost-orb';
 import { RaceHud } from './hud/race-hud';
 import { RingPass } from './ring-pass';
-import { RaceSession, courseProgress, type AbortReason, type RaceEvent } from './race';
+import { RaceSession, courseProgress, passTightness, type AbortReason, type RaceEvent } from './race';
 import { loadGhostEnabled, saveGhostEnabled } from './race-prefs';
 import { GhostRecorder, clearRecords, decodeGhost, getRecord, loadRecords, recordRuns, submitRun } from './records';
 import { BoostEnvelope, boostDeltaV } from './speed-boost';
@@ -303,6 +303,7 @@ export function createActivitySystem(): System {
           emitActivity('started', `${name} · ${RACE_TEXT.label.running(1, s.total)}`);
           break;
         case 'gate': {
+          notePass(course.gates[e.index]);
           rings.setNext(e.index + 1, false);
           if (e.index < s.total - 1) {
             hud?.gate(e.split, e.bestSplit !== undefined ? e.split - e.bestSplit : undefined);
@@ -312,6 +313,7 @@ export function createActivitySystem(): System {
           break;
         }
         case 'boost':
+          notePass(course.speedRings[e.index]);
           speedRings.markUsed(e.index);
           startBoost();
           break;
@@ -357,6 +359,16 @@ export function createActivitySystem(): System {
           break;
       }
     }
+  }
+
+  /** A gate or speed ring passed: tells flight how snug it was (the flow system's use of the world). */
+  function notePass(ring: { x: number; y: number; z: number; radius: number } | undefined): void {
+    const d = dragon;
+    if (!d || !ring || typeof d.notePass !== 'function') {
+      return;
+    }
+    const p = d.position;
+    d.notePass(passTightness(ring.radius, Math.hypot(p.x - ring.x, p.y - ring.y, p.z - ring.z)));
   }
 
   /* ---------------- speed ring boost ---------------- */

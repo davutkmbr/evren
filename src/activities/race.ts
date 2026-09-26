@@ -107,6 +107,18 @@ export function courseProgress(course: CompiledCourse, next: number, pos: Vec3):
   return next + Math.min(MAX_LEG_FRACTION, segmentFraction(pos, from, course.gates[next]));
 }
 
+/** A ring this small (m) is snug for the dragon wherever it passes. */
+const SNUG_RADIUS = 12;
+
+/**
+ * How snug a gate or speed ring pass was for the dragon, 0..1 (the flow system's use of the world): a small ring
+ * anywhere, a wide gate only near its rim (the inside line of a turn). `offset` is the distance from the ring centre (m).
+ */
+export function passTightness(radius: number, offset: number): number {
+  const r = Math.max(radius, 1);
+  return Math.max(0, Math.min(1, Math.max((SNUG_RADIUS / r) ** 2, Math.max(offset, 0) / r)));
+}
+
 export class RaceSession {
   readonly course: CompiledCourse;
   phase: RacePhase = 'idle';
