@@ -14,6 +14,7 @@ import { LodTiledMesh } from '../shared/lod-tiles';
 import { countTriangles } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
+import { isWallOwned } from '../../landmarks/walls/system/owned';
 import { Poi } from './build';
 import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
@@ -97,7 +98,8 @@ class BuildingsLayer extends LayerBase {
     const worker = new Worker(new URL('./buildings.worker.ts', import.meta.url), { type: 'module', name: 'osm-buildings' });
     const request: BuildingsRequest = {
       base: ctx.base,
-      buildings: data.buildings,
+      // Towers and gate pylons of the city walls are drawn by the walls system.
+      buildings: data.buildings.filter((b) => !isWallOwned(b.id)),
       pois: poiTriples(data.points),
       pads: landmarkPads(ctx.geo),
       passages: findPassages(data.buildings, data.roads),

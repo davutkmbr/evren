@@ -31,6 +31,29 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    intersect any building (OSM slice/regions, compiled tiles, procedural city); end `flush` against buildings on the
    line, small sheds/annexes step aside, larger buildings break the wall (thresholds + counts); procedural city keeps
    out of the wall corridor; towers never inside buildings; an overlap check per stretch with target 0.
+   **Progress (walls agent, uncommitted):**
+   - Bake: `npm run compile:walls` (`tools/world-compiler/src/walls/{cli,plan,build,poly}.ts`, ~10 s) → gitignored
+     `public/world/walls/` (index.json with `owned`, colliders.json, lod0/ per 100 m tile, lod1/ per 1 km cell,
+     lod2.bin.gz; container format `src/world/landmarks/walls/data/baked.ts`) + checked-in land-use corridors
+     `src/world/landmarks/walls/data/corridors.json` (read by `src/world/geo/prepare.ts` as reserved lines).
+   - Runtime: `src/world/landmarks/walls/system/` (registered in `src/main.ts`; `?walls=0` off): LOD2 and LOD1 as
+     BatchedMesh, LOD0 tiles streamed; colliders `city-wall:<id>` (tag heritage); `owned.ts` = ids the OSM building
+     layer (`src/world/osm/buildings/index.ts`, awaited in `src/world/osm/index.ts`) and the street compiler
+     (`tools/world-compiler/src/osm-street.ts`) skip. Runtime OSM `barriers.ts` city-wall beams removed.
+   - Buildings (owner report): `tools/world-compiler/src/walls/{buildings,fit}.ts` read all 93k footprints (slice,
+     regions, street-area data); the wall is shifted (≤3 m) / thinned (≥1.6 m) to keep 0.35 m off buildings, breaks
+     flush where a building stands on the line, small sheds (≤25 m², or ≤60 m² and low) and wall-ruin buildings step
+     aside (ids join `owned`), towers shrink or are skipped; a verify pass rebuilds a run until no band point is in a
+     building; `check.overlap*` in the bake log / index stats = 0 m, 0 overlaps (2026-09-26). Corridors grow 9 m past
+     the faces (procedural city lots sample the 11.7 m land-use grid).
+   - Done: shots at 300 m / 80 m / eye level for 7 stretches (`.shots/walls/ingame/`), top-down debug maps
+     (`.shots/walls/debug/`, input lines by source, openings, placed pieces: positions match the real course — the
+     owner's "wrong place" report was the aqueduct), walk-test --dragon kumkapi (0 phantoms, no city-wall collider
+     blocks a street), perf (`.shots/walls/perf/`: +7 draw calls, +58k triangles at 300 m over the land walls, walls
+     CPU < 0.01 ms), worktree typecheck clean. Data issues left: OSM tags the Hippodrome sphendone (321386212) and two
+     Dolmabahçe garden walls (castle_wall) as walls; mapped land-wall gate openings are 11+ m (breaches, no gate
+     pieces); street lamps / OSM trees are not kept out of the walls. Compiled street areas need a recompile to drop
+     wall-owned buildings.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
 
 ## Next, in order (agreed with the owner)

@@ -1,10 +1,10 @@
 /**
  * Walls and fences of the street edges from OSM lines, built into the masonry mesh: garden and consulate walls
- * (barrier=wall), retaining walls with their parapet (typical of the steep Cihangir and Galata lanes), the remnants
- * of the Genoese Galata walls (barrier=city_wall, historic=citywalls), metal railings (barrier=fence) and the
- * hoardings of construction sites (fences around landuse=construction, plus hoardings along the street sides of
+ * (barrier=wall), retaining walls with their parapet (typical of the steep Cihangir and Galata lanes), metal railings
+ * (barrier=fence) and the hoardings of construction sites (fences around landuse=construction, plus hoardings along the street sides of
  * construction areas that have none). Pieces that fall on a carriageway or a footpath are left open (gates,
- * crossings); lines inside landmark pads are the landmarks' own.
+ * crossings); lines inside landmark pads are the landmarks' own. City walls (barrier=city_wall, historic=citywalls)
+ * are the walls system's (src/world/landmarks/walls).
  */
 import type { WorldBounds } from '../../../core/contracts';
 import type { OsmArea, OsmData } from '../data';
@@ -16,13 +16,12 @@ import { beam, type Rgb, slab } from './masonry';
 import type { PadTest } from './pads';
 
 const WALL: Rgb = [0.66, 0.62, 0.55];
-const CITY_WALL: Rgb = [0.52, 0.48, 0.42];
 const RETAINING: Rgb = [0.58, 0.56, 0.52];
 const RAILING: Rgb = [0.12, 0.14, 0.13];
 const HOARDING: Rgb = [0.86, 0.86, 0.83];
 const HOARDING_BAND: Rgb = [0.1, 0.22, 0.42];
 
-type Kind = 'wall' | 'city' | 'retaining' | 'fence' | 'hoarding';
+type Kind = 'wall' | 'retaining' | 'fence' | 'hoarding';
 
 interface Spec {
   height: number;
@@ -33,7 +32,6 @@ interface Spec {
 
 const SPECS: Record<Kind, Spec> = {
   wall: { height: 2.3, half: 0.2, col: WALL, layer: GROUND_LAYER_INDEX.stone },
-  city: { height: 7, half: 1.2, col: CITY_WALL, layer: GROUND_LAYER_INDEX.stone },
   retaining: { height: 1.2, half: 0.25, col: RETAINING, layer: GROUND_LAYER_INDEX.stone },
   fence: { height: 1.7, half: 0.03, col: RAILING, layer: GROUND_LAYER_INDEX.concrete },
   hoarding: { height: 2.5, half: 0.05, col: HOARDING, layer: GROUND_LAYER_INDEX.concrete },
@@ -43,9 +41,6 @@ function kindOf(kind: string): Kind | null {
   switch (kind) {
     case 'barrier=wall':
       return 'wall';
-    case 'barrier=city_wall':
-    case 'historic=citywalls':
-      return 'city';
     case 'barrier=retaining_wall':
       return 'retaining';
     case 'barrier=fence':
@@ -87,7 +82,7 @@ export function buildBarriers(m: MeshBuf, data: Pick<OsmData, 'lines' | 'areas'>
       }
       return false;
     });
-  const stats: Record<string, number> = { walls: 0, cityWalls: 0, retaining: 0, fences: 0, hoardings: 0 };
+  const stats: Record<string, number> = { walls: 0, retaining: 0, fences: 0, hoardings: 0 };
   const fenced = new Set<OsmArea>();
 
   // Keep clear of the fade-out margin, where the OSM ground dissolves into the procedural city (`rect` is the fade
@@ -155,8 +150,8 @@ export function buildBarriers(m: MeshBuf, data: Pick<OsmData, 'lines' | 'areas'>
         fenced.add(site);
       }
     }
-    const metres = build(kind, line.pts, !!line.closed, kind === 'city' ? Math.min(line.height ?? 7, 9) : line.height);
-    const key = kind === 'wall' ? 'walls' : kind === 'city' ? 'cityWalls' : kind === 'retaining' ? 'retaining' : kind === 'fence' ? 'fences' : 'hoardings';
+    const metres = build(kind, line.pts, !!line.closed, line.height);
+    const key = kind === 'wall' ? 'walls' : kind === 'retaining' ? 'retaining' : kind === 'fence' ? 'fences' : 'hoardings';
     stats[key] += Math.round(metres);
   }
 

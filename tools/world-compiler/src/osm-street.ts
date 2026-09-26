@@ -4,7 +4,9 @@
  * additive, so the file still satisfies OsmData; the runtime slice (profile 'slice') never carries these fields.
  * Data © OpenStreetMap contributors, ODbL 1.0.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ROOT } from '../lib/areas.mjs';
 import { OSM_SCHEMA_VERSION, type OsmData, type OsmPoint, type OsmRoad } from '../../../src/world/osm/data';
 
 export const STREET_EXTENSION = 'street/1';
@@ -57,5 +59,21 @@ export function loadStreetData(file: string): OsmStreetData {
   if (data.extension !== STREET_EXTENSION) {
     throw new Error(`${file}: extension ${data.extension ?? 'none'}, expected ${STREET_EXTENSION} (fetch with a 'street' profile area)`);
   }
+  const owned = wallOwnedBuildings();
+  if (owned.size) {
+    data.buildings = data.buildings.filter((b) => !owned.has(b.id));
+  }
   return data;
+}
+
+/**
+ * OSM buildings the city walls draw (towers, gate pylons; `owned` of the baked walls index, npm run compile:walls):
+ * the street tiles leave them out, the walls system draws them in the game. Empty when the walls are not baked.
+ */
+function wallOwnedBuildings(): Set<number> {
+  const file = resolve(ROOT, 'public/world/walls/index.json');
+  if (!existsSync(file)) {
+    return new Set();
+  }
+  return new Set((JSON.parse(readFileSync(file, 'utf8')) as { owned?: number[] }).owned ?? []);
 }
