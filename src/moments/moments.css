@@ -1,0 +1,53 @@
+/* Moments (src/moments/view.ts): the subtitle line in the lowerCenter zone and the closing card in the corner zone.
+   Plain shadowed text over the scene, no box (.docs/design/README.md). The line fades slower than other HUD text:
+   a moment is calm, and a line cut short (the glide ended) leaves slower still. */
+
+.hud-moment {
+  padding: 0 16px;
+}
+
+.hud-moment.ejd-fade {
+  transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out), visibility 0s linear 0s;
+}
+
+.hud-moment.ejd-fade.is-out {
+  transform: translateY(4px);
+  transition: opacity 520ms var(--ease-in-out), transform 520ms var(--ease-in-out), visibility 0s linear 520ms;
+}
+
+.hud-moment.ejd-fade.is-out.is-slow {
+  transition: opacity 1400ms var(--ease-in-out), transform 1400ms var(--ease-in-out), visibility 0s linear 1400ms;
+}
+
+.moment-line {
+  margin: 0;
+  max-width: min(760px, 86vw);
+  font-family: var(--font-ui);
+  font-size: clamp(17px, 1.4vw, 21px);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0.005em;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--hud-ink, #f6f1e7);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+.moment-speaker {
+  margin-right: 0.45em;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent, #e8b872);
+}
+
+/* The closing card reuses the discovery card; its text may take one more line. */
+.hud-moment-card .dcard-info {
+  -webkit-line-clamp: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-moment.ejd-fade.is-out {
+    transform: none;
+  }
+}

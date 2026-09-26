@@ -2,8 +2,8 @@
  * Pure trigger evaluator for moments: given the records and a snapshot of the world, which moments may start now.
  *
  * No three.js, no scene, no clock: every input is in `MomentContext`, so the same inputs always give the same answer
- * (results are sorted by distance, then id). The runtime system (not built yet) fills the context each check, picks
- * one of the eligible moments and records it in the session state.
+ * (results are sorted by distance, then id). The runtime (./runtime.ts, driven by ./system.ts) fills the context every
+ * frame, picks one of the eligible moments and records it in the session state.
  */
 import type { FlightMode, WeatherPreset } from '../core/contracts';
 import { latLonToLocal } from '../core/geo-coords';
@@ -44,7 +44,7 @@ export interface MomentContext {
 }
 
 export interface EvaluateOptions {
-  /** Also consider 'draft' moments (tests, debug overlays). Default false: only 'ready' moments play. */
+  /** Also consider 'draft' moments (the runtime passes its own playable list; tests). Default false: only 'ready'. */
   includeDrafts?: boolean;
   /** The player's settings; moments of a switched-off category (or all, when disabled) never play. */
   prefs?: MomentPrefs;

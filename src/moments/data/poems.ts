@@ -44,6 +44,12 @@ export const istanbuluDinliyorum: Moment = {
       title: "İstanbul'u Dinliyorum",
       text: "Orhan Veli Kanık'ın (1914–1950) en sevilen şiirlerinden biri. Gözler kapalı, şehir sesleriyle dinlenir.",
     },
+    waypoints: [
+      // The ?moment= shortcut starts here, heading for 'glide'; the headless checks fly this stretch.
+      { id: 'start', lat: 41.042, lon: 29.013, note: 'Off the European shore between Beşiktaş and Ortaköy, ~60 m out', expect: 'water' },
+      { id: 'glide', lat: 41.056, lon: 29.0375, note: 'Off Kuruçeşme, the line of a low glide north along the shore', expect: 'water' },
+      { id: 'bebek', lat: 41.076, lon: 29.0455, note: 'Bebek bay, the end of the stretch', expect: 'water' },
+    ],
   },
   provenance: [
     {
@@ -56,7 +62,10 @@ export const istanbuluDinliyorum: Moment = {
     original('card'),
   ],
   needs: ['sound'],
-  notes: 'No character: just subtitles over a soft shore ambience while gliding low. Lines should fade with the glide, not force pacing.',
+  notes:
+    'No character: just subtitles over a soft shore ambience while gliding low. Lines should fade with the glide, not force pacing. ' +
+    "Plays while still 'draft': its only need is the sound, which is optional for a subtitle-only moment (the runtime lifts " +
+    'the existing coastal ambience instead; see src/moments/runtime.ts, momentPlayability).',
 };
 
 export const POEMS: readonly Moment[] = [istanbuluDinliyorum];
