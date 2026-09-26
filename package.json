@@ -35,6 +35,7 @@
     "brand:png": "node scripts/snap.mjs --batch scripts/brand/renders.json",
     "walk-test": "node scripts/walk-test.mjs",
     "compile:world": "node tools/world-compiler/run.mjs",
+    "compile:walls": "tsx tools/world-compiler/src/walls/cli.ts",
     "typecheck:world": "tsc -p tools/world-compiler/tsconfig.json",
     "blender": "node scripts/blender-run.mjs"
   },

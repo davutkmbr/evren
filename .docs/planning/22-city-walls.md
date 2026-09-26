@@ -1,7 +1,8 @@
-# 22 — City walls: kit now, placement by the world compiler later
+# 22 — City walls: kit and placement
 
-Status: the model kit exists (`src/world/landmarks/walls/kit`, preview `sandbox/walls.html`); nothing is placed in the
-game. Placement waits for the OSM regions (multi-region slice plumbing) and is a world-compiler job.
+Status (2026-09-26): placed in the game. `npm run compile:walls` (tools/world-compiler/src/walls, ~20 s) bakes the kit
+along `data/osm/walls.json` into `public/world/walls/` (gitignored); the walls system
+(`src/world/landmarks/walls/system`) streams it. See "Placement (implemented)" at the end.
 
 ## What exists
 
@@ -73,3 +74,25 @@ Towers: `man_made=tower` + `tower:type=defensive` outlines (often `building=yes`
    runtime OSM `barriers.ts` city-wall beams go away at the same time).
 9. **Checks**: `walk-test --dragon --area <id>` over every area with walls, `?colliders=1` overlay, eye-level and
    300 m / 80 m shots along Kumkapı, Samatya, Sarayburnu, Ayvansaray and Balat, `snap.mjs --perf` before / after.
+
+## Placement (implemented)
+
+- **Bake** (`tools/world-compiler/src/walls/`): `plan.ts` (steps 2–7), `fit.ts` (walls vs buildings), `build.ts` (kit
+  per LOD, triangles cut into 100 m tiles by centroid), `cli.ts` (files). Ground: `osmGroundHeight` over the headless
+  geo world (the OSM ground's function). Output: `index.json` (tiles, LOD files, `owned`, stats incl. the overlap
+  check), `colliders.json`, `lod0/<i>_<j>.bin.gz`, `lod1/<ci>_<cj>.bin.gz` (1 km cells), `lod2.bin.gz`; container format
+  `src/world/landmarks/walls/data/baked.ts`. Land-use corridors (`data/corridors.json`, checked in) are reserved by the
+  geo build (`src/world/geo/prepare.ts`), so the procedural city and OSM infill keep ~9 m off the faces.
+- **Runtime** (`src/world/landmarks/walls/system/`): LOD 2 and LOD 1 in one `BatchedMesh` each (per-tile visibility),
+  LOD 0 tiles streamed within 260 m (quality-scaled), LOD 1 within 1 km; box colliders `city-wall:<id>` (tag
+  `heritage`); foliage without shadows. The OSM building layer and the street compiler skip `owned` buildings; the
+  runtime OSM city-wall beams (`streets/barriers.ts`) are gone. `?walls=0` turns the walls off.
+- **Buildings**: no piece may stand in a building of the slice, the regions or the street areas. The wall is shifted
+  (≤ 3 m) / thinned (≥ 1.6 m) to keep 0.35 m off; where a building stands on the line the wall breaks with flush ends;
+  small sheds (≤ 25 m², or ≤ 60 m² and ≤ 1 storey / ≤ 4.5 m / shed-like) and buildings that are the wall itself
+  (ruins / towers mostly inside the band) step aside (`owned`). Towers shrink once or are skipped. A verify pass
+  rebuilds a run until no band point is in a building; the bake reports `check.overlapMetres` / `check.overlapCount`
+  (target 0).
+- **Rules not yet done**: road gates at mapped gates need gaps < 10 m, and the mapped road openings at the land-wall
+  gates are 11+ m (breaches instead); OSM trees are not kept out of the walls.
+

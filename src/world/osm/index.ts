@@ -22,6 +22,7 @@ import { classifyStreets } from './shared/street-field';
 import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
+import { wallsReady } from '../landmarks/walls/system/owned';
 
 /**
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
@@ -96,7 +97,8 @@ class OsmRegion {
 
   async load(engine: EngineContext, geo: GeoQuery): Promise<void> {
     const t0 = performance.now();
-    const data = await loadOsmData(this.def.url);
+    // The city walls draw their towers themselves: their ids must be known before the buildings layer starts.
+    const [data] = await Promise.all([loadOsmData(this.def.url), wallsReady()]);
     if (this.disposed) {
       return;
     }

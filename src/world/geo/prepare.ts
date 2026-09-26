@@ -10,6 +10,7 @@ import { BATHYMETRY, BEACHES, BURIED_VALLEYS, SHORE_FLATS, STEEP_CHANNELS, SUMMI
 import { RIVER_VALLEYS } from './data/rivers';
 import { ROADS } from './data/roads';
 import { SPOT_HEIGHTS } from './data/spot-heights';
+import WALL_CORRIDORS from '../landmarks/walls/data/corridors.json';
 import type { BuildInput, FlatRing } from './types';
 
 /** Flat lat/lon pairs -> flat local x/z pairs. */
@@ -204,6 +205,11 @@ export function prepareBuildInput(): PreparedInput {
       padIndex.set(l.id, pads.length);
       pads.push({ x: p.x, z: p.z, radius: l.footprintWidth ?? l.radius * 0.45, blend: l.radius * 0.4, strength: 0.65 });
     }
+  }
+
+  // The placed city walls (npm run compile:walls): procedural buildings keep a few metres off both faces.
+  for (const c of (WALL_CORRIDORS as { lines: number[][] }).lines) {
+    reservedLines.push({ pts: Float64Array.from(c.slice(1)), halfWidth: c[0] });
   }
 
   const rivers: BuildInput['rivers'] = [...RIVER_VALLEYS, ...BURIED_VALLEYS].map((r) => ({
