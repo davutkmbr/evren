@@ -50,7 +50,7 @@ export function createMomentSystem(): System {
     showCard: (m) => view?.showCard(m),
     setAmbienceLift: (amount) => ctxRef?.services.tryGet('audio')?.setAmbienceLift?.(amount),
     startMoment: (m, forced, anchorId) => {
-      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(true, m.content.musicId);
+      ctxRef?.services.tryGet('audio')?.setMomentMusic?.(true, m.content.musicId, { category: m.category, mood: m.content.musicMood });
       if (!ctxRef || !m.content.actorId) {
         return;
       }
