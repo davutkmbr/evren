@@ -4,8 +4,6 @@
  * real builders in Node and verifies every resolved point against the built geometry.
  */
 import type { GeoQuery, LandmarkDef, PerchPoint } from '../../core/contracts';
-import { latLonToLocal } from '../../core/geo-coords';
-import { RUMELI_GREAT_TOWERS } from '../landmarks/heritage/data/fortresses';
 import { LANDMARK_SPECS } from '../landmarks/mosques/gen/specs';
 import type { ImperialSpec } from '../landmarks/mosques/gen/styles/imperial';
 import { BOGAZICI, FSM, YSS } from '../landmarks/structures/builders/bridges/bosphorus-specs';
@@ -90,15 +88,14 @@ function galataCap(geo: GeoQuery): Grip {
   return { x: def.x, y: ground - 0.5 + 65.6, z: def.z };
 }
 
-/** Mirrors buildKizKulesi: terrace paving at a fixed 2.1 m, local frame u along the heading, v to the right. */
-function kizTerrace(geo: GeoQuery, u: number, v: number): Grip {
+/**
+ * Mirrors buildKizKulesi: terrace paving at a fixed 2.1 m, the tower 6.75 m behind the islet centre along the heading,
+ * its lead cupola springing at 20.6 m above the paving with a 2 m rise (the finial starts at the crown).
+ */
+function kizCupola(geo: GeoQuery): Grip {
   const def = landmark(geo, 'kiz-kulesi');
   const h = def.headingDeg * DEG;
-  const fx = Math.sin(h);
-  const fz = -Math.cos(h);
-  const rx = -fz;
-  const rz = fx;
-  return { x: def.x + fx * u + rx * v, y: 2.1, z: def.z + fz * u + rz * v };
+  return { x: def.x - Math.sin(h) * 6.75, y: 2.1 + 22.6, z: def.z + Math.cos(h) * 6.75 };
 }
 
 /**
@@ -148,19 +145,6 @@ function mosqueDome(geo: GeoQuery, id: string, offset: number, headingDeg: numbe
   return { x: cx + Math.sin(h) * offset + Math.cos(h) * side, y, z: cz - Math.cos(h) * offset + Math.sin(h) * side };
 }
 
-/**
- * Rumeli Hisarı great towers from heritage/data/fortresses.ts (ground at the tower centre + the recorded height).
- * The heritage module has no fortress builder yet; keep this in sync when one lands.
- */
-function fortressTower(geo: GeoQuery, name: string): Grip {
-  const t = RUMELI_GREAT_TOWERS.find((w) => w.name === name);
-  if (!t) {
-    throw new Error(`Rumeli Hisarı tower "${name}" not found`);
-  }
-  const p = latLonToLocal(t.lat, t.lon);
-  return { x: p.x, y: geo.heightAt(p.x, p.z) + (t.h ?? 20), z: p.z };
-}
-
 /** Mirrors buildSkyscraperCluster + buildTower: ground, roof height and the slanted crown plane. */
 function skyscraperRoof(geo: GeoQuery, id: string, anchor: number, along: number): Grip {
   const def = landmark(geo, id);
@@ -196,20 +180,14 @@ function skyscraperRoof(geo: GeoQuery, id: string, anchor: number, along: number
 
 function resolveGrip(geo: GeoQuery, p: PerchPlacement, headingDeg: number): Grip {
   switch (p.kind) {
-    case 'ground': {
-      const q = latLonToLocal(p.lat, p.lon);
-      return { x: q.x, y: geo.heightAt(q.x, q.z), z: q.z };
-    }
     case 'bridge-tower':
       return bridgeTower(geo, p.landmarkId, p.tower);
     case 'galata-cap':
       return galataCap(geo);
-    case 'kiz-terrace':
-      return kizTerrace(geo, p.u, p.v);
+    case 'kiz-cupola':
+      return kizCupola(geo);
     case 'mosque-dome':
       return mosqueDome(geo, p.landmarkId, p.offset, headingDeg, p.side ?? 0);
-    case 'fortress-tower':
-      return fortressTower(geo, p.tower);
     case 'skyscraper-roof':
       return skyscraperRoof(geo, p.landmarkId, p.anchor, p.along);
   }
