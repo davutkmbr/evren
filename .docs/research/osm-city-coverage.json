@@ -1,0 +1,166 @@
+{
+ "$comment": "Phase 24 S0 audit (scripts/data/osm-city-audit.ts). Coverage = OSM footprint area / buildable geo area per 250 m cell; built cells: geo buildable >= 30 %. PNG legend: blue = geo water, grey = not buildable and no OSM buildings, red -> yellow -> green = coverage 0 -> 0.15 -> >= 0.3 in built cells, cyan = OSM buildings on land the geo map does not build on, white outline = flight-scale regions.",
+ "extract": {
+  "osmBase": "2026-09-25T01:52:55Z",
+  "source": "Geofabrik extract turkey-latest.osm.pbf (https://download.geofabrik.de/europe/turkey.html)"
+ },
+ "square": {
+  "half": 24000,
+  "cell": 250,
+  "cells": 36864,
+  "builtCells": 12277
+ },
+ "buildings": {
+  "outlines": 616472,
+  "parts": 1392,
+  "footprintKm2": 140.39,
+  "withHeightOrLevels": 65203,
+  "withHeightOrLevelsShare": 0.106,
+  "verticesPerOutline": 5
+ },
+ "coverage": {
+  "regions": {
+   "n": 1127,
+   "p10": 0.037,
+   "p25": 0.102,
+   "p50": 0.215,
+   "p75": 0.375,
+   "p90": 0.49
+  },
+  "all": {
+   "n": 12277,
+   "p10": 0,
+   "p25": 0.014,
+   "p50": 0.142,
+   "p75": 0.278,
+   "p90": 0.406
+  },
+  "thresholds": [
+   {
+    "threshold": 0.05,
+    "coveredCells": 8240,
+    "coveredShare": 0.671,
+    "buildingsInCovered": 542386,
+    "buildingsLeftOut": 74086
+   },
+   {
+    "threshold": 0.1,
+    "coveredCells": 7075,
+    "coveredShare": 0.576,
+    "buildingsInCovered": 525198,
+    "buildingsLeftOut": 91274
+   },
+   {
+    "threshold": 0.15,
+    "coveredCells": 5938,
+    "coveredShare": 0.484,
+    "buildingsInCovered": 496682,
+    "buildingsLeftOut": 119790
+   },
+   {
+    "threshold": 0.2,
+    "coveredCells": 4837,
+    "coveredShare": 0.394,
+    "buildingsInCovered": 452914,
+    "buildingsLeftOut": 163558
+   },
+   {
+    "threshold": 0.3,
+    "coveredCells": 2661,
+    "coveredShare": 0.217,
+    "buildingsInCovered": 317129,
+    "buildingsLeftOut": 299343
+   }
+  ],
+  "smoothThresholds": [
+   {
+    "threshold": 0.05,
+    "coveredShare": 0.771,
+    "regionCellsCovered": 0.972,
+    "buildingsInCovered": 546209
+   },
+   {
+    "threshold": 0.08,
+    "coveredShare": 0.704,
+    "regionCellsCovered": 0.931,
+    "buildingsInCovered": 539522
+   },
+   {
+    "threshold": 0.1,
+    "coveredShare": 0.657,
+    "regionCellsCovered": 0.883,
+    "buildingsInCovered": 531818
+   },
+   {
+    "threshold": 0.15,
+    "coveredShare": 0.535,
+    "regionCellsCovered": 0.76,
+    "buildingsInCovered": 500813
+   }
+  ],
+  "emptyBuiltCells": {
+   "cells": 4037,
+   "km2": 236.2,
+   "osmLandKm2": {
+    "park": 10.3,
+    "grass": 24.2,
+    "forest": 76.5,
+    "cemetery": 4.4,
+    "farm": 7.1,
+    "water": 1.3,
+    "industrial": 13.4,
+    "residential": 18,
+    "pitch": 1.3
+   }
+  }
+ },
+ "land": {
+  "park": {
+   "polygons": 5985,
+   "km2": 33.18
+  },
+  "grass": {
+   "polygons": 9656,
+   "km2": 54.79
+  },
+  "forest": {
+   "polygons": 3121,
+   "km2": 629.8
+  },
+  "cemetery": {
+   "polygons": 309,
+   "km2": 9.02
+  },
+  "farm": {
+   "polygons": 407,
+   "km2": 23
+  },
+  "water": {
+   "polygons": 955,
+   "km2": 29.09
+  },
+  "industrial": {
+   "polygons": 3024,
+   "km2": 84.42
+  },
+  "residential": {
+   "polygons": 6852,
+   "km2": 290.3
+  },
+  "pitch": {
+   "polygons": 3881,
+   "km2": 8.34
+  }
+ },
+ "size": {
+  "l0RawMB": 19.7,
+  "l0GzipMBEstimate": 10.9,
+  "lodPyramidRawMBEstimate": 25.7,
+  "landRawMB": 1.8,
+  "note": "Int16 rings (4 B per vertex) + 12 B attributes per building; gzip ratio 0.55 assumed for quantised coordinates; L1/L2 add ~30 %."
+ },
+ "ms": {
+  "query": 71251,
+  "total": 74621
+ }
+}
