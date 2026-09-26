@@ -27,6 +27,7 @@ import { HelpOverlay } from './overlays/help-overlay';
 import { StatsOverlay } from './overlays/stats-overlay';
 import { Toasts } from './overlays/toasts';
 import { loadPrefs, savePrefs, type UiPrefs } from './prefs';
+import { TutorialHints } from './tutorial';
 import { createSnapshot } from './types';
 import { applyZoneBands, HudDirector } from './zones';
 import './styles/base.css';
@@ -59,6 +60,8 @@ export class UiSystem implements System {
   private readonly hints = new FlightHints(this.zones);
   private readonly hoverHints = new HoverHints(this.zones);
   private readonly shotCaption = new ShotCaption(this.zones);
+  /** Contextual move hints (src/ui/tutorial): one quiet hint at a time on the hint line, well paced. */
+  private readonly tutorial = new TutorialHints(this.zones);
   /** Flight mode seen last frame (null without a dragon): entering a hover shows its controls. */
   private lastFlightMode: string | null = null;
   private readonly photoHint = new PhotoHint();
@@ -125,6 +128,11 @@ export class UiSystem implements System {
         this.toasts.push('Keşif ilerlemesi sıfırlandı');
       },
       onShowControls: () => this.pauseMenu.show('controls'),
+      tutorial: {
+        enabled: () => this.tutorial.engine.enabled,
+        setEnabled: (on) => this.tutorial.engine.setEnabled(on),
+        reset: () => this.tutorial.engine.reset(),
+      },
     });
     const flyTo = (view: ViewPreset): void => {
       if (view.time !== undefined) {
@@ -155,9 +163,10 @@ export class UiSystem implements System {
       onOpenMap: () => this.openModal('map'),
     });
     this.momentsPanel = new MomentsPanel();
+    const controlsView = new ControlsView({ untried: (group, keys) => this.tutorial.untried(group, keys) });
     this.sourceSheet = new SourceSheet({ onClose: () => this.closeModal(), onClick: () => this.click() });
     this.pauseMenu = new PauseMenu({
-      panels: { teleport: teleportPanel, controls: new ControlsView(), settings: this.settings, moments: this.momentsPanel },
+      panels: { teleport: teleportPanel, controls: controlsView, settings: this.settings, moments: this.momentsPanel },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {
@@ -167,6 +176,8 @@ export class UiSystem implements System {
           teleportPanel.opened();
         } else if (tab === 'moments') {
           this.momentsPanel.opened();
+        } else if (tab === 'controls') {
+          controlsView.refresh();
         }
       },
       onTabClose: (tab) => {
@@ -199,6 +210,7 @@ export class UiSystem implements System {
       events.on('moment-source', ({ id }) => this.openSource(id)),
       () => this.momentsPanel.dispose(),
       this.hud.maneuver.connect(events),
+      this.tutorial.connect(events),
     );
 
     void services.when('geo').then((geo) => {
@@ -267,6 +279,8 @@ export class UiSystem implements System {
     if (hudVisible && this.snapshot.valid) {
       this.hud.update(this.snapshot, realDt);
     }
+    // Move hints only in plain flight with the HUD up (not perched: the viewing mode fades the HUD to its zones).
+    this.tutorial.update(ctx, hudVisible && !this.perchView.viewing);
     this.tracker.update(this.snapshot, realDt, hudVisible);
     // Last: every request of this frame (UI and activities) is in; zones settle and fade.
     this.zones.update(realDt);
