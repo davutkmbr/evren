@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { clamp } from '../../core/math/noise';
+import { clamp, smoothstep } from '../../core/math/noise';
 import { enterStance, stepStance } from './ground-moves';
 import { MANEUVER_LABELS } from './maneuvers';
-import { GRAVITY, GROUND, SWIM } from './params';
+import { FLAP, GRAVITY, GROUND, SWIM, SWIM_POSE } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 
@@ -108,6 +108,8 @@ export function enterSwimming(sim: FlightSim): void {
   sim.hoverBlend = 0;
   sim.brake = 0;
   sim.attachment = 1;
+  sim.leapCharge = 0;
+  sim.runTakeoff = 0;
   sim.maneuvers.cancel();
   sim.setMode('swimming');
 }
@@ -191,55 +193,101 @@ function sampleFloat(sim: FlightSim, fx: number, fz: number): typeof _float {
   return f;
 }
 
+/** Wading water turns into swimming here: the seabed is deeper than the floating body's legs reach (SWIM_POSE). */
+export function floatsHere(sim: FlightSim): boolean {
+  return sim.terrainY < sim.waterY - (sim.standHeight + SWIM.floatDepth + SWIM_POSE.floatMargin);
+}
+
+/** A swimming dragon's feet reach the seabed here (or it has left the water): it stands up and wades. */
+function wadesHere(sim: FlightSim): boolean {
+  if (!sim.overWater) {
+    return sim.terrainY > -0.6;
+  }
+  return sim.terrainY > sim.waterY - (sim.standHeight + SWIM.floatDepth - SWIM_POSE.wadeMargin);
+}
+
+/** Wing-beat phase at which a running take-off's downstroke slaps the water (late in the downstroke). */
+const SLAP_PHASE = TWO_PI * FLAP.downstrokeFraction * 0.85;
+
 /**
- * Floating and paddling on the sea (W/S paddle, A/D turn, Space/L take off with a splash). The body floats on the
- * wave surface of the water service, pitches and rolls with it and is carried by the orbital motion and the current.
+ * Floating and swimming on the sea (W/S swim, Shift fast, A/D turn, Space/L the take-off run, V an instant leap).
+ * The body floats on the wave surface of the water service, pitches and rolls with it and is carried by the orbital
+ * motion and the current. The stroke (swimPhase / swimStroke) is the side-to-side undulation of the body and tail with
+ * the hind legs kicking; its frequency and strength follow the speed through the water.
  */
 export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void {
   const b = sim.body;
   const p = b.position;
   const v = b.velocity;
   const urged = cmd.urgePressed && sim.maneuvers.tryUrge(sim);
-  if (urged || cmd.flapPressed || cmd.flap || cmd.landPressed) {
+  if (urged) {
     sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, sim.waterY, p.z), strength: 1.2 });
     leap(sim, SWIM.leapUp, SWIM.leapForward);
     return;
   }
+  // Space / L: the take-off run on the surface (wings beating the water), then the leap.
+  if (sim.runTakeoff <= 0 && (cmd.flapPressed || cmd.flap || cmd.landPressed)) {
+    sim.runTakeoff = h;
+  }
+  const running = sim.runTakeoff > 0;
+  const run = running ? clamp(sim.runTakeoff / SWIM_POSE.runTime, 0, 1) : 0;
+  if (running) {
+    sim.runTakeoff += h;
+    if (sim.runTakeoff >= SWIM_POSE.runTime) {
+      sim.emit({ type: 'splash', point: new THREE.Vector3(p.x, sim.waterY, p.z), strength: 1.2 });
+      leap(sim, SWIM.leapUp, SWIM.leapForward);
+      return;
+    }
+  }
   const fast = cmd.dive;
   const fwd = clamp(cmd.pitch, -1, 1);
-  const target = fwd > 0 ? fwd * (fast ? SWIM.fastSpeed : SWIM.paddleSpeed) : fwd * 1;
-  sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * 0.9));
+  if (running) {
+    sim.groundSpeed = Math.min(SWIM_POSE.runSpeed, sim.groundSpeed + SWIM_POSE.runAccel * h);
+  } else {
+    const target = fwd > 0 ? fwd * (fast ? SWIM.fastSpeed : SWIM.paddleSpeed) : fwd * 1;
+    sim.groundSpeed += (target - sim.groundSpeed) * (1 - Math.exp(-h * 0.9));
+  }
   const turn = clamp(cmd.roll + cmd.yaw, -1, 1);
-  sim.groundYawRate = -turn * SWIM.turnRate;
+  sim.groundYawRate = -turn * SWIM.turnRate * (running ? 0.5 : 1);
   sim.groundYaw += sim.groundYawRate * h;
   const fx = -Math.sin(sim.groundYaw);
   const fz = -Math.cos(sim.groundYaw);
   const float = sampleFloat(sim, fx, fz);
 
-  // Paddling toward the target velocity through the water (which itself moves: orbital motion + current); quadratic
+  // Swimming toward the target velocity through the water (which itself moves: orbital motion + current); quadratic
   // hydrodynamic drag bleeds a fast plunge in ~0.4 s.
   const dx = fx * sim.groundSpeed + float.vx - v.x;
   const dz = fz * sim.groundSpeed + float.vz - v.z;
   const drag = 1 - Math.exp(-h * (1.6 + 0.15 * Math.hypot(dx, dz)));
   v.x += dx * drag;
   v.z += dz * drag;
-  // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave.
-  const floatY = float.height - SWIM.floatDepth;
+  // Buoyancy toward the float depth under the (body-averaged) wave surface, damped relative to the water's heave. The
+  // take-off run lifts the body onto the surface.
+  const depth = SWIM.floatDepth + (SWIM_POSE.runRiseDepth - SWIM.floatDepth) * run * run * (3 - 2 * run);
+  const floatY = float.height - depth;
   const vDrag = 1 - Math.exp(-h * (4 + 0.4 * Math.abs(v.y - float.vy)));
   v.y += 10 * (floatY - p.y) * h;
   v.y -= (v.y - float.vy) * vDrag;
+  // Settling in after a landing or a plunge's surfacing: the body sinks into the float no faster than this.
+  if (sim.modeTime < SWIM_POSE.settleTime) {
+    v.y = Math.max(v.y, float.vy - SWIM_POSE.settleSink);
+  }
   p.addScaledVector(v, h);
   p.y = Math.max(p.y, float.height - 2.5);
 
   sim.sampleSurface();
-  if (!sim.overWater && sim.terrainY > -0.6) {
+  if (!running && wadesHere(sim)) {
+    // The feet reach the seabed: stand up and wade (the stance starts from the floating height and settles).
+    if (sim.overWater) {
+      sim.surfaceY = sim.terrainY;
+    }
     enterGrounded(sim);
     return;
   }
 
-  // Attitude: the plane through the sampled surface, a slight head-up trim.
+  // Attitude: the plane through the sampled surface, a slight head-up trim (more while running on the water).
   _up.set(-float.slopeForward * fx + float.slopeRight * fz, 1, -float.slopeForward * fz - float.slopeRight * fx).normalize();
-  alignBody(sim, _up, 0.06, 0, 5, h);
+  alignBody(sim, _up, 0.06 + 0.1 * run, 0, sim.modeTime < SWIM_POSE.settleTime ? SWIM_POSE.settleAlign : 5, h);
   b.angularVelocity.set(0, sim.groundYawRate, 0);
 
   const collision = sim.world.collision;
@@ -247,17 +295,54 @@ export function stepSwimming(sim: FlightSim, cmd: PilotCommand, h: number): void
     sim.groundSpeed *= 0.5;
   }
 
+  // The stroke: frequency and strength from the speed through the water (Shift's fast swim beats harder and quicker);
+  // no walk cycle while floating.
   const speed = Math.abs(sim.groundSpeed);
-  sim.walkPhase = (sim.walkPhase + TWO_PI * (0.35 + speed / 1.8) * h) % TWO_PI;
-  sim.walkAmount += (clamp(0.35 + speed / 3, 0, 1) - sim.walkAmount) * (1 - Math.exp(-h * 4));
-  if (speed > 1.5 && sim.splashTimer > 0.7) {
+  const fastK = smoothstep(SWIM.paddleSpeed, SWIM.fastSpeed, speed);
+  const freq = running ? SWIM_POSE.runFreq : (SWIM_POSE.freqIdle + SWIM_POSE.freqPerSpeed * speed) * (1 + (SWIM_POSE.fastFreq - 1) * fastK);
+  const strokeTarget = running
+    ? SWIM_POSE.strokeFast
+    : SWIM_POSE.strokeIdle + (SWIM_POSE.strokePaddle - SWIM_POSE.strokeIdle) * smoothstep(0, SWIM.paddleSpeed, speed) + (SWIM_POSE.strokeFast - SWIM_POSE.strokePaddle) * fastK;
+  sim.swimStroke += (strokeTarget - sim.swimStroke) * (1 - Math.exp(-h * SWIM_POSE.strokeRate));
+  const prevPhase = sim.swimPhase;
+  sim.swimPhase = (sim.swimPhase + TWO_PI * freq * h) % TWO_PI;
+  sim.walkAmount = 0;
+  // Paddle cue: a small splash at the tail on each stroke reversal (the tail at the end of its sweep).
+  const reversal = Math.floor((prevPhase + Math.PI / 2) / Math.PI) !== Math.floor((sim.swimPhase + Math.PI / 2) / Math.PI);
+  if (!running && reversal && speed > SWIM_POSE.splashSpeed && sim.splashTimer > 0.3) {
     sim.splashTimer = 0;
-    const sx = p.x + fx * 3;
-    const sz = p.z + fz * 3;
-    sim.emit({ type: 'splash', point: new THREE.Vector3(sx, sim.waterHeight(sx, sz), sz), strength: 0.12 + speed * 0.03 });
+    const side = Math.sin(sim.swimPhase) > 0 ? 1 : -1;
+    const back = 0.42 * sim.rigLength;
+    const lateral = 0.08 * sim.rigLength * side * sim.swimStroke;
+    const sx = p.x - fx * back - fz * lateral;
+    const sz = p.z - fz * back + fx * lateral;
+    sim.emit({ type: 'splash', point: new THREE.Vector3(sx, sim.waterHeight(sx, sz), sz), strength: SWIM_POSE.splashBase + SWIM_POSE.splashPerSpeed * speed });
   }
-  sim.touchingWater = speed > 1.5;
+  sim.touchingWater = speed > 1.5 || running;
 
-  relaxWings(sim, 0.22, 0.3, h);
+  if (running) {
+    // Wings open and beat, the downstrokes slapping the water at both tips.
+    const prevBeat = sim.beat.phase;
+    sim.spread = approach(sim.spread, SWIM_POSE.runSpread, 3, h);
+    sim.sweep = approach(sim.sweep, 0, 2, h);
+    sim.legsOut = approach(sim.legsOut, 1, 2, h);
+    sim.hoverBlend = approach(sim.hoverBlend, 0.4, 2, h);
+    sim.brake = 0;
+    sim.attachment = 1;
+    sim.updateInertia();
+    sim.beat.update(h, SWIM_POSE.runEffort, sim.hoverBlend, SWIM_POSE.runAmplitude);
+    const beat = sim.beat.phase;
+    if (prevBeat < SLAP_PHASE && beat >= SLAP_PHASE && sim.beat.amplitude > 0.3) {
+      const span = SWIM_POSE.runSlapSpan * sim.rigLength;
+      for (const side of [-1, 1]) {
+        const sx = p.x - fz * span * side;
+        const sz = p.z + fx * span * side;
+        sim.emit({ type: 'splash', point: new THREE.Vector3(sx, sim.waterHeight(sx, sz), sz), strength: SWIM_POSE.runSlap });
+      }
+    }
+  } else {
+    // Wings folded tight along the back.
+    relaxWings(sim, 0, 0.3, h);
+  }
   fillLocomotionTelemetry(sim);
 }

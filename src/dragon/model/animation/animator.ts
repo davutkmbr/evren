@@ -127,6 +127,35 @@ const GAZE_UP_BODY = 0.4;
 /** Affectionate head tilt (roll, rad), stronger while petted. */
 const GAZE_TILT = 0.2;
 const GAZE_PET_TILT = 0.16;
+/**
+ * Swimming at the surface (DragonPose.swim / swimPhase / swimStroke; the feel tunables live in the flight model's
+ * SWIM_POSE). Shape of the stroke on the rig at full strength (rad): the side-to-side undulation of the spine (root,
+ * lumbar, pelvis) runs into a travelling wave down the tail (per-bone yaw growing toward the tip, TAIL_LAG rad of phase
+ * per bone), the chest and rider stay steady and the neck undoes the body's swing so the head keeps to the course. The
+ * neck carries a swan-like S (lower neck up, upper neck forward) and the head is held level. The wings fold tight along
+ * the back; the hind legs kick alternately below the body (thigh swinging back and forth around THIGH, the shin
+ * flexing on the recovery, the foot feathering).
+ */
+const SWIM_RIG = {
+  rootYaw: 0.035,
+  lumbarYaw: 0.08,
+  pelvisYaw: 0.12,
+  roll: 0.03,
+  tailYawBase: 0.035,
+  tailYawTip: 0.11,
+  tailLag: 0.32,
+  neckCurve: [0.11, 0.09, 0.06, 0.02, -0.02, -0.05, -0.07, -0.07, -0.07],
+  headLevel: 0.55,
+  thigh: -0.55,
+  thighKick: 0.4,
+  thighKickIdle: 0.12,
+  thighOut: 0.18,
+  shin: 0.55,
+  shinFlex: 0.4,
+  meta: -0.35,
+  foot: -0.45,
+  footFeather: 0.4,
+} as const;
 /** Clamp for the body-frame acceleration fed to secondary motion (teleports, collisions). */
 const MAX_ACCEL = 40;
 const _qa = new THREE.Quaternion();
@@ -197,6 +226,10 @@ export class DragonAnimator {
   private smoothAmp = 0;
   private smoothWalk = 0;
   private smoothJaw = 0;
+  /* Swimming this frame: posture weight (eased), stroke strength (weighted) and phase. */
+  private swimW = 0;
+  private swimStroke = 0;
+  private swimPhase = 0;
   private povTarget = 0;
   private povBlend = 0;
   /** 1 while the head is raised to breathe fire (jaw open), eased so the head does not snap. */
@@ -324,8 +357,17 @@ export class DragonAnimator {
     this.readGround(pose, state);
     const psi = strokePhase(pose.flapPhase);
     const amp = THREE.MathUtils.clamp(this.smoothAmp, 0, 1.5) * this.smoothSpread;
-    const grounded = 1 - THREE.MathUtils.clamp(this.smoothTuck, 0, 1);
+    // Floating: no ground plane, no planted feet; the swim stroke takes over from the stance.
+    const swimRaw = THREE.MathUtils.clamp(pose.swim ?? 0, 0, 1);
+    const swimW = swimRaw * swimRaw * (3 - 2 * swimRaw);
+    this.swimW = swimW;
+    this.swimStroke = THREE.MathUtils.clamp(pose.swimStroke ?? 0, 0, 1.2) * swimW;
+    this.swimPhase = pose.swimPhase ?? 0;
+    const grounded = (1 - THREE.MathUtils.clamp(this.smoothTuck, 0, 1)) * (1 - swimW);
     const walk = this.smoothWalk * grounded;
+    const swPh = this.swimPhase;
+    const swSt = this.swimStroke;
+    const swimRoot = SWIM_RIG.rootYaw * swSt * Math.sin(swPh + 0.6);
 
     // --- Body: heave counter to the wing stroke, slight pitching; walking sway. ---
     const heave = -0.13 * amp * Math.cos(psi - 0.35);
@@ -340,10 +382,10 @@ export class DragonAnimator {
     const gaitPitch = walk * gallop * 0.05 * Math.sin(wp - 2.2);
     const spineFlex = walk * gallop * 0.09 * Math.sin(wp - 1.2);
     this.root.position.set(this.rootRest.x + walkSway * 0.6, this.rootRest.y + heave + walkBob, this.rootRest.z);
-    setEuler(this.root, bodyPitch + gaitPitch, walkSway * 0.8, walk * 0.03 * Math.sin(wp) * (1 - gallop), 'YXZ');
-    setEuler(this.chest, -bodyPitch * 0.4 + grounded * 0.05 - spineFlex * 0.5, -walkSway * 0.9, 0, 'YXZ');
-    setEuler(this.lumbar, -bodyPitch * 0.3 + spineFlex, -walkSway * 0.5, 0, 'YXZ');
-    setEuler(this.pelvis, -0.02 * grounded - spineFlex * 0.5, walkSway * 0.6, 0, 'YXZ');
+    setEuler(this.root, bodyPitch + gaitPitch, walkSway * 0.8 + swimRoot, walk * 0.03 * Math.sin(wp) * (1 - gallop) + SWIM_RIG.roll * swSt * Math.sin(swPh), 'YXZ');
+    setEuler(this.chest, -bodyPitch * 0.4 + grounded * 0.05 - spineFlex * 0.5, -walkSway * 0.9 - swimRoot * 0.5, 0, 'YXZ');
+    setEuler(this.lumbar, -bodyPitch * 0.3 + spineFlex, -walkSway * 0.5 + SWIM_RIG.lumbarYaw * swSt * Math.sin(swPh - 0.4), 0, 'YXZ');
+    setEuler(this.pelvis, -0.02 * grounded - spineFlex * 0.5, walkSway * 0.6 + SWIM_RIG.pelvisYaw * swSt * Math.sin(swPh - 0.9), 0, 'YXZ');
 
     // --- Neck & head ---
     const neckYawTarget = THREE.MathUtils.clamp(pose.neckYaw, -1.3, 1.3);
@@ -376,8 +418,9 @@ export class DragonAnimator {
       const osc = -bodyPitch * (i < 3 ? 0.5 : 0);
       const lift = groundNeck * (i < 4 ? 0.9 : -0.6);
       const pov = this.povBlend * povKeep * (i < 5 ? -POV_NECK_DROP * (w / 0.62) : POV_NECK_LIFT * (w / 0.38));
-      const flightPitch = np * w + osc + lift * w + walkNod * w + pov;
-      const flightYaw = ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded;
+      const flightPitch = np * w + osc + lift * w + walkNod * w + pov + SWIM_RIG.neckCurve[i] * swimW;
+      // Swimming: the neck undoes the chest's swing so the head keeps to the course.
+      const flightYaw = ny * w + 0.02 * Math.sin(this.time * 0.7 - i * 0.4) * grounded - swimRoot * 0.5 * w;
       const gazePitch = GAZE_PITCH[i] + osc * 0.5;
       const gazeYaw = side * (GAZE_YAW[i] + GAZE_PET_YAW[i] * pet) + petSway * (i > 3 ? 1 : 0);
       setEuler(this.neck[i], flightPitch + (gazePitch - flightPitch) * g, flightYaw + (gazeYaw - flightYaw) * g, 0, 'YXZ');
@@ -389,7 +432,7 @@ export class DragonAnimator {
     // neck's net pitch (level, as in third person) and raises its nose unless it is breathing fire.
     const headStab = -bodyPitch * 0.6 - heave * 0.25;
     const povHead = this.povBlend * povKeep * (POV_NECK_DROP - POV_NECK_LIFT + POV_HEAD_RAISE * (1 - this.povAim));
-    setEuler(this.head, headStab - groundNeck * 0.25 + povHead, 0, 0, 'YXZ');
+    setEuler(this.head, headStab - groundNeck * 0.25 + povHead - SWIM_RIG.headLevel * Math.max(0, np) * swimW, 0, 0, 'YXZ');
     if (g > 0.001) {
       this.aimHeadAtRider(g, side, pet);
     }
@@ -495,12 +538,14 @@ export class DragonAnimator {
       const idle = 0.035 * Math.sin(this.time * 0.8 - i * 0.42) * (0.3 + k) * (0.4 + 0.6 * grounded);
       const walkSwing = walk * 0.06 * Math.sin(wp - i * 0.35 - 0.8) * (0.3 + k);
       const lateralAcc = -_acc.x * 0.0015 * k;
+      // Swimming: the travelling wave of the stroke down the tail (the main paddle).
+      const swimWave = this.swimStroke * (SWIM_RIG.tailYawBase + (SWIM_RIG.tailYawTip - SWIM_RIG.tailYawBase) * k) * Math.sin(this.swimPhase - 1.3 - SWIM_RIG.tailLag * i);
       const droop = grounded * (i < 4 ? -0.03 : 0.012);
       // Contentment while petted: the tail tip curls up and to one side, slowly swaying.
       const tip = THREE.MathUtils.smoothstep(k, 0.45, 1);
       const curlYaw = pet * tip * (0.2 * side + 0.07 * Math.sin(this.time * 0.55 - i * 0.35));
       const curlPitch = -pet * tip * 0.1;
-      const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc + curlYaw;
+      const ty = baseYaw + inertialYaw + idle + walkSwing + lateralAcc + curlYaw + swimWave;
       const tp = basePitch + inertialPitch + wave + droop + curlPitch + 0.012 * Math.sin(this.time * 0.6 - i * 0.3) * grounded;
       let yaw: number;
       let pitch: number;
@@ -561,11 +606,12 @@ export class DragonAnimator {
     const shoulder = _hip.copy(bones.humerus.position).applyQuaternion(_q).add(_p);
     _restUp.set(0, 1, 0);
 
-    // Flight fold.
-    _up.set(0.35 * sgn, 1, 0);
-    aimBoneUp(bones.humerus, _q, rest.upper, _restUp, _dir.set(0.3 * sgn, -0.16, 1), _up, _qa);
-    aimBoneUp(bones.forearm, _qa, rest.fore, _restUp, _dir.set(0.07 * sgn, 0.1, -1), _up, _qb);
-    aimBoneUp(bones.hand, _qb, rest.hand, _restUp, _dir.set(0.06 * sgn, 0.06, 1), _up);
+    // Flight fold (swimming: folded tighter and higher, along the back).
+    const sw = this.swimW;
+    _up.set((0.35 - 0.1 * sw) * sgn, 1, 0);
+    aimBoneUp(bones.humerus, _q, rest.upper, _restUp, _dir.set((0.3 - 0.14 * sw) * sgn, -0.16 + 0.14 * sw, 1), _up, _qa);
+    aimBoneUp(bones.forearm, _qa, rest.fore, _restUp, _dir.set((0.07 - 0.04 * sw) * sgn, 0.1 + 0.05 * sw, -1), _up, _qb);
+    aimBoneUp(bones.hand, _qb, rest.hand, _restUp, _dir.set((0.06 - 0.03 * sw) * sgn, 0.06 + 0.08 * sw, 1), _up);
     if (grounded > 0.001) {
       _stash[4].copy(bones.humerus.quaternion);
       _stash[5].copy(bones.forearm.quaternion);
@@ -732,6 +778,7 @@ export class DragonAnimator {
     setEuler(bones.meta, -0.25, 0, 0, 'YXZ');
     setEuler(bones.foot, -0.55, 0, 0, 'YXZ');
     if (grounded < 0.001) {
+      this.applySwimKick(side);
       return;
     }
     for (let i = 0; i < 4; i++) {
@@ -776,6 +823,36 @@ export class DragonAnimator {
     const e = grounded * grounded * (3 - 2 * grounded);
     for (let i = 0; i < 4; i++) {
       blendFrom(bones.list[i], _stash[4 + i], e);
+    }
+    this.applySwimKick(side);
+  }
+
+  /**
+   * Swimming: the hind legs kick alternately below the body (no ground plane): the thigh swings back in the power
+   * stroke and forward in the recovery with the shin flexed and the foot feathered, blended over the leg's pose by the
+   * swim weight.
+   */
+  private applySwimKick(side: Side): void {
+    const w = this.swimW;
+    if (w < 0.001) {
+      return;
+    }
+    const sgn = sideSign(side);
+    const bones = this.legs[side];
+    for (let i = 0; i < 4; i++) {
+      _stash[4 + i].copy(bones.list[i].quaternion);
+    }
+    // The left leg kicks back while the tail sweeps right, the right one half a cycle later.
+    const ph = this.swimPhase + (side === 'L' ? 0 : Math.PI);
+    const kick = Math.sin(ph);
+    const recover = 0.5 + 0.5 * Math.cos(ph);
+    const amp = SWIM_RIG.thighKickIdle + (SWIM_RIG.thighKick - SWIM_RIG.thighKickIdle) * Math.min(1, this.swimStroke / Math.max(w, 1e-3));
+    setEuler(bones.thigh, SWIM_RIG.thigh - amp * kick, 0.05 * sgn, SWIM_RIG.thighOut * sgn, 'YXZ');
+    setEuler(bones.shin, SWIM_RIG.shin + SWIM_RIG.shinFlex * recover * (amp / SWIM_RIG.thighKick), 0, 0, 'YXZ');
+    setEuler(bones.meta, SWIM_RIG.meta, 0, 0, 'YXZ');
+    setEuler(bones.foot, SWIM_RIG.foot + SWIM_RIG.footFeather * recover, 0, 0, 'YXZ');
+    for (let i = 0; i < 4; i++) {
+      blendFrom(bones.list[i], _stash[4 + i], w);
     }
   }
 

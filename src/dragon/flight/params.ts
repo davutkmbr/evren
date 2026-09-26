@@ -491,12 +491,80 @@ export const LEAP = {
 } as const;
 
 export const SWIM = {
-  floatDepth: 0.35,
+  /** Depth of the centre of mass below the body-averaged wave surface (m): the waterline runs along the back. */
+  floatDepth: 0.6,
   paddleSpeed: 2.6,
   fastSpeed: 4.5,
   turnRate: 0.6,
   leapUp: 4.5,
   leapForward: 2,
+} as const;
+
+/**
+ * Swimming at the surface (locomotion.ts drives it, pose.ts turns it into DragonPose.swim / swimPhase / swimStroke,
+ * the animator shapes the rig). The dragon floats low with the head and neck raised, the wings folded tight along the
+ * back, the hind legs kicking slowly under the body; the side-to-side undulation of the body and tail is the stroke.
+ * Speeds m/s, times s, frequencies Hz, angles rad.
+ */
+export const SWIM_POSE = {
+  /** Stroke (tail undulation) frequency: idle + per m/s of swim speed; Shift (fast swim) multiplies it. */
+  freqIdle: 0.2,
+  freqPerSpeed: 0.13,
+  fastFreq: 1.3,
+  /** Stroke strength 0..1: the idle sway, the strength at paddle speed, and with Shift. */
+  strokeIdle: 0.22,
+  strokePaddle: 0.7,
+  strokeFast: 1,
+  /** Rate (1/s) at which the stroke strength follows the swim speed. */
+  strokeRate: 1.6,
+  /** Rate (1/s) at which the swim posture blends in (a landing settles into the float) and out. */
+  blendIn: 2.2,
+  blendOut: 5,
+  /**
+   * Settling into the float (a landing onto the water, surfacing from a plunge): for settleTime the body sinks no
+   * faster than settleSink (m/s) and levels out at settleAlign (1/s) instead of flopping flat.
+   */
+  settleTime: 1.5,
+  settleSink: 2,
+  settleAlign: 1.6,
+  /** Neck raise (pose neckPitch, + = up) while floating, and extra with the stroke (the head pushes forward). */
+  neckRaise: 0.42,
+  neckStroke: -0.1,
+  /** Tail: carried at the surface (pitch, + = down), its lateral sweep (pose tailYaw) per unit of stroke. */
+  tailPitch: 0.04,
+  tailSweep: 0.28,
+  /** Idle look-around: seconds between head turns (random within) and the largest turn (rad). */
+  lookEvery: [3.5, 8] as const,
+  lookYaw: 0.55,
+  /** Paddle cue: a small splash at the tail on each stroke reversal above this speed, strength base + per m/s. */
+  splashSpeed: 1.2,
+  splashBase: 0.05,
+  splashPerSpeed: 0.025,
+  /**
+   * Water take-off run (Space / L while swimming): the body rises onto the surface and speeds up with the wings
+   * beating and slapping the water (a splash at each wingtip per downstroke), then leaps into the air.
+   */
+  runTime: 1.2,
+  runSpeed: 8,
+  runAccel: 7,
+  runEffort: 0.95,
+  /** Stroke amplitude limit through the run: the downstrokes slap the surface instead of plunging deep. */
+  runAmplitude: 0.7,
+  /** Leg kick frequency (Hz) through the run: the hind feet paddle the surface quickly. */
+  runFreq: 1.5,
+  runSpread: 0.85,
+  /** Float depth (m) the running body rises to by the end of the run. */
+  runRiseDepth: 0.05,
+  /** Wingtip slap splash strength and lateral offset (fraction of the rig length). */
+  runSlap: 0.35,
+  runSlapSpan: 0.42,
+  /**
+   * Shore: swimming turns into wading (grounded, feet on the seabed) where the seabed is within the legs' reach,
+   * standHeight + floatDepth - wadeMargin below the surface; wading turns back into swimming beyond
+   * standHeight + floatDepth + floatMargin (hysteresis, so the switch never flickers).
+   */
+  wadeMargin: 0.3,
+  floatMargin: 0.45,
 } as const;
 
 /** Body collision spheres as fractions of the rig length (x, y, z, radius). */
