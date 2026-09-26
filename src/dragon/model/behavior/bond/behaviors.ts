@@ -381,7 +381,7 @@ interface Running {
 /** The last RECENT_COUNT behaviours are drawn with their weight times RECENT_PENALTY. */
 const RECENT_COUNT = 4;
 const RECENT_PENALTY = 0.3;
-const GAP_MOOD: Record<DragonMood, number> = { content: 1, curious: 0.75, playful: 0.75, tired: 1.1, excited: 0.8 };
+const GAP_MOOD: Record<DragonMood, number> = { content: 1, curious: 0.75, playful: 0.75, tired: 1.1, excited: 0.8, embarrassed: 1.2 };
 
 /**
  * Chooses and plays the self-driven behaviours: rare (a global gap of BOND.behavior.gap s scaled by mood, per-

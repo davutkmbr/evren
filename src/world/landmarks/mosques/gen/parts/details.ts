@@ -9,6 +9,11 @@ export function alem(b: MeshBuilder, height: number, lod: LodLevel): void {
   const h = height;
   const rodR = h * 0.022;
   const seg = lod === 0 ? 12 : 6;
+  if (h >= 1.2) {
+    // bulbs on the rod, then the crescent as a thin slab in its own plane (small finials on arcade domes get none)
+    b.colCylinder(0, 0, 0, h * 0.1, h * 0.62);
+    b.colBox(-h * 0.2, h * 0.6, -Math.max(0.12, h * 0.02), h * 0.2, h * 1.02, Math.max(0.12, h * 0.02));
+  }
   b.with({ mat: Mat.Gold, light: Light.Cap, lightBase: b.worldY(0, 0, 0) - 1.5, ao: 1 }, () => {
     if (lod === 2) {
       b.lathe([rodR * 1.8, 0, h * 0.09, h * 0.12, rodR, h * 0.28, rodR, h * 0.75, 0, h * 0.8], { seg: 4, facets: true });
@@ -119,6 +124,16 @@ export function polyPath(r: number, n: number, phase = 0): [number, number][] {
  * Lead roof slab over a rectangle at height y with a thin edge; `pitch` > 0 raises the middle into a low hipped roof.
  */
 export function flatRoof(b: MeshBuilder, x0: number, z0: number, x1: number, z1: number, y: number, pitch = 0): void {
+  if (pitch > 0.3) {
+    // the hipped roof as stacked boxes, each inset to where the slopes reach its top (the walls below register
+    // their own box)
+    const inset = Math.min(x1 - x0, z1 - z0) / 2;
+    const tiers = Math.max(2, Math.ceil(pitch / 0.8));
+    for (let k = 0; k < tiers; k++) {
+      const d = (inset * k) / tiers;
+      b.colBox(x0 + d, y - 0.1 + (pitch * k) / tiers, z0 + d, x1 - d, y + (pitch * (k + 1)) / tiers, z1 - d);
+    }
+  }
   b.with({ mat: Mat.Lead, light: Light.None, ao: 0.95 }, () => {
     if (pitch <= 0) {
       b.quad([x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]);

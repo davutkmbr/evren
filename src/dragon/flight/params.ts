@@ -867,6 +867,25 @@ export const SWIM_SEA = {
   crestShare: 0.2,
   crestSink: 0.3,
   crestLift: 1,
+  /**
+   * Wave surfing: on a wave's front face (the surface falling away ahead) gravity along the slope pushes the swimming
+   * dragon on (surfGain x g x slope, m/s²); the extra speed builds up while it stays on the face (a wave moving with it)
+   * and bleeds away at surfDecay (1/s) behind the crest, up to surfMax m/s. From surfLo to surfHi m/s of it the dragon
+   * rides: it eases off its stroke (surfEase), stretches its neck forward and down (surfNeck, rad), lifts its tail
+   * (surfTail) and opens its jaw a little in delight (surfJaw); spray bursts off its chest every surfSprayEvery s.
+   */
+  surfGain: 1.3,
+  surfDecay: 0.45,
+  surfMax: 7,
+  surfLo: 0.6,
+  surfHi: 3,
+  surfEase: 0.7,
+  surfNeck: -0.18,
+  surfTail: -0.12,
+  surfJaw: 0.1,
+  surfSpray: 0.5,
+  surfSprayEvery: 0.3,
+  surfSprayForward: 0.3,
 } as const;
 
 /** Body collision spheres as fractions of the rig length (x, y, z, radius). */
@@ -1321,4 +1340,77 @@ export const PLUNGE = {
   breachMaxPath: 75 * DEG,
   /** For this long after the breach the water skim leaves the body alone (it is leaving the water, not skimming). */
   exitGrace: 0.5,
+} as const;
+
+/**
+ * Hard landing (phase 04, hard-landing.ts): meeting the ground too fast tumbles the dragon along it, then it gets up,
+ * shakes its head and grumbles. No penalty. Speeds m/s, times s, heights m, angles rad.
+ *
+ * Thresholds against the sim's own touchdowns (headless checks, hard-landing-check.ts): the slow landing (landing v2)
+ * touches down sinking 0.3-1.6 m/s at 0.3-2 m/s, the running landing sinking 0.3-1.6 m/s at 12-18 m/s, and the run-out
+ * takes up to RUNOUT.maxSink = 6 m/s; the only body contact a normal landing makes is a hip meeting a slope at ~2.4 m/s.
+ * A floor-like contact (normal y > floorNormal) on land at or above these numbers is a hard landing.
+ */
+export const HARD_LANDING = {
+  seed: 9151,
+  /** Legs out (the feet meet the ground first): sinking this fast or faster. */
+  legSink: 8,
+  /** Legs tucked (the belly, chest or head meets the ground): a normal approach speed this fast or faster... */
+  bellySink: 6,
+  /** ...or a glancing belly contact at glanceSink or more while this fast over the ground (no flare, a botched landing). */
+  glanceSink: 3,
+  glanceSpeed: 24,
+  /** Contacts with a normal steeper than this (y component) are walls, not the ground. */
+  floorNormal: 0.7,
+  /** The slide starts at the horizontal speed × slideKeep, at most slideMax, and stops at the end of the tumble. */
+  slideKeep: 0.55,
+  slideMax: 16,
+  /** Tumble length per variant; the side roll rolls twice from sideDoubleSpeed (m/s at impact) up. */
+  frontTime: 1.3,
+  sideTime: 1.3,
+  sideDoubleTime: 1.7,
+  sideDoubleSpeed: 20,
+  bellyTime: 1.5,
+  /** Getting up (legs out, lying → standing), then the head shake while standing (the bond plays it). */
+  riseTime: 0.7,
+  shakeTime: 1.3,
+  /** Blend from the impact attitude into the scripted tumble. */
+  blendIn: 0.18,
+  /** The body bounces off the impact at this share of the sink (m/s), at most bounceMax; it falls back under gravity. */
+  bounce: 0.3,
+  bounceMax: 3.5,
+  /** Carried up by the ground (a roll over the back), the body keeps at most this much upward speed as a hop (m/s). */
+  carryMax: 2,
+  /** The slide stops when the ground ends this far ahead of the centre (share of the rig length: the head's front). */
+  leadReach: 0.52,
+  /**
+   * Front: the nose dips this far (peaking at frontDipAt of the tumble) with the head held up frontNeckRaise, then the
+   * roll over the shoulder starts at frontRollStart. Side: slews sideSlew across the track, the roll starts at
+   * sideRollStart. The wings are folded by then (they flail for rollFlailTime; the belly skid's for flailTime).
+   */
+  frontDip: 0.38,
+  frontDipAt: 0.2,
+  frontNeckRaise: 0.6,
+  frontRollStart: 0.25,
+  sideSlew: 1.35,
+  sideRollStart: 0.2,
+  rollFlailTime: 0.22,
+  flailTime: 0.45,
+  /** Belly skid: fishtail yaw and roll wobble amplitudes, and the chin held up off the ground. */
+  skidYaw: 0.32,
+  skidRoll: 0.05,
+  bellyNeckRaise: 0.3,
+  /** The neck's raise follows its cue at this rate (1/s, as the pose driver's neck); its base (share of the length ahead). */
+  neckRate: 6,
+  neckBase: 0.2,
+  /** Nose-down of the lying body at the end of the tumble. */
+  lyingPitch: -0.06,
+  /** Dust puffs along the slide (s apart) and the impact's dust burst and camera jolt. */
+  dustEvery: 0.12,
+  impactDust: 1.3,
+  shake: 0.55,
+  /** The rider's sphere above the saddle (fractions of the rig length: up, forward) and its radius (m). */
+  riderUp: 0.13,
+  riderForward: 0.17,
+  riderRadius: 0.55,
 } as const;

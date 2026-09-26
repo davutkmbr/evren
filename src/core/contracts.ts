@@ -320,6 +320,12 @@ export interface GeoQuery {
 
 export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming' | 'underwater';
 
+/**
+ * Hard landing phases (phase 04, dragon/flight/hard-landing.ts): `tumble` (rolling / skidding along the ground),
+ * `rise` (getting up) and `shake` (standing, shaking its head). The mode stays 'grounded' throughout.
+ */
+export type HardLandingPhase = 'tumble' | 'rise' | 'shake';
+
 export interface DragonState {
   /** Root transform driven by physics. The rig root is parented under it. Origin = center of mass. */
   readonly object: THREE.Object3D;
@@ -376,6 +382,11 @@ export interface DragonState {
   fireBurst?(seconds: number): void;
   /** Perching on viewpoints (phase 03, dragon/flight/perch.ts); absent in sandboxes without perches. */
   readonly perch?: DragonPerchState;
+  /**
+   * The running hard landing's phase (phase 04), null when none runs. It is no landing of the player's: a race does
+   * not count it as standing on the ground (it only costs its time).
+   */
+  hardLanding?: HardLandingPhase | null;
 }
 
 /**
@@ -604,8 +615,10 @@ export interface EnvironmentState {
 /* ------------------------------------------------------------------ */
 
 export interface FxService {
-  /** One-shot water splash at a world point. */
+  /** One-shot water splash at a world point (the dragon's water contacts: skims, plunges, breaches). */
   splash(position: THREE.Vector3, strength: number): void;
+  /** One-shot splash of something else hitting the water (dolphins): no skim-contact bookkeeping. */
+  worldSplash?(position: THREE.Vector3, strength: number): void;
   /** One-shot dust/debris burst (landing on ground). */
   dust(position: THREE.Vector3, strength: number): void;
 }
@@ -670,7 +683,16 @@ export interface AudioService {
   setMomentMusic?(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void;
   /** A bond sound of the dragon at its head (phase 06); `volume` 0..1.5 also sets its intensity. */
   bondCue?(cue: BondAudioCue, volume?: number): void;
+  /**
+   * A dolphin sound at a world point (world/life/dolphins): recorded whistles, breaths and splashes from the audio
+   * manifest ('dolphin/*' entries). Silent while no recording is approved, except 'splash', which falls back to the
+   * generic water splash. `volume` 0..1.5 on top of the distance.
+   */
+  dolphinCue?(cue: DolphinAudioCue, position: { x: number; y: number; z: number }, volume?: number): void;
 }
+
+/** Dolphin sound cues: a whistle or click train (heard faintly above water), a breath at the surface, a leap's splash. */
+export type DolphinAudioCue = 'whistle' | 'breath' | 'splash';
 
 /**
  * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
@@ -735,6 +757,11 @@ export interface WeatherService {
   readonly preset: WeatherPreset | 'custom';
   /** Lightning flash brightness this frame (0..1, fast decay). */
   readonly flash: number;
+  /**
+   * Smoothed amount 0..1 of the fog layer lying on the sea this frame (foggy mornings and fog weather,
+   * src/render/weather/sea-fog.ts); 0 while the layer is off. Optional so test doubles may leave it out.
+   */
+  readonly seaFog?: number;
   setPreset(preset: WeatherPreset): void;
   set(settings: Partial<WeatherSettings>): void;
   /** Cycles clear → haze → fog → rain → storm. */
@@ -1127,7 +1154,8 @@ export interface LifeService {
 /* ------------------------------------------------------------------ */
 
 /** The dragon's mood (no meter on screen; it shows in pose and sound, and as one quiet line in the pause menu). */
-export type DragonMood = 'content' | 'curious' | 'playful' | 'tired' | 'excited';
+/** `embarrassed`: briefly, after a hard landing (phase 04). */
+export type DragonMood = 'content' | 'curious' | 'playful' | 'tired' | 'excited' | 'embarrassed';
 
 /** Read-only state of the bond behaviour, provided by dragon/model as 'bond'. */
 export interface DragonBondState {
@@ -1219,10 +1247,11 @@ export interface GameEvents {
    */
   'dragon-puff': { kind: 'smoke' | 'flame' | 'steam' | 'droplets'; strength: number };
   /**
-   * Something worth a look for the dragon (phase 06 attention): a ferry horn, a flock, a stork kettle. World point;
+   * Something worth a look for the dragon (phase 06 attention): a ferry horn, a flock, a stork kettle, a dolphin
+   * surfacing or leaping (world/life/dolphins). World point;
    * `strength` 0..1 ranks it. Any system may emit it; the bond behaviour turns the head there when it is safe.
    */
-  'dragon-attention': { x: number; y: number; z: number; kind: 'horn' | 'bird' | 'stork' | 'ferry' | 'sound'; strength: number };
+  'dragon-attention': { x: number; y: number; z: number; kind: 'horn' | 'bird' | 'stork' | 'ferry' | 'dolphin' | 'sound'; strength: number };
   /** The player asked for a moment's sources ("[I] Kaynağa bak", src/moments): the UI opens the source sheet. */
   'moment-source': { id: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */

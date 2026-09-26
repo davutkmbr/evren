@@ -98,7 +98,10 @@ export class DragonTracker {
     this.speed = this.velocity.length();
     this.mode = dragon.mode;
     this.agl = dragon.agl;
-    this.bank = bankOf(this.quaternion);
+    // Tumbling after a hard landing (phase 04): the body rolls and somersaults, the view keeps the travel direction it
+    // had and does not roll with it.
+    const tumbling = this.initialized && (dragon.hardLanding === 'tumble' || dragon.hardLanding === 'rise');
+    this.bank = tumbling ? 0 : bankOf(this.quaternion);
 
     const rig = this.rig;
     let headValid = false;
@@ -132,31 +135,33 @@ export class DragonTracker {
     }
 
     // Travel direction: velocity when flying, the nose when slow; blended to avoid pops around hover.
-    const moving = smoothstep(3, 12, this.speed);
-    if (this.speed > 1e-3) {
-      _tmp.copy(this.velocity).multiplyScalar(moving / this.speed);
-    } else {
-      _tmp.set(0, 0, 0);
+    if (!tumbling) {
+      const moving = smoothstep(3, 12, this.speed);
+      if (this.speed > 1e-3) {
+        _tmp.copy(this.velocity).multiplyScalar(moving / this.speed);
+      } else {
+        _tmp.set(0, 0, 0);
+      }
+      _tmp.addScaledVector(this.forward, 1 - moving);
+      if (_tmp.lengthSq() < 1e-6) {
+        _tmp.copy(this.forward);
+      }
+      this.travelDir.copy(_tmp.normalize());
+      const flat = Math.hypot(this.travelDir.x, this.travelDir.z);
+      this.horizontalness = flat;
+      if (flat > 1e-3) {
+        this.travelFlat.set(this.travelDir.x / flat, 0, this.travelDir.z / flat);
+      } else {
+        // Vertical travel: keep heading from the body (up vector points backwards in a dive).
+        const fx = this.forward.x - this.up.x * Math.sign(this.travelDir.y);
+        const fz = this.forward.z - this.up.z * Math.sign(this.travelDir.y);
+        const fl = Math.hypot(fx, fz) || 1;
+        this.travelFlat.set(fx / fl, 0, fz / fl);
+      }
+      this.travelRight.set(-this.travelFlat.z, 0, this.travelFlat.x);
+      this.travelYaw = yawOfDirection(this.travelFlat.x, this.travelFlat.z);
+      this.travelPitch = Math.asin(clamp(this.travelDir.y, -1, 1));
     }
-    _tmp.addScaledVector(this.forward, 1 - moving);
-    if (_tmp.lengthSq() < 1e-6) {
-      _tmp.copy(this.forward);
-    }
-    this.travelDir.copy(_tmp.normalize());
-    const flat = Math.hypot(this.travelDir.x, this.travelDir.z);
-    this.horizontalness = flat;
-    if (flat > 1e-3) {
-      this.travelFlat.set(this.travelDir.x / flat, 0, this.travelDir.z / flat);
-    } else {
-      // Vertical travel: keep heading from the body (up vector points backwards in a dive).
-      const fx = this.forward.x - this.up.x * Math.sign(this.travelDir.y);
-      const fz = this.forward.z - this.up.z * Math.sign(this.travelDir.y);
-      const fl = Math.hypot(fx, fz) || 1;
-      this.travelFlat.set(fx / fl, 0, fz / fl);
-    }
-    this.travelRight.set(-this.travelFlat.z, 0, this.travelFlat.x);
-    this.travelYaw = yawOfDirection(this.travelFlat.x, this.travelFlat.z);
-    this.travelPitch = Math.asin(clamp(this.travelDir.y, -1, 1));
 
     const jumped = this.initialized && this.position.distanceTo(this.prevPosition) > JUMP_DISTANCE;
     if (!this.initialized || jumped) {
@@ -186,7 +191,7 @@ export class DragonTracker {
       this.accel.y += (ay - this.accel.y) * a;
       this.accel.z += (az - this.accel.z) * a;
 
-      const yawRate = flat > 0.25 ? -wrapAngle(this.travelYaw - this.prevYaw) / dt : 0;
+      const yawRate = this.horizontalness > 0.25 ? -wrapAngle(this.travelYaw - this.prevYaw) / dt : 0;
       const pitchRate = (this.travelPitch - this.prevPitch) / dt;
       const r = expAlpha(6, dt);
       this.headingRate += (clamp(yawRate, -3, 3) - this.headingRate) * r;

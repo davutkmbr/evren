@@ -15,6 +15,7 @@ import { BURST } from './flow/burst';
 import { mountFlowDebug } from './flow/debug-overlay';
 import { DEFAULT_RIG_HEIGHT, DEFAULT_RIG_LENGTH, DEG, MAX_SUBSTEPS, PHYSICS_DT } from './params';
 import { Autopilot, hasPilotInput, readPilotInput } from './pilot';
+import { triggerHardLanding, type HardLandingVariant } from './hard-landing';
 import { PoseDriver, type LookTarget } from './pose';
 import { FlightSim } from './sim';
 import { createTestControl, installFlightTestHook } from './test-hook';
@@ -77,6 +78,7 @@ export function createFlightSystem(): System {
       fireBurstLeft = Math.max(fireBurstLeft, seconds);
     },
     perch: sim.perch,
+    hardLanding: null,
   };
 
   const chainNext: string[] = [];
@@ -312,6 +314,7 @@ export function createFlightSystem(): System {
     state.firing = sim.firing;
     state.roarCooldown = roarCooldown / ROAR_COOLDOWN;
     state.touchingWater = splashThisFrame || (touchedWater && sim.airspeed > 4);
+    state.hardLanding = sim.hard.phase;
   }
 
   return {
@@ -361,6 +364,15 @@ export function createFlightSystem(): System {
       // Test/diagnostics hook: dev server, sandboxes and ?flighttest=1 only.
       if (!import.meta.env.DEV && !ctx.sandbox && !ctx.debug.params.has('flighttest')) {
         return;
+      }
+      // window.__evren.hardLanding(variant?, speed?, sink?): the same trigger as __flightTest.hardLanding.
+      const evren = (window as unknown as { __evren?: Record<string, unknown> }).__evren;
+      if (evren) {
+        evren.hardLanding = (variant?: HardLandingVariant, speed?: number, sink?: number): boolean => {
+          const ok = triggerHardLanding(sim, variant, speed, sink);
+          snapInterpolation();
+          return ok;
+        };
       }
       removeTestHook = installFlightTestHook(sim, testControl, {
         teleport,
