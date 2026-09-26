@@ -343,6 +343,10 @@ export interface DragonState {
   roarCooldown?: number;
   /** Adds a world velocity change (m/s) to the physics body (speed rings, future powers). */
   addVelocity?(dx: number, dy: number, dz: number): void;
+  /** Flow ("akış", phase 20 stage D) 0..1: harmony of the recent motions, paid back as capped speed. */
+  flow?: number;
+  /** A race gate or speed ring was passed; `tightness` 0..1 = how snug the pass was (flow's use of the world). */
+  notePass?(tightness: number): void;
   /** Roars when allowed (not cooling down, not breathing fire); returns true when it roared. */
   requestRoar?(): boolean;
   /** Breathes fire for `seconds` as if the fire key were held (hotbar slot). */
