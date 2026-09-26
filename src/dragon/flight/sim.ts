@@ -118,6 +118,29 @@ export class FlightSim {
   private aheadTimer = 0;
   private readonly column = { floor: 0, ceiling: Infinity };
 
+  /*
+   * Far look-ahead along the ground track beyond the near samples (hands-off assist: tall obstacles such as towers
+   * are seen early enough to climb over them, or to turn away from them). Split like the near samples; ceilings are
+   * kept so a distant deck to fly under is not taken for a wall. Surface -Infinity = no sample (hovering).
+   */
+  readonly farSurface: number[] = new Array<number>(PROXIMITY.farSamples).fill(-Infinity);
+  readonly farCeiling: number[] = new Array<number>(PROXIMITY.farSamples).fill(Infinity);
+  readonly farDistance: number[] = new Array<number>(PROXIMITY.farSamples).fill(0);
+  readonly farWater: boolean[] = new Array<boolean>(PROXIMITY.farSamples).fill(false);
+  /** Far look-ahead on (off only to compare against the near look-ahead alone in headless checks). */
+  farLookahead = true;
+  /** Reach of the far look-ahead (m), set at the start of each sweep. */
+  farReach: number = PROXIMITY.farMin;
+  /** Steepest climb angle (rad) to clear a far sample with the hands-off land / water clearance (-Infinity: none). */
+  farPath = -Infinity;
+  /** Distance (m) of the sample that needs farPath, and the climb (m) it needs. */
+  farObstacleDistance = 0;
+  farClimb = 0;
+  /** Side the hands-off assist turns to around an obstacle it cannot out-climb: +1 right, -1 left, 0 none. */
+  farSide = 0;
+  private farCursor = 0;
+  private farTurnTimer = 0;
+
   standHeight = 0.5 * DEFAULT_RIG_HEIGHT;
   rigLength = DEFAULT_RIG_LENGTH;
   readonly impact: ImpactReport = { speed: 0, point: new THREE.Vector3(), normal: new THREE.Vector3(), surface: '', touched: false };
@@ -197,6 +220,7 @@ export class FlightSim {
     this.leapCharge = 0;
     this.runTakeoff = 0;
     this.aheadTimer = 0;
+    this.resetFarLookahead();
     this.splashDistance = 0;
     this.wind.reseed(4711);
     this.sampleSurface();
@@ -432,7 +456,7 @@ export class FlightSim {
    * height, plus the raised wings and a margin): structures reaching into it are obstacles (their top is the
    * surface to clear), structures entirely above it are ceilings to fly under — unless the gap below them is too
    * small for the dragon, then they are obstacles as well. A ceiling the dragon is already under caps the band: it
-   * cannot climb over what it is beneath.
+   * cannot climb over what it is beneath. The far look-ahead continues the scan beyond the near samples.
    */
   private updateLookahead(h: number): void {
     this.aheadTimer -= h;
@@ -454,26 +478,139 @@ export class FlightSim {
       this.aheadDistance[i] = horizontal * t;
       if (col) {
         const terrain = col.terrainHeight(x, z);
-        let band = Math.max(p.y, p.y + v.y * t) + above;
-        if (under) {
-          band = Math.min(band, this.ceilingY - 0.01);
-        }
-        const c = col.columnAt(x, z, band, this.column);
-        let surface = c.floor;
-        let ceiling = c.ceiling;
-        if (ceiling < Infinity && ceiling - surface < gapNeed && !under) {
-          // Too low to pass under: climb over the whole structure.
-          surface = col.surfaceHeight(x, z);
-          ceiling = Infinity;
-        }
+        this.sampleColumn(col, x, z, Math.max(p.y, p.y + v.y * t) + above, gapNeed, under);
+        const surface = this.column.floor;
         this.aheadSurface[i] = surface;
-        this.aheadCeiling[i] = ceiling;
+        this.aheadCeiling[i] = this.column.ceiling;
         this.aheadWater[i] = terrain < -0.4 && surface < 0.05;
       } else {
         this.aheadSurface[i] = 0;
         this.aheadCeiling[i] = Infinity;
         this.aheadWater[i] = true;
       }
+    }
+    this.updateFarLookahead(horizontal, gapNeed, under);
+  }
+
+  private resetFarLookahead(): void {
+    this.farSurface.fill(-Infinity);
+    this.farCeiling.fill(Infinity);
+    this.farDistance.fill(0);
+    this.farWater.fill(false);
+    this.farCursor = 0;
+    this.farReach = PROXIMITY.farMin;
+    this.farPath = -Infinity;
+    this.farObstacleDistance = 0;
+    this.farClimb = 0;
+    this.farSide = 0;
+    this.farTurnTimer = 0;
+  }
+
+  /**
+   * Split column at (x, z) for a look-ahead point: the band is `band` (capped under a ceiling the dragon is already
+   * beneath); a gap under a ceiling too small for the dragon makes the whole structure an obstacle.
+   */
+  private sampleColumn(col: NonNullable<SimWorld['collision']>, x: number, z: number, band: number, gapNeed: number, under: boolean): void {
+    if (under) {
+      band = Math.min(band, this.ceilingY - 0.01);
+    }
+    const c = col.columnAt(x, z, band, this.column);
+    if (c.ceiling < Infinity && c.ceiling - c.floor < gapNeed && !under) {
+      c.floor = col.surfaceHeight(x, z);
+      c.ceiling = Infinity;
+    }
+  }
+
+  /**
+   * Far look-ahead: farPerUpdate of the farSamples points between the last near sample and the reach are refreshed
+   * each look-ahead update (older samples have their distance shortened by the ground covered since). The reach grows
+   * with the airspeed and with the climb the worst obstacle of the last sweep needs at the planned climb angle. The
+   * body band is predicted no further than the near look-ahead (a climb or a descent does not go on for ever), so a
+   * deck far ahead that the dragon would pass under at its height stays a ceiling. When the steepest climb needed is
+   * too steep to fly, two probes along headings to either side pick the side to turn to (kept until the obstacle is
+   * no longer a problem).
+   */
+  private updateFarLookahead(horizontal: number, gapNeed: number, under: boolean): void {
+    const n = PROXIMITY.farSamples;
+    const col = this.world.collision;
+    const p = this.body.position;
+    const v = this.body.velocity;
+    if (!this.farLookahead || !col || horizontal < 3) {
+      if (this.farPath !== -Infinity || this.farSide !== 0) {
+        this.resetFarLookahead();
+      }
+      return;
+    }
+    const covered = horizontal * PROXIMITY.sampleInterval;
+    for (let k = 0; k < n; k++) {
+      this.farDistance[k] -= covered;
+    }
+    const nearTime = PROXIMITY.lookahead[PROXIMITY.lookahead.length - 1];
+    const start = horizontal * nearTime;
+    if (this.farCursor === 0) {
+      const climbReach = Math.max(this.farClimb, 0) / Math.tan(PROXIMITY.farPlanPath);
+      this.farReach = clamp(Math.max(horizontal * PROXIMITY.farTime, climbReach), PROXIMITY.farMin, PROXIMITY.farMax);
+    }
+    const reach = Math.max(this.farReach, start + 10);
+    const ux = v.x / horizontal;
+    const uz = v.z / horizontal;
+    const band = Math.max(p.y, p.y + v.y * nearTime) + PROXIMITY.headroom + PROXIMITY.ceilingMargin;
+    for (let j = 0; j < PROXIMITY.farPerUpdate; j++) {
+      const k = this.farCursor;
+      this.farCursor = (k + 1) % n;
+      const d = start + ((reach - start) * (k + 1)) / n;
+      const x = p.x + ux * d;
+      const z = p.z + uz * d;
+      this.sampleColumn(col, x, z, band, gapNeed, under);
+      this.farSurface[k] = this.column.floor;
+      this.farCeiling[k] = this.column.ceiling;
+      this.farDistance[k] = d;
+      this.farWater[k] = col.terrainHeight(x, z) < -0.4 && this.column.floor < 0.05;
+    }
+    // Steepest climb to clear a sample with the hands-off clearance (ceilings squeeze it into the gap).
+    const feet = p.y - this.footDepth();
+    const up = this.footDepth() + PROXIMITY.headroom + PROXIMITY.ceilingKeep;
+    let worst = -Infinity;
+    let worstK = -1;
+    let worstClimb = 0;
+    for (let k = 0; k < n; k++) {
+      const surface = this.farSurface[k];
+      const d = this.farDistance[k];
+      if (surface === -Infinity || d <= start * 0.5) {
+        continue;
+      }
+      let want: number = this.farWater[k] ? PROXIMITY.idleWater : PROXIMITY.idleLand;
+      if (this.farCeiling[k] < Infinity) {
+        want = Math.min(want, Math.max(this.farCeiling[k] - up - surface, PROXIMITY.passClearance));
+      }
+      const climb = surface + want - feet;
+      const path = Math.atan2(climb, d);
+      if (path > worst) {
+        worst = path;
+        worstK = k;
+        worstClimb = climb;
+      }
+    }
+    this.farPath = worst;
+    this.farClimb = worstClimb;
+    this.farObstacleDistance = worstK >= 0 ? this.farDistance[worstK] : 0;
+    // Too steep to out-climb: the climb needed is steep and the dragon's own climb has been falling short of it for a
+    // moment (a dragon already climbing at about the angle needed keeps climbing).
+    const shortfall = worst >= PROXIMITY.farTurnPath && worst - Math.max(this.gamma, 0) > PROXIMITY.farTurnLag;
+    this.farTurnTimer = shortfall ? this.farTurnTimer + PROXIMITY.sampleInterval : 0;
+    if (this.farSide !== 0 && worst < 0.6 * PROXIMITY.farTurnPath) {
+      this.farSide = 0;
+    } else if (this.farSide === 0 && this.farTurnTimer >= PROXIMITY.farTurnDelay) {
+      // Two probes along headings to either side at the obstacle's distance: turn toward the lower column.
+      const d = this.farObstacleDistance + 20;
+      const c = Math.cos(PROXIMITY.farProbeAngle);
+      const s = Math.sin(PROXIMITY.farProbeAngle);
+      // Right of the track is (-uz, ux).
+      this.sampleColumn(col, p.x + (ux * c - uz * s) * d, p.z + (uz * c + ux * s) * d, band, gapNeed, under);
+      const right = this.column.floor;
+      this.sampleColumn(col, p.x + (ux * c + uz * s) * d, p.z + (uz * c - ux * s) * d, band, gapNeed, under);
+      const left = this.column.floor;
+      this.farSide = Math.abs(right - left) < 2 ? (this.bank < 0 ? -1 : 1) : right < left ? 1 : -1;
     }
   }
 

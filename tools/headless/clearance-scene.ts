@@ -39,21 +39,9 @@ export function buildStructure(geo: GeoQuery, id: string): BuiltStructure {
   return { id, colliders: r.colliders.map(toCollider), decks: r.decks };
 }
 
-/**
- * The collision queries as they were before overhead structures were told apart: the whole column (terrain plus
- * every collider top) is the surface and there is never a ceiling. Used to fly the same scenarios on the old logic.
- */
-export class LegacyCollisionWorld extends CollisionWorld {
-  override columnAt(x: number, z: number, _y: number, out: { floor: number; ceiling: number }): { floor: number; ceiling: number } {
-    out.floor = this.surfaceHeight(x, z);
-    out.ceiling = Infinity;
-    return out;
-  }
-}
-
-/** A CollisionWorld (legacy or current) with the geo and the given structures registered. */
-export function createWorld(geo: GeoQuery, structures: readonly BuiltStructure[], legacy: boolean): CollisionWorld {
-  const world = legacy ? new LegacyCollisionWorld() : new CollisionWorld();
+/** A CollisionWorld with the geo and the given structures registered. */
+export function createWorld(geo: GeoQuery, structures: readonly BuiltStructure[]): CollisionWorld {
+  const world = new CollisionWorld();
   world.setGeo(geo);
   for (const s of structures) {
     for (const c of s.colliders) {
@@ -62,4 +50,3 @@ export function createWorld(geo: GeoQuery, structures: readonly BuiltStructure[]
   }
   return world;
 }
-

@@ -292,6 +292,8 @@ export class FlightController {
 
     // Low-speed protection (assisted pilot input only: overrides, landing and braking fly slow on purpose).
     const protect = sim.options.stallProtection && !cmd.brake && ov.pathTarget === null && ov.airspeedTarget === null;
+    // Fully hands-off (no stick, rudder, brake or dive, no override): the far look-ahead may climb and turn.
+    const handsOff = pilotIdle && Math.abs(cmd.yaw) < 0.04 && !cmd.brake && !cmd.dive && ov.pathTarget === null && ov.airspeedTarget === null && ov.bankTarget === null;
 
     // Bank: stick deflection commands a bank angle; idle = gentle auto-level.
     let bankCmd = 0;
@@ -310,6 +312,10 @@ export class FlightController {
       // Gentle auto-level; decisive once past knife-edge so the dragon never stays inverted.
       const inverted = smoothstep(60 * DEG, 100 * DEG, Math.abs(sim.bank));
       rollRateLimit = ENVELOPE.autoLevelRollRate + (ENVELOPE.invertedRollRate - ENVELOPE.autoLevelRollRate) * inverted;
+      if (handsOff && sim.farSide !== 0) {
+        // An obstacle ahead too tall to out-climb: bank gently toward the side with more free space.
+        bankCmd = sim.farSide * PROXIMITY.farTurnBank * smoothstep(0.6 * PROXIMITY.farTurnPath, PROXIMITY.farTurnFullPath, sim.farPath);
+      }
     }
     bankCmd = this.limitBankNearSurface(sim, sim.boundarySteer(bankCmd), PROXIMITY.minAmplitudeCruise);
     const rollRate = -clamp(3.2 * this.rollError(sim, bankCmd), -rollRateLimit, rollRateLimit);
@@ -376,6 +382,10 @@ export class FlightController {
         floor = cmd.brake
           ? this.groundFloor(sim, PROXIMITY.pilotLand, PROXIMITY.pilotWater, PROXIMITY.idleHorizon)
           : this.groundFloor(sim, PROXIMITY.idleLand, PROXIMITY.idleWater, PROXIMITY.idleHorizon);
+        if (handsOff) {
+          // Tall obstacles further ahead start the climb early (never up into a deck the dragon is passing under).
+          floor = Math.max(floor, Math.min(this.farFloor(sim), this.ceilingPath));
+        }
         // Under a bridge deck or an overhang the held path never climbs into it.
         this.gammaHold = Math.min(this.gammaHold, this.ceilingPath);
         pitchRate = clamp(1.4 * (Math.max(this.gammaHold, floor) - sim.gamma), -0.3, 0.3) * cosBank;
@@ -754,6 +764,20 @@ export class FlightController {
     this.ceilingPath = ceilingPath;
     // The ceiling wins: pushing up into a deck the dragon is under or about to pass under is never the way out.
     return Math.min(floor, ceilingPath);
+  }
+
+  /**
+   * Climb the far look-ahead asks for (hands-off): the path to clear the worst obstacle ahead with the hands-off
+   * clearance, faded in between farIgnorePath and farFullPath (gentle slopes are left to the near look-ahead) and no
+   * steeper than the energy allows (what cannot be out-climbed is turned away from as well).
+   */
+  private farFloor(sim: FlightSim): number {
+    const path = sim.farPath;
+    if (path < PROXIMITY.farIgnorePath) {
+      return -Infinity;
+    }
+    const lift = path * smoothstep(PROXIMITY.farIgnorePath, PROXIMITY.farFullPath, path);
+    return Math.min(lift, Math.max(this.gammaMax, 0));
   }
 
   /** Height of the lowest body point above the surface ~0.8-1.7 s ahead along the track. */
