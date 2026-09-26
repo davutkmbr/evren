@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { FlightMode } from '../../core/contracts';
 import { clamp, lerp, smoothstep } from '../../core/math/noise';
 import { airDensity, ceilingFactor } from './aero';
-import { DART, DEG, FLAP, GRAVITY, MASS, POWER_STROKE, PROXIMITY, SLIP, TRICKS, WING } from './params';
+import { AxisPress, inImmelmannWindow, resolvePitchUpDoubleTap, resolveRollDoubleTap } from '../../core/gestures';
+import { DART, DEG, FLAP, GRAVITY, IMMELMANN, MASS, POWER_STROKE, PROXIMITY, SLIP, SPLIT_S, TRICKS, WING, WINGOVER } from './params';
 import type { ControlTargets } from './controller';
 import type { FlightSim } from './sim';
 import type { ManeuverId, MoveId, MoveRecord, PilotCommand } from './types';
@@ -11,7 +12,7 @@ import type { ManeuverId, MoveId, MoveRecord, PilotCommand } from './types';
  * Tricks that replace the normal control law while they run. The urge and the power stroke run on top of the normal
  * law; the surface skim is automatic (skim.ts).
  */
-export type TrickKind = 'none' | 'roll' | 'loop' | 'drop' | 'catch' | 'dart' | 'slip';
+export type TrickKind = 'none' | 'roll' | 'loop' | 'drop' | 'catch' | 'dart' | 'slip' | 'wingover' | 'immelmann' | 'splits';
 
 const TWO_PI = Math.PI * 2;
 /** Turkish captions of the maneuvers (the HUD shows them briefly). */
@@ -31,6 +32,9 @@ export const MANEUVER_LABELS: Record<Exclude<ManeuverId, 'hint'>, string> = {
   dart: 'Ok gibi',
   slip: 'Kayış',
   skim: 'Sıyırma',
+  wingover: 'Kanat üstü dönüş',
+  immelmann: 'Immelmann',
+  splits: 'Split-S',
 };
 
 /** Moves kept in the log of finished moves (headless checks, diagnostics). */
@@ -44,6 +48,8 @@ export class MoveTracker {
   start = 0;
   entrySpeed = 0;
   entryY = 0;
+  /** Compass heading of the track at the start (rad). */
+  entryHeading = 0;
   contact = false;
   stalled = false;
 
@@ -51,6 +57,7 @@ export class MoveTracker {
     this.start = sim.time;
     this.entrySpeed = sim.airspeed;
     this.entryY = sim.body.position.y;
+    this.entryHeading = trackHeading(sim);
     this.contact = false;
     this.stalled = false;
   }
@@ -69,19 +76,22 @@ export class MoveTracker {
   finish(sim: FlightSim, id: MoveId, tolerance: number, forced = false): MoveRecord {
     const exitSpeed = sim.airspeed;
     const clean = !forced && !this.contact && !this.stalled && exitSpeed >= this.entrySpeed - tolerance;
+    const heightChange = sim.body.position.y - this.entryY;
+    const entryEnergy = 0.5 * this.entrySpeed * this.entrySpeed;
     return {
       id,
       start: this.start,
       duration: sim.time - this.start,
       entrySpeed: this.entrySpeed,
       exitSpeed,
-      heightChange: sim.body.position.y - this.entryY,
+      heightChange,
       clean,
       contact: this.contact,
       stalled: this.stalled,
       forced,
       lateral: 0,
-      headingChange: 0,
+      headingChange: wrapAngle(trackHeading(sim) - this.entryHeading),
+      energyRatio: entryEnergy > 1 ? (0.5 * exitSpeed * exitSpeed + GRAVITY * heightChange) / entryEnergy : 1,
     };
   }
 }
@@ -102,6 +112,55 @@ function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
+/** Compass heading of the ground track (rad, 0 = north / -z, +π/2 = east / +x). */
+function trackHeading(sim: FlightSim): number {
+  const v = sim.body.velocity;
+  return Math.atan2(v.x, -v.z);
+}
+
+/** Compass heading of the air track (rad): the heading the wingover turns. */
+function airHeading(sim: FlightSim): number {
+  const v = sim.airVelocity;
+  return Math.atan2(v.x, -v.z);
+}
+
+/**
+ * Wingover path shape over the progress p (0..1): sin(2πp) (climb, level through the top at p = 0.5, dive), eased in
+ * and out so the path starts and ends level without a jerk. Peaks near ±1 at p = 0.25 / 0.75.
+ */
+function wingoverShape(p: number): number {
+  return Math.sin(TWO_PI * p) * smoothstep(0, WINGOVER.easeIn, p) * (1 - smoothstep(1 - WINGOVER.easeOut, 1, p));
+}
+
+/** d(wingoverShape)/dp (central difference). */
+function wingoverSlope(p: number): number {
+  const e = 1e-3;
+  return (wingoverShape(p + e) - wingoverShape(p - e)) / (2 * e);
+}
+
+const _pathUp = new THREE.Vector3();
+const _pathRight = new THREE.Vector3();
+const _liftUp = new THREE.Vector3();
+/**
+ * Bank about the flight path (rad, + = lift tilted right): the angle between the lift direction (body up, square to
+ * the air path) and the vertical plane through the path. Undefined for a vertical path (0 then).
+ */
+function pathBank(sim: FlightSim): number {
+  const V = sim.airspeed;
+  if (V < 1) {
+    return sim.bank;
+  }
+  _dir.copy(sim.airVelocity).divideScalar(V);
+  _pathUp.set(0, 1, 0).addScaledVector(_dir, -_dir.y);
+  if (_pathUp.lengthSq() < 1e-4) {
+    return 0;
+  }
+  _pathUp.normalize();
+  _pathRight.crossVectors(_dir, _pathUp);
+  _liftUp.copy(sim.axes.up).addScaledVector(_dir, -sim.axes.up.dot(_dir));
+  return Math.atan2(_liftUp.dot(_pathRight), _liftUp.dot(_pathUp));
+}
+
 const _dir = new THREE.Vector3();
 const _invQ = new THREE.Quaternion();
 const _cross = new THREE.Vector3();
@@ -110,6 +169,7 @@ const _slipFrom = new THREE.Vector3();
 const _slipOffset = new THREE.Vector3();
 const _slipHit = { distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3(), surface: '' };
 const _slipColumn = { floor: 0, ceiling: Infinity };
+const _cue = { pull: 0, roll: 0, pivot: 0 };
 /** Sideways shift of a side-slip (m): SLIP.lengths body lengths of this dragon's rig. */
 export function slipDistance(sim: FlightSim): number {
   return SLIP.lengths * sim.rigLength;
@@ -139,9 +199,10 @@ function yawFeed(sim: FlightSim): number {
 }
 
 /**
- * Rider-driven maneuvers: the barrel roll, the loop, the free-fall drop and its catch, and the urge ("dehh").
- * Starts them from pilot edges (double taps, V) and automatic triggers, runs their control laws in place of the
- * normal law, and exposes cue envelopes for the pose driver. Announcements and sounds go out as sim events.
+ * Rider-driven maneuvers: the barrel roll, the loop, the free-fall drop and its catch, the urge ("dehh"), the stage B
+ * moves (power stroke, dart, side-slip) and the stage C reversals (wingover, Immelmann, Split-S). Starts them from
+ * pilot edges (double taps, V, the roll axis during a loop) and automatic triggers, runs their control laws in place
+ * of the normal law, and exposes cue envelopes for the pose driver. Announcements and sounds go out as sim events.
  */
 export class Maneuvers {
   kind: TrickKind = 'none';
@@ -208,6 +269,30 @@ export class Maneuvers {
   private slipPath = 0;
   private slipPushPrev = 0;
 
+  /* Stage C reversals (tricks): wingover, Immelmann (from the top of a loop), Split-S (from a steep dive). */
+  /** Fresh A / D presses on the held roll axis (the Immelmann's trigger during a loop). */
+  private readonly rollAxis = new AxisPress(IMMELMANN.press, IMMELMANN.release);
+  /** Side of the running reversal's turn or roll: +1 right, -1 left. */
+  reversalDir = 0;
+  /** Reversal phase: the Immelmann's pull and half roll, the Split-S's half roll and pull through. */
+  reversalPhase: 'pull' | 'roll' = 'pull';
+  /** Wingover progress (heading turned / 180°, 0..1). */
+  wingoverProgress = 0;
+  private woTurned = 0;
+  private woPrevHeading = 0;
+  private woStartLoad = 1;
+  private woDiveDepth = 1;
+  private revRolled = 0;
+  private revRate = 0;
+  private revPrevRoll = 0;
+  private revPhaseTime = 0;
+  private splitLoadStart = 0;
+  private splitUrgent = false;
+  private splitAngle = 0;
+  private splitPrevAngle = 0;
+  private splitNeedTimer = 0;
+  private splitNeed = 0;
+
   reset(): void {
     this.kind = 'none';
     this.time = 0;
@@ -222,6 +307,8 @@ export class Maneuvers {
     this.powerTime = 99;
     this.powerCooldown = 0;
     this.slipDir = 0;
+    this.reversalDir = 0;
+    this.wingoverProgress = 0;
     this.log.length = 0;
   }
 
@@ -231,7 +318,7 @@ export class Maneuvers {
 
   /** Ends any trick at once (touchdown, splashdown); a running dart, side-slip or power stroke ends unclean. */
   cancel(sim?: FlightSim): void {
-    if (sim && (this.kind === 'dart' || this.kind === 'slip')) {
+    if (sim && (this.kind === 'dart' || this.kind === 'slip' || this.kind === 'wingover' || this.kind === 'immelmann' || this.kind === 'splits')) {
       this.endMove(sim, this.moveTrack.finish(sim, this.kind, 0, true));
     }
     if (sim && this.powerActive) {
@@ -240,6 +327,7 @@ export class Maneuvers {
     this.kind = 'none';
     this.time = 0;
     this.slipDir = 0;
+    this.reversalDir = 0;
   }
 
   /** The pilot's Shift is ignored (a held dive that Space caught). */
@@ -277,6 +365,9 @@ export class Maneuvers {
       case 'loop':
       case 'catch':
       case 'slip':
+      case 'wingover':
+      case 'immelmann':
+      case 'splits':
         return 'flying';
       default:
         return null;
@@ -340,6 +431,11 @@ export class Maneuvers {
     if (!cmd.dive) {
       this.diveSuppressed = false;
     }
+    // A / D pressed during the top of a loop: the Immelmann (a double tap there counts as a press too).
+    const rollPress = this.rollAxis.update(cmd.roll) || (cmd.rollRightPressed ? 1 : cmd.rollLeftPressed ? -1 : 0);
+    if (this.kind === 'loop' && rollPress !== 0) {
+      this.tryImmelmann(sim, rollPress);
+    }
     const mode = sim.mode;
     const cruising = mode === 'flying' || mode === 'gliding' || mode === 'diving' || mode === 'stalling';
     if (cmd.urgePressed && this.tryUrge(sim)) {
@@ -398,7 +494,17 @@ export class Maneuvers {
       return;
     }
 
-    if (cmd.rollLeftPressed || cmd.rollRightPressed) {
+    if ((cmd.rollLeftPressed || cmd.rollRightPressed) && cruising && !cmd.brake && resolveRollDoubleTap(sim.gamma, SPLIT_S.maxPath) === 'splits') {
+      // A steep dive: the Split-S (half roll onto the back, pull through to the reverse heading).
+      const dir = cmd.rollRightPressed ? 1 : -1;
+      const why = V < SPLIT_S.minSpeed ? 'Split-S için hızlan' : !this.splitRoom(sim) ? 'Split-S için yüksel' : null;
+      if (why) {
+        this.hint(sim, why);
+      } else {
+        this.startSplit(sim, dir);
+        return;
+      }
+    } else if (cmd.rollLeftPressed || cmd.rollRightPressed) {
       const dir = cmd.rollRightPressed ? 1 : -1;
       // The upper wingtip sweeps up to half a span above the body: no roll right under a bridge deck.
       const room = this.headroom(sim) >= 0.5 * sim.wing.span + PROXIMITY.ceilingMargin;
@@ -410,10 +516,32 @@ export class Maneuvers {
         this.hint(sim, V < TRICKS.rollMinSpeed ? 'Takla için hızlan' : room ? 'Takla için yüksel' : 'Takla için yer yok');
       }
     }
-    if (cmd.loopPressed) {
+    if (cmd.loopPressed && resolvePitchUpDoubleTap(sim.bank, WINGOVER.minBank) === 'wingover') {
+      // Banked: the wingover (a climbing turn over the high wing, diving out on the reverse heading).
+      if (cruising && !cmd.brake) {
+        const dir = sim.bank > 0 ? 1 : -1;
+        const why = sim.tired
+          ? 'Ejderha yorgun'
+          : V < WINGOVER.minSpeed
+            ? 'Kanat üstü dönüş için hızlan'
+            : Math.abs(sim.gamma) > WINGOVER.maxEntryPath
+              ? 'Kanat üstü dönüş için düz uç'
+              : clearance < WINGOVER.minClearance
+                ? 'Kanat üstü dönüş için yüksel'
+                : !this.wingoverRoom(sim, dir)
+                  ? 'Kanat üstü dönüş için yer yok'
+                  : null;
+        if (why) {
+          this.hint(sim, why);
+        } else {
+          this.startWingover(sim, dir);
+          return;
+        }
+      }
+    } else if (cmd.loopPressed) {
       const room = this.headroom(sim) >= TRICKS.loopMinClearance;
       const fit = !sim.tired && V >= TRICKS.loopMinSpeed && clearance >= TRICKS.loopMinClearance && room;
-      const level = Math.abs(sim.gamma) < TRICKS.loopMaxEntryPath && Math.abs(sim.bank) < 50 * DEG;
+      const level = Math.abs(sim.gamma) < TRICKS.loopMaxEntryPath;
       if (cruising && fit && level && !cmd.brake) {
         this.startLoop(sim);
         return;
@@ -455,6 +583,15 @@ export class Maneuvers {
         break;
       case 'loop':
         this.loopLaw(sim, t);
+        break;
+      case 'wingover':
+        this.wingoverLaw(sim, t);
+        break;
+      case 'immelmann':
+        this.immelmannLaw(sim, h, t);
+        break;
+      case 'splits':
+        this.splitLaw(sim, cmd, h, t);
         break;
       case 'drop':
         this.dropLaw(sim, t);
@@ -593,6 +730,8 @@ export class Maneuvers {
     // Progress is measured from the entry path, so the loop ends where it began.
     this.prevLoopAngle = Math.atan2(sim.airVelocity.y, sim.airVelocity.dot(this.loopForward));
     this.loopAngle = 0;
+    // The Immelmann's record starts at the loop's entry (height and energy over the whole half loop).
+    this.moveTrack.begin(sim);
     sim.emit({ type: 'sound', name: 'whoosh', volume: 1 });
     this.announce(sim, 'loop');
   }
@@ -767,13 +906,18 @@ export class Maneuvers {
 
   /* ---------------------------------------------------------------- loop */
 
-  private loopLaw(sim: FlightSim, t: ControlTargets): void {
+  /** Loop angle (rad) from the entry path, accumulated in the loop plane. */
+  private updateLoopAngle(sim: FlightSim): number {
     const air = sim.airVelocity;
-    const V = sim.airspeed;
     const a = Math.atan2(air.y, air.dot(this.loopForward));
     this.loopAngle += wrapAngle(a - this.prevLoopAngle);
     this.prevLoopAngle = a;
-    const theta = this.loopAngle;
+    return this.loopAngle;
+  }
+
+  private loopLaw(sim: FlightSim, t: ControlTargets): void {
+    const V = sim.airspeed;
+    const theta = this.updateLoopAngle(sim);
     if (theta > TWO_PI - 6 * DEG) {
       this.finish(sim, clamp(sim.gamma, -5 * DEG, 12 * DEG), true);
       this.normalTargets(t);
@@ -785,6 +929,12 @@ export class Maneuvers {
       this.normalTargets(t);
       return;
     }
+    this.loopSteer(sim, t, theta);
+  }
+
+  /** The loop's pitch, roll and wing targets at loop angle `theta` (the loop and the Immelmann's pull). */
+  private loopSteer(sim: FlightSim, t: ControlTargets, theta: number): void {
+    const V = sim.airspeed;
     // An aerobatic egg rather than a circle (a round loop at cruise speed would need 6 g at the bottom): a firm
     // pull-up, a tight top while slow (the dynamic lift of hard beats) and a firm pull-out. The angle of attack stays
     // under the stall margin, so a slow loop simply grows rounder.
@@ -1047,6 +1197,531 @@ export class Maneuvers {
     t.legsOut = 0;
     t.hover = 0;
     t.authority.set(SLIP.authority[0], SLIP.authority[1], SLIP.authority[2]);
+  }
+
+  /* ---------------------------------------------------------------- stage C reversals */
+
+  /**
+   * Ends a reversal: logs its record and marks its end. Clean = no contact, no stall, not cut short, upright, the track
+   * within headingTolerance of the reverse heading, and the move's energy trade: the wingover keeps cleanEnergy of the
+   * entry's specific energy, the Immelmann ends higher (and keeps cleanEnergy), the Split-S ends lower and faster.
+   */
+  private endReversal(sim: FlightSim, id: 'wingover' | 'immelmann' | 'splits', forced: boolean): MoveRecord {
+    const rec = this.moveTrack.finish(sim, id, Infinity, forced);
+    const tolerance = id === 'wingover' ? WINGOVER.headingTolerance : id === 'immelmann' ? IMMELMANN.headingTolerance : SPLIT_S.headingTolerance;
+    const reversed = Math.abs(Math.PI - Math.abs(rec.headingChange)) <= tolerance;
+    const upright = sim.axes.up.y > 0.5;
+    const traded =
+      id === 'wingover'
+        ? rec.energyRatio >= WINGOVER.cleanEnergy
+        : id === 'immelmann'
+          ? rec.heightChange > 0 && rec.energyRatio >= IMMELMANN.cleanEnergy
+          : rec.heightChange < 0 && rec.exitSpeed >= rec.entrySpeed - SPLIT_S.cleanTolerance;
+    rec.clean = !forced && !rec.contact && !rec.stalled && reversed && upright && traded;
+    this.endMove(sim, rec);
+    this.reversalDir = 0;
+    return rec;
+  }
+
+  /** Roll angle of the body about the flight path from the loop plane's right axis (rad, + = rolled right). */
+  private planeRoll(sim: FlightSim): number {
+    const right = sim.axes.right;
+    const V = Math.max(sim.airspeed, 1);
+    _cross.crossVectors(this.loopRight, right);
+    _slipDir.copy(sim.airVelocity).divideScalar(V);
+    return Math.atan2(_cross.dot(_slipDir), right.dot(this.loopRight));
+  }
+
+  /**
+   * One substep of a half roll about the flight path toward `reversalDir` (the Immelmann's and the Split-S's): body
+   * rates into `t.rate` (the roll only), returns the angle still to roll (rad).
+   */
+  private halfRoll(sim: FlightSim, h: number, t: ControlTargets, rate: number, accel: number, decel: number): number {
+    const dir = this.reversalDir;
+    const roll = this.planeRoll(sim);
+    this.revRolled += wrapAngle(roll - this.revPrevRoll) * dir;
+    this.revPrevRoll = roll;
+    const remaining = Math.PI - this.revRolled;
+    const want = Math.min(rate, Math.sqrt(2 * decel * Math.max(remaining, 0)));
+    this.revRate = Math.min(want, this.revRate + accel * h);
+    _invQ.copy(sim.body.quaternion).invert();
+    _dir.copy(sim.airVelocity).divideScalar(Math.max(sim.airspeed, 1)).applyQuaternion(_invQ);
+    t.rate.copy(_dir).multiplyScalar(this.revRate * dir);
+    return remaining;
+  }
+
+  /** Starts a half roll from the current roll rate about the flight path. */
+  private beginHalfRoll(sim: FlightSim): void {
+    this.reversalPhase = 'roll';
+    this.revRolled = 0;
+    this.revPrevRoll = this.planeRoll(sim);
+    this.revPhaseTime = 0;
+    _invQ.copy(sim.body.quaternion).invert();
+    _dir.copy(sim.airVelocity).divideScalar(Math.max(sim.airspeed, 1)).applyQuaternion(_invQ);
+    this.revRate = Math.max(0, this.reversalDir * sim.body.angularVelocity.dot(_dir));
+  }
+
+  /** Sets the horizontal plane of a reversal (loopForward / loopRight) from the air track (or the body when vertical). */
+  private setPlane(sim: FlightSim): void {
+    const v = sim.airVelocity;
+    this.loopForward.set(v.x, 0, v.z);
+    if (this.loopForward.lengthSq() < 0.01 * Math.max(sim.airspeed * sim.airspeed, 1)) {
+      // Straight down: the body's forward (or, nose down, the back of its up axis) points along the track.
+      const F = sim.axes.forward;
+      const U = sim.axes.up;
+      this.loopForward.set(F.x, 0, F.z);
+      if (this.loopForward.lengthSq() < 1e-4) {
+        this.loopForward.set(-U.x, 0, -U.z);
+      }
+    }
+    if (this.loopForward.lengthSq() < 1e-6) {
+      this.loopForward.set(0, 0, -1);
+    }
+    this.loopForward.normalize();
+    this.loopRight.set(-this.loopForward.z, 0, this.loopForward.x);
+  }
+
+  /* ---------------------------------------------------------------- wingover */
+
+  /**
+   * Room for a wingover toward `dir`: headroom for the climb, and along the turn (an inner and an outer arc of the
+   * planned radius, with the wingtip margin) no wall at the body's height or halfway up the climb, the ground or a
+   * roof WINGOVER.minClearance below the feet, nothing overhead lower than the climb.
+   */
+  private wingoverRoom(sim: FlightSim, dir: number): boolean {
+    if (this.headroom(sim) < WINGOVER.headroom) {
+      return false;
+    }
+    const col = sim.world.collision;
+    if (!col) {
+      return true;
+    }
+    const p = sim.body.position;
+    const heading = airHeading(sim);
+    const fx = Math.sin(heading);
+    const fz = -Math.cos(heading);
+    const rx = Math.cos(heading) * dir;
+    const rz = Math.sin(heading) * dir;
+    const radius = (sim.airspeed * sim.airspeed) / (GRAVITY * WINGOVER.turnLoad);
+    const margin = 0.5 * sim.wing.span + WINGOVER.sideMargin;
+    const feet = p.y - sim.footDepth();
+    const steps = 6;
+    for (const r of [Math.max(radius - margin, 0.4 * radius), radius + margin]) {
+      let px = p.x;
+      let pz = p.z;
+      for (let i = 1; i <= steps; i++) {
+        const psi = (Math.PI * i) / steps;
+        const x = p.x + r * (Math.sin(psi) * fx + (1 - Math.cos(psi)) * rx);
+        const z = p.z + r * (Math.sin(psi) * fz + (1 - Math.cos(psi)) * rz);
+        const dx = x - px;
+        const dz = z - pz;
+        const len = Math.hypot(dx, dz);
+        _slipDir.set(dx / len, 0, dz / len);
+        for (const dy of [0, 0.5 * WINGOVER.headroom]) {
+          _slipFrom.set(px, p.y + dy, pz);
+          if (col.raycast(_slipFrom, _slipDir, len, false, _slipHit)) {
+            return false;
+          }
+        }
+        col.columnAt(x, z, p.y, _slipColumn);
+        const floor = col.terrainHeight(x, z) < -0.4 && _slipColumn.floor < 0.05 ? sim.waterHeight(x, z) : _slipColumn.floor;
+        if (feet - floor < WINGOVER.minClearance || _slipColumn.ceiling < p.y + WINGOVER.headroom) {
+          return false;
+        }
+        px = x;
+        pz = z;
+      }
+    }
+    return true;
+  }
+
+  private startWingover(sim: FlightSim, dir: number): void {
+    this.enter('wingover');
+    this.moveTrack.begin(sim);
+    this.reversalDir = dir;
+    this.woTurned = 0;
+    this.wingoverProgress = 0;
+    this.woPrevHeading = airHeading(sim);
+    // The turn starts from the horizontal lift the entry bank already gives (no roll back toward level first).
+    this.woStartLoad = clamp(Math.tan(Math.min(Math.abs(pathBank(sim)), 70 * DEG)), 0.6, WINGOVER.turnLoad);
+    this.woDiveDepth = 1;
+    sim.stamina = Math.max(0, sim.stamina - WINGOVER.stamina);
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.8 });
+    this.announce(sim, 'wingover');
+  }
+
+  /**
+   * Wingover: the flight path follows a planned climb and dive over the heading turned (WINGOVER), the lift vector is
+   * solved for it each substep (vertical part: the path's curvature plus gravity, horizontal part: the turn) and the
+   * dragon rolls about the flight path to point it. Over the top, slow, the vertical part goes below zero: the bank
+   * passes 90° and the nose slices through the horizon (the pivot over the high wing), then the dive rolls out.
+   */
+  private wingoverLaw(sim: FlightSim, t: ControlTargets): void {
+    this.moveTrack.sample(sim);
+    const dir = this.reversalDir;
+    const heading = airHeading(sim);
+    this.woTurned += dir * wrapAngle(heading - this.woPrevHeading);
+    this.woPrevHeading = heading;
+    const p = clamp(this.woTurned / Math.PI, 0, 1);
+    this.wingoverProgress = p;
+    const forced = this.time > WINGOVER.maxTime;
+    if (p >= WINGOVER.endProgress || forced) {
+      this.endReversal(sim, 'wingover', forced);
+      this.finish(sim, clamp(sim.gamma, -10 * DEG, 5 * DEG), !forced);
+      this.normalTargets(t);
+      return;
+    }
+    const V = Math.max(sim.airspeed, 6);
+    const gamma = sim.gamma;
+    // Near the ground the dive out gets shallower (never deeper than it was planned at a lower clearance).
+    this.woDiveDepth = Math.min(this.woDiveDepth, smoothstep(WINGOVER.minClearance - 10, WINGOVER.diveClearance, this.clearance(sim)));
+    const amp = p < 0.5 ? WINGOVER.climb : WINGOVER.dive * this.woDiveDepth;
+    const gammaPlan = amp * wingoverShape(p);
+    const slope = amp * wingoverSlope(p);
+    let turn = lerp(this.woStartLoad, WINGOVER.turnLoad, smoothstep(0, 0.25, p));
+    turn = lerp(turn, WINGOVER.diveLoad, smoothstep(0.5, 0.65, p));
+    turn = lerp(turn, WINGOVER.endLoad, smoothstep(0.75, 1, p));
+    const headingRate = (GRAVITY * turn) / (V * Math.max(Math.cos(gamma), 0.3));
+    const gammaRate = (slope * headingRate) / Math.PI + WINGOVER.pathGain * (gammaPlan - gamma);
+    // Over the top the vertical part may go a little below zero (the bank passes 90°), no further; past the top the
+    // push into the dive may go on a little further while the nose falls.
+    const floor = lerp(WINGOVER.topLift, WINGOVER.diveLift, smoothstep(0.55, 0.7, p));
+    const vertical = Math.max(Math.cos(gamma) + (V * gammaRate) / GRAVITY, floor);
+    // A softer pull-out (less induced drag): the dive may run a little deeper and faster than planned.
+    const maxLoad = lerp(WINGOVER.maxLoad, WINGOVER.exitLoad, smoothstep(0.6, 0.75, p));
+    let load = Math.min(Math.hypot(vertical, turn), maxLoad);
+    let bankTarget = dir * Math.atan2(turn, vertical);
+    // The climb keeps a bank toward the turn (a climbing turn, not a straight pull-up): the vertical part comes from a
+    // firmer pull at that bank instead.
+    const bankFloor = WINGOVER.climbBank * (1 - smoothstep(0.35, 0.5, p));
+    if (Math.abs(bankTarget) < bankFloor && vertical > 0) {
+      bankTarget = dir * bankFloor;
+      load = Math.min(vertical / Math.cos(bankFloor), maxLoad);
+    }
+    const bank = pathBank(sim);
+    const rollRate = clamp(WINGOVER.rollGain * wrapAngle(bankTarget - bank), -WINGOVER.rollRate, WINGOVER.rollRate);
+    _invQ.copy(sim.body.quaternion).invert();
+    _dir.copy(sim.airVelocity).divideScalar(Math.max(sim.airspeed, 1)).applyQuaternion(_invQ);
+    t.rate.copy(_dir).multiplyScalar(rollRate);
+    // Steady beats on the climb, hard ones while slow over the top (their dynamic lift helps the pivot).
+    const climbing = p < 0.42;
+    const hard = V < 20;
+    const boost = hard ? WINGOVER.liftBoost : 0;
+    const alphaTarget = clamp(alphaForLoad(sim, load, boost), ALPHA_MIN, ALPHA_MAX);
+    t.rate.x += pitchFeed(sim) + 6 * (alphaTarget - sim.alpha);
+    t.rate.y += yawFeed(sim) - 1.8 * sim.beta;
+    t.effort = hard ? 1 : climbing ? WINGOVER.climbEffort : WINGOVER.diveEffort;
+    t.liftBoost = boost;
+    t.spread = 1;
+    t.sweep = 0;
+    t.brake = 0;
+    t.legsOut = 0;
+    t.hover = 0;
+    t.authority.set(2, 1.5, 2);
+  }
+
+  /* ---------------------------------------------------------------- Immelmann */
+
+  /** A / D pressed during a loop: the Immelmann when the loop is at its top and there is room to roll. */
+  private tryImmelmann(sim: FlightSim, dir: number): void {
+    if (!inImmelmannWindow(this.loopAngle, IMMELMANN.windowStart, IMMELMANN.windowEnd)) {
+      return;
+    }
+    if (this.headroom(sim) < 0.5 * sim.wing.span + PROXIMITY.ceilingMargin) {
+      this.hint(sim, 'Immelmann için yer yok');
+      return;
+    }
+    this.kind = 'immelmann';
+    this.time = 0;
+    this.reversalDir = dir;
+    this.reversalPhase = 'pull';
+    if (this.loopAngle >= Math.PI - IMMELMANN.rollStart) {
+      this.beginHalfRoll(sim);
+      sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.4 });
+    }
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.6 });
+    this.announce(sim, 'immelmann');
+  }
+
+  /**
+   * Immelmann: the loop pulls on to the top (the path level on its back), then a half roll about the flight path
+   * toward the key's side brings the dragon upright, on the reverse heading, a loop's height above the entry.
+   */
+  private immelmannLaw(sim: FlightSim, h: number, t: ControlTargets): void {
+    this.moveTrack.sample(sim);
+    const theta = this.updateLoopAngle(sim);
+    const forced = this.time > IMMELMANN.maxTime + 0.25 * TRICKS.loopMaxTime;
+    if (this.reversalPhase === 'pull') {
+      if (theta >= Math.PI - IMMELMANN.rollStart) {
+        this.beginHalfRoll(sim);
+        sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.4 });
+      } else if (forced || sim.airspeed < 7) {
+        this.endReversal(sim, 'immelmann', true);
+        this.finish(sim, clamp(sim.gamma, -0.4, 0.2), false);
+        this.normalTargets(t);
+        return;
+      } else {
+        this.loopSteer(sim, t, theta);
+        return;
+      }
+    }
+    this.revPhaseTime += h;
+    const remaining = this.halfRoll(sim, h, t, IMMELMANN.rollRate, IMMELMANN.rollAccel, IMMELMANN.rollDecel);
+    if (remaining < 3 * DEG || forced || this.revPhaseTime > IMMELMANN.maxTime) {
+      this.endReversal(sim, 'immelmann', forced);
+      this.finish(sim, clamp(sim.gamma, -6 * DEG, 10 * DEG), !forced);
+      this.normalTargets(t);
+      return;
+    }
+    // Lift shaped for a straight, level path while rolling (a push on the back, a pull upright), a moment ahead.
+    const V = Math.max(sim.airspeed, 6);
+    const c = Math.cos(pathBank(sim) + this.reversalDir * this.revRate * ROLL_LEAD);
+    const hold = Math.cos(sim.gamma) + (V * 1.5 * (0 - sim.gamma)) / GRAVITY;
+    const load = clamp(c * hold, -1.2, 2.5);
+    const alphaTarget = clamp(alphaForLoad(sim, load, TRICKS.loopLiftBoost), ALPHA_MIN, ALPHA_MAX);
+    t.rate.x += pitchFeed(sim) + ROLL_ALPHA_GAIN * (alphaTarget - sim.alpha);
+    t.rate.y += yawFeed(sim) - 1.8 * sim.beta;
+    t.effort = V < 20 ? 1 : 0.3;
+    t.thrustBoost = TRICKS.loopThrust;
+    t.liftBoost = TRICKS.loopLiftBoost;
+    t.spread = IMMELMANN.spread;
+    t.sweep = IMMELMANN.sweep;
+    t.brake = 0;
+    t.legsOut = 0;
+    t.hover = 0;
+    t.authority.set(IMMELMANN.authority[0], IMMELMANN.authority[1], IMMELMANN.authority[2]);
+  }
+
+  /* ---------------------------------------------------------------- Split-S */
+
+  /** Seconds a Split-S half roll takes from rest (acceleration, cruise and deceleration of the roll rate). */
+  private splitRollTime(): number {
+    const r = SPLIT_S.rollRate;
+    return Math.PI / r + (0.5 * r) / SPLIT_S.rollAccel + (0.5 * r) / SPLIT_S.rollDecel;
+  }
+
+  /**
+   * Point-mass prediction of a Split-S in the vertical plane of the track: `rollTime` s straight along the path (the
+   * half roll), then the pull through at `load` (`onsetDone` s into its onset) until the path is level on the reverse
+   * heading. `u0` is the speed along the entry heading (negative past the vertical), `w0` the vertical speed. Returns
+   * the height lost to the lowest point (m) and the horizontal offsets along the entry heading of the farthest point
+   * and of the end (m).
+   */
+  predictSplit(sim: FlightSim, u0: number, w0: number, rollTime: number, load: number, onsetDone: number): { drop: number; far: number; end: number } {
+    let u = u0;
+    let w = w0;
+    const rho = airDensity(sim.body.position.y);
+    const weight = MASS * GRAVITY;
+    const area = WING.areaSpread * 0.8;
+    const dt = 0.04;
+    let x = 0;
+    let y = 0;
+    let minY = 0;
+    let far = 0;
+    for (let i = 0; i < 400; i++) {
+      const time = i * dt;
+      const V = Math.max(Math.hypot(u, w), 0.1);
+      const q = 0.5 * rho * V * V;
+      const drag = (q * (PREDICT_CDA + 0.03 * area)) / MASS;
+      let au: number;
+      let aw: number;
+      if (time < rollTime) {
+        const along = (-GRAVITY * w) / V - drag;
+        au = (u / V) * along;
+        aw = (w / V) * along;
+      } else {
+        const onset = smoothstep(0, SPLIT_S.onset, time - rollTime + onsetDone);
+        const n = Math.min(load * Math.max(onset, 0.15), (PREDICT_CL * q * area) / weight);
+        // On its back the lift turns the path down through the vertical and back to level (clockwise in u, w).
+        au = (w / V) * n * GRAVITY - (u / V) * drag;
+        aw = (-u / V) * n * GRAVITY - GRAVITY - (w / V) * drag;
+      }
+      u += au * dt;
+      w += aw * dt;
+      x += u * dt;
+      y += w * dt;
+      minY = Math.min(minY, y);
+      far = Math.max(far, x);
+      if (time > rollTime && u < 0 && w >= 0) {
+        break;
+      }
+    }
+    return { drop: -minY, far, end: x };
+  }
+
+  /**
+   * Room for a Split-S from here: the predicted lowest point of the body keeps SPLIT_S.margin above the surface now,
+   * along the track ahead, and below the farthest point and the end of the pull through.
+   */
+  private splitRoom(sim: FlightSim): boolean {
+    const v = sim.airVelocity;
+    const pred = this.predictSplit(sim, Math.hypot(v.x, v.z), v.y, this.splitRollTime(), SPLIT_S.load, 0);
+    if (this.clearance(sim) < pred.drop + SPLIT_S.margin) {
+      return false;
+    }
+    const col = sim.world.collision;
+    if (!col) {
+      return true;
+    }
+    const p = sim.body.position;
+    const horizontal = Math.max(Math.hypot(v.x, v.z), 1e-3);
+    const fx = v.x / horizontal;
+    const fz = v.z / horizontal;
+    const lowest = p.y - pred.drop - sim.footDepth();
+    for (const d of [pred.far, pred.end, 0.5 * (pred.far + pred.end)]) {
+      const x = p.x + fx * d;
+      const z = p.z + fz * d;
+      col.columnAt(x, z, lowest, _slipColumn);
+      const floor = col.terrainHeight(x, z) < -0.4 && _slipColumn.floor < 0.05 ? sim.waterHeight(x, z) : _slipColumn.floor;
+      if (lowest - floor < SPLIT_S.margin) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private startSplit(sim: FlightSim, dir: number): void {
+    this.enter('splits');
+    this.moveTrack.begin(sim);
+    this.reversalDir = dir;
+    this.setPlane(sim);
+    this.beginHalfRoll(sim);
+    this.splitUrgent = false;
+    this.splitNeedTimer = 0;
+    this.splitNeed = 0;
+    this.diveTime = 0;
+    sim.emit({ type: 'sound', name: 'whoosh', volume: 0.8 });
+  }
+
+  /**
+   * Split-S: a half roll onto the back about the flight path (the dive goes on straight), then a firm pull through the
+   * bottom of a half loop in the entry's vertical plane to level flight on the reverse heading. The pull goes up to
+   * SPLIT_S.maxLoad when the predicted bottom gets close to the ground. The key still held as the half roll ends hands
+   * over to the diving barrel roll instead (the spinning dive).
+   */
+  private splitLaw(sim: FlightSim, cmd: PilotCommand, h: number, t: ControlTargets): void {
+    this.moveTrack.sample(sim);
+    const dir = this.reversalDir;
+    const V = Math.max(sim.airspeed, 6);
+    const clearance = this.clearance(sim);
+    this.revPhaseTime += h;
+    if (this.reversalPhase === 'roll') {
+      const remaining = this.halfRoll(sim, h, t, SPLIT_S.rollRate, SPLIT_S.rollAccel, SPLIT_S.rollDecel);
+      if (remaining >= 3 * DEG && this.revPhaseTime <= 2) {
+        // Straight dive while rolling: the lift carries only gravity's part square to the path, shaped a moment ahead.
+        const c = Math.cos(pathBank(sim) + dir * this.revRate * ROLL_LEAD);
+        const alphaTarget = clamp(alphaForLoad(sim, c * Math.cos(sim.gamma)), ALPHA_MIN, ALPHA_MAX);
+        t.rate.x += pitchFeed(sim) + ROLL_ALPHA_GAIN * (alphaTarget - sim.alpha);
+        t.rate.y += yawFeed(sim) - 1.8 * sim.beta;
+        t.effort = 0;
+        t.spread = SPLIT_S.rollSpread;
+        t.sweep = SPLIT_S.rollSweep;
+        t.brake = 0;
+        t.legsOut = 0;
+        t.hover = 0;
+        t.authority.set(SPLIT_S.rollAuthority[0], SPLIT_S.rollAuthority[1], SPLIT_S.rollAuthority[2]);
+        return;
+      }
+      const held = dir > 0 ? cmd.roll > 0.5 : cmd.roll < -0.5;
+      if (held && clearance > TRICKS.rollKeepClearance && sim.airspeed > TRICKS.rollMinSpeed - 4) {
+        this.splitToRoll(sim);
+        this.rollLaw(sim, cmd, h, t);
+        return;
+      }
+      this.reversalPhase = 'pull';
+      this.revPhaseTime = 0;
+      this.splitLoadStart = clamp(sim.loadFactor, 0, 1.5);
+      this.splitAngle = Math.atan2(sim.airVelocity.y, sim.airVelocity.dot(this.loopForward));
+      this.splitPrevAngle = this.splitAngle;
+      sim.emit({ type: 'sound', name: 'wing-snap', volume: 0.55 + 0.4 * smoothstep(20, 70, V) });
+      sim.emit({ type: 'shake', amount: 0.12 + 0.2 * smoothstep(20, 70, V) });
+      this.announce(sim, 'splits');
+    }
+    // Pull through: the path angle in the entry plane runs from the dive through the vertical to level backwards.
+    const air = sim.airVelocity;
+    const a = Math.atan2(air.y, air.dot(this.loopForward));
+    this.splitAngle += wrapAngle(a - this.splitPrevAngle);
+    this.splitPrevAngle = a;
+    const forced = this.time > SPLIT_S.maxTime;
+    if ((this.splitAngle < -0.5 * Math.PI && sim.gamma >= -SPLIT_S.exitPath) || forced) {
+      this.endReversal(sim, 'splits', forced);
+      // Shift still held from the dive stays ignored until released: the wings stay open.
+      this.diveSuppressed = cmd.dive;
+      this.finish(sim, clamp(sim.gamma, -3 * DEG, 8 * DEG), !forced);
+      this.normalTargets(t);
+      return;
+    }
+    // Watch the bottom: pull harder when the predicted lowest point gets close to the ground.
+    this.splitNeedTimer -= h;
+    if (this.splitNeedTimer <= 0) {
+      this.splitNeedTimer = PREDICT_INTERVAL;
+      this.splitNeed = this.predictSplit(sim, air.dot(this.loopForward), air.y, 0, SPLIT_S.load, this.revPhaseTime).drop;
+    }
+    if (!this.splitUrgent && clearance < this.splitNeed + 0.5 * SPLIT_S.margin) {
+      this.splitUrgent = true;
+    }
+    const onset = smoothstep(0, SPLIT_S.onset, this.revPhaseTime);
+    const target = this.splitUrgent ? SPLIT_S.maxLoad : SPLIT_S.load;
+    const load = lerp(this.splitLoadStart, target, onset);
+    const alphaTarget = clamp(alphaForLoad(sim, load), ALPHA_MIN, ALPHA_MAX);
+    let pitchRate = pitchFeed(sim) + 6 * (alphaTarget - sim.alpha);
+    if (sim.loadFactor > target + 0.4) {
+      pitchRate -= (sim.loadFactor - target - 0.4) * 0.6;
+    }
+    // Wings level in the entry plane, on the back: the body's right axis on the plane's left.
+    const right = sim.axes.right;
+    _slipOffset.copy(this.loopRight).negate();
+    _cross.crossVectors(right, _slipOffset);
+    const rollErr = Math.atan2(_cross.dot(sim.axes.forward), right.dot(_slipOffset));
+    t.rate.set(clamp(pitchRate, -1.8, 1.8), yawFeed(sim) - 1.8 * sim.beta, -clamp(3 * rollErr, -1.5, 1.5));
+    // Wings open (part way at dive speed, like the catch), a strong beat when slow at the bottom.
+    t.spread = clamp(1.25 - V / 110, 0.62, 1);
+    t.sweep = 0;
+    t.spreadRate = 5;
+    t.sweepRate = 5;
+    t.effort = V < 22 ? 1 : 0;
+    t.brake = 0;
+    t.legsOut = 0;
+    t.hover = 0;
+    t.authority.set(2.5, 1.5, 1.5);
+  }
+
+  /** The key held through the Split-S's half roll: the diving barrel roll finishes the revolution (and spins on). */
+  private splitToRoll(sim: FlightSim): void {
+    const dir = this.reversalDir;
+    this.kind = 'roll';
+    this.time = 0.3;
+    this.rollDir = dir;
+    this.rollEntryPath = Math.min(sim.gamma, -16 * DEG);
+    this.rollTarget = TWO_PI;
+    this.rolled = this.revRolled;
+    this.revolutions = 0;
+    this.rollRate = this.revRate;
+    this.prevBank = sim.bank;
+    this.reversalDir = 0;
+    this.announce(sim, 'roll');
+  }
+
+  /**
+   * Pose cues of the reversals: `pull` 0..1 while a loop-like pull runs (the neck raised into it), `roll` signed
+   * (+ right) during a half roll, `pivot` signed (+ right) around the wingover's top.
+   */
+  get reversalCue(): { pull: number; roll: number; pivot: number } {
+    const out = _cue;
+    out.pull = 0;
+    out.roll = 0;
+    out.pivot = 0;
+    if (this.kind === 'wingover') {
+      const p = this.wingoverProgress;
+      out.pivot = this.reversalDir * smoothstep(0.2, 0.45, p) * (1 - smoothstep(0.6, 0.9, p));
+      out.pull = 1 - smoothstep(0.25, 0.45, p);
+    } else if (this.kind === 'immelmann' || this.kind === 'splits') {
+      out.pull = this.reversalPhase === 'pull' ? 1 : 0;
+      out.roll = this.reversalPhase === 'roll' ? this.reversalDir : 0;
+    } else if (this.kind === 'loop') {
+      out.pull = 1;
+    }
+    return out;
   }
 
   /** The side-slip's flick, signed (+ right): into the slip, then out of it (the pose's wing and tail cue). */

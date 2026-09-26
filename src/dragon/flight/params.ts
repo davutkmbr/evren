@@ -733,6 +733,145 @@ export const SLIP = {
   cleanTolerance: 2,
 } as const;
 
+/**
+ * Phase 20 stage C energy-trading reversals (maneuvers.ts). Each one ends on the reverse heading and reports its end on
+ * the 'maneuver' event (`ended`, `clean`): clean = no contact, no stall, not cut short, upright, the track within
+ * headingTolerance of the reverse heading, and its energy trade: the wingover keeps cleanEnergy of the entry's specific
+ * energy (½V² + g·Δh, height measured from the entry), the Immelmann ends higher (keeping cleanEnergy), the Split-S
+ * ends lower and faster (exit speed ≥ entry − cleanTolerance). Speeds m/s, heights and clearances m, angles rad, loads
+ * g, times s.
+ */
+export const WINGOVER = {
+  /**
+   * S double tap while banked more than minBank (up to minBank it stays the loop): a climbing turn toward the low wing,
+   * a pivot over the high wing at low speed with the nose slicing through the horizon, a dive out on the reverse
+   * heading. The path follows a planned flight-path angle over the heading turned (p = heading turned / 180°):
+   * γ(p) = climb · f(p) up to the top (p = 0.5, heading +90°), dive · f(p) after it, with f(p) = sin(2πp) eased in
+   * over easeIn and out over easeOut (level at both ends, steepest through the top).
+   */
+  minBank: 45 * DEG,
+  minSpeed: 24,
+  /** Roughly level entry (flight path within this). */
+  maxEntryPath: 30 * DEG,
+  /** Peak climb and dive angles of the planned path. */
+  climb: 50 * DEG,
+  dive: 45 * DEG,
+  easeIn: 0.3,
+  easeOut: 0.3,
+  /** Horizontal lift (g) that turns the path: from tan(entry bank) to `turnLoad` over the first quarter ... */
+  turnLoad: 1.15,
+  /** ... lighter in the dive (a longer dive: the height comes back as speed), and endLoad as it rolls out. */
+  diveLoad: 0.7,
+  endLoad: 0.6,
+  /** Least vertical part of the lift (g) over the top: the bank passes 90° by this much and no more. */
+  topLift: -0.3,
+  /** Least bank through the climb (a climbing turn, not a straight pull-up), fading out toward the top. */
+  climbBank: 34 * DEG,
+  /** ... and in the dive after it (from p 0.55 to 0.7). */
+  diveLift: -0.45,
+  /** Flight-path gain (1/s) around the planned path, the largest load (g) and the dynamic lift of hard beats. */
+  pathGain: 2.2,
+  maxLoad: 3.6,
+  /** Largest load of the pull out of the dive (softer: the dive runs a little deeper and comes out faster). */
+  exitLoad: 2.2,
+  liftBoost: 0.3,
+  /**
+   * Wing-beat effort on the climb and in the dive (the dragon's drag is high, L/D ≈ 6.5: a turn this long without beats
+   * would lose half its energy); full beats while slow over the top.
+   */
+  climbEffort: 0.9,
+  diveEffort: 0.6,
+  /** Bank rate limit (rad/s) and gain (1/s) of the roll about the flight path. */
+  rollRate: 2.2,
+  rollGain: 3.5,
+  /** The move ends at this progress (the normal law rolls the last few degrees out level); cut short after maxTime. */
+  endProgress: 0.95,
+  maxTime: 12,
+  /** Room: headroom for the climb above the entry, clearance below now and along the turn, a margin beyond the wingtip. */
+  headroom: 45,
+  minClearance: 25,
+  sideMargin: 6,
+  /** The dive out gets shallower from this clearance down (level at minClearance − 10). */
+  diveClearance: 40,
+  stamina: 0.03,
+  headingTolerance: 15 * DEG,
+  cleanEnergy: 0.9,
+} as const;
+
+export const IMMELMANN = {
+  /**
+   * A / D pressed during the top of a loop (loop angle between windowStart and windowEnd, measured from the entry
+   * path): the loop pulls on until the path is level on its back (rollStart short of the top), then a half roll toward
+   * the key's side brings it out upright on top, on the reverse heading and higher than the entry.
+   */
+  windowStart: 0.55 * Math.PI,
+  windowEnd: 1.08 * Math.PI,
+  rollStart: 4 * DEG,
+  /** Half roll: rate (rad/s), acceleration and deceleration (rad/s²), wing spread / sweep, authority (pitch, yaw, roll). */
+  rollRate: 3.6,
+  rollAccel: 14,
+  rollDecel: 12,
+  spread: 0.8,
+  sweep: 0.2,
+  authority: [4, 8, 4] as readonly [number, number, number],
+  /** Pressing the key on the axis past this counts as a press (a fresh press: released below `release` first). */
+  press: 0.5,
+  release: 0.2,
+  maxTime: 3,
+  headingTolerance: 15 * DEG,
+  cleanEnergy: 0.75,
+} as const;
+
+export const SPLIT_S = {
+  /**
+   * A / D double tap in a steep dive (flight path below maxPath; shallower it stays the barrel roll, and from level
+   * flight too: dive first, with W or Shift): a half roll onto the back about the flight path, then a pull through the
+   * bottom of a half loop to level flight on the reverse heading (lower and faster). The key still held when the half
+   * roll ends keeps spinning instead: the diving barrel roll finishes the revolution (and more while held).
+   */
+  maxPath: -30 * DEG,
+  minSpeed: 20,
+  /** Half roll (rad/s, rad/s², rad/s²) with the wings half folded. */
+  rollRate: 4.2,
+  rollAccel: 18,
+  rollDecel: 16,
+  rollSpread: 0.6,
+  rollSweep: 0.35,
+  rollAuthority: [5, 12, 4] as readonly [number, number, number],
+  /** Pull through: load (g), its onset (s), the load the pull may go up to when the ground is close, and the exit path. */
+  load: 4,
+  onset: 0.35,
+  maxLoad: 4.8,
+  exitPath: 2 * DEG,
+  /** Room: the predicted lowest point of the half roll and pull through stays this far above the surface below. */
+  margin: 18,
+  maxTime: 8,
+  headingTolerance: 15 * DEG,
+  cleanTolerance: 0,
+} as const;
+
+/**
+ * Pose cues of the stage C reversals (pose.ts, from Maneuvers.reversalCue): rad of the pose channel per unit of cue.
+ * pull (0..1): the loop-like pull of the loop, the Immelmann and the Split-S (and the wingover's climb); roll (±1):
+ * a half roll toward that side; pivot (±1): around the wingover's top, toward the turn.
+ */
+export const REVERSAL_POSE = {
+  /** Wing twist into the pivot / the half roll (the high wing pushed over). */
+  pivotTwist: 0.35,
+  rollTwist: 0.3,
+  /** Neck pitch held through a pull (raised into it), raised and turned into the pivot, turned toward a half roll. */
+  pullNeck: 0.25,
+  pivotNeckPitch: 0.22,
+  pivotNeckYaw: 0.45,
+  rollNeckYaw: 0.2,
+  /** Tail swept out opposite the pivot and the half roll; its pitch held through a pull (trailing in line, a little low). */
+  pivotTail: 0.4,
+  rollTail: 0.3,
+  pullTail: 0.06,
+  /** Rider lean (riderLeanRoll) into the pivot and with a half roll. */
+  riderLean: 0.3,
+} as const;
+
 export const SKIM = {
   /**
    * Surface skim / ground effect ("sıyırma"), automatic: foot clearance below `height` (full from fullHeight) over water
