@@ -157,6 +157,7 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'Sağ tık', action: 'Etrafa bak (basılı tut)', group: 'camera' },
   { keys: 'C', action: 'Kamera: 3. şahıs, binici, sinematik', group: 'camera' },
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
+  { keys: 'Enter', action: 'Fotoğraf modunda: fotoğraf çek (duraklatma menüsü → Albüm)', group: 'camera' },
   { keys: '[ / ]', action: 'Saati yarım saat geri / ileri', group: 'camera' },
   { keys: 'N', action: 'Hava: açık, pus, sis, yağmur, fırtına', group: 'camera' },
   // Viewpoints (phase 03, src/dragon/flight/perch.ts, src/ui/perch-view.ts).

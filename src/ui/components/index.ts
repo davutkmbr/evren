@@ -23,7 +23,8 @@ export { medalDot, medalDisc, type MedalMark } from './medal';
 export { pill, type Pill, type PillTone } from './pill';
 export { legend, type LegendItem, type LegendSwatch } from './legend';
 export { listRow, type ListRow, type ListRowContent, type ListRowOptions } from './list-row';
-export { textField, type TextField, type TextFieldOptions } from './text-field';
+export { thumbGrid, type ThumbGrid, type ThumbGridOptions, type ThumbItem } from './thumb-grid';
+export { textField,type TextField, type TextFieldOptions } from './text-field';
 export { routeMap, frameRoute, type RouteMap, type RouteMapData, type RouteMapOptions, type RoutePoint, type RouteFrame, type WaterSampler } from './route-map';
 export { divergingBars, divergingBar, divergingExtent, divergingRowHeight, type DivergingBars, type DivergingBarsOptions, type DivergingRow } from './diverging-bars';
 
