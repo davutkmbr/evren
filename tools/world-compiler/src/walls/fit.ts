@@ -21,6 +21,8 @@ export const CLEAR = 0.35;
 export const T_MIN = 1.6;
 const MAX_SHIFT = 3;
 const STEP = 0.5;
+/** Widest median (m) between the one-way carriageways of a divided major road. */
+const MEDIAN_MAX = 35;
 const T_QUANT = 0.2;
 /** Small buildings that step aside for the wall: any footprint up to SMALL_ANY m², or up to SMALL_LOW m² when low. */
 export const SMALL_ANY = 25;
@@ -34,6 +36,9 @@ export type Displace = 'wall' | 'small';
 
 /** Why a building overlapping the wall steps aside, or null when the wall must fit around it. */
 export function displaceable(f: Footprint): Displace | null {
+  if (f.road) {
+    return null;
+  }
   if (WALL_KINDS.has(f.kind) || (f.historic && WALL_HISTORIC.has(f.historic))) {
     return 'wall';
   }
@@ -50,8 +55,8 @@ export interface Fit {
   /** Thickness profile over the fitted axis' arc length (step function at profS). */
   profS: number[];
   profT: number[];
-  /** Arc-length intervals (fitted axis) where a building stands on the wall line. */
-  blocked: [number, number][];
+  /** Arc-length intervals (fitted axis) where a building (road = false) or a road / rail bed (road = true) stands on the wall line. */
+  blocked: [number, number, boolean][];
   shifted: number;
   thinned: number;
 }
@@ -108,11 +113,22 @@ export function fitRun(pts: readonly V2[], T: number, bat: number, fp: Footprint
   }
   // Per sample: the free gap that holds the thickest, least shifted wall.
   type Choice = { t: number; g0: number; g1: number } | null;
+  const onRoad: boolean[] = [];
   const choice: Choice[] = smp.map((q) => {
-    const occ = q.hits
-      .filter((h) => !skip(h.f))
-      .map((h) => [h.v0, h.v1] as [number, number])
-      .sort((a, b) => a[0] - b[0]);
+    const live = q.hits.filter((h) => !skip(h.f)).sort((a, b) => a.v0 - b.v0);
+    const occ = live.map((h) => [h.v0, h.v1] as [number, number]);
+    // The median between the two carriageways of a divided major road is road too.
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const A = live[i].f.road;
+        const B = live[j].f.road;
+        if (A && B && A.major && B.major && A.oneway && B.oneway && live[j].v0 - live[i].v1 > 0 && live[j].v0 - live[i].v1 < MEDIAN_MAX) {
+          occ.push([live[i].v1, live[j].v0]);
+        }
+      }
+    }
+    occ.sort((a, b) => a[0] - b[0]);
+    onRoad.push(occ.some(([a, b]) => a < T / 2 && b > -T / 2) && live.some((h) => h.f.road && h.v0 < T / 2 + 2 && h.v1 > -T / 2 - 2));
     const gaps: [number, number][] = [];
     let cur = -reach;
     for (const [a, b] of occ) {
@@ -197,7 +213,7 @@ export function fitRun(pts: readonly V2[], T: number, bat: number, fp: Footprint
   }
   const moved: V2[] = smp.map((q, k) => [q.p[0] + q.n[0] * shift[k], q.p[1] + q.n[1] * shift[k]]);
   const mcum = lengths(moved);
-  const blocked: [number, number][] = [];
+  const blocked: [number, number, boolean][] = [];
   let b0 = -1;
   let shifted = 0;
   let thinned = 0;
@@ -216,7 +232,7 @@ export function fitRun(pts: readonly V2[], T: number, bat: number, fp: Footprint
     }
     if ((!isB || k === N) && b0 >= 0) {
       const k1 = isB ? k : k - 1;
-      blocked.push([Math.max(0, mcum[b0] - STEP / 2 - CLEAR), Math.min(mcum[N], mcum[k1] + STEP / 2 + CLEAR)]);
+      blocked.push([Math.max(0, mcum[b0] - STEP / 2 - CLEAR), Math.min(mcum[N], mcum[k1] + STEP / 2 + CLEAR), onRoad.slice(b0, k1 + 1).some(Boolean)]);
       b0 = -1;
     }
   }
@@ -343,7 +359,9 @@ export function outlineBlocked(poly: readonly V2[], fp: Footprints, skip: (f: Fo
 export interface OverlapReport {
   metres: number;
   count: number;
-  byStretch: Record<string, { metres: number; buildings: number; towers: number }>;
+  /** Metres of wall standing on a road / rail bed. */
+  roadMetres: number;
+  byStretch: Record<string, { metres: number; buildings: number; towers: number; roadMetres: number }>;
 }
 
 /**
@@ -351,9 +369,9 @@ export interface OverlapReport {
  * and the outer foot (5 cm inside), tower outlines polygon-tested. Buildings that `skip()` are not counted.
  */
 export function wallOverlaps(pieces: readonly Piece[], fp: Footprints, skip: (f: Footprint) => boolean, stretch: (src: number) => string): OverlapReport {
-  const rep: OverlapReport = { metres: 0, count: 0, byStretch: {} };
+  const rep: OverlapReport = { metres: 0, count: 0, roadMetres: 0, byStretch: {} };
   const hit = new Set<Footprint>();
-  const entry = (src: number): { metres: number; buildings: number; towers: number } => (rep.byStretch[stretch(src)] ??= { metres: 0, buildings: 0, towers: 0 });
+  const entry = (src: number): OverlapReport['byStretch'][string] => (rep.byStretch[stretch(src)] ??= { metres: 0, buildings: 0, towers: 0, roadMetres: 0 });
   const band = (src: number, pts: V2[], t: number, bat: number): void => {
     const cum = lengths(pts);
     const total = cum[cum.length - 1];
@@ -363,11 +381,16 @@ export function wallOverlaps(pieces: readonly Piece[], fp: Footprints, skip: (f:
       const tt = tangent(pts, cum, s, 1);
       const n: V2 = [-tt[1], tt[0]];
       let over = false;
+      let onRoad = false;
       for (const v of [-t / 2 + 0.05, 0, t / 2 + bat - 0.05]) {
         const x = p[0] + n[0] * v;
         const z = p[1] + n[1] * v;
         for (const f of fp.near(x, z, 0.5)) {
           if (!skip(f) && inRing(x, z, f.ring)) {
+            if (f.road) {
+              onRoad = true;
+              continue;
+            }
             over = true;
             if (!hit.has(f)) {
               hit.add(f);
@@ -380,6 +403,10 @@ export function wallOverlaps(pieces: readonly Piece[], fp: Footprints, skip: (f:
       if (over) {
         e.metres += 0.5;
         rep.metres += 0.5;
+      }
+      if (onRoad) {
+        e.roadMetres += 0.5;
+        rep.roadMetres += 0.5;
       }
     }
   };
@@ -396,5 +423,6 @@ export function wallOverlaps(pieces: readonly Piece[], fp: Footprints, skip: (f:
     }
   }
   rep.metres = Math.round(rep.metres * 10) / 10;
+  rep.roadMetres = Math.round(rep.roadMetres * 10) / 10;
   return rep;
 }
