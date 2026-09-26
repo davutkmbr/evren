@@ -28,11 +28,11 @@ export interface DistrictProfile {
   id: string;
   label: string;
   /**
-   * Default full-detail rect when `--strip` is not given (strip.ts). `rect` wins; else `cameras` (a camera spec with
-   * a `strip` rect), `spec` (a markdown file naming a rect) and `route` (the bbox of a src/street/routes.ts route +
-   * 30 m) are tried in this order. null: every tile greybox.
+   * Default full-detail rect when `--strip` is not given (strip.ts). `area` (the whole compiled area) wins, then
+   * `rect`; else `cameras` (a camera spec with a `strip` rect), `spec` (a markdown file naming a rect) and `route` (the
+   * bbox of a src/street/routes.ts route + 30 m) are tried in this order. null: every tile greybox.
    */
-  strip: { rect?: Bounds2; cameras?: string; spec?: string; route?: string } | null;
+  strip: { area?: true; rect?: Bounds2; cameras?: string; spec?: string; route?: string } | null;
   /**
    * Hand-fitted reference cameras (repo-relative, e.g. tools/world-compiler/s1/cameras.json): the street lane reads
    * the spine, the arrival square, the off-spine kit tiles and the clear foregrounds from it. null: none.

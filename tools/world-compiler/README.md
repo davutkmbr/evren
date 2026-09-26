@@ -501,13 +501,14 @@ Sets that are not downloaded yet are skipped the same way.
 
 The strip is the rect compiled at full detail (`detail: "full"`); every other tile is greybox (format 0 geometry,
 textured materials, LOD0 = LOD1). The rect comes from `--strip minX,minZ,maxX,maxZ`, else from the district profile's
-`strip`: its `rect` (Eminönü), else a camera file (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
-`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres; Kadıköy:
-`tools/world-compiler/s1/cameras.json`), else a spec file (the first line naming a `rect` followed by four numbers;
-Kadıköy: `.docs/street/s1-strip.md`), else the bbox of a walk route of `src/street/routes.ts` grown by 30 m (Kadıköy:
-`rihtim-carsi`). A profile without a strip (the generic one) and `--strip none` make every tile greybox. Tiles whose
-square intersects the rect are full-detail. `index.strip.source` says which source won (`cli`, `district:<id>`, a
-file or `route:<id>`).
+`strip`: `area: true` for the whole compiled area (Kadıköy), else its `rect` (Eminönü; landing spots use their
+square), else a camera file (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
+`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres), else a spec file (the
+first line naming a `rect` followed by four numbers), else the bbox of a walk route of `src/street/routes.ts` grown by
+30 m. A profile without a strip (the generic one) and `--strip none` make every tile greybox. Tiles whose square
+intersects the rect are full-detail. `index.strip.source` says which source won (`cli`, `district:<id>`,
+`district:<id> (whole area)`, a file or `route:<id>`). Kadıköy's S1 strip alone (the photo-fitted Rıhtım–çarşı walk):
+`--strip 150,5728,472,6240`.
 
 ## District profiles
 
