@@ -35,7 +35,7 @@ import type { FlightMode, WeatherPreset } from '../../src/core/contracts';
 import { ALL_MOMENTS } from '../../src/moments/data';
 import { BOSPHORUS_CORRIDOR } from '../../src/moments/data/city-life';
 import { defaultMomentPrefs, onMomentPrefsChange, saveMomentPrefs, type MomentPrefs } from '../../src/moments/prefs';
-import { HOLD, momentPlayability, MomentRunner, momentStartPose, type MomentFrame, type MomentSink } from '../../src/moments/runtime';
+import { momentPlayability, MomentRunner, momentStartPose, type MomentFrame, type MomentSink } from '../../src/moments/runtime';
 import { pointInPolygon, type MomentContext, type XZ } from '../../src/moments/triggers';
 import type { Moment, SubtitleLine } from '../../src/moments/types';
 import { SOURCE_PROMPT_AFTER_S, SourcePromptWindow, type SourcePromptState } from '../../src/moments/sources';
@@ -358,50 +358,65 @@ console.log('4. pacing');
     check(runner.now === now && runner.currentLine === line && log.shows.length === shows && !!runner.current, 'a paused minute (menu, photo mode) changes nothing, even with the dragon "elsewhere"');
   }
 
-  // A few wing beats and a small climb inside the hysteresis do not end the glide.
+  // Once started it plays to the end (owner decision, 26 Sep): wing beats, a hover, climbing out of the band or flying
+  // far away do not cut it short.
   {
-    const { runner } = harness();
+    const { runner, log } = harness();
     fly(runner, positions.slice(0, 40 * FPS), (i) => {
       const t = i * DT;
       if (t > 6 && t < 7) return flight({ mode: 'flying' });
-      if (t > 10 && t < 14) return flight({ agl: 40 + HOLD.altitude - 3 });
-      if (t > 16 && t < 16.8) return flight({ mode: 'hovering' });
+      if (t > 10 && t < 14) return flight({ agl: 300 });
+      if (t > 16 && t < 20) return flight({ mode: 'hovering' });
       return flight();
     });
-    check(runner.history[0]?.reason === 'complete', `flapping 1 s, climbing to ${40 + HOLD.altitude - 3} m and a 0.8 s hover do not end it (${runner.history[0]?.reason})`);
+    check(runner.history[0]?.reason === 'complete', `flapping, climbing to 300 m and a 4 s hover do not end it (${runner.history[0]?.reason})`);
+    check(log.hides.every((h) => h.how === 'end'), 'no line fades out early');
   }
-
-  // Leaving the band fades the line out; cut short early → may try again after retrySec, not before.
   {
     const { runner, log } = harness();
     let climbAt = -1;
-    fly(runner, positions.slice(0, 20 * FPS), (i) => {
+    fly(runner, positions.slice(0, 40 * FPS), (i) => {
       const t = i * DT;
       if (runner.currentLine === 1 && climbAt < 0) climbAt = t;
-      return climbAt >= 0 && t >= climbAt + 1 ? flight({ agl: 90 }) : flight();
+      return climbAt >= 0 ? flight({ agl: 900, mode: 'flying' }) : flight();
     });
     const h = runner.history[0];
-    check(h?.reason === 'conditions', `climbing to 90 m ends it (${h?.reason})`);
-    const lastHide = log.hides[log.hides.length - 1];
-    check(lastHide?.how === 'fade', 'the line on screen fades out gently');
-    check(!!h && Math.abs(h.end - (climbAt + 1) - runner.pacing.graceSec) <= 2 * DT + 1e-6, `it ends ${runner.pacing.graceSec} s after leaving the band (after ${h ? (h.end - climbAt - 1).toFixed(2) : '?'} s)`);
-    check(log.shows.length === 2 && log.cards.length === 0, `no more lines and no card after the fade (lines ${log.shows.length}, cards ${log.cards.length})`);
-    // Back low right away: waits for the retry time.
-    const cut = h?.end ?? 0;
-    fly(runner, positions.slice(20 * FPS, 20 * FPS + Math.round((cut + runner.pacing.retrySec - 1 - runner.now) * FPS)), () => flight());
-    check(runner.history.length === 1 && !runner.current, 'cut short after 2 lines: not again before the retry time');
-    fly(runner, positions.slice(0, 40 * FPS), () => flight());
-    check(runner.history.length === 2 && runner.history[1].start >= cut + runner.pacing.retrySec - 1e-6, 'but it may play again after the retry time');
+    check(h?.reason === 'complete' && log.cards.length === 1, `leaving its band for good after line 2: it still plays every line and its card (${h?.reason}, cards ${log.cards.length})`);
   }
+
+  // No other moment may start while one plays, and never right after one ends (the global gap applies to every end).
   {
     const { runner } = harness();
-    let climbAt = -1;
-    fly(runner, positions.slice(0, 500 * FPS), (i) => {
-      const t = i * DT;
-      if (runner.currentLine === 4 && climbAt < 0) climbAt = t;
-      return climbAt >= 0 && t >= climbAt && t < climbAt + 20 ? flight({ agl: 90 }) : flight();
+    const starts: number[] = [];
+    let playing = false;
+    fly(runner, positions.slice(0, 400 * FPS), () => {
+      if (!!runner.current !== playing) {
+        playing = !!runner.current;
+        if (playing) starts.push(runner.now);
+      }
+      return flight();
     });
-    check(runner.history.length === 1 && runner.history[0].reason === 'conditions', 'cut short after 5 of 7 lines: spent for the session');
+    let overlap = false;
+    for (let k = 1; k < runner.history.length; k++) overlap ||= runner.history[k].start < runner.history[k - 1].end + runner.pacing.minGapSec - 1e-6;
+    check(!overlap, `consecutive moments keep the ${runner.pacing.minGapSec} s gap (${runner.history.length} played)`);
+  }
+
+  // Cut short early by a race → it may try again after retrySec and the global gap, not before.
+  {
+    const { runner } = harness();
+    let raceFrom = -1;
+    fly(runner, positions.slice(0, 20 * FPS), (i) => {
+      if (runner.currentLine === 1 && raceFrom < 0) raceFrom = i;
+      return raceFrom >= 0 && i < raceFrom + 2 * FPS ? flight({ racing: true }) : flight();
+    });
+    const h = runner.history[0];
+    check(h?.reason === 'race', `a race cuts it after 2 lines (${h?.reason})`);
+    const cut = h?.end ?? 0;
+    const wait = Math.max(runner.pacing.retrySec, runner.pacing.minGapSec);
+    fly(runner, positions.slice(0, Math.round((cut + wait - 1 - runner.now) * FPS)), () => flight());
+    check(runner.history.length === 1 && !runner.current, 'cut short after 2 lines: not again before the retry time and the gap');
+    fly(runner, positions.slice(0, 40 * FPS), () => flight());
+    check(runner.history.length === 2 && runner.history[1].start >= cut + wait - 1e-6, 'but it may play again after them');
   }
 
   // Race and settings end a playing moment.
@@ -559,11 +574,11 @@ console.log('5. storks over the Bosphorus');
     const fired = r.history.some((h) => h.id === STORKS_ID);
     check(fired === expected, `storks ${expected ? 'fire' : 'do not fire'} ${label} (${fired ? 'fired' : 'silent'})`);
   }
-  // Leaving the band while it plays: climbing to 1600 m fades the lines out (the flock itself lives on).
+  // Leaving the band while it plays: climbing to 1600 m no longer ends it, the lines play to the end.
   {
     const { runner, log } = harness();
-    flyStorks(runner, strait.slice(0, 40 * FPS), (i) => sf({ asl: i * DT > 6 ? 1600 : 420 }));
-    check(runner.history[0]?.reason === 'conditions' && log.ends[0]?.reason === 'conditions', `climbing out of the band ends the lines (${runner.history[0]?.reason})`);
+    flyStorks(runner, strait.slice(0, 60 * FPS), (i) => sf({ asl: i * DT > 6 ? 1600 : 420 }));
+    check(runner.history[0]?.reason === 'complete' && log.ends[0]?.reason === 'complete', `climbing out of the band does not cut the lines (${runner.history[0]?.reason})`);
   }
   // Cooldown: repeatable after 30 minutes, not before (the global 3-minute gap is shorter).
   {
@@ -881,7 +896,7 @@ console.log('7. gull and simit on a ferry');
     flyFerry(runner, 5, () => ferryFlight({ weather }));
     check(!!runner.current || runner.history.length === 1, `fires in ${weather}`);
   }
-  // Hold: the ferry pulls away while the dragon hovers; within the 250 + 100 m hold it goes on, leaving ends it.
+  // Flying away from the ferry mid-moment no longer ends it: it plays to the end.
   {
     const { runner, log } = gullOnly();
     let leftAt = -1;
@@ -889,12 +904,12 @@ console.log('7. gull and simit on a ferry');
       if (runner.currentLine === 1 && leftAt < 0) leftAt = t;
       return ferryFlight(leftAt >= 0 ? { side: 700 } : {});
     });
-    check(runner.history[0]?.reason === 'conditions' && log.hides[log.hides.length - 1]?.how === 'fade', `flying 700 m away mid-moment fades it out (${runner.history[0]?.reason})`);
+    check(runner.history[0]?.reason === 'complete' && log.hides.every((h) => h.how === 'end'), `flying 700 m away mid-moment: it plays to the end (${runner.history[0]?.reason})`);
   }
   {
     const { runner } = gullOnly();
     flyFerry(runner, 30, () => ferryFlight({ side: 240, along: 0, mode: 'hovering' }));
-    check(runner.history[0]?.reason === 'complete', 'hovering 240 m abeam while the ferry sails on (beyond 250 m after a few seconds, inside the 350 m hold): plays to the end');
+    check(runner.history[0]?.reason === 'complete', 'hovering 240 m abeam while the ferry sails on: plays to the end');
   }
   // Cooldown: repeatable after 600 s (and the global gap), not before.
   {
