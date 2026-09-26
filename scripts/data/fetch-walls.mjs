@@ -3,12 +3,15 @@
  * Fetches every city / castle wall of the playable world from OpenStreetMap (Overpass, one polite query) and writes
  * a compact wall dataset for the city-wall kit (src/world/landmarks/walls/kit):
  *
- *   node scripts/data/fetch-walls.mjs [--cache <overpass.json>] [--supplement <id>]
+ *   node scripts/data/fetch-walls.mjs [--cache <overpass.json>] [--supplement <id>] [--source local|overpass]
+ *
+ * OSM queries run against the local Geofabrik extract index by default (scripts/data/lib/osm-local.mjs);
+ * `--source overpass` sends them to the public Overpass API. The supplement always queries its own endpoint.
  *
  * Output: data/osm/walls.json (compiler input, not served and not read by the game; schema WallData in
  * src/world/landmarks/walls/data/types.ts). Coordinates are local metres (+X east, +Z south, same projection as
  * src/core/geo-coords.ts) rounded to 0.1 m. Placing the wall kit along these lines is the world compiler's job later
- * (.docs/planning/20-city-walls.md).
+ * (.docs/planning/22-city-walls.md).
  *
  * What is extracted (all generic OSM tagging, nothing per coordinate):
  * - lines: barrier=city_wall / historic=citywalls|city_wall|castle_wall / wall=castle_wall ways and the outer members
@@ -34,6 +37,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
+import { overpassLocal, sourceArg } from './lib/osm-local.mjs';
 
 const args = process.argv.slice(2);
 const argOf = (name) => {
@@ -43,6 +47,7 @@ const argOf = (name) => {
 const OUT = resolve(ROOT, 'data/osm/walls.json');
 const cachePath = argOf('--cache');
 const supplementId = argOf('--supplement');
+const SOURCE = sourceArg(args);
 
 const ORIGIN = readOrigin();
 const DEG = Math.PI / 180;
@@ -82,6 +87,11 @@ ${WALL_FILTERS.map((f) => `  way${f}(${BBOX});\n  relation${f}(${BBOX});`).join(
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function overpass(url, q, name) {
+  if (!url && SOURCE === 'local') {
+    const json = overpassLocal(q);
+    console.error(`[fetch-walls] ${name}: ${json.elements.length} elements from the local index`);
+    return json;
+  }
   let last = null;
   const endpoints = url ? [url] : ENDPOINTS;
   for (let attempt = 0; attempt < 6; attempt++) {

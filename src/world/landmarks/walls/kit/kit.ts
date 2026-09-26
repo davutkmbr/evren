@@ -3,7 +3,7 @@
  * ends), crenellations, Byzantine towers (square, pentagonal prow, hexagonal, octagonal), arched gates, ruined and
  * broken variants and sea-side foundations. Every piece is built into a heritage MeshBuilder (vertex format and
  * surfaces of heritage/build) in world coordinates from a polyline or an anchor point, a ground function and plain
- * parameters, so a compiler can instantiate the kit along any wall line later (see .docs/planning/20-city-walls.md).
+ * parameters, so a compiler can instantiate the kit along any wall line later (see .docs/planning/22-city-walls.md).
  *
  * Conventions: polylines run along the wall; the OUTER (field / sea) side is to the right of the drawing direction
  * (right-hand normal (-dz, dx), +Z = south). LOD 0 is the close-up model, LOD 1 drops merlons, openings and small
@@ -82,7 +82,8 @@ export function kitMats(style: WallStyle, seed: number, weather = 0.7): KitMats 
     grass: mat(Surf.Earth, [0.16, 0.16, 0.1], 0.6, 0),
     brick: mat(Surf.Brick, [0.36, 0.2, 0.14], 0.8, 0),
     block: mat(Surf.Ashlar, tint([0.5, 0.47, 0.41], k, warm), 0.85, 0),
-    void: mat(Surf.Void, [0.015, 0.014, 0.013], 0, 0),
+    // Openings read as deep shadow, not flat black: a dark rubble-coloured interior.
+    void: mat(Surf.Void, [0.03, 0.027, 0.024], 0, 0),
     wood: mat(Surf.Wood, [0.12, 0.08, 0.05], 0.6, 0),
     marble: mat(Surf.Marble, tint([0.66, 0.64, 0.59], k, warm), 0.85, 0),
   };
@@ -821,6 +822,10 @@ export function tower(o: KitOut, at: V2, dir: V2, ground: GroundFn, p: TowerPara
     const tops2 = per.map((q, k) => topAt(q.s, k));
     const lossAmt = Math.min(1, 0.35 + 0.4 * (p.weather ?? 0.8) + 0.5 * ruin);
     const R = Math.max(4, Math.round((Math.max(...tops2) - plTop) / 0.7));
+    // The facing stays intact (and flat) around the marble inscription band, so the slabs sit on the face.
+    const inscFrac = p.inscription === undefined ? (hash(seed, 9500) < 0.35 ? 0.55 + 0.2 * hash(seed, 9501) : null) : p.inscription;
+    const inscY = inscFrac === null ? -1e9 : g0 + p.height * inscFrac + 0.22;
+    const minTop2 = Math.min(...tops2);
     for (let e = 0; e < cut.length; e++) {
       const idx: number[] = [];
       per.forEach((q, k) => {
@@ -843,16 +848,65 @@ export function tower(o: KitOut, at: V2, dir: V2, ground: GroundFn, p: TowerPara
         const col: FacePoint[] = [];
         for (let r = 0; r <= R; r++) {
           const hRel = r / R;
-          const d = edgeCol ? 0 : (noise1(sv / 5, seed + 77) - 0.5) * 0.16 * Math.sin(Math.PI * hRel);
-          col.push({ x: q.x + fnx * d, y: plTop + (tops2[k] - plTop) * hRel, z: q.z + fnz * d, u: sv, nx: fnx, nz: fnz, tx, tz });
+          const y = plTop + (tops2[k] - plTop) * hRel;
+          const flat = edgeCol || Math.abs(y - inscY) < 0.9;
+          const d = flat ? 0 : (noise1(sv / 5, seed + 77) - 0.5) * 0.16 * Math.sin(Math.PI * hRel);
+          col.push({ x: q.x + fnx * d, y, z: q.z + fnz * d, u: sv, nx: fnx, nz: fnz, tx, tz });
         }
         return col;
       });
       if (g.length < 2) {
         continue;
       }
-      const f = len > 2 ? faceFields(g, seed + e * 31, lossAmt, 1, (i, r) => i === 0 || i === g.length - 1 || r === 0 || r === R) : null;
-      reliefSurface(mb, g, f ? f.loss : null, M.tower, f ? (i, r) => (f.repair[i][r] ? M.brick : null) : undefined);
+      const C = g.length - 1;
+      // Openings as broken-out holes in the face grid: slits in the lower storeys, pairs of windows in the top storey,
+      // outward faces only (inner faces blind below the top storey).
+      const voidCell: boolean[][] = Array.from({ length: C }, () => new Array<boolean>(R).fill(false));
+      const outward = fnx * nx + fnz * nz;
+      if (len > 2.2) {
+        const rowOf = (y: number): number => Math.round(((y - plTop) / Math.max(0.1, minTop2 - plTop)) * R);
+        for (let st = 1; st <= storeys; st++) {
+          const topSt = st === storeys;
+          if (outward < -0.3 && !topSt) {
+            continue;
+          }
+          const yF = g0 + (p.height * (st - 1)) / storeys;
+          const hS = p.height / storeys;
+          const y0 = Math.max(yF + hS * 0.25, ground((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) + 3);
+          const h = topSt ? Math.min(hS * 0.6, 2.6) : Math.min(hS * 0.5, 1.9);
+          if (y0 + h > minTop2 - 0.8 || Math.abs(y0 + h / 2 - inscY) < h / 2 + 0.9) {
+            continue;
+          }
+          const count = topSt && C >= 7 ? 2 : 1;
+          // One grid column (0.8 m) per opening: rows follow each column's own height, so wider holes would shear.
+          const wCols = 1;
+          for (let c = 0; c < count; c++) {
+            const mid = Math.round(C * (count === 1 ? 0.5 : (c + 1) / (count + 1)));
+            const c0 = Math.max(1, mid - Math.floor(wCols / 2));
+            for (let ci = c0; ci < Math.min(C - 1, c0 + wCols); ci++) {
+              for (let r = Math.max(1, rowOf(y0)); r < Math.min(R - 1, rowOf(y0 + h)); r++) {
+                voidCell[ci][r] = true;
+              }
+            }
+          }
+        }
+      }
+      const nearInsc = (i: number, r: number): boolean => Math.abs(g[i][r].y - inscY) < 0.9;
+      const isVoidVertex = (i: number, r: number): boolean => (i > 0 && r > 0 && voidCell[i - 1]?.[r - 1]) || (i < C && r > 0 && voidCell[i]?.[r - 1]) || (i > 0 && r < R && voidCell[i - 1]?.[r]) || (i < C && r < R && voidCell[i]?.[r]);
+      const f = len > 2 ? faceFields(g, seed + e * 31, lossAmt, 1, (i, r) => i === 0 || i === C || r === 0 || r === R || nearInsc(i, r) || isVoidVertex(i, r)) : null;
+      // Recess the openings 0.8 m (their neighbours slope into them: rough reveals).
+      for (let i = 1; i < C; i++) {
+        for (let r = 1; r < R; r++) {
+          if (isVoidVertex(i, r) && !(i === 0 || i === C)) {
+            const q = g[i][r];
+            const allVoid = voidCell[i - 1][r - 1] && voidCell[i][r - 1] && voidCell[i - 1][r] && voidCell[i][r];
+            const d = allVoid ? 0.9 : 0.25;
+            q.x -= q.nx * d;
+            q.z -= q.nz * d;
+          }
+        }
+      }
+      reliefSurface(mb, g, f ? f.loss : null, M.tower, (i, r) => (voidCell[i][r] ? M.void : f && f.repair[i][r] ? M.brick : null));
     }
     flatPoly(mb, per.map((q) => [q.x, q.z] as V2), tops2, ruin > 0.3 ? M.grass : M.top);
   } else {
@@ -896,18 +950,9 @@ export function tower(o: KitOut, at: V2, dir: V2, ground: GroundFn, p: TowerPara
       }
     }
   }
-  // String courses (projecting brick bands at the storey floors).
-  if (lod === 0) {
-    for (let s = 1; s < storeys; s++) {
-      const y = g0 + (p.height * s) / storeys;
-      if ((ruin > 0 && y > Math.min(...tops) - 0.5) || hash(seed, 9700 + s) < 0.35) {
-        continue;
-      }
-      prism(mb, chamfer(offsetRing(ring, 0.06), () => (p.chip ?? 0.35) * 0.8), y - 0.27, y, M.brick, { cap: true, capMat: M.brick, vRef: 0 });
-    }
-  }
-  // Openings: arrow slits in the lower storeys, arched windows in the top storey, on faces that look outward.
-  if (lod === 0) {
+  // Openings: arrow slits in the lower storeys, arched windows in the top storey, on faces that look outward. At LOD 0
+  // they are holes in the relief grid; the decals are for LOD 1.
+  if (lod === 1) {
     const minTop = Math.min(...tops);
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i];
