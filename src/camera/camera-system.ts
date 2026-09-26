@@ -290,9 +290,39 @@ export class CameraSystem implements System, CameraRigHost {
     this.wheelPixels = input.enabled ? clamp(this.wheelPixels - notches * WHEEL_PIXELS_PER_NOTCH, -WHEEL_BACKLOG_PIXELS, WHEEL_BACKLOG_PIXELS) : 0;
     frame.wheel = notches;
     if (input.enabled && input.wasPressed('camera') && this.requested !== 'free') {
-      const i = MODE_CYCLE.indexOf(this.requested);
-      this.requestMode(MODE_CYCLE[(i + 1) % MODE_CYCLE.length]);
+      if (this.tracker.dragon?.perch?.phase === 'perched') {
+        this.cyclePerchCamera();
+      } else {
+        const i = MODE_CYCLE.indexOf(this.requested);
+        this.requestMode(MODE_CYCLE[(i + 1) % MODE_CYCLE.length]);
+      }
     }
+  }
+
+  /**
+   * Perched on a viewpoint (phase 03), C cycles the viewing cameras: the slow orbit, the still framing (both the
+   * cinematic mode's perch camera) and the rider's eyes.
+   */
+  private cyclePerchCamera(): void {
+    const cin = this.cinematic;
+    if (this.requested === 'cinematic' && cin.perchStyle === 'orbit') {
+      cin.perchStyle = 'fixed';
+      cin.restartPerch(this.frame);
+    } else if (this.requested === 'cinematic') {
+      this.requestMode('pov');
+    } else {
+      cin.perchStyle = 'orbit';
+      cin.restartPerch(this.frame);
+      this.requestMode('cinematic');
+    }
+  }
+
+  /** Perch camera style the viewing mode names in its hints ('rider' when looking through the rider's eyes). */
+  get perchCamera(): 'orbit' | 'fixed' | 'rider' | 'other' {
+    if (this.requested === 'pov') {
+      return 'rider';
+    }
+    return this.requested === 'cinematic' ? this.cinematic.perchStyle : 'other';
   }
 
   private switchTo(next: CameraMode): void {
