@@ -37,8 +37,8 @@ export class FlightHints {
 /** Hover controls, shown on entering a hover: full length for the first few hovers of a session, then briefly. */
 export class HoverHints {
   readonly root = el('div', 'hud-hints hud-hints-hover ejd-fade is-out', [
-    el('p', 'ejd-caps hint-caps', 'Havada asılı'),
-    // Two short rows: one long row would run under the instruments on narrower screens.
+    el('p', 'hint-caps', 'Havada asılı'),
+    // Two short rows: one long row would crowd the bottom-centre cluster on narrower screens.
     el('div', 'hint-panel', [
       hintRow([
         [['Ctrl', '+', 'W', 'S'], 'Yavaşça ileri, geri'],
@@ -71,7 +71,7 @@ export class HoverHints {
 /** Subtle caption of the running cinematic shot (a landmark's name, or the kind of shot); fades after a few seconds. */
 export class ShotCaption {
   private readonly label = el('span', 'shot-label');
-  readonly root = el('div', 'hud-shot ejd-fade is-out', [el('span', 'ejd-caps shot-caps', 'Sinematik'), this.label], { 'aria-live': 'polite' });
+  readonly root = el('div', 'hud-shot ejd-fade is-out', [el('span', 'shot-caps', 'Sinematik'), this.label], { 'aria-live': 'polite' });
   private current = '';
   private timer = 0;
 
@@ -95,7 +95,7 @@ export class ShotCaption {
 /** Photo mode caption with the free-camera controls; fades to a whisper after a few seconds. */
 export class PhotoHint {
   readonly root = el('div', 'ejd-photo-hint ejd-fade is-out', [
-    el('p', 'ejd-caps photo-caps', 'Fotoğraf modu'),
+    el('p', 'photo-caps', 'Fotoğraf modu'),
     hintRow([
       [['W', 'A', 'S', 'D'], 'Hareket'],
       [['Q', 'E'], 'Alçal, yüksel'],

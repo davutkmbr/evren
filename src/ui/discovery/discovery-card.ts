@@ -5,7 +5,7 @@ import { LANDMARK_KIND_LABELS } from '../labels';
 
 export const CARD_DURATION_MS = 9000;
 
-/** Compact card under the discovery counter (top right), shown once when a landmark is discovered. */
+/** Discovery note at the top right (plain text with a soft shadow, no box), shown once when a landmark is discovered. */
 export class DiscoveryCard {
   readonly root: HTMLElement;
   private readonly badge: HTMLElement;
@@ -19,7 +19,7 @@ export class DiscoveryCard {
 
   constructor() {
     this.badge = el('span', 'dcard-badge', 'Yeni keşif');
-    const metaNode = el('span', 'dcard-meta ejd-caps');
+    const metaNode = el('span', 'dcard-meta');
     const titleNode = el('h3', 'dcard-title');
     const infoNode = el('p', 'dcard-info');
     const distNode = el('span', 'dcard-dist ejd-num');
@@ -28,7 +28,7 @@ export class DiscoveryCard {
     this.info = new TextSlot(infoNode);
     this.distance = new TextSlot(distNode);
     this.timer = el('i', 'dcard-timer');
-    this.root = el('aside', 'hud-dcard ejd-glass ejd-fade is-out', [
+    this.root = el('aside', 'hud-dcard ejd-fade is-out', [
       el('div', 'dcard-top', [this.badge, metaNode, distNode]),
       titleNode,
       infoNode,
