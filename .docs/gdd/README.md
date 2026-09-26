@@ -88,6 +88,10 @@ Data-driven small scenes on the map: legends (Hezarfen, Lagari, Kız Kulesi, shi
 simit, anglers, stork migration), poems (Orhan Veli's first stanza while gliding low along the shore). Triggers by
 place, altitude, time, date, weather; once per session or with a cooldown; players can switch categories off
 (Ayarlar → Oyun → Anlar). Rights: no ripped media; official embeds only; stylised, original characters.
+Runtime built (`src/moments/system.ts`, pure logic in `runtime.ts`): one moment at a time, rare (a global gap), never
+taking control; subtitles in the lowerCenter zone fade with the glide. Playable today: the Orhan Veli poem (subtitle
+only; the coastal ambience lifts in place of its sound). The others wait for their characters, animations and sounds.
+`?moment=<id>` jumps to a moment's start and plays it once.
 
 ### 5.6 Hotbar, abilities and items
 Five slots on keys 1–5 (HUD, bottom centre). Today: fire (1) and roar (2). Items and special powers register through
