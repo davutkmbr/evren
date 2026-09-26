@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DragonRig, DragonState } from '../../core/contracts';
+import type { DragonRig, DragonState, LowFlightView } from '../../core/contracts';
 import { createSpawnSpec } from '../particles/particle-pool';
 import { jetSpeedForReach } from '../particles/motion';
 import { packColor, SharpType, VolType } from '../particles/types';
@@ -65,6 +65,8 @@ export class FireEmitter {
   private readonly embers = new EmissionAccumulator();
   private readonly sparks = new EmissionAccumulator();
   private readonly steam = new EmissionAccumulator();
+  /** Seconds until the next hissing steam spurt where the fire meets the sea. */
+  private puffTimer = 0;
   private readonly burn = new EmissionAccumulator();
   private readonly spec = createSpawnSpec();
   private readonly tmpDir = new THREE.Vector3();
@@ -93,8 +95,14 @@ export class FireEmitter {
     this.light.name = 'fx-fire-light';
   }
 
-  update(ctx: EmitContext, dragon: DragonState | undefined, rig: DragonRig | undefined, lights: FireLightState): void {
+  update(ctx: EmitContext, dragon: DragonState | undefined, rig: DragonRig | undefined, lights: FireLightState, low?: LowFlightView): void {
     const dt = ctx.dt;
+    // Fire meeting the sea (lowFlight service, the same point the water boils at and the hiss plays from). It keeps
+    // steaming for a moment after the breath stops, so it runs before the early returns below.
+    const seaSteam = !!low && low.steam > 0.01 && dt > 0;
+    if (seaSteam) {
+      this.seaSteam(ctx, low);
+    }
     const firing = !!dragon && !!rig && dragon.firing;
     if (dt > 0) {
       this.ramp = THREE.MathUtils.clamp(this.ramp + (firing ? dt * 6.5 : -dt * 3.2), 0, 1);
@@ -130,7 +138,9 @@ export class FireEmitter {
 
     const underwater = this.pos.y < 0.3 && isWaterAt(ctx, this.pos.x, this.pos.z);
     if (underwater) {
-      this.emitSteam(ctx, this.tmpPos.set(this.pos.x, 0.2, this.pos.z), 90 * env, 4, 0);
+      if (!seaSteam) {
+        this.emitSteam(ctx, this.tmpPos.set(this.pos.x, 0.2, this.pos.z), 90 * env, 4, 0);
+      }
       this.setLights(0, lights, ctx.now);
       this.prevPos.copy(this.pos);
       this.prevDir.copy(this.dir);
@@ -165,7 +175,9 @@ export class FireEmitter {
     if (this.hitValid && this.hitDistance < reach * 1.25) {
       const closeness = 1 - this.hitDistance / (reach * 1.25);
       if (this.hitWater) {
-        this.emitSteam(ctx, this.hitPoint, 70 * k * closeness * volT, 6, 1);
+        if (!seaSteam) {
+          this.emitSteam(ctx, this.hitPoint, 70 * k * closeness * volT, 6, 1);
+        }
       } else {
         this.emitBurnSmoke(ctx, 16 * k * closeness * volT);
       }
@@ -337,8 +349,55 @@ export class FireEmitter {
     }
   }
 
-  /** White steam boiling off water (fire hitting the sea, or breathing underwater). */
-  private emitSteam(ctx: EmitContext, at: THREE.Vector3, rate: number, spread: number, inherit: number): void {
+  /**
+   * Fire boiling the sea: a steady steam cloud rising from the wave surface at the low-flight steam point plus hissing
+   * spurts (tight, fast-rising puffs every 0.1-0.35 s, the visual beat of the hiss).
+   */
+  private seaSteam(ctx: EmitContext, low: LowFlightView): void {
+    const k = low.steam;
+    const volT = poolThrottle(ctx.vol);
+    const at = low.steamPoint;
+    this.emitSteam(ctx, at, 80 * ctx.budgetScale * k * volT, 3 + 3 * k, 1, at.y);
+    this.puffTimer -= ctx.dt;
+    if (this.puffTimer > 0) {
+      return;
+    }
+    const rng = ctx.rng;
+    this.puffTimer = range(rng, 0.1, 0.35);
+    const n = Math.round((3 + 6 * k) * ctx.budgetScale * volT);
+    const s = this.spec;
+    const cx = at.x + (rng() - 0.5) * 4 * k;
+    const cz = at.z + (rng() - 0.5) * 4 * k;
+    for (let i = 0; i < n; i++) {
+      const a = rng() * Math.PI * 2;
+      const r = rng() * 1.2;
+      s.px = cx + Math.cos(a) * r;
+      s.py = at.y + range(rng, 0.1, 0.5);
+      s.pz = cz + Math.sin(a) * r;
+      s.vx = Math.cos(a) * range(rng, 0.5, 2) + this.worldJet.x * 0.05;
+      s.vy = range(rng, 4, 9) * (0.6 + 0.4 * k);
+      s.vz = Math.sin(a) * range(rng, 0.5, 2) + this.worldJet.z * 0.05;
+      s.birth = ctx.now + rng() * 0.06;
+      s.life = range(rng, 1.4, 2.6);
+      s.size0 = range(rng, 0.4, 0.8);
+      s.size1 = range(rng, 2.2, 3.6);
+      s.drag = 1.6;
+      s.buoy = range(rng, 4, 7);
+      s.seed = rng();
+      s.type = VolType.Steam;
+      s.cvx = 0;
+      s.cvy = 0;
+      s.cvz = 0;
+      s.auxA = 0;
+      s.auxB = range(rng, 0.55, 0.85);
+      s.auxC = 0;
+      setGroundPlane(s, at.y);
+      ctx.vol.spawn(s);
+    }
+  }
+
+  /** White steam boiling off water (fire hitting the sea, or breathing underwater); `base` = the water surface. */
+  private emitSteam(ctx: EmitContext, at: THREE.Vector3, rate: number, spread: number, inherit: number, base = 0): void {
     const n = this.steam.take(rate, ctx.dt);
     const rng = ctx.rng;
     const s = this.spec;
@@ -346,7 +405,7 @@ export class FireEmitter {
       const a = rng() * Math.PI * 2;
       const r = Math.sqrt(rng()) * spread;
       s.px = at.x + Math.cos(a) * r;
-      s.py = 0.3;
+      s.py = base + 0.3;
       s.pz = at.z + Math.sin(a) * r;
       s.vx = Math.cos(a) * range(rng, 0.5, 2.5) + this.worldJet.x * 0.08 * inherit;
       s.vy = range(rng, 1.5, 4);
@@ -365,7 +424,7 @@ export class FireEmitter {
       s.auxA = 0;
       s.auxB = range(rng, 0.45, 0.7);
       s.auxC = 0;
-      setGroundPlane(s, 0);
+      setGroundPlane(s, base);
       ctx.vol.spawn(s);
     }
   }

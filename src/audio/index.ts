@@ -9,6 +9,14 @@ import { loadVolume, saveVolume } from './settings';
 import { footfallOffsets } from '../core/gait';
 
 const TWO_PI = Math.PI * 2;
+
+function copyFinite(src: { x: number; y: number; z: number }, dst: { x: number; y: number; z: number }): void {
+  if (Number.isFinite(src.x) && Number.isFinite(src.y) && Number.isFinite(src.z)) {
+    dst.x = src.x;
+    dst.y = src.y;
+    dst.z = src.z;
+  }
+}
 /**
  * The flight model marks the nostril bubbles of an under-water dragon as tiny splashes where they reach the surface
  * (phase 21 stage 3, PLUNGE.bubbleStrength 0.05); at or below this strength, with the dragon under water, they play
@@ -254,10 +262,26 @@ export function createAudioSystem(): System {
       const geo = services.tryGet('geo');
       geoProbe.update(geo, lp.x, lp.y, lp.z, realDt, frame.probe);
       const dragonAgl = dragon ? finiteOr(dragon.agl, 1e3) : 1e3;
-      const skimTarget =
+      // The sea's reaction to low flight (phase 21 stage 2): the same numbers the water surface and the sprays use.
+      const low = services.tryGet('lowFlight');
+      const fd = frame.dragon;
+      if (low && low.active && dragon) {
+        fd.downwash = clamp01(finiteOr(low.downwash + 0.5 * low.edgeSpray, 0));
+        fd.wake = clamp01(finiteOr(Math.max(low.wake, 0.5 * low.vortex), 0));
+        fd.steam = clamp01(finiteOr(low.steam, 0));
+        copyFinite(low.surfacePoint, fd.seaPoint);
+        copyFinite(low.steamPoint, fd.steamPoint);
+      } else {
+        fd.downwash = 0;
+        fd.wake = 0;
+        fd.steam = 0;
+      }
+      const skimLow =
         dragon && geo && dragonAgl < 14 && dragon.mode !== 'swimming' && dragon.mode !== 'underwater' && geo.isWater(frame.dragon.position.x, frame.dragon.position.z)
           ? (1 - Math.max(0, dragonAgl) / 14) * smoothstep(12, 35, frame.dragon.airspeed)
           : 0;
+      // The airy spray hiss of the wind voice follows the wake too (a wave-relative contact the agl misses in a swell).
+      const skimTarget = Math.max(skimLow, fd.wake);
       frame.dragon.skim = finiteOr(frame.dragon.skim + (skimTarget - frame.dragon.skim) * (1 - Math.exp(-realDt * 6)), 0);
 
       engine.update(frame);

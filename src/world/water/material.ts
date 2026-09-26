@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { REGION_OPTICS, type WaterOptics } from './config';
+import type { DisturbanceUniforms } from './lowflight/disturbance-gpu';
 import type { SeaStateUniforms } from './sea-state';
 import { WATER_FRAGMENT_GLSL } from './shaders/water-fragment.glsl';
 import { WATER_VERTEX_GLSL } from './shaders/water-vertex.glsl';
 
-export interface WaterUniforms extends SeaStateUniforms {
+export interface WaterUniforms extends SeaStateUniforms, DisturbanceUniforms {
   uOrigin: { value: THREE.Vector2 };
   uGridCenter: { value: THREE.Vector2 };
   uWorldRect: { value: THREE.Vector4 };
@@ -44,9 +45,11 @@ function vec3List(pick: (o: WaterOptics) => readonly [number, number, number]): 
   return OPTICS_ORDER.map((o) => new THREE.Vector3(...pick(o)));
 }
 
-export function createWaterUniforms(sea: SeaStateUniforms, textures: WaterTextureSet, worldRect: THREE.Vector4): WaterUniforms {
+export function createWaterUniforms(sea: SeaStateUniforms, textures: WaterTextureSet, worldRect: THREE.Vector4, disturbance: DisturbanceUniforms): WaterUniforms {
   return {
     ...sea,
+    // The disturbance field's uniform objects are shared with the low-flight controller, which updates them.
+    ...disturbance,
     uOrigin: { value: new THREE.Vector2() },
     uGridCenter: { value: new THREE.Vector2() },
     uWorldRect: { value: worldRect },

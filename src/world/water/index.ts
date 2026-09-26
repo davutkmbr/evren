@@ -19,6 +19,7 @@ import { SeaState } from './sea-state';
 import { buildRadialGrid } from './surface-grid';
 import { createBandTexture, createFlowTexture, createFoamTexture, createPlaceholders, createRegionTexture } from './textures';
 import { UnderwaterController } from './underwater';
+import { LowFlightController } from './lowflight';
 import { decodeRegionMaps, WaveQuery } from './wave-query';
 
 /** Debug handle (sandbox / console): window.__water */
@@ -30,6 +31,8 @@ export interface WaterDebug {
   mesh: THREE.Mesh;
   reflection: PlanarReflection;
   quality: () => WaterQuality;
+  /** Low flight over the sea (phase 21 stage 2): model (the `lowFlight` service) and disturbance window. */
+  lowFlight: LowFlightController;
   regionStats: () => RegionBakeResult['stats'] | null;
 }
 
@@ -59,6 +62,7 @@ export function createWaterSystem(): System {
   const sea = new SeaState();
   const waves = new WaveQuery();
   const underwater = new UnderwaterController();
+  const lowFlight = new LowFlightController();
   let geoRef: GeoQuery | null = null;
   const placeholders = createPlaceholders();
   const origin = new THREE.Vector2();
@@ -142,6 +146,7 @@ export function createWaterSystem(): System {
       ctx.services.provide('water', waves);
       geoRef = geo;
       underwater.init(ctx);
+      lowFlight.init(ctx);
       anisotropy = ctx.quality.settings.anisotropy;
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
@@ -161,6 +166,7 @@ export function createWaterSystem(): System {
           reflectionDepth: reflection.target.depthTexture,
         },
         new THREE.Vector4(b.minX, b.minZ, 1 / (b.maxX - b.minX), 1 / (b.maxZ - b.minZ)),
+        lowFlight.uniforms,
       );
       const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan'];
       material = createWaterMaterial(uniforms, quality.bands, Math.max(0, debugViews.indexOf(ctx.debug.params.get('wdebug') ?? 'off')));
@@ -194,6 +200,7 @@ export function createWaterSystem(): System {
         mesh,
         reflection,
         quality: () => quality,
+        lowFlight,
         regionStats: () => regionStats,
       };
     },
@@ -211,6 +218,7 @@ export function createWaterSystem(): System {
       uniforms.uOrigin.value.copy(origin);
       underwater.update(ctx, waves, geoRef);
       uniforms.uCamUnder.value = underwater.state.under ? 1 : 0;
+      lowFlight.update(ctx, waves, geoRef);
     },
 
     preRender(ctx: EngineContext) {
@@ -222,6 +230,8 @@ export function createWaterSystem(): System {
       mesh.updateMatrix();
       mesh.updateMatrixWorld();
       uniforms.uGridCenter.value.set(cam.position.x - origin.x, cam.position.z - origin.y);
+      // The disturbance field under a low-flying dragon (nothing drawn while it is not alive).
+      lowFlight.preRender(ctx, origin.x, origin.y);
 
       // The mirror pass reuses the main camera's shadow map; until it exists (first frame, after a shadow-quality
       // change) lit materials would sample an unbound shadow sampler, so the pass waits a frame.
@@ -255,6 +265,7 @@ export function createWaterSystem(): System {
       }
       unsubscribeQuality?.();
       underwater.dispose();
+      lowFlight.dispose();
       client.dispose();
       if (mesh) {
         mesh.removeFromParent();
