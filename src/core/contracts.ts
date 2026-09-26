@@ -1089,9 +1089,15 @@ export interface GameEvents {
   perch: { id: string; state: 'perched' | 'left'; first: boolean };
   /**
    * A maneuver or rider action started (flight emits: roll, loop, freefall, catch, takeoff, land...; the rider
-   * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly.
+   * behaviour emits: pet, stand, sit). `label` is the Turkish caption the HUD shows briefly; `clean` only where the
+   * start already tells (the breach).
    */
-  maneuver: { id: string; label: string };
+  maneuver: { id: string; label: string; clean?: boolean };
+  /**
+   * A move that reports its end finished (phase 20 stage B / C moves, the plunge): `clean` = no contact, no stall, not
+   * cut short and the move's trade kept. Not a caption; the tutorial hints (src/ui/tutorial) read it as "learned".
+   */
+  'maneuver-end': { id: string; clean: boolean };
   /**
    * A chain link landed (flow's chain bursts, phase 20): its number in the chain, the speed push it gives (m/s, 0 when
    * the push was trimmed away) and why (a motion, a speed ring or a tight gate taken during the chain).
