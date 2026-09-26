@@ -51,6 +51,87 @@ export function playChainCue(env: SfxEnv, when: number, volume: number, link: nu
   return 0.7;
 }
 
+/** Which harmony term peaked in a "Kusursuz" moment (flow, phase 20). */
+export type FlowMomentKind = 'rhythm' | 'energy' | 'handover' | 'world';
+
+/** One struck-glass note (partials 1, 2.01, 3.02) at `at` seconds into the voice. */
+function glassNote(v: Voice, t: number, at: number, freq: number, peak: number, decay: number, pan = 0): void {
+  for (const [ratio, amp, d] of [
+    [1, 1, decay],
+    [2.01, 0.3, decay * 0.55],
+    [3.02, 0.1, decay * 0.3],
+  ] as const) {
+    const o = v.osc('sine', freq * ratio, at, 0, d + 0.05);
+    const g = v.gain(0);
+    percEnv(g.gain, t + at, peak * amp, 0.004, d);
+    o.connect(g);
+    v.toInput(g, pan);
+  }
+}
+
+/**
+ * A "Kusursuz" moment (flow, phase 20): a short, airy figure in D major above the chain-link tones, one shape per
+ * harmony term so the player learns what was perfect:
+ *   rhythm    two quick bells on the beat (A5, D6)
+ *   energy    a soft rising glide D5 → A5 with a bell on top (energy kept)
+ *   handover  F♯5 and A5 together, D6 after them (a seamless handover resolving)
+ *   world     an open fifth D5 + A5 with a breath of air (the world used: low, tight)
+ * Returns the duration in seconds.
+ */
+export function playFlowMoment(env: SfxEnv, when: number, volume: number, kind: FlowMomentKind): number {
+  const v = new Voice(env, placement({ reverb: 0.6, width: 0.8 }), when, volume);
+  const t = v.t;
+  switch (kind) {
+    case 'rhythm':
+      glassNote(v, t, 0, 880, 0.45, 0.45, -0.15);
+      glassNote(v, t, 0.11, 1174.66, 0.4, 0.7, 0.15);
+      break;
+    case 'energy': {
+      const o = v.osc('sine', 587.33, 0, 0, 0.9);
+      o.frequency.setValueAtTime(587.33, t);
+      o.frequency.exponentialRampToValueAtTime(880, t + 0.32);
+      const g = v.gain(0);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.28, t + 0.12);
+      g.gain.setTargetAtTime(0, t + 0.36, 0.12);
+      o.connect(g);
+      v.toInput(g);
+      glassNote(v, t, 0.3, 1760, 0.18, 0.5);
+      break;
+    }
+    case 'handover':
+      glassNote(v, t, 0, 739.99, 0.3, 0.55, -0.2);
+      glassNote(v, t, 0, 880, 0.3, 0.55, 0.2);
+      glassNote(v, t, 0.13, 1174.66, 0.38, 0.75);
+      break;
+    case 'world': {
+      for (const [f, pan] of [
+        [587.33, -0.25],
+        [880, 0.25],
+      ] as const) {
+        const o = v.osc('sine', f, 0, 0, 1.1);
+        const g = v.gain(0);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.22, t + 0.08);
+        g.gain.setTargetAtTime(0, t + 0.15, 0.22);
+        o.connect(g);
+        v.toInput(g, pan);
+      }
+      const air = v.noise(env.noise.pink);
+      const bp = v.filter('bandpass', 2400, 0.8);
+      const ag = v.gain(0);
+      ag.gain.setValueAtTime(0, t);
+      ag.gain.linearRampToValueAtTime(0.06, t + 0.1);
+      ag.gain.setTargetAtTime(0, t + 0.2, 0.15);
+      air.connect(bp).connect(ag);
+      v.toInput(ag);
+      break;
+    }
+  }
+  v.end(1.2);
+  return 1.2;
+}
+
 /**
  * Discovery chime: an airy open-fifth arpeggio (D5 A5 E6) on a soft struck-glass timbre
  * (partials 1, 2.01, 3.02, 4.23 with faster decay on the upper ones) over a gentle pad swell.

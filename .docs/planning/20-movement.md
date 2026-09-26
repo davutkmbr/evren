@@ -96,8 +96,9 @@ path (a stall, a scrape, a slow exit) that costs speed, never control.
   language's contextual reveal: only while a chain is alive) and the chain length as a small "×3" at its right end;
   chain captions reuse the maneuver caption. No score numbers flying around.
 - **Races:** speed rings, gates under bridges and skim-friendly legs are placed so chains pay off. Medal targets
-  (stage D v2): bronze reachable with plain flying, silver needs some chaining, gold needs sustained flow (target: a
-  skilled chained run 15–25 % faster than a clean unchained run on each built-in course; stage D had 6–10 %).
+  (owner decision 26 Sep, replacing stage D v2's "plain bronze, some chaining silver"): bronze for finishing the course,
+  silver for clean flying without moves, gold needs sustained flow (target: a skilled chained run 15–25 % faster than a
+  clean unchained run on each built-in course; stage D had 6–10 %).
 
 ## Tooling and verification (no GPU needed for most of it)
 
@@ -376,8 +377,17 @@ manoeuvring) takes part without registering anything.
     the gates, darts on the descents, strokes in the urges' gaps and takes the gates on the inside): Boğaz 227.3 →
     212.6 s (−6.5 %), Haliç 104.9 → 98.1 s (−6.5 %), Adalar 318.3 → 291.7 s (−8.4 %); mean flow plain 0.03–0.11,
     chained 0.89–0.92. The plain run earns silver, the chained run gold on every course.
-- **Not yet:** a sound for the moments (they reuse the caption only), the rider's reaction to high flow, tuning in the
-  game (feel test). The balance numbers move with any flight-model change: rerun `race-balance.ts` after one.
+- **Moment sounds** (added 26 Sep after stage D v4, owner request): each "Kusursuz" moment also plays a short airy
+  figure in D major above the chain-link tones, one shape per harmony term, so the player learns what was perfect:
+  *ritim* two quick bells on the beat (A5, D6), *enerji* a soft rising glide D5 → A5 with a bell on top, *geçiş* F♯5
+  and A5 together resolving to D6, *çizgi* an open fifth D5 + A5 with a breath of air (`playFlowMoment` in
+  `audio/sfx/ui.ts`). Flow emits a sim `moment` event with the kind; the game gets `flow-moment`; the engine plays it
+  on the UI bus (`MIX.moment` 0.25, ×0.7 in calm free flight, at most one a second). Offline case `flow-moments`
+  (`audio/analysis/scenarios.ts`): −27.6 LUFS momentary (target −31..−25; the discovery chime −21.7, the cruise wind
+  bed ~−28), the four figures within 2 dB of each other; case `chain-links` (the burst rush and the rising link tone):
+  −27.2 LUFS (target −28..−18).
+- **Not yet:** the rider's reaction to high flow, tuning in the game (feel test). The balance numbers move with any
+  flight-model change: rerun `race-balance.ts` after one.
 
 ### Urge removed (owner decision 26 Sep)
 
@@ -572,6 +582,12 @@ first links were half size at low flow. Nothing on screen said when to act or wh
   Medals (gold = best chained + 3 %): Boğaz turu 3:58 / 4:28 / 5:09, Haliç kıvrımı 1:41 / 2:03 / 2:22, Adalar turu
   4:58 / 6:08 / 7:05; default paces gold 49 / silver 41 / bronze 36 m/s. Plain bronze, some chaining silver, chained
   gold on every course.
+- **Medals retuned (owner decision, 26 Sep):** finishing earns bronze, clean flying silver, flow gold. Default paces
+  gold 49 / silver 36 / bronze 24 m/s; the built-in silver takes the old bronze time and bronze the 24 m/s default:
+  Boğaz turu 3:58 / 5:09 / 7:35, Haliç kıvrımı 1:41 / 2:22 / 3:39, Adalar turu 4:58 / 7:05 / 10:31 (the chain
+  practice's hidden targets follow the default paces). The plain racer now earns silver with ~10 % margin (a run 10 %
+  slower still earns it), a 1.4× slower finish earns bronze, some chaining earns silver, chained gold (`race-balance`
+  rules updated).
 - **Checks:** `flow-check.ts` section 5 now tests the rule step by step (begin, link in the window, a repeat, a kind
   among the last two, a third kind; the window running out, an unclean end and a contact breaking the chain; a move
   started during another linking); the fuzz: repeated gesture macros keep a longest chain of 1 (worst 7.6 m/s of
