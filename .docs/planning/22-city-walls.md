@@ -1,4 +1,4 @@
-# 20 — City walls: kit now, placement by the world compiler later
+# 22 — City walls: kit now, placement by the world compiler later
 
 Status: the model kit exists (`src/world/landmarks/walls/kit`, preview `sandbox/walls.html`); nothing is placed in the
 game. Placement waits for the OSM regions (multi-region slice plumbing) and is a world-compiler job.
