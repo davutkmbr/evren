@@ -8,6 +8,7 @@ import { BodyAxes, BodyState } from './body';
 import { BodyContacts, type ImpactReport } from './contacts';
 import { createControlTargets, FlightController } from './controller';
 import { GroundMoves } from './ground-moves';
+import { HardLanding, stepHardLanding } from './hard-landing';
 import { FlowSystem } from './flow/flow';
 import { endSkim, SkimState } from './skim';
 import { enterGrounded, enterSwimming, stepGrounded, stepSwimming } from './locomotion';
@@ -43,6 +44,8 @@ export class FlightSim {
   readonly skim = new SkimState();
   /** Flow ("akış", phase 20 stage D): harmony of consecutive motions, paid back as capped drag / thrust (flow/). */
   readonly flow = new FlowSystem();
+  /** Hard landing (hard-landing.ts): the tumble, get-up and head shake after meeting the ground too fast. */
+  readonly hard = new HardLanding();
   /** Perching on viewpoints (perch.ts): prompt, guided approach, perched hold, drop take-off off the perch. */
   readonly perch: PerchDriver = new PerchDriver(this);
   readonly wing: WingShape = createWingShape();
@@ -276,6 +279,7 @@ export class FlightSim {
     this.seaRollRate = 0;
     this.seaHs = 0;
     this.moves.reset();
+    this.hard.reset();
     this.perch.reset();
     this.aheadTimer = 0;
     this.resetFarLookahead();
@@ -294,6 +298,7 @@ export class FlightSim {
 
   /** Put the dragon down standing on the surface at its current x/z. */
   placeOnGround(): void {
+    this.hard.active = false;
     this.sampleSurface();
     if (this.surfaceIsWater()) {
       enterSwimming(this);
@@ -389,7 +394,10 @@ export class FlightSim {
     this.maneuvers.tick(h, this);
     this.moves.sinceLiftOff += h;
 
-    if (this.perch.step(this, cmd, h)) {
+    if (this.hard.active) {
+      // Tumbling, getting up and shaking its head after a hard landing: the pilot's input waits (hard-landing.ts).
+      stepHardLanding(this, h);
+    } else if (this.perch.step(this, cmd, h)) {
       // The perch approach, the perched hold or a drop-off off the perch moved the body this step (perch.ts).
     } else if (this.mode === 'grounded') {
       stepGrounded(this, cmd, h);

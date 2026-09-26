@@ -320,6 +320,12 @@ export interface GeoQuery {
 
 export type FlightMode = 'flying' | 'gliding' | 'diving' | 'hovering' | 'stalling' | 'landing' | 'grounded' | 'takeoff' | 'swimming' | 'underwater';
 
+/**
+ * Hard landing phases (phase 04, dragon/flight/hard-landing.ts): `tumble` (rolling / skidding along the ground),
+ * `rise` (getting up) and `shake` (standing, shaking its head). The mode stays 'grounded' throughout.
+ */
+export type HardLandingPhase = 'tumble' | 'rise' | 'shake';
+
 export interface DragonState {
   /** Root transform driven by physics. The rig root is parented under it. Origin = center of mass. */
   readonly object: THREE.Object3D;
@@ -376,6 +382,11 @@ export interface DragonState {
   fireBurst?(seconds: number): void;
   /** Perching on viewpoints (phase 03, dragon/flight/perch.ts); absent in sandboxes without perches. */
   readonly perch?: DragonPerchState;
+  /**
+   * The running hard landing's phase (phase 04), null when none runs. It is no landing of the player's: a race does
+   * not count it as standing on the ground (it only costs its time).
+   */
+  hardLanding?: HardLandingPhase | null;
 }
 
 /**
@@ -1138,7 +1149,8 @@ export interface LifeService {
 /* ------------------------------------------------------------------ */
 
 /** The dragon's mood (no meter on screen; it shows in pose and sound, and as one quiet line in the pause menu). */
-export type DragonMood = 'content' | 'curious' | 'playful' | 'tired' | 'excited';
+/** `embarrassed`: briefly, after a hard landing (phase 04). */
+export type DragonMood = 'content' | 'curious' | 'playful' | 'tired' | 'excited' | 'embarrassed';
 
 /** Read-only state of the bond behaviour, provided by dragon/model as 'bond'. */
 export interface DragonBondState {
