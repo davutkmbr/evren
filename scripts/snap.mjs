@@ -15,7 +15,8 @@
  * Frame times are measured in the page over the settle window: `stats.frameMedianMs` / `stats.frameP99Ms`, and
  * `frameTimes` ({ windowMs, frames, medianMs, p99Ms, maxMs, over50ms }). A frame is a change of the page's frame
  * counter (__evren.frame or __evren.ctx.time.frame), so a capped page (default 24 fps) reports its real cadence.
- * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs).
+ * GPU browsers are queued machine-wide (scripts/lib/gpu-slot.mjs). SNAP_CHROME=<path> runs a given Chromium instead of
+ * the system Chrome (e.g. a Linux container: ANGLE on SwiftShader).
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -198,11 +199,14 @@ async function shoot(browser, job) {
 
 await ensureServer();
 await acquireSlot();
-const browser = await chromium.launch({
-  channel: 'chrome',
-  headless: true,
-  args: CHROME_ARGS,
-});
+// SNAP_CHROME=<path>: a Chromium executable instead of the system Chrome (Linux containers without Metal: ANGLE on
+// SwiftShader, slow but deterministic).
+const chromePath = process.env.SNAP_CHROME;
+const browser = await chromium.launch(
+  chromePath
+    ? { executablePath: chromePath, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'] }
+    : { channel: 'chrome', headless: true, args: CHROME_ARGS },
+);
 try {
   let jobs;
   if (opt('batch')) {

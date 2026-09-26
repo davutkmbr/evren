@@ -17,6 +17,8 @@ export interface FlightSnapshot {
   stamina: number;
   /** Flow 0..1 (phase 20 stage D; 0 without a dragon). */
   flow: number;
+  /** Links in the current chain (flow's chain bursts; 0 without a chain or a dragon). */
+  chain: number;
   mode: FlightMode;
 }
 
@@ -34,6 +36,7 @@ export function createSnapshot(): FlightSnapshot {
     verticalSpeed: 0,
     stamina: 1,
     flow: 0,
+    chain: 0,
     mode: 'flying',
   };
 }

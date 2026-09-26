@@ -10,6 +10,7 @@ import { PovController } from './modes/pov';
 import { CameraCollision } from './obstruction';
 import { CameraRigService, type CameraDebugInfo, type CameraRigHost } from './rig-service';
 import { CameraShake } from './shake';
+import { CAMERA_FEEL, cameraFeel } from './feel';
 import type { ShotKind } from './shots/shot';
 import { DragonTracker } from './tracker';
 import { copyPose, createPose, type CameraController, type CameraFrame } from './types';
@@ -344,7 +345,12 @@ export class CameraSystem implements System, CameraRigHost {
     const env = ctx.services.tryGet('env');
     const speed = t.available ? t.speed : 0;
     // Buffeting grows with speed; a falling dragon's folded wings and loose gear flutter (kept subtle for POV).
-    shaker.buffet = 0.05 * smoothstep(55, 125, speed) + (t.available ? 0.035 * t.weightless * smoothstep(12, 50, speed) : 0);
+    // Perceived speed (camera/feel.ts): a light rumble at race speeds and on a chain burst, scaled by the speed feel.
+    const feel = cameraFeel(t);
+    shaker.buffet =
+      0.05 * smoothstep(55, 125, speed) +
+      (t.available ? 0.035 * t.weightless * smoothstep(12, 50, speed) : 0) +
+      feel.feel * (CAMERA_FEEL.buffet * feel.speed + CAMERA_FEEL.burstBuffet * feel.burst);
     shaker.turbulence = env ? 0.02 * clamp(env.wind.length() / 8, 0, 2) * smoothstep(5, 40, speed) : 0;
     shaker.firing = t.dragon?.firing ? 0.035 : 0;
     if (ctx.time.paused) {
