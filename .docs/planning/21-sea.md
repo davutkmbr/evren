@@ -22,12 +22,17 @@ animal in real waves. All of it calm and optional, and some of it useful to a sk
 - **Life** (`src/world/life/`): ferries, boats and ships with Kelvin wakes (`wakes/`), gulls.
 - **Mismatch:** the dragon floats and skims on a flat plane while the rendered surface moves with waves up to a few
   metres in lodos.
+- **Canned vessel motion:** ships heave, pitch and roll with fixed sine amplitudes scaled by size (`fleet.ts`), not
+  from the waves they sit in; wakes are parametric ribbons drawn from speed and hull size (`wakes/wake-trails.ts`),
+  not from what the hull does to the water. Nothing reacts to anything else's wake.
 
 ## Strand 1 — One sea for physics and pictures
 
 - A CPU wave evaluator that uses the **same** wave set, phases and regime as the shader (`sea-state.ts` already
   computes them in double precision): `heightAt(x, z)`, `normalAt(x, z)`, `velocityAt(x, z)` (orbital velocity),
   plus the Bosphorus surface current (north → south, stronger in the narrows).
+- Plus the **dynamic part** of strand 7 (wave particles from hulls, the dragon and splashes): `heightAt` returns the
+  sum, so everything floats on the same water.
 - Published through a new `water` service in `contracts.ts` (owned by the water module). Flight, fx, life and the
   camera use it instead of y = 0.
 - A headless parity test: sample the CPU evaluator against a JS port of the shader formula at many points and
@@ -91,6 +96,65 @@ Ground-effect lift keeps working and becomes the physical basis of **sıyırma**
 - Poyraz: choppy, cold light; fog banks sitting on the water in the morning (phase 13).
 - Rain: rings on the water; storms: whitecaps everywhere.
 
+## Strand 7 — A physical sea: vessels, wakes and foam from the simulation
+
+Owner's requirement: ships floating, the waves, the ships' motion in the waves, the wake and the foam behind a ship
+must not be canned effects; they come from the physics of the moment, and performance stays within budget.
+
+### 7a. The wave field = spectrum + interactive part
+- **Ambient sea:** the existing Gerstner set, driven by the sea regime (wind speed, fetch, poyraz/lodos direction,
+  swell). Keep it, but derive its amplitudes and periods from a wind-wave spectrum (JONSWAP-style, fetch-limited in the
+  Bosphorus and the Marmara), so the sea state follows the wind physically.
+- **Interactive part: wave particles.** Every disturbance (a hull pushing water, the dragon's downwash and skim, a
+  plunge, a breach, a splash) emits wave-front particles that travel with the deep-water group speed, spread and lose
+  amplitude with distance. A moving hull emits them continuously along its waterline, so the **bow wave, the stern wave
+  and the Kelvin pattern emerge** from the hull's speed and length (the 19.5° wedge for displacement hulls, a narrower
+  wake as planing hulls speed up) instead of being drawn. Particles are cheap on the CPU (they can be queried for
+  buoyancy) and splatted into a height/normal texture on the GPU for rendering.
+- **Crossing wakes interact:** a ferry's wake reaches a small boat, and the boat rolls because the water under it
+  really rises; the dragon swimming in a wake bobs the same way.
+
+### 7b. Vessels as floating rigid bodies
+- Each vessel gets a simplified 6-DOF rigid body: mass, inertia and a set of hull sample points generated from its hull
+  model (`hull.ts`: 8–24 points on the waterline and keel, more for long hulls).
+- **Buoyancy** from the water height at each point (displaced volume, Archimedes), **damping** from hull drag, **wind
+  heel** from the superstructure's side area, **propulsion and rudder as forces**: the existing navigation keeps
+  choosing speed and heading, a controller turns them into thrust and rudder force, the body does the rest (turning
+  heel, squat, trim).
+- **Planing craft** (speedboats, small launches) get dynamic lift with speed: they rise, trim bow-up, slam in waves.
+- Natural periods and stability come from the hull shape (metacentric height), so a ferry rolls slowly and a caique
+  bounces; nothing capsizes in lodos (checked).
+- Moored and anchored boats ride the same water on springs (mooring lines / anchor chain), swinging to wind and current.
+
+### 7c. Foam and spray from the water's state
+- **Foam** is generated where the simulated surface breaks (steepness / surface compression above a threshold: wave
+  crests in lodos, the bow wave, the crest of a wake), where the propeller churns the water (source strength from
+  thrust) and where anything hits the water. It is **advected** with the surface flow and decays over tens of seconds,
+  in a world-space foam texture that scrolls with a moving window around the camera, so a ship leaves a persistent
+  white trail that bends when it turns and spreads and fades behind it.
+- **Spray** particles are emitted from the same breaking events (bow slamming into a wave, the dragon's plunge),
+  their amount from the local energy, not from fixed timers.
+
+### 7d. Level of detail and budgets
+| Range | Wave field | Vessels | Foam |
+|---|---|---|---|
+| near (≤ 600 m) | spectrum + wave particles, full splat resolution | full rigid body, all hull points | full foam texture |
+| mid (0.6–2 km) | spectrum + wave particles at lower splat density | 4-point rigid body (bow, stern, both beams) | coarse foam |
+| far (> 2 km) | spectrum only | analytic response to the spectrum (transfer functions from the same hull data) | analytic wake line tinted into the water shader, parameters from the same hull |
+
+Budgets on "high" (M2 Max, 1600 × 900): vessel physics ≤ 1.0 ms CPU for everything within 2 km (a worker if needed),
+wave particles ≤ 0.5 ms CPU, splatting ≤ 0.4 ms GPU, foam ≤ 0.3 ms GPU. The current canned motion and ribbons stay
+only as the far LOD and as a fallback on "low".
+
+### 7e. Verification (mostly headless)
+- Natural heave and roll periods of each vessel class against the textbook formulas from its hull data (±15 %).
+- No capsizing and bounded roll in the strongest lodos; moored boats stay within their lines.
+- Measured wake half-angle ≈ 19.5° for displacement hulls at low Froude numbers, narrowing with speed for planing
+  hulls; wake height decaying with distance.
+- A small boat crossing a ferry's wake rolls more than in calm water (interaction exists).
+- Energy check: wave particles never gain amplitude; particle count and CPU time stay within budget with the full fleet.
+- Timings measured in Node for the CPU parts; GPU parts reviewed by the owner.
+
 ## Racing tie-ins
 
 - Water gates close to the surface reward skims; a plunge + breach can shortcut a vertical reversal.
@@ -125,10 +189,15 @@ Ground-effect lift keeps working and becomes the physical basis of **sıyırma**
 | 4 | Underwater rendering | Owner GPU review OK; ≤ 1 ms |
 | 5 | Swimming rework: gaits, duck under, water take-off run, shake-off, wet sheen, company | Checks and sheets approved; feel test OK |
 | 6 | Weather coupling and race/flow tie-ins | Race balance report; feel test OK |
+| 7a | Wind-wave spectrum; wave particles (CPU + GPU splat), fed by hulls, the dragon and splashes | Wake-angle and energy checks pass; budgets met; owner GPU review |
+| 7b | Vessels as floating rigid bodies with LOD; propulsion/rudder forces; moorings | Period, stability and interaction checks pass; CPU ≤ 1 ms |
+| 7c | Foam and spray from breaking, propellers and impacts; advected foam texture | Owner GPU review; ≤ 0.3 ms |
 
 ## Risks
 
 - Physics/visual mismatch is worse than no feature: strand 1 comes first and the parity test gates the rest.
 - Underwater rendering is GPU-heavy and cannot be judged headless: keep it behind stage 4 and owner review.
+- Physical vessels change traffic behaviour (slower turns, drift): the navigation controller must be retuned so ferries
+  still dock on time; the old kinematic path stays available as a fallback per vessel class.
 - Collisions with ships and piers under water: the collision world has their hulls only above water; add simple
   underwater hull boxes for vessels before stage 3 ships.
