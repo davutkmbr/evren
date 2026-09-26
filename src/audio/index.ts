@@ -6,6 +6,7 @@ import { DragonProbe, readListener } from './dragon-probe';
 import { GeoProbe } from './geo-probe';
 import { clamp01, finiteOr, smoothstep } from './dsp/math';
 import { loadVolume, saveVolume } from './settings';
+import { createMusicController } from './music';
 import { footfallOffsets } from '../core/gait';
 
 const TWO_PI = Math.PI * 2;
@@ -72,6 +73,8 @@ export function createAudioSystem(): System {
   let building = false;
   let qualityPreset = 'high';
   const unsubscribers: Array<() => void> = [];
+  /** Adaptive music (src/audio/music): plays on the master bus's music input once the engine exists. */
+  const music = createMusicController();
 
   const removeGestureListeners = (): void => {
     for (const e of gestureEvents) {
@@ -102,6 +105,7 @@ export function createAudioSystem(): System {
         engine.setVolume(volume);
         engine.setPaused(paused);
         engine.setQuality(qualityPreset);
+        music.attach(ctxRef, engine.bus.music);
       };
       void assets
         .load(ctxRef)
@@ -176,6 +180,21 @@ export function createAudioSystem(): System {
     setMomentBed(amount: number): void {
       engine?.setMomentBed(amount);
     },
+    setMusicVolume(v: number): void {
+      music.setVolume(v);
+    },
+    get musicVolume(): number {
+      return music.musicVolume;
+    },
+    setAdaptiveMusic(on: boolean): void {
+      music.setAdaptive(on);
+    },
+    get adaptiveMusic(): boolean {
+      return music.adaptiveMusic;
+    },
+    setMomentMusic(active: boolean, musicId?: string): void {
+      music.setMomentMusic(active, musicId);
+    },
   };
 
   const debugHandle: AudioDebugHandle = {
@@ -208,6 +227,7 @@ export function createAudioSystem(): System {
       }
       document.addEventListener('visibilitychange', onVisibility);
       (window as unknown as { __evrenAudio?: AudioDebugHandle }).__evrenAudio = debugHandle;
+      music.init(ctx);
 
       const ev = ctx.events;
       unsubscribers.push(
@@ -315,6 +335,7 @@ export function createAudioSystem(): System {
       frame.dragon.skim = finiteOr(frame.dragon.skim + (skimTarget - frame.dragon.skim) * (1 - Math.exp(-realDt * 6)), 0);
 
       engine.update(frame);
+      music.update(ctx, realDt);
 
       // The flight model owns roar gating (cooldown, not while breathing fire or paused) and calls play('roar');
       // the raw input is only a fallback when no flight model is running at all.
@@ -404,6 +425,7 @@ export function createAudioSystem(): System {
       }
       removeGestureListeners();
       document.removeEventListener('visibilitychange', onVisibility);
+      music.dispose();
       engine?.dispose();
       engine = null;
       assets.dispose();

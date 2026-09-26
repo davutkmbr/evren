@@ -4,6 +4,7 @@ import { el } from '../dom';
 import { formatClock, formatDecimal } from '../format';
 import type { UiPrefs } from '../prefs';
 import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moments/prefs';
+import { loadAdaptiveMusic, loadMusicVolume } from '../../audio/music/settings';
 import type { MomentCategory } from '../../moments/types';
 import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
 
@@ -49,6 +50,8 @@ export class SettingsPanel {
   private readonly invertMouse: Control<boolean>;
   private readonly invertPitch: Control<boolean>;
   private readonly volume: Control<number>;
+  private readonly musicVolume: Control<number>;
+  private readonly adaptiveMusic: Control<boolean>;
   private readonly timeOfDay: Control<number>;
   private readonly timeSpeed: Control<number>;
   private readonly camera: Control<CameraMode>;
@@ -130,6 +133,20 @@ export class SettingsPanel {
         save();
       },
     });
+
+    // Music (src/audio/music): the audio service persists both.
+    this.musicVolume = slider({
+      label: 'Müzik',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      value: ctx.services.tryGet('audio')?.musicVolume ?? loadMusicVolume(),
+      format: (v) => percentFormat.format(v),
+      onInput: (v) => ctx.services.tryGet('audio')?.setMusicVolume?.(v),
+    });
+    this.adaptiveMusic = toggle('Uyarlanabilir müzik', ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic(), (v) =>
+      ctx.services.tryGet('audio')?.setAdaptiveMusic?.(v),
+    );
 
     this.timeOfDay = slider({
       label: 'Günün saati',
@@ -268,7 +285,13 @@ export class SettingsPanel {
           settingRow('Tüm tuşlar', 'Uçuş, kamera ve arayüz kısayolları', controlsLink.root),
         ]),
       ],
-      sound: [settingSection('Ses', [settingRow('Ana ses', undefined, this.volume.root)])],
+      sound: [
+        settingSection('Ses', [
+          settingRow('Ana ses', undefined, this.volume.root),
+          settingRow('Müzik', undefined, this.musicVolume.root),
+          settingRow('Uyarlanabilir müzik', 'Müzik uçuşuna göre katman katman değişir; kapalıyken parçalar tam haliyle çalar', this.adaptiveMusic.root),
+        ]),
+      ],
       game: [
         settingSection(
           'Anlar',
@@ -339,6 +362,8 @@ export class SettingsPanel {
     this.invertMouse.set(ctx.input.settings.invertMouseY);
     this.invertPitch.set(ctx.input.settings.invertPitch);
     this.volume.set(ctx.services.tryGet('audio')?.masterVolume ?? this.options.prefs.volume ?? 1);
+    this.musicVolume.set(ctx.services.tryGet('audio')?.musicVolume ?? loadMusicVolume());
+    this.adaptiveMusic.set(ctx.services.tryGet('audio')?.adaptiveMusic ?? loadAdaptiveMusic());
     this.timeOfDay.set(Math.round(ctx.time.timeOfDay * 4) / 4);
     this.timeSpeed.set(ctx.time.dayTimeScale);
     const mode = ctx.services.tryGet('cameraRig')?.mode;
