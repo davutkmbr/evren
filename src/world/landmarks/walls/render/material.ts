@@ -17,7 +17,7 @@ import { Surf } from '../../heritage/build/surfaces';
 import { WALL_FOLIAGE } from '../kit/detail';
 import { loadImage, maxAnisotropy, pixels } from '../../../osm/shared/textures';
 
-const BASE = `${import.meta.env.BASE_URL}textures/`;
+const BASE = `${import.meta.env?.BASE_URL ?? "/"}textures/`;
 /** Texture array layers: 0 facing, 1 brick, 2 core. */
 const LAYERS = ['wall_stone', 'wall_brick', 'wall_core'] as const;
 /** Real-world size (m) of one repeat per layer [u, v]: Bricks102 is 2:1, courses ~0.34 m at 2.4 m height. */

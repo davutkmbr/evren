@@ -852,10 +852,10 @@ export function createStreetLayerSystem(): System {
   };
 
   const loadArea = (e: AreaEntry, ctx: EngineContext): void => {
-    const baseUrl = `${import.meta.env.BASE_URL}world/${e.id}/`;
+    const baseUrl = `${import.meta.env?.BASE_URL ?? '/'}world/${e.id}/`;
     loaded.set(e.id, 'loading');
     pendingInit++;
-    void fetchJson<StreetIndex>(new URL(e.index, new URL(`${import.meta.env.BASE_URL}${WORLD_INDEX}`, window.location.href)).href)
+    void fetchJson<StreetIndex>(new URL(e.index, new URL(`${import.meta.env?.BASE_URL ?? '/'}${WORLD_INDEX}`, window.location.href)).href)
       .then((full) => {
         if (loaded.get(e.id) !== 'loading') {
           return;
@@ -939,7 +939,7 @@ export function createStreetLayerSystem(): System {
         return;
       }
       pendingInit++;
-      void fetchJson<WorldIndex>(`${import.meta.env.BASE_URL}${WORLD_INDEX}`)
+      void fetchJson<WorldIndex>(`${import.meta.env?.BASE_URL ?? '/'}${WORLD_INDEX}`)
         .then((root) => {
           entries = root.areas;
           owned = cellOwners(entries);
