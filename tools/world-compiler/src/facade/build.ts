@@ -839,24 +839,9 @@ function streetWear(x: Ctx2, e: Edge, b: Batch, wins: readonly Win[], units: rea
   const cableCol = lin(0x141414);
   const yc = (p.roof === 'flat' ? p.roofY - 0.3 : p.roofY - 0.45) - 0.2 * H(3);
   const nSeg = Math.max(1, Math.round(e.len / 1.2));
-  for (let q = 0; q < 3; q++) {
-    const yq = yc - q * 0.035 - 0.012;
-    const d0 = 0.03 + q * 0.012;
-    const d1 = d0 + 0.015;
-    const th = 0.018 + 0.008 * (q % 2);
-    for (let k = 0; k < nSeg; k++) {
-      const a = (e.len * k) / nSeg;
-      const c2 = (e.len * (k + 1)) / nSeg;
-      const m = (a + c2) / 2;
-      const sag = 0.02 + 0.03 * H(500 + q * 31 + k);
-      for (const [ra, rb, ya, yb] of [
-        [a, m, yq, yq - sag],
-        [m, c2, yq - sag, yq],
-      ] as const) {
-        b.quadF('fac_metal', 'N', [[ra, ya - th, d1], [rb, yb - th, d1], [rb, yb, d1], [ra, ya, d1]], cableCol);
-        b.poly('fac_metal', e.f.dir('-Y'), [e.f.p(ra, ya - th, d0), e.f.p(rb, yb - th, d0), e.f.p(rb, yb - th, d1), e.f.p(ra, ya - th, d1)], cableCol);
-      }
-    }
+  // One module slot per span between two clips (modules/wall.ts), its sag picked per span.
+  for (let k = 0; k < nSeg; k++) {
+    x.c.slots.add(e.f, 'wall.cables', { seed: p.seed + e.i * 17.3 + k * 0.77, r: (e.len * k) / nSeg, y: yc, w: e.len / nSeg });
   }
   const drops = 1 + Math.floor(H(4) * 2);
   for (let k = 0; k < drops; k++) {

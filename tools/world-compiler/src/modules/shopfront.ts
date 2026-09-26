@@ -110,14 +110,14 @@ function step(c: AuthorCtx): void {
  * valance, the bar and the folding arms. The belly and the bar's droop follow the stripe's place across the width,
  * so each stripe count is its own variant.
  */
-function awning(n: number, market: boolean) {
+function awning(n: number) {
   return (c: AuthorCtx): void => {
     const { b, w: Wd, h: drop, d: D } = c;
     const f = b.f;
     // The slot spans the unit; the awning overhangs it by 0.1 m on both sides.
     const a0 = -0.1;
     const a1 = Wd + 0.1;
-    const sag = market ? 0.095 : 0.06;
+    const sag = 0.07;
     const barDroop = 0.027;
     const tm = 0.55;
     const yMount = 0;
@@ -164,14 +164,12 @@ function awning(n: number, market: boolean) {
 }
 
 function awnings(): VariantSpec[] {
+  // Stripes of 0.23-0.29 m: an even stripe count per variant, its fit covering one stripe more or less.
   const out: VariantSpec[] = [];
-  for (const market of [false, true]) {
-    for (let n = 1; n <= 44; n++) {
-      // n = round((w + 0.2) / 0.26)
-      const lo = n === 1 ? 0.3 : (n - 0.5) * 0.26 - 0.2;
-      const hi = (n + 0.5) * 0.26 - 0.2;
-      out.push({ id: `${market ? 'market' : 'shop'}-n${n}`, ref: [Math.max(lo + 0.01, n * 0.26 - 0.2), 0.8, 1.6], fit: { w: [lo, n === 44 ? INF : hi] }, styles: [market ? 'market' : 'shop'], author: awning(n, market) });
-    }
+  for (let n = 4; n <= 48; n += 2) {
+    const lo = n === 4 ? 0.3 : (n - 1) * 0.26 - 0.2;
+    const hi = (n + 1) * 0.26 - 0.2;
+    out.push({ id: `n${n}`, ref: [n * 0.26 - 0.2, 0.8, 1.6], fit: { w: [lo, n === 48 ? INF : hi] }, author: awning(n) });
   }
   return out;
 }
@@ -209,6 +207,6 @@ export const SHOPFRONT_FAMILIES: FamilySpec[] = [
   },
   { name: 'shop.sign', doc: 'Sign board over a unit (w, h; tint 0 panel, tint 1 face; style plain or a glow colour).', styles: FACE_STYLES, variants: [{ id: 'board', ref: [4, 0.8, 0], author: signBoard }] },
   { name: 'shop.blade', doc: 'Projecting sign (origin on the wall at its axis and bottom; tint 0 panel, tint 1 face; style plain or a glow colour).', styles: FACE_STYLES, variants: [{ id: 'blade', ref: [0, 0, 0], author: bladeSign }] },
-  { name: 'shop.awning', doc: 'Striped awning (origin at the roller on the wall at the unit start; w the unit, h the drop, d the projection; tints the stripes; style shop or market).', variants: awnings() },
+  { name: 'shop.awning', doc: 'Striped awning (origin at the roller on the wall at the unit start; w the unit, h the drop, d the projection; tints the stripes).', variants: awnings() },
 ];
 
