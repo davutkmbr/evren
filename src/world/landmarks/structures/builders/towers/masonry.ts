@@ -355,7 +355,8 @@ function opening(mb: MeshBuilder, map: WallMap, o: Opening, opt: WallOptions, se
   if (ledge > 0) {
     mb.surface(trim);
     const hw = o.w / 2 + f + 0.12;
-    block(mb, map, o.s - hw, o.s + hw, o.sill - 0.16, o.sill, 0.02, -ledge);
+    // starts at the face: reaching into the wall its top would lie in the plane of the reveal's floor
+    block(mb, map, o.s - hw, o.s + hw, o.sill - 0.16, o.sill, 0, -ledge);
   }
 }
 
@@ -363,7 +364,19 @@ function opening(mb: MeshBuilder, map: WallMap, o: Opening, opt: WallOptions, se
  * Block proud of (or set into) the face: s in [sa, sb], y in [ya, yb], from depth dIn (usually >= 0, inside the
  * wall) out to dOut (< 0). Emits the front, top, bottom and the two ends; curved faces are faceted per column.
  */
-export function block(mb: MeshBuilder, map: WallMap, sa: number, sb: number, ya: number, yb: number, dIn: number, dOut: number, topOut = dOut): void {
+export function block(
+  mb: MeshBuilder,
+  map: WallMap,
+  sa: number,
+  sb: number,
+  ya: number,
+  yb: number,
+  dIn: number,
+  dOut: number,
+  topOut = dOut,
+  /** End faces to emit: 1 = at sa, 2 = at sb (default both). */
+  ends = 3,
+): void {
   const cols = Math.max(1, Math.ceil((map.columns * (sb - sa)) / map.len));
   const vBase = mb.vBase;
   for (let i = 0; i < cols; i++) {
@@ -383,8 +396,12 @@ export function block(mb: MeshBuilder, map: WallMap, sa: number, sb: number, ya:
   }
   const endL = map.tangent(sa, new THREE.Vector3()).negate();
   const endR = map.tangent(sb, new THREE.Vector3());
-  mb.polygon([map.point(sa, ya, dIn), map.point(sa, ya, dOut), map.point(sa, yb, topOut), map.point(sa, yb, dIn)], endL);
-  mb.polygon([map.point(sb, ya, dIn), map.point(sb, ya, dOut), map.point(sb, yb, topOut), map.point(sb, yb, dIn)], endR);
+  if (ends & 1) {
+    mb.polygon([map.point(sa, ya, dIn), map.point(sa, ya, dOut), map.point(sa, yb, topOut), map.point(sa, yb, dIn)], endL);
+  }
+  if (ends & 2) {
+    mb.polygon([map.point(sb, ya, dIn), map.point(sb, ya, dOut), map.point(sb, yb, topOut), map.point(sb, yb, dIn)], endR);
+  }
 }
 
 /** Horizontal band (string course / plinth) along the whole face, `out` metres proud, with a chamfered top. */
@@ -412,10 +429,12 @@ export function quoins(mb: MeshBuilder, map: WallMap, sCorner: number, ya: numbe
   let k = 0;
   for (let y = ya; y + course * 0.5 < yb; y += course, k++) {
     const w = k % 2 === 0 ? long : short;
-    // the block runs `out` past the corner so it meets the neighbour face's quoin
-    const s0 = dir > 0 ? sCorner - out : sCorner - w;
+    // only the block at the end of a face runs `out` past the corner and closes it; the one starting the next face
+    // stops at the corner (both running past put their faces in one plane there and z-fought)
+    const s0 = dir > 0 ? sCorner : sCorner - w;
     const s1 = dir > 0 ? sCorner + w : sCorner + out;
-    block(mb, map, s0, s1, y + 0.015, Math.min(yb, y + course) - 0.015, 0.02, -out);
+    // the start-of-face block's corner end would lie in the neighbour's wall plane, under its quoin: not emitted
+    block(mb, map, s0, s1, y + 0.015, Math.min(yb, y + course) - 0.015, 0.02, -out, -out, dir > 0 ? 2 : 3);
   }
 }
 
