@@ -267,6 +267,21 @@ export function structureBlocks(claims: LandmarkClaims, b: OsmBuilding): boolean
 }
 
 /**
+ * Wall top (absolute m, on `groundAt`) this layer plans for every solid it draws, by OSM id. The street compiler takes
+ * the height of an untagged building from here, so up close it stands as tall as from the air, and the flight-scale
+ * buildings the street layer leaves standing beyond an area's edge meet street buildings of their own height.
+ */
+export function plannedWallTops(buildings: readonly OsmBuilding[], claims: LandmarkClaims, groundAt: (x: number, z: number) => number): Map<number, number> {
+  const out = new Map<number, number>();
+  const everywhere = { minX: -Infinity, minZ: -Infinity, maxX: Infinity, maxZ: Infinity };
+  for (const s of collectSolids({ buildings, claims, extra: [] }, everywhere)) {
+    const ground = solidGround(s.ring, groundAt);
+    out.set(s.b.id, ground.ref + planSolid(s, claims.settings, ground).wallH);
+  }
+  return out;
+}
+
+/**
  * Plan, footprint and wall height of a solid (heights relative to its reference ground; see buildBuildings). With the
  * historic mosque settings (landmarks/monument-setting.ts) and the solid's ground, an untagged building loses storeys
  * until its roof stays under the setting's top.
