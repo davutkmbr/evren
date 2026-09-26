@@ -248,11 +248,79 @@ export function buildTower(b: StructureBuild, x: number, z: number, spec: TowerS
   }
   // colliders: shaft as a vertical cylinder (or box for slabs), crown/spire as a thin cylinder
   const r = extent * (1 + taper) * 0.5;
-  b.cylinderCollider(x, y0, z, r, roofAbs - y0);
+  if (crown.kind === 'slant') {
+    // a flat top at roofAbs would hold the dragon up to ~30 m above the low end: shaft to the low end, then boxes
+    // stepping up the slope, each topped at the roof height in its middle (within ±1 m of the slab)
+    const lowY = roofAbs - (roofAbs - y0) * (1 - crown.low);
+    b.cylinderCollider(x, y0, z, r, lowY - y0);
+    slantRoofColliders(b, basePlanDetail, spec.rotation, x, z, taper, extent, roofAbs, roofAbs - lowY, lowY - 2);
+  } else {
+    b.cylinderCollider(x, y0, z, r, roofAbs - y0);
+  }
   if (top - roofAbs > 3) {
     b.cylinderCollider(x, roofAbs, z, Math.max(1.2, crown.kind === 'fins' ? r : 2), top - roofAbs);
   }
   return { roof: roofAbs, top, radius: extent };
+}
+
+/** Half width across the plan (local z) where the plan crosses local x = u; 0 outside the plan. */
+function planHalfWidthAt(plan: Plan, u: number): number {
+  let w = 0;
+  for (let i = 0; i < plan.length; i++) {
+    const [ax, az] = plan[i];
+    const [bx, bz] = plan[(i + 1) % plan.length];
+    if ((ax - u) * (bx - u) > 0 || ax === bx) {
+      continue;
+    }
+    w = Math.max(w, Math.abs(az + ((u - ax) / (bx - ax)) * (bz - az)));
+  }
+  return w;
+}
+
+/**
+ * Colliders of a slanted roof (crown 'slant'): slices across the slope axis (local x), each a yawed box from `bottom`
+ * up to the roof height at the slice middle. The roof drops `drop` metres from the high end (+x) to the low end.
+ */
+function slantRoofColliders(
+  b: StructureBuild,
+  plan: Plan,
+  rotDeg: number,
+  x: number,
+  z: number,
+  taper: number,
+  extent: number,
+  roofAbs: number,
+  drop: number,
+  bottom: number,
+): void {
+  let uMin = Infinity;
+  let uMax = -Infinity;
+  for (const [u] of plan) {
+    uMin = Math.min(uMin, u);
+    uMax = Math.max(uMax, u);
+  }
+  const a = (rotDeg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  // slices ~2 m of roof drop tall, at most 24
+  const n = Math.min(24, Math.max(4, Math.ceil(drop / 2)));
+  const step = (uMax - uMin) / n;
+  for (let i = 0; i < n; i++) {
+    const u0 = uMin + step * i;
+    const u1 = u0 + step;
+    const um = (u0 + u1) / 2;
+    // narrowest width in the slice (plans are convex): the box never sticks out of the facade into open air
+    const hw = Math.min(planHalfWidthAt(plan, u0), planHalfWidthAt(plan, um), planHalfWidthAt(plan, u1)) * taper;
+    if (hw <= 0.1) {
+      continue;
+    }
+    // same roof function as the curtain wall: t = along / extent in world metres
+    const top = roofAbs - drop * (0.5 - 0.5 * ((um * taper) / extent));
+    if (top <= bottom) {
+      continue;
+    }
+    b.boxCollider(x + um * taper * c, (top + bottom) / 2, z + um * taper * s, (step * taper) / 2, (top - bottom) / 2, hw, -a);
+  }
 }
 
 function roofPlan4(plan: Plan, rot: number, x: number, z: number, scale: number): Plan {
