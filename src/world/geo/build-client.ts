@@ -9,7 +9,9 @@ type ResponseOf<T extends GeoWorkerResponse['type']> = Extract<GeoWorkerResponse
 class GeoWorkerHandle {
   private readonly worker: Worker;
   private readonly waiting = new Map<string, (msg: GeoWorkerResponse) => void>();
-  private failure: ((err: Error) => void) | null = null;
+  private readonly failures = new Set<(err: Error) => void>();
+  /** Sticky: a worker error rejects every pending and every later expect() (an error between two awaits was lost). */
+  private error: Error | null = null;
 
   constructor() {
     this.worker = new Worker(new URL('./geo.worker.ts', import.meta.url), { type: 'module', name: 'geo-build' });
@@ -20,7 +22,11 @@ class GeoWorkerHandle {
     };
     this.worker.onerror = (e) => {
       e.preventDefault();
-      this.failure?.(new Error(e.message || 'geo worker failed'));
+      this.error ??= new Error(e.message || 'geo worker failed');
+      for (const reject of this.failures) {
+        reject(this.error);
+      }
+      this.failures.clear();
     };
   }
 
@@ -30,8 +36,15 @@ class GeoWorkerHandle {
 
   expect<T extends GeoWorkerResponse['type']>(type: T): Promise<ResponseOf<T>> {
     return new Promise((resolve, reject) => {
-      this.waiting.set(type, resolve as (msg: GeoWorkerResponse) => void);
-      this.failure = reject;
+      if (this.error) {
+        reject(this.error);
+        return;
+      }
+      this.failures.add(reject);
+      this.waiting.set(type, (msg) => {
+        this.failures.delete(reject);
+        (resolve as (msg: GeoWorkerResponse) => void)(msg);
+      });
     });
   }
 
