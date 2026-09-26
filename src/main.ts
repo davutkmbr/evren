@@ -29,6 +29,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'camera', load: () => import('./camera').then((m) => m.createCameraSystem) },
   { name: 'life', load: () => import('./world/life').then((m) => m.createLifeSystem) },
   { name: 'activities', load: () => import('./activities').then((m) => m.createActivitySystem) },
+  { name: 'escort', load: () => import('./activities/escort').then((m) => m.createEscortSystem) },
   { name: 'moments', load: () => import('./moments/system').then((m) => m.createMomentSystem) },
   { name: 'fx', load: () => import('./fx').then((m) => m.createFxSystem) },
   { name: 'audio', load: () => import('./audio').then((m) => m.createAudioSystem) },
