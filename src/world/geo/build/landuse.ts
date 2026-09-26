@@ -302,11 +302,15 @@ function markReserved(input: BuildInput, out: Uint8Array): void {
       out[k] = LandUse.Landmark;
     }
   };
-  scanFill(input.reservedPolygons, g, (row, c0, c1) => {
-    for (let k = row * g.size + c0; k <= row * g.size + c1; k++) {
-      setLandmark(k);
-    }
-  });
+  // One polygon at a time: scanFill is even-odd over its rings, and reserved polygons overlap (the bridges' deck
+  // pieces with their verges), so a joint fill would cut holes where two overlap.
+  for (const ring of input.reservedPolygons) {
+    scanFill([ring], g, (row, c0, c1) => {
+      for (let k = row * g.size + c0; k <= row * g.size + c1; k++) {
+        setLandmark(k);
+      }
+    });
+  }
   for (const line of input.reservedLines) {
     stampPolyline(line.pts, line.halfWidth, g, setLandmark);
   }

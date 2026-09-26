@@ -131,6 +131,12 @@ export interface BuildInput {
   reservedLines: { pts: Float64Array; halfWidth: number }[];
   reservedPolygons: FlatRing[];
   /**
+   * Bridge volumes (landmarks/structure-volumes.ts, `structureStride` floats per box): the terrain is capped under
+   * their decks, piers and anchorages (height.ts capUnderStructures).
+   */
+  structureCaps: Float32Array;
+  structureStride: number;
+  /**
    * Road corridors; `highway`: the name of a motorway or ring road (its sections share it): their verges and the
    * junction pockets between two different highways turn green (landuse.ts).
    */
