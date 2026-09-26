@@ -32,6 +32,8 @@ are English.
   - `seasons` (meteorological: spring Mar–May … winter Dec–Feb) and/or `dateRange` (`{ month, day }` pairs, inclusive,
     wraps past New Year when `from` is later than `to`). Day of year uses a non-leap calendar, like `TimeState.dayOfYear`.
   - `weather`: allowed `WeatherPreset`s (a `'custom'` weather never matches a list).
+  - `seaFog`: `{ min?, max? }` band (0..1) of the fog layer on the sea (`WeatherService.seaFog`: the foggy mornings of
+    about a third of the game days and fog weather); independent of `weather`.
   - `repeat`: `{ kind: 'once-per-session' }` or `{ kind: 'repeatable', cooldownSec }`.
 - **Content** (`content`): placeholder ids for the actor model, animations and sound; `subtitles` (timed Turkish lines
   `{ at, duration, text, speaker? }`); an optional `camera` hint (never takes control from the player); an optional
@@ -55,7 +57,8 @@ unless `includeDrafts` is set. `rejectReason()` names the first failing conditio
 
 ## Player settings
 
-Every record has a `category` (`legend`, `city-life`, `poem`). Players switch moments off in Ayarlar → Oyun → Anlar: a
+Every record has a `category` (`legend`, `city-life`, `poem`; `poem` covers every quoted literary text and is shown as
+"Şiir ve edebiyat" in the settings and "Edebiyat" on the card). Players switch moments off in Ayarlar → Oyun → Anlar: a
 master switch plus one switch per category, stored per viewer (`src/moments/prefs.ts`, key `evren.moments.prefs.v1`).
 The runtime passes them to the evaluator (`evaluate(..., { prefs: loadMomentPrefs() })`), which rejects switched-off
 moments with the reason `disabled`.
@@ -101,6 +104,7 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 | 8 | `ships-over-land-1453` | Karadan Yürüyen Gemiler | draft | Translucent galley model, slide/fade animations, wood-creak sound |
 | 9 | `kiz-kulesi-legend` | Kız Kulesi Efsanesi | draft | Small snake character and fruit basket, idle/peek/hide animations, night-sea sound |
 | 14 | `orhan-veli-istanbulu-dinliyorum` | İstanbul'u Dinliyorum | draft | Soft shore ambience (first stanza in place) |
+| 16 | ten literary records (`src/moments/data/literature.ts`) | Nedim, Sinan's inscription, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Haşim, Kuyrukluyıldız, Prokopios, De Amicis | 8 ready, 2 draft | The drafts (`sinan-turbe-kitabesi`, `hasim-bir-gunun-sonunda-arzu`) wait for the owner's text check; see `.docs/planning/19-moments.md`, "Literary moments" |
 
 No record uses `media`; film and series items (backlog 6 and 11) wait for the user's choices and official links.
 
