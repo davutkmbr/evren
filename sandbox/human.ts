@@ -209,6 +209,7 @@ const bench: System = {
       }
       if (play) {
         controller = new LocomotionController(m, holder);
+        controller.layers = params.get('layers') !== '0';
       }
       m.mixer.update(0);
       m.wind.captureRest();

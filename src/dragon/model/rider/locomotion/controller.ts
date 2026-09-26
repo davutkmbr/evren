@@ -73,6 +73,8 @@ export class LocomotionController {
   yaw = 0;
   state: LocoState = 'ground';
   crouch = 0;
+  /** Procedural layers (lean, look) on top of the clips. */
+  layers = true;
   private stateTime = 0;
   private phase = 0;
   private idleTime = 0;
@@ -87,6 +89,12 @@ export class LocomotionController {
   private prevYaw = 0;
   private readonly spine: THREE.Bone[] = [];
   private readonly hips?: THREE.Bone;
+  private readonly neck?: THREE.Bone;
+  private readonly head?: THREE.Bone;
+  private look = 0;
+  /** The layered bones' rotations as the clips left them: restored before each mixer update (the mixer only writes
+   * values that changed, so a layer would otherwise compound). */
+  private readonly layered: [THREE.Bone, THREE.Quaternion][] = [];
 
   constructor(
     private readonly human: HumanRider,
@@ -113,6 +121,13 @@ export class LocomotionController {
       }
     }
     this.hips = human.bones.get('Hips');
+    this.neck = human.bones.get('Neck');
+    this.head = human.bones.get('Head');
+    for (const b of [...this.spine, this.neck, this.head]) {
+      if (b) {
+        this.layered.push([b, b.quaternion.clone()]);
+      }
+    }
     this.yaw = object.rotation.y;
     this.prevYaw = this.yaw;
   }
@@ -298,8 +313,16 @@ export class LocomotionController {
     for (const [n, a] of this.actions) {
       a.setEffectiveWeight(sum > 1e-6 ? (this.weights.get(n) ?? 0) / sum : n === 'idle' ? 1 : 0);
     }
+    for (const [bone, q] of this.layered) {
+      bone.quaternion.copy(q);
+    }
     this.human.mixer.update(0);
-    this.leanLayer(dt, sp);
+    for (const [bone, q] of this.layered) {
+      q.copy(bone.quaternion);
+    }
+    if (this.layers) {
+      this.leanLayer(dt, sp);
+    }
     void ONE_SHOT;
     void AIR;
   }
@@ -344,6 +367,23 @@ export class LocomotionController {
       b.quaternion.premultiply(_pq).premultiply(_q).premultiply(inv);
       b.updateMatrixWorld(true);
     });
+    // The head looks into the turn, ahead of the body (a fraction of a second of turning), eased.
+    const wantLook = clamp((dyaw / dt) * 0.22, -0.6, 0.6);
+    this.look += (wantLook - this.look) * (1 - Math.exp(-5 * dt));
+    for (const [b, share] of [
+      [this.neck, 0.4],
+      [this.head, 0.6],
+    ] as const) {
+      if (!b) {
+        continue;
+      }
+      b.parent!.getWorldQuaternion(_pq);
+      _axis.set(0, 1, 0);
+      _q.setFromAxisAngle(_axis, this.look * share);
+      const inv = _pq.clone().invert();
+      b.quaternion.premultiply(_pq).premultiply(_q).premultiply(inv);
+      b.updateMatrixWorld(true);
+    }
     void this.hips;
   }
 }
