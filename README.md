@@ -174,6 +174,7 @@ Then open <http://127.0.0.1:5199/>.
 | `autostart` | `?autostart=1` | Skip the start screen |
 | `stats` | `?stats=1` | Performance overlay |
 | `nohud` | `?nohud=1` | Hide the HUD |
+| `music` | `?music=raw` | Music debug: `raw` / `denoised` picks the version of the restored 78 rpm moment pieces, `test`, `debug`, `off`, `sparse`, `continuous` (see [.docs/audio/music-system.md](.docs/audio/music-system.md)) |
 
 ## Architecture
 
@@ -298,3 +299,5 @@ Before opening a pull request, run `npm run build` and check the affected views 
   (see [its licence note](src/world/geo/data/LICENSE.md)). Elevation checks use NASA SRTM data (public domain).
 - Built with [three.js](https://threejs.org/).
 - The Seventeen Skies name and logo are the project's brand; see [.docs/brand](.docs/brand/README.md) for usage.
+- Textures, sounds, music and the historic 78 rpm recordings under the moments: see [CREDITS.md](CREDITS.md).
+  Rights holders can request corrections or removal at `<contact-email>`.

@@ -49,7 +49,10 @@ textures, decals and HDRI skies from Poly Haven and ambientCG, each one recorded
 18 CC0 Freesound recordings for wind, wing flaps, thunder and rain plus 4 gull recordings (user approval 2026-09-24,
 `.docs/assets/candidates/sounds.md` and `gulls.md`), and the CC0 OpenHistoricalMap trace of the Walls of Constantinople for sea-wall stretches OSM does
 not map (user approval 2026-09-26, `.docs/assets/candidates/sea-walls-data.md`), and the four CC0 city-wall sets Bricks102,
-castle_brick_broken_06, Rocks025 and LeafSet029 (user approval 2026-09-26, `.docs/assets/candidates/wall-scans.md`).
+castle_brick_broken_06, Rocks025 and LeafSet029 (user approval 2026-09-26, `.docs/assets/candidates/wall-scans.md`),
+and historic 78 rpm recordings (user approval 2026-09-26, `.docs/assets/candidates/moment-music.md`): every candidate is
+archived with its source (`.docs/assets/archive-78rpm.md`); public-domain-clean ones ship from `public/`, US-risky ones
+(free in Turkey, not yet in the US) stay private-only (`private-assets/`, builds) with full attribution.
 
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy

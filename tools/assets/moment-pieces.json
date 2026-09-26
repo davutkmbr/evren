@@ -1,0 +1,163 @@
+{
+ "$comment": "Moment pieces cut from the archived 78 rpm originals (tools/assets/approved.json, kind 'recording'). scripts/audio/prep-moment-music.py builds a denoised and a raw variant of each, measures them (tools/assets/moment-pieces.report.json) and writes the manifest entry. segment = [start, end] in seconds of the original side; noiseRegion = groove-only seconds for the hiss profile (default: the lead-in groove, or the quietest second with noise 'quietest'); variant forces the default variant (otherwise chosen from the metrics). target 'private' = US-risky: private-assets/ only. Owner approval: .docs/assets/candidates/moment-music.md#decision-2026-09-26.",
+ "approvedOn": "2026-09-26",
+ "pieces": [
+  {
+   "id": "kagithane-semaisi-1916",
+   "recording": "loc-victor-69173-kagithane-semaisi",
+   "file": "jvm_victor_69173_01_b18808_02.wav",
+   "segment": [7.5, 63.5],
+   "fadeIn": 0.5,
+   "fadeOut": 4.0,
+   "target": "public",
+   "family": "fasil",
+   "tags": ["poem", "city-life", "history", "solemn", "tender", "day"],
+   "moments": ["nedim-bu-sehr-i-sitanbul", "storks-bosphorus-migration"],
+   "credit": {
+    "title": "Kâğıthane Semaisi",
+    "author": "Karekin Proodian, Kemani Minas ve topluluğu",
+    "licence": "public-domain",
+    "sourceUrl": "https://www.loc.gov/item/jukebox-20789/",
+    "attribution": "Kâğıthane Semaisi (giriş sazı) — Karekin Proodian, Kemani Minas ve topluluğu, Victor 69173 (New York, 1916), Library of Congress National Jukebox"
+   }
+  },
+  {
+   "id": "felek-bana-1916",
+   "recording": "loc-victor-69175-felek-bana",
+   "file": "jvm_victor_69175_01_b18809_01.wav",
+   "segment": [1.0, 116.5],
+   "fadeIn": 0.5,
+   "fadeOut": 5.0,
+   "target": "public",
+   "family": "fasil",
+   "tags": ["poem", "history", "joyful", "night"],
+   "moments": ["karagoz-sehzadebasi"],
+   "credit": {
+    "title": "Felek Bana",
+    "author": "Karekin Proodian, Kemani Minas ve topluluğu",
+    "licence": "public-domain",
+    "sourceUrl": "https://www.loc.gov/item/jukebox-20790/",
+    "attribution": "Felek Bana — Karekin Proodian, Kemani Minas ve topluluğu, Victor 69175 (New York, 1916), Library of Congress National Jukebox"
+   }
+  },
+  {
+   "id": "isfahan-gazeli-cemil-bey",
+   "recording": "commons-isfahan-gazel-cemil-bey",
+   "file": "ملا_عثمان_الموصلي_-_غزل_اصفهان_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+   "segment": [0.0, 100.0],
+   "fadeIn": 1.0,
+   "fadeOut": 5.0,
+   "noise": "quietest",
+   "target": "public",
+   "family": "tanbur",
+   "tags": ["poem", "history", "solemn", "sea", "dawn"],
+   "moments": ["de-amicis-sis-kalkinca"],
+   "credit": {
+    "title": "Dil verme gönül (Isfahan gazeli)",
+    "author": "Hâfız Osman el-Mevsılî ve Tanburi Cemil Bey",
+    "licence": "public-domain",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:%D9%85%D9%84%D8%A7_%D8%B9%D8%AB%D9%85%D8%A7%D9%86_%D8%A7%D9%84%D9%85%D9%88%D8%B5%D9%84%D9%8A_-_%D8%BA%D8%B2%D9%84_%D8%A7%D8%B5%D9%81%D9%87%D8%A7%D9%86_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+    "attribution": "Dil verme gönül (Isfahan gazeli) — Hâfız Osman el-Mevsılî (ses), Tanburi Cemil Bey (tanbur), İstanbul taş plağı (y. 1912), Wikimedia Commons"
+   }
+  },
+  {
+   "id": "aya-yorgi-apolitikiyonu-nafpliotis",
+   "recording": "analogion-nafpliotis-apolytikion-agios-georgios",
+   "file": "Apolytikion-AgGeorgiou-INafpliotis.mp3",
+   "segment": [0.0, 75.0],
+   "fadeIn": 0.3,
+   "fadeOut": 2.5,
+   "noise": "quietest",
+   "target": "public",
+   "family": "chant",
+   "tags": ["legend", "mystic", "solemn", "history"],
+   "moments": ["aya-yorgi-challenge"],
+   "credit": {
+    "title": "Aya Yorgi apolitikiyonu (Os ton ehmaloton eleftherotis)",
+    "author": "Iakovos Nafpliotis",
+    "licence": "public-domain",
+    "sourceUrl": "https://analogion.com/site/html/Nafpliotis.html",
+    "attribution": "Aya Yorgi apolitikiyonu — Iakovos Nafpliotis (Patrikhane baş psaltisi), Orfeon (İstanbul, 1913–1918), analogion.com"
+   }
+  },
+  {
+   "id": "resadiye-marsi-1910",
+   "recording": "commons-odeon-54745-resadiye-marsi",
+   "file": "Marche_de_sa_Majesté_Impériale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+   "segment": [0.0, 90.0],
+   "fadeIn": 0.5,
+   "fadeOut": 4.0,
+   "target": "public",
+   "family": "orchestra",
+   "tags": ["poem", "joyful", "night", "history"],
+   "moments": ["huseyin-rahmi-kuyrukluyildiz"],
+   "credit": {
+    "title": "Reşadiye Marşı",
+    "author": "Odeon Orkestrası (beste: Italo Selvelli)",
+    "licence": "public-domain",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+    "attribution": "Reşadiye Marşı — Odeon Orkestrası, beste Italo Selvelli, Odeon 54745 (1910), Wikimedia Commons"
+   }
+  },
+  {
+   "id": "katibim-safiye-ayla-1949",
+   "recording": "ia-safiye-ayla-katibim-1949",
+   "file": "KatibimUskudaraGiderIken-SafiyeAyla.mp3",
+   "segment": [0.5, 99.0],
+   "fadeIn": 0.3,
+   "fadeOut": 3.0,
+   "noise": "quietest",
+   "target": "private",
+   "family": "fasil",
+   "tags": ["poem", "joyful", "tender"],
+   "moments": ["katibim-uskudar-yagmur"],
+   "credit": {
+    "title": "Kâtibim (Üsküdar'a Gider İken)",
+    "author": "Safiye Ayla",
+    "licence": "public-domain-tr",
+    "sourceUrl": "https://archive.org/details/KatibimuskudaraGiderIken-SafiyeAyla",
+    "attribution": "Kâtibim (Üsküdar'a Gider İken) — Safiye Ayla, keman, kanun, ud ve klarnet eşliğinde, taş plak (1949), Internet Archive"
+   }
+  },
+  {
+   "id": "huseyni-taksim-hafiz-kemal",
+   "recording": "gallica-pathe-huseyni-taksim-saz-semaisi",
+   "file": "bpt6k1310275k-f1.mp3",
+   "segment": [0.0, 87.2],
+   "fadeIn": 0.3,
+   "fadeOut": 2.0,
+   "noiseRegion": [87.4, 89.6],
+   "target": "private",
+   "family": "kemence",
+   "tags": ["poem", "history", "solemn", "tender", "dusk"],
+   "moments": ["sinan-turbe-kitabesi"],
+   "credit": {
+    "title": "Hüseyni Taksim",
+    "author": "Hafız Kemal Bey",
+    "licence": "public-domain-tr",
+    "sourceUrl": "https://gallica.bnf.fr/ark:/12148/bpt6k1310275k",
+    "attribution": "Hüseyni Taksim — Hafız Kemal Bey (kemençe), Pathé, matris N 11016 (İstanbul, y. 1927–1928), Source gallica.bnf.fr / BnF"
+   }
+  },
+  {
+   "id": "huzzam-taksim-resad-bey",
+   "recording": "gallica-pathe-huseyni-huzzam-taksim",
+   "file": "bpt6k13102426-f2.mp3",
+   "segment": [0.4, 81.0],
+   "fadeIn": 0.3,
+   "fadeOut": 2.5,
+   "noiseRegion": [79.4, 81.6],
+   "target": "private",
+   "family": "violin",
+   "tags": ["poem", "legend", "nostalgic", "tender", "mystic", "dusk", "night"],
+   "moments": ["hasim-bir-gunun-sonunda-arzu", "kiz-kulesi-legend"],
+   "credit": {
+    "title": "Hüzzam Taksim",
+    "author": "Reşad Bey",
+    "licence": "public-domain-tr",
+    "sourceUrl": "https://gallica.bnf.fr/ark:/12148/bpt6k13102426",
+    "attribution": "Hüzzam Taksim — Reşad Bey (keman), Pathé, matris N 11136 (İstanbul, y. 1927–1928), Source gallica.bnf.fr / BnF"
+   }
+  }
+ ]
+}

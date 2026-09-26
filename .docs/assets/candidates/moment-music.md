@@ -1,11 +1,54 @@
-# Moment music: real recordings per moment (pending approval)
+# Moment music: real recordings per moment
 
-Status: **research only, nothing approved.** No audio was added to `public/`, `assets-src/` or `private-assets/`, and
-nothing is referenced in code. Researched on 2026-09-26. Companion to [`music.md`](music.md) (the earlier shortlist of
-modern CC BY taksim recordings, C1–C19), which stays valid as the modern fallback pool.
+Status: **approved on 2026-09-26** (see the decision below): every candidate archived, the first picks integrated.
+Researched on 2026-09-26. Companion to [`music.md`](music.md) (the earlier shortlist of modern CC BY taksim
+recordings, C1–C19), which stays valid as the modern fallback pool.
 
 Owner's direction (2026-09-26): **public-domain historic 78 rpm records ("taş plak") come first** for every moment.
 CC0 / CC BY modern recordings and generated instrumentals are fallbacks only.
+
+## Decision (2026-09-26)
+
+The owner approved, on 2026-09-26:
+
+1. **Archive every candidate recording in its original form, with its source** ("bizde kalsınlar, kaynaklarını da
+   koru"). Later work only opens, copies or trims them.
+2. **Integrate the first five picks now**, denoised when the restoration is clean, else with their crackle: H1
+   *Kâğıthane Semaisi* intro (Nedim, the storks), H2 *Felek Bana* (Karagöz, as a distant gramophone), H8 the Isfahan
+   gazel with Tanburi Cemil Bey (De Amicis), H13 Nafpliotis' Apolytikion of St George (Aya Yorgi, only if no modern
+   drone was added), H9 *Reşadiye Marşı* (Kuyrukluyıldız).
+3. **Also take the US-risky recordings** (free in Turkey, not yet in the US): Safiye Ayla's 1949 *Kâtibim*, the Pathé
+   Istanbul discs of 1927–1928 and the others marked that way. The owner accepts the risk and wants full attribution
+   and a takedown contact (`<contact-email>`, to be filled in by the owner). They never go to `public/` or git.
+
+What was done (details, sha256 and rights per file: [`archive-78rpm.md`](../archive-78rpm.md)):
+
+- **Archived (38 recordings):** H1–H7 (LoC WAV masters), H13 and both H14 transfers (analogion.com; also committed in
+  `data/archive/78rpm/`), all 15 Pathé discs of H15–H22 (both sides each, from Gallica, which was reachable this time
+  with a browser-style user agent), the Commons mirror of H15, and the Internet Archive uploads of Safiye Ayla's
+  *Kâtibim*, both Hafız Burhan sides and the Darülelhan *Turnalar Turnalar*. Every entry is in
+  `tools/assets/approved.json` (kind `recording`) and re-downloads with
+  `node scripts/data/fetch-assets.mjs --kind=recording --no-docs`.
+- **Listed but not downloaded yet:** the Commons files H8, H9, H10 (both transfers), H11, H12, M1 and M2:
+  upload.wikimedia.org and the Commons API answered HTTP 429 to every request for over 90 minutes on 2026-09-26.
+  Their entries carry the URLs; the sha256 fills in on the first successful fetch (`--write-sha`).
+- **Integrated, public** (`public/audio/music/moments/`, both a denoised and a raw version): `kagithane-semaisi-1916`
+  (H1, 0:07.5–1:03.5, default denoised) for Nedim and the storks; `felek-bana-1916` (H2, 0:01–1:56.5, default denoised)
+  for Karagöz, whose music source is now a coffeehouse gramophone on Şehzadebaşı Caddesi;
+  `aya-yorgi-apolitikiyonu-nafpliotis` (H13, whole, default raw: the transfer is already clean) for Aya Yorgi. **H13
+  has no later drone**: no pitch holds longer than 1.5 s under the chant (see the archive doc); confirm by ear.
+- **Integrated, private** (`private-assets/audio/moments/`, builds only): `katibim-safiye-ayla-1949` (Kâtibim, raw),
+  `huseyni-taksim-hafiz-kemal` (H15 taksim side, Sinan, denoised), `huzzam-taksim-resad-bey` (H18 Hüzzam side, Haşim and
+  Kız Kulesi, raw).
+- **Waiting for the Commons download:** H8 (De Amicis) and H9 (Kuyrukluyıldız). Their recipes are ready in
+  `tools/assets/moment-pieces.json`; once the files arrive, run the fetch, `python3 scripts/audio/prep-moment-music.py
+  --id=isfahan-gazeli-cemil-bey,resadiye-marsi-1910`, and set `musicId` on the two moments (they keep the mood choice
+  until then).
+- **Not found:** Naftule Brandwein's 1924 *Der Terk in America* (no transfer on the Internet Archive).
+
+Status per candidate: H1, H2, H13 taken and integrated; H3–H7, H14 archived; H8–H12 listed (download pending), H8 and
+H9 to integrate; H15–H22 archived as US-risky, H15 (taksim) and H18 (Hüzzam taksim) integrated privately; Safiye Ayla
+archived and integrated privately; Hafız Burhan and Darülelhan archived (US-risky); M1, M2 listed (download pending).
 
 ## Read this first
 
@@ -225,7 +268,7 @@ improvised them and died in 1963, so they are protected in Turkey until the end 
 
 | Item | Why |
 |---|---|
-| Safiye Ayla, *Kâtibim (Üsküdar'a Gider İken)*, 78 rpm, https://archive.org/details/KatibimuskudaraGiderIken-SafiyeAyla (3:21, violin, kanun, ud, clarinet; uploader's "public domain" tag) | The famous recording, but from **1949** (per Wikipedia): free in Turkey since 2020, protected in the US until 2059. Fails the US test. Analysis for the record: 0:00–0:16 quieter introduction, vocal from ~0:16, 2.7 clicks/s, fair noise. |
+| Safiye Ayla, *Kâtibim (Üsküdar'a Gider İken)*, 78 rpm, https://archive.org/details/KatibimuskudaraGiderIken-SafiyeAyla (3:21, violin, kanun, ud, clarinet; uploader's "public domain" tag) | The famous recording, but from **1949** (per Wikipedia): free in Turkey since 2020, protected in the US until 2059. Fails the US test. Analysis for the record: 0:00–0:16 quieter introduction, vocal from ~0:16, 2.7 clicks/s, fair noise. **Taken 2026-09-26 as a US-risky private piece** (owner accepts the risk; see the decision). |
 | Hafız Burhan, *Kadifeden Kesesi*, *Ben Yemenimi Al İsterim* (Internet Archive, same uploader) | No label or date; Hafız Burhan recorded from the 1910s to the 1930s, so the US test cannot be shown. |
 | Darülelhan folk-song series (e.g. *Turnalar Turnalar*, Denizkızı Eftalya) | 1926–1929: US-free from 2027–2030 at the earliest; dates per disc unknown. |
 | Udi Hrant, Marko Melkon, Kanuni Garbis taksims (Great 78 Project) | 1930s–1940s US releases; also improvisations by performers who died after 1955. |
