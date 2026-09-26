@@ -1982,7 +1982,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/%D9%85%D9%84%D8%A7_%D8%B9%D8%AB%D9%85%D8%A7%D9%86_%D8%A7%D9%84%D9%85%D9%88%D8%B5%D9%84%D9%8A_-_%D8%BA%D8%B2%D9%84_%D8%A7%D8%B5%D9%81%D9%87%D8%A7%D9%86_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2028,7 +2029,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2074,7 +2076,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/d/df/Hamidiye_March_by_Nedjib_Pasha.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2120,7 +2123,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/4/49/Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Abdul-Hamid-Han_II._par_S._E._N%C3%A9djib_Pacha.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2166,7 +2170,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/6/60/Sivastopol_%C3%96n%C3%BCnde_Yatar_Gemiler.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2212,7 +2217,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Plevna_March.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2307,7 +2313,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/4/41/Turku_Nomads_of_the_Silk_Road_-_01_-_-Uskudara_Gideriken.ogg",
      "format": "Ogg Vorbis",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
@@ -2353,7 +2360,8 @@
      "url": "https://upload.wikimedia.org/wikipedia/commons/0/00/K%C3%A2tibim.mp3",
      "format": "MP3",
      "bytes": null,
-     "sha256": null
+     "sha256": null,
+     "note": "sha256 pending: Commons rate-limited from the build container"
     }
    ]
   },
