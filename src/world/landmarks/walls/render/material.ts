@@ -360,6 +360,9 @@ HS wallsSurface() {
     s = hPaving(p, tint, fw);
   } else if (id == ${Surf.Wood}.0) {
     s = hWood(p, tint, fw);
+  } else if (id == ${Surf.Lead}.0) {
+    // Lead roofs of the heritage fortress towers drawn with this material (heritage WALL_MATERIAL_SITES).
+    s = hLead(p, wp, tint, w, fw);
   } else {
     s = hsInit(tint, 0.9);
   }

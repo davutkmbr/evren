@@ -28,3 +28,10 @@ export const SITE_BUILDERS: Record<string, SiteBuilder> = {
   'topkapi-sarayi': buildTopkapi,
   yedikule: buildYedikule,
 };
+
+/**
+ * Sites drawn with the city-wall kit's material (walls/render/material.ts: the approved CC0 stone, brick and rubble
+ * texture sets) instead of the procedural heritage material: the Roman and fortress masonry, so it matches the city
+ * walls. Their builders write no floodlight (that channel is the lost-facing field in the wall material).
+ */
+export const WALL_MATERIAL_SITES: ReadonlySet<string> = new Set(['bozdogan-kemeri', 'rumeli-hisari', 'yedikule', 'anadolu-hisari']);
