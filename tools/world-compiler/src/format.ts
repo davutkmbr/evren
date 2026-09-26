@@ -10,6 +10,7 @@
  * src/street/modules/format.ts.
  */
 import type { ModulesRef, SlotsRef } from '../../../src/street/modules/format';
+import type { KeepRec } from './edge-keeps';
 
 export type FormatVersion = 0 | 1;
 /** Default output format of the compiler (`--format 0|1` picks one). */
@@ -381,6 +382,8 @@ export interface TileManifest {
   glb: string;
   triangles: number;
   buildings: BuildingRec[];
+  /** Flight-scale buildings on the area's edge the tile leaves standing (edge-keeps.ts); absent when none. */
+  keep?: KeepRec[];
   doors: DoorRec[];
   pois: PoiRec[];
   lamps: LampRec[];

@@ -125,6 +125,8 @@ export interface StreetTileManifest {
   id: string;
   detail?: 'full' | 'greybox';
   buildings?: StreetBuildingRec[];
+  /** Flight-scale buildings on the area's edge the tile leaves standing (tools/world-compiler/src/edge-keeps.ts). */
+  keep?: StreetBuildingRec[];
   instances?: InstanceRec[];
   lights?: LightRec[];
 }

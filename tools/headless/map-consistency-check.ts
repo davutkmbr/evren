@@ -19,6 +19,8 @@
  *    landmarkOf with the game's landmark claims, as compiled with `--landmarks none`). Every building the tiles draw up
  *    close is drawn from the air as well, and the other way round. Canopies (building=roof/carport) are near-only
  *    detail. The tiles' landmarks draw nothing, so the game's model or the flight-scale twin shows through them.
+ *    Buildings straddling an area's edge with their centroid outside are compiled by nobody: each needs a keep record
+ *    (world-compiler/src/edge-keeps.ts) on every tile its footprint reaches, or the tile edge halves it.
  * 5. Invented content: no neighbourhood mosque site (a procedural mosque whose pad removes OSM buildings) reaches into
  *    an OSM region, and no infill parcel (a building OSM does not have) reaches into a street area.
  * 6. Far layer (phase 24): the city bake (public/data/osm/city, scripts/data/osm-city-bake.ts), the regions and the
@@ -47,7 +49,8 @@ import { buildStreetRaster, streetRasterInput } from '../../src/world/osm/shared
 import { StreetSurface } from '../../src/world/osm/shared/street-surface';
 import { STREET_TILE_SIZE, streetAreaRects } from '../../src/world/osm/street-areas';
 import { makeSolids } from '../world-compiler/src/buildings';
-import { landmarkOf, setLandmarkClaims, useDistrict } from '../world-compiler/src/district';
+import { edgeKeeps, edgeSolids } from '../world-compiler/src/edge-keeps';
+import { landmarkClasses, landmarkOf, setLandmarkClaims, useDistrict } from '../world-compiler/src/district';
 import { readAreas, ROOT } from '../world-compiler/lib/areas.mjs';
 import { buildHeadlessGeo, readOsmLand } from './geo';
 import { clipWaysToLand } from '../../src/world/osm/shared/land';
@@ -339,6 +342,76 @@ const flatHeights = { at: () => 0, carriage: () => 0, off: () => 0 };
   }
   setLandmarkClaims(null);
   check(bad.length === 0, `${compared} buildings in ${areas.length} street areas: same set up close and from the air (${drift} not in both fetches, see 3)`, [...bad, ...lines]);
+}
+{
+  // Buildings on an area's edge. Only buildings whose centroid lies in the tile grid are compiled, while the street
+  // layer cuts the flight-scale city inside every live tile: a building straddling the grid's edge with its centroid
+  // outside needs a keep record (world-compiler/src/edge-keeps.ts) on every tile its footprint reaches, or the tile
+  // edge halves it (Moda, 2026-09-26). The footprint is traced exactly here (edge samples every metre plus the tile
+  // corners inside it), independent of the bbox test the compiler uses.
+  const bad: string[] = [];
+  let edgeCount = 0;
+  setLandmarkClaims(compilerClaims);
+  for (const a of areas) {
+    useDistrict(a.id);
+    const buildings = streetData.get(a.id)!.buildings.filter((b) => !wallOwned.has(b.id));
+    const T = STREET_TILE_SIZE;
+    const tiles = new Map<string, { bounds: WorldBounds }>();
+    for (let z = a.rect.minZ; z < a.rect.maxZ - 1e-6; z += T) {
+      for (let x = a.rect.minX; x < a.rect.maxX - 1e-6; x += T) {
+        tiles.set(`${Math.round(x / T)}_${Math.round(z / T)}`, { bounds: { minX: x, minZ: z, maxX: x + T, maxZ: z + T } });
+      }
+    }
+    const all = makeSolids(buildings, flatHeights);
+    const keeps = edgeKeeps(edgeSolids(all, a.rect), tiles, landmarkClasses(buildings));
+    const keptOn = new Map<string, Set<string>>();
+    for (const [tile, list] of keeps) {
+      for (const k of list) {
+        const set = keptOn.get(k.id) ?? new Set<string>();
+        set.add(tile);
+        keptOn.set(k.id, set);
+      }
+    }
+    for (const s of all) {
+      if (inRect(a.rect, s.cx, s.cz)) {
+        continue;
+      }
+      const reached = new Set<string>();
+      const n = s.ring.length / 2;
+      for (let i = 0; i < n; i++) {
+        const ax = s.ring[i * 2];
+        const az = s.ring[i * 2 + 1];
+        const bx = s.ring[((i + 1) % n) * 2];
+        const bz = s.ring[((i + 1) % n) * 2 + 1];
+        const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az)));
+        for (let k = 0; k < steps; k++) {
+          const x = ax + ((bx - ax) * k) / steps;
+          const z = az + ((bz - az) * k) / steps;
+          // Strictly inside (5 cm): an outline lying on the grid's edge touches it without reaching into a tile.
+          const e = 0.05;
+          if (x > a.rect.minX + e && x < a.rect.maxX - e && z > a.rect.minZ + e && z < a.rect.maxZ - e) {
+            reached.add(`${Math.floor(x / T)}_${Math.floor(z / T)}`);
+          }
+        }
+      }
+      for (const [id, t] of tiles) {
+        const b = t.bounds;
+        if ([[b.minX, b.minZ], [b.maxX, b.minZ], [b.minX, b.maxZ], [b.maxX, b.maxZ]].some(([x, z]) => pointInRing(s.ring, x, z))) {
+          reached.add(id);
+        }
+      }
+      if (!reached.size) {
+        continue;
+      }
+      edgeCount++;
+      const missing = [...reached].filter((t) => !keptOn.get(s.rec.id)?.has(t));
+      if (missing.length) {
+        bad.push(`${a.id}: ${s.rec.id} (${s.rec.kind}) at ${s.cx.toFixed(0)}, ${s.cz.toFixed(0)} reaches tile(s) ${missing.join(', ')} without a keep record: the tile edge halves it`);
+      }
+    }
+  }
+  setLandmarkClaims(null);
+  check(bad.length === 0, `${edgeCount} buildings straddle a street area's edge with their centroid outside: all kept whole (edge-keeps.ts)`, bad);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
