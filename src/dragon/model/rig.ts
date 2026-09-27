@@ -336,6 +336,74 @@ export class DragonRigImpl implements DragonRig {
     }
   }
 
+  /**
+   * The rider climbs back into the saddle (the caller has brought them beside the dragon): over `duration` the on-foot
+   * pose blends into the riding pose while the hips travel up to the seat on an arc; then the rig drives the rider
+   * again (retarget, reins). False when the rider is not on foot.
+   */
+  mountRider(duration = 1.1): boolean {
+    const h = this.human;
+    if (!h || !this.onFoot || !h.saddle || !this.riderRetarget) {
+      return false;
+    }
+    const snap = new Map<THREE.Bone, THREE.Quaternion>();
+    for (const b of h.bones.values()) {
+      snap.set(b, b.quaternion.clone());
+    }
+    const hips = h.bones.get('Hips')!;
+    const hipsWorld = hips.getWorldPosition(new THREE.Vector3());
+    const hipsWorldQ = hips.getWorldQuaternion(new THREE.Quaternion());
+    h.mixer.stopAllAction();
+    h.saddle.anchor.add(h.root);
+    h.root.position.copy(h.saddle.position);
+    h.root.quaternion.copy(h.saddle.quaternion);
+    h.root.scale.set(1, 1, 1);
+    h.wings.set(0);
+    this.onFoot = undefined;
+    this.riderRetarget.enabled = true;
+    if (this.reins) {
+      const rt = this.riderRetarget;
+      const own = (side: 'L' | 'R', out: THREE.Vector3[]): THREE.Vector3[] => rt.fistPath(side, out);
+      this.reins.fistPath = own;
+    }
+    this.mounting = { t: 0, duration, snap, hipsWorld, hipsWorldQ };
+    return true;
+  }
+
+  private mounting?: { t: number; duration: number; snap: Map<THREE.Bone, THREE.Quaternion>; hipsWorld: THREE.Vector3; hipsWorldQ: THREE.Quaternion };
+
+  /** Blends the start of a mount (the pose the rider stood in) into the riding pose the retarget just set. */
+  private blendMount(dt: number): void {
+    const m = this.mounting;
+    const h = this.human;
+    if (!m || !h) {
+      return;
+    }
+    m.t += dt;
+    const u = Math.min(1, m.t / m.duration);
+    const k = u * u * (3 - 2 * u);
+    const hips = h.bones.get('Hips')!;
+    const targetPos = hips.position.clone();
+    const targetQ = hips.quaternion.clone();
+    for (const [b, q] of m.snap) {
+      if (b !== hips) {
+        b.quaternion.copy(q).slerp(b.quaternion, k);
+      }
+    }
+    // The hips from where they were (in the world) to the seat, lifted on the way (a step up and a swing over).
+    const parent = hips.parent!;
+    parent.updateWorldMatrix(true, false);
+    const startPos = parent.worldToLocal(m.hipsWorld.clone());
+    const pq = parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const startQ = pq.multiply(m.hipsWorldQ);
+    hips.position.lerpVectors(startPos, targetPos, k);
+    hips.position.y += 0.45 * Math.sin(Math.PI * u);
+    hips.quaternion.copy(startQ).slerp(targetQ, k);
+    if (u >= 1) {
+      this.mounting = undefined;
+    }
+  }
+
   get isFirstPerson(): boolean {
     return this.firstPerson;
   }
@@ -372,6 +440,7 @@ export class DragonRigImpl implements DragonRig {
       this.reins?.update(dt);
     } else {
       this.riderRetarget?.update();
+      this.blendMount(dt);
       this.reins?.update(dt);
       // Face: laughs with the dragon, shouts with the roar, set jaw in a tuck, a soft smile while petting; meets the
       // dragon's eyes when it looks back.

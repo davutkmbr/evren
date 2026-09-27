@@ -7,7 +7,8 @@
  *   Rider cues: window.__riderDebug.force({ riderStand: 1, gazeRider: 1, gazeSide: -1, urgePhase: 0.5, ... }) / .clear()
  *   ?sun=azimuthDeg,elevationDeg   ?env=0   ?ground=0   ?fp=1 (first person hide)   ?sky=1&t=hours (real sky + post)
  *   ?alt=m (flight altitude of the rig origin, default 9)
- *   ?leap=s: the rider leaves the saddle at that time and glides down (view=leap follows the glide line)
+ *   ?leap=s: the rider leaves the saddle at that time and glides down (view=leap follows the glide line); with
+ *   pose=idle a hop down beside the dragon, and ?mount=s climbs back on
  */
 import * as THREE from 'three';
 import { startSandbox } from '../src/core/sandbox';
@@ -114,6 +115,8 @@ const VIEWS: Record<string, ViewDef> = {
   standside: { pos: [2.4, 2.4, -2.2], target: [0, 1.75, -2.6] },
   // The rider leaving the saddle (?leap=s): a wide side view along the glide.
   leap: { pos: [34, 2, -16], target: [0, -3, -16] },
+  // Hopping down beside the dragon on the ground and climbing back on (?pose=idle&leap=&mount=).
+  mountside: { pos: [8.5, 2.2, 3.5], target: [2.2, -0.4, -2.4] },
 };
 const view = VIEWS[viewName] ?? VIEWS['three-quarter'];
 
@@ -188,6 +191,9 @@ let elapsed = 0;
 /** ?leap=s: the rider leaves the saddle at that time, spreads the wings and glides down (G glides in the game). */
 const leapAt = params.has('leap') ? Number(params.get('leap')) : undefined;
 let onFoot: LocomotionController | undefined;
+/** ?mount=s: back into the saddle at that time (after ?leap on the ground). */
+const mountAt = params.has('mount') ? Number(params.get('mount')) : undefined;
+let mounted = false;
 let ctxScene: THREE.Scene | undefined;
 let leapTime = 0;
 
@@ -247,13 +253,22 @@ const driver: System = {
     }
     rig?.setPose(pose);
     fakeState.flapEffort = pose.flapAmplitude ?? 0;
-    if (rig && leapAt !== undefined && elapsed >= leapAt && !onFoot) {
-      // Up and out to the right of the dragon (the sandbox dragon holds still; in flight add its velocity).
-      onFoot = (rig as unknown as DragonRigImpl).leaveSaddle(ctxScene!, new THREE.Vector3(3.5, 4.5, -1));
+    if (rig && leapAt !== undefined && elapsed >= leapAt && !onFoot && !mounted) {
+      // Up and out to the right of the dragon (the sandbox dragon holds still; in flight add its velocity). On the
+      // ground (pose=idle|walk) a hop down beside it.
+      const hop = grounded ? new THREE.Vector3(4.2, 3.0, 0.3) : new THREE.Vector3(3.5, 4.5, -1);
+      onFoot = (rig as unknown as DragonRigImpl).leaveSaddle(ctxScene!, hop);
     }
+    if (rig && onFoot && mountAt !== undefined && elapsed >= mountAt) {
+      (rig as unknown as DragonRigImpl).mountRider();
+      onFoot = undefined;
+      mounted = true;
+    }
+    // The rig owns the on-foot controller (mountRider() ends it).
+    onFoot = rig ? (rig as unknown as DragonRigImpl).onFoot : undefined;
     if (onFoot) {
       leapTime += dt;
-      onFoot.update(dt, { move: new THREE.Vector2(0, -1), run: false, crouch: false, jump: false, glide: leapTime > 0.45 });
+      onFoot.update(dt, { move: grounded ? new THREE.Vector2() : new THREE.Vector2(0, -1), run: false, crouch: false, jump: false, glide: !grounded && leapTime > 0.45 });
       const h = (rig as unknown as DragonRigImpl).human!;
       h.root.updateMatrixWorld(true);
       h.face.update(dt, { effort: onFoot.state === 'glide' ? 0.5 : 0.8 });
