@@ -321,24 +321,6 @@ export interface BuildingMaterials {
   dispose(): void;
 }
 
-/** Mean linear luminance of each layer of an sRGB RGBA8 texture array. */
-function layerLuminance(t: THREE.DataArrayTexture): number[] {
-  const img = t.image as { data: Uint8Array; width: number; height: number; depth: number };
-  const layer = img.width * img.height * 4;
-  const out: number[] = [];
-  const lin = (c: number): number => Math.pow(c / 255, 2.2);
-  for (let l = 0; l < img.depth; l++) {
-    let sum = 0;
-    let n = 0;
-    for (let k = l * layer; k < (l + 1) * layer; k += 4 * 97) {
-      sum += 0.2126 * lin(img.data[k]) + 0.7152 * lin(img.data[k + 1]) + 0.0722 * lin(img.data[k + 2]);
-      n++;
-    }
-    out.push(Math.max(0.05, sum / Math.max(1, n)));
-  }
-  return out;
-}
-
 export function createBuildingMaterials(renderer: THREE.WebGLRenderer, detailKinds: readonly DetailKind[]): BuildingMaterials {
   const loader = new THREE.TextureLoader();
   const aniso = maxAnisotropy(renderer);
@@ -363,7 +345,7 @@ export function createBuildingMaterials(renderer: THREE.WebGLRenderer, detailKin
       textures.push(alb, nrm);
       uniforms.uFacAlb.value = alb;
       uniforms.uFacNrm.value = nrm;
-      uniforms.uLayerNorm.value = layerLuminance(alb).map((l, i) => (FACADE_LAYERS[i] === 'brick' ? 1 : 0.62 / l));
+      uniforms.uLayerNorm.value = (alb.userData.layerLuminance as number[]).map((l, i) => (FACADE_LAYERS[i] === 'brick' ? 1 : 0.62 / l));
     }),
     bindPbr(roof, 'roof_tiles', loader, aniso).then((t) => {
       textures.push(...t);
