@@ -7,6 +7,7 @@ import { GULL_SITES, PIGEON_MOSQUES } from '../data/places';
 import type { Vessel } from '../vessels/agents';
 import { buildBirdGeometry } from './bird-geometry';
 import { createBirdMaterial } from './bird-material';
+import { trackReactive } from '../../../core/motion';
 
 type FlockKind = 'coast' | 'ferry' | 'pigeon';
 
@@ -83,6 +84,7 @@ export class Flocks {
     geometry.setAttribute('aFlap', this.flap);
     this.mesh = new THREE.InstancedMesh(geometry, createBirdMaterial(), Math.max(1, capacity));
     this.mesh.name = 'life-birds';
+    this.untrack = trackReactive(this.mesh);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
@@ -456,7 +458,11 @@ export class Flocks {
     return false;
   }
 
+  /** Removes the birds from the TAA's reactive mask. */
+  private readonly untrack: () => void;
+
   dispose(): void {
+    this.untrack();
     this.mesh.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();
   }
