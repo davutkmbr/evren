@@ -23,6 +23,7 @@ import { encodePrism } from './protocol';
 import { passageArch, passageColliders, passageProfile, portalOnWall, portalWalls, wallHit, type Passage, type Wall } from '../shared/passages';
 import { buildRoof, createPropSink, type PropSink } from './roofs';
 import type { LandmarkClaims } from '../../landmarks/claim-shapes';
+import { settingTop } from '../../landmarks/monument-setting';
 import { CANOPY_KINDS, nearClaimedStructure, NON_SOLID_KINDS, onLandmarkClaim, onStructure } from './selection';
 
 /** POI point kinds (x, z, kind triples): 1 shop, 2 food and drink (awnings), 3 services (banks, pharmacies). */
@@ -220,7 +221,23 @@ export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | '
   return solids;
 }
 
-/** Plan, footprint and wall height of a solid (heights relative to its reference ground; see buildBuildings). */
+/** Lowest and reference (mid) ground of a solid's outline; buildBuildings stands the walls on `ref`. */
+export function solidGround(ring: readonly number[], groundAt: (x: number, z: number) => number): SolidGround {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < ring.length; i += 2) {
+    const g = groundAt(ring[i], ring[i + 1]);
+    min = Math.min(min, g);
+    max = Math.max(max, g);
+  }
+  return { min, ref: min + 0.5 * (max - min) };
+}
+
+export interface SolidGround {
+  min: number;
+  ref: number;
+}
+
 /**
  * Whether a solid would enter a bridge of the claims (landmarks/structure-volumes.ts), with its planned heights, so a
  * house under a high deck stays. The world compiler asks the same (district.ts landmarkOf, structureBlocks).
@@ -249,7 +266,27 @@ export function structureBlocks(claims: LandmarkClaims, b: OsmBuilding): boolean
   return solidOnStructure(claims, { b, ring, holes: [], id: b.id, infill: false });
 }
 
-export function planSolid(s: Solid): { box: Obb; info: FootprintInfo; plan: BuildingPlan; rise: number; wallH: number } {
+/**
+ * Wall top (absolute m, on `groundAt`) this layer plans for every solid it draws, by OSM id. The street compiler takes
+ * the height of an untagged building from here, so up close it stands as tall as from the air, and the flight-scale
+ * buildings the street layer leaves standing beyond an area's edge meet street buildings of their own height.
+ */
+export function plannedWallTops(buildings: readonly OsmBuilding[], claims: LandmarkClaims, groundAt: (x: number, z: number) => number): Map<number, number> {
+  const out = new Map<number, number>();
+  const everywhere = { minX: -Infinity, minZ: -Infinity, maxX: Infinity, maxZ: Infinity };
+  for (const s of collectSolids({ buildings, claims, extra: [] }, everywhere)) {
+    const ground = solidGround(s.ring, groundAt);
+    out.set(s.b.id, ground.ref + planSolid(s, claims.settings, ground).wallH);
+  }
+  return out;
+}
+
+/**
+ * Plan, footprint and wall height of a solid (heights relative to its reference ground; see buildBuildings). With the
+ * historic mosque settings (landmarks/monument-setting.ts) and the solid's ground, an untagged building loses storeys
+ * until its roof stays under the setting's top.
+ */
+export function planSolid(s: Solid, settings?: ArrayLike<number>, ground?: SolidGround): { box: Obb; info: FootprintInfo; plan: BuildingPlan; rise: number; wallH: number } {
   const box = orientedBox(s.ring);
   const info = footprintInfo(s.ring, box);
   const plan = planBuilding(s.b, info, s.id);
@@ -260,7 +297,14 @@ export function planSolid(s: Solid): { box: Obb; info: FootprintInfo; plan: Buil
     plan.clearance = clearanceOf(plan);
   }
   const rise = Math.min(5, box.hw * plan.pitch);
-  const wallH = wallHeight(s.b, plan, rise);
+  let wallH = wallHeight(s.b, plan, rise);
+  if (settings?.length && ground && !s.b.height && !s.b.levels && plan.wallTop === undefined) {
+    const top = settingTop(settings, info.cx, info.cz, ground.min);
+    while (plan.floors > 1 && ground.ref + wallH + (plan.roof === 'flat' ? 0 : rise) > top) {
+      plan.floors--;
+      wallH = wallHeight(s.b, plan, rise);
+    }
+  }
   plan.wallH = wallH;
   return { box, info, plan, rise, wallH };
 }
@@ -310,9 +354,6 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
   solids.forEach((s, si) => {
     const { b, ring: r, holes } = s;
     const n = r.length / 2;
-    const { box, info, plan, rise, wallH } = planSolid(s);
-    archStats[plan.arch] = (archStats[plan.arch] ?? 0) + 1;
-
     const ground: number[] = [];
     let gMin = Infinity;
     let gMax = -Infinity;
@@ -324,6 +365,8 @@ export function buildBuildings(input: BuildInput, surface: StreetSurface, rect: 
       gMax = Math.max(gMax, g);
     }
     const gRef = gMin + 0.5 * (gMax - gMin);
+    const { box, info, plan, rise, wallH } = planSolid(s, input.claims.settings, { min: gMin, ref: gRef });
+    archStats[plan.arch] = (archStats[plan.arch] ?? 0) + 1;
     const top = gRef + wallH;
     const yBase = plan.minH > 0.5 ? gRef + plan.minH : gMin - 1.5;
     const wallTopV = top - gMin;

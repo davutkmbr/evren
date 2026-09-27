@@ -212,6 +212,16 @@ export function setLandmarkClaims(claims: LandmarkClaims | null): void {
   landmarkClaims = claims;
 }
 
+/** The landmark claims set with `--landmarks none`, or none. */
+export function claimsOf(): LandmarkClaims | null {
+  return landmarkClaims;
+}
+
+/** Historic mosque settings of the claims (landmarks/monument-setting.ts), or undefined without claims. */
+export function settingSites(): Float32Array | undefined {
+  return landmarkClaims?.settings;
+}
+
 export function landmarkOf(b: Pick<OsmBuilding, 'id' | 'kind'> & { amenity?: string; historic?: string; ring?: readonly number[] }): string | null {
   if (district().buildings.landmarkIds.has(b.id)) {
     return b.amenity === 'marketplace' ? 'market' : 'landmark';
