@@ -80,6 +80,14 @@ def render_caption(meta):
     return ' · '.join(parts)
 
 
+def score_block(c):
+    """The critic's score, with the score without the placeholder mannequins when the critique has one."""
+    sc = (c or {}).get('score')
+    alt = (c or {}).get('peopleExcluded')
+    extra = f'<small class="alt">insanlar hariç {num(alt)}</small>' if alt is not None and alt != sc else ''
+    return f'<div class="score score-{score_class(sc)}"><b>{num(sc)}</b><span>/10</span>{extra}</div>'
+
+
 def pose_notes(meta, cam):
     notes = []
     po = meta.get('poseOverride')
@@ -127,15 +135,17 @@ def write(out_dir, root, metas, cams, sources):
     w('<h1>Kadıköy şeridi: fotoğraf ve son render</h1>')
     w('<p class="lede">Rıhtım’dan çarşıya ~200 m, 1,6 m göz yüksekliğinde. Her kamerada solda gerçek fotoğraf, sağda Blender Cycles ile alınan son render.</p>')
     real = crit.get('realismScore')
+    people = f" · insanlar hariç {num(crit['realismPeopleExcluded'])}" if crit.get('realismPeopleExcluded') is not None else ''
     w('<div class="stats">')
-    w(f'<div class="stat"><span class="k">Gerçekçilik puanı</span><span class="v score-{score_class(real)}">{num(real)}<small>/10</small></span><span class="s">önceki tur</span></div>')
+    w(f'<div class="stat"><span class="k">Gerçekçilik puanı</span><span class="v score-{score_class(real)}">{num(real)}<small>/10</small></span><span class="s">önceki tur{esc(people)}</span></div>')
     w('<div class="stat"><span class="k">Kontrol listesi</span><span class="v small">'
       f'<b class="pill ok">{counts.get("pass", 0)} geçti</b> <b class="pill mid">{counts.get("partly", 0)} kısmen</b> <b class="pill bad">{counts.get("fail", 0)} kaldı</b></span><span class="s">{len(crit.get("checklist", []))} madde, önceki tur</span></div>')
     w(f'<div class="stat"><span class="k">Son renderlar</span><span class="v">{len(metas)}</span><span class="s">{len(groups)} görünüm · toplam {num(total_s / 60.0)} dk · {esc(when)}</span></div>')
     w(f'<div class="stat"><span class="k">Derleme</span><span class="v mono small">{esc(", ".join(hashes) or "–")}</span><span class="s">public/world/kadikoy</span></div>')
     w('</div>')
-    w('<p class="notice"><b>Not:</b> Puanlar ve notlar, eleştirmenin revizyondan <em>önceki</em> renderlara verdiği değerlendirmedir. '
-      'Bu sayfadaki renderlar revizyon sonrası son renderlardır; notun neye dair olduğunu görmek için render üstündeki '
+    w('<p class="notice"><b>Not:</b> Puanlar ve notlar, eleştirmenin <em>önceki turun</em> renderlarına verdiği değerlendirmedir'
+      f'{" (" + esc(crit["round"]) + ")" if crit.get("round") else ""}. '
+      'Bu sayfadaki renderlar bu turun son renderlarıdır; notun neye dair olduğunu görmek için render üstündeki '
       '<span class="kbd">Önceki tur</span> düğmesine basın.</p>')
     w('<nav class="index" aria-label="Kameralar">')
     for cid in order:
@@ -197,7 +207,7 @@ def write(out_dir, root, metas, cams, sources):
             notes = pose_notes(m, cam)
             w('<div class="review">')
             if c:
-                w(f'<div class="score score-{score_class(c.get("score"))}"><b>{num(c.get("score"))}</b><span>/10</span></div>')
+                w(score_block(c))
                 w(f'<div class="note"><p class="note-k">Eleştirmen · önceki tur</p><p>{esc(c.get("note"))}</p>')
             else:
                 w('<div class="score score-na"><b>–</b><span>/10</span></div>')
@@ -224,7 +234,7 @@ def write(out_dir, root, metas, cams, sources):
                 t = name.rsplit('-', 1)[-1]
                 w(f'<figure class="shot">{toggle}<a href="{esc(src)}" target="_blank"><img src="{esc(src)}" alt="{esc(name)}" loading="lazy"></a>'
                   f'<figcaption><span class="which">Son render</span><span class="det"> · {esc(name)} · {esc(TIME_LABEL.get(t, t))}</span></figcaption></figure>')
-            w(f'<div class="review compact"><div class="score score-{score_class(o.get("score"))}"><b>{num(o.get("score"))}</b><span>/10</span></div><div class="note"><p class="note-k">{esc(o.get("camera"))}</p><p>{esc(o.get("note"))}</p></div></div>')
+            w(f'<div class="review compact">{score_block(o)}<div class="note"><p class="note-k">{esc(o.get("camera"))}</p><p>{esc(o.get("note"))}</p></div></div>')
             w('</div>')
         w('</div></section>')
 
@@ -292,9 +302,10 @@ h2{margin:0;font-size:20px;font-weight:620;line-height:1.3;text-wrap:balance}
 .swap[aria-pressed=true]{background:var(--mid);color:#1b1408;border-color:transparent}
 .review{display:grid;grid-template-columns:auto 1fr;gap:14px 16px;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;max-width:1100px}
 .review.compact{margin-top:10px}
-.score{display:flex;align-items:baseline;gap:2px;font-variant-numeric:tabular-nums;min-width:62px}
+.score{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px;font-variant-numeric:tabular-nums;min-width:62px}
 .score b{font-size:30px;line-height:1;font-weight:700}
 .score span{color:var(--dim);font-size:13px}
+.score .alt{flex-basis:100%;margin-top:4px;font-size:12px;color:var(--dim);font-weight:500;white-space:nowrap}
 .note p{margin:0;max-width:95ch}
 .note .note-k{font-size:12px;color:var(--faint);margin-bottom:3px}
 .meta{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
