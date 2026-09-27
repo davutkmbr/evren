@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import type { HumanRider } from '../human';
 import { CLIPS, STOP_BRAKE, cycleLength } from './clips';
+import { FootIK } from './foot-ik';
 
 export interface LocomotionInput {
   /** Desired horizontal direction and strength (world x, z; length 0..1). */
@@ -107,6 +108,8 @@ export class LocomotionController {
   /** The layered bones' rotations as the clips left them: restored before each mixer update (the mixer only writes
    * values that changed, so a layer would otherwise compound). */
   private readonly layered: [THREE.Bone, THREE.Quaternion][] = [];
+  private readonly hipsPos = new THREE.Vector3();
+  private readonly footIK: FootIK;
   /** Glide: body pitch and bank (rad), wing spread spring (value, velocity). */
   private pitch = 0;
   private bank = 0;
@@ -152,6 +155,19 @@ export class LocomotionController {
       if (b) {
         this.layered.push([b, b.quaternion.clone()]);
       }
+    }
+    // Feet on the ground: the legs and the pelvis are layered too.
+    for (const s of ['Left', 'Right']) {
+      for (const n of ['UpLeg', 'Leg', 'Foot']) {
+        const b = human.bones.get(s + n);
+        if (b) {
+          this.layered.push([b, b.quaternion.clone()]);
+        }
+      }
+    }
+    this.footIK = new FootIK(human);
+    if (this.hips) {
+      this.hipsPos.copy(this.hips.position);
     }
     this.yaw = object.rotation.y;
     this.prevYaw = this.yaw;
@@ -439,7 +455,11 @@ export class LocomotionController {
     for (const [bone, q] of this.layered) {
       bone.quaternion.copy(q);
     }
+    this.hips?.position.copy(this.hipsPos);
     this.human.mixer.update(0);
+    if (this.hips) {
+      this.hipsPos.copy(this.hips.position);
+    }
     // After the mixer (the clips key every bone's scale at 1).
     this.human.wings.set(this.wing);
     for (const [bone, q] of this.layered) {
@@ -447,6 +467,12 @@ export class LocomotionController {
     }
     if (this.layers) {
       this.leanLayer(dt, sp);
+      // Feet on uneven ground while standing on it; eased out in the air, gliding, taking off.
+      const onGround = this.state === 'ground' || this.state === 'stop' || this.state === 'land';
+      this.footIK.weight += ((onGround ? 1 : 0) - this.footIK.weight) * (1 - Math.exp(-10 * dt));
+      if (this.footIK.weight > 1e-3) {
+        this.footIK.apply(this.object, this.groundHeight, dt);
+      }
     }
     void ONE_SHOT;
     void AIR;
