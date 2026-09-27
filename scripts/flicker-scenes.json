@@ -151,5 +151,14 @@
   ],
   "motion": "fly:8",
   "frames": 60
+ },
+ "dragon-chase": {
+  "note": "chase camera over the sea by day: the dragon is carried with the camera (--carry dragon) while the world moves past; TAA ghosting check",
+  "query": {
+   "view": "kizkulesi",
+   "t": "16"
+  },
+  "motion": "fly:2",
+  "frames": 48
  }
 }
