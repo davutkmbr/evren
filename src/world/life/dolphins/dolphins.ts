@@ -32,6 +32,7 @@ import { LaneField, type LinePoints } from './lanes';
 import { EVENT, type DolphinDragon, type DolphinEnv, type DolphinPod } from './pod-sim';
 import type { SpawnWorld } from './spawn';
 import { trackReactive } from '../../../core/motion';
+import { exposeDebug } from '../../../core/dev-tools';
 
 /** Instances per LOD (two pods of eight). */
 const CAPACITY = DOLPHIN_SPAWN.maxPods * DOLPHIN_SPAWN.podMax;
@@ -153,7 +154,7 @@ export class Dolphins {
         director: this.director,
         stats: this.stats,
       };
-      (window as unknown as { __dolphins?: typeof handle }).__dolphins = handle;
+      exposeDebug('__dolphins', handle);
     }
   }
 

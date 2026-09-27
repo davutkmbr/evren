@@ -2,13 +2,14 @@
 import * as THREE from 'three';
 import { RenderLayers } from '../../../core/contracts';
 import type { MeshArrays } from './protocol';
+import { devParams } from '../../../core/dev-tools';
 
 /**
  * Static OSM meshes drop their CPU arrays once uploaded (every streamed region would otherwise keep a second copy of
  * its geometry in the JS heap). `?keepGeometry=1` keeps them for test tools that ray-test the drawn meshes
  * (scripts/lib/collision-walk.mjs), like the procedural city.
  */
-const KEEP_CPU = typeof location !== 'undefined' && new URLSearchParams(location.search).get('keepGeometry') === '1';
+const KEEP_CPU = devParams().get('keepGeometry') === '1';
 
 function releaseArray(this: THREE.BufferAttribute): void {
   (this as unknown as { array: ArrayLike<number> | null }).array = null;

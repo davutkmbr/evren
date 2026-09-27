@@ -161,6 +161,7 @@ Sensitivity rule: real mosques, Hagia Sophia and similar landmarks are never dam
 | 23 | [OSM feature kits: one parametric kit and compiler rule per place type](23-osm-feature-kits.md) | C · Realistic city | L | 16 (world compiler), fetch changes |
 | 24 | [Far OSM layer: the real map out to the horizon](24-far-osm-layer.md) | C · Realistic city | L | 16, 23, one-map rule (`npm run check:map`) |
 | 25 | [Temporal antialiasing (TAA)](25-temporal-aa.md) | C · Visual quality | M–L | flicker audit ([flicker-audit.md](flicker-audit.md)) |
+| 26 | [Online: seventeenskies.com and servers](26-online.md) | F · Multiplayer | S + L | 15 (network design) |
 
 Effort: S ≈ half a workflow session, M ≈ one workflow session, L ≈ two or more sessions.
 

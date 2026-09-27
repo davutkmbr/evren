@@ -7,6 +7,7 @@ import { BondBehavior } from './behavior/bond/bond-behavior';
 import { DragonRigImpl } from './rig';
 import { DEFAULT_APPEARANCE, sanitizeAppearance } from './rider/appearance';
 import { RIDER_SIZE } from './rider/skeleton';
+import { devParams } from '../../core/dev-tools';
 
 /**
  * The rider character built by tools/humans/ (public/models/rider/akinci.glb); `?riderUrl=<glb url>` loads another
@@ -16,7 +17,7 @@ function humanRiderFlag(): string | undefined {
   if (typeof window === 'undefined') {
     return undefined;
   }
-  const q = new URLSearchParams(window.location.search);
+  const q = devParams();
   if (q.get('rider') === 'old' || q.get('rider') === 'new') {
     return undefined;
   }
@@ -28,7 +29,7 @@ function newRiderFlag(): ReturnType<typeof sanitizeAppearance> | undefined {
   if (typeof window === 'undefined') {
     return undefined;
   }
-  const q = new URLSearchParams(window.location.search);
+  const q = devParams();
   if (q.get('rider') !== 'new') {
     return undefined;
   }

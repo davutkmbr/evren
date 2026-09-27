@@ -23,6 +23,7 @@ import { type BuildingMaterials, createBuildingMaterials } from './materials';
 import { antennaGeometry, chimneyGeometry, dishGeometry, minaretGeometry, solarGeometry, tankGeometry } from './props';
 import { type BuildingsRequest, type BuildingsResult, decodePrisms } from './protocol';
 import type { PropKind } from './roofs';
+import { exposeDebug } from '../../../core/dev-tools';
 
 const FOOD = /^amenity=(restaurant|cafe|fast_food|bar|pub|ice_cream|nightclub|biergarten)$|^shop=(bakery|confectionery|pastry|coffee|tea|deli)$/;
 const SERVICE = /^amenity=(bank|pharmacy|bureau_de_change|post_office|dentist|doctors|clinic)$|^office=/;
@@ -149,8 +150,7 @@ class BuildingsLayer extends LayerBase {
       this.collision?.removeMany(this.colliderIds);
       this.colliderIds = [];
     });
-    const debug = window as unknown as { __osmBuildings?: unknown };
-    debug.__osmBuildings = { stats: res.stats, lod: () => this.lod?.counts(), shells: () => this.shells.map((s) => ({ name: s.name, ...s.counts() })) };
+    exposeDebug('__osmBuildings', { stats: res.stats, lod: () => this.lod?.counts(), shells: () => this.shells.map((s) => ({ name: s.name, ...s.counts() })) });
     console.info(
       `[osm:buildings] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`,
     );

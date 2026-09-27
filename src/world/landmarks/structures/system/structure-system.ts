@@ -20,6 +20,7 @@ import { QUAY_EDGE } from '../../../osm/shared/street-surface';
 import { JOINT_REACH } from '../build/deck-joint';
 import { RoadSurface } from './road-surface';
 import { prepareSite } from './site-planner';
+import { exposeDebug } from '../../../../core/dev-tools';
 
 export interface StructureSystemOptions {
   /** Only build these landmark ids (sandbox isolation). */
@@ -153,7 +154,7 @@ export class StructureSystem implements System {
         this.provideRoadSurface();
         if (import.meta.env.DEV) {
           // Joint checks: every deck end with its strips (see DeckEnd).
-          (window as unknown as { __structures?: unknown }).__structures = { ends: [...this.results.values()].flatMap((r) => r.ends) };
+          exposeDebug('__structures', { ends: [...this.results.values()].flatMap((r) => r.ends) });
         }
         finish();
         done(msg.ms);
