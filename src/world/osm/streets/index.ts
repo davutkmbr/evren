@@ -33,11 +33,12 @@ void main() {
   float lightsOn = smoothstep(0.08, 0.42, uNight);
   float pxScale = projectionMatrix[1][1] * uResolution.y * 0.5;
   float px = aLamp.w * pxScale / dist;
-  float size = max(px, 1.5);
-  float energy = pow(px / size, 1.6);
+  float look = max(px, 1.5);
+  float size = max(look, lightSplatMinSize(2.2, 9.0));
+  float energy = pow(px / look, 1.6);
   // Near lamps show their emissive glass; the sprite takes over with distance.
   float far = smoothstep(40.0, 120.0, dist);
-  float intensity = 18.0 * lightsOn * mix(0.35, 1.0, energy) * far;
+  float intensity = 18.0 * lightsOn * mix(0.35, 1.0, energy) * far * lightSplatEnergy(look, size);
   vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
   vLampColor = aLamp.rgb * intensity * atmoTransmittance(wp);
   gl_Position = projectionMatrix * mv;

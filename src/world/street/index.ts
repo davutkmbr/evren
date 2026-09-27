@@ -14,7 +14,8 @@
  * - ground materials (terrain, street ground, cover, street furniture) under every live tile;
  * - building materials by whole building: the footprints of the buildings the live tiles draw (a compiled building
  *   belongs to the tile of its centroid and may overhang it) plus the rest of the live tiles, except the footprints
- *   of buildings that belong to tiles not loaded, so no flight-scale building is cut at a tile edge;
+ *   of buildings that belong to tiles not loaded and of the buildings on the area's edge that no tile draws (their
+ *   centroid lies outside the tile grid: manifest `keep`), so no flight-scale building is cut at a tile edge;
  * - never inside landmark footprints, where the game's own mosque and landmark models keep showing.
  * Tiles cross-fade with the city they replace (a screen-door dissolve over FADE_SECONDS, street/fade.ts): each live
  * tile owns a fade slot, the mask stores the slot per texel, and both sides dither against the slot's fade. A tile fades
@@ -79,6 +80,11 @@ interface Footprint {
   id: string;
   ring: readonly number[];
   landmark: boolean;
+  /**
+   * A building on the area's edge that no tile draws (manifest `keep`, tools/world-compiler/src/edge-keeps.ts): its
+   * flight-scale twin is never cut, so it is not halved at the tile edge.
+   */
+  keep: boolean;
   bbox: Rect;
 }
 
@@ -172,7 +178,8 @@ function tileRect(tiles: readonly StreetTileRef[]): Rect {
 }
 
 function footprintsOf(manifest: StreetTileManifest): Footprint[] {
-  return (manifest.buildings ?? []).map((b) => {
+  const recs = [...(manifest.buildings ?? []).map((b) => ({ b, keep: false })), ...(manifest.keep ?? []).map((b) => ({ b, keep: true }))];
+  return recs.map(({ b, keep }) => {
     const f = b.footprint;
     const bbox = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
     for (let i = 0; i < f.length; i += 2) {
@@ -181,7 +188,7 @@ function footprintsOf(manifest: StreetTileManifest): Footprint[] {
       bbox.minZ = Math.min(bbox.minZ, f[i + 1]);
       bbox.maxZ = Math.max(bbox.maxZ, f[i + 1]);
     }
-    return { id: b.id, ring: f, landmark: !!b.landmark, bbox };
+    return { id: b.id, ring: f, landmark: !!b.landmark, keep, bbox };
   });
 }
 
@@ -430,7 +437,7 @@ class HoleMask {
 
   /** Growth a footprint is painted with when its tile is live / not live. */
   private static growth(fp: Footprint, live: boolean): number {
-    return fp.landmark ? GROW_LANDMARK : live ? GROW_LIVE : GROW_KEEP;
+    return fp.landmark ? GROW_LANDMARK : live && !fp.keep ? GROW_LIVE : GROW_KEEP;
   }
 
   /**
@@ -590,9 +597,18 @@ class HoleMask {
           }
         }
       }
+      // Edge buildings no tile draws keep their flight-scale twin inside the live squares (before the live buildings,
+      // so a neighbouring area that does draw one still cuts it).
+      for (const { id } of paintedRects) {
+        for (const fp of this.footprintsOf(id)) {
+          if (fp.keep && !fp.landmark && overlaps(fp.bbox, region, GROW_KEEP)) {
+            paint(this.cellsOf(fp, GROW_KEEP), 1, 0);
+          }
+        }
+      }
       for (const { id, slot } of paintedRects) {
         for (const fp of this.footprintsOf(id)) {
-          if (!fp.landmark && overlaps(fp.bbox, region, GROW_LIVE)) {
+          if (!fp.landmark && !fp.keep && overlaps(fp.bbox, region, GROW_LIVE)) {
             paint(this.cellsOf(fp, GROW_LIVE), 1, slot);
           }
         }
@@ -609,7 +625,7 @@ class HoleMask {
             if (overlaps(fp.bbox, region, GROW_LANDMARK) && nearPainted(fp, GROW_LANDMARK)) {
               paint(this.cellsOf(fp, GROW_LANDMARK), -1, 0);
             }
-          } else if (!isPainted && overlaps(fp.bbox, region, GROW_KEEP) && nearPainted(fp, GROW_LIVE)) {
+          } else if (!isPainted && !fp.keep && overlaps(fp.bbox, region, GROW_KEEP) && nearPainted(fp, GROW_LIVE)) {
             paint(this.cellsOf(fp, GROW_KEEP), 1, 0);
           }
         }

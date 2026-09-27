@@ -8,8 +8,14 @@
  *
  * Each stem is rendered one loop long plus a tail, and the tail is folded back onto the start so notes ringing over
  * the loop point continue seamlessly on the next pass.
+ *
+ * The same switch also brings test PHRASES for sprinkle mode (a breathy ney, a few kanun plucks, a low tanbur at
+ * night...) and three test MOMENT PIECES (a ney over a soft pad for poems, a kanun tune for city life, a solemn tanbur
+ * for legends), rendered once each on first use. Only these synthesized moment pieces carry a very faint 78-style
+ * surface (hiss and sparse crackle) so the moment source chains can be judged on something record-like; real 78
+ * transfers get no added crackle.
  */
-import { loopSeconds, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
+import { loopSeconds, type MusicPhraseDef, type MusicSetDef, type StemRole, type StingerKind } from './manifest';
 import type { MusicBuffers } from './player';
 
 export interface TestNote {
@@ -20,7 +26,7 @@ export interface TestNote {
   vel: number;
 }
 
-type Voice = 'piano' | 'pad' | 'pluck' | 'shaker' | 'ney' | 'kanun' | 'air' | 'bell';
+type Voice = 'piano' | 'pad' | 'pluck' | 'shaker' | 'ney' | 'kanun' | 'air' | 'bell' | 'tanbur';
 
 interface TestSetSpec {
   def: MusicSetDef;
@@ -140,6 +146,232 @@ const SPECS: TestSetSpec[] = [
 
 /** The test sets' manifest entries (valid MusicSetDefs; their `src` files do not exist and are never fetched). */
 export const TEST_SETS: readonly MusicSetDef[] = SPECS.map((s) => s.def);
+
+/* ------------------------------------------------------------------ */
+/* Test phrases (sprinkle mode) and the test moment piece               */
+/* ------------------------------------------------------------------ */
+
+interface TestPhraseSpec {
+  def: MusicPhraseDef;
+  /** Layers rendered into the one-shot: a voice and its notes ([start s, length s, midi, velocity]). */
+  layers: Array<{ voice: Voice; notes: Array<[number, number, number, number]> }>;
+}
+
+const phraseSrc = (id: string): string[] => [`dev-test/phrases/${id}.opus`];
+const phraseCredit = { title: 'Test cümlesi (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' as const };
+
+const PHRASE_SPECS: TestPhraseSpec[] = [
+  {
+    // A soft breathy ney by day: a long tone, a small turn, a fall (D uşşak colour).
+    def: { id: 'test-ney-nefes', src: phraseSrc('test-ney-nefes'), durationSec: 22, family: 'ney', tags: ['day', 'dawn', 'calm', 'water'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'ney',
+        notes: [
+          [1.5, 4.2, 74, 0.8],
+          [6, 1.1, 76, 0.6],
+          [7.2, 1, 77, 0.55],
+          [8.3, 4.5, 74, 0.7],
+          [13.4, 4.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A few kanun notes over the water: two short falling groups, then silence.
+    def: { id: 'test-kanun-damla', src: phraseSrc('test-kanun-damla'), durationSec: 20, family: 'kanun', tags: ['day', 'water', 'flight'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'kanun',
+        notes: [
+          [1.2, 0.45, 81, 0.7],
+          [1.65, 0.45, 79, 0.6],
+          [2.1, 1.6, 76, 0.7],
+          [5.2, 0.45, 74, 0.6],
+          [5.65, 0.45, 76, 0.6],
+          [6.1, 2.2, 78, 0.7],
+          [10.5, 0.4, 81, 0.5],
+          [10.9, 0.4, 79, 0.5],
+          [11.3, 2.6, 74, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A low tanbur at night: four slow notes that ring out.
+    def: { id: 'test-tanbur-gece', src: phraseSrc('test-tanbur-gece'), durationSec: 24, family: 'tanbur', tags: ['night', 'calm', 'perch'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'tanbur',
+        notes: [
+          [1.5, 3, 45, 0.8],
+          [5, 2, 52, 0.6],
+          [7.4, 4, 50, 0.7],
+          [12.6, 5, 45, 0.7],
+        ],
+      },
+    ],
+  },
+  {
+    // A lower, darker ney at night or in fog (hicaz turn: A, B♭, C♯).
+    def: { id: 'test-ney-gece', src: phraseSrc('test-ney-gece'), durationSec: 24, family: 'ney', tags: ['night', 'fog', 'water'], credit: phraseCredit, approvedOn: '2026-09-26' },
+    layers: [
+      {
+        voice: 'ney',
+        notes: [
+          [2, 4.5, 69, 0.7],
+          [6.8, 1.2, 70, 0.55],
+          [8.1, 2.6, 73, 0.6],
+          [11, 5.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+];
+
+const MOMENT_SPECS: TestPhraseSpec[] = [
+  {
+    // A gentle moment piece: a slow ney line over a soft pad (A uşşak / minor), 48 s with a quiet ending.
+    def: {
+      id: 'test-an-ney',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-ney.opus`],
+      durationSec: 48,
+      family: 'ney',
+      tags: ['poem', 'nostalgic', 'sea', 'tender'],
+      credit: { title: 'Test an müziği (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'pad',
+        notes: [
+          ...[57, 60, 64].map((m): [number, number, number, number] => [0.5, 10, m, 0.55]),
+          ...[53, 57, 60].map((m): [number, number, number, number] => [10.5, 10, m, 0.5]),
+          ...[55, 59, 62].map((m): [number, number, number, number] => [20.5, 10, m, 0.5]),
+          ...[52, 57, 60].map((m): [number, number, number, number] => [30.5, 12, m, 0.45]),
+        ],
+      },
+      {
+        voice: 'ney',
+        notes: [
+          [3, 3.5, 69, 0.6],
+          [6.8, 1.2, 71, 0.5],
+          [8.1, 2.4, 72, 0.55],
+          [11.5, 3, 74, 0.6],
+          [14.8, 1.2, 72, 0.5],
+          [16.1, 3.2, 71, 0.55],
+          [21, 2.5, 67, 0.5],
+          [23.8, 1.2, 69, 0.5],
+          [25.2, 4, 71, 0.55],
+          [31, 2.2, 72, 0.5],
+          [33.4, 1.4, 71, 0.45],
+          [35, 6, 69, 0.5],
+        ],
+      },
+    ],
+  },
+  {
+    // A light kanun tune over a tanbur drone, a deck radio's kind of song (city life, by day): 44 s.
+    def: {
+      id: 'test-an-kanun-vapur',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-kanun-vapur.opus`],
+      durationSec: 44,
+      family: 'kanun',
+      tags: ['city-life', 'joyful', 'sea', 'day'],
+      credit: { title: 'Test an müziği: vapur (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'tanbur',
+        notes: [
+          [1, 5, 45, 0.6],
+          [7, 5, 50, 0.55],
+          [13, 5, 45, 0.6],
+          [19, 5, 52, 0.55],
+          [25, 5, 50, 0.55],
+          [31, 7, 45, 0.55],
+        ],
+      },
+      {
+        voice: 'kanun',
+        notes: [
+          ...[0, 6, 12, 18, 24].flatMap((b, i): Array<[number, number, number, number]> => {
+            const up = i % 2 === 0 ? 0 : 2;
+            return [
+              [b + 1.5, 0.4, 69 + up, 0.6],
+              [b + 1.9, 0.4, 71 + up, 0.55],
+              [b + 2.3, 0.4, 72 + up, 0.6],
+              [b + 2.7, 1.1, 74 + up, 0.65],
+              [b + 4, 0.4, 72 + up, 0.5],
+              [b + 4.4, 1.2, 71 + up, 0.55],
+            ];
+          }),
+          [31.5, 0.5, 72, 0.55],
+          [32, 0.5, 71, 0.5],
+          [32.5, 4.5, 69, 0.6],
+        ],
+      },
+    ],
+  },
+  {
+    // A slow, solemn tanbur line over a dark pad (legends and history): 50 s.
+    def: {
+      id: 'test-an-tanbur-eski',
+      role: 'moment',
+      src: [`dev-test/moments/test-an-tanbur-eski.opus`],
+      durationSec: 50,
+      family: 'tanbur',
+      tags: ['legend', 'history', 'solemn', 'mystic'],
+      credit: { title: 'Test an müziği: eski (geliştirici)', author: 'Seventeen Skies (procedural dev test)', licence: 'original' },
+      approvedOn: '2026-09-26',
+    },
+    layers: [
+      {
+        voice: 'pad',
+        notes: [
+          ...[50, 57, 62].map((m): [number, number, number, number] => [0.5, 12, m, 0.5]),
+          ...[48, 55, 60].map((m): [number, number, number, number] => [12.5, 12, m, 0.45]),
+          ...[46, 53, 58].map((m): [number, number, number, number] => [24.5, 10, m, 0.45]),
+          ...[50, 57, 62].map((m): [number, number, number, number] => [34.5, 11, m, 0.4]),
+        ],
+      },
+      {
+        voice: 'tanbur',
+        notes: [
+          [2, 3, 62, 0.7],
+          [5.5, 1.5, 63, 0.55],
+          [7.2, 3.5, 66, 0.6],
+          [11.5, 4, 62, 0.65],
+          [16.5, 2, 60, 0.55],
+          [18.8, 1.5, 58, 0.5],
+          [20.5, 4, 57, 0.6],
+          [26, 3, 58, 0.55],
+          [29.5, 1.5, 60, 0.5],
+          [31.2, 3, 62, 0.6],
+          [36, 2, 63, 0.5],
+          [38.2, 6, 62, 0.55],
+        ],
+      },
+    ],
+  },
+];
+
+/** The test phrases (valid sprinkle phrases; their files do not exist and are never fetched). */
+export const TEST_PHRASES: readonly MusicPhraseDef[] = PHRASE_SPECS.map((s) => s.def);
+/** The test moment pieces (valid `role: "moment"` phrases). */
+export const TEST_MOMENT_PIECES: readonly MusicPhraseDef[] = MOMENT_SPECS.map((s) => s.def);
+
+/** The notes of a test phrase or moment piece, flattened (pure: the headless check verifies they end before the tail). */
+export function testPhraseNotes(id: string): TestNote[] {
+  const spec = [...PHRASE_SPECS, ...MOMENT_SPECS].find((s) => s.def.id === id);
+  if (!spec) {
+    throw new Error(`no test phrase ${id}`);
+  }
+  return spec.layers.flatMap((l) => l.notes.map(([t, dur, midi, vel]) => ({ t, dur, midi, vel })));
+}
 
 /** The notes of every stem of a test set (pure: the headless check verifies they fit the loop). */
 export function testScore(id: string): Record<StemRole, TestNote[]> {
@@ -333,6 +565,21 @@ function playNote(ctx: OfflineAudioContext, out: AudioNode, voice: Voice, n: Tes
       g.linearRampToValueAtTime(0, t + n.dur + 0.8);
       break;
     }
+    case 'tanbur': {
+      // A long-necked lute: a bright pluck through a low-pass that closes as the string rings out.
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(f * 8, t);
+      lp.frequency.setTargetAtTime(f * 2.5, t + 0.01, 0.4);
+      env.disconnect();
+      env.connect(lp).connect(out);
+      osc('sawtooth', f, 0.6);
+      osc('triangle', f * 2, 0.25, 4);
+      g.setValueAtTime(0, t);
+      g.linearRampToValueAtTime(0.3 * n.vel, t + 0.004);
+      g.setTargetAtTime(0, t + 0.005, Math.min(1.4, n.dur * 0.5));
+      break;
+    }
     case 'bell':
       osc('sine', f, 1);
       osc('sine', f * 2.76, 0.4);
@@ -366,6 +613,71 @@ async function renderNotes(voice: Voice, notes: readonly TestNote[], seconds: nu
     dst[i] = src[i] + (i + len < src.length ? src[i + len] : 0);
   }
   return out;
+}
+
+/**
+ * Renders a test phrase or moment piece: every layer into one buffer exactly `durationSec` long (the notes end a few
+ * seconds before the end, so the file has its own silent tail like a real phrase).
+ */
+export async function renderTestPhrase(phrase: MusicPhraseDef): Promise<AudioBuffer> {
+  const spec = [...PHRASE_SPECS, ...MOMENT_SPECS].find((s) => s.def.id === phrase.id);
+  if (!spec) {
+    throw new Error(`no test phrase ${phrase.id}`);
+  }
+  const ctx = new OfflineAudioContext(1, Math.round(phrase.durationSec * RATE), RATE);
+  const noise = noiseBuffer(ctx, 2);
+  const bus = ctx.createGain();
+  bus.gain.value = 1.4;
+  bus.connect(ctx.destination);
+  for (const layer of spec.layers) {
+    for (const [t, dur, midi, vel] of layer.notes) {
+      playNote(ctx, bus, layer.voice, { t, dur, midi, vel }, noise);
+    }
+  }
+  if (phrase.role === 'moment') {
+    addTestSurface(ctx, phrase.durationSec);
+  }
+  return ctx.startRendering();
+}
+
+/** Level of the test pieces' 78-style surface: hiss about -58 dBFS, clicks peaking about -40 dBFS. */
+const SURFACE_HISS = 0.0013;
+const SURFACE_CLICK = 0.01;
+
+/**
+ * A very faint 78-style surface for the synthesized test moment pieces only (deterministic): band-limited hiss and a
+ * few sparse clicks, fading in and out with the piece.
+ */
+function addTestSurface(ctx: OfflineAudioContext, seconds: number): void {
+  const len = Math.round(seconds * RATE);
+  const buf = ctx.createBuffer(1, len, RATE);
+  const d = buf.getChannelData(0);
+  let seed = 0x7a3d;
+  const rnd = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    lp += (rnd() * 2 - 1 - lp) * 0.35;
+    d[i] = lp * SURFACE_HISS;
+    // About three clicks a second, each a short decaying spike.
+    if (rnd() < 3 / RATE) {
+      const a = SURFACE_CLICK * (0.3 + 0.7 * rnd()) * (rnd() < 0.5 ? -1 : 1);
+      for (let k = 0; k < 40 && i + k < len; k++) {
+        d[i + k] += a * Math.exp(-k / 6);
+      }
+    }
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, 0);
+  g.gain.linearRampToValueAtTime(1, 1.5);
+  g.gain.setValueAtTime(1, Math.max(1.5, seconds - 2.5));
+  g.gain.linearRampToValueAtTime(0, seconds);
+  src.connect(g).connect(ctx.destination);
+  src.start(0);
 }
 
 /** Renders one test set's stems and stingers (a few hundred ms per set on a laptop). */

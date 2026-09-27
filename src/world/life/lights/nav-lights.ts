@@ -29,9 +29,10 @@ void main() {
   float radius = aSector.w;
   float pxScale = projectionMatrix[1][1] * uResolution.y * 0.5;
   float px = radius * pxScale / dist;
-  float size = max(px, 1.5);
-  float energy = pow(px / size, 1.5);
-  float intensity = lightsOn * vis * mix(0.45, 1.0, energy);
+  float look = max(px, 1.5);
+  float size = max(look, lightSplatMinSize(2.4, 10.0));
+  float energy = pow(px / look, 1.5);
+  float intensity = lightsOn * vis * mix(0.45, 1.0, energy) * lightSplatEnergy(look, size);
   vCol = aColor * intensity * atmoTransmittance(position);
   gl_Position = projectionMatrix * mv;
   gl_PointSize = size * 2.4;

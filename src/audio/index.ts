@@ -7,7 +7,7 @@ import { DragonProbe, readListener } from './dragon-probe';
 import { GeoProbe } from './geo-probe';
 import { clamp01, finiteOr, smoothstep } from './dsp/math';
 import { loadVolume, saveVolume } from './settings';
-import { createMusicController } from './music';
+import { createMusicController, type MomentSourceAudio, type MomentSourceFrame } from './music';
 import { footfallOffsets } from '../core/gait';
 
 const TWO_PI = Math.PI * 2;
@@ -29,7 +29,7 @@ const BUBBLE_SPLASH_MAX = 0.08;
  * Swimming (phase 21 stage 5 v2): the rig's swim phase (DragonPose.swimPhase) puts the left wing's catch at 0 and the
  * right one's at pi (the animator's convention); the power stroke lasts this share of the cycle (SWIM_RIG.paddlePower).
  */
-const SWIM_POWER_SHARE = 0.42;
+const SWIM_POWER_SHARE = 0.45;
 /** The swimming posture weight (pose.swim) above which strokes are heard (the take-off run fades it below). */
 const SWIM_STROKE_MIN = 0.6;
 
@@ -106,7 +106,7 @@ export function createAudioSystem(): System {
         engine.setVolume(volume);
         engine.setPaused(paused);
         engine.setQuality(qualityPreset);
-        music.attach(ctxRef, engine.bus.music);
+        music.attach(ctxRef, engine.bus.music, engine.bus.reverbSend);
       };
       void assets
         .load(ctxRef)
@@ -153,7 +153,7 @@ export function createAudioSystem(): System {
     }
   };
 
-  const service: AudioService = {
+  const service: AudioService & MomentSourceAudio = {
     play(name: SoundName, vol?: number): void {
       if (name === 'roar') {
         externalRoar = true;
@@ -181,6 +181,9 @@ export function createAudioSystem(): System {
     bondCue(cue, vol): void {
       engine?.bondCue(cue, vol ?? 1);
     },
+    dolphinCue(cue, position, vol): void {
+      engine?.dolphinCue(cue, position, vol ?? 1);
+    },
     setMomentBed(amount: number): void {
       engine?.setMomentBed(amount);
     },
@@ -196,8 +199,20 @@ export function createAudioSystem(): System {
     get adaptiveMusic(): boolean {
       return music.adaptiveMusic;
     },
-    setMomentMusic(active: boolean, musicId?: string): void {
-      music.setMomentMusic(active, musicId);
+    setMusicStyle(style: 'sparse' | 'continuous'): void {
+      music.setMusicStyle(style);
+    },
+    get musicStyle(): 'sparse' | 'continuous' {
+      return music.musicStyle;
+    },
+    setMomentMusic(active: boolean, musicId?: string, info?: { category?: string; mood?: readonly string[] }): void {
+      music.setMomentMusic(active, musicId, info);
+    },
+    get momentMusicFocus(): { momentId: string; anchorId?: number } | null {
+      return music.momentMusicFocus;
+    },
+    updateMomentSources(frame: MomentSourceFrame): void {
+      music.updateMomentSources(frame);
     },
   };
 
@@ -347,7 +362,7 @@ export function createAudioSystem(): System {
       frame.dragon.skim = finiteOr(frame.dragon.skim + (skimTarget - frame.dragon.skim) * (1 - Math.exp(-realDt * 6)), 0);
 
       engine.update(frame);
-      music.update(ctx, realDt);
+      music.update(ctx, realDt, frame.listener);
 
       // The flight model owns roar gating (cooldown, not while breathing fire or paused) and calls play('roar');
       // the raw input is only a fallback when no flight model is running at all.

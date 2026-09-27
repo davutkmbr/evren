@@ -370,6 +370,13 @@
   color: rgba(243, 238, 229, 0.85);
 }
 
+/* the row's gamepad buttons (core/pad-keys.ts), quiet, under the action */
+.ctl-pad {
+  display: flex;
+  margin-top: 3px;
+  opacity: 0.75;
+}
+
 /* a move not yet tried (src/ui/tutorial): a small gold dot after the action, explained once under the rows */
 .ctl-untried {
   display: inline-block;

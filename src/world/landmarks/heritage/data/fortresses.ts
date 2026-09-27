@@ -63,3 +63,15 @@ export const YEDIKULE_TOWERS: readonly TowerSpot[] = [
 
 /** Anadolu Hisarı: the keep (Hisarpeçe); the citadel walls are laid out around it by the builder. */
 export const ANADOLU_KEEP: readonly number[] = [41.082162, 29.06712, 41.082067, 29.067102, 41.082079, 29.06699, 41.082174, 29.067006];
+
+/**
+ * Fortress towers the heritage builders draw (round towers and the Anadolu Hisarı keep): the city-wall bake places
+ * none of its own kit towers on these spots (tools/world-compiler/src/walls/plan.ts), so each tower exists once.
+ * Radius (m) of the drawn tower; the square pylons (r 0) stay with the wall kit.
+ */
+export const HERITAGE_FORTRESS_TOWERS: readonly TowerSpot[] = [
+  ...RUMELI_GREAT_TOWERS,
+  ...RUMELI_SMALL_TOWERS,
+  ...YEDIKULE_TOWERS.filter((t) => t.r > 0),
+  { name: 'anadolu-keep', lat: 41.08212, lon: 29.06705, r: 7.5, h: 25 },
+];

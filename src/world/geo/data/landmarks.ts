@@ -224,7 +224,7 @@ const HERITAGE: LandmarkData[] = [
     info: "Fatih Sultan Mehmed'in fetihten önce Boğaz'ı denetlemek için yalnızca dört ayda yaptırdığı kale; üç büyük kulesi Boğaz'ın en dar noktasına bakar.",
   },
   {
-    id: 'anadolu-hisari', name: 'Anadolu Hisarı', kind: 'fortress', builder: 'heritage', lat: 41.08409, lon: 29.06837, headingDeg: 0, radius: 65, height: 25, year: 1395,
+    id: 'anadolu-hisari', name: 'Anadolu Hisarı', kind: 'fortress', builder: 'heritage', lat: 41.08212, lon: 29.06706, headingDeg: 0, radius: 65, height: 25, year: 1395,
     info: "Yıldırım Bayezid'in Göksu deresinin Boğaz'a döküldüğü yerde yaptırdığı 'Güzelce Hisar'; Rumeli Hisarı'nın tam karşısındadır.",
   },
   {

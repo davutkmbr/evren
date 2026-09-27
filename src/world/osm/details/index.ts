@@ -19,35 +19,27 @@ import { addMesh, countTriangles, toGeometry } from '../shared/three';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
 import { createCoverMaterial } from './cover/material';
-import { Crowd } from './crowd/crowd';
+import { Crowd, DRAW_DISTANCE as CROWD_DRAW_DISTANCE } from './crowd/crowd';
 import { createPropMaterial } from './props/material';
 import { STANDER_STRIDE, VERT_STRIDE, type DetailsRequest, type DetailsResult } from './protocol';
-import { createFoliageAtlas } from './trees/atlas';
+import { acquireFoliageAtlas } from './trees/atlas';
 import { createTreeMaterial } from './trees/material';
 import { treeGeometries } from './trees/models';
 import { TREE_SPECIES } from './trees/species';
 import { GalataDeck, placeAnglers, standerArray } from './waterfront/bridge';
 import { createFlags } from './waterfront/flags';
 import { createPigeons } from './waterfront/pigeons';
-import { isModelled, landmarkClaims } from '../../landmarks/claims';
+import { landmarkClaims } from '../../landmarks/claims';
+import { mosquePads } from './mosque-pads';
+import { perchClearings } from '../../perches/clearings';
 
+/** Margin (m) beyond the crowd's draw distance before its walkers stop being stepped. */
+const CROWD_MARGIN = 100;
+/** Schedule events the crowd may handle on the frame it is stepped again. */
+const CROWD_CATCH_UP = 200_000;
 const CROWD_SCALE: Record<string, number> = { low: 0.35, medium: 0.6, high: 1, ultra: 1.2 };
 /** Seconds to wait for the structures module's Galata Bridge before starting the crowd without it. */
 const DECK_TIMEOUT = 40;
-
-/** Landmark mosques (grown by 10 m like the reserved pads) and neighbourhood mosque sites: x, z, radius triples. */
-function mosquePads(geo: GeoQuery): number[] {
-  const out: number[] = [];
-  for (const l of geo.landmarks) {
-    if (l.kind === 'mosque' && isModelled(l)) {
-      out.push(l.x, l.z, l.radius + 10);
-    }
-  }
-  for (const m of geo.smallMosqueSites) {
-    out.push(m.x, m.z, m.radius);
-  }
-  return out;
-}
 
 /** Trees shape the city from the air (always drawn) but cast shadows only within this distance (m, "high"). */
 const TREE_SHADOW_RADIUS = 450;
@@ -65,7 +57,9 @@ class DetailsLayer extends LayerBase {
   private crowd: Crowd | null = null;
   private readonly trees: InstanceLod[] = [];
   private props: LodTiledMesh | null = null;
+  private kits: LodTiledMesh | null = null;
   private result: DetailsResult | null = null;
+  private crowdOn = true;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
   private deckNext = 0;
@@ -93,6 +87,7 @@ class DetailsLayer extends LayerBase {
       lines: Array.from(claims.lines),
       infillClaims: claims,
       mosques: mosquePads(ctx.geo),
+      clearings: perchClearings(ctx.geo),
     };
     const job = runWorker<DetailsRequest, DetailsResult>(worker, request);
     this.onDispose(() => job.cancel());
@@ -129,10 +124,10 @@ class DetailsLayer extends LayerBase {
         }),
       );
     }
-    const atlas = createFoliageAtlas();
-    const treeMat = createTreeMaterial(atlas);
+    const atlas = acquireFoliageAtlas();
+    const treeMat = createTreeMaterial(atlas.texture);
     this.onDispose(() => {
-      atlas.dispose();
+      atlas.release();
       treeMat.dispose();
     });
     const geos = treeGeometries();
@@ -147,6 +142,12 @@ class DetailsLayer extends LayerBase {
     if (res.props && res.propsTiles) {
       this.props = new LodTiledMesh(this.group, 'osm-details-props', res.props, res.propsTiles, this.propMaterial, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
       this.props.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+    }
+    if (res.kits && res.kitsTiles) {
+      const kitMat = createPropMaterial('osm-details-kits', false, false);
+      this.onDispose(() => kitMat.dispose());
+      this.kits = new LodTiledMesh(this.group, 'osm-details-kits', res.kits, res.kitsTiles, kitMat, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
+      this.kits.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -217,6 +218,8 @@ class DetailsLayer extends LayerBase {
     this.group.add(crowd.group);
     this.onDispose(() => crowd.dispose());
     this.stats.walkers = crowd.stats.walkers;
+    // Everything the crowd needed is taken: the rest of the result (mesh arrays, tree records) may be collected.
+    this.result = null;
     this.stats.standers = standers.length / STANDER_STRIDE;
     console.info(`[osm:details] ${JSON.stringify(this.stats)}, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`);
   }
@@ -236,14 +239,26 @@ class DetailsLayer extends LayerBase {
     }
     const cam = ctx.engine.camera.position;
     const preset = ctx.engine.quality.settings.preset;
-    this.crowd?.setLodScale(LOD_RADIUS_SCALE[preset] ?? 1);
-    this.crowd?.update(ctx.engine.time.elapsed, cam);
+    const lodScale = LOD_RADIUS_SCALE[preset] ?? 1;
+    this.crowd?.setLodScale(lodScale);
+    // Beyond the crowd's draw distance from the region the walkers are not stepped (the schedule catches up on return);
+    // one last pass empties the near buffers.
+    const r = ctx.rect;
+    const away = Math.hypot(Math.max(r.minX - cam.x, 0, cam.x - r.maxX), Math.max(r.minZ - cam.z, 0, cam.z - r.maxZ));
+    const crowdOn = away < CROWD_DRAW_DISTANCE * lodScale + CROWD_MARGIN;
+    if (crowdOn || this.crowdOn) {
+      this.crowd?.update(ctx.engine.time.elapsed, cam, crowdOn && !this.crowdOn ? CROWD_CATCH_UP : undefined);
+    }
+    this.crowdOn = crowdOn;
     for (const t of this.trees) {
       t.update(cam, preset);
     }
-    if (this.props) {
-      this.props.update(cam, preset);
-      this.props.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
+    for (const m of [this.props, this.kits]) {
+      if (!m) {
+        continue;
+      }
+      m.update(cam, preset);
+      m.setCastShadow(cam.y - ctx.geo.heightAt(cam.x, cam.z) < PROPS_SHADOW_AGL);
     }
   }
 }

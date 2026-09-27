@@ -8,6 +8,8 @@ import { SITE_BUILDERS } from './build/registry';
 import { makeJob } from './jobs';
 import type { ChunkResult, ColliderDesc, SiteJob, SiteResult, WorkerResponse } from './protocol';
 import { createHeritageMaterial } from './render/material';
+import { createWallsMaterial, type WallsMaterial } from '../walls/render/material';
+import { WALL_MATERIAL_SITES } from './build/registry';
 import { buildSite } from './worker/build-site';
 
 const LODS = 2;
@@ -44,6 +46,9 @@ export class HeritageSystem implements System {
   readonly order = UpdateOrder.World;
   private root = new THREE.Group();
   private material: THREE.MeshStandardMaterial | null = null;
+  /** The city-wall material, created for the first site that uses it (WALL_MATERIAL_SITES). */
+  private wallMaterial: WallsMaterial | null = null;
+  private renderer: THREE.WebGLRenderer | null = null;
   private chunks: Chunk[] = [];
   private colliderIds: number[] = [];
   private outstanding = 0;
@@ -60,6 +65,7 @@ export class HeritageSystem implements System {
     this.root.name = 'heritage';
     ctx.scene.add(this.root);
     this.material = createHeritageMaterial();
+    this.renderer = ctx.renderer;
     this.applyQuality(ctx.quality.settings);
     this.unsubQuality = ctx.quality.onChange((s) => this.applyQuality(s));
     this.collision = ctx.services.get('collision');
@@ -134,7 +140,11 @@ export class HeritageSystem implements System {
     if (r.error) {
       console.error(`[heritage] ${r.id}: ${r.error}`);
     }
-    const mat = this.material!;
+    let mat: THREE.Material = this.material!;
+    if (WALL_MATERIAL_SITES.has(r.id) && this.renderer) {
+      this.wallMaterial ??= createWallsMaterial(this.renderer);
+      mat = this.wallMaterial.material;
+    }
     for (const c of r.chunks) {
       this.chunks.push(this.makeChunk(r.id, c, mat));
     }
@@ -237,6 +247,8 @@ export class HeritageSystem implements System {
     }
     this.colliderIds = [];
     this.material?.dispose();
+    this.wallMaterial?.dispose();
+    this.wallMaterial = null;
     this.root.removeFromParent();
   }
 }

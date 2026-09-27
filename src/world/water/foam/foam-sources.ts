@@ -10,7 +10,8 @@
  *   the field's slow wake decay keeps it white for a few hundred metres behind a ferry. Planing craft add foam along
  *   the aft chines.
  * - the dragon: the skim furrow (swept from frame to frame), spray falling back at the downwash ring's edge, the fire's
- *   boiling patch, the swimming body's wash and the wing strokes where a wingtip is under water.
+ *   boiling patch, the swimming body's wash (wider and thicker in the fast swim, with a white bow wave off the chest)
+ *   and the wing strokes where a wingtip is under water.
  * - splashes (plunges, breaches, skim contacts): a foam disk.
  * Breaking crests, breaking wake crests and surf are sources of the simulation itself (foam-gpu.ts).
  *
@@ -440,9 +441,25 @@ export class FoamSources implements WaterFoam {
         const x0 = Number.isFinite(this.swimX) && Math.hypot(tx - this.swimX, tz - this.swimZ) < 30 ? this.swimX : tx;
         const z0 = Number.isFinite(this.swimX) && Math.hypot(tx - this.swimX, tz - this.swimZ) < 30 ? this.swimZ : tz;
         const lv = Math.min(1, 0.15 + sp * 0.12);
-        win.stamp(x0, z0, tx, tz, D.swimBeam * 0.35, D.swimBeam * 0.35, 0, 0.6 * lv, lv, 0.7 * lv, 0.3 * lv);
+        // The fast swim: a wider, thicker wash and a white bow wave off the chest on both sides.
+        const fast = smoothstep(D.swimFastFrom, D.swimFastTo, sp);
+        const r = D.swimBeam * (0.35 + (D.swimFastBeam - 0.35) * fast);
+        const boost = 1 + D.swimFastBoost * fast;
+        win.stamp(x0, z0, tx, tz, r, r, 0, Math.min(1, 0.6 * lv * boost), lv, Math.min(1, 0.7 * lv * boost), 0.3 * lv * boost);
         this.swimX = tx;
         this.swimZ = tz;
+        if (fast > 0.02) {
+          const bx = p.x + fx * D.swimLength * D.bowForward;
+          const bz = p.z + fz * D.swimLength * D.bowForward;
+          const out = D.swimBeam * D.bowOut;
+          const lb = D.bowFoam * fast;
+          for (const side of [-1, 1]) {
+            // Right of the heading is (-fz, fx).
+            const sx = bx - fz * out * side;
+            const sz = bz + fx * out * side;
+            win.stamp(sx, sz, sx, sz, D.bowRadius, D.bowRadius, 0, lb, 0.6 * lb, 0.8 * lb, 0.2 * lb);
+          }
+        }
       } else {
         this.swimX = NaN;
       }

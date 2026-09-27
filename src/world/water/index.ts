@@ -94,6 +94,9 @@ export function createWaterSystem(): System {
   const origin = new THREE.Vector2();
   const tmpWind = new THREE.Vector3();
   let quality: WaterQuality = waterQualityFor('high', 'planar');
+  /** `?wrefl=sky`: sky-only reflections whatever the preset (A/B against the planar mirror). */
+  let forceSky = false;
+  const reflectionsOf = (settings: QualitySettings): 'sky' | 'planar' => (forceSky ? 'sky' : settings.waterReflections);
   let uniforms: WaterUniforms | null = null;
   let material: THREE.ShaderMaterial | null = null;
   let mesh: THREE.Mesh | null = null;
@@ -130,7 +133,7 @@ export function createWaterSystem(): System {
   }
 
   function applyQuality(settings: QualitySettings): void {
-    const next = waterQualityFor(settings.preset, settings.waterReflections);
+    const next = waterQualityFor(settings.preset, reflectionsOf(settings));
     anisotropy = settings.anisotropy;
     for (const tex of owned) {
       if (tex.anisotropy !== anisotropy && tex.minFilter === THREE.LinearMipmapLinearFilter) {
@@ -156,12 +159,16 @@ export function createWaterSystem(): System {
     }
   }
 
+  /** Main camera field of view the mirror was last sized for (the mirror covers a margin beyond it). */
+  let viewFov = 60;
+
   function resizeReflection(): void {
     if (!reflection) {
       return;
     }
     const res = globalUniforms.uResolution.value as THREE.Vector2;
-    reflection.setSize(res.x * quality.reflectionScale, res.y * quality.reflectionScale, anisotropy, quality.reflectionSamples);
+    const scale = quality.reflectionScale * PlanarReflection.coverage(viewFov);
+    reflection.setSize(res.x * scale, res.y * scale, anisotropy, quality.reflectionSamples);
   }
 
   return {
@@ -192,7 +199,9 @@ export function createWaterSystem(): System {
       anisotropy = ctx.quality.settings.anisotropy;
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
-      quality = waterQualityFor(ctx.quality.settings.preset, ctx.quality.settings.waterReflections);
+      forceSky = ctx.debug.params.get('wrefl') === 'sky';
+      const noEdgeFade = ctx.debug.params.get('wfade') === '0';
+      quality = waterQualityFor(ctx.quality.settings.preset, reflectionsOf(ctx.quality.settings));
       const b = geo.bounds;
       reflection = new PlanarReflection(anisotropy, quality.reflectionSamples);
       uniforms = createWaterUniforms(
@@ -205,7 +214,7 @@ export function createWaterSystem(): System {
           bands: placeholders.bands,
           foam: placeholders.foam,
           reflection: reflection.target.texture,
-          reflectionDepth: reflection.target.depthTexture,
+          reflectionDepth: reflection.depthTexture,
         },
         new THREE.Vector4(b.minX, b.minZ, 1 / (b.maxX - b.minX), 1 / (b.maxZ - b.minZ)),
         lowFlight.uniforms,
@@ -213,6 +222,7 @@ export function createWaterSystem(): System {
         foam.uniforms,
       );
       foam.attach(uniforms);
+      uniforms.uReflParams.value.z = noEdgeFade ? 1 : 0;
       const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan', 'foam'];
       material = createWaterMaterial(uniforms, quality.bands, Math.max(0, debugViews.indexOf(ctx.debug.params.get('wdebug') ?? 'off')));
       mesh = new THREE.Mesh(buildRadialGrid(quality.segments, GRID_INNER_RADIUS, GRID_EXTENT), material);
@@ -308,10 +318,11 @@ export function createWaterSystem(): System {
       // Under water the surface shows its underside (Snell's window), which never samples the mirror.
       const planar = quality.planar && shadowReady && !underwater.state.under && PlanarReflection.seesWater(cam);
       if (planar) {
+        viewFov = cam.fov;
         resizeReflection();
         reflection.render(ctx.renderer, ctx.scene, cam, mesh);
         uniforms.uReflTex.value = reflection.target.texture;
-        uniforms.uReflDepth.value = reflection.target.depthTexture;
+        uniforms.uReflDepth.value = reflection.depthTexture;
         uniforms.uReflMatrix.value.copy(reflection.textureMatrix);
         uniforms.uReflInvProj.value.copy(reflection.camera.projectionMatrixInverse);
       }

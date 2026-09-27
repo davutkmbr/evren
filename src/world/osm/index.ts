@@ -14,12 +14,12 @@ import type { EngineContext, GeoQuery, StreetGroundService, System } from '../..
 import { UpdateOrder } from '../../core/contracts';
 import type { QualityPreset } from '../../core/quality';
 import { loadOsmData, type OsmData } from './data';
-import { osmRegions, setOsmRegionActive, type OsmRegionDef } from './regions';
+import { notifyOsmTreesChange, osmRegions, setOsmRegionActive, type OsmRegionDef } from './regions';
+import { acquireOsmFade, OSM_FADE_SECONDS, releaseOsmFade, setOsmFade, tagOsmFade } from './fade';
 import { buildWorkerBase } from './shared/foundation';
 import { clipWaysToLand } from './shared/land';
 import { groundLines, linesCrossing, type GroundLine, type GroundLineCrossing } from './shared/ground-lines';
 import { classifyStreets } from './shared/street-field';
-import { FootprintIndex } from './shared/footprints';
 import { StreetSurface } from './shared/street-surface';
 import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
@@ -54,10 +54,19 @@ function layerFactories(): Promise<(OsmLayerFactory | null)[]> {
 /**
  * Streaming distances (m from the camera to a region's rect, horizontal) at the "high" preset: a region loads inside
  * LOAD_DISTANCE and unloads beyond UNLOAD_DISTANCE; at most MAX_LOADED streamed regions are kept (nearest win).
+ * Beyond about 1 km a region adds little over the far OSM layer (the same baked buildings, with near detail out to
+ * 800 m; the region's own facade details, props and crowd end by 800 m), so regions load only as near as their build
+ * time needs and few are kept: each one costs tens to hundreds of MB and per-frame work.
  */
-const LOAD_DISTANCE = 2600;
-const UNLOAD_DISTANCE = 3400;
-const MAX_LOADED = 8;
+const LOAD_DISTANCE = 1800;
+const UNLOAD_DISTANCE = 2400;
+const MAX_LOADED = 5;
+/**
+ * A loaded region takes over from the far layer (city swap + fade in) only inside this distance: between it and
+ * LOAD_DISTANCE the region is built but hidden, so the far layer keeps drawing the same buildings in one merged set
+ * of chunks instead of the region's own draws and shadow casters.
+ */
+const ACTIVATE_DISTANCE = 1200;
 /** Near-only layers (traffic) of a streamed region start inside NEAR_ON and stop beyond NEAR_OFF (m, "high"). */
 const NEAR_ON = 1000;
 const NEAR_OFF = 1400;
@@ -76,6 +85,13 @@ class OsmRegion {
   state: RegionState = 'loading';
   /** The region's rect is in the active exclusion list (its buildings are drawn). */
   active = false;
+  /** Handover (fade.ts): slot while fading, start time and direction of the running fade. */
+  private fadeSlot: number | null = null;
+  private casting = true;
+  private fadeFrom: number | null = null;
+  private fadeOut = false;
+  /** Faded out: ready to be disposed. */
+  gone = false;
   loadMs = 0;
   private cancel: (() => void) | null = null;
   private disposed = false;
@@ -94,7 +110,92 @@ class OsmRegion {
     this.layers = layers;
     this.near = def.fixed;
     this.group.name = `osm-${def.id}`;
+    // Streamed regions load hidden and fade in once the city has swapped its chunks over them (fade.ts).
+    this.group.visible = def.fixed;
     parent.add(this.group);
+  }
+
+  /** Starts fading in from `t0` (the city's swap instant). */
+  beginFadeIn(t0: number): void {
+    if (this.gone || this.fadeOut) {
+      return;
+    }
+    this.fadeSlot ??= acquireOsmFade(this.def.rect);
+    tagOsmFade(this.group);
+    this.group.visible = true;
+    if (this.fadeSlot === null) {
+      // No slot free: the region pops in, as before the handover existed.
+      notifyOsmTreesChange(this.def.rect);
+      return;
+    }
+    this.fadeFrom = t0;
+    this.stepFade();
+  }
+
+  /** Turns the region's shadow casters off or back to what they were built with. */
+  private setCasting(on: boolean): void {
+    if (on === this.casting) {
+      return;
+    }
+    this.casting = on;
+    this.group.traverse((o) => {
+      if (on) {
+        if (o.userData.osmCastShadow !== undefined) {
+          o.castShadow = o.userData.osmCastShadow as boolean;
+          delete o.userData.osmCastShadow;
+        }
+      } else if (o.castShadow) {
+        o.userData.osmCastShadow = true;
+        o.castShadow = false;
+      }
+    });
+  }
+
+  /** Keeps the region fully drawn on a slot until beginFadeOut (called when it stops being active). */
+  holdForFadeOut(): void {
+    this.fadeSlot ??= acquireOsmFade(this.def.rect);
+    this.fadeFrom = null;
+    if (this.fadeSlot !== null) {
+      setOsmFade(this.fadeSlot, this.group.visible ? 1 : 0, false);
+    }
+  }
+
+  /** Starts fading out from `t0`; the region is `gone` when done. */
+  beginFadeOut(t0: number): void {
+    if (this.fadeSlot === null || !this.group.visible) {
+      notifyOsmTreesChange(this.def.rect);
+      this.gone = true;
+      return;
+    }
+    tagOsmFade(this.group);
+    this.fadeOut = true;
+    this.fadeFrom = t0;
+    // The procedural trees come back in the pixels the region gives up (OSM_FADE_OUT).
+    notifyOsmTreesChange(this.def.rect);
+    this.stepFade();
+  }
+
+  private stepFade(): void {
+    if (this.fadeFrom === null) {
+      return;
+    }
+    const f = Math.min(1, (performance.now() - this.fadeFrom) / (OSM_FADE_SECONDS * 1000));
+    if (this.fadeSlot !== null) {
+      setOsmFade(this.fadeSlot, this.fadeOut ? 1 - f : f, this.fadeOut);
+    }
+    // The shadow switches at the middle of the dither, like the city chunks it replaces (city/streamer.ts).
+    this.setCasting(this.fadeOut ? f < 0.5 : f >= 0.5);
+    if (f < 1) {
+      return;
+    }
+    this.fadeFrom = null;
+    if (this.fadeOut) {
+      this.gone = true;
+    } else {
+      // Fully drawn. The slot stays at 1 while the region is loaded: the procedural trees under it stay hidden
+      // (OSM_FADE_OUT) until the vegetation has rebuilt its tiles without them, and it is ready for the fade out.
+      notifyOsmTreesChange(this.def.rect);
+    }
   }
 
   async load(engine: EngineContext, geo: GeoQuery): Promise<void> {
@@ -125,7 +226,6 @@ class OsmRegion {
       fade: this.def.fade,
       base,
       surface: new StreetSurface(base),
-      footprints: new FootprintIndex(data.buildings),
     };
     this.ctx = ctx;
     this.data = data;
@@ -207,8 +307,10 @@ class OsmRegion {
   }
 
   update(dt: number): void {
+    this.stepFade();
     const ctx = this.ctx;
-    if (!ctx) {
+    // Built but not yet taken over from the far layer (hidden): nothing of it is drawn, so its LODs need no streaming.
+    if (!ctx || !this.group.visible) {
       return;
     }
     for (const l of this.layers) {
@@ -223,6 +325,10 @@ class OsmRegion {
 
   dispose(): void {
     this.disposed = true;
+    if (this.fadeSlot !== null) {
+      releaseOsmFade(this.fadeSlot);
+      this.fadeSlot = null;
+    }
     this.cancel?.();
     for (const l of this.layers) {
       l.dispose();
@@ -232,6 +338,14 @@ class OsmRegion {
     this.ctx = null;
     this.data = null;
   }
+}
+
+/** A handover never waits longer than this (ms) for the city's swap (a stalled chunk must not keep a region hidden). */
+const HANDOVER_TIMEOUT = 5000;
+
+/** `p`, or now after HANDOVER_TIMEOUT. */
+function withTimeout(p: Promise<number>): Promise<number> {
+  return Promise.race([p, new Promise<number>((resolve) => setTimeout(() => resolve(performance.now()), HANDOVER_TIMEOUT))]);
 }
 
 const inside = (r: { minX: number; maxX: number; minZ: number; maxZ: number }, x: number, z: number): boolean => x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
@@ -258,6 +372,8 @@ class OsmSystem implements System {
   /** Galata's layer list (a stable array for window.__osm.layers). */
   private readonly galataLayers: OsmLayer[] = [];
   private readonly loaded = new Map<string, OsmRegion>();
+  /** Regions fading out after they stopped being active (fade.ts). */
+  private readonly leaving = new Set<OsmRegion>();
   private engine: EngineContext | null = null;
   private geo: GeoQuery | null = null;
   private building: OsmRegion | null = null;
@@ -342,11 +458,18 @@ class OsmSystem implements System {
       } else if (dist > NEAR_OFF * scale) {
         r.setNear(false);
       }
-      if (!r.active && r.buildingsDrawn()) {
+      if (!r.active && r.buildingsDrawn() && dist < ACTIVATE_DISTANCE * scale) {
         r.active = true;
-        setOsmRegionActive(r.def, true);
+        void withTimeout(setOsmRegionActive(r.def, true)).then((t0) => r.beginFadeIn(t0));
       }
       r.update(dt);
+    }
+    for (const r of [...this.leaving]) {
+      r.update(dt);
+      if (r.gone) {
+        r.dispose();
+        this.leaving.delete(r);
+      }
     }
   }
 
@@ -385,6 +508,13 @@ class OsmSystem implements System {
 
   private start(def: OsmRegionDef, layers?: OsmLayer[]): void {
     const engine = this.engine!;
+    // Back before its fade-out finished: drop the leaving copy (one region per rect and fade slot).
+    for (const r of this.leaving) {
+      if (r.def.id === def.id) {
+        r.dispose();
+        this.leaving.delete(r);
+      }
+    }
     const region = new OsmRegion(def, this.root, layers);
     this.loaded.set(def.id, region);
     this.building = region;
@@ -410,12 +540,21 @@ class OsmSystem implements System {
     if (this.building === r) {
       this.building = null;
     }
+    this.loaded.delete(r.def.id);
+    if (r.active && !r.def.fixed && !this.disposed) {
+      // Stays drawn until the city's chunks with its buildings swap in, then fades out (fade.ts).
+      r.active = false;
+      r.holdForFadeOut();
+      this.leaving.add(r);
+      void withTimeout(setOsmRegionActive(r.def, false)).then((t0) => r.beginFadeOut(t0));
+      return;
+    }
     if (r.active) {
       r.active = false;
-      setOsmRegionActive(r.def, false);
+      void setOsmRegionActive(r.def, false);
+      notifyOsmTreesChange(r.def.rect);
     }
     r.dispose();
-    this.loaded.delete(r.def.id);
   }
 
   /** The drawn street ground of every loaded region, for other modules (bridge decks landing on the streets). */
@@ -456,6 +595,10 @@ class OsmSystem implements System {
     for (const r of [...this.loaded.values()]) {
       this.stop(r);
     }
+    for (const r of this.leaving) {
+      r.dispose();
+    }
+    this.leaving.clear();
     this.root.removeFromParent();
   }
 }

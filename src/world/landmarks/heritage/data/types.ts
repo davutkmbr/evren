@@ -17,3 +17,12 @@ export interface GeoPoint {
   lat: number;
   lon: number;
 }
+
+/** An OSM building outline with its name, kind and courtyard holes (scripts/data/heritage-footprints.ts). */
+export interface NamedFootprint {
+  key: string;
+  ll: readonly number[];
+  name?: string;
+  kind?: string;
+  holes?: readonly (readonly number[])[];
+}

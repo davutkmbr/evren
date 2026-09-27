@@ -32,10 +32,13 @@ vec3 rockBoat(vec3 p, vec4 pv, out mat3 rot) {
 }
 `;
 
-export function createPropMaterial(name: string, rocking = false): THREE.MeshStandardMaterial {
-  // Moored boats float on the game's water, which the street tiles do not replace: they are never cut out.
+/**
+ * `hole`: cut out where the street tiles replace the ground (their own furniture stands there). Moored boats float on
+ * the game's water and the feature kits have no twin in the tiles (props/stamp.ts THROUGH_HOLE): never cut out.
+ */
+export function createPropMaterial(name: string, rocking = false, hole = !rocking): THREE.MeshStandardMaterial {
   const plain = new THREE.MeshStandardMaterial({ name, vertexColors: true, roughness: 0.7, metalness: 0.05 });
-  const m = rocking ? plain : streetHole(plain);
+  const m = hole ? streetHole(plain) : plain;
   patchMaterial(m, `osm-details-${name}-v1`, (shader) => {
     let vs = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${GLOW_VERTEX}${rocking ? ROCK_VERTEX : ''}`)

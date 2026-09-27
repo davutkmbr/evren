@@ -16,6 +16,7 @@ import { Flocks } from './birds/flocks';
 import { createLifeService } from './life-service';
 import { CarTraffic } from './traffic/car-traffic';
 import { osmStaticExclusion } from '../osm/regions';
+import { Dolphins } from './dolphins/dolphins';
 
 const TRAFFIC_DENSITY: Record<string, number> = { low: 0.35, medium: 0.6, high: 1.0, ultra: 1.25 };
 import { buildStraitLanes, placeBerths, type Berth, type StraitLanes } from './vessels/routes';
@@ -47,6 +48,8 @@ export class LifeSystem implements System {
   private lightsAwake = true;
   flocks: Flocks | null = null;
   traffic: CarTraffic | null = null;
+  /** Dolphin pods in the Bosphorus (phase 13 natural phenomena); nothing runs or draws while none is alive. */
+  dolphins: Dolphins | null = null;
   private trafficPreset = '';
   private birdCount = -1;
   private jobs = 0;
@@ -81,6 +84,7 @@ export class LifeSystem implements System {
       this.pierLamps = piers.lamps;
       this.colliderIds = ctx.services.get('collision').addMany(piers.colliders, 'pier', piers.colliders.map(() => 'life:pier'));
       const t2 = performance.now();
+      this.dolphins = new Dolphins(this.root, geo, this.lanes, ctx);
       this.rebuildFleet(ctx.quality.settings);
       ctx.services.provide('life', createLifeService(this));
       this.rebuildTraffic(ctx.quality.settings);
@@ -144,6 +148,7 @@ export class LifeSystem implements System {
       this.wakes.dispose();
     }
     this.wakes = this.fleet.createWakes();
+    this.dolphins?.setFleet(this.fleet);
     this.root.add(this.wakes.mesh);
 
     if (this.lights) {
@@ -188,6 +193,7 @@ export class LifeSystem implements System {
     if (this.flocks) {
       this.flocks.update(dt, this.camPos, dragon ? dragon.position : null);
     }
+    this.dolphins?.update(dt, this.camPos);
     // Lights only need per-frame work around dusk and at night.
     const night = (ctx.services.tryGet('env')?.nightFactor ?? (globalUniforms.uNight.value as number)) > 0.02;
     if (this.lights && this.vesselLights && (night || this.lightsAwake)) {
@@ -212,6 +218,8 @@ export class LifeSystem implements System {
     this.lights?.dispose();
     this.flocks?.dispose();
     this.traffic?.dispose();
+    this.dolphins?.dispose();
+    this.dolphins = null;
     this.pierMesh?.geometry.dispose();
     this.ctx?.services.tryGet('collision')?.removeMany(this.colliderIds);
     this.material?.dispose();

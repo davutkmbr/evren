@@ -8,6 +8,11 @@
  * mip/anisotropic filtering as the colour, so silhouettes against the sky are antialiased at the lookup footprint
  * instead of being rebuilt from a binary depth test (texel-sized stair steps). With MSAA the coverage is resolved per
  * sample as well, which antialiases the silhouettes themselves.
+ * The scene is drawn into a multisampled target without mips; a clean-up pass then copies it into the mip-mapped target
+ * the water samples, turning non-finite texels (a material dividing by zero in the mirror's upward view) into sky and
+ * capping over-range ones. The mip chain would otherwise spread a single bad texel over a whole block, which the water
+ * showed as hard, screen-aligned dark or bright patches for the frames it was there (flicker audit,
+ * .docs/planning/flicker-audit.md).
  */
 import * as THREE from 'three';
 import { RenderLayers } from '../../core/contracts';
@@ -47,6 +52,30 @@ const COVERAGE_FRAGMENT = /* glsl */ `
 uniform vec4 uValue;
 void main() {
   gl_FragColor = uValue;
+}
+`;
+
+/** Largest mirror radiance kept before the mips (the water compresses reflections above ~60 anyway). */
+const MIRROR_MAX = 1e4;
+
+const SANITIZE_VERTEX = /* glsl */ `
+void main() {
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+const SANITIZE_FRAGMENT = /* glsl */ `
+uniform sampler2D tScene;
+// Bit-level test: fast-math GPU compilers fold isnan() / x != x away.
+bool badFloat(float x) {
+  return (floatBitsToUint(x) & 0x7f800000u) == 0x7f800000u;
+}
+void main() {
+  vec4 c = texelFetch(tScene, ivec2(gl_FragCoord.xy), 0);
+  if (badFloat(c.r) || badFloat(c.g) || badFloat(c.b) || badFloat(c.a)) {
+    // Treated as sky: zero colour and coverage (premultiplied), so the water shows its own sky reflection there.
+    c = vec4(0.0);
+  }
+  gl_FragColor = vec4(clamp(c.rgb, vec3(0.0), vec3(${MIRROR_MAX.toFixed(1)})), clamp(c.a, 0.0, 1.0));
 }
 `;
 
@@ -121,11 +150,34 @@ export class PlanarReflection {
   readonly camera = new THREE.PerspectiveCamera();
   /** World -> reflection texture uv (xy/w), without the oblique clip. */
   readonly textureMatrix = new THREE.Matrix4();
+  /** What the water samples: the mirror image, cleaned up and mip-mapped. */
   target: THREE.WebGLRenderTarget;
+  /** The mirror's scene render (multisampled, no mips) and its depth. */
+  private sceneTarget: THREE.WebGLRenderTarget;
+  private readonly sanitize = new THREE.Mesh(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
+    new THREE.ShaderMaterial({
+      name: 'water.reflectionSanitize',
+      vertexShader: SANITIZE_VERTEX,
+      fragmentShader: SANITIZE_FRAGMENT,
+      uniforms: { tScene: { value: null } },
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  private readonly sanitizeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   /** False when the last frame skipped the pass (camera under water / water not in view). */
   valid = false;
-  /** Vertical field of view scale of the mirror camera relative to the main camera. */
-  fovScale = 1.12;
+  /**
+   * Angular margin (degrees, each side) of the mirror camera beyond the main camera's view. Wave normals bend the
+   * reflected rays by a similar angle whatever the zoom, so the margin is an angle, not a factor of the field of
+   * view: with a factor, a narrow (zoomed) view left the bent rays outside the mirror, where the water fell back to
+   * the sky reflection in screen-aligned patches that jumped as the view turned.
+   */
+  static readonly MARGIN_DEG = 9;
+  /** Largest mirror resolution boost that keeps the texel density of the wider view (see coverage()). */
+  static readonly MAX_BOOST = 1.35;
   private width = 0;
   private height = 0;
   private readonly coverage = new CoverageMeshes();
@@ -140,10 +192,34 @@ export class PlanarReflection {
     // Mark the mirror camera as reversed-Z up front: the renderer would otherwise rebuild its projection (and drop
     // the oblique clip plane) on first use.
     (this.camera as unknown as { _reversedDepth: boolean })._reversedDepth = true;
+    this.sanitize.frustumCulled = false;
+    this.sceneTarget = this.createSceneTarget(2, 2);
     this.target = this.createTarget(2, 2, anisotropy);
   }
 
+  /** Depth of the mirror's scene render (the water's per-pixel reflection distance). */
+  get depthTexture(): THREE.DepthTexture {
+    return this.sceneTarget.depthTexture as THREE.DepthTexture;
+  }
+
   private createTarget(width: number, height: number, anisotropy: number): THREE.WebGLRenderTarget {
+    const target = new THREE.WebGLRenderTarget(width, height, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      depthBuffer: false,
+      stencilBuffer: false,
+      generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter,
+      magFilter: THREE.LinearFilter,
+      wrapS: THREE.ClampToEdgeWrapping,
+      wrapT: THREE.ClampToEdgeWrapping,
+    });
+    target.texture.name = 'water.reflection';
+    target.texture.anisotropy = anisotropy;
+    return target;
+  }
+
+  private createSceneTarget(width: number, height: number): THREE.WebGLRenderTarget {
     const depthTexture = new THREE.DepthTexture(width, height, THREE.FloatType);
     depthTexture.name = 'water.reflectionDepth';
     depthTexture.minFilter = THREE.NearestFilter;
@@ -154,16 +230,15 @@ export class PlanarReflection {
       depthBuffer: true,
       depthTexture,
       stencilBuffer: false,
-      generateMipmaps: true,
-      minFilter: THREE.LinearMipmapLinearFilter,
-      magFilter: THREE.LinearFilter,
+      generateMipmaps: false,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
       wrapS: THREE.ClampToEdgeWrapping,
       wrapT: THREE.ClampToEdgeWrapping,
       // Multisampled: the coverage pass then runs per sample, so the resolved alpha is the antialiased coverage.
       samples: this.samples,
     });
-    target.texture.name = 'water.reflection';
-    target.texture.anisotropy = anisotropy;
+    target.texture.name = 'water.reflectionScene';
     return target;
   }
 
@@ -180,7 +255,20 @@ export class PlanarReflection {
     this.height = h;
     this.samples = samples;
     this.target.dispose();
+    this.sceneTarget.dispose();
+    this.sceneTarget = this.createSceneTarget(w, h);
     this.target = this.createTarget(w, h, anisotropy);
+  }
+
+  /** Vertical field of view (degrees) of the mirror camera for a main camera of `fov`. */
+  static mirrorFov(fov: number): number {
+    return Math.min(fov + 2 * PlanarReflection.MARGIN_DEG, 150);
+  }
+
+  /** Resolution factor that keeps the mirror's texels per degree at the centre while it covers the wider view. */
+  static coverage(fov: number): number {
+    const t = (f: number): number => Math.tan((f * Math.PI) / 360);
+    return Math.min(PlanarReflection.MAX_BOOST, t(PlanarReflection.mirrorFov(fov)) / t(fov));
   }
 
   /** True if any part of the main camera's view could see the water plane from above. */
@@ -211,7 +299,7 @@ export class PlanarReflection {
     cam.up.copy(_up);
     _target.copy(cam.position).add(_forward);
     cam.lookAt(_target);
-    cam.fov = Math.min(main.fov * this.fovScale, 150);
+    cam.fov = PlanarReflection.mirrorFov(main.fov);
     cam.aspect = main.aspect;
     cam.near = main.near;
     cam.far = main.far * 2;
@@ -247,13 +335,18 @@ export class PlanarReflection {
     scene.add(this.coverage.group);
     try {
       renderer.autoClear = true;
-      renderer.setRenderTarget(this.target);
+      renderer.setRenderTarget(this.sceneTarget);
       renderer.state.buffers.depth.setMask(true);
       renderer.clear(true, true, false);
       renderer.render(scene, cam);
+      // The coverage triangles cover the whole far plane: left in the scene they would black out the main view's sky.
+      scene.remove(this.coverage.group);
+      // Clean-up copy into the mip-mapped target (the renderer builds its mips after the draw).
+      (this.sanitize.material as THREE.ShaderMaterial).uniforms.tScene.value = this.sceneTarget.texture;
+      renderer.setRenderTarget(this.target);
+      renderer.render(this.sanitize, this.sanitizeCamera);
       this.valid = true;
     } finally {
-      // The coverage triangles cover the whole far plane: left in the scene they would black out the main view's sky.
       scene.remove(this.coverage.group);
       renderer.setRenderTarget(previousTarget);
       renderer.autoClear = previousAutoClear;
@@ -263,6 +356,9 @@ export class PlanarReflection {
 
   dispose(): void {
     this.target.dispose();
+    this.sceneTarget.dispose();
+    this.sanitize.geometry.dispose();
+    (this.sanitize.material as THREE.Material).dispose();
     this.coverage.dispose();
   }
 }

@@ -112,7 +112,12 @@ export function osmStaticExclusion(): readonly WorldBounds[] {
   return (staticRects ??= osmRegions().map((r) => r.rect));
 }
 
-type ExclusionListener = (rect: WorldBounds, active: boolean) => void;
+/**
+ * A rect entered (`active`) or left the active list. A listener that redraws content under the rect may return the
+ * time (performance.now()) at which its replacement starts to cross-fade, once it is ready (the region's handover
+ * waits for it, fade.ts).
+ */
+type ExclusionListener = (rect: WorldBounds, active: boolean) => Promise<number> | void;
 
 /** Live list behind osmActiveExclusion(): mutated in place, so holders of the array always see the current rects. */
 const activeRects: WorldBounds[] = [];
@@ -132,20 +137,47 @@ export function onOsmExclusionChange(fn: ExclusionListener): () => void {
   return () => listeners.delete(fn);
 }
 
-/** index.ts: a region started (true) or stopped (false) drawing. */
-export function setOsmRegionActive(def: OsmRegionDef, active: boolean): void {
+/**
+ * index.ts: a region started (true) or stopped (false) drawing. Resolves with the time the listeners' replacement
+ * content starts to cross-fade (the latest of them; now when no listener redraws anything).
+ */
+export function setOsmRegionActive(def: OsmRegionDef, active: boolean): Promise<number> {
   const list = osmActiveExclusion() as WorldBounds[];
   const i = list.indexOf(def.rect);
   if (active === i >= 0 || def.fixed) {
-    return;
+    return Promise.resolve(performance.now());
   }
   if (active) {
     list.push(def.rect);
   } else {
     list.splice(i, 1);
   }
+  const waits: Promise<number>[] = [];
   for (const fn of listeners) {
-    fn(def.rect, active);
+    const w = fn(def.rect, active);
+    if (w) {
+      waits.push(w);
+    }
+  }
+  return waits.length ? Promise.all(waits).then((ts) => Math.max(...ts)) : Promise.resolve(performance.now());
+}
+
+type TreesListener = (rect: WorldBounds) => void;
+const treesListeners = new Set<TreesListener>();
+
+/**
+ * The procedural trees over `rect` must follow the active list now (vegetation rebuilds its tiles there): when a
+ * region has faded in (its trees replaced the procedural ones pixel by pixel, OSM_FADE_OUT) or starts to fade out
+ * (the procedural trees come back while the region's fade out). index.ts fires it.
+ */
+export function onOsmTreesChange(fn: TreesListener): () => void {
+  treesListeners.add(fn);
+  return () => treesListeners.delete(fn);
+}
+
+export function notifyOsmTreesChange(rect: WorldBounds): void {
+  for (const fn of treesListeners) {
+    fn(rect);
   }
 }
 

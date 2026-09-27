@@ -3,7 +3,7 @@ import { pointAt, polylineLength, type V2, type V3 } from '../geom';
 import { Palette } from '../surfaces';
 import type { SiteContext } from '../site';
 import { box, face } from '../prims/basic';
-import { M, tint } from './common';
+import { dim, M, tint } from './common';
 
 /**
  * Roman aqueduct arcade along a line landmark's anchors (Bozdoğan Kemeri / Valens aqueduct, 4th c.): see-through
@@ -31,9 +31,10 @@ const MIN_SPRING = 2.2;
 /** Channel fall (m per km) in the flow direction (anchor order). */
 const FALL = 1.5;
 
-const stone: Mat = tint(M.ashlar, Palette.stoneBuff);
-const stoneDark: Mat = tint(M.ashlarGrey, Palette.stoneGreyPink);
-const coping: Mat = M.ashlarLight;
+// Drawn with the city-wall material (registry.ts WALL_MATERIAL_SITES): no floodlight channel.
+const stone: Mat = tint(M.ashlar, Palette.stoneBuff, 0);
+const stoneDark: Mat = tint(M.ashlarGrey, Palette.stoneGreyPink, 0);
+const coping: Mat = dim(M.ashlarLight, 0);
 
 interface Frame {
   x: number;
