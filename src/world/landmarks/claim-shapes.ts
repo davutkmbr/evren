@@ -6,6 +6,8 @@ export interface LandmarkClaims {
   pads: Float32Array;
   /** ax, az, bx, bz, body radius, corridor radius per segment of a line landmark. */
   lines: Float32Array;
+  /** Historic mosque settings (monument-setting.ts): x, z, radius, platform y per site. */
+  settings?: Float32Array;
   /**
    * Solid volumes of the structures without a ground pad (bridges), structure-volumes.ts STRUCTURE_STRIDE floats per
    * box: a building or tree that would enter one is left out (height-aware: houses under a high deck stay).

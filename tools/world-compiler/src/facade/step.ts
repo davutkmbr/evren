@@ -21,10 +21,11 @@ import { LOD0, LOD1, type TileMesh, type Vec3 } from '../mesh';
 import { lin, scale } from './frame';
 import type { AreaContext, CompileStep } from '../registry';
 import { osmWords } from '../shopfront/names';
-import { district, landmarkBlocksEnabled, landmarkClasses } from '../district';
+import { district, landmarkBlocksEnabled, landmarkClasses, settingSites } from '../district';
+import { settingTop } from '../../../../src/world/landmarks/monument-setting';
 import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/osm/shared/geometry';
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
-import { type FacadePlan, parentOf, planFacade, planTop } from './plan';
+import { type FacadePlan, HIPPED_RIDGE, parentOf, planFacade, planTop } from './plan';
 import { SLOTS_RECORD, SlotSink } from '../modules/slots';
 
 /** AreaContext.shared key of the Set<string> of building ids (e.g. "w102190096") the façade step must not emit. */
@@ -98,12 +99,14 @@ function prepare(a: AreaContext): void {
     }
     const edges = classifyEdges(s, a.heights, a.outlines, f.surface, a.land);
     const base = streetBase(s, edges);
-    const plan = planFacade(s, osm, parent, base);
+    const sites = settingSites();
+    const maxTop = settingTop(sites, s.cx, s.cz, s.rec.groundY, (k) => a.heights.at(sites![k], sites![k + 1]));
+    const plan = planFacade(s, osm, parent, base, maxTop);
     if (plan.source === 'parent-levels') {
       sh.inherited.push(s.rec.id);
       s.rec.levels = plan.storeys;
     }
-    const ridge = plan.roof === 'hipped' ? 2.2 : 0;
+    const ridge = plan.roof === 'hipped' ? HIPPED_RIDGE : 0;
     s.rec.topY = Math.round(planTop(plan, ridge) * 100) / 100;
     s.rec.height = Math.round((s.rec.topY - s.rec.groundY) * 100) / 100;
     sh.plans.set(s, { plan, edges });

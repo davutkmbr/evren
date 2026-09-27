@@ -11,8 +11,8 @@ const sandboxPages = Object.fromEntries(
 /** Generated folders served straight from disk in dev (see worldStatic): mount path -> folder. */
 const STATIC_DIRS: Record<string, string> = {
   '/world': resolve(__dirname, 'public/world'),
-  // Flight-scale OSM regions (scripts/data/osm-regions.mjs), fetched while the dev server runs.
-  '/data/osm/regions': resolve(__dirname, 'public/data/osm/regions'),
+  // Generated data (OSM regions, the far city bake): written or pulled while the dev server runs.
+  '/data': resolve(__dirname, 'public/data'),
 };
 const WORLD_TYPES: Record<string, string> = {
   '.glb': 'model/gltf-binary',

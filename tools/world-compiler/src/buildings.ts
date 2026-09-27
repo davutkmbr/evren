@@ -13,7 +13,8 @@ import type { BuildingRec, DoorRec, XYZ } from './format';
 import type { GroundHeights } from './ground';
 import type { TileMesh, Vec3 } from './mesh';
 import type { OsmStreetPoint } from './osm-street';
-import { district } from './district';
+import { district, settingSites } from './district';
+import { settingTop } from '../../../src/world/landmarks/monument-setting';
 import { emitLining, emitPiece, portalsOn, spandrels, type SolidPassage } from './passages';
 import { entranceSize, INFERRED_DOOR, isEntrance, isStorefront } from './pois';
 
@@ -53,6 +54,8 @@ export interface Solid {
   doors: DoorPlan[];
   /** Building passages through this solid (passages.ts attachPassages): arched openings and their lining. */
   passages?: SolidPassage[];
+  /** Wall top (absolute m) the flight-scale layer plans for it (buildings/build.ts plannedWallTops). */
+  flightTop?: number;
 }
 
 function defaultLevels(b: OsmBuilding, area: number): number {
@@ -69,8 +72,11 @@ function defaultLevels(b: OsmBuilding, area: number): number {
   return district().buildings.defaultLevels;
 }
 
-/** Rendered solids of the data with heights and ground references. */
-export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHeights): Solid[] {
+/**
+ * Rendered solids of the data with heights and ground references. An untagged building takes its wall top from
+ * `flightTops` (the flight-scale layer's plan) when given: one height up close and from the air.
+ */
+export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHeights, flightTops?: ReadonlyMap<number, number>): Solid[] {
   const seen = new Map<number, number>();
   const out: Solid[] = [];
   for (const b of buildings) {
@@ -104,14 +110,22 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
     cz /= n;
     let heightSource: BuildingRec['heightSource'] = 'default';
     let h: number;
+    const flight = flightTops?.get(b.id);
     if (b.height) {
       h = b.height;
       heightSource = 'height';
     } else if (b.levels) {
-      h = (b.levels + (b.roofLevels ?? 0)) * LEVEL_HEIGHT;
+      // The flight-scale layer's storey heights, so the tagged storeys stand as tall up close as from the air.
+      h = flight !== undefined ? Math.max(LEVEL_HEIGHT, flight - groundY) : (b.levels + (b.roofLevels ?? 0)) * LEVEL_HEIGHT;
       heightSource = 'levels';
     } else {
-      h = b.kind === 'roof' ? 4 : defaultLevels(b, area) * LEVEL_HEIGHT;
+      h = b.kind === 'roof' ? 4 : flight !== undefined ? Math.max(LEVEL_HEIGHT, flight - groundY) : defaultLevels(b, area) * LEVEL_HEIGHT;
+      // Historic mosque settings (landmarks/monument-setting.ts): untagged buildings stay low around the monument.
+      const sites = settingSites();
+      const top = settingTop(sites, cx, cz, groundY, (k) => heights.at(sites![k], sites![k + 1]));
+      if (b.kind !== 'roof') {
+        h = Math.min(h, top - groundY);
+      }
     }
     let minH = b.minHeight ?? (b.minLevel ? b.minLevel * LEVEL_HEIGHT : 0);
     if (b.kind === 'roof' && !minH) {
@@ -146,7 +160,7 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
     if (b.levels) {
       rec.levels = b.levels;
     }
-    out.push({ rec, ring, holes, cx, cz, grounded: minH === 0, doors: [] });
+    out.push({ rec, ring, holes, cx, cz, grounded: minH === 0, doors: [], flightTop: flightTops?.get(b.id) });
   }
   return out;
 }

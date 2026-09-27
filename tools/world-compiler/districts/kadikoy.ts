@@ -5,41 +5,8 @@
  * here.
  */
 import type { DistrictProfile } from '../src/district';
-import type { SpecRow } from '../src/facade/plan';
+import { SURVEYED } from '../../../src/world/osm/buildings/surveyed';
 
-/** .docs/street/s1-strip.md section 2 (storeys include the ground floor; ranges resolve by hash). */
-const SPEC: Record<number, SpecRow> = {
-  1462853463: { typ: 'T2', storeys: [3, 4] },
-  179197246: { typ: 'T2', storeys: [3, 4] },
-  709156144: { typ: 'T2', storeys: [4, 4] },
-  694298370: { typ: 'T2', storeys: [3, 4] },
-  709156145: { typ: 'T2', storeys: [4, 4], railing: 'iron' },
-  694298380: { typ: 'T1', storeys: [5, 6] },
-  694298381: { typ: 'T1', storeys: [5, 6] },
-  694298376: { typ: 'T3', storeys: [6, 6], cikma: 'full', glazedBase: 2, wall: 0x858a8d },
-  709156143: { typ: 'T1', storeys: [5, 6] },
-  694298375: { typ: 'T1', storeys: [5, 5] },
-  694298374: { typ: 'T1', storeys: [5, 5] },
-  694298373: { typ: 'T2', storeys: [2, 3] },
-  179197314: { typ: 'T1', storeys: [5, 5] },
-  694298383: { typ: 'T5', storeys: [1, 1] },
-  179197243: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
-  179197258: { typ: 'T3', storeys: [5, 5], railing: 'glass', wall: 0xdddbd5 },
-  179197266: { typ: 'T1', storeys: [5, 6] },
-  1462853447: { typ: 'T1', storeys: [5, 5] },
-  179197226: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
-  1462853450: { typ: 'T2', storeys: [3, 3], roof: 'hipped', wall: 0xd8c592, G: 3.7, F: 2.85 },
-  711321929: { typ: 'T1', storeys: [3, 4], wall: 0xdcd2b6, frame: 0x3a4d40, cikma: 'none' },
-  694715116: { typ: 'T1', storeys: [4, 5] },
-  711321928: { typ: 'T1', storeys: [4, 5] },
-  694715117: { typ: 'T1', storeys: [4, 5] },
-  694298355: { typ: 'T1', storeys: [4, 5] },
-  694715125: { typ: 'T1', storeys: [4, 5] },
-  694298352: { typ: 'T1', storeys: [3, 4] },
-  694298353: { typ: 'T1', storeys: [3, 4] },
-  694715137: { typ: 'T1', storeys: [3, 4] },
-  694715138: { typ: 'T1', storeys: [3, 4] },
-};
 
 /** The fish / produce end of the strip: near the Yasa × Güneşlibahçe × Yağlıkçı İsmail junction (spec P10–P11). */
 function inMarket(x: number, z: number): boolean {
@@ -71,7 +38,7 @@ export const KADIKOY: DistrictProfile = {
       ['T3', area > 180 ? 0.25 : 0.12],
     ],
     storeys: { T1: [5, 6], T2: [3, 4], T3: [5, 7] },
-    spec: SPEC,
+    spec: SURVEYED,
     // Piers, Haldun Taner, İskele Camii, Aya Efimia (hero lane).
     heroIds: new Set([102190096, 560203763, 102190100, 102190093, 694298377, 694298362, 694298363]),
     heroHeights: { 102190100: 13 },

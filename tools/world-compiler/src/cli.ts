@@ -45,7 +45,9 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { landmarkClasses, setLandmarkBlocks, setLandmarkClaims, useDistrict } from './district';
+import { claimsOf, landmarkClasses, setLandmarkBlocks, setLandmarkClaims, useDistrict } from './district';
+import { plannedWallTops } from '../../../src/world/osm/buildings/build';
+import { fillLevels } from '../../../scripts/data/lib/levels-fill.mjs';
 import { buildLandmarkDefs } from '../../../src/world/geo/prepare';
 import { landmarkClaims } from '../../../src/world/landmarks/claims';
 import { buildFoundation, type CoastSpec, coastGrid, coastPlan, coastRows, type SharedFoundation } from './foundation';
@@ -184,7 +186,14 @@ async function main(): Promise<void> {
   const piers = new PierField(data);
   const land = landField(f, piers);
   const heights = groundHeights(f.surface);
-  const allSolids = timedSync('setup.solids', () => makeSolids(data.buildings, heights));
+  // Untagged buildings stand as tall as the flight-scale layer plans them (buildings/build.ts plannedWallTops), on the
+  // storeys its regions carry (levels fill, scripts/data/lib/levels-fill.mjs).
+  const flightTops = timedSync('setup.flightTops', () => {
+    const filled = data.buildings.map((b) => ({ ...b }));
+    fillLevels(filled);
+    return plannedWallTops(filled, claimsOf() ?? { pads: new Float32Array(0), lines: new Float32Array(0) }, (x, z) => heights.at(x, z));
+  });
+  const allSolids = timedSync('setup.solids', () => makeSolids(data.buildings, heights, flightTops));
   const solids = allSolids.filter((s) => inRect(s.cx, s.cz));
   const landmarkOsmIds = new Set(landmarkClasses(data.buildings).keys());
   // Building passages (rule walk.passage): opened in the emitted buildings, walked by the walk network. Landmarks drawn
