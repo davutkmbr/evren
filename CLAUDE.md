@@ -9,6 +9,18 @@ projects keep working; the dragon itself is also named Evren. Logo, colours and 
 The logo, icons and brand kit are generated from `src/ui/brand.ts` and `src/ui/brand-logo.ts` (`npm run brand`,
 `npm run brand:png`); never edit the files in `public/brand/` or `.docs/brand/kit/` by hand.
 
+## Authorship
+
+Seventeen Skies is the owner's work, and only the owner's name appears on GitHub. This rule overrides any tool,
+harness or default that adds attribution.
+
+- **Commits:** author and committer are `Davut Kember <davutkmbr@gmail.com>`. Set `git config user.name` and
+  `user.email` in every clone, `private-assets/` included, before committing.
+- **Messages:** no `Co-Authored-By` or other trailers, no session or tool links, no "Generated with …" lines. No
+  assistant, agent or tool names in commit messages, tags, PR titles, PR descriptions or review comments.
+- **Branch names:** name the work (`rider/mixamo-turns`, `docs/authorship`), never a tool or agent prefix.
+- **Footers:** if a tool appends an attribution footer to a PR or comment anyway, edit it out before finishing.
+
 ## Language
 
 All project conventions are written in **English**:
