@@ -8,11 +8,11 @@
  *   i16 qx..qw     orientation (unit quaternion * 32767)
  *   i16 vx, vy, vz velocity (0.1 m/s)
  *   u8  mode       FlightMode index
- *   u8  flags      bit 0 firing, bit 1 riderless, bit 2 ground plane valid, bit 3 teleport
+ *   u8  flags      bit 0 firing, bit 1 riderless, bit 2 ground plane valid, bit 3 teleport, bit 4 away
  *   u8  pose[..]   POSE_FIELDS quantized over their range (phases wrap)
  */
 import type { DragonPose, FlightMode } from '../core/contracts';
-import { FLAG_FIRING, FLAG_GROUND, FLAG_RIDERLESS, FLAG_TELEPORT, SNAPSHOT_BYTES } from './protocol';
+import { FLAG_AWAY, FLAG_FIRING, FLAG_GROUND, FLAG_RIDERLESS, FLAG_TELEPORT, SNAPSHOT_BYTES } from './protocol';
 
 export { SNAPSHOT_BYTES };
 
@@ -76,6 +76,8 @@ export interface DragonSnapshot {
   riderless: boolean;
   /** Placed somewhere new: receivers snap to it instead of interpolating. */
   teleport: boolean;
+  /** The tab is in the background: this is the last snapshot until it returns (src/net/loiter.ts). */
+  away: boolean;
   /** POSE_FIELDS values in order. */
   pose: Float32Array;
   /** World height of the ground under the dragon, or NaN (no ground plane: the default standing plane). */
@@ -94,6 +96,7 @@ export function createSnapshot(): DragonSnapshot {
     firing: false,
     riderless: false,
     teleport: false,
+    away: false,
     pose: new Float32Array(POSE_FIELDS.length),
     groundY: Number.NaN,
     groundNx: 0,
@@ -166,7 +169,7 @@ export function encodeSnapshot(s: DragonSnapshot, out = new ArrayBuffer(SNAPSHOT
   }
   v.setUint8(o++, Math.max(0, FLIGHT_MODES.indexOf(s.mode)));
   const ground = Number.isFinite(s.groundY);
-  v.setUint8(o++, (s.firing ? FLAG_FIRING : 0) | (s.riderless ? FLAG_RIDERLESS : 0) | (ground ? FLAG_GROUND : 0) | (s.teleport ? FLAG_TELEPORT : 0));
+  v.setUint8(o++, (s.firing ? FLAG_FIRING : 0) | (s.riderless ? FLAG_RIDERLESS : 0) | (ground ? FLAG_GROUND : 0) | (s.teleport ? FLAG_TELEPORT : 0) | (s.away ? FLAG_AWAY : 0));
   POSE_FIELDS.forEach((f, i) => v.setUint8(o++, quantize(f, s.pose[i])));
   const dy = ground ? clamp(Math.round((s.groundY - s.position[1]) * 10), -127, 127) : 0;
   v.setInt8(o++, dy);
@@ -200,6 +203,7 @@ export function decodeSnapshot(buf: ArrayBuffer, offset = 0, out = createSnapsho
   out.firing = (flags & FLAG_FIRING) !== 0;
   out.riderless = (flags & FLAG_RIDERLESS) !== 0;
   out.teleport = (flags & FLAG_TELEPORT) !== 0;
+  out.away = (flags & FLAG_AWAY) !== 0;
   POSE_FIELDS.forEach((f, i) => {
     out.pose[i] = dequantize(f, v.getUint8(o++));
   });

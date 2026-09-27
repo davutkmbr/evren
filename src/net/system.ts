@@ -11,6 +11,7 @@ import { UpdateOrder, type AccountService, type GameServerInfo, type NetService,
 import { devParams, exposeDebug } from '../core/dev-tools';
 import { NetClient } from './client';
 import { captureSnapshot } from './capture';
+import { Presence } from './presence';
 import { SEND_RATE_HZ } from './protocol';
 import { createSnapshot, encodeSnapshot, SNAPSHOT_BYTES } from './snapshot';
 
@@ -164,6 +165,7 @@ export function createNetSystem(): System {
   };
 
   let unsubscribe: (() => void) | undefined;
+  let presence: Presence | undefined;
 
   return {
     name: 'net',
@@ -177,8 +179,21 @@ export function createNetSystem(): System {
         account = a;
         return a;
       });
-      unsubscribe = ctx.events.on('teleport', () => {
-        teleported = true;
+      unsubscribe = ctx.events.on('teleport', (e) => {
+        teleported ||= !e.resume;
+      });
+      presence = new Presence({
+        online: () => status === 'online' && !!client,
+        capture: (now) => {
+          const state = ctx.services.tryGet('dragon');
+          const rig = ctx.services.tryGet('rig');
+          return state && rig ? captureSnapshot(state, rig.getPose(), now, createSnapshot()) : null;
+        },
+        send: (data) => client?.send(data),
+        place: (e) => ctx.events.emit('teleport', e),
+        resumed: () => {
+          lastPos = null;
+        },
       });
       const q = devParams();
       const auto = q.get('server');
@@ -196,7 +211,9 @@ export function createNetSystem(): System {
       exposeDebug('__net', service);
     },
     update(_dt, ctx) {
-      if (status !== 'online' || !client) {
+      // Shared world: menus and the map never stop it while online (the flight autopilot holds the dragon).
+      ctx.time.pauseAllowed = status !== 'online';
+      if (status !== 'online' || !client || presence?.isAway) {
         return;
       }
       const now = performance.now();
@@ -225,6 +242,7 @@ export function createNetSystem(): System {
     },
     dispose() {
       unsubscribe?.();
+      presence?.dispose();
       service.leave();
     },
   };

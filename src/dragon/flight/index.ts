@@ -159,9 +159,12 @@ export function createFlightSystem(): System {
     } else {
       readPilotInput(ctx.input, frameCmd);
       clearOverrides(sim.overrides);
-      if (ctx.debug.autopilot && !hasPilotInput(frameCmd)) {
-        autopilot.apply(sim, frameCmd, sim.overrides);
-      } else if (ctx.debug.autopilot) {
+      // The pilot is away while the world keeps running (online, a menu or the map open, typing in a field): the
+      // autopilot holds the dragon in the air so other players never see it stall or freeze. Perching is left alone.
+      const away = !ctx.input.enabled && !ctx.time.paused && (state.perch?.phase ?? 'free') === 'free';
+      if ((ctx.debug.autopilot || away) && !hasPilotInput(frameCmd)) {
+        autopilot.apply(sim, frameCmd, sim.overrides, ctx.debug.autopilot);
+      } else {
         autopilot.reset();
       }
     }
