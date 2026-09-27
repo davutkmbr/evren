@@ -85,6 +85,8 @@ const LAND_CLASSES: [LandClass, RegExp][] = [
   [LandClass.Industrial, /^landuse=(industrial|port|railway|quarry|landfill|construction|brownfield)$/],
   [LandClass.Residential, /^landuse=(residential|commercial|retail)$/],
   [LandClass.Pitch, /^leisure=(pitch|sports_centre|stadium|track|golf_course)$/],
+  // Market squares: open paved ground (the regions draw their stalls; from afar the square stays open).
+  [LandClass.Market, /^amenity=marketplace$/],
 ];
 
 const t0 = performance.now();
