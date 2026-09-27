@@ -8,7 +8,7 @@ Assets whose licence allows use inside the game but forbids redistributing the r
 | MetaHuman (Epic Games) | Player, hero NPCs, crowd (low LODs); faces via MetaHuman Animator | MetaHuman licence / Unreal Engine EULA: free under $1 M annual revenue, usable in any engine since mid-2025, no royalty outside Unreal | Characters are created in the Unreal Engine MetaHuman plugin and exported once. |
 | Fab: Epic MetaHuman wardrobe | Crowd and NPC clothing (garments, shoes, construction presets) | Fab Standard License, Professional tier ($0): any engine; no standalone distribution; restrict extraction by end users | Added via Fab "Add to Project" in the Unreal project; approved 2026-09-24 (`.docs/assets/candidates/metahuman-outfits.md`). |
 | Mixamo (Adobe) | Body animation clips, retargeted to the MetaHuman skeleton with Unreal's IK Retargeter (batch, Python) | Mixamo FAQ: royalty-free in games; raw files must not be redistributed | Downloaded "without skin" per clip. |
-| Historic 78 rpm recordings, US-risky (Internet Archive, Gallica / BnF) | Moment pieces (music under moments) | Public domain in Turkey (published before 1956; composers and improvising performers died before 1956), **still protected in the US** (published 1926 or later, 17 U.S.C. §1401). Kept out of the public repository so it does not redistribute them; the owner accepts the residual risk (2026-09-26) | Full attribution below and in [archive-78rpm.md](archive-78rpm.md). Takedown requests: `<contact-email>`. |
+| Historic 78 rpm recordings, US-risky (Internet Archive, Gallica / BnF) | Moment pieces (music under moments) | Public domain in Turkey (published before 1956; composers and improvising performers died before 1956), **still protected in the US** (published 1926 or later, 17 U.S.C. §1401). Kept out of the public repository so it does not redistribute them; the owner accepts the residual risk (2026-09-26) | Full attribution below and in [archive-78rpm.md](archive-78rpm.md). Takedown requests: `davutkmbr@gmail.com`. |
 
 ## Layout
 
@@ -76,7 +76,7 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
 
 Gallica files carry the BnF reuse conditions (credit "Source gallica.bnf.fr / BnF"; commercial reuse needs a BnF
 licence). The other US-risky recordings (the rest of the Pathé discs, the Darülelhan and Hafız Burhan sides) are
-archived only; see [archive-78rpm.md](archive-78rpm.md). Takedown contact for all of them: `<contact-email>`.
+archived only; see [archive-78rpm.md](archive-78rpm.md). Takedown contact for all of them: `davutkmbr@gmail.com`.
 
 ## Log
 
