@@ -63,6 +63,7 @@ export const LANDMARK_KIND_LABELS: Record<LandmarkKind, string> = {
   skyscraper: 'Gökdelenler',
   monument: 'Anıt',
   barracks: 'Kışla',
+  church: 'Kilise',
   other: 'Simge yapı',
 };
 
@@ -81,6 +82,7 @@ const SHORT_NAMES: Record<string, string> = {
   'mihrimah-uskudar': 'Mihrimah Sultan',
   'mihrimah-edirnekapi': 'Mihrimah Sultan',
   kuleli: 'Kuleli',
+  'aya-yorgi-manastiri': 'Aya Yorgi',
 };
 
 /** Compact name for tight spots (compass tape, map labels). */

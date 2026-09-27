@@ -1,5 +1,6 @@
 import type { SiteBuilder } from './site';
 import { buildAqueduct } from './sites/aqueduct';
+import { buildAyaYorgi } from './sites/aya-yorgi';
 import { buildBeylerbeyi } from './sites/beylerbeyi';
 import { buildCiragan } from './sites/ciragan';
 import { buildDolmabahce } from './sites/dolmabahce';
@@ -16,6 +17,7 @@ import { buildTopkapi } from './sites/topkapi';
 export const SITE_BUILDERS: Record<string, SiteBuilder> = {
   'beylerbeyi-sarayi': buildBeylerbeyi,
   'anadolu-hisari': buildAnadoluHisari,
+  'aya-yorgi-manastiri': buildAyaYorgi,
   'bozdogan-kemeri': buildAqueduct,
   'ciragan-sarayi': buildCiragan,
   'dolmabahce-sarayi': buildDolmabahce,
