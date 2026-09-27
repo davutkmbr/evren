@@ -336,6 +336,11 @@ export interface DragonState {
   /** Body-frame angular velocity rad/s (x = pitch rate, y = yaw rate, z = roll rate). */
   readonly angularVelocity: THREE.Vector3;
   mode: FlightMode;
+  /**
+   * The rider has left the saddle (on foot or gliding): the player's keys drive the rider, not the dragon. Flying, the
+   * dragon comes down and lands on its own; on the ground it waits. Set by the on-foot system.
+   */
+  riderless?: boolean;
   /** True airspeed m/s. */
   airspeed: number;
   /** Altitude above sea level (m). */
