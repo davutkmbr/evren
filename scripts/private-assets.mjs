@@ -5,21 +5,26 @@
  *
  *   npm run private:pull              first run: turns the folder into a clone (files already there are kept; the
  *                                     repository's own come in); after that: fast-forward to the repository
- *   npm run private:push -- "message" commits every change in the folder (except build/, regenerated) and pushes
+ *   npm run private:push -- "message" commits every change in the folder (except build/ and fab/) and pushes; refuses
+ *                                     a file over 95 MB, and over 500 MB in all unless --big
  *   npm run private:status            what changed locally, and how far behind / ahead of the repository
  *
  * The repository: EVREN_PRIVATE_REPO, default https://github.com/davutkmbr/seventeenskies-private.git. It must stay
  * private and only the owner may have access: anyone with access receives the files.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIR = join(ROOT, 'private-assets');
 const REPO = process.env.EVREN_PRIVATE_REPO ?? 'https://github.com/davutkmbr/seventeenskies-private.git';
-/** Regenerated from the sources by the tools (tools/humans/build_rider.py and friends): never pushed. */
-const IGNORE = ['build/', '.DS_Store', '__MACOSX/', '*.tmp', ''].join('\n');
+/** Regenerated from the sources by the tools (tools/humans/build_rider.py and friends), or re-downloaded (fab/: the Fab
+ * library, ~12 GB): never pushed. */
+const IGNORE = ['build/', '.DS_Store', '__MACOSX/', '*.tmp', 'fab/', 'Fab/', ''].join('\n');
+/** GitHub refuses files over 100 MB; a push over this total is almost certainly a mistake (a download folder). */
+const MAX_FILE_MB = 95;
+const MAX_PUSH_MB = 500;
 
 function git(args, opts = {}) {
   return execFileSync('git', ['-C', DIR, ...args], { stdio: opts.quiet ? 'pipe' : 'inherit', encoding: 'utf8' });
@@ -70,6 +75,26 @@ function push(message) {
   ensureIgnore();
   git(['add', '-A']);
   const staged = git(['diff', '--cached', '--name-only'], { quiet: true }).trim();
+  // Sizes of what is about to go: refuse a file GitHub would reject, and a batch this large unless --big.
+  let total = 0;
+  const big = [];
+  for (const f of staged.split('\n').filter(Boolean)) {
+    const p = join(DIR, f);
+    if (!existsSync(p)) {
+      continue;
+    }
+    const mb = statSync(p).size / 1e6;
+    total += mb;
+    if (mb > MAX_FILE_MB) {
+      big.push(`${f} (${mb.toFixed(0)} MB)`);
+    }
+  }
+  if (big.length || (total > MAX_PUSH_MB && !BIG)) {
+    git(['reset', '-q']);
+    console.error(`[private-assets] not pushed: ${total.toFixed(0)} MB staged${big.length ? `; over ${MAX_FILE_MB} MB: ${big.join(', ')}` : ''}.`);
+    console.error('  Add large downloads to private-assets/.gitignore (they are re-downloaded, not stored), or pass --big.');
+    process.exit(1);
+  }
   if (staged) {
     git(['commit', '-q', '-m', message || 'Update private assets']);
   }
@@ -86,7 +111,8 @@ function status() {
   git(['status', '--short', '--branch']);
 }
 
-const [cmd, ...rest] = process.argv.slice(2);
+const BIG = process.argv.includes('--big');
+const [cmd, ...rest] = process.argv.slice(2).filter((a) => a !== '--big');
 if (cmd === 'pull') {
   pull();
 } else if (cmd === 'push') {
