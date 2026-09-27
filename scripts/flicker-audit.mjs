@@ -18,7 +18,8 @@
  * --blame N (binary search for the object behind the N hottest pixels), --blame-at x,y,frame,
  * --events (drawables that appear / disappear per frame), --mirror [lod|depth|bad] (capture the water's planar
  * reflection; `bad` counts non-finite / over-range texels and finds the object that writes them),
- * --pre <js>|@file (evaluated in the page first, e.g. shader probes).
+ * --pre <js>|@file (evaluated in the page first, e.g. shader probes), --post <js>|@file (after the capture, returned),
+ * --carry <name> (the object keeps its start pose relative to the camera: a chase camera).
  *
  * Method
  * - The page runs with ?fps=0&freeze=1&nohud=1&grain=0; the engine's rAF loop is stopped and frames are stepped by
@@ -134,9 +135,23 @@ async function pageAudit(o) {
   const forceHidden = new Set();
   // Every render of the scene (shadow maps, the water's mirror, the main view) sees the hidden set: systems set
   // visibility in their updates and the mirror renders in preRender, before the pipeline.
+  // --carry <name>: that object keeps its frame-0 pose relative to the camera (a chase camera: the object stays put on
+  // screen while the world moves past it), applied before every scene render.
+  let carried = null;
+  let carryRel = null;
+  const carry = () => {
+    if (!o.carry) return;
+    if (!carried || !carryRel) return;
+    cam.updateMatrixWorld();
+    const m = cam.matrixWorld.clone().multiply(carryRel);
+    const parentInv = carried.parent ? carried.parent.matrixWorld.clone().invert() : new THREE.Matrix4();
+    parentInv.multiply(m).decompose(carried.position, carried.quaternion, carried.scale);
+    carried.updateMatrixWorld(true);
+  };
   const rendererRender = renderer.render.bind(renderer);
   renderer.render = (scene, camera) => {
     if (scene === ctx.scene) {
+      carry();
       hideAll();
       forceHidden.forEach((ob) => (ob.visible = false));
     }
@@ -162,6 +177,15 @@ async function pageAudit(o) {
   if (!p0) {
     const e = new THREE.Euler().setFromQuaternion(cam.quaternion, 'YXZ');
     p0 = [cam.position.x, cam.position.y, cam.position.z, -e.y / DEG, e.x / DEG, cam.fov];
+  }
+  // The carried object's pose relative to the camera at the start pose (before any warm-up pose).
+  if (o.carry) {
+    carried = ctx.scene.getObjectByName(o.carry) ?? null;
+    if (carried) {
+      cam.updateMatrixWorld();
+      carried.updateMatrixWorld(true);
+      carryRel = cam.matrixWorld.clone().invert().multiply(carried.matrixWorld);
+    }
   }
   const fwd = new THREE.Vector3();
   const poseAt = (i) => {
@@ -424,6 +448,16 @@ async function pageAudit(o) {
       };
       if (entry.again > 0 && alone(leaves) > 0) search(leaves);
       nanSource.push(entry);
+    }
+  }
+
+  // --post <js>|@file: evaluated in the page after the capture; its (awaited) value goes to the summary as `post`.
+  let post = null;
+  if (o.post) {
+    try {
+      post = await (0, eval)(`(async () => { ${o.post} })()`);
+    } catch (e) {
+      post = `post error: ${e.message}`;
     }
   }
 
@@ -876,6 +910,7 @@ async function pageAudit(o) {
   }
 
   return {
+    post,
     nanSource,
     events,
     dump,
@@ -923,6 +958,8 @@ async function runOne(browser, run) {
       hide: run.hide,
       passesOff: run.passesOff,
       blame: Number(opt('blame', 0)),
+      carry: opt('carry') ?? null,
+      post: opt('post') ? (opt('post').startsWith('@') ? readFileSync(opt('post').slice(1), 'utf8') : opt('post')) : null,
       pre: opt('pre') ? (opt('pre').startsWith('@') ? readFileSync(opt('pre').slice(1), 'utf8') : opt('pre')) : null,
       events: has('events'),
       mirror: has('mirror') ? (opt('mirror') && !opt('mirror').startsWith('--') ? opt('mirror') : '0') : null,

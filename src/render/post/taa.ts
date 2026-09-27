@@ -29,6 +29,9 @@ ${POST_COMMON_GLSL}
 uniform sampler2D tCurrent;
 uniform sampler2D tDepth;
 uniform sampler2D tHistory;
+/* Tracked objects' motion (post/velocity.ts): xy NDC motion, z current / w previous view depth, z = 0: none. */
+uniform sampler2D tVelocity;
+uniform float uVelocityOn;
 uniform vec2 uSize;
 uniform float uNear;
 uniform float uFar;
@@ -38,7 +41,8 @@ uniform mat4 uPrevViewProj;
 uniform mat4 uPrevView;
 uniform float uHistoryValid;
 uniform float uCurrentWeight;
-/* Debug bits (window.__evren.ctx.pipeline.taa): 1 = no variance clip, 2 = no disocclusion test. */
+/* Debug bits (window.__evren.ctx.pipeline.taa): 1 = no variance clip, 2 = no disocclusion test, 4 = show the path
+   (red: object velocity, green: history kept). */
 uniform int uFlags;
 /* Width of the variance clip box in standard deviations. */
 uniform float uGamma;
@@ -126,6 +130,18 @@ void main() {
   vec2 prevUv = prevClip.xy / prevClip.w * 0.5 + 0.5;
   // Motion of this pixel (the closest sample's motion, applied at this pixel).
   vec2 motion = prevUv - (vec2(closestP) + 0.5) / uSize;
+  // A tracked object in front at the closest sample (its velocity pass depth matches the scene there): its own motion.
+  float k = -(uPrevView * world).z / max(dist, 1e-3);
+  bool object = false;
+  float objectPrevDist = 0.0;
+  if (uVelocityOn > 0.5) {
+    vec4 vel = texelFetch(tVelocity, closestP, 0);
+    if (vel.z > 0.0 && abs(vel.z - dist) < 0.02 * dist + 0.3) {
+      motion = -vel.xy * 0.5;
+      objectPrevDist = vel.w;
+      object = true;
+    }
+  }
   vec2 historyUv = vUv + motion;
 
   float currentDist = texelFetch(tDepth, p, 0).r <= 0.0 ? uFar : postLinearDepth(texelFetch(tDepth, p, 0).r, uNear, uFar);
@@ -140,9 +156,17 @@ void main() {
     // the previous camera sees them (scaled by the camera's own move along the view). A single-surface comparison
     // rejects static pixels: across a jittered pixel of distant, grazing ground the distance varies by more than any
     // fixed tolerance.
-    float k = -(uPrevView * world).z / max(dist, 1e-3);
+    // Static range test (see above); a tracked object deforms and turns (wings), so its pixels also pass when the
+    // history holds the distance its velocity pass says this surface had in the previous frame (nearest history
+    // texel). Silhouette pixels take the object's motion (closest sample) but may show the background: either counts.
     float seen = hist.a;
-    if (seen < nearD * k * 0.97 - 0.1 || seen > farD * k * 1.03 + 0.1) {
+    bool staticOk = seen >= nearD * k * 0.97 - 0.1 && seen <= farD * k * 1.03 + 0.1;
+    bool objectOk = false;
+    if (object) {
+      float seenNearest = texelFetch(tHistory, ivec2(historyUv * vec2(textureSize(tHistory, 0))), 0).a;
+      objectOk = abs(seenNearest - objectPrevDist) <= 0.04 * objectPrevDist + 0.2;
+    }
+    if (!staticOk && !objectOk) {
       valid = false;
     }
   }
@@ -163,11 +187,21 @@ void main() {
     // Faster convergence under motion (less blur trailing a moving camera).
     float motionPx = length(motion * uSize);
     alpha = mix(uCurrentWeight, 0.35, clamp(motionPx / 24.0, 0.0, 1.0));
+    // Deforming objects (wings, rider) are only approximated by their velocity: a little more of the current frame.
+    alpha = object ? max(alpha, 0.2) : alpha;
     // Luma-weighted blend (flicker reduction, Karis 2014): a brighter sample counts for less.
     float wc = alpha / (1.0 + c.x);
     float wh = (1.0 - alpha) / (1.0 + h.x);
     vec3 blended = (c * wc + h * wh) / (wc + wh);
     result = taaUntonemap(taaFromYCoCg(blended));
+  }
+  if ((uFlags & 8) != 0) {
+    // seen / expected (current distance x k): 0.5 = equal.
+    gl_FragColor = vec4(vec3(0.5 * hist.a / max(currentDist * k, 1e-3), k * 0.5, float(valid)), currentDist);
+    return;
+  }
+  if ((uFlags & 4) != 0) {
+    result = vec3(object ? 1.0 : 0.0, valid ? 1.0 : 0.0, 0.0) * 2.0;
   }
   gl_FragColor = vec4(max(result, vec3(0.0)), currentDist);
 }
@@ -209,6 +243,8 @@ export class TemporalAA {
         tCurrent: { value: null },
         tDepth: { value: null },
         tHistory: { value: null },
+        tVelocity: { value: null },
+        uVelocityOn: { value: 0 },
         uSize: { value: new THREE.Vector2(1, 1) },
         uNear: { value: 0.1 },
         uFar: { value: 1000 },
@@ -222,6 +258,21 @@ export class TemporalAA {
         uGamma: { value: 1 },
       },
     });
+  }
+
+  /** The previous frame's unjittered view-projection (the velocity pass's reference). */
+  get previousViewProjection(): THREE.Matrix4 {
+    return this.prevViewProj;
+  }
+
+  /** This frame's unjittered view-projection (valid while jittered: the projection before the offset). */
+  viewProjection(camera: THREE.PerspectiveCamera, out: THREE.Matrix4): THREE.Matrix4 {
+    out.copy(camera.projectionMatrix);
+    if (this.jittered) {
+      out.elements[8] = this.savedE8[0];
+      out.elements[9] = this.savedE8[1];
+    }
+    return out.multiply(camera.matrixWorldInverse);
   }
 
   /** Drops the history (teleports, cuts, quality changes): the next frame starts from the current image. */
@@ -259,7 +310,7 @@ export class TemporalAA {
    * Resolves `color` (this frame's jittered HDR scene) against the history into the next history target and returns
    * its texture. `camera` must be unjittered again.
    */
-  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number): THREE.Texture {
+  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number, velocity: THREE.Texture | null = null): THREE.Texture {
     camera.updateMatrixWorld();
     camera.matrixWorld.decompose(this.pos, this.quat, _scale);
     if (this.valid && (this.pos.distanceTo(this.prevPos) > CUT_DISTANCE || this.quat.angleTo(this.prevQuat) > CUT_ANGLE)) {
@@ -284,6 +335,8 @@ export class TemporalAA {
     (u.uPrevViewProj.value as THREE.Matrix4).copy(this.prevViewProj);
     (u.uPrevView.value as THREE.Matrix4).copy(this.prevView);
     u.uHistoryValid.value = this.valid ? 1 : 0;
+    u.tVelocity.value = velocity;
+    u.uVelocityOn.value = velocity ? 1 : 0;
     fs.draw(renderer, this.material, dst);
 
     this.prevView.copy(camera.matrixWorldInverse);

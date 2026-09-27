@@ -127,6 +127,31 @@ resolve). Two corrections to the design found by the audit:
 
 Not in stage 1: moving objects (the dragon ghosts in the chase camera; stage 2), which is why TAA stays opt-in.
 
+## Stage 2 result (2026-09-27, still opt-in)
+
+`src/render/post/velocity.ts` (velocity-only draw of the meshes under `core/motion.ts` roots: previous model, bone and
+bind matrices), registered by the flight system for the dragon and its rider; the resolve takes the velocity of the
+closest sample. Measured with the new `dragon-chase` scene: the dragon is carried with the camera
+(`flicker-audit.mjs --carry dragon`) while the world moves past, compared frame by frame with the MSAA + SMAA image of
+the same run (`scripts/lib/ghost-metric.py`: mean luma difference within 8 px of the dragon / elsewhere):
+
+| | near the dragon | elsewhere | ratio |
+|---|---|---|---|
+| `taa=1&taavel=0` (stage 1) | 4.22 | 2.75 | 1.54 |
+| `taa=1` (stage 2) | 3.56 | 2.75 | 1.29 |
+
+Without velocity the dragon's edges are stair-stepped and the far wing tip leaves a trail; with it the dragon matches
+the reference (`.shots/flicker/dragon-chase/dragon-030.png`). Land flicker in that scene 2.03 → 1.34 per mille; the
+static scenes are unchanged; the velocity draw costs less than the timing noise (±0.8 ms).
+
+Found on the way: three's bone matrices are world-space and `bindMatrixInverse` follows the mesh every frame, so the
+previous skinned position needs the previous `bindMatrixInverse` (with the current one, motion counted twice). The
+disocclusion test of object pixels compares the history with the distance the velocity pass reports for the previous
+frame, and falls back to the static range test (silhouette pixels take the object's motion but may show background).
+
+Left for stage 3: wing-membrane flutter is not in the velocity (thin strips of the membrane fall back to the current
+frame), traffic, vessels and other movers still use camera reprojection.
+
 ## Measurement
 
 - The flicker audit already reprojects and scores; with TAA the scenes need a warm-up of 16+ frames (history) before
