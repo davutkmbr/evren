@@ -29,26 +29,24 @@ What was done (details, sha256 and rights per file: [`archive-78rpm.md`](../arch
   *Kâtibim*, both Hafız Burhan sides and the Darülelhan *Turnalar Turnalar*. Every entry is in
   `tools/assets/approved.json` (kind `recording`) and re-downloads with
   `node scripts/data/fetch-assets.mjs --kind=recording --no-docs`.
-- **Listed but not downloaded yet:** the Commons files H8, H9, H10 (both transfers), H11, H12, M1 and M2:
-  upload.wikimedia.org and the Commons API answered HTTP 429 to every request for over 90 minutes on 2026-09-26.
-  Their entries carry the URLs; the sha256 fills in on the first successful fetch (`--write-sha`).
+- **Commons files fetched later:** H8, H9, H10 (both transfers), H11, H12, M1 and M2: upload.wikimedia.org and the
+  Commons API answered HTTP 429 to every request for over 90 minutes on 2026-09-26; they were fetched afterwards and
+  their sha256 is recorded in `tools/assets/approved.json`.
 - **Integrated, public** (`public/audio/music/moments/`, both a denoised and a raw version): `kagithane-semaisi-1916`
   (H1, 0:07.5–1:03.5, default denoised) for Nedim and the storks; `felek-bana-1916` (H2, 0:01–1:56.5, default denoised)
   for Karagöz, whose music source is now a coffeehouse gramophone on Şehzadebaşı Caddesi;
-  `aya-yorgi-apolitikiyonu-nafpliotis` (H13, whole, default raw: the transfer is already clean) for Aya Yorgi. **H13
+  `aya-yorgi-apolitikiyonu-nafpliotis` (H13, whole, default raw: the transfer is already clean) for Aya Yorgi;
+  `isfahan-gazeli-cemil-bey` (H8, 0:00–1:40, default raw: denoising gained only 0.4 dB SNR and cut the voice band by
+  2.9 dB) for De Amicis; `resadiye-marsi-1910` (H9, 0:00–1:30, default raw: the Commons transfer is already clean, its
+  run-in is digital silence so the denoiser has no noise profile) for Kuyrukluyıldız. **H13
   has no later drone**: no pitch holds longer than 1.5 s under the chant (see the archive doc); confirm by ear.
 - **Integrated, private** (`private-assets/audio/moments/`, builds only): `katibim-safiye-ayla-1949` (Kâtibim, raw),
   `huseyni-taksim-hafiz-kemal` (H15 taksim side, Sinan, denoised), `huzzam-taksim-resad-bey` (H18 Hüzzam side, Haşim and
   Kız Kulesi, raw).
-- **Waiting for the Commons download:** H8 (De Amicis) and H9 (Kuyrukluyıldız). Their recipes are ready in
-  `tools/assets/moment-pieces.json`; once the files arrive, run the fetch, `python3 scripts/audio/prep-moment-music.py
-  --id=isfahan-gazeli-cemil-bey,resadiye-marsi-1910`, and set `musicId` on the two moments (they keep the mood choice
-  until then).
 - **Not found:** Naftule Brandwein's 1924 *Der Terk in America* (no transfer on the Internet Archive).
 
-Status per candidate: H1, H2, H13 taken and integrated; H3–H7, H14 archived; H8–H12 listed (download pending), H8 and
-H9 to integrate; H15–H22 archived as US-risky, H15 (taksim) and H18 (Hüzzam taksim) integrated privately; Safiye Ayla
-archived and integrated privately; Hafız Burhan and Darülelhan archived (US-risky); M1, M2 listed (download pending).
+Status per candidate: H1, H2, H8, H9, H13 taken and integrated; H3–H7, H10–H12, H14 archived; H15–H22 archived as US-risky, H15 (taksim) and H18 (Hüzzam taksim) integrated privately; Safiye Ayla
+archived and integrated privately; Hafız Burhan and Darülelhan archived (US-risky); M1, M2 archived.
 
 ## Read this first
 

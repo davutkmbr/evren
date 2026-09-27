@@ -129,6 +129,91 @@
         "attribution": "Aya Yorgi apolitikiyonu — Iakovos Nafpliotis (Patrikhane baş psaltisi), Orfeon (İstanbul, 1913–1918), analogion.com"
       },
       "approvedOn": "2026-09-26"
+    },
+    {
+      "id": "isfahan-gazeli-cemil-bey",
+      "role": "moment",
+      "src": [
+        "moments/isfahan-gazeli-cemil-bey.raw.opus",
+        "moments/isfahan-gazeli-cemil-bey.raw.m4a"
+      ],
+      "durationSec": 100.0,
+      "family": "tanbur",
+      "tags": [
+        "poem",
+        "history",
+        "solemn",
+        "sea",
+        "dawn"
+      ],
+      "lufs": -18.0,
+      "variant": "raw",
+      "variants": {
+        "denoised": {
+          "src": [
+            "moments/isfahan-gazeli-cemil-bey.opus",
+            "moments/isfahan-gazeli-cemil-bey.m4a"
+          ],
+          "lufs": -18.0
+        },
+        "raw": {
+          "src": [
+            "moments/isfahan-gazeli-cemil-bey.raw.opus",
+            "moments/isfahan-gazeli-cemil-bey.raw.m4a"
+          ],
+          "lufs": -18.0
+        }
+      },
+      "credit": {
+        "title": "Dil verme gönül (Isfahan gazeli)",
+        "author": "Hâfız Osman el-Mevsılî ve Tanburi Cemil Bey",
+        "licence": "public-domain",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:%D9%85%D9%84%D8%A7_%D8%B9%D8%AB%D9%85%D8%A7%D9%86_%D8%A7%D9%84%D9%85%D9%88%D8%B5%D9%84%D9%8A_-_%D8%BA%D8%B2%D9%84_%D8%A7%D8%B5%D9%81%D9%87%D8%A7%D9%86_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+        "attribution": "Dil verme gönül (Isfahan gazeli) — Hâfız Osman el-Mevsılî (ses), Tanburi Cemil Bey (tanbur), İstanbul taş plağı (y. 1912), Wikimedia Commons"
+      },
+      "approvedOn": "2026-09-26"
+    },
+    {
+      "id": "resadiye-marsi-1910",
+      "role": "moment",
+      "src": [
+        "moments/resadiye-marsi-1910.raw.opus",
+        "moments/resadiye-marsi-1910.raw.m4a"
+      ],
+      "durationSec": 90.0,
+      "family": "orchestra",
+      "tags": [
+        "poem",
+        "joyful",
+        "night",
+        "history"
+      ],
+      "lufs": -18.0,
+      "variant": "raw",
+      "variants": {
+        "denoised": {
+          "src": [
+            "moments/resadiye-marsi-1910.opus",
+            "moments/resadiye-marsi-1910.m4a"
+          ],
+          "lufs": -18.0
+        },
+        "raw": {
+          "src": [
+            "moments/resadiye-marsi-1910.raw.opus",
+            "moments/resadiye-marsi-1910.raw.m4a"
+          ],
+          "lufs": -18.0
+        }
+      },
+      "credit": {
+        "title": "Reşadiye Marşı",
+        "author": "Odeon Orkestrası (beste: Italo Selvelli)",
+        "licence": "public-domain",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Marche_de_sa_Majest%C3%A9_Imp%C3%A9riale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+        "attribution": "Reşadiye Marşı — Odeon Orkestrası, beste Italo Selvelli, Odeon 54745 (1910), Wikimedia Commons"
+      },
+      "approvedOn": "2026-09-26"
     }
   ]
 }
