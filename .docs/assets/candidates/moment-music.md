@@ -152,7 +152,7 @@ from the subtitles.
 | 12 | `hezarfen-galata-uskudar` | Hezarfen Ahmed Çelebi | Galata Tower → Doğancılar | adventurous, wonder (inferred) | legend | draft |
 | 13 | `lagari-sarayburnu-rocket` | Lagari Hasan Çelebi | Sarayburnu point | festive, daring (inferred) | legend | draft |
 | 14 | `kiz-kulesi-legend` | Kız Kulesi Efsanesi | Kız Kulesi islet, night | tender, tragic (inferred) | legend | draft |
-| 15 | `aya-yorgi-challenge` | Aya Yorgi'nin Meydan Okuması | Aya Yorgi monastery, Büyükada | devotional, playful (inferred) | legend | draft |
+| 15 | `aya-yorgi-challenge` | Aya Yorgi'nin Meydan Okuması | Aya Yorgi monastery, Büyükada | devotional, playful (inferred) | legend | ready |
 | 16 | `ships-over-land-1453` | Karadan Yürüyen Gemiler | Beyoğlu hills above Kasımpaşa, night | epic, tense (inferred) | legend | draft |
 | 17 | `storks-bosphorus-migration` | Boğaz'da Leylek Göçü | Bosphorus corridor, day | calm, wonder (inferred) | city-life | ready |
 | 18 | `ferry-gull-simit` | Martı ve Simit | Near a ferry (moving anchor) | light, humorous (inferred) | city-life | ready |
