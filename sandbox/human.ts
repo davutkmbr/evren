@@ -2,7 +2,7 @@
  * Human character test bench: the character built by tools/humans/ on flat ground.
  *   ?url=<glb> (default /.scratch/rider.glb)
  *   ?clip=<name> plays one clip in a loop (&rate=1), &t=<s> holds it at that time
- *   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
+ *   ?terrain=1 (rolling ground)   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
  *   Without ?clip: the locomotion controller (keyboard: WASD relative to the camera, Shift run, C crouch, Space jump;
  *   G held in the air: glide; drag to orbit, wheel to zoom), or a scripted input
  *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide (glide: with ?alt=m; anything else stands, and
@@ -31,6 +31,9 @@ const windSpeed = Number(params.get('wind') ?? 0);
 const script = params.get('script');
 const holdAt = params.has('at') ? Number(params.get('at')) : undefined;
 const play = !clipName;
+/** ?terrain=1: rolling ground (feet on uneven ground). */
+const terrain = params.get('terrain') === '1';
+const groundAt = (x: number, z: number): number => (terrain ? 0.22 * Math.sin(x * 0.9) * Math.cos(z * 0.7) + 0.12 * Math.sin(z * 1.7 + x * 0.3) : 0);
 
 function bindMissingSharedSamplers(): void {
   const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
@@ -96,7 +99,15 @@ function makeGround(): THREE.Mesh {
   tex.repeat.set(200, 200);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
+  const geo = new THREE.PlaneGeometry(200, 200, terrain ? 800 : 1, terrain ? 800 : 1).rotateX(-Math.PI / 2);
+  if (terrain) {
+    const p = geo.getAttribute('position');
+    for (let i = 0; i < p.count; i++) {
+      p.setY(i, groundAt(p.getX(i), p.getZ(i)));
+    }
+    geo.computeVertexNormals();
+  }
+  const g = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
   g.receiveShadow = true;
   return g;
 }
@@ -221,7 +232,7 @@ const bench: System = {
         }
       }
       if (play) {
-        controller = new LocomotionController(m, holder);
+        controller = new LocomotionController(m, holder, groundAt);
         controller.layers = params.get('layers') !== '0';
         if (params.has('alt')) {
           holder.position.y = Number(params.get('alt'));
