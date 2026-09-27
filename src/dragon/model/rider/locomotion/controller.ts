@@ -31,14 +31,17 @@ export interface LocomotionInput {
   flight?: { pitch: number; roll: number; flap: boolean; fold: boolean };
   /** Standing: turn to face this heading (rad about +Y, 0 = +Z); the feet step round. */
   faceYaw?: number;
+  /** Pressed this frame: a trick (running: a forward flip). */
+  trick?: boolean;
 }
 
-export type LocoState = 'ground' | 'stop' | 'takeoff' | 'air' | 'glide' | 'land';
+/** `act`: a one-shot on the ground that moves the body by itself (a pivot turn, a slide, a landing roll). */
+export type LocoState = 'ground' | 'stop' | 'takeoff' | 'air' | 'glide' | 'land' | 'act';
 
 /** Tunables (SI units). */
 export const LOCO = {
   walkSpeed: 1.45,
-  runSpeed: 5.2,
+  runSpeed: 5.8,
   crouchSpeed: 1.0,
   /** Horizontal acceleration toward the wanted velocity (m/s²), and braking when letting go. */
   accel: 9,
@@ -50,8 +53,25 @@ export const LOCO = {
   /** Take-off speed (m/s) and gravity (m/s²; a little above g so jumps feel crisp, not floaty). */
   jumpSpeed: 5.0,
   gravity: 12.5,
-  /** A stop plays the skid from above this speed. */
+  /** A stop plays the skid from above this speed; the full skid (run_stop) from above stopFull, the quick one below. */
   stopMin: 3.4,
+  stopFull: 5.3,
+  /** Take-off speeds (m/s) of a running jump and a flip. */
+  runJumpSpeed: 4.4,
+  flipSpeed: 4.2,
+  /** Captured moves: pivot on the spot when the wanted heading is this far off (rad) and the body is slower than
+   * pivotMaxSpeed; turn round in the run when the wanted direction points back (cos below runTurnDot) above runTurnMin;
+   * slide from above slideMin; a landing turns into a roll above rollMin with at least this depth. */
+  pivotAngle: 1.0,
+  pivotMaxSpeed: 0.6,
+  runTurnDot: -0.6,
+  runTurnMin: 3.5,
+  slideMin: 4.0,
+  rollMin: 3.5,
+  rollDepth: 0.6,
+  /** A fall (not our own jump) turns into flailing after this long, faster than this (m/s down). */
+  flailAfter: 1.1,
+  flailSpeed: 8,
   /** Crouch in / out time (s). */
   crouchTime: 0.22,
   /** Weight easing rate (1/s) and the faster one for landing and take-off. */
@@ -84,7 +104,7 @@ export const LOCO = {
   flapTime: 0.7,
 };
 
-const GAIT = ['idle', 'walk', 'run', 'crouch_idle', 'crouch_walk'] as const;
+const GAIT = ['idle', 'walk', 'jog', 'run', 'crouch_idle', 'crouch_walk'] as const;
 const ONE_SHOT = ['run_stop', 'jump_start', 'jump_land'] as const;
 const AIR = ['jump_rise', 'jump_fall'] as const;
 
@@ -146,6 +166,17 @@ export class LocomotionController {
   private spin = 0;
   /** In the air after our own take-off (not a fall or a leap off the dragon): the take-off clip plays on. */
   private launched = false;
+  /** The take-off clip of this jump (jump_start, run_jump, run_flip) and the take-off speed it left with. */
+  private jumpClip = 'jump_start';
+  private jumpVy = LOCO.jumpSpeed;
+  /** The skid clip of this stop and how long it brakes (s). */
+  private stopClip = 'run_stop';
+  private stopBrake = STOP_BRAKE;
+  /** The current `act`: its clip, heading at the start and the scale of the clip's own turn, the speed it entered
+   * with and the exponent of its braking curve (speed = v0·(1 - t/T)^p, matched to the clip's travel). */
+  private act = { clip: '', yaw0: 0, turnScale: 0, v0: 0, p: 1, exit: 0.85, ik: false, t0: 0 };
+  private prevCrouchIn = false;
+  private landClipName = 'jump_land';
 
   constructor(
     private readonly human: HumanRider,
@@ -204,8 +235,10 @@ export class LocomotionController {
     dt = Math.min(dt, 1 / 20);
     this.stateTime += dt;
     const grounded = this.state !== 'air' && this.state !== 'takeoff' && this.state !== 'glide';
+    const crouchPressed = input.crouch && !this.prevCrouchIn;
+    this.prevCrouchIn = input.crouch;
     // --- crouch ---
-    const wantCrouch = input.crouch && grounded && !input.run ? 1 : 0;
+    const wantCrouch = input.crouch && grounded && !input.run && this.state !== 'act' ? 1 : 0;
     this.crouch += clamp(wantCrouch - this.crouch, -dt / LOCO.crouchTime, dt / LOCO.crouchTime);
     // --- horizontal movement ---
     const m = Math.min(1, input.move.length());
@@ -214,21 +247,29 @@ export class LocomotionController {
     if (m < 1e-3) {
       _want.set(0, 0);
     }
-    if (this.state === 'stop') {
+    // --- captured one-shots started from the ground ---
+    if (this.state === 'ground') {
+      this.startAct(input, m, crouchPressed);
+    }
+    if (this.state === 'act') {
+      this.acting(dt, m);
+    } else if (this.state === 'stop') {
       // The skid: speed follows the clip (1 - t/T)², in the direction of travel.
-      const u = Math.min(1, this.stateTime / STOP_BRAKE);
+      const u = Math.min(1, this.stateTime / this.stopBrake);
       const s = this.stopSpeed * (1 - u) * (1 - u);
       if (this.velocity.lengthSq() > 1e-6) {
         this.velocity.setLength(s);
       }
-      if (this.stateTime >= CLIPS.run_stop.duration * 0.8 || m > 0.2) {
+      if (this.stateTime >= CLIPS[this.stopClip].duration * 0.8 || m > 0.2) {
         this.enter('ground');
       }
     } else if (this.state === 'glide') {
       this.fly(dt, input);
-    } else if (this.state === 'land' || this.state === 'takeoff') {
-      // Planted: little steering, the landing absorbs.
+    } else if (this.state === 'land' || (this.state === 'takeoff' && this.jumpClip === 'jump_start')) {
+      // Planted: little steering, the landing absorbs (a running take-off keeps its speed).
       this.approach(_want, (this.state === 'land' ? 0.5 : 0.2) * LOCO.decel, dt);
+    } else if (this.state === 'takeoff') {
+      // Running take-off: carried on.
     } else {
       const rate = !grounded ? LOCO.airAccel : _want.lengthSq() > this.velocity.lengthSq() ? LOCO.accel : LOCO.decel;
       this.approach(_want, rate, dt);
@@ -236,6 +277,11 @@ export class LocomotionController {
     // --- the stop ---
     if (this.state === 'ground' && m < 0.05 && this.prevVel.length() > LOCO.stopMin && this.crouch < 0.3) {
       this.stopSpeed = this.prevVel.length();
+      // A full run skids long; slower, the quick stop (when captured).
+      this.stopClip = this.stopSpeed < LOCO.stopFull && this.actions.has('run_stop_quick') ? 'run_stop_quick' : 'run_stop';
+      // Brake time so the (1 - t/T)² slide covers the clip's own travel from this speed (procedural: STOP_BRAKE).
+      const travel = CLIPS[this.stopClip].measured?.travel;
+      this.stopBrake = travel ? clamp((3 * travel) / this.stopSpeed, 0.3, CLIPS[this.stopClip].duration) : STOP_BRAKE;
       this.enter('stop');
     }
     // --- facing: turn toward the travel ---
@@ -249,6 +295,8 @@ export class LocomotionController {
     }
     if (this.state === 'glide') {
       // Turning comes from the bank (fly()).
+    } else if (this.state === 'act') {
+      // Heading from the clip's turn (acting()).
     } else if (sp > 0.15 && this.state !== 'stop') {
       const want = Math.atan2(this.velocity.x, this.velocity.y);
       let d = want - this.yaw;
@@ -260,12 +308,17 @@ export class LocomotionController {
     const pos = this.object.position;
     const ground = this.groundHeight(pos.x, pos.z);
     if (this.state === 'ground' || this.state === 'stop' || this.state === 'land') {
-      if (input.jump) {
+      // Standing, a jump; running, the running jump; the trick key running, a flip (when captured).
+      const flip = !!input.trick && sp > 3 && this.actions.has('run_flip');
+      if (input.jump || flip) {
+        this.jumpClip = flip ? 'run_flip' : sp > 3 && this.actions.has('run_jump') ? 'run_jump' : 'jump_start';
+        this.jumpVy = flip ? LOCO.flipSpeed : this.jumpClip === 'run_jump' ? LOCO.runJumpSpeed : LOCO.jumpSpeed;
         this.enter('takeoff');
       }
     }
-    if (this.state === 'takeoff' && this.stateTime >= (CLIPS.jump_start.takeoff ?? CLIPS.jump_start.duration)) {
-      this.vy = LOCO.jumpSpeed;
+    const jc = CLIPS[this.jumpClip];
+    if (this.state === 'takeoff' && this.stateTime >= (jc.takeoff ?? jc.duration)) {
+      this.vy = this.jumpVy;
       this.enter('air');
       this.launched = true;
     }
@@ -284,6 +337,7 @@ export class LocomotionController {
         pos.y = ground;
         // Touch-down: the fall rate sets the landing's depth; the speed runs on (the controller slows it).
         this.landDepth = clamp((-this.vy - 1.0) / 4 + 0.35, 0.3, 1);
+        this.landClipName = this.landDepth > 0.75 && this.actions.has('jump_land_hard') ? 'jump_land_hard' : 'jump_land';
         this.vy = 0;
         this.velocity.multiplyScalar(0.55);
         this.enter('land');
@@ -294,9 +348,16 @@ export class LocomotionController {
       if (pos.y <= ground && this.vy < 0) {
         pos.y = ground;
         // Landing depth from the impact speed: a hop barely dips, a fall from height crouches deep.
-        this.landDepth = clamp((-this.vy - 1.5) / 6, 0.25, 1);
+        const impact = -this.vy;
+        this.landDepth = clamp((impact - 1.5) / 6, 0.25, 1);
         this.vy = 0;
-        this.enter('land');
+        // Coming down fast while running: roll it out (when captured); else the landing for the impact.
+        if (this.speed > LOCO.rollMin && this.landDepth >= LOCO.rollDepth && this.actions.has('run_roll')) {
+          this.beginAct('run_roll', 0);
+        } else {
+          this.landClipName = this.landDepth >= 1 && impact > 13 && this.actions.has('jump_land_heavy') ? 'jump_land_heavy' : this.landDepth > 0.75 && this.actions.has('jump_land_hard') ? 'jump_land_hard' : 'jump_land';
+          this.enter('land');
+        }
       }
     } else {
       pos.y = ground;
@@ -386,6 +447,93 @@ export class LocomotionController {
     return THREE.MathUtils.lerp(0.6, -0.02, k * k * (3 - 2 * k)) - 0.3 * Math.sin(Math.PI * k);
   }
 
+  /**
+   * Starts a captured one-shot from the ground when the input asks for it: a slide (crouch pressed while running), a
+   * turn round in the run (the wanted direction points back), a pivot on the spot (the wanted heading far off while
+   * slow; the wary turn when walking, the brisk one when running).
+   */
+  private startAct(input: LocomotionInput, m: number, crouchPressed: boolean): void {
+    const sp = this.speed;
+    if (crouchPressed && sp > LOCO.slideMin && this.actions.has('run_slide')) {
+      this.beginAct('run_slide', 0);
+      return;
+    }
+    if (m < 0.5) {
+      return;
+    }
+    const want = Math.atan2(input.move.x, input.move.y);
+    let d = want - this.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (sp > LOCO.runTurnMin && Math.cos(d) < LOCO.runTurnDot && this.actions.has('run_turn_180')) {
+      this.beginAct('run_turn_180', d);
+      return;
+    }
+    if (sp > LOCO.pivotMaxSpeed || Math.abs(d) < LOCO.pivotAngle) {
+      return;
+    }
+    let clip: string;
+    if (Math.abs(d) > 2.4) {
+      clip = input.run ? 'run_turn_180' : 'walk_turn_180';
+    } else {
+      const side = d > 0 ? 'left' : 'right';
+      clip = input.run ? `turn_${side}` : `turn_${side}_wary`;
+      if (!this.actions.has(clip)) {
+        clip = `turn_${side}`;
+      }
+    }
+    if (this.actions.has(clip) && CLIPS[clip].turn) {
+      this.beginAct(clip, d);
+    }
+  }
+
+  /** Enters `act` with this clip; `turnBy` the heading change wanted (rad; the clip's own turn is scaled to it). */
+  private beginAct(clip: string, turnBy: number): void {
+    const c = CLIPS[clip];
+    const a = this.act;
+    a.clip = clip;
+    a.yaw0 = this.yaw;
+    a.turnScale = 0;
+    if (c.turn) {
+      // Turn the way the clip turns: a half turn the other way round becomes the long way (at most ~1.25×).
+      let d = turnBy;
+      if (Math.sign(d) !== Math.sign(c.turn) && Math.abs(d) > 2.4) {
+        d -= Math.sign(d) * 2 * Math.PI;
+      }
+      a.turnScale = Math.sign(d) === Math.sign(c.turn) ? clamp(d / c.turn, 0.6, 1.3) : 1;
+    }
+    a.v0 = this.speed;
+    a.t0 = c.start ?? 0;
+    const travel = c.measured?.travel ?? 0;
+    const T = c.duration - a.t0;
+    // speed = v0·(1 - u)^p covers v0·T/(p + 1): p so the distance matches the clip's travel (its share after t0).
+    a.p = travel > 0.2 && a.v0 > 0.1 ? clamp((a.v0 * T) / (travel * (T / c.duration)) - 1, 0, 6) : 6;
+    a.exit = clip.includes('turn') ? 0.8 : 0.88;
+    // The feet stay on uneven ground in a pivot; a slide or roll rides the body.
+    a.ik = clip.includes('turn');
+    this.enter('act');
+  }
+
+  /** Runs the current `act`: heading from the clip's turn curve, speed along the heading on the braking curve. */
+  private acting(dt: number, m: number): void {
+    const a = this.act;
+    const c = CLIPS[a.clip];
+    const u = Math.min(1, this.stateTime / (c.duration - a.t0));
+    if (c.turn_curve && a.turnScale) {
+      const n = c.turn_curve.length - 1;
+      const x = u * n;
+      const i = Math.min(n - 1, Math.floor(x));
+      const h = THREE.MathUtils.lerp(c.turn_curve[i], c.turn_curve[i + 1], x - i);
+      this.yaw = a.yaw0 + h * a.turnScale;
+    }
+    const s = a.v0 * Math.pow(1 - u, a.p);
+    this.velocity.set(Math.sin(this.yaw) * s, Math.cos(this.yaw) * s);
+    // Ends near the clip's end (blending into the gait); a slide or roll can be broken off late by moving.
+    if (u >= a.exit || (u > 0.6 && m > 0.2 && !c.turn)) {
+      this.enter('ground');
+    }
+    void dt;
+  }
+
   /** Leaves the ground (or the saddle) with this velocity (world, m/s): into the air, e.g. to glide. */
   launch(velocity: THREE.Vector3, yaw = this.yaw): void {
     this.velocity.set(velocity.x, velocity.z);
@@ -423,7 +571,11 @@ export class LocomotionController {
     const walkIn = smoothstep(sp, 0.05, 0.45);
     const runIn = smoothstep(sp, 2.2, 4.4);
     const stand = 1 - this.crouch;
-    const gait = { idle: (1 - walkIn) * stand, walk: walkIn * (1 - runIn) * stand, run: walkIn * runIn * stand, crouch_idle: (1 - walkIn) * this.crouch, crouch_walk: walkIn * this.crouch };
+    // With a captured jog, the fast gait is jog up to its own speed, then the run.
+    const hasJog = this.actions.has('jog');
+    const sprint = hasJog ? smoothstep(sp, CLIPS.jog.speed * 0.95, Math.max(CLIPS.jog.speed + 0.3, Math.min(CLIPS.run.speed, LOCO.runSpeed))) : 1;
+    const fastGait = walkIn * runIn * stand;
+    const gait = { idle: (1 - walkIn) * stand, walk: walkIn * (1 - runIn) * stand, jog: fastGait * (1 - sprint), run: fastGait * sprint, crouch_idle: (1 - walkIn) * this.crouch, crouch_walk: walkIn * this.crouch };
     // The shared phase advances by distance over the blended cycle length.
     // Turning on the spot: the feet step round (the walk, a little, its phase driven by the turn).
     let dyawStep = this.yaw - this.prevYaw;
@@ -435,9 +587,9 @@ export class LocomotionController {
       gait.idle *= 1 - stepIn;
       this.phase = (this.phase + (this.spin * 0.28 * dt) / cycleLength('walk')) % 1;
     }
-    const moving = gait.walk + gait.run + gait.crouch_walk;
+    const moving = gait.walk + gait.jog + gait.run + gait.crouch_walk;
     if (moving > 1e-3 && stepIn < 1e-3) {
-      const len = (gait.walk * cycleLength('walk') + gait.run * cycleLength('run') + gait.crouch_walk * cycleLength('crouch_walk')) / moving;
+      const len = (gait.walk * cycleLength('walk') + (hasJog ? gait.jog * cycleLength('jog') : 0) + gait.run * cycleLength('run') + gait.crouch_walk * cycleLength('crouch_walk')) / moving;
       this.phase = (this.phase + (sp * dt) / len) % 1;
     }
     this.idleTime = (this.idleTime + dt) % CLIPS.idle.duration;
@@ -446,17 +598,28 @@ export class LocomotionController {
     let fast = false;
     switch (this.state) {
       case 'stop': {
-        const k = 1 - smoothstep(this.stateTime, CLIPS.run_stop.duration * 0.6, CLIPS.run_stop.duration * 0.8);
-        t.set('run_stop', k);
+        const dur = CLIPS[this.stopClip].duration;
+        const k = 1 - smoothstep(this.stateTime, dur * 0.6, dur * 0.8);
+        t.set(this.stopClip, k);
         gaitShare = 1 - k;
-        this.setTime('run_stop', this.stateTime);
+        this.setTime(this.stopClip, this.stateTime);
+        break;
+      }
+      case 'act': {
+        const c = CLIPS[this.act.clip];
+        const T = c.duration - this.act.t0;
+        const k = 1 - smoothstep(this.stateTime, T * (this.act.exit - 0.12), T * this.act.exit);
+        t.set(this.act.clip, k);
+        gaitShare = 1 - k;
+        fast = true;
+        this.setTime(this.act.clip, this.act.t0 + this.stateTime);
         break;
       }
       case 'takeoff':
-        t.set('jump_start', 1);
+        t.set(this.jumpClip, 1);
         gaitShare = 0;
         fast = true;
-        this.setTime('jump_start', this.stateTime);
+        this.setTime(this.jumpClip, this.stateTime);
         break;
       case 'glide':
         t.set('glide', 1);
@@ -464,19 +627,30 @@ export class LocomotionController {
         this.setTime('glide', this.stateTime % CLIPS.glide.duration);
         break;
       case 'air': {
-        const fall = smoothstep(-this.vy, -1.5, 2.5);
-        const takeoff = CLIPS.jump_start.takeoff;
+        let fall = smoothstep(-this.vy, -1.5, 2.5);
+        const jc = CLIPS[this.jumpClip];
+        const takeoff = jc.takeoff;
         if (takeoff !== undefined && this.launched) {
-          // A captured jump: the take-off clip carries the rise past its take-off moment, the fall loop takes over.
-          t.set('jump_start', 1 - fall);
-          this.setTime('jump_start', takeoff + this.stateTime);
+          // A captured jump: the take-off clip plays its flight over ours (its own flight time stretched to the
+          // physics' 2·vy/g), then the fall loop takes over if we are still up.
+          const air = jc.air ?? 0.4;
+          const clipT = takeoff + (this.stateTime * air) / Math.max(0.2, (2 * this.jumpVy) / LOCO.gravity);
+          fall *= smoothstep(clipT, takeoff + air * 0.85, takeoff + air * 1.15);
+          t.set(this.jumpClip, 1 - fall);
+          this.setTime(this.jumpClip, clipT);
         } else {
           t.set('jump_rise', 1 - fall);
           this.setTime('jump_rise', this.stateTime % CLIPS.jump_rise.duration);
         }
-        t.set('jump_fall', fall);
+        // A long fall that is not our own jump (off a roof, off the dragon without the wings): arms and legs flail.
+        const flail = !this.launched && this.actions.has('fall_flail') ? smoothstep(this.stateTime, LOCO.flailAfter, LOCO.flailAfter + 0.6) * smoothstep(-this.vy, LOCO.flailSpeed - 2, LOCO.flailSpeed) : 0;
+        t.set('jump_fall', fall * (1 - flail));
+        t.set('fall_flail', fall * flail);
         gaitShare = 0;
         this.setTime('jump_fall', this.stateTime % CLIPS.jump_fall.duration);
+        if (flail > 0) {
+          this.setTime('fall_flail', this.stateTime % CLIPS.fall_flail.duration);
+        }
         break;
       }
       case 'land': {
@@ -499,7 +673,7 @@ export class LocomotionController {
     if (!standing) {
       this.variant = null;
     } else if (!this.variant && this.still > this.nextVariant) {
-      const names = ['idle_look', 'idle_warrior', 'idle_shoulders'].filter((n) => this.actions.has(n));
+      const names = ['idle_look', 'idle_warrior', 'idle_look_2', 'idle_shoulders'].filter((n) => this.actions.has(n));
       if (names.length) {
         this.variant = names[this.variantIndex++ % names.length];
         this.variantTime = 0;
@@ -563,7 +737,7 @@ export class LocomotionController {
     if (this.layers) {
       this.leanLayer(dt, sp);
       // Feet on uneven ground while standing on it; eased out in the air, gliding, taking off.
-      const onGround = this.state === 'ground' || this.state === 'stop' || this.state === 'land';
+      const onGround = this.state === 'ground' || this.state === 'stop' || this.state === 'land' || (this.state === 'act' && this.act.ik);
       this.footIK.weight += ((onGround ? 1 : 0) - this.footIK.weight) * (1 - Math.exp(-10 * dt));
       if (this.footIK.weight > 1e-3) {
         this.footIK.apply(this.object, this.groundHeight, dt);
@@ -573,9 +747,9 @@ export class LocomotionController {
     void AIR;
   }
 
-  /** The landing clip: the hard one (when there is one) for a deep landing. */
+  /** The landing clip chosen at touch-down (jump_land, the hard one for a deep landing, the heavy one from height). */
   private landClip(): string {
-    return this.landDepth > 0.75 && this.actions.has('jump_land_hard') ? 'jump_land_hard' : 'jump_land';
+    return this.actions.has(this.landClipName) ? this.landClipName : 'jump_land';
   }
 
   private setTime(name: string, time: number): void {
