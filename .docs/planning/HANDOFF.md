@@ -120,18 +120,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    water (`tools/headless/traffic-water-check.ts`); OSM colour tags incl. Turkish words (`osm/shared/colour.ts`, fixes
    `Unknown color kiremit`).
    Phase 24 (far OSM layer) is merged; items 1, 2 and the pool re-fetch are local runs.
-6. **Flicker while moving (owner report, open):** reflections on the sea come and go as the view turns (hard,
-   screen-aligned light/dark patches, by day with the sun ahead and in the evening), and at night car lights and
-   city window lights blink black. Findings so far: the sea patches vanish with `?wrefl=sky` (planar mirror, PR #65
-   added the switch); PR #66 widened the mirror to an angular margin (9 deg each side, resolution up to 1.35x, softer
-   edge) but the owner still sees it. `?dynres=0` does not change the night-light blinking. Probably several causes.
-   Plan: a GPU flicker audit (`scripts/flicker-audit.mjs` on the snap.mjs infrastructure: deterministic camera
-   sweep, consecutive frames, per-pixel up-down-up luminance instability, heatmaps + scores), then bisect with URL
-   toggles (wrefl, dynres, osmfar, osmregions, street, traffic, walls, bloom, aa, flare, shadows) and fix each cause
-   generically. Suspects: mirror edge hand-over / `reflDistanceAt` distortion / mirror-vs-camera frame lag;
-   sub-pixel emissive lights aliasing away (need a minimum projected size); night LOD handovers of the far OSM
-   layer and city chunks (`night-lights.glsl.ts`, `osm/fade.ts`, `city/streamer.ts`); the dragon casts a strong
-   moon shadow on the water under an overcast night sky (should not).
+6. **Flicker while moving (owner report):** audited and fixed, see `.docs/planning/flicker-audit.md` (tool
+   `scripts/flicker-audit.mjs`, scenes `scripts/flicker-scenes.json`). Causes fixed with generic rules: non-finite
+   texels in the water mirror spread by its mips (the hard sea patches), light splats narrower than a pixel, far
+   window lights point-sampled, cloud shadows that ignored the moon (the dragon's moon shadow under clouds), and the
+   final CAS sharpening. Scores -38 to -76 % over 9 scenes. Open: the facade material's NaN in the mirror's view
+   (made harmless), remaining sub-pixel geometry aliasing (needs TAA), near-sea glitter bands (radial grid).
 7. **Local runs owed by PR #62:** `npm run compile:walls` (baked wall tiles are gitignored: palace walls left to
    Dolmabahçe, towers flanking gate breaches); the region re-fetch for swimming pools. Open question for the owner:
    the Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
