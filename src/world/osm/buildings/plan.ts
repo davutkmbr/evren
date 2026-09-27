@@ -9,6 +9,7 @@ import { hash } from '../shared/geometry';
 import { Arch, ARCHETYPES, Balcony, Head, Layer } from './archetypes';
 import { districtAt, type DistrictProfile, pickColour, pickWeighted } from './districts';
 import { osmColour } from '../shared/colour';
+import { resolveSurveyed, SURVEYED, type SurveyedPlan } from './surveyed';
 
 export type RoofShape = 'flat' | 'hipped' | 'gabled' | 'pyramidal' | 'skillion' | 'dome' | 'domes';
 /** Roof covering (roof material: tiles / lead / metal; flat roofs: slab finishes, see materials.ts). */
@@ -71,6 +72,8 @@ export interface BuildingPlan {
   wallH: number;
   /** Height of the bottom above the reference ground (building:part min_height), 0 for whole buildings. */
   minH: number;
+  /** Wall top (m above the reference ground) of a surveyed building (surveyed.ts), as the street tiles draw it. */
+  wallTop?: number;
   roof: RoofShape;
   roofCover: RoofCover;
   roofTint: THREE.Color;
@@ -236,6 +239,8 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
   const H = (k: number): number => hash(seed * 97.13 + k * 13.37);
   const kind = b.kind === 'yes' && (b.amenity === 'restaurant' || b.amenity === 'cafe' || b.shop) ? 'commercial' : b.kind;
   const district = districtAt(f.cx, f.cz, H(1));
+  const row = SURVEYED[b.id];
+  const surveyed: SurveyedPlan | null = row ? resolveSurveyed(row, b.id, b.roofShape, f.area) : null;
 
   let arch = taggedArch(b, kind, H(2));
   if (arch === null) {
@@ -261,7 +266,7 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
   const floorH = def.floorH[0] + (def.floorH[1] - def.floorH[0]) * H(4);
 
   // Floors: tags first, then archetype / district heuristics with neighbour-to-neighbour variety.
-  let floors = b.levels ?? 0;
+  let floors = surveyed?.storeys ?? b.levels ?? 0;
   if (!floors && b.height) {
     floors = Math.max(1, Math.round((b.height - (b.roofHeight ?? 0)) / floorH));
   }
@@ -308,7 +313,9 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
   const tagRoof = b.roofShape ? TAG_ROOFS[b.roofShape] : undefined;
   let roof: RoofShape;
   const compact = f.convexity > 0.88 && f.vertices <= 12;
-  if (tagRoof) {
+  if (surveyed) {
+    roof = surveyed.roof;
+  } else if (tagRoof) {
     roof = tagRoof;
   } else if (isBazaar(b)) {
     roof = 'domes';
@@ -326,7 +333,7 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
     const fits = compact && f.area < (arch === Arch.Han ? 1200 : 700) && floors <= 8;
     roof = fits && H(9) < rate ? (f.rectangular && f.area < 220 && (arch === Arch.Wood ? H(10) < 0.35 : H(10) < 0.15) ? 'gabled' : f.rectangular && f.hl < f.hw * 1.15 && f.area < 180 ? 'pyramidal' : 'hipped') : 'flat';
   }
-  if (roof !== 'flat' && roof !== 'dome' && roof !== 'domes' && !compact && !tagRoof) {
+  if (roof !== 'flat' && roof !== 'dome' && roof !== 'domes' && !compact && !tagRoof && !surveyed) {
     roof = 'flat';
   }
   const pitched = roof !== 'flat' && roof !== 'domes';
@@ -454,6 +461,7 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
     floorH,
     wallH: 0,
     minH,
+    wallTop: surveyed?.wallTop,
     roof,
     roofCover,
     roofTint,
@@ -484,6 +492,9 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
  * enough for every floor to carry windows under the cornice / parapet zone (plan.clearance).
  */
 export function wallHeight(b: OsmBuilding, p: BuildingPlan, roofRise: number): number {
+  if (p.wallTop !== undefined) {
+    return Math.max(p.minH + 2.5, p.wallTop);
+  }
   if (b.height) {
     const roofH = b.roofHeight ?? (p.roof === 'flat' ? 0 : roofRise);
     return Math.max(p.minH + 2.5, b.height - roofH);

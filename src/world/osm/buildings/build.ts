@@ -298,7 +298,7 @@ export function planSolid(s: Solid, settings?: ArrayLike<number>, ground?: Solid
   }
   const rise = Math.min(5, box.hw * plan.pitch);
   let wallH = wallHeight(s.b, plan, rise);
-  if (settings?.length && ground && !s.b.height && !s.b.levels) {
+  if (settings?.length && ground && !s.b.height && !s.b.levels && plan.wallTop === undefined) {
     const top = settingTop(settings, info.cx, info.cz, ground.min);
     while (plan.floors > 1 && ground.ref + wallH + (plan.roof === 'flat' ? 0 : rise) > top) {
       plan.floors--;
