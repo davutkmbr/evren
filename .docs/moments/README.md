@@ -99,7 +99,7 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 | 3 | `hezarfen-galata-uskudar` | Hezarfen Ahmed Çelebi | draft | Ghost glider model (17th-century clothes, eagle-feather wings), leap/glide/wave animations, wing-cloth sound; race gameplay |
 | 4 | `ferry-gull-simit` | Martı ve Simit | draft | Passenger (MetaHuman) + gull models, snatch animations, gull call (the approved CC0 gull recordings may fit); ferry positions as the `ferry` anchor (phase 13) |
 | 4 | `galata-bridge-anglers` | Galata Köprüsü Oltacıları | draft | Angler characters (MetaHuman) with rods and hats, hold-hat/shake-fist animations, reel and shout sound |
-| 5 | `aya-yorgi-challenge` | Aya Yorgi'nin Meydan Okuması | ready | Procedural knight statue (`src/moments/aya-yorgi`: weathered bronze on a stone plinth, 9.4 m) with raise / lower / shrug animations on the lines and a synthesised armour creak. A resident prop: it stands on the hill whenever the camera is within 2.5 km (no pop-in when the moment starts), turns to the dragon when the moment plays and keeps its drooping spear afterwards; the plinth sits on the lowest ground under it with a buried foundation; stands 50 m north of the monastery (OSM way 746217504), which the game does not model (outside the OSM extract). Pose sheet: `npx tsx tools/headless/aya-yorgi-sheet.ts`; check: `aya-yorgi-check.ts` |
+| 5 | `aya-yorgi-challenge` | Aya Yorgi'nin Meydan Okuması | ready | Bronze statue of a soldier saint on a limestone plinth (about 9 m), built in Blender by `tools/moments/knight_statue.py` on the CC0 MakeHuman body (muscle cuirass, pteruges, chlamys, crested helmet, shield with a cross, spear; baked patina and limestone maps; `public/models/moments/aya-yorgi-statue.glb`), with raise / lower / shrug animations on its bones along the lines and a synthesised armour creak. A resident prop: it stands on the hill whenever the camera is within 2.5 km (no pop-in when the moment starts), turns to the dragon when the moment plays and keeps its drooping spear afterwards; the plinth sits on the lowest ground under it with a buried foundation; stands 50 m north of the Aya Yorgi monastery. Build: `node scripts/blender-run.mjs --timeout 5400 tools/moments/knight_statue.py -- public/models/moments/aya-yorgi-statue.glb` (review renders in `.shots/moments/aya-yorgi/blender/`); check: `aya-yorgi-check.ts` |
 | 7 | `lagari-sarayburnu-rocket` | Lagari Hasan Çelebi | draft | Rocket + rider model, launch/wings/splash animations, fuse and whoosh sound; chase gameplay |
 | 8 | `ships-over-land-1453` | Karadan Yürüyen Gemiler | draft | Translucent galley model, slide/fade animations, wood-creak sound |
 | 9 | `kiz-kulesi-legend` | Kız Kulesi Efsanesi | draft | Small snake character and fruit basket, idle/peek/hide animations, night-sea sound |
@@ -107,6 +107,27 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 | 16 | ten literary records (`src/moments/data/literature.ts`) | Nedim, Sinan's inscription, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Haşim, Kuyrukluyıldız, Prokopios, De Amicis | 10 ready | Sinan's inscription and Haşim follow scholarly editions (owner approved, 2026-09-27); see `.docs/planning/19-moments.md`, "Literary moments" |
 
 No record uses `media`; film and series items (backlog 6 and 11) wait for the user's choices and official links.
+
+## Building moment models in Blender
+
+The Aya Yorgi statue (`tools/moments/knight_statue.py`, `knight_outfit.py`, `statue_materials.py`) is the pipeline to
+reuse. Lessons from building it:
+
+- Iterate in stages, not full builds: `STATUE_STAGE=pose` / `outfit` give Workbench previews in ~20 s, `STATUE_TEX=1024`
+  a quick material trial (~2 min); the full 4096 build with export takes ~8 min on the GPU.
+- Judge every change on renders (`.shots/moments/aya-yorgi/blender/`: front / side / three-quarter sheets and close-ups
+  of the head and hands), then in the game with `snap.mjs` from the worktree (CLAUDE.md, Shared machine).
+- MPFB's mixamo rig: fingers curl about the bones' local **Z** (not X). Test an unknown axis by rendering the four
+  signed variants side by side instead of reasoning about bone frames.
+- Build head gear in the head bone's frame (up the bone, -Y toward the nose): the posed head is tilted, and an outline
+  cut at world heights runs crooked across the face.
+- Shrinkwrap then smooth pulls a shell under the skin; a second `OUTSIDE` shrinkwrap crumples it. Use a larger offset
+  and let the relaxing eat into it.
+- A hand-held prop goes through the hand's actual geometry (between the knuckles and the curled middle joints, along
+  the knuckle line), with the wrist turned so that line matches the prop.
+- Outdoor bronze is satin, not polished: oxide patina half metallic (0.5) at roughness ~0.6, bright metal only on convex
+  edges (bevel-normal curvature; pointiness is noisy on decimated meshes), verdigris only in the hollows.
+- Name the mesh data as well as the object (`o.data.name`): glTF meshes take the data's name, and checks look for it.
 
 ## Open questions for the user
 

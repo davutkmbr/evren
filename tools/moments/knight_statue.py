@@ -101,21 +101,31 @@ def empty(name, loc):
 
 # The statue's pose (figure's left +X, forward -Y, up +Z; metres at scale 1). IK targets are offsets from a rest-pose
 # bone head, so they follow the body's proportions. Contrapposto: the weight on the right leg (straight), the left knee
-# eased forward; the spear hand low at the right side (the spear stands on the plinth), the shield forearm across the
-# body at waist height; chest up, the head turned a little toward the shield side.
+# eased forward; the spear forearm forward at the waist, the fist round the upright shaft (the spear stands on the
+# plinth), the shield forearm across the body at waist height; chest up, the head turned a little toward the shield
+# side.
 SPINE = {"Spine": (-2, 0, -3), "Spine1": (-3, 0, -3), "Spine2": (-2, 0, -2), "Neck": (4, 0, 5), "Head": (-3, 0, 9)}
 HIPS = (0, -3, 2)
 POSE_IK = {
     # bone: (reference bone, target offset, pole offset from the same reference)
-    "RightForeArm": ("RightArm", (-0.10, -0.16, -0.52), (-0.3, 0.8, -0.2)),
+    "RightForeArm": ("RightArm", (-0.06, -0.25, -0.33), (-0.1, 0.6, -0.8)),
     "LeftForeArm": ("LeftArm", (0.06, -0.26, -0.36), (0.6, 0.5, -0.3)),
     "RightLeg": ("RightFoot", (0.07, 0.0, 0.0), (0.0, -1.0, 0.5)),
     "LeftLeg": ("LeftFoot", (-0.03, -0.18, 0.04), (0.1, -1.0, 0.5)),
 }
 
 
+# The spear's axis through the right fist (leaning a little forward) and the finger curls, (x, y, z) degrees per joint.
+GRIP_AXIS = Vector((0.0, -0.06, 1.0)).normalized()
+CURL = {
+    "Index": ((0, 0, 62), (0, 0, 80), (0, 0, 45)), "Middle": ((0, 0, 66), (0, 0, 82), (0, 0, 45)),
+    "Ring": ((0, 0, 70), (0, 0, 80), (0, 0, 45)), "Pinky": ((0, 0, 74), (0, 0, 76), (0, 0, 42)),
+    "Thumb": ((0, -55, 25), (0, 0, 45), (0, 0, 40)),
+}
+
+
 def pose_body(rig, body):
-    from mathutils import Euler
+    from mathutils import Euler, Matrix
 
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="POSE")
@@ -146,14 +156,23 @@ def pose_body(rig, body):
             pb.constraints.remove(c)
     for h in helpers:
         bpy.data.objects.remove(h, do_unlink=True)
-    # Hands: the right fist closed around the spear shaft, the left gripping the shield's handle.
-    curl = {"Index": (55, 70, 40), "Middle": (60, 72, 42), "Ring": (65, 72, 42), "Pinky": (70, 70, 40), "Thumb": (15, 30, 25)}
+    # The right wrist turns so the knuckle line (pinky -> index) stands along the spear: the fist's tunnel is upright.
+    bpy.context.view_layer.update()
+    hand = rig.pose.bones["mixamorig:RightHand"]
+    knuckles = bone_head(rig, "RightHandIndex1") - bone_head(rig, "RightHandPinky1")
+    inv = rig.matrix_world.inverted().to_3x3()
+    turn = (inv @ knuckles).normalized().rotation_difference((inv @ GRIP_AXIS).normalized()).to_matrix().to_4x4()
+    h = hand.head.copy()
+    hand.matrix = Matrix.Translation(h) @ turn @ Matrix.Translation(-h) @ hand.matrix
+    bpy.context.view_layer.update()
+    # Hands: the fingers curl about the bones' local Z on this rig (the palm side); the right fist closes round the
+    # shaft with the thumb over the fingers, the left grips the shield's strap.
     for side in ("Left", "Right"):
-        for finger, angles in curl.items():
-            for k, deg in enumerate(angles):
+        for finger, angles in CURL.items():
+            for k, a in enumerate(angles):
                 pb = rig.pose.bones.get(f"mixamorig:{side}Hand{finger}{k + 1}")
                 if pb:
-                    pb.rotation_quaternion = Euler((math.radians(deg), 0, 0), "XYZ").to_quaternion()
+                    pb.rotation_quaternion = Euler([math.radians(d) for d in a], "XYZ").to_quaternion()
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.update()
 
@@ -218,6 +237,8 @@ log("body", body.name, len(body.data.vertices), "verts")
 pose_body(rig, body)
 if STAGE == "pose":
     preview("pose-")
+    _hand = rig.matrix_world @ rig.pose.bones["mixamorig:RightHand"].tail
+    preview("hand-", views=("front", "side", "three"), res=600, focus=(_hand, 0.3))
     sys.exit(0)
 meshes = [o for o in bpy.data.objects if o.type == "MESH"]
 apply_pose_as_rest(rig, meshes)
@@ -238,7 +259,7 @@ if STAGE == "outfit":
 import statue_materials as SM  # noqa: E402
 
 PLINTH_H = 0.76  # figure units; the game's PLINTH_H / FIGURE_SCALE
-FOUNDATION = 0.75  # figure units buried below the plinth's foot (the game's FOUNDATION_DEPTH / FIGURE_SCALE)
+FOUNDATION = 0.85  # figure units buried below the plinth's foot (the game's FOUNDATION_DEPTH / FIGURE_SCALE)
 
 
 def build_plinth():
@@ -275,6 +296,7 @@ def build_plinth():
     bpy.ops.object.join()
     plinth = bpy.context.active_object
     plinth.name = "plinth"
+    plinth.data.name = "plinth"
     # a little irregularity: the blocks are hand-dressed, not machined
     me = plinth.data
     import random
@@ -326,8 +348,9 @@ def beauty(tag, focus=None, res=(1000, 1250)):
     """Cycles render under the approved CC0 clear-sky HDRI with a low sun: how the bronze reads in daylight."""
     scn = bpy.context.scene
     scn.render.engine = "CYCLES"
-    scn.cycles.device = "CPU"
+    SM.use_gpu(scn)
     scn.cycles.samples = 96
+    scn.view_settings.exposure = -0.7  # a clear noon sky: keep the stone's value readable
     scn.render.resolution_x, scn.render.resolution_y = res
     w = bpy.data.worlds.new("sky")
     w.use_nodes = True
@@ -395,7 +418,7 @@ log("statue", tris(statue), "tris")
 SM.unwrap(statue)
 SM.tag_parts([plinth])
 SM.unwrap(plinth, margin=0.004)
-SIZE = int(os.environ.get("STATUE_TEX", "2048"))
+SIZE = int(os.environ.get("STATUE_TEX", "4096"))
 bm_mat, bm_h = SM.bronze_material()
 bronze_imgs = SM.bake(statue, bm_mat, bm_h, SIZE, "statue_bronze", samples=int(os.environ.get("STATUE_SAMPLES", "16")))
 st_mat, st_h = SM.stone_material()

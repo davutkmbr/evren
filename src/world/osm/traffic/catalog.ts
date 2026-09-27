@@ -166,6 +166,16 @@ export function trafficMix(rank: number, busLane: boolean): readonly (readonly [
   ];
 }
 
+/**
+ * Adalar's electric vehicles (the car-free zones, life/traffic/car-free.ts): İETT's 13+1 seat electric minibuses and
+ * the 3+1 seat electric cars that replaced the phaetons, both white.
+ */
+export const ELECTRIC_MIX: readonly (readonly [number, number])[] = [
+  [2, Model.Minibus],
+  [1, Model.Hatch],
+];
+export const ELECTRIC_PAINT = 0xf1f1ee;
+
 /** Parked vehicle mix: private cars, a few vans and taxis, scooters in the gaps. */
 export const PARKED_MIX: readonly (readonly [number, number])[] = [
   [34, Model.Sedan],

@@ -1,11 +1,13 @@
 /**
  * Worker side of the traffic layer: the routable lane graph built from the OSM highways.
  *
- * - Drivable ways (carriageway classes, no access=no/private/psv/bus/permit/emergency, no parking aisles, none in a
- *   car-free zone, life/traffic/car-free.ts) are clipped to the build rect and
+ * - Drivable ways (carriageway classes, no access=no/private/psv/bus/permit/emergency, no parking aisles) are clipped
+ *   to the build rect and
  *   split at every vertex shared with another drivable way (the `refs` junction ids of data.ts) into edges.
  * - Every edge gets right-hand lanes per direction (oneway, lanes, lanes:forward/backward, width; kerbside parking
  *   strips narrow the moving part), trimmed back from junctions by the width of the crossing streets.
+ * - Edges in a car-free zone (life/traffic/car-free.ts) carry only the zone's electric vehicles (LaneFlag.Electric):
+ *   slow, sparse, no kerbside parking.
  * - Junctions get Hermite connectors from each incoming lane to the outgoing lanes it may turn into (rightmost lane
  *   turns right, leftmost turns left, straight keeps the lane; U-turns only at dead ends).
  * - Traffic signal nodes become signal heads grouped into controllers (phase group per approach axis), pedestrian
@@ -79,6 +81,13 @@ const NO_ACCESS = new Set(['no', 'private', 'psv', 'bus', 'permit', 'emergency']
 const LIMITED_ACCESS = new Set(['destination', 'delivery', 'customers', 'limited']);
 const NO_PARKING = new Set(['no', 'no_parking', 'no_stopping', 'separate', 'fire_lane']);
 
+/**
+ * Car-free zones: speed cap (km/h) and density factor of their electric vehicles (Adalar: about 60 of them on four
+ * islands, most at the piers or on their few routes).
+ */
+const ELECTRIC_KMH = 22;
+const ELECTRIC_DENSITY = 0.06;
+
 /** Lane step (m) of lane and connector paths. */
 const LANE_STEP = 2;
 const CONN_STEP = 1;
@@ -97,7 +106,7 @@ export function drivable(r: OsmRoad): boolean {
   if (r.kind === 'service' && (r.service === 'parking_aisle' || r.service === 'driveway' || r.service === 'drive-through')) {
     return false;
   }
-  return !carFree(r.pts[0], r.pts[1]);
+  return true;
 }
 
 export interface Edge {
@@ -114,6 +123,8 @@ export interface Edge {
   rank: number;
   speed: number;
   cobble: boolean;
+  /** In a car-free zone: electric vehicles only. */
+  electric: boolean;
   width: number;
   /** Parking strip width (m) on the left / right kerb (relative to pts direction). */
   parkL: number;
@@ -363,6 +374,10 @@ export function buildNetwork(
       if (cobble) {
         speed *= 0.8;
       }
+      const electric = carFree(mid[0], mid[1]);
+      if (electric) {
+        speed = Math.min(speed, ELECTRIC_KMH / 3.6);
+      }
       edges.push({
         id: edges.length,
         road: pc.road,
@@ -376,6 +391,7 @@ export function buildNetwork(
         rank,
         speed,
         cobble,
+        electric,
         width: r.width,
         parkL: 0,
         parkR: 0,
@@ -483,7 +499,7 @@ export function buildNetwork(
       fwdGeom = (off) => offsetPolyline(e.pts, off);
       bwdGeom = (off) => reversePolyline(offsetPolyline(e.pts, off));
     }
-    const baseFlags = (e.r.tunnel ? LaneFlag.Hidden : 0) | (e.deck ? LaneFlag.Deck : 0) | (BUS_KINDS.has(r.kind) ? LaneFlag.Bus : 0) | (narrow ? LaneFlag.Narrow : 0);
+    const baseFlags = (e.electric ? LaneFlag.Electric : 0) | (e.r.tunnel ? LaneFlag.Hidden : 0) | (e.deck ? LaneFlag.Deck : 0) | (BUS_KINDS.has(r.kind) ? LaneFlag.Bus : 0) | (narrow ? LaneFlag.Narrow : 0);
     const pathFlags = (e.r.tunnel ? PathFlag.Hidden : 0) | (e.deck ? PathFlag.Deck : 0);
     const make = (forward: boolean, offsets: number[], geom: (off: number) => number[], out: number[]): void => {
       const t0 = forward ? e.trim0 : e.trim1;
@@ -888,6 +904,9 @@ export function laneDensity(e: Edge): number {
   if (e.deck) {
     // Galata Köprüsü: the busiest link of the slice
     d *= 1.6;
+  }
+  if (e.electric) {
+    d *= ELECTRIC_DENSITY;
   }
   return d;
 }

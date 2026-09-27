@@ -14,7 +14,7 @@
  */
 import * as THREE from 'three';
 import type { WorldBounds } from '../../../core/contracts';
-import { MODEL_LENGTH, MODEL_WHEELBASE, Model, paintOf, pickModel, rng32, trafficMix } from './catalog';
+import { ELECTRIC_MIX, ELECTRIC_PAINT, linear, MODEL_LENGTH, MODEL_WHEELBASE, Model, paintOf, pickModel, rng32, trafficMix } from './catalog';
 import { VehicleState } from './materials';
 import { PathFlag } from './paths';
 import { LaneFlag, SAMPLE_STRIDE, StopKind, type TrafficNet } from './protocol';
@@ -58,6 +58,9 @@ const DRIVERS: Record<number, Driver> = {
   [Model.Moto]: { a: 3.2, b: 3.4, T: 0.7, s0: 1.2, vMax: 18, factor: [1.05, 1.3] },
   [Model.Truck]: { a: 1.3, b: 2.0, T: 1.5, s0: 2.4, vMax: 13, factor: [0.82, 1.0] },
 };
+
+/** Linear paint of the car-free zones' electric vehicles. */
+const ELECTRIC_RGB = linear(ELECTRIC_PAINT);
 
 /** Share of the full-traffic density by hour of day (piecewise linear). */
 const TIME_CURVE: readonly (readonly [number, number])[] = [
@@ -405,6 +408,9 @@ export class CarSim {
 
   private chooseModel(lane: number): number {
     const net = this.net;
+    if (net.laneFlags[lane] & LaneFlag.Electric) {
+      return pickModel(ELECTRIC_MIX, this.rng());
+    }
     const bus = (net.laneFlags[lane] & LaneFlag.Bus) !== 0;
     return pickModel(trafficMix(net.laneRank[lane], bus), this.rng());
   }
@@ -441,7 +447,7 @@ export class CarSim {
     }
     this.stopIdx[i] = k;
     this.conn[i] = this.chooseConn(i, lane);
-    const c = paintOf(model, this.rng(), this.rng());
+    const c = this.net.laneFlags[lane] & LaneFlag.Electric ? ELECTRIC_RGB : paintOf(model, this.rng(), this.rng());
     this.paint.set(c, i * 3);
     const grey = Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 0.05 && c[0] > 0.05 && c[0] < 0.55;
     this.state[i] = grey || this.rng() < 0.2 ? VehicleState.Metallic : 0;
