@@ -128,14 +128,14 @@ export const nedim: Moment = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 5. Sâî, Sinan's tomb inscription (elegiac, dusk) — pending          */
+/* 5. Sâî, Sinan's tomb inscription (elegiac, dusk)                    */
 /* ------------------------------------------------------------------ */
 
 export const sinanKitabe: Moment = {
   id: 'sinan-turbe-kitabesi',
   title: "Pîr-i Mi'mârân Sinan",
   category: 'poem',
-  status: 'draft',
+  status: 'ready',
   backlog: BACKLOG,
   trigger: {
     place: { label: "Mimar Sinan's tomb at the north corner of the Süleymaniye", center: { lat: 41.01723, lon: 28.96394 }, radius: 200 },
@@ -159,18 +159,18 @@ export const sinanKitabe: Moment = {
     musicMood: ['solemn', 'tender', 'history'],
     subtitles: timeline(
       [
-        'Ey iden bir iki gün dünyâ sarayında mekân',
-        'Cây-i asâyiş değildir âdeme milk-i cihân',
+        'Ey iden bir iki gün dünyâ sarâyında mekân',
+        'Câ-yı âsâyiş değildür âdeme mülk-i cihân',
         'Hân Süleymân’a olub mi’mâr bu merd-i güzîn',
-        'Yapdı bir câmi’ verir Firdevs-i âlâdan nişân',
-        '… Geçdi bu demde cihândan pîr-i mi’mârân-ı Sinân',
+        'Yapdı bir câmi’ virir Firdevs-i a’lâdan nişân',
+        '… Geçdi bu demde cihândan pîr-i mi’mârân Sinân',
       ].map((text) => ({ text, hold: 5 })),
     ),
     card: {
       title: "Pîr-i Mi'mârân Sinan",
       text:
-        "Kitabeyi Sinan'ın yakın dostu şair Sâî Mustafa Çelebi yazdı. Son mısra ebced hesabıyla 996'yı (1588) verir: " +
-        '"Mimarların piri Sinan bu dünyadan göçtü." Türbeyi Sinan kendisi tasarladı, Süleymaniye\'nin hemen yanında.',
+        "Kitabeyi Sinan'ın yakın dostu şair Sâî Mustafa Çelebi yazdı. Tarih mısraı ölümünü haber verir, kitabe yılı " +
+        '996 (1588) diye yazar: "Mimarların piri Sinan bu dünyadan göçtü." Türbeyi Sinan kendisi tasarladı, Süleymaniye\'nin hemen yanında.',
     },
     waypoints: [
       { id: 'start', lat: 41.0215, lon: 28.966, note: 'Golden Horn off Unkapanı, facing the Süleymaniye hill', expect: 'water' },
@@ -184,19 +184,18 @@ export const sinanKitabe: Moment = {
       licence: 'public domain',
       author: 'Sâî Mustafa Çelebi (ö. 1595)',
       basis:
-        "Mimar Sinan's tomb inscription (996/1588), lines 1–4 and 14 of 15, as transcribed by Emre Gül (Dünya Bülteni), " +
-        `copied on hayatgezincedahaguzel.blogspot.com and other sites. ${CHECKED}: every online full text found ` +
-        'goes back to that one transcription, so lines 1–4 have a single source. The TDV İslâm Ansiklopedisi ("Sinan", ' +
-        'Selçuk Mülâyim) quotes only the last line, and differently: "Geçti bu demde cihandan pîr-i mi‘mârân Sinân".',
-      pending:
-        'Read lines 1–4 and the date line against the stone or a critical reading (e.g. the Karadeniz Sosyal Bilimler ' +
-        'Dergisi article "Mimar Sinan Türbesi Üzerine Bir Değerlendirme", or Sâî, Tezkiretü\'l-Bünyân, Koç 2004). Open: ' +
-        '"Geçdi" or "Göçdü"; "mi’mârân-ı Sinân" (Dünya Bülteni) or "mi‘mârân Sinân" (TDV, fits the metre); "olub", ' +
-        '"Yapdı" spellings.',
+        "Mimar Sinan's tomb inscription (996/1588), lines 1–4 and 14 (the tarih mısraı) of 15, after the scholarly " +
+        'transliterations of İsmail Yakıt, "Mimar Sinan\'ın milliyeti hakkında yapılan tartışmalar", Türk Dünyası ' +
+        'Araştırmaları 128/252 (2021), p. 97, and Vildan Serdaroğlu Coşkun, İslâm Araştırmaları Dergisi 17 (2007), ' +
+        'pp. 98–99; both agree on every reading used. They correct the widely copied Dünya Bülteni transcription ' +
+        '("Câ-yı âsâyiş", "mülk-i", "virir", "a\'lâ"). The tarih line reads "mi\'mârân Sinân" without izafet, as in both ' +
+        'and the TDV İslâm Ansiklopedisi ("Sinan"): the -ı breaks the remel metre. No source reads "Göçdü". The ' +
+        "line's abjad total is 986, not 996 (Serdaroğlu notes the gap; the kitabe states 996, after Ayvansarâyî), so " +
+        'the card does not claim the line adds up to the year. Not seen: a photo or Ottoman-script edition of the stone.',
     },
     original('card', 'TDV İslâm Ansiklopedisi, "Sinan"; Wikipedia, "Mimar Sinan" (tomb of his own design)'),
   ],
-  needs: ['text-approval'],
+  needs: [],
   sources: [...SINAN_KITABE_SOURCES, MUSIC_HUSEYNI_TAKSIM],
   notes:
     'Only the opening four lines and the date line are used; the inscription ends with a request for a Fâtiha, left out ' +
@@ -475,14 +474,14 @@ export const yagmur: Moment = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 12. Ahmet Haşim, "Bir Günün Sonunda Arzu" (melancholy) — pending    */
+/* 12. Ahmet Haşim, "Bir Günün Sonunda Arzu" (melancholy)              */
 /* ------------------------------------------------------------------ */
 
 export const hasim: Moment = {
   id: 'hasim-bir-gunun-sonunda-arzu',
   title: 'Bir Günün Sonunda Arzu',
   category: 'poem',
-  status: 'draft',
+  status: 'ready',
   backlog: BACKLOG,
   trigger: {
     // Göksu fallback: Küçükçekmece Lake lies at the west edge of the map (28.72–28.77° E; the flight turns the dragon
@@ -503,12 +502,12 @@ export const hasim: Moment = {
     musicMood: ['nostalgic', 'tender', 'mystic'],
     subtitles: timeline([
       'Altın kulelerden yine kuşlar',
-      'Tekrarını ömrün eder ilân.',
-      'Kuşlar mıdır onlar ki bu akşam',
-      'Alemlerimizden sefer eyler?',
-      'Akşam yine akşam, yine akşam,',
+      'Tekrârını ömrün eder i\'lân,',
+      'Kuşlar mıdır onlar ki her akşam',
+      'Alemlerimizden sefer eyler?..',
+      'Akşam, yine akşam, yine akşam,',
       'Bir sırma kemerdir suya baksam',
-      'Üstümde semâ bir kavs-ı mutalsam!',
+      'Üstümde semâ kavs-ı mutalsam!',
       'Akşam, yine akşam, yine akşam,',
       'Göllerde bu dem bir kamış olsam!',
     ]),
@@ -530,19 +529,18 @@ export const hasim: Moment = {
       licence: 'public domain',
       author: 'Ahmet Haşim (1884–1933)',
       basis:
-        'Ahmet Haşim, "Bir Günün Sonunda Arzu", stanzas 2–3 as first printed in Dergâh 1/1 (15 Nisan 1337/1921), p. 7, ' +
-        `in the transcription on epigraf.fisek.com.tr (num=210). ${CHECKED}: the sources disagree. Epigraf's main text ` +
-        '(later version) has "i\'lân", "her akşam", "sefer eyler?.." and no "Üstümde semâ…" line; antoloji.com has the ' +
-        'line ("Üstümde sema kavs-i mutalsam!") and "her akşam".',
-      pending:
-        'Choose the version and read it against İnci Enginün, "Ahmet Haşim – Bütün Şiirleri" (Dergâh Yay.) or the ' +
-        '1921 printing: whether line 7 "Üstümde semâ bir kavs-ı mutalsam!" belongs to the last stanza; line 2 ' +
-        '"ilân." or "i\'lân,"; line 3 "bu akşam" or "her akşam"; line 4 "eyler?" or "eyler?.."; line 5 comma after ' +
-        '"Akşam". The first stanza ("Yorgun gözümün halkalarında…") is skipped for length.',
+        'Ahmet Haşim, "Bir Günün Sonunda Arzu", stanzas 2–3 in the state of Dergâh 1/1 (15 Nisan 1337/1921, p. 7) ' +
+        'with the poet\'s own correction from the next Dergâh issue ("bu akşam" → "her akşam"), as in Piyale (1926): ' +
+        'İnci Enginün – Zeynep Kerman, "Ahmet Haşim, Bütün Şiirleri" (Dergâh Yay., 1987), p. 92 and its variant notes, ' +
+        'quoted by Mustafa Apaydın, "Ahmet Haşim\'in Bir Günün Sonunda Arzu Şiiri Üzerine Düşünceler" ' +
+        '(turkoloji.cu.edu.tr). The line "Üstümde semâ kavs-ı mutalsam!" is in Dergâh and Piyale 1926 and was dropped ' +
+        'in Piyale 1928; it reads without "bir" (epigraf.fisek.com.tr num=210 adds one, which breaks the hezec metre). ' +
+        '"i\'lân,", "eyler?.." and the comma after the first "Akşam" follow the Enginün–Kerman text. Not seen in ' +
+        'facsimile: the exact punctuation of Dergâh 1/1.',
     },
     original('card', 'Epigraf note on the first printing (Dergâh, 1921)'),
   ],
-  needs: ['text-approval'],
+  needs: [],
   sources: [...HASIM_SOURCES, MUSIC_HUZZAM_TAKSIM],
   notes: 'The lake of the poem ("göllerde") is fitted to the Bosphorus at sunset; the card does not claim a place.',
 };

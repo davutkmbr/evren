@@ -968,12 +968,7 @@ console.log('7. gull and simit on a ferry');
 console.log('8. literary moments');
 {
   const litPlayable = LITERATURE.filter((m) => momentPlayability(m).playable);
-  check(litPlayable.length === 8, `8 literary moments play now (${litPlayable.map((m) => m.id).join(', ')})`);
-  for (const id of ['sinan-turbe-kitabesi', 'hasim-bir-gunun-sonunda-arzu']) {
-    const m = LITERATURE.find((x) => x.id === id)!;
-    const p = momentPlayability(m);
-    check(!p.playable && /pending|text-approval/.test(p.reason ?? ''), `${id} waits for the owner's text check (${p.reason})`);
-  }
+  check(litPlayable.length === 10, `10 literary moments play now (${litPlayable.map((m) => m.id).join(', ')})`);
 
   /** A situation that meets every condition of `m`'s trigger at its target (centre or area centroid). */
   const situation = (m: Moment): Omit<MomentContext, 'session'> => {
