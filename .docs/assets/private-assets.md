@@ -23,6 +23,11 @@ the same files, with their history as the backup:
   (the tools regenerate it: `tools/humans/build_rider.py`, `scripts/audio/prep-moment-music.py`).
 - `npm run private:status`: local changes, and how far behind or ahead of the repository.
 
+Not in the repository: `build/` (regenerated) and `fab/`, the Fab downloads (the Epic MetaHuman wardrobe, ~12 GB).
+Fab items are re-downloaded from the owner's Fab library (Fab site or the Unreal Fab plugin, signed in to the owner's
+Epic account; no public download API); what the game uses from them is exported into the repository instead. Keep a
+local backup of `fab/`. `private:push` refuses a file over 95 MB, and a push over 500 MB unless `--big`.
+
 `EVREN_PRIVATE_REPO` points the scripts at another repository.
 
 ## Layout
