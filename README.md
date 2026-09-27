@@ -143,8 +143,8 @@ Requirements: Node.js 22.12 or newer and a browser with WebGL 2 and the `EXT_cli
 Chrome or Edge is recommended).
 
 ```bash
-git clone https://github.com/davutkmbr/evren.git
-cd evren
+git clone https://github.com/davutkmbr/seventeenskies.git
+cd seventeenskies
 npm install
 npm run dev
 ```
