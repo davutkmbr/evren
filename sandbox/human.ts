@@ -5,7 +5,8 @@
  *   ?terrain=1 (rolling ground)   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
  *   Without ?clip: the locomotion controller (keyboard: WASD relative to the camera, Shift run, C crouch, Space jump;
  *   G held in the air: glide; drag to orbit, wheel to zoom), or a scripted input
- *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide|pivot|reverse|slide|flip|drop (glide, drop: with
+ *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide|pivot|reverse|slide|flip|drop|start|walkturn|
+ *   runturn|crouchturn (glide, drop: with
  *   ?alt=m; drop&move=1 runs off it; anything else stands, and
  *   idles) with
  *   &at=<s> to hold the simulation at that time (deterministic screenshots of transitions).
@@ -207,6 +208,28 @@ function scripted(t: number, input: LocomotionInput): void {
       if (params.get('move') === '1') {
         fwd(1);
         input.run = true;
+      }
+      break;
+    case 'start':
+      // Stands a while, then sets off walking.
+      if (t > 1.2) {
+        fwd(1);
+      }
+      break;
+    case 'walkturn':
+      // Walks, then bears sharply left (~60°).
+      input.move.set(t < 2.0 ? 0 : 0.87, t < 2.0 ? 1 : 0.5);
+      break;
+    case 'runturn':
+      // Runs, then bears sharply right (~60°).
+      input.run = true;
+      input.move.set(t < 2.4 ? 0 : -0.87, t < 2.4 ? 1 : 0.5);
+      break;
+    case 'crouchturn':
+      // Crouches, then stands up to walk back the way it faced.
+      input.crouch = t > 0.3 && t < 1.6;
+      if (t >= 1.6) {
+        fwd(-1);
       }
       break;
     case 'circle': {
