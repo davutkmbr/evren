@@ -59,7 +59,9 @@ MakeHuman system assets, skins pack 01 and face units 01 as the human base for r
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy
 them into `public/`, and never publish them in screenshots of their raw files; code and manifests may reference them
-by id. Their licences and sources are recorded in `.docs/assets/private-assets.md`.
+by id. Their licences and sources are recorded in `.docs/assets/private-assets.md`. The folder is a clone of the
+owner's private repository `davutkmbr/seventeenskies-private`: `npm run private:pull` to get it, `npm run private:push`
+after adding or changing a private asset (never commit them to this repository).
 
 ## Shared machine (agents)
 
