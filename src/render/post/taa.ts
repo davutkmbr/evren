@@ -22,6 +22,8 @@ const JITTER_PHASES = 8;
 const CURRENT_WEIGHT = 0.1;
 /** Weight of the current frame on reactive movers (traffic, vessels, crowd): trails shorter than a frame or two. */
 const REACTIVE_WEIGHT = 0.5;
+/** Variance clip box on reactive movers, relative to the normal one. */
+const REACTIVE_CLIP = 1;
 /** A camera jump beyond this (m) or turn beyond this (rad) in one frame drops the history (cuts, teleports). */
 const CUT_DISTANCE = 60;
 const CUT_ANGLE = 0.5;
@@ -38,6 +40,7 @@ uniform float uVelocityOn;
 uniform sampler2D tReactive;
 uniform float uReactiveOn;
 uniform float uReactiveWeight;
+uniform float uReactiveClip;
 uniform vec2 uSize;
 uniform float uNear;
 uniform float uFar;
@@ -191,11 +194,11 @@ void main() {
   } else {
     vec3 h = taaToYCoCg(taaTonemap(max(hist.rgb, vec3(0.0))));
     // Variance clip: move the history towards the neighbourhood mean until it lies inside mean +- sigma.
-    vec3 lo = mean - sigma;
-    vec3 hi = mean + sigma;
+    // Reactive movers clip tighter: history that disagrees with this frame is pulled in instead of blended away.
+    vec3 box = reactive ? sigma * uReactiveClip : sigma;
     vec3 c = taaToYCoCg(taaTonemap(center));
     vec3 toH = h - mean;
-    vec3 extent = max(hi - mean, vec3(1e-5));
+    vec3 extent = max(box, vec3(1e-5));
     vec3 unit = abs(toH / extent);
     float m = max(unit.x, max(unit.y, unit.z));
     h = m > 1.0 && (uFlags & 1) == 0 ? mean + toH / m : h;
@@ -264,6 +267,7 @@ export class TemporalAA {
         tReactive: { value: null },
         uReactiveOn: { value: 0 },
         uReactiveWeight: { value: REACTIVE_WEIGHT },
+        uReactiveClip: { value: REACTIVE_CLIP },
         uSize: { value: new THREE.Vector2(1, 1) },
         uNear: { value: 0.1 },
         uFar: { value: 1000 },
