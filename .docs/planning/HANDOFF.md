@@ -126,12 +126,23 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    window lights point-sampled, cloud shadows that ignored the moon (the dragon's moon shadow under clouds), and the
    final CAS sharpening. Scores -38 to -76 % over 9 scenes. Open: the facade material's NaN in the mirror's view
    (made harmless), remaining sub-pixel geometry aliasing (needs TAA), near-sea glitter bands (radial grid).
-7. **Local runs owed by PR #62:** `npm run compile:walls` (baked wall tiles are gitignored: palace walls left to
-   Dolmabahçe, towers flanking gate breaches); the region re-fetch for swimming pools. Open question for the owner:
-   the Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
-8. **Never shot in the cloud (no GPU there):** the perch audit (`node scripts/perch-audit.mjs`), the OSM feature
-   kits (fuel stations, pitches, playgrounds, cemeteries, markets, shopfronts, motorway verges) and the region
-   performance steps of PRs #60 / #62 (heap and `--perf` near Kadıköy, region fade-in at ~1.2 km).
+7. **Local runs owed by PR #62 (done 2026-09-27):** `npm run compile:walls` on current main: tiles unchanged against
+   the bake in the main checkout (breach-flank towers 4, overlap / road checks 0); the wall-tower perch candidates
+   (`walls/data/towers.json`) re-baked and committed (90 of 312 changed). Swimming pools: already in the region data
+   since 827c128 (677 pool areas); a fresh re-fetch changes only metadata. Open question for the owner: the
+   Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
+8. **Shot locally (2026-09-27):**
+   - Perch audit (`node scripts/perch-audit.mjs --page <worktree shim>`, `.shots/perches/audit/2026-09-27/`): 9
+     perches x 3 cameras at 16:00; one failure: `camlica-camii-kubbe` rider, 20 % of the view within 60 m blocked by
+     its own minarets. The Istanbul Sapphire rider view is mostly the dragon's neck.
+   - OSM feature kits (`.shots/osm-kits/2026-09-27/sheet.jpg`, 300 / 80 / 25 m): stadium pitch, fuel canopy,
+     playground equipment, motorway verge and shop signs read well. **Defects:** Karacaahmet cemetery and Salı Pazarı
+     (marketplace) draw as bare, blotchy ground (no graves / stalls); Eyüp cemetery shows trees only.
+   - Regions performance near Kadıköy (150 m, `dynres=0`, headless M-series): regions on 33 fps (p95 50 ms), heap
+     2.09 GB, 19.3 M triangles, 593 draws; `osmregions=0` 60 fps, 1.09 GB, 7.3 M, 363. Regions still cost ~1 GB and
+     ~12 M triangles there (item 3). Region takeover flight (`flicker-audit --scene kadikoy-handover --animate
+     --events`): no flicker spikes (0.10 per mille), but the region was already active from the warm-up, so the
+     1.2 km swap itself still needs a capture that starts beyond the load distance.
 
 ## Working notes
 
