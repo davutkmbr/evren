@@ -152,17 +152,29 @@ frame, and falls back to the static range test (silhouette pixels take the objec
 Left for stage 3: wing-membrane flutter is not in the velocity (thin strips of the membrane fall back to the current
 frame), traffic, vessels and other movers still use camera reprojection.
 
-## Stage 3 status (2026-09-27, in progress, opt-in)
+## Stage 3 status (2026-09-27, done, opt-in)
 
 Reactive mask: traffic (OSM and procedural), crowd, birds and dolphins register with `trackReactive`
 (`core/motion.ts`); `post/velocity.ts` draws them once more with their own materials into a depth mask (the scene's
 child list swapped for the lights and the reactive roots: 0.21 ms CPU instead of 0.9 ms for a full scene walk); the
-resolve raises the current-frame weight to 0.5 there. `?taareact=0` for A/B. Vessels stay on camera reprojection: they
+resolve raises the current-frame weight to 0.25 there. `?taareact=0` for A/B. Vessels stay on camera reprojection: they
 are slow and come out clean, while the mask made ferries aliased. Pedestrians on the quays, which the plain resolve
 erased, stay visible with the mask.
 
-Open: the `traffic-night` scene looks at buildings, not the road (fix the pose); masked pixels raised the harbour
-land flicker 0.21 → 0.64 per mille (lower the weight, or mask only fast movers). Then stage 4.
+Tuning (`--animate`, 48 frames after warm-up; land flicker in per mille, ghosting = `ghost-metric.py` ratio near the
+cars against the no-TAA run, `traffic-night` now looks up Barbaros Bulvarı from 45 m):
+
+| reactive weight | harbour land | traffic-night land | traffic-night ghosting |
+|---|---|---|---|
+| no mask (`?taareact=0`) | 0.34 | 0.09 | 1.35 |
+| 0.5 (first cut) | 0.62 | 0.08 | 1.36 |
+| **0.25 (kept)** | **0.33** | **0.07** | **1.35** |
+| 0.15, clip box x0.5 | 0.41 | 0.11 | – |
+| 0.5, clip box x0.5 | 0.79 | 0.10 | – |
+
+A weight of 0.5 made the masked pixels (quay crowd, cars) mostly the jittered current frame, which the audit counts as
+flicker; 0.25 keeps them at the unmasked level with no measurable extra trail. A tighter variance clip on masked
+pixels was worse in both scenes and was dropped. Stage 4 next.
 
 ## Measurement
 
