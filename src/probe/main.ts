@@ -158,8 +158,11 @@ async function loadSummary(host: HTMLElement): Promise<void> {
 
 async function main(): Promise<void> {
   const root = document.getElementById('probe')!;
+  const brand = el('p', 'probe-brand', 'Seventeen Skies');
+  // English name: uppercase it with English rules (Turkish would give "SKİES").
+  brand.lang = 'en';
   root.append(
-    el('p', 'probe-brand', 'Seventeen Skies'),
+    brand,
     el('h1', undefined, 'Bağlantı testi'),
     el(
       'p',
