@@ -17,12 +17,12 @@ the moment music picks a piece by category and `musicMood`. Each opens with `?mo
 | # | Record id | Plays? | Place and trigger as built | Text status |
 |---|---|---|---|---|
 | 1 | `nedim-bu-sehr-i-sitanbul` | yes | 250–600 m ASL within 900 m of Sarayburnu, 07–11 h, clear or haze | Two couplets; Vikikaynak, liseedebiyat.com and yedinota.com give the same words (transliteration differs) |
-| 5 | `sinan-turbe-kitabesi` | **no, pending** | Within 200 m of the tomb (any surface, ≤ 90 m AGL and ≤ 170 m ASL), 16:30–20:30, clear or haze | Lines 1–4 have one source (every online copy goes back to one transcription); the TDV quotes the date line differently |
+| 5 | `sinan-turbe-kitabesi` | yes | Within 200 m of the tomb (any surface, ≤ 90 m AGL and ≤ 170 m ASL), 16:30–20:30, clear or haze | The online copies go back to one faulty transcription; the text now follows Yakıt 2021 and Serdaroğlu 2007 (owner approved 2026-09-27) |
 | 7 | `katibim-uskudar-yagmur` | yes | ≤ 80 m AGL within 450 m of Üsküdar square, rain | Traditional; Vikikaynak text, same words in the TSM listing |
 | 8 | `ati-alan-uskudari-gecti` | yes | Diving (the fallback) over the strait mouth between Sarayburnu and Üsküdar, ≤ 250 m AGL, 06–21 h, not in a storm | Our retelling (MIT) |
 | 9 | `karagoz-sehzadebasi` | yes | ≤ 60 m AGL within 250 m of Şehzadebaşı Caddesi, 20–24 h | Traditional opening and closing formulas (liseedebiyat.com, Türk Maarif Ansiklopedisi) plus our dialogue |
 | 10 | `fikret-yagmur-asiyan` | yes | Within 300 m of Aşiyan (any surface, ≤ 80 m AGL), rain | First seven lines; turk-siiri.com and Milliyet give the same text, two more sites the same words |
-| 12 | `hasim-bir-gunun-sonunda-arzu` | **no, pending** | Göksu fallback: gliding ≤ 35 m AGL over the Bosphorus off the Göksu mouth, 17–20:30 h, clear or haze | Versions disagree (the first print has a line the later text lacks) |
+| 12 | `hasim-bir-gunun-sonunda-arzu` | yes | Göksu fallback: gliding ≤ 35 m AGL over the Bosphorus off the Göksu mouth, 17–20:30 h, clear or haze | Versions disagree; the text now follows Enginün–Kerman 1987 in the Dergâh / Piyale 1926 state (owner approved 2026-09-27) |
 | 16 | `huseyin-rahmi-kuyrukluyildiz` | yes | 150–900 m ASL within 1.3 km of Heybeliada, 22–04 h, clear | Four lines of dialogue; the TDK and Remzi editions give the same words; opening and closing lines ours |
 | 20 | `prokopios-gokten-asili-kubbe` | yes | Gliding or flying 150–450 m ASL within 300 m of the dome, 10–16 h, clear or haze | Our translation (MIT) from Dewing's English of *Buildings* I.1.27–46 (LacusCurtius) |
 | 21 | `de-amicis-sis-kalkinca` | yes | ≤ 90 m AGL over the Marmara within 1.6 km south of Sarayburnu, 05–11 h, sea fog ≥ 0.2 (a foggy morning or fog weather) | Our translation (MIT) of sentences confirmed on experiences.it and a second site |

@@ -127,23 +127,6 @@ float cityBox(vec2 p, vec2 lo, vec2 hi, float aa) {
   return a.x * a.y;
 }
 
-/* Lit state of a cell of 2^l x 2^l windows. Cells are all-lit or all-dark with probability = occupancy, so a
-   pixel-sized cell keeps the sparkle of individual windows while the average stays energy-conserving. Level 0
-   reproduces the per-window decision of the detailed shading exactly. */
-float cityLitCell(vec2 wc, float l, float seed, float occ) {
-  if (l < 0.5) return step(hash13(vec3(floor(wc), seed + 17.0)), occ);
-  float s = exp2(l);
-  return step(hash13(vec3(floor(wc / s), seed + 5.0 + l * 7.13)), occ);
-}
-
-/* Stable sparkle for pixels covering one or more windows: cells matching the pixel footprint (in windows), blended
-   between two levels, so distant facades twinkle without shimmering while the camera moves. */
-float cityFarLit(vec2 wc, float footprint, float seed, float occ) {
-  float lod = clamp(log2(max(footprint, 1.0)), 0.0, 7.0);
-  float l0 = floor(lod);
-  return mix(cityLitCell(wc, l0, seed, occ), cityLitCell(wc, l0 + 1.0, seed, occ), smoothstep(0.2, 0.8, lod - l0));
-}
-
 /* Windows + everything on plastered / stone / timber facades. */
 void cityWall(inout CitySurf s, int kind, vec3 N, vec3 T, float u, float v, float sx, int flags, float fh, float gfh,
               float seed, int winType, int usage, float hAbove, float lightsOn, float occ) {
@@ -433,14 +416,17 @@ void cityWall(inout CitySurf s, int kind, vec3 N, vec3 T, float u, float v, floa
   vec2 rLo = shopBay ? vec2(0.12, 0.25) : vec2(wx0, wy0);
   vec2 rHi = shopBay ? vec2(cw - 0.12, gfh - 0.95) : vec2(wx1, wy1);
   float cover = cityCover(lx, fwu, rLo.x, rHi.x) * cityCover(ly, fwv, rLo.y, rHi.y) * (blankCol && !shopBay ? 0.0 : 1.0);
+  // Light is filtered wider than the glass (CITY_LIT_FILTER px): a lit window about a pixel wide keeps its brightness
+  // wherever it falls between pixel centres instead of blinking as the view moves.
+  float coverLit = cityCover(lx, fwu * CITY_LIT_FILTER, rLo.x, rHi.x) * cityCover(ly, fwv * CITY_LIT_FILTER, rLo.y, rHi.y) * (blankCol && !shopBay ? 0.0 : 1.0);
   float glassFrac = mix(cover, winFrac * (1.0 - colBlank), cellMix);
   vec3 wallFar = base * (0.9 + 0.22 * (mott - 0.5)) * mix(0.62, 1.0, smoothstep(0.0, 2.2, hAbove));
   vec3 glassFar = mix(vec3(0.03), vec3(0.16, 0.15, 0.13), step(0.45, hw2) * 0.6);
   vec3 farAlb = mix(wallFar, glassFar, glassFrac * 0.92);
   float onW = shopBay ? 1.0 : (stair ? step(hash13(vec3(col, fi, seed + 17.0)), 0.75) : step(hash13(vec3(col, fi, seed + 17.0)), occ));
   float tW = hash13(vec3(col, fi, seed + 29.0));
-  vec3 sharpEmis = cityKelvin(shopBay ? 0.65 : (tW < 0.7 ? tW * 0.6 : 0.5 + tW * 0.5)) * (shopBay ? 7.0 : 4.5 + 6.0 * hw1) * onW * cover;
-  float farLit = cityFarLit(vec2(col, fi), footprint, seed, occ);
+  vec3 sharpEmis = cityKelvin(shopBay ? 0.65 : (tW < 0.7 ? tW * 0.6 : 0.5 + tW * 0.5)) * (shopBay ? 7.0 : 4.5 + 6.0 * hw1) * onW * coverLit;
+  float farLit = lightsOn <= 0.0 ? 0.0 : cityFarLit(vec2(u / cw, fi + ly / flH), vec2(fwu / cw, fwv / flH), vec2(seed + 17.0, seed + 5.0), occ);
   vec3 cellEmis = cityFarWindowLight(winFrac, farLit) * (1.0 - colBlank);
   if (shop && v < gfh && v > 0.0) cellEmis = cityKelvin(0.6) * 7.0 * 0.5;
   vec3 farEmis = mix(sharpEmis, cellEmis, cellMix) * lightsOn;
@@ -483,8 +469,7 @@ void cityCurtain(inout CitySurf s, vec3 N, vec3 T, float u, float v, float sx, i
   float ceiling = mix(0.55, 1.25, smoothstep(0.9, flH - 0.1, ly));
   vec3 lc = cityKelvin(0.72 + 0.2 * hash12(vec2(bay, seed)));
   vec3 emis = lc * onB * (fi == 0.0 ? 8.0 : 5.0) * ceiling * (1.0 - spandrel) * (1.0 - mull) * lightsOn;
-  float footprint = max(fwidth(u) / (pw * 4.0), fwidth(v) / fh);
-  float farOn = max(cityFarLit(vec2(bay, fi), footprint, seed + 11.0, occ), step(hash12(vec2(fi, seed + 5.0)), occ * 0.35));
+  float farOn = lightsOn <= 0.0 ? 0.0 : max(cityFarLit(vec2(u / (pw * 4.0), fi + ly / flH), vec2(fwidth(u) / (pw * 4.0), fwidth(v) / fh), vec2(seed + 28.0, seed + 16.0), occ), step(hash12(vec2(fi, seed + 5.0)), occ * 0.35));
   vec3 farEmis = lc * 5.0 * 0.6 * farOn * lightsOn;
   s.albedo = mix(mix(glass, tint * 0.35, 0.25), alb, detail);
   s.rough = mix(0.08, rough, detail);

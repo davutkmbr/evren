@@ -71,9 +71,10 @@ void main() {
   vec4 mv = viewMatrix * vec4(p, 1.0);
   float pxScale = projectionMatrix[1][1] * uResolution.y * 0.5;
   float px = radius * pxScale / max(-mv.z, 1.0);
-  float size = max(px, 1.35);
-  float energy = pow(px / size, 1.4);
-  float intensity = lightsOn * vis * lobe * mix(0.5, 1.0, energy);
+  float look = max(px, 1.35);
+  float size = max(look, lightSplatMinSize(2.3, 10.0));
+  float energy = pow(px / look, 1.4);
+  float intensity = lightsOn * vis * lobe * mix(0.5, 1.0, energy) * lightSplatEnergy(look, size);
   vCol = col * intensity * atmoTransmittance(p);
   gl_Position = projectionMatrix * mv;
   gl_PointSize = size * 2.3;

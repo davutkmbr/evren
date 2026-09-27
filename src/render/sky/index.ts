@@ -461,6 +461,10 @@ export function createSkySystem(): System {
       c.scene.environmentIntensity = 1;
 
       keyLight.applyQuality(c.quality.settings);
+      // ?shadows=0: no key-light shadows (A/B switch, e.g. the flicker audit's bisection).
+      if (params.get('shadows') === '0') {
+        keyLight.light.castShadow = false;
+      }
       unsubscribeQuality = c.quality.onChange(applyQuality);
 
       // Cascades are fitted to (and rendered for) the main camera only; other cameras (planar reflections) reuse

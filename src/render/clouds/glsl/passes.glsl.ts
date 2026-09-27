@@ -592,8 +592,9 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
   vec2 xz = uShadowRegion.xy + (vUv - 0.5) * uShadowRegion.z;
-  float sy = max(uSunDir.y, 0.05);
-  vec3 sr = vec3(uSunDir.x / sy, 1.0, uSunDir.z / sy);
+  // Along the key light (the sun by day, the moon at night), like cloudShadow() that reads it.
+  float sy = max(uKeyLightDir.y, 0.05);
+  vec3 sr = vec3(uKeyLightDir.x / sy, 1.0, uKeyLightDir.z / sy);
   float h0 = CLOUD_SHADOW_REF_H;
   float h1 = CLOUD_SHADOW_TOP_H;
   float od = 0.0;

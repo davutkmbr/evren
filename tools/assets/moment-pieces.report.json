@@ -383,6 +383,138 @@
      "durationSec": 80.6
     }
    }
+  },
+  "isfahan-gazeli-cemil-bey": {
+   "id": "isfahan-gazeli-cemil-bey",
+   "recording": "commons-isfahan-gazel-cemil-bey",
+   "file": "ملا_عثمان_الموصلي_-_غزل_اصفهان_Isfahan_Gazel_-_Uthman_al-Mosuli.ogg",
+   "segment": [
+    0.0,
+    100.0
+   ],
+   "noiseRegion": [
+    213.95,
+    214.95
+   ],
+   "hum": null,
+   "clicksRepaired": 342,
+   "metrics": {
+    "raw": {
+     "music_db": -23.47,
+     "noise_db": -36.97,
+     "snr_db": 13.5,
+     "flatness_quiet": 0.0417,
+     "clicks_per_s": 0.96
+    },
+    "denoised": {
+     "music_db": -26.59,
+     "noise_db": -40.51,
+     "snr_db": 13.92,
+     "flatness_quiet": 0.0449,
+     "clicks_per_s": 0.76
+    },
+    "compare": {
+     "band_change_db": -2.87,
+     "hf_change_db": -1.37,
+     "band_change_vs_raw_db": -2.88,
+     "hf_change_vs_raw_db": -1.65,
+     "hiss_change_db": -1.79,
+     "kurtosis_ratio": 0.302
+    },
+    "snrGainDb": 0.42
+   },
+   "autoVariant": "raw",
+   "autoReasons": [
+    "SNR gain 0.4 dB < 3 dB",
+    "music 300 Hz-3 kHz changed -2.87 dB (> 1.5 dB)"
+   ],
+   "variant": "raw",
+   "variants": {
+    "denoised": {
+     "src": [
+      "moments/isfahan-gazeli-cemil-bey.opus",
+      "moments/isfahan-gazeli-cemil-bey.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -1.89,
+     "durationSec": 100.0
+    },
+    "raw": {
+     "src": [
+      "moments/isfahan-gazeli-cemil-bey.raw.opus",
+      "moments/isfahan-gazeli-cemil-bey.raw.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -3.49,
+     "durationSec": 100.0
+    }
+   }
+  },
+  "resadiye-marsi-1910": {
+   "id": "resadiye-marsi-1910",
+   "recording": "commons-odeon-54745-resadiye-marsi",
+   "file": "Marche_de_sa_Majesté_Impériale_Le_Sultan_Mohammed_V._par_Italo_Selvelli.ogg",
+   "segment": [
+    0.0,
+    90.0
+   ],
+   "noiseRegion": [
+    0.15,
+    0.5
+   ],
+   "hum": null,
+   "clicksRepaired": 23,
+   "metrics": {
+    "raw": {
+     "music_db": -16.21,
+     "noise_db": -120.0,
+     "snr_db": 103.79,
+     "flatness_quiet": 0.0762,
+     "clicks_per_s": 0.24
+    },
+    "denoised": {
+     "music_db": -16.21,
+     "noise_db": -120.0,
+     "snr_db": 103.79,
+     "flatness_quiet": 0.0763,
+     "clicks_per_s": 0.16
+    },
+    "compare": {
+     "band_change_db": -0.0,
+     "hf_change_db": 0.0,
+     "band_change_vs_raw_db": -0.0,
+     "hf_change_vs_raw_db": -0.0,
+     "hiss_change_db": 0.0,
+     "kurtosis_ratio": 5.853
+    },
+    "snrGainDb": 0.0
+   },
+   "autoVariant": "raw",
+   "autoReasons": [
+    "SNR gain 0.0 dB < 3 dB",
+    "kurtosis ratio 5.853 > 1 (musical-noise risk)"
+   ],
+   "variant": "raw",
+   "variants": {
+    "denoised": {
+     "src": [
+      "moments/resadiye-marsi-1910.opus",
+      "moments/resadiye-marsi-1910.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -1.74,
+     "durationSec": 90.0
+    },
+    "raw": {
+     "src": [
+      "moments/resadiye-marsi-1910.raw.opus",
+      "moments/resadiye-marsi-1910.raw.m4a"
+     ],
+     "lufs": -18.0,
+     "truePeakDb": -1.73,
+     "durationSec": 90.0
+    }
+   }
   }
  },
  "generatedBy": "scripts/audio/prep-moment-music.py"
