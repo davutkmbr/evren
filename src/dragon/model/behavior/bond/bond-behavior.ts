@@ -6,6 +6,7 @@ import { bondPose } from './apply';
 import { BondCore } from './core';
 import { MOOD_LINES } from './mood';
 import { BOND, createInputs, estimateAirTemp, type AttentionCandidate, type BondInputs } from './types';
+import { exposeDebug } from '../../../../core/dev-tools';
 
 const DEG = Math.PI / 180;
 /** Maneuvers the dragon glances back after ("did you like that?"); they also excite it a little. */
@@ -119,7 +120,7 @@ export class BondBehavior implements DragonBondState {
           log: this.core.behaviors.log.slice(-10),
         }),
       };
-      (window as unknown as { __bondDebug?: typeof handle }).__bondDebug = handle;
+      exposeDebug('__bondDebug', handle);
       this.unsubscribe.push(() => {
         const w = window as unknown as { __bondDebug?: typeof handle };
         if (w.__bondDebug === handle) {

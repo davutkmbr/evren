@@ -21,7 +21,7 @@ Later work only opens, copies or trims them; the originals stay untouched.
 - **US-risky recordings** (public domain in Turkey, still protected in the US: the 1949 Kâtibim, the Pathé Istanbul
   discs of about 1927–1928, the Darülelhan series, the undated Hafız Burhan sides) may reach players only through
   `private-assets/` and builds, never `public/` or the repository ([private-assets.md](private-assets.md)). The owner
-  accepts that residual risk; each one carries full attribution. **Takedown requests: `<contact-email>`.**
+  accepts that residual risk; each one carries full attribution. **Takedown requests: `davutkmbr@gmail.com`.**
 - Gallica files: the BnF marks them "domaine public" but attaches reuse conditions to its own files (non-commercial
   reuse free with the credit "Source gallica.bnf.fr / BnF"; commercial reuse needs a BnF licence). Settle this before
   any paid release.

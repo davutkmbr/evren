@@ -35,4 +35,4 @@ assets, never in this repository:
 ## Rights holders and takedown requests
 
 If you hold rights in any material used here and want it credited differently or removed, write to
-**`<contact-email>`**. Requests are answered and acted on promptly.
+**`davutkmbr@gmail.com`**. Requests are answered and acted on promptly.

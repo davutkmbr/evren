@@ -32,6 +32,7 @@ import { SkyDome, type SkyDomeParams } from './sky-dome';
 import { StarField } from './stars';
 import { nightSkyWeight, twilightSkyBoost, twilightSkyDirection } from './twilight';
 import { WindModel } from './wind';
+import { exposeDebug } from '../../core/dev-tools';
 
 registerAtmosphereGlobals();
 installSkyShaderPatches();
@@ -500,7 +501,7 @@ export function createSkySystem(): System {
 
       c.services.provide('env', state);
       if (c.sandbox) {
-        (window as unknown as Record<string, unknown>).__skyDebug = { luts, environment, keyLight, celestial, state, clock, overrides, calendar: () => ({ year, dayOfYear: c.time.dayOfYear }) };
+        exposeDebug('__skyDebug', { luts, environment, keyLight, celestial, state, clock, overrides, calendar: () => ({ year, dayOfYear: c.time.dayOfYear }) });
       }
     },
 

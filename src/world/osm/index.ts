@@ -25,6 +25,7 @@ import type { OsmContext, OsmLayer, OsmLayerFactory } from './types';
 import { wallsReady } from '../landmarks/walls/system/owned';
 import { landmarkClaims } from '../landmarks/claims';
 import { openLandmarkPassages } from './shared/landmark-passages';
+import { exposeDebug } from '../../core/dev-tools';
 
 /**
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
@@ -400,7 +401,7 @@ class OsmSystem implements System {
       .catch((e: unknown) => console.error('[osm] failed to start', e));
     const system = this;
     const galata = (): OsmRegion | undefined => this.loaded.get('galata');
-    (window as unknown as { __osm: OsmDebug }).__osm = {
+    exposeDebug('__osm', {
       get ctx() {
         return galata()?.ctx ?? null;
       },
@@ -427,7 +428,7 @@ class OsmSystem implements System {
         const r = system.loaded.get(id);
         return r ? { ctx: r.ctx, data: r.data, layers: r.layers } : null;
       },
-    };
+    });
   }
 
   pending(): number {

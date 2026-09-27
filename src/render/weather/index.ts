@@ -13,6 +13,7 @@ import { DEFAULT_FAR_BLUR, WEATHER_LABELS, WEATHER_ORDER, WEATHER_PRESETS } from
 import { RainStreaks } from './rain';
 import { SEA_FOG, SeaFogModel, type SeaFogInputs } from './sea-fog';
 import { WeatherPass } from './weather-pass';
+import { exposeDebug } from '../../core/dev-tools';
 
 const STORAGE_KEY = 'ejderha.weather.v1';
 /** Time constants (s) of the weather transitions and of the look setting. */
@@ -173,14 +174,14 @@ export function createWeatherSystem(): System {
       ctx.pipeline.addHdrPass(pass);
       ctx.services.provide('weather', service);
       if (import.meta.env.DEV || ctx.sandbox || ctx.debug.params.has('weatherdebug')) {
-        (window as unknown as { __weather?: unknown }).__weather = {
+        exposeDebug('__weather', {
           service,
           strike: () => lightning.trigger(ctx.camera, Math.max(current.storm, 0.6), heightAt),
           pass,
           rain,
           lightning,
           seaFog,
-        };
+        });
       }
     },
 
