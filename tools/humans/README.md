@@ -18,6 +18,7 @@ installed in MPFB's data folder (face units zip path: `RIDER_FACEUNITS`, default
 | `garments.py` | Garment helpers: regions cut from the body by bone weights, grown shells, trims, piping, cloth settling, skinning, bone chains. |
 | `wings.py` | Hezarfen's wind wings and their case (bone chains `wing_L/R_1..3`). |
 | `face.py` | Face units kept as morph targets while the body targets are baked; keys copied to lashes / brows; eye bones. |
+| `mixamo.py` | Retargets the owner's private Mixamo clips (`private-assets/mixamo/`) into `private-assets/build/rider/clips.glb` + `clips.json` (see `.docs/assets/private-assets.md`). |
 | `anim.py` | Procedural on-foot clips (idle, walk, run, run_stop, crouch, jump, glide) with its own forward kinematics and leg IK. |
 | `mpfb.py` | Imports MPFB services inside Blender. |
 

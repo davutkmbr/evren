@@ -470,29 +470,38 @@ def jump_start_pose(b, t):
     for side, sg in SIDES:
         b.foot_on_ground(side, sg, 0.0, pitch=0.7 * drive, toe=0.5 * drive, width=0.03)
         # Arms swing back in the squat, then forward and up with the drive.
-        b.arm(side, sg, swing=lerp(-0.6 * squat, 1.3, drive), out=0.2, elbow=0.3 + 0.2 * squat)
+        b.arm(side, sg, swing=lerp(-0.7 * squat, 1.0, drive), out=0.18, elbow=0.3 + 0.25 * squat + 0.6 * drive)
     b.fingers(0.3, 0.2)
 
 
 def air_pose(b, t, falling):
-    """In the air: rising = legs tucked under, arms up; falling = legs reaching down for the ground, arms out."""
+    """
+    In the air. Rising: carried up by the drive, the knees drawn up (one a little higher), the arms forward at chest
+    height, elbows bent, the chest a little forward. Falling: the legs lowering to meet the ground (knees soft, one
+    foot ahead), the arms out to the sides and a little forward for balance, the gaze down toward the landing.
+    """
     T = CLIPS["jump_rise"][0]
     w = math.sin(2 * math.pi * t / T)
     b.start()
-    tuck = 0.0 if falling else 1.0
-    b.pelvis(Vector((0, 0, 0.0)), pitch=0.08 + 0.1 * tuck)
-    b.trunk(pitch=0.05 + 0.08 * tuck + 0.01 * w)
-    b.head_level(pitch=-0.05 if falling else -0.12)
-    for side, sg in SIDES:
-        if falling:
-            ankle = Vector((sg * 0.15, b.ankle0[side].y - 0.06 * sg, b.ankle_h + 0.08))
-            b.leg(side, sg, ankle, pitch=0.35, knee_out=0.15)
-            b.arm(side, sg, swing=0.55 + 0.05 * w, raise_=0.75, out=0.1, elbow=0.7)
-        else:
-            ankle = Vector((sg * 0.14, b.ankle0[side].y + 0.12 + (0.1 if side == "Left" else -0.05), b.ankle_h + 0.32 + 0.08 * sg))
-            b.leg(side, sg, ankle, pitch=0.45, knee_out=0.1)
-            b.arm(side, sg, swing=1.9 + 0.05 * w, raise_=0.35, out=0.1, elbow=1.1)
-    b.fingers(0.25, 0.2)
+    if falling:
+        b.pelvis(Vector((0, 0, 0.0)), pitch=0.06)
+        b.trunk(pitch=0.08 + 0.01 * w)
+        b.head_level(pitch=0.22)
+        for side, sg in SIDES:
+            ahead = 0.08 if side == "Left" else -0.02
+            ankle = Vector((sg * 0.14, b.ankle0[side].y - ahead, b.ankle_h + 0.1))
+            b.leg(side, sg, ankle, pitch=0.3, knee_out=0.12)
+            b.arm(side, sg, swing=0.35 + 0.04 * w, raise_=0.55, out=0.12, elbow=0.55)
+    else:
+        b.pelvis(Vector((0, 0, 0.0)), pitch=0.14)
+        b.trunk(pitch=0.12 + 0.01 * w)
+        b.head_level(pitch=0.05)
+        for side, sg in SIDES:
+            lift = 0.3 if side == "Left" else 0.2
+            ankle = Vector((sg * 0.13, b.ankle0[side].y + 0.14, b.ankle_h + lift))
+            b.leg(side, sg, ankle, pitch=0.5, knee_out=0.08)
+            b.arm(side, sg, swing=1.0 + 0.05 * w, raise_=0.12, out=0.1, elbow=1.05)
+    b.fingers(0.3, 0.2)
 
 
 def jump_land_pose(b, t):
