@@ -10,6 +10,13 @@ export interface ClipInfo {
   takeoff?: number;
   /** Captured landings: when the feet meet the ground (s). */
   contact?: number;
+  /** Captured jumps: the flight time after take-off (s; the game stretches it over its own). */
+  air?: number;
+  /** Captured turns: the heading change (rad, + = to the left) and its curve over the clip (24 even steps). */
+  turn?: number;
+  turn_curve?: number[];
+  /** What the retarget measured (tools/humans/mixamo.py): travel (m) and more. */
+  measured?: { travel: number };
 }
 
 export const CLIPS: Record<string, ClipInfo> = {

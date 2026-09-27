@@ -4,7 +4,8 @@
  * zig-zags down the back and the ribs close onto it like a fan, the canvas gathering between them; opening runs the
  * other way (a spring in the controller gives the snap). Flapping swings the whole wing about the body's long axis,
  * the wrist bending back a little on the up-stroke; the hands hold the grips (two-bone arm IK) while the wings are open.
- * All angles are in the character's own frame (root: +X left, +Y up, -Z back), so they hold in any body orientation.
+ * All angles are in the back's frame: the character's own axes (root: +X left, +Y up, -Z back) as carried by the chest
+ * bone the wings hang from, so the folded wings stay on the back however the body bends, twists or tumbles.
  */
 import * as THREE from 'three';
 
@@ -23,6 +24,8 @@ const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _pq = new THREE.Quaternion();
 const _rq = new THREE.Quaternion();
+const _fq = new THREE.Quaternion();
+const _mq = new THREE.Quaternion();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
@@ -41,16 +44,18 @@ interface WingRig {
   spar: THREE.Bone[];
   ribs: { bone: THREE.Bone; collapse: number }[];
   rest: Map<THREE.Bone, THREE.Quaternion>;
+  /** The mount (the wings' parent bone) in the bind pose, relative to the root: frame = mount · this⁻¹. */
+  mountRel: THREE.Quaternion;
   arm?: { upper: THREE.Bone; lower: THREE.Bone; hand: THREE.Bone; l1: number; l2: number };
 }
 
-/** Rotates `bone` by `angle` about `axis` given in the root's frame (applied in world space, kept in the bone's). */
-function rotateInRoot(root: THREE.Object3D, bone: THREE.Bone, axis: THREE.Vector3, angle: number): void {
+/** Rotates `bone` by `angle` about `axis` given in `frame` (a world rotation; applied in world space, kept in the
+ * bone's). */
+function rotateInFrame(frame: THREE.Quaternion, bone: THREE.Bone, axis: THREE.Vector3, angle: number): void {
   if (Math.abs(angle) < 1e-6) {
     return;
   }
-  root.getWorldQuaternion(_rq);
-  _axis.copy(axis).applyQuaternion(_rq);
+  _axis.copy(axis).applyQuaternion(frame);
   _q.setFromAxisAngle(_axis, angle);
   bone.parent!.getWorldQuaternion(_pq);
   // local' = P⁻¹ · R · P · local
@@ -128,7 +133,8 @@ export class Wings {
         hand.getWorldPosition(_c);
         arm = { upper, lower, hand, l1: _a.distanceTo(_b), l2: _b.distanceTo(_c) };
       }
-      this.wings.push({ side, sg, spar, ribs, rest, arm });
+      const mountRel = inv.clone().multiply(spar[0].parent!.getWorldQuaternion(new THREE.Quaternion()));
+      this.wings.push({ side, sg, spar, ribs, rest, arm, mountRel });
     }
     this.apply();
   }
@@ -155,16 +161,19 @@ export class Wings {
       for (const [b, q] of w.rest) {
         b.quaternion.copy(q);
       }
-      w.spar[0].parent!.updateMatrixWorld(true);
+      const mount = w.spar[0].parent!;
+      mount.updateMatrixWorld(true);
+      // The back's frame now: the root's axes carried along by the mount bone's pose.
+      const f = mount.getWorldQuaternion(_fq).multiply(_mq.copy(w.mountRel).invert());
       const sg = w.sg;
-      // Flap about the body's long axis (root Y): + = down-stroke (the tip toward the belly, root +Z).
-      rotateInRoot(this.root, w.spar[0], _Y, -sg * this.flap * (1 - sparFold));
-      rotateInRoot(this.root, w.spar[0], _Z, -sg * (FOLD[0] * sparFold - over * 0.15));
-      rotateInRoot(this.root, w.spar[0], _X, this.tuck * sparFold);
-      rotateInRoot(this.root, w.spar[1], _Z, sg * (FOLD[1] * sparFold + up * FLAP_WRIST));
-      rotateInRoot(this.root, w.spar[2], _Z, -sg * (FOLD[2] * sparFold + up * FLAP_WRIST * 0.6));
+      // Flap about the body's long axis (Y): + = down-stroke (the tip toward the belly, +Z).
+      rotateInFrame(f, w.spar[0], _Y, -sg * this.flap * (1 - sparFold));
+      rotateInFrame(f, w.spar[0], _Z, -sg * (FOLD[0] * sparFold - over * 0.15));
+      rotateInFrame(f, w.spar[0], _X, this.tuck * sparFold);
+      rotateInFrame(f, w.spar[1], _Z, sg * (FOLD[1] * sparFold + up * FLAP_WRIST));
+      rotateInFrame(f, w.spar[2], _Z, -sg * (FOLD[2] * sparFold + up * FLAP_WRIST * 0.6));
       for (const r of w.ribs) {
-        rotateInRoot(this.root, r.bone, _Z, r.collapse * Math.min(1, ribFold + up * FLAP_RIB_CLOSE));
+        rotateInFrame(f, r.bone, _Z, r.collapse * Math.min(1, ribFold + up * FLAP_RIB_CLOSE));
       }
       if (w.arm && this.grip > 1e-3) {
         this.holdGrip(w, this.grip * (1 - sparFold));

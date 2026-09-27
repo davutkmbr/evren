@@ -5,7 +5,8 @@
  *   ?terrain=1 (rolling ground)   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
  *   Without ?clip: the locomotion controller (keyboard: WASD relative to the camera, Shift run, C crouch, Space jump;
  *   G held in the air: glide; drag to orbit, wheel to zoom), or a scripted input
- *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide (glide: with ?alt=m; anything else stands, and
+ *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide|pivot|reverse|slide|flip|drop (glide, drop: with
+ *   ?alt=m; drop&move=1 runs off it; anything else stands, and
  *   idles) with
  *   &at=<s> to hold the simulation at that time (deterministic screenshots of transitions).
  *   ?look=<JSON RiderLook fields>  ?palette=akinci|sipahi|deli|yeniceri
@@ -120,10 +121,14 @@ let controller: LocomotionController | undefined;
 let simTime = 0;
 const keys = new Set<string>();
 let jumpQueued = false;
+let trickQueued = false;
 window.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (e.code === 'Space') {
     jumpQueued = true;
+  }
+  if (e.code === 'KeyF') {
+    trickQueued = true;
   }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -173,6 +178,37 @@ function scripted(t: number, input: LocomotionInput): void {
       input.flight = { pitch: dive, roll: t > 4.6 && t < 7 ? -1 : 0, flap, fold: false };
       break;
     }
+    case 'pivot':
+      // Standing: asks to go left (a pivot turn), then back the other way (a half turn), then walks.
+      if (t > 0.6 && t < 2.2) {
+        input.move.set(1, 0);
+      } else if (t > 3.0) {
+        input.move.set(-1, 0);
+      }
+      input.run = t > 3.0;
+      break;
+    case 'reverse':
+      // Runs, then pulls back: the turn round in the run.
+      input.run = true;
+      input.move.set(0, t < 2.4 ? 1 : -1);
+      break;
+    case 'slide':
+      fwd(1);
+      input.run = true;
+      input.crouch = t > 2.0 && t < 3.6;
+      break;
+    case 'flip':
+      fwd(1);
+      input.run = true;
+      input.trick = t >= 2.0 && t < 2.0 + 1 / 60;
+      break;
+    case 'drop':
+      // From ?alt=: a fall off a height, running (a roll) with ?move=1.
+      if (params.get('move') === '1') {
+        fwd(1);
+        input.run = true;
+      }
+      break;
     case 'circle': {
       const a = t * 0.9;
       input.move.set(Math.sin(a), Math.cos(a));
@@ -280,6 +316,8 @@ const bench: System = {
           input.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
           input.crouch = keys.has('KeyC');
           input.jump = jumpQueued;
+          input.trick = trickQueued;
+          trickQueued = false;
           input.glide = keys.has('KeyG') || (jumpQueued && controller.state === 'air');
           input.flight = { pitch: f, roll: r, flap: input.jump, fold: input.crouch };
           jumpQueued = false;
