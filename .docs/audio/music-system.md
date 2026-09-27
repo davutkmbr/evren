@@ -8,16 +8,24 @@ open-world soundtrack (Sky, Alto's Odyssey, A Short Hike) with at most a light I
 
 The game has two music styles ("Müzik tarzı" in the settings):
 
-- **Seyrek (sparse, sprinkle mode)** — the default as soon as the manifest has sprinkle phrases. Mostly silence: every
+- **Seyrek (sparse, sprinkle mode)** — the default as soon as the free-flight pool (sprinkle phrases and moment pieces)
+  is not empty. Mostly silence: every
   few minutes one short, sparse, single-instrument **phrase** (a ney breath, a few kanun notes, an oud phrase, a tanbur
   note at night) plays over the world sound, chosen by context — the way Breath of the Wild and Minecraft do it. Loops
   only play for races (race-tagged sets) and for a moment's own set. See [Sprinkle mode](#sprinkle-mode).
-- **Sürekli (continuous)** — the looping stem sets described below, with their play / silence cycle.
+- **Sürekli (continuous)** — the looping stem sets described below, with their play / silence cycle. While no loop set
+  is approved, the **rotation** plays the free-flight pool instead: one piece after another, 8–25 s apart.
+
+**Free-flight pool (shared for now).** Both styles draw on the sprinkle phrases **and** the historic moment pieces: the
+owner asked (2026-09-27) to play the 78 rpm records in free flight too, sparse or continuous by the setting, and to
+split moment-only pieces from free-flight ones later if needed. A moment piece fits any time of day in free flight; its
+time tags only make it likelier at that time. Moments, lead-ins, races, photos and menus fade a free piece out as they
+do a sprinkle.
 
 In both styles a moment (a poem, a quotation, a historical memory) can have its own emotional **moment piece** under its
 subtitles; see [Moment music](#moment-music).
 
-No loop sets or sprinkle phrases are approved yet. The first **moment pieces** are: restored excerpts of historic 78 rpm
+No loop sets or sprinkle phrases are approved yet, so free flight plays the moment pieces. The first **moment pieces** are: restored excerpts of historic 78 rpm
 records (approved 2026-09-26), see [Historic 78 rpm recordings](#historic-78-rpm-recordings-archive-and-variants).
 To hear the loops and sprinkles now, use the procedural DEV test sets and phrases (below).
 
@@ -161,8 +169,9 @@ Style **Seyrek** (`sparse`). The sprinkle director (`sprinkle.ts`) runs on the A
 **Coexistence with the loops.** In sparse style the loop director only plays when a race or a moment asks for it: a
 race-tagged set during races (with its stingers) and a moment's own `momentOnly` set. Outside those the director holds,
 and a set that still plays (after a race) ends on its next phrase boundary. In continuous style the sprinkle director
-does not run. Moment pieces play in both styles. With no sprinkle phrases in the manifest the default style is
-continuous, so the game behaves as before until the owner adds phrases.
+does not run; with no free-flight loop set, the rotation (`ROTATION_DEFAULTS`, a second `SprinkleDirector`, voice
+owner `r`) plays the pool back to back instead. Moment pieces play in both styles. With an empty pool the default style
+is continuous.
 
 **Tuning:** every number above is in `SPRINKLE_DEFAULTS` (`sprinkle.ts`): gap ranges, first gap, after-hold quiet,
 calm settle, long-calm length / scale / floor, fades, retry, preload, the pick weights, the dawn and dusk hours, the calm
@@ -632,7 +641,7 @@ with silences); the moment duck, the menu duck and the under-water muffle remain
 ## Settings
 
 Ayarlar → Ses: **Müzik** (volume, persisted as `ejderha.audio.music.volume`, default 80 %), **Müzik tarzı** (Seyrek /
-Sürekli, persisted as `ejderha.audio.music.style`; unset = Seyrek when the manifest has sprinkle phrases, else Sürekli)
+Sürekli, persisted as `ejderha.audio.music.style`; unset = Seyrek when the free-flight pool has pieces, else Sürekli)
 and **Uyarlanabilir müzik** (on / off, persisted as `ejderha.audio.music.adaptive`, default on). At zero volume nothing
 new is decoded.
 
