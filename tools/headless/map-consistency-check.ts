@@ -631,6 +631,57 @@ console.log('7. Real parks and woods in the land use (geo/build/osm-land.ts)');
       }
     }
     check(samples > 0 && hits / samples >= 0.95, `${polys} OSM parks, woods and cemeteries over 2 ha: ${((hits / Math.max(1, samples)) * 100).toFixed(1)} % of ${samples} samples green in the land use (>= 95 %)`, lines);
+
+    // Against the source: every ring of the regions' OSM data, not only the polygons the bake kept (it once kept one
+    // ring per relation id and dropped Karacaahmet's 42 ha main part). Each sizeable ring >= 80 % green.
+    const SOURCE = /^(landuse=(cemetery|forest)|amenity=grave_yard|natural=wood|leisure=park)$/;
+    const bad: string[] = [];
+    let rings = 0;
+    const seenRing = new Set<string>();
+    for (const def of osmRegions()) {
+      const file = resolve(ROOT, 'public', def.url.replace(/^\//, ''));
+      if (!existsSync(file)) {
+        continue;
+      }
+      const data = readJson<OsmData>(file);
+      for (const a of data.areas as OsmArea[]) {
+        const key = `${a.id}:${a.ring.length}:${a.ring[0]},${a.ring[1]}`;
+        if (!SOURCE.test(a.kind) || seenRing.has(key)) {
+          continue;
+        }
+        seenRing.add(key);
+        let ps = 0;
+        let ph = 0;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let q = 0; q < a.ring.length; q += 2) {
+          minX = Math.min(minX, a.ring[q]);
+          maxX = Math.max(maxX, a.ring[q]);
+          minZ = Math.min(minZ, a.ring[q + 1]);
+          maxZ = Math.max(maxZ, a.ring[q + 1]);
+        }
+        for (let z = minZ + 10; z < maxZ; z += 20) {
+          for (let x = minX + 10; x < maxX; x += 20) {
+            if (!isOsmCell(x, z) || !pointInRing(a.ring, x, z) || (a.holes ?? []).some((h) => pointInRing(h, x, z))) {
+              continue;
+            }
+            const u = geo.landUseAt(x, z);
+            ps++;
+            ph += RESERVED.has(u) || u === LandUse.Park || u === LandUse.Forest || u === LandUse.Cemetery ? 1 : 0;
+          }
+        }
+        if (ps * 400 < 20000) {
+          continue;
+        }
+        rings++;
+        if (ph / ps < 0.8) {
+          bad.push(`${a.kind} ${a.name ?? a.id} (${((ps * 400) / 1e4).toFixed(1)} ha at ${minX.toFixed(0)}, ${minZ.toFixed(0)}): ${((ph / ps) * 100).toFixed(0)} % green`);
+        }
+      }
+    }
+    check(rings > 0 && bad.length === 0, `${rings} park, wood and cemetery rings over 2 ha in the regions' OSM data: each >= 80 % green in the land use`, bad);
   }
 }
 
