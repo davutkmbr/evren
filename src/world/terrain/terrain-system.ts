@@ -15,6 +15,7 @@ import { HeightBounds } from './height-bounds';
 import { createPatchGeometry, createPatchGrid, type PatchGrid } from './patch-geometry';
 import { PATCH_STRIDE, QuadtreeSelector } from './quadtree';
 import { createTerrainMaterial, createTerrainUniforms, type TerrainUniforms } from './terrain-material';
+import { exposeDebug } from '../../core/dev-tools';
 
 const MAX_PATCHES = 6144;
 const _projView = new THREE.Matrix4();
@@ -113,7 +114,7 @@ export class TerrainSystem implements System {
     u.uTerrainDebug.value.x = debug ? (debugModes[debug] ?? 0) : 0;
     u.uTerrainDebug.value.z = Number(params.get('terrainProf') ?? 0) || 0;
     void this.bakeResources(ctx, geo);
-    (window as unknown as Record<string, unknown>).__terrain = { system: this, uniforms: u, selector: this.selector, stats: () => this.stats() };
+    exposeDebug('__terrain', { system: this, uniforms: u, selector: this.selector, stats: () => this.stats() });
   }
 
   /** Slow resources (district raster, surface tiles) are produced after init; pending() reports them. */

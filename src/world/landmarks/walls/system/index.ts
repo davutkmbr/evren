@@ -18,6 +18,7 @@ import { fetchBytes, fetchJson } from '../../../../street/format';
 import { decodeMeshes, type DecodedMesh, type WallsColliders, type WallsIndex, type WallsTile } from '../data/baked';
 import { createWallsMaterial, type WallsMaterial } from '../render/material';
 import { wallsIndex, WALLS_BASE } from './owned';
+import { exposeDebug } from '../../../../core/dev-tools';
 
 /** LOD distances (m, camera to the tile's box) at "high". */
 const NEAR = 260;
@@ -145,7 +146,7 @@ class WallsSystem implements System {
       this.addColliders(colliders);
     }
     this.starting = 0;
-    (window as unknown as { __walls: unknown }).__walls = { stats: () => this.stats(), system: this };
+    exposeDebug('__walls', { stats: () => this.stats(), system: this });
   }
 
   private makeBatch(name: string, instances: number, vertices: number, indices: number, material: THREE.Material, shadows: boolean): THREE.BatchedMesh {

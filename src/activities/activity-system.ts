@@ -59,6 +59,7 @@ import { GhostRecorder, clearRecords, decodeGhost, getRecord, loadRecords, recor
 import { BoostEnvelope, boostDeltaV } from './speed-boost';
 import { SpeedRingMesh } from './speed-ring-mesh';
 import { RACE_TEXT, formatRaceTime, skippedWarning, type SkipReason } from './text';
+import { exposeDebug } from '../core/dev-tools';
 
 /** Seconds the rings stay visible (in the finish colour) after the finish. */
 const FINISH_LINGER = 5;
@@ -1025,7 +1026,7 @@ export function createActivitySystem(): System {
       importCourse: (code: string): string | null => importCode(code),
       deleteCourse: (id: string): void => removeCourse(id),
     };
-    (window as unknown as { __evrenRaces?: typeof hook }).__evrenRaces = hook;
+    exposeDebug('__evrenRaces', hook);
     disposers.push(() => {
       const w = window as unknown as { __evrenRaces?: typeof hook };
       if (w.__evrenRaces === hook) {

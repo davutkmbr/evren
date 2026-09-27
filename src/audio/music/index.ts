@@ -61,6 +61,7 @@ import { idleInput, MUSIC_CONDITIONS, MUSIC_RULES, MusicRulesEngine, type MusicI
 import { effectiveMusicStyle, loadAdaptiveMusic, loadMusicStyle, loadMusicVolume, saveAdaptiveMusic, saveMusicStyle, saveMusicVolume, type MusicStyle } from './settings';
 import { ROTATION_DEFAULTS, SprinkleDirector, sprinkleContext, TIME_TAGS, type SprinkleCommand, type SprinkleContext } from './sprinkle';
 import type { MusicDebugOverlay } from './debug-overlay';
+import { exposeDebug } from '../../core/dev-tools';
 
 export interface MusicSnapshot {
   set: string | null;
@@ -327,7 +328,7 @@ export class MusicController {
         }
       }),
     );
-    (window as unknown as { __evrenMusic?: MusicDebugApi }).__evrenMusic = this.debugApi;
+    exposeDebug('__evrenMusic', this.debugApi);
     if (!this.disabled) {
       if (this.testMode) {
         void this.useTestSets();

@@ -19,7 +19,7 @@ The owner approved, on 2026-09-26:
    drone was added), H9 *Reşadiye Marşı* (Kuyrukluyıldız).
 3. **Also take the US-risky recordings** (free in Turkey, not yet in the US): Safiye Ayla's 1949 *Kâtibim*, the Pathé
    Istanbul discs of 1927–1928 and the others marked that way. The owner accepts the risk and wants full attribution
-   and a takedown contact (`<contact-email>`, to be filled in by the owner). They never go to `public/` or git.
+   and a takedown contact (`davutkmbr@gmail.com`, to be filled in by the owner). They never go to `public/` or git.
 
 What was done (details, sha256 and rights per file: [`archive-78rpm.md`](../archive-78rpm.md)):
 
