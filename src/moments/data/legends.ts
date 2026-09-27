@@ -164,7 +164,7 @@ export const ayaYorgi: Moment = {
     musicId: 'aya-yorgi-apolitikiyonu-nafpliotis',
     musicSource: {
       kind: 'memory',
-      from: { lat: 40.84884, lon: 29.11883, height: 10, note: 'Aya Yorgi church on Yücetepe (OSM way 1175114430)', expect: 'land' },
+      from: { lat: 40.84884, lon: 29.11883, height: 10, note: 'Aya Yorgi church on Yücetepe (OSM way 1175114430)', expect: 'land', nearLandmark: 'aya-yorgi-manastiri' },
     },
     actorId: 'moments/aya-yorgi-knight-statue',
     animationIds: ['moments/knight-raise-spear', 'moments/knight-lower-spear', 'moments/knight-shrug'],
@@ -175,7 +175,7 @@ export const ayaYorgi: Moment = {
       { at: 8.5, duration: 4.5, speaker: 'Şövalye', text: 'Gerçi mızrağım biraz paslandı... Bugünlük berabere diyelim mi?' },
       { at: 13.5, duration: 4, text: 'Yücetepe\'deki manastır, ejderhayı yenen Aziz Yorgi\'ye adanmıştır.' },
     ],
-    camera: { kind: 'look-at', waypoint: 'statue', note: 'Low angle on the knight statue with the hilltop behind; the dragon in the foreground.' },
+    camera: { kind: 'look-at', waypoint: 'statue', note: 'Low angle on the knight statue with the monastery and its bell tower behind; the dragon in the foreground.' },
     card: {
       title: 'Aya Yorgi, Büyükada',
       text:
@@ -183,8 +183,8 @@ export const ayaYorgi: Moment = {
         'Her yıl 23 Nisan\'da binlerce ziyaretçi tepeye tırmanır.',
     },
     waypoints: [
-      { id: 'start', lat: 40.8526, lon: 29.1195, note: 'On the Aya Yorgi walking track below the hill, facing south up to the summit', expect: 'land' },
-      { id: 'statue', lat: 40.8493, lon: 29.1191, note: 'Hilltop about 50 m north of the church, where the track arrives (the statue is our invention)', expect: 'land' },
+      { id: 'start', lat: 40.8496, lon: 29.1192, note: 'The cleared summit terrace north of the monastery, about 33 m in front of the statue, facing south', expect: 'land', nearLandmark: 'aya-yorgi-manastiri' },
+      { id: 'statue', lat: 40.8493, lon: 29.1191, note: 'Hilltop about 50 m north of the church, where the track arrives (the statue is our invention)', expect: 'land', nearLandmark: 'aya-yorgi-manastiri' },
     ],
   },
   provenance: [

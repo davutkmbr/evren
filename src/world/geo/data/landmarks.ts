@@ -277,6 +277,13 @@ const HERITAGE: LandmarkData[] = [
     anchors: [41.00705, 28.97635, 41.00583, 28.97527, 41.00563, 28.97506, 41.00541, 28.97484, 41.00405, 28.97358],
     info: "Bizans'ın at yarışı ve tören alanı Hipodrom'un bugünkü meydanı; Dikilitaş, Yılanlı Sütun ve Örme Dikilitaş antik spina hattında sıralanır.",
   },
+  {
+    // OSM way 746217504. 'slope' keeps the summit's natural hillside; the radius clears the forest over the courtyard,
+    // the terrace north of it (the Aya Yorgi moment's knight statue) and the path's arrival.
+    id: 'aya-yorgi-manastiri', name: 'Aya Yorgi Manastırı', kind: 'church', builder: 'heritage', lat: 40.8486, lon: 29.119, headingDeg: 104, radius: 125, height: 22, year: 1751,
+    footprint: 'slope',
+    info: "Büyükada'nın en yüksek tepesi Yücetepe'deki Rum Ortodoks manastırı; çan kulesi adanın her yerinden görünür, her 23 Nisan'da binlerce ziyaretçi dilek için tepeye tırmanır.",
+  },
 ];
 
 export const LANDMARKS: readonly LandmarkData[] = [...MOSQUES, ...STRUCTURES, ...HERITAGE];
