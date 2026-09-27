@@ -8,7 +8,7 @@
   "homepage": "https://seventeenskies.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/davutkmbr/evren.git"
+    "url": "git+https://github.com/davutkmbr/seventeenskies.git"
   },
   "keywords": [
     "threejs",
