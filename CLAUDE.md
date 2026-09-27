@@ -98,3 +98,11 @@ Several agents often work in parallel on one machine while the user plays the ga
   machine-wide and runs pages at 24 fps; do not launch your own Playwright/Chrome scripts.
 - Use the shared dev server on port 5199; do not start additional Vite servers.
 - Automated browsers run the game at 24 fps by default; add `?fps=0` (or use `snap.mjs --perf`) for performance numbers.
+- The shared server serves the main checkout. To see a worktree's own code and new files, point `snap.mjs` at a shim
+  page (a copy of `index.html` with `src="../../src/main.ts"` under the worktree's `.shots/wt/`, opened as
+  `/.claude/worktrees/<name>/.shots/wt/index.html`) and pass `publicDir: 'public'` (serves `/data/`, `/world/`,
+  `/models/` from the worktree). `freeze=1` also stops system updates such as resident props; frame a shot with
+  `__evren.ctx.services.get('cameraRig').placeFree(x, y, z, headingDeg, pitchDeg)` in `--eval`.
+- Run Blender only through `scripts/blender-run.mjs` (GPU slot, timeout; `--threads 8` for heavy jobs; `--quiet` hides
+  the script's output on success). Bake and render Cycles on the GPU (`use_gpu` in `tools/moments/statue_materials.py`):
+  the Aya Yorgi bake went from ~40 min on the CPU to ~8 min.

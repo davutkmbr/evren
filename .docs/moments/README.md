@@ -108,6 +108,27 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 
 No record uses `media`; film and series items (backlog 6 and 11) wait for the user's choices and official links.
 
+## Building moment models in Blender
+
+The Aya Yorgi statue (`tools/moments/knight_statue.py`, `knight_outfit.py`, `statue_materials.py`) is the pipeline to
+reuse. Lessons from building it:
+
+- Iterate in stages, not full builds: `STATUE_STAGE=pose` / `outfit` give Workbench previews in ~20 s, `STATUE_TEX=1024`
+  a quick material trial (~2 min); the full 4096 build with export takes ~8 min on the GPU.
+- Judge every change on renders (`.shots/moments/aya-yorgi/blender/`: front / side / three-quarter sheets and close-ups
+  of the head and hands), then in the game with `snap.mjs` from the worktree (CLAUDE.md, Shared machine).
+- MPFB's mixamo rig: fingers curl about the bones' local **Z** (not X). Test an unknown axis by rendering the four
+  signed variants side by side instead of reasoning about bone frames.
+- Build head gear in the head bone's frame (up the bone, -Y toward the nose): the posed head is tilted, and an outline
+  cut at world heights runs crooked across the face.
+- Shrinkwrap then smooth pulls a shell under the skin; a second `OUTSIDE` shrinkwrap crumples it. Use a larger offset
+  and let the relaxing eat into it.
+- A hand-held prop goes through the hand's actual geometry (between the knuckles and the curled middle joints, along
+  the knuckle line), with the wrist turned so that line matches the prop.
+- Outdoor bronze is satin, not polished: oxide patina half metallic (0.5) at roughness ~0.6, bright metal only on convex
+  edges (bevel-normal curvature; pointiness is noisy on decimated meshes), verdigris only in the hollows.
+- Name the mesh data as well as the object (`o.data.name`): glTF meshes take the data's name, and checks look for it.
+
 ## Open questions for the user
 
 - **Orhan Veli (decided 2026-09-26).** Public domain in Turkey since 1 January 2021 (died 14 November 1950; FSEK life +
