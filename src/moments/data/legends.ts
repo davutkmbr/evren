@@ -150,10 +150,11 @@ export const ayaYorgi: Moment = {
   id: 'aya-yorgi-challenge',
   title: "Aya Yorgi'nin Meydan Okuması",
   category: 'legend',
-  status: 'draft',
+  status: 'ready',
   backlog: 5,
   trigger: {
-    place: { label: 'Aya Yorgi monastery on Yücetepe, Büyükada', center: { lat: 40.8468, lon: 29.1196 }, radius: 160 },
+    // The monastery on Yücetepe: OSM way 746217504 (Aya Yorgi Manastırı), church way 1175114430.
+    place: { label: 'Aya Yorgi monastery on Yücetepe, Büyükada', center: { lat: 40.8487, lon: 29.119 }, radius: 160 },
     surface: 'ground',
     timeOfDay: { from: 7, to: 20 },
     repeat: { kind: 'once-per-session' },
@@ -163,7 +164,7 @@ export const ayaYorgi: Moment = {
     musicId: 'aya-yorgi-apolitikiyonu-nafpliotis',
     musicSource: {
       kind: 'memory',
-      from: { lat: 40.8468, lon: 29.1196, height: 10, note: 'Aya Yorgi monastery on Yücetepe', expect: 'land' },
+      from: { lat: 40.84884, lon: 29.11883, height: 10, note: 'Aya Yorgi church on Yücetepe (OSM way 1175114430)', expect: 'land' },
     },
     actorId: 'moments/aya-yorgi-knight-statue',
     animationIds: ['moments/knight-raise-spear', 'moments/knight-lower-spear', 'moments/knight-shrug'],
@@ -174,20 +175,23 @@ export const ayaYorgi: Moment = {
       { at: 8.5, duration: 4.5, speaker: 'Şövalye', text: 'Gerçi mızrağım biraz paslandı... Bugünlük berabere diyelim mi?' },
       { at: 13.5, duration: 4, text: 'Yücetepe\'deki manastır, ejderhayı yenen Aziz Yorgi\'ye adanmıştır.' },
     ],
-    camera: { kind: 'look-at', waypoint: 'statue', note: 'Low angle on the knight statue with the monastery behind; the dragon in the foreground.' },
+    camera: { kind: 'look-at', waypoint: 'statue', note: 'Low angle on the knight statue with the hilltop behind; the dragon in the foreground.' },
     card: {
       title: 'Aya Yorgi, Büyükada',
       text:
         "Büyükada'nın Yücetepe'sindeki manastır, ejderha öldüren aziz olarak anılan Aziz Yorgi'ye adanmıştır. " +
         'Her yıl 23 Nisan\'da binlerce ziyaretçi tepeye tırmanır.',
     },
-    waypoints: [{ id: 'statue', lat: 40.8468, lon: 29.1196, note: 'Hilltop in front of the monastery (the statue is our invention)', expect: 'land' }],
+    waypoints: [
+      { id: 'start', lat: 40.8526, lon: 29.1195, note: 'On the Aya Yorgi walking track below the hill, facing south up to the summit', expect: 'land' },
+      { id: 'statue', lat: 40.8493, lon: 29.1191, note: 'Hilltop about 50 m north of the church, where the track arrives (the statue is our invention)', expect: 'land' },
+    ],
   },
   provenance: [
     original('subtitles', 'Legend of Saint George and the dragon (traditional), public domain'),
-    original('card', 'Aya Yorgi monastery on Yücetepe, Büyükada; feast day 23 April', 'Confirm the monastery point on the hill in game (no landmark record yet).'),
+    original('card', 'Aya Yorgi monastery on Yücetepe, Büyükada (OSM way 746217504, church way 1175114430); feast day 23 April'),
   ],
-  needs: ['model', 'animation', 'sound'],
+  needs: [],
   sources: [MUSIC_NAFPLIOTIS],
   notes:
     'The knight statue is an original prop, not a real statue at the site. Keep the tone gentle: the saint is venerated by many ' +

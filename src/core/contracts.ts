@@ -698,9 +698,10 @@ export type DolphinAudioCue = 'whistle' | 'breath' | 'splash';
  * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
  * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit),
  * and 'ferry-horn', a soft vapur whistle at a ferry (the synthesised ambience horn, src/audio/sfx/ambient.ts; the
- * ferry escort plays it on arrival, src/activities/escort).
+ * ferry escort plays it on arrival, src/activities/escort), and 'knight-creak', the rusty joints of the Aya Yorgi knight
+ * statue (src/audio/sfx/knight.ts).
  */
-export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat' | 'ferry-horn';
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat' | 'ferry-horn' | 'knight-creak';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).

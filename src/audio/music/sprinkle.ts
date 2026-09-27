@@ -80,6 +80,21 @@ export const SPRINKLE_DEFAULTS: SprinkleConfig = {
   boostThreshold: 0.05,
 };
 
+/**
+ * "Sürekli" style while no loop set is approved: the same director as a rotation of the pool (sprinkle phrases and the
+ * historic moment pieces), one after another with a short breath between them.
+ */
+export const ROTATION_DEFAULTS: SprinkleConfig = {
+  ...SPRINKLE_DEFAULTS,
+  gapMinSec: 8,
+  gapMaxSec: 25,
+  firstGapMinSec: 5,
+  firstGapMaxSec: 15,
+  afterHoldSec: 10,
+  longCalmGapScale: 1,
+  gapFloorSec: 8,
+};
+
 /** Why nothing new may start (highest priority first). A hold also fades out a playing phrase. */
 export type SprinkleHold = 'race' | 'moment' | 'photo' | 'menu' | 'underwater';
 /** Why the director waits for calmer flight (a playing phrase continues). */
@@ -138,9 +153,12 @@ export function sprinkleContext(input: MusicInput, conditions: Iterable<Conditio
   return { tags, hold, busy, adaptive };
 }
 
-/** A phrase may play in this context: its time-of-day tags (if any) must include one of the current ones. */
-export function phraseFits(p: Pick<MusicPhraseDef, 'tags'>, ctx: SprinkleContext): boolean {
-  if (!ctx.adaptive) {
+/**
+ * A phrase may play in this context: its time-of-day tags (if any) must include one of the current ones. A moment piece
+ * (a whole historic record) fits any time; its time tags only weigh the pick.
+ */
+export function phraseFits(p: Pick<MusicPhraseDef, 'tags' | 'role'>, ctx: SprinkleContext): boolean {
+  if (!ctx.adaptive || p.role === 'moment') {
     return true;
   }
   const times = p.tags.filter((t) => TIME_TAGS.includes(t));
