@@ -10,6 +10,8 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
 import { WindBones } from './wind-bones';
 import { FaceLife } from './face';
+import { Wings } from './wings';
+export { Wings } from './wings';
 import { mergeClipInfo, type ClipInfo } from './locomotion/clips';
 
 /** Where the hips joint sits on the saddle (rig space). */
@@ -109,41 +111,10 @@ export async function loadHumanModel(url: string): Promise<HumanRider> {
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
   await loadPrivateClips(clips);
-  const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife, wings: new Wings(bones) };
+  const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife, wings: new Wings(root, bones) };
   human.face = new FaceLife(human);
   applyGarmentMaterials(human);
   return human;
-}
-
-/**
- * Hezarfen's wings: each hangs on a bone chain rooted at the case on the back; scaling the roots toward the case stows
- * them (the fabric furls in), back to 1 deploys them. `amount` 0 = stowed, 1 = spread (a little over 1 overshoots).
- */
-export class Wings {
-  private readonly roots: THREE.Bone[] = [];
-  amount = 0;
-
-  constructor(bones: Map<string, THREE.Bone>) {
-    for (const n of ['wing_L_1', 'wing_R_1']) {
-      const b = bones.get(n);
-      if (b) {
-        this.roots.push(b);
-      }
-    }
-    this.set(0);
-  }
-
-  get present(): boolean {
-    return this.roots.length > 0;
-  }
-
-  set(amount: number): void {
-    this.amount = amount;
-    const s = Math.max(0.015, amount);
-    for (const b of this.roots) {
-      b.scale.setScalar(s);
-    }
-  }
 }
 
 /** The rider on the dragon: the held riding pose, turned to face -Z with the hips on the seat, under `anchor`. */
@@ -204,6 +175,8 @@ const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number;
   feather: { set: 'linen', sheen: 0.8, sheenRough: 0.5, rough: 0.9 },
   // Hezarfen's wing fabric: waxed canvas.
   wing: { set: 'linen', sheen: 0.35, sheenRough: 0.6, rough: 0.75 },
+  // Hezarfen's wing spars and ribs: oiled wood (the leather scan's grain, a light bump).
+  wood: { set: 'leather', bump: 0.3, rough: 0.65 },
 };
 
 const textureLoader = new THREE.TextureLoader();

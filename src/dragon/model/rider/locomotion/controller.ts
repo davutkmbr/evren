@@ -26,6 +26,9 @@ export interface LocomotionInput {
   jump: boolean;
   /** Held: spread the wings and glide (in the air). */
   glide?: boolean;
+  /** Gliding: pitch (+1 = nose down, W) and roll (+1 = bank right, D) sticks, a flap stroke (pressed), fold the wings
+   * and drop (held). */
+  flight?: { pitch: number; roll: number; flap: boolean; fold: boolean };
   /** Standing: turn to face this heading (rad about +Y, 0 = +Z); the feet step round. */
   faceYaw?: number;
 }
@@ -66,6 +69,19 @@ export const LOCO = {
   glidePitch: 1.2,
   glideBank: 0.45,
   wingHz: 2.6,
+  /** Flight model: the trim glide angle (rad, nose down), how far the stick moves it (dive, climb), the speed held at
+   * trim (m/s), the stall speed, the most bank (rad), flap strokes (count, recovery per s, speed and path kick, time). */
+  glideTrim: -0.14,
+  glideDive: 0.5,
+  glideClimb: 0.42,
+  glideTrimSpeed: 13,
+  glideStall: 8,
+  glideMaxBank: 0.8,
+  flapStrokes: 4,
+  flapRegen: 0.35,
+  flapSpeed: 2.4,
+  flapLift: 0.14,
+  flapTime: 0.7,
 };
 
 const GAIT = ['idle', 'walk', 'run', 'crouch_idle', 'crouch_walk'] as const;
@@ -115,6 +131,11 @@ export class LocomotionController {
   private bank = 0;
   private wing = 0;
   private wingVel = 0;
+  /** Flight: airspeed (m/s), path angle (rad, + climbing), bank (uses `bank`), flap stock and the stroke clock. */
+  airspeed = 0;
+  private path = 0;
+  flapStock = LOCO.flapStrokes;
+  private flapT = -1;
   /** Standing still: time so far, the idle variation playing (if any) and its time, when the next one comes. */
   private still = 0;
   private variant: string | null = null;
@@ -204,11 +225,7 @@ export class LocomotionController {
         this.enter('ground');
       }
     } else if (this.state === 'glide') {
-      // Gliding: the wings carry the body forward along its heading at the glide speed; the stick turns it.
-      const fwdX = Math.sin(this.yaw);
-      const fwdZ = Math.cos(this.yaw);
-      _want.set(fwdX, fwdZ).multiplyScalar(LOCO.glideSpeed);
-      this.approach(_want, 4, dt);
+      this.fly(dt, input);
     } else if (this.state === 'land' || this.state === 'takeoff') {
       // Planted: little steering, the landing absorbs.
       this.approach(_want, (this.state === 'land' ? 0.5 : 0.2) * LOCO.decel, dt);
@@ -231,14 +248,7 @@ export class LocomotionController {
       this.yaw += turn;
     }
     if (this.state === 'glide') {
-      let turn = 0;
-      if (m > 0.1) {
-        let d = Math.atan2(input.move.x, input.move.y) - this.yaw;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
-        turn = clamp(d * 2, -1, 1) * LOCO.glideTurn;
-      }
-      this.yaw += turn * dt;
-      this.bank += (clamp(-turn * LOCO.glideBank, -0.7, 0.7) - this.bank) * (1 - Math.exp(-3 * dt));
+      // Turning comes from the bank (fly()).
     } else if (sp > 0.15 && this.state !== 'stop') {
       const want = Math.atan2(this.velocity.x, this.velocity.y);
       let d = want - this.yaw;
@@ -260,18 +270,22 @@ export class LocomotionController {
       this.launched = true;
     }
     if (this.state === 'air' && input.glide && this.vy < 2 && this.human.wings.present) {
+      // Wings open: the flight starts from the fall's own speed and angle.
+      const h = this.velocity.length();
+      this.airspeed = Math.max(LOCO.glideStall - 1, Math.hypot(h, this.vy));
+      this.path = Math.atan2(this.vy, Math.max(h, 1));
       this.enter('glide');
-    } else if (this.state === 'glide' && !input.glide) {
+    } else if (this.state === 'glide' && input.flight?.fold) {
       this.enter('air');
     }
     if (this.state === 'glide') {
-      // Lift holds the sink near the glide rate (a stall's worth of drop first if it was falling fast).
-      this.vy += (-LOCO.glideSink - this.vy) * (1 - Math.exp(-2.2 * dt));
       pos.y += this.vy * dt;
       if (pos.y <= ground) {
         pos.y = ground;
+        // Touch-down: the fall rate sets the landing's depth; the speed runs on (the controller slows it).
         this.landDepth = clamp((-this.vy - 1.0) / 4 + 0.35, 0.3, 1);
         this.vy = 0;
+        this.velocity.multiplyScalar(0.55);
         this.enter('land');
       }
     } else if (this.state === 'air') {
@@ -296,8 +310,9 @@ export class LocomotionController {
     pos.z += this.velocity.y * dt;
     // Body pitched into the flight line and banked while gliding, upright otherwise (fast on landing).
     const gl = this.state === 'glide';
-    const pk = 1 - Math.exp(-(gl ? 2.5 : this.state === 'land' ? 14 : 5) * dt);
-    this.pitch += ((gl ? LOCO.glidePitch : 0) - this.pitch) * pk;
+    const pk = 1 - Math.exp(-(gl ? 4 : this.state === 'land' ? 14 : 5) * dt);
+    // Gliding the body lies along the flight path (head down in a dive, raised in a climb).
+    this.pitch += ((gl ? LOCO.glidePitch - this.path * 0.9 : 0) - this.pitch) * pk;
     if (!gl) {
       this.bank += (0 - this.bank) * pk;
     }
@@ -310,6 +325,65 @@ export class LocomotionController {
     this.animate(dt, sp);
     this.prevVel.copy(this.velocity);
     this.prevYaw = this.yaw;
+  }
+
+  /**
+   * Gliding flight. Along the path, gravity trades height for speed and drag bleeds it (so at the trim angle the speed
+   * settles at glideTrimSpeed); the pitch stick moves the path angle (W dives, S climbs; below the stall speed the nose
+   * drops by itself); the roll stick banks and the bank turns (rate g·tan(bank)/V); a flap stroke adds speed and lifts
+   * the path, a few in a row, recovering with time.
+   */
+  private fly(dt: number, input: LocomotionInput): void {
+    const f = input.flight ?? { pitch: 0, roll: 0, flap: false, fold: false };
+    const g = LOCO.gravity * 0.8;
+    const drag = (g * Math.sin(-LOCO.glideTrim)) / (LOCO.glideTrimSpeed * LOCO.glideTrimSpeed);
+    let target = LOCO.glideTrim - f.pitch * (f.pitch > 0 ? LOCO.glideDive : LOCO.glideClimb);
+    const stall = clamp((LOCO.glideStall - this.airspeed) / 3, 0, 1);
+    target = THREE.MathUtils.lerp(target, -0.55, stall);
+    this.path += (target - this.path) * (1 - Math.exp(-1.6 * dt));
+    // Bank and turn.
+    const wantBank = clamp(f.roll, -1, 1) * LOCO.glideMaxBank;
+    this.bank += (-wantBank - this.bank) * (1 - Math.exp(-3 * dt));
+    this.yaw += ((g * Math.tan(this.bank)) / Math.max(this.airspeed, 4)) * dt;
+    // Speed: gravity along the path, drag (more in a bank).
+    const bankDrag = 1 + 0.6 * this.bank * this.bank;
+    this.airspeed += (-g * Math.sin(this.path) - drag * bankDrag * this.airspeed * this.airspeed) * dt;
+    this.airspeed = Math.max(this.airspeed, 3);
+    // Flap strokes.
+    this.flapStock = Math.min(LOCO.flapStrokes, this.flapStock + LOCO.flapRegen * dt);
+    if (f.flap && this.flapT < 0 && this.flapStock >= 1) {
+      this.flapStock -= 1;
+      this.flapT = 0;
+    }
+    if (this.flapT >= 0) {
+      const u = this.flapT / LOCO.flapTime;
+      // The push is in the down-stroke (the first third).
+      const push = u < 0.35 ? Math.sin((u / 0.35) * Math.PI) : 0;
+      this.airspeed += push * LOCO.flapSpeed * 4.5 * dt;
+      this.path += push * LOCO.flapLift * 4.5 * dt;
+      this.flapT += dt;
+      if (this.flapT >= LOCO.flapTime) {
+        this.flapT = -1;
+      }
+    }
+    const h = this.airspeed * Math.cos(this.path);
+    this.velocity.set(Math.sin(this.yaw) * h, Math.cos(this.yaw) * h);
+    this.vy = this.airspeed * Math.sin(this.path);
+  }
+
+  /** The wings' flap angle now (rad, + = down-stroke): a quick down-stroke, a slower recovery, a small rest wave. */
+  private flapAngle(): number {
+    if (this.flapT < 0) {
+      // Holding the glide: the canvas breathes with the air.
+      return 0.03 * Math.sin(this.stateTime * 5.3) - 0.02;
+    }
+    const u = this.flapT / LOCO.flapTime;
+    if (u < 0.35) {
+      const k = u / 0.35;
+      return THREE.MathUtils.lerp(-0.35, 0.6, k * k * (3 - 2 * k));
+    }
+    const k = (u - 0.35) / 0.65;
+    return THREE.MathUtils.lerp(0.6, -0.02, k * k * (3 - 2 * k)) - 0.3 * Math.sin(Math.PI * k);
   }
 
   /** Leaves the ground (or the saddle) with this velocity (world, m/s): into the air, e.g. to glide. */
@@ -477,7 +551,12 @@ export class LocomotionController {
       this.hipsPos.copy(this.hips.position);
     }
     // After the mixer (the clips key every bone's scale at 1).
-    this.human.wings.set(this.wing);
+    const wings = this.human.wings;
+    wings.amount = this.wing;
+    wings.flap = this.state === 'glide' ? this.flapAngle() : 0;
+    wings.grip = this.state === 'glide' ? 1 : smoothstep(this.wing, 0.3, 1);
+    wings.tuck = 0.25;
+    wings.apply();
     for (const [bone, q] of this.layered) {
       q.copy(bone.quaternion);
     }
