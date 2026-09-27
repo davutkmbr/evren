@@ -9,6 +9,7 @@ import { clamp01, finiteOr, smoothstep } from './dsp/math';
 import { loadVolume, saveVolume } from './settings';
 import { createMusicController, type MomentSourceAudio, type MomentSourceFrame } from './music';
 import { footfallOffsets } from '../core/gait';
+import { exposeDebug } from '../core/dev-tools';
 
 const TWO_PI = Math.PI * 2;
 
@@ -245,7 +246,7 @@ export function createAudioSystem(): System {
         window.addEventListener(e, unlock, true);
       }
       document.addEventListener('visibilitychange', onVisibility);
-      (window as unknown as { __evrenAudio?: AudioDebugHandle }).__evrenAudio = debugHandle;
+      exposeDebug('__evrenAudio', debugHandle);
       music.init(ctx);
 
       const ev = ctx.events;

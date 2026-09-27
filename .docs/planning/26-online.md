@@ -26,6 +26,11 @@ workers/static-assets/billing-and-limitations, workers/platform/limits.
   `scripts/deploy/stage.mjs` copies the shipping street layer (world/index.json, the areas it lists, `_shared`, `walls`;
   experiment folders never ship), removes `sandbox/` and checks the Workers limits.
 - `public/_headers`: hashed `/assets/*` cached immutable; everything else revalidates (world files keep stable names).
+- No overrides in production: the public build compiles `DEV_TOOLS` (`src/core/dev-tools.ts`) to false. Every URL
+  override reads through `devParams()` / `parseDebugFlags()` and gets no parameters; every `window.__*` debug hook goes
+  through `exposeDebug()` and is stripped. Only a read-only `window.__evren` (`ready`, `pending()`, `stats()`) stays,
+  for screenshot and performance tooling. Dev server, sandboxes and plain `npm run build` keep all tools. Client checks
+  only stop casual tampering; online cheats are stopped by the server (stage 1 validation).
 - `npm run deploy`: build:web + `wrangler deploy`. Needs `npx wrangler login` once and the seventeenskies.com zone in
   the same Cloudflare account. From a worktree: `EVREN_WORLD_DIR=<main checkout>/public/world npm run deploy`.
 

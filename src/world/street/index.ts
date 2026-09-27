@@ -31,6 +31,7 @@ import { FadeTable, STREET_DITHER_GLSL } from '../../street/fade';
 import { fetchJson, type StreetIndex, type StreetTileManifest, type StreetTileRef } from '../../street/format';
 import { installLazyBufferUploads, ownsBufferArray, TileBatches } from '../../street/tile-batches';
 import { TileStreamer } from '../../street/tile-streamer';
+import { devParams } from '../../core/dev-tools';
 
 /** Root index of the compiled areas (tools/world-compiler/src/world-index.ts). */
 const WORLD_INDEX = 'world/index.json';
@@ -797,7 +798,7 @@ const PREPARE_DISTANCE = 600;
 
 /** Whether the street layer runs: on by default, `?street=0` turns it off. */
 function streetLayerEnabled(): boolean {
-  return new URLSearchParams(window.location.search).get('street') !== '0';
+  return devParams().get('street') !== '0';
 }
 
 /** Distance (m) from an area's square at which its index is loaded and its streamer set up / dropped again. */

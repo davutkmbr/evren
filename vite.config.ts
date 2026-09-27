@@ -116,8 +116,12 @@ function worldStatic(): Plugin {
   };
 }
 
+/** Public web build (npm run build:web): URL overrides and debug hooks off, see src/core/dev-tools.ts. */
+const publicBuild = process.env.EVREN_PUBLIC === '1';
+
 export default defineConfig({
   plugins: [worldStatic(), privateMusic()],
+  define: { __EVREN_DEV_TOOLS__: JSON.stringify(!publicBuild) },
   server: {
     port: 5199,
     strictPort: true,

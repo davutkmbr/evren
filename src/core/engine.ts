@@ -9,6 +9,7 @@ import { globalUniforms, installGlobalShaderHooks } from './uniforms';
 import { CollisionWorld } from './collision';
 import { parseDebugFlags, VIEW_PRESETS } from './debug';
 import { latLonToLocal } from './geo-coords';
+import { DEV_TOOLS } from './dev-tools';
 
 export interface EngineOptions {
   container: HTMLElement;
@@ -353,15 +354,27 @@ export class Engine {
 
   private installDebugApi(): void {
     const engine = this;
-    const api = {
-      engine,
-      ctx: this.ctx,
-      THREE,
+    // Read-only status (load state, frame stats): kept in the public build for screenshot and performance tooling.
+    const status = {
       get ready() {
         return engine.readyFrames >= 3;
       },
       pending: () => engine.pending(),
       stats: () => engine.stats(),
+    };
+    if (!DEV_TOOLS) {
+      (window as unknown as { __evren: typeof status }).__evren = status;
+      return;
+    }
+    const api = {
+      engine,
+      ctx: this.ctx,
+      THREE,
+      get ready() {
+        return status.ready;
+      },
+      pending: status.pending,
+      stats: status.stats,
       setPaused: (paused: boolean) => engine.ctx.events.emit('pause', { paused }),
       setTime: (hours: number) => engine.ctx.services.tryGet('env')?.setTimeOfDay(hours),
       setQuality: (p: QualityPreset) => engine.ctx.quality.setPreset(p),

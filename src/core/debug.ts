@@ -1,8 +1,10 @@
 import type { CameraMode, DebugFlags } from './contracts';
 import { latLonToLocal } from './geo-coords';
+import { devParams } from './dev-tools';
 
+/** URL overrides; all empty in the public build (src/core/dev-tools.ts). */
 export function parseDebugFlags(search = window.location.search): DebugFlags {
-  const params = new URLSearchParams(search);
+  const params = devParams(search);
   const num = (k: string) => (params.has(k) ? Number(params.get(k)) : undefined);
   const flag = (k: string) => params.get(k) === '1' || params.get(k) === 'true';
   const cam = params.get('cam') as CameraMode | null;
