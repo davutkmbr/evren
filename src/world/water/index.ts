@@ -214,7 +214,7 @@ export function createWaterSystem(): System {
           bands: placeholders.bands,
           foam: placeholders.foam,
           reflection: reflection.target.texture,
-          reflectionDepth: reflection.target.depthTexture,
+          reflectionDepth: reflection.depthTexture,
         },
         new THREE.Vector4(b.minX, b.minZ, 1 / (b.maxX - b.minX), 1 / (b.maxZ - b.minZ)),
         lowFlight.uniforms,
@@ -322,7 +322,7 @@ export function createWaterSystem(): System {
         resizeReflection();
         reflection.render(ctx.renderer, ctx.scene, cam, mesh);
         uniforms.uReflTex.value = reflection.target.texture;
-        uniforms.uReflDepth.value = reflection.target.depthTexture;
+        uniforms.uReflDepth.value = reflection.depthTexture;
         uniforms.uReflMatrix.value.copy(reflection.textureMatrix);
         uniforms.uReflInvProj.value.copy(reflection.camera.projectionMatrixInverse);
       }
