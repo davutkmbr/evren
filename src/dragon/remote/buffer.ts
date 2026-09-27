@@ -2,9 +2,11 @@
  * Snapshot buffer of one remote dragon: received snapshots are drawn INTERP_DELAY_MS behind the newest one, so there
  * is almost always a pair around the render time to interpolate between (position on a Hermite curve from the
  * velocities, orientation slerped, pose fields blended, phases the short way round). When the stream stalls the dragon
- * coasts on its velocity for up to EXTRAPOLATE_MS, then holds.
+ * coasts on its velocity for up to EXTRAPOLATE_MS, then holds; after an `away` snapshot (the player's tab went to the
+ * background) it flies on along the loiter circle (src/net/loiter.ts) until the player is back.
  */
 import * as THREE from 'three';
+import { loiter, loiters } from '../../net/loiter';
 import { createSnapshot, isPhaseField, type DragonSnapshot } from '../../net/snapshot';
 
 export const INTERP_DELAY_MS = 100;
@@ -65,9 +67,12 @@ export class SnapshotBuffer {
       return false;
     }
     this.renderT += dt * 1000;
-    const target = newest.t - INTERP_DELAY_MS;
-    const err = target - this.renderT;
-    this.renderT = Math.abs(err) > SNAP_MS ? target : this.renderT + err * Math.min(1, dt * EASE_RATE);
+    // While the player is away no snapshots come: the clock runs on freely (no pull back to the old newest).
+    if (!newest.away) {
+      const target = newest.t - INTERP_DELAY_MS;
+      const err = target - this.renderT;
+      this.renderT = Math.abs(err) > SNAP_MS ? target : this.renderT + err * Math.min(1, dt * EASE_RATE);
+    }
     const t = this.renderT;
     // Drop snapshots no longer needed (keep the last one at or before the render time).
     while (this.items.length > 2 && this.items[1].t <= t) {
@@ -75,12 +80,21 @@ export class SnapshotBuffer {
     }
     const a = this.items[0];
     const b = this.items[1];
+    // Past an away snapshot, up to the player's return: the loiter circle (the returning player was placed on it).
+    if (a.away && t > a.t && (!b || t < b.t) && loiters(a)) {
+      loiter(a, (t - a.t) / 1000, out);
+      return true;
+    }
     if (!b || t <= a.t) {
       extrapolate(a, t, out);
       return true;
     }
     if (t >= b.t) {
-      extrapolate(b, t, out);
+      if (b.away && loiters(b)) {
+        loiter(b, (t - b.t) / 1000, out);
+      } else {
+        extrapolate(b, t, out);
+      }
       return true;
     }
     interpolate(a, b, (t - a.t) / (b.t - a.t), out);
@@ -104,6 +118,7 @@ function copySnapshot(s: DragonSnapshot, out: DragonSnapshot): void {
   out.firing = s.firing;
   out.riderless = s.riderless;
   out.teleport = s.teleport;
+  out.away = s.away;
   out.pose.set(s.pose);
   out.groundY = s.groundY;
   out.groundNx = s.groundNx;

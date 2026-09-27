@@ -144,7 +144,7 @@ BETTER_AUTH_SECRET`, and for Google a Google Cloud OAuth client (redirect URI
 `https://seventeenskies.com/api/auth/callback/google`) with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` as secrets. A
 privacy notice (aydınlatma metni) and the account deletion button in the UI come with the start screen.
 
-### Start screen, account settings, legal pages (done in branch feat/online-start-screen)
+### Start screen, account settings, legal pages (done)
 
 - Start screen (`src/ui/loading`): "[Enter] Tek başına uç" and "[O] Online uç". The online sheet (`online-panel.ts`)
   takes the start prompts' place and the title steps back: nickname (a guest account on the way, or "Google ile
@@ -170,6 +170,23 @@ privacy notice (aydınlatma metni) and the account deletion button in the UI com
 Before production: `npx wrangler d1 migrations apply seventeen-skies --remote`, the secrets `BETTER_AUTH_SECRET`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (`npx wrangler secret put`), and a legal review of `/legal/privacy`
 (cross-border transfer basis under KVKK article 9) before Google sign-in is announced.
+
+### Online never pauses (done in branch fix/online-never-pause)
+
+Rule: while online nobody's game stops, whatever the player opens.
+
+- Menus, the map, photo mode: the engine separates a pause *request* from the *permission* (`TimeState.pauseRequested`,
+  `pauseAllowed`; `paused` is both). The net system withdraws the permission while online, so the world runs on.
+  With the pilot's input off (a menu open, typing in a field) and the world running, the flight autopilot holds the
+  dragon on a wide 12° right-hand circle at its altitude; on the ground, perched or in the water it just waits.
+  Single player keeps its pause. Measured: map open 4 s online, not paused, the dragon flew 96 m, altitude ±0.8 m.
+- Hidden tab (the browser stops the frame loop): `src/net/presence.ts` sends one last snapshot flagged `away`
+  (protocol flag 16) and nothing else until the tab returns. Every receiver continues that dragon on the same circle,
+  computed by `src/net/loiter.ts` from the decoded snapshot (the sender uses the decoded copy too, so everyone gets
+  the same numbers). On return the local dragon is placed where the circle has taken it (a `resume` teleport, not
+  flagged as a jump), so nobody sees it snap. Measured end to end: back after 8 s, 0.55 m from the circle the watcher
+  computed, no teleport flag. `npm run test:loiter` covers the circle and the buffer hand-over (no jump over 1 m per
+  frame through away and back).
 
 ## Stage 2 — later
 

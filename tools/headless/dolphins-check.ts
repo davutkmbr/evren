@@ -415,7 +415,7 @@ section('5. Engine side (stubbed engine): idle cost, meshes, toast, gaze, effect
     events,
     services,
     debug: { params: new URLSearchParams(''), freeze: false, autopilot: false, stats: false, nohud: false },
-    time: { timeOfDay: 8, elapsed: 0, dt: 1 / 30, realDt: 1 / 30, frame: 0, dayTimeScale: 0, dayOfYear: 200, paused: false, paceFloorMs: 16 },
+    time: { timeOfDay: 8, elapsed: 0, dt: 1 / 30, realDt: 1 / 30, frame: 0, dayTimeScale: 0, dayOfYear: 200, paused: false, pauseRequested: false, pauseAllowed: true, paceFloorMs: 16 },
     sandbox: false,
   } as unknown as EngineContext;
   let fxSplashes = 0;

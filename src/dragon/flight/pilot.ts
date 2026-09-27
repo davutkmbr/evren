@@ -55,8 +55,10 @@ export function hasPilotInput(cmd: PilotCommand): boolean {
 }
 
 /**
- * Screenshot/demo autopilot: holds the altitude it started at (never closer than ~70 m to the surface)
- * and flies a wide, gentle right-hand circle; cruise flapping comes from the governor ("relaxed flaps").
+ * Autopilot: holds the altitude it started at (never closer than ~70 m to the surface) and flies a wide, gentle
+ * right-hand circle; cruise flapping comes from the governor ("relaxed flaps"). Used for screenshots and demos
+ * (`takeOff`: it also lifts off the ground or the water) and online while the pilot is away (a menu or the map is
+ * open): then a dragon on the ground or in the water stays where it is.
  */
 export class Autopilot {
   private holdAltitude: number | null = null;
@@ -66,7 +68,7 @@ export class Autopilot {
     this.holdAltitude = null;
   }
 
-  apply(sim: FlightSim, cmd: PilotCommand, overrides: AssistOverrides): void {
+  apply(sim: FlightSim, cmd: PilotCommand, overrides: AssistOverrides, takeOff = true): void {
     const y = sim.body.position.y;
     if (this.holdAltitude === null) {
       this.holdAltitude = y;
@@ -82,7 +84,7 @@ export class Autopilot {
     cmd.rollLeftPressed = cmd.rollRightPressed = cmd.loopPressed = cmd.dropPressed = false;
     cmd.powerPressed = cmd.slipLeftPressed = cmd.slipRightPressed = false;
     if (sim.mode === 'grounded' || sim.mode === 'swimming' || sim.mode === 'underwater') {
-      cmd.flapPressed = true;
+      cmd.flapPressed = takeOff;
       return;
     }
     if (sim.mode === 'hovering') {

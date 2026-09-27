@@ -33,7 +33,18 @@ export interface TimeState {
   dayTimeScale: number;
   /** Day of year 1..365 (used for sun declination). */
   dayOfYear: number;
+  /**
+   * Whether the simulation stands still this frame: `pauseRequested && pauseAllowed`, set by the engine. Read it; to
+   * pause, emit the 'pause' event.
+   */
   paused: boolean;
+  /** What the 'pause' events asked for (menus, the map, photo mode, the start screen). */
+  pauseRequested: boolean;
+  /**
+   * False while the game is shared with other players (online, set by the net system): a menu or the map never stops
+   * the world then, and with the pilot's input off the flight system's autopilot holds the dragon in the air.
+   */
+  pauseAllowed: boolean;
   /**
    * Shortest frame interval reachable whatever the load (ms): the display refresh interval (smallest rAF interval
    * seen), or the ?fps cap rounded up to whole refresh intervals. Frame pacing below this is not a slowdown.
@@ -1339,7 +1350,11 @@ export interface GameEvents {
   /** The player asked for a moment's sources ("[I] Kaynağa bak", src/moments): the UI opens the source sheet. */
   'moment-source': { id: string };
   /** Move the dragon (flight listens; camera snaps). Angles in degrees. */
-  teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number };
+  /**
+   * Places the dragon. `resume`: not a jump but the continuation of the loiter circle the other players saw while this
+   * tab was away (src/net/loiter.ts); the net system does not flag it as a teleport.
+   */
+  teleport: { x: number; y: number; z: number; headingDeg: number; pitchDeg: number; speed?: number; resume?: boolean };
   /**
    * Activity progress (src/activities: ring races…). Emitted on start, every checkpoint, finish and abort.
    * Times in seconds; `label` is the Turkish caption for the HUD.

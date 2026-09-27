@@ -32,6 +32,8 @@ export const FLAG_RIDERLESS = 2;
 export const FLAG_GROUND = 4;
 /** The dragon was placed somewhere new (map, perch or moment teleport): receivers snap instead of interpolating. */
 export const FLAG_TELEPORT = 8;
+/** The player's tab went to the background: receivers continue the dragon on the loiter circle (src/net/loiter.ts). */
+export const FLAG_AWAY = 16;
 
 /** `replaced`: the same account joined again elsewhere (another tab or device). */
 export type ServerErrorCode = 'full' | 'version' | 'hello' | 'replaced';

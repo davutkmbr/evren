@@ -141,6 +141,8 @@ export class Engine {
       dayTimeScale: 0,
       dayOfYear: 266,
       paused: debug.freeze,
+      pauseRequested: debug.freeze,
+      pauseAllowed: true,
       paceFloorMs: 0,
     };
 
@@ -167,7 +169,9 @@ export class Engine {
     };
 
     events.on('pause', ({ paused }) => {
-      this.ctx.time.paused = paused;
+      const t = this.ctx.time;
+      t.pauseRequested = paused;
+      t.paused = paused && t.pauseAllowed;
     });
     quality.onChange(() => this.resize());
 
@@ -250,6 +254,7 @@ export class Engine {
     ctx.time.realDt = realDt;
 
     ctx.input.update(realDt);
+    ctx.time.paused = ctx.time.pauseRequested && ctx.time.pauseAllowed;
     const dt = ctx.time.paused ? 0 : Math.min(realDt, 1 / 20);
     ctx.time.dt = dt;
     ctx.time.elapsed += dt;
