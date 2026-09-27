@@ -38,8 +38,14 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   moment that names one (`musicId`) falls back to the mood choice. `EVREN_PRIVATE_ASSETS=0` leaves them out of a dev
   server or build, e.g. for a build that is published openly.
 - **MetaHuman.** Exported runtime files under `build/` (per runtime), wired when that pipeline lands.
-- **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/<name>.fbx`
-  (FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off).
+- **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/` (subfolders
+  allowed; FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off).
+  `python3 tools/humans/mixamo_names.py` renames the downloads to lowercase snake_case: our clip name for ours
+  ("Breathing Idle (1).fbx" -> `idle.fbx`), the title otherwise ("Great Sword Slash.fbx" -> `great_sword_slash.fbx`);
+  the retarget also accepts the Mixamo titles unrenamed. Any other
+  FBX is retargeted too, as an extra clip `x_<slug>` (loop and travel measured) with a category guessed from its name;
+  `private-assets/build/rider/report.md` lists every clip with its measurements, to decide where the extras go in the
+  game (the bench plays any of them: `sandbox/human.html?clip=x_<slug>`).
   `tools/humans/build_rider.py` retargets them onto the rider skeleton (`tools/humans/mixamo.py`: world rotation changes
   from each rest pose, hips travel scaled by leg length, root motion measured and removed) and writes
   `private-assets/build/rider/clips.glb` + `clips.json` (durations, speeds, take-off and landing times). `vite.config.ts`
@@ -64,6 +70,27 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   | `run_jump.fbx` | Running Jump |
   | `turn_left.fbx` | Left Turn |
   | `turn_right.fbx` | Right Turn |
+
+  The owner's additional picks (2026-09-27), also wired into the controller:
+
+  | File | Mixamo animation | In the game |
+  |---|---|---|
+  | `jog.fbx` | Running (a bit slower) | the fast gait up to its own speed, then the run |
+  | `run_stop_quick.fbx` | Run To Stop (a faster stop) | stopping from a jog |
+  | `turn_left_wary.fbx`, `turn_right_wary.fbx` | Left / Right Turn (a more hesitant one) | walking off at a right angle from standing |
+  | `walk_turn_180.fbx`, `run_turn_180.fbx` | Walking / Running Turn 180 | walking or running off the other way from standing; turning round mid-run |
+  | `jump_land_heavy.fbx` | Hard Landing (from higher) | landing from a great height |
+  | `fall_flail.fbx` | Falling | a long fall that is not a jump (off a roof, off the dragon without the wings) |
+  | `run_flip.fbx` | Running Forward Flip | F while running |
+  | `run_roll.fbx` | a forward dive roll while running | landing fast while running |
+  | `run_slide.fbx` | Running Slide | crouch pressed while running |
+  | `idle_look_2.fbx` | Looking Around (another) | an idle variation |
+  | `walk_start.fbx`, `walk_turn_left.fbx`, `run_turn_right.fbx`, `crouch_to_stand.fbx` | Start Walking, Walking Left Turn, Running Right Turn, Crouch Turn To Stand | retargeted, not used yet |
+
+  Turning clips have their heading change taken out and recorded (`turn`, `turn_curve` in clips.json; the controller
+  turns the body by it); take-off clips lose their own rise in the air (the jump physics carries the body) and record
+  their flight time (`air`), which the controller stretches over the physical one. A clip that starts facing well off
+  to the side (the roll) is turned to face ahead, and the roll skips its lead-in steps (`start`).
 
 ## US-risky moment pieces (full attribution)
 
