@@ -40,6 +40,12 @@ const withPrivateAssets = process.env.EVREN_PRIVATE_ASSETS !== '0';
 if (withPrivateAssets && existsSync(PRIVATE_MUSIC_DIR)) {
   STATIC_DIRS[PRIVATE_MUSIC_MOUNT] = PRIVATE_MUSIC_DIR;
 }
+/** The rider's captured clips (Mixamo, retargeted by tools/humans/mixamo.py): served and copied the same way. */
+const PRIVATE_RIDER_DIR = resolve(__dirname, 'private-assets/build/rider');
+const PRIVATE_RIDER_MOUNT = '/private/rider';
+if (withPrivateAssets && existsSync(PRIVATE_RIDER_DIR)) {
+  STATIC_DIRS[PRIVATE_RIDER_MOUNT] = PRIVATE_RIDER_DIR;
+}
 
 /** Copies the private music (see PRIVATE_MUSIC_DIR) into the build output. */
 function privateMusic(): Plugin {
@@ -51,6 +57,15 @@ function privateMusic(): Plugin {
       outDir = resolve(config.root, config.build.outDir);
     },
     closeBundle() {
+      if (withPrivateAssets && existsSync(PRIVATE_RIDER_DIR)) {
+        const riderTarget = join(outDir, 'private/rider');
+        mkdirSync(riderTarget, { recursive: true });
+        const riderFiles = readdirSync(PRIVATE_RIDER_DIR).filter((n) => /\.(glb|json)$/.test(n));
+        for (const f of riderFiles) {
+          copyFileSync(join(PRIVATE_RIDER_DIR, f), join(riderTarget, f));
+        }
+        console.log(`[private-assets] ${riderFiles.length} private rider clip files copied to ${riderTarget}`);
+      }
       if (!withPrivateAssets || !existsSync(PRIVATE_MUSIC_DIR)) {
         return;
       }

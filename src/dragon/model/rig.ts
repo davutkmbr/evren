@@ -440,6 +440,8 @@ export class DragonRigImpl implements DragonRig {
       this.reins?.update(dt);
     } else {
       this.riderRetarget?.update();
+      this.human.wings.tuck = 1.15;
+      this.human.wings.apply();
       this.blendMount(dt);
       this.reins?.update(dt);
       // Face: laughs with the dragon, shouts with the roar, set jaw in a tuck, a soft smile while petting; meets the

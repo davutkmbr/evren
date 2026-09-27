@@ -5,6 +5,8 @@ anim.py, "ride").
 Binding in the standing pose keeps the character ready for any clip (riding, gliding, landing, walking, running).
 
   node scripts/blender-run.mjs --no-slot tools/humans/build_rider.py -- <out.glb> [preview-dir]
+
+Mixamo clips found in private-assets/mixamo/ are retargeted into private-assets/build/rider/clips.glb (mixamo.py).
 """
 import math
 import os
@@ -111,6 +113,7 @@ def preview(tag_prefix=""):
     views = os.environ.get("RIDER_VIEWS", "front,side").split(",")
     shots = {
         "front": ((0, -5, 0.8), (90, 0, 0), 2.0),
+        "wide": ((0, 6, 1.0), (90, 0, 180), 6.6),
         "side": ((5, 0, 0.8), (90, 0, 90), 2.0),
         "back": ((0, 5, 0.9), (90, 0, 180), 2.0),
         "hand": ((hand.x + 2, hand.y, hand.z), (90, 0, 90), 0.35),
@@ -279,3 +282,11 @@ bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True,
                           export_yup=True, export_image_format="WEBP", export_image_quality=85,
                           export_vertex_color="NAME", export_vertex_color_name="ao")
 print("EXPORTED", OUT, os.path.getsize(OUT))
+
+# --- Mixamo clips (private, when the owner has downloaded them into private-assets/mixamo/): a separate clips file.
+import mixamo  # noqa: E402
+MIXAMO_INFOS = mixamo.author(rig)
+if MIXAMO_INFOS:
+    mixamo.export(rig, MIXAMO_INFOS)
+else:
+    print("MIXAMO none (no private-assets/mixamo/*.fbx)")

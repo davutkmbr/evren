@@ -14,6 +14,7 @@ import type { Edge } from './network';
 import { PARK_STRIP } from './network';
 import { offsetPolyline, pointAt, polyLength } from './paths';
 import { PARKED_STRIDE } from './protocol';
+import { carFree } from '../../life/traffic/car-free';
 
 /** Kerbside occupancy by street class. */
 const OCCUPANCY: Record<string, number> = {
@@ -136,7 +137,7 @@ export function parkLots(data: Pick<OsmData, 'areas'>, out: ParkedBuffer, surfac
   const land = osmStandGround(surface, footprints);
   let lots = 0;
   for (const a of data.areas) {
-    if (a.kind !== 'amenity=parking' || (a.parking && LOT_SKIP.has(a.parking))) {
+    if (a.kind !== 'amenity=parking' || (a.parking && LOT_SKIP.has(a.parking)) || carFree(a.ring[0], a.ring[1])) {
       continue;
     }
     const ring = a.ring;

@@ -10,6 +10,9 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
 import { WindBones } from './wind-bones';
 import { FaceLife } from './face';
+import { Wings } from './wings';
+export { Wings } from './wings';
+import { mergeClipInfo, type ClipInfo } from './locomotion/clips';
 
 /** Where the hips joint sits on the saddle (rig space). */
 export const SEAT_HIPS = new THREE.Vector3(0, 1.2, -2.52);
@@ -31,6 +34,29 @@ export interface HumanRider {
   garments?: Map<string, THREE.MeshPhysicalMaterial[]>;
   /** On a dragon: the bone the character hangs from and its root's place there (to mount again). */
   saddle?: { anchor: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion };
+}
+
+/**
+ * Captured clips (Mixamo, private: .docs/assets/private-assets.md) served next to the build at private/rider/ when the
+ * owner has them; they replace the procedural clips of the same name. A checkout without them keeps the procedural set.
+ */
+async function loadPrivateClips(clips: Map<string, THREE.AnimationClip>): Promise<void> {
+  const base = `${import.meta.env.BASE_URL}private/rider/`;
+  try {
+    const res = await fetch(`${base}clips.json`, { cache: 'no-cache' });
+    if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) {
+      return;
+    }
+    const info = (await res.json()) as Record<string, ClipInfo>;
+    const gltf = await loader().loadAsync(`${base}clips.glb`);
+    for (const c of gltf.animations) {
+      clips.set(c.name, c);
+    }
+    mergeClipInfo(info);
+    console.info(`[rider] captured clips: ${gltf.animations.map((c) => c.name).join(', ')}`);
+  } catch {
+    // No private clips: the procedural ones stay.
+  }
 }
 
 let gltfLoader: GLTFLoader | undefined;
@@ -84,41 +110,11 @@ export async function loadHumanModel(url: string): Promise<HumanRider> {
   }
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
-  const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife, wings: new Wings(bones) };
+  await loadPrivateClips(clips);
+  const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife, wings: new Wings(root, bones) };
   human.face = new FaceLife(human);
   applyGarmentMaterials(human);
   return human;
-}
-
-/**
- * Hezarfen's wings: each hangs on a bone chain rooted at the case on the back; scaling the roots toward the case stows
- * them (the fabric furls in), back to 1 deploys them. `amount` 0 = stowed, 1 = spread (a little over 1 overshoots).
- */
-export class Wings {
-  private readonly roots: THREE.Bone[] = [];
-  amount = 0;
-
-  constructor(bones: Map<string, THREE.Bone>) {
-    for (const n of ['wing_L_1', 'wing_R_1']) {
-      const b = bones.get(n);
-      if (b) {
-        this.roots.push(b);
-      }
-    }
-    this.set(0);
-  }
-
-  get present(): boolean {
-    return this.roots.length > 0;
-  }
-
-  set(amount: number): void {
-    this.amount = amount;
-    const s = Math.max(0.015, amount);
-    for (const b of this.roots) {
-      b.scale.setScalar(s);
-    }
-  }
 }
 
 /** The rider on the dragon: the held riding pose, turned to face -Z with the hips on the seat, under `anchor`. */
@@ -179,6 +175,8 @@ const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number;
   feather: { set: 'linen', sheen: 0.8, sheenRough: 0.5, rough: 0.9 },
   // Hezarfen's wing fabric: waxed canvas.
   wing: { set: 'linen', sheen: 0.35, sheenRough: 0.6, rough: 0.75 },
+  // Hezarfen's wing spars and ribs: oiled wood (the leather scan's grain, a light bump).
+  wood: { set: 'leather', bump: 0.3, rough: 0.65 },
 };
 
 const textureLoader = new THREE.TextureLoader();
