@@ -247,12 +247,24 @@ preview("ride-")
 if OUT == "-":
     sys.exit(0)
 
+# Textures sized for the game: the skin at 2K, eyes, teeth and tongue small (seen from a few metres at most).
+LIMITS = {"eye": 512, "teeth": 512, "tongue": 256, "brow": 512, "lash": 512, "diffuse": 2048}  # specific names first
+for img in bpy.data.images:
+    if img.size[0] == 0:
+        continue
+    n = img.name.lower()
+    lim = next((v for k, v in LIMITS.items() if k in n), 1024)
+    if max(img.size) > lim:
+        k = lim / max(img.size)
+        img.scale(max(1, int(img.size[0] * k)), max(1, int(img.size[1] * k)))
+
 bpy.ops.object.select_all(action="DESELECT")
 for o in [rig] + list(rig.children_recursive):
     o.select_set(True)
 os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True, export_skins=True, export_animations=True,
-                          export_animation_mode="ACTIONS", export_force_sampling=True, export_morph=True, export_morph_normal=False, export_apply=False,
-                          export_yup=True, export_image_format="JPEG", export_jpeg_quality=88,
+                          export_animation_mode="ACTIONS", export_force_sampling=True, export_optimize_animation_size=True, export_morph=True, export_morph_normal=False, export_apply=False,
+                          export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=6,
+                          export_yup=True, export_image_format="WEBP", export_image_quality=85,
                           export_vertex_color="NAME", export_vertex_color_name="ao")
 print("EXPORTED", OUT, os.path.getsize(OUT))

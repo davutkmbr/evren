@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
 import { WindBones } from './wind-bones';
 import { FaceLife } from './face';
@@ -28,13 +29,24 @@ export interface HumanRider {
   wings: Wings;
 }
 
+let gltfLoader: GLTFLoader | undefined;
+/** One loader for all characters; meshes are Draco-compressed (decoder in public/draco/). */
+function loader(): GLTFLoader {
+  if (!gltfLoader) {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
+    gltfLoader = new GLTFLoader().setDRACOLoader(draco);
+  }
+  return gltfLoader;
+}
+
 /**
  * Loads a character built by the pipeline: skinned meshes (shadows on, cards alpha-tested), bones by Mixamo name,
  * the bind pose, its clips on a mixer, the game's garment materials and the wind chains. In the bind pose, feet on
  * the origin, facing +Z.
  */
 export async function loadHumanModel(url: string): Promise<HumanRider> {
-  const gltf = await new GLTFLoader().loadAsync(url);
+  const gltf = await loader().loadAsync(url);
   const root = gltf.scene;
   root.name = 'human';
   const meshes: THREE.SkinnedMesh[] = [];
