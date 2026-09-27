@@ -96,6 +96,7 @@ export class PostPipeline implements RenderPipeline {
   private velocity: ObjectVelocity | null = null;
   private readonly viewProj = new THREE.Matrix4();
   private readonly velocityAllowed: boolean;
+  private readonly reactiveAllowed: boolean;
   private antialiasMode: AntialiasMode = 'none';
 
   private readonly composite: CompositePass;
@@ -140,6 +141,8 @@ export class PostPipeline implements RenderPipeline {
     this.gl = ctx.renderer.getContext() as WebGL2RenderingContext;
     this.overrides = parsePostOverrides(ctx.debug.params);
     this.velocityAllowed = ctx.debug.params.get('taavel') !== '0';
+    // ?taareact=0: TAA without the reactive mask (stage 2 behaviour, for A/B comparisons).
+    this.reactiveAllowed = ctx.debug.params.get('taareact') !== '0';
     const prof = ctx.debug.params.get('postprof');
     this.profileMode = prof === 'scene' ? 'scene' : prof === '1' || ctx.debug.params.has('postbench') ? 'post' : 'frame';
     this.benchIterations = Math.max(1, Math.min(64, Math.round(Number(ctx.debug.params.get('postbench') ?? 1)) || 1));
@@ -315,6 +318,9 @@ export class PostPipeline implements RenderPipeline {
       } else if (this.velocity) {
         this.velocity.active = false;
       }
+      if (this.taa && this.velocity && this.reactiveAllowed) {
+        this.velocity.renderReactive(renderer, ctx.scene, camera, this.internalWidth, this.internalHeight);
+      }
     } finally {
       this.taa?.unjitter(camera);
     }
@@ -486,7 +492,7 @@ export class PostPipeline implements RenderPipeline {
       // that must not leave trails (rain, particles, race rings).
       if (!resolved && (!pass || pass.order > TAA_ORDER)) {
         resolved = true;
-        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight, this.velocity?.active ? this.velocity.target.texture : null);
+        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight, this.velocity?.active ? this.velocity.target.texture : null, this.velocity?.reactive ? (this.velocity.mask.depthTexture as THREE.Texture) : null);
       }
       if (!pass || !pass.enabled) {
         continue;

@@ -6,6 +6,7 @@ import { SHARED_GLSL } from '../../../render/shaders';
 import { MeshBuilder, surf } from '../util/mesh-builder';
 import { CAR_FRAME_GLSL, CAR_LIGHT_FRAGMENT, CAR_LIGHT_VERTEX, CAR_MESH_BEGIN, CAR_MESH_COLOR, CAR_MESH_FRAGMENT_PARS, CAR_MESH_NORMAL, CAR_MESH_VERTEX_PARS } from './car-shaders';
 import { ROAD_STEP, RoadNetwork } from './road-network';
+import { trackReactive } from '../../../core/motion';
 
 /** Radius (m) around the camera inside which cars are drawn as meshes. */
 const NEAR_RADIUS = 1400;
@@ -78,6 +79,8 @@ function buildCarGeometry(): THREE.BufferGeometry {
 export class CarTraffic {
   readonly group = new THREE.Group();
   readonly network: RoadNetwork;
+  /** GPU-animated cars and light streams: the TAA's reactive mask. */
+  private readonly untrack = trackReactive(this.group);
   private readonly lights: THREE.Points;
   private readonly cars: THREE.Mesh;
   private readonly carGeo: THREE.InstancedBufferGeometry;
@@ -248,6 +251,7 @@ export class CarTraffic {
   }
 
   dispose(): void {
+    this.untrack();
     this.lights.geometry.dispose();
     this.carGeo.dispose();
     this.lightMaterial.dispose();

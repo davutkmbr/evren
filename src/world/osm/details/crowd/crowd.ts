@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { hash } from '../../shared/geometry';
 import { Pose, STANDER_STRIDE, VERT_STRIDE, type WalkGraph } from '../protocol';
 import { PERSON_COLOR_STRIDE, PERSON_STRIDE, Style, createPeopleMaterial, createPeopleMesh, personGeometry } from './people';
+import { trackReactive } from '../../../../core/motion';
 
 /**
  * LOD ranges (m at the "high" preset, scaled with LOD_RADIUS_SCALE): detailed people within NEAR_LOD, the light body
@@ -257,6 +258,7 @@ export class Crowd {
       this.group.add(createPeopleMesh(geo, this.materials[lod], `osm-people-${names[lod]}`));
     });
     this.group.name = 'osm-crowd';
+    this.untrack = trackReactive(this.group);
   }
 
   /** Every usable edge once, with cumulative expected people for spawning. */
@@ -551,7 +553,11 @@ export class Crowd {
     geo.instanceCount = n;
   }
 
+  /** Removes the crowd from the TAA's reactive mask. */
+  private readonly untrack: () => void;
+
   dispose(): void {
+    this.untrack();
     for (const g of this.geometries) g.dispose();
     for (const m of this.materials) m.dispose();
     this.group.removeFromParent();

@@ -8,6 +8,20 @@ import type * as THREE from 'three';
  */
 export const motionRoots = new Set<THREE.Object3D>();
 
+/**
+ * Moving things the TAA cannot reproject (GPU-animated or instanced movers: traffic, crowd, animals; vessels are slow enough for the camera reprojection): drawn
+ * once more with their own materials into a reactive mask (post/velocity.ts), where the resolve lowers the history
+ * weight so they do not leave trails. They lose some antialiasing instead.
+ */
+export const reactiveRoots = new Set<THREE.Object3D>();
+
+export function trackReactive(root: THREE.Object3D): () => void {
+  reactiveRoots.add(root);
+  return () => {
+    reactiveRoots.delete(root);
+  };
+}
+
 export function trackMotion(root: THREE.Object3D): () => void {
   motionRoots.add(root);
   return () => {

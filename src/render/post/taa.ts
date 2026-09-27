@@ -20,6 +20,8 @@ import { createColorTarget } from './targets';
 const JITTER_PHASES = 8;
 /** Weight of the current frame in steady state. */
 const CURRENT_WEIGHT = 0.1;
+/** Weight of the current frame on reactive movers (traffic, vessels, crowd): trails shorter than a frame or two. */
+const REACTIVE_WEIGHT = 0.5;
 /** A camera jump beyond this (m) or turn beyond this (rad) in one frame drops the history (cuts, teleports). */
 const CUT_DISTANCE = 60;
 const CUT_ANGLE = 0.5;
@@ -32,6 +34,10 @@ uniform sampler2D tHistory;
 /* Tracked objects' motion (post/velocity.ts): xy NDC motion, z current / w previous view depth, z = 0: none. */
 uniform sampler2D tVelocity;
 uniform float uVelocityOn;
+/* Reactive movers' depth (post/velocity.ts renderReactive; reversed-Z, 0 = none). */
+uniform sampler2D tReactive;
+uniform float uReactiveOn;
+uniform float uReactiveWeight;
 uniform vec2 uSize;
 uniform float uNear;
 uniform float uFar;
@@ -42,7 +48,7 @@ uniform mat4 uPrevView;
 uniform float uHistoryValid;
 uniform float uCurrentWeight;
 /* Debug bits (window.__evren.ctx.pipeline.taa): 1 = no variance clip, 2 = no disocclusion test, 4 = show the path
-   (red: object velocity, green: history kept). */
+   (red: object velocity, green: history kept, blue: reactive). */
 uniform int uFlags;
 /* Width of the variance clip box in standard deviations. */
 uniform float uGamma;
@@ -143,6 +149,15 @@ void main() {
     }
   }
   vec2 historyUv = vUv + motion;
+  // A reactive mover (traffic, vessels, crowd, animals) at the closest sample: mostly this frame, so it leaves no trail.
+  bool reactive = false;
+  if (uReactiveOn > 0.5) {
+    float rd = texelFetch(tReactive, closestP, 0).r;
+    if (rd > 0.0) {
+      float rdist = postLinearDepth(rd, uNear, uFar);
+      reactive = abs(rdist - dist) < 0.02 * dist + 0.3;
+    }
+  }
 
   float currentDist = texelFetch(tDepth, p, 0).r <= 0.0 ? uFar : postLinearDepth(texelFetch(tDepth, p, 0).r, uNear, uFar);
   float alpha = uCurrentWeight;
@@ -189,6 +204,7 @@ void main() {
     alpha = mix(uCurrentWeight, 0.35, clamp(motionPx / 24.0, 0.0, 1.0));
     // Deforming objects (wings, rider) are only approximated by their velocity: a little more of the current frame.
     alpha = object ? max(alpha, 0.2) : alpha;
+    alpha = reactive ? max(alpha, uReactiveWeight) : alpha;
     // Luma-weighted blend (flicker reduction, Karis 2014): a brighter sample counts for less.
     float wc = alpha / (1.0 + c.x);
     float wh = (1.0 - alpha) / (1.0 + h.x);
@@ -201,7 +217,7 @@ void main() {
     return;
   }
   if ((uFlags & 4) != 0) {
-    result = vec3(object ? 1.0 : 0.0, valid ? 1.0 : 0.0, 0.0) * 2.0;
+    result = vec3(object ? 1.0 : 0.0, valid ? 1.0 : 0.0, reactive ? 1.0 : 0.0) * 2.0;
   }
   gl_FragColor = vec4(max(result, vec3(0.0)), currentDist);
 }
@@ -245,6 +261,9 @@ export class TemporalAA {
         tHistory: { value: null },
         tVelocity: { value: null },
         uVelocityOn: { value: 0 },
+        tReactive: { value: null },
+        uReactiveOn: { value: 0 },
+        uReactiveWeight: { value: REACTIVE_WEIGHT },
         uSize: { value: new THREE.Vector2(1, 1) },
         uNear: { value: 0.1 },
         uFar: { value: 1000 },
@@ -310,7 +329,7 @@ export class TemporalAA {
    * Resolves `color` (this frame's jittered HDR scene) against the history into the next history target and returns
    * its texture. `camera` must be unjittered again.
    */
-  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number, velocity: THREE.Texture | null = null): THREE.Texture {
+  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number, velocity: THREE.Texture | null = null, reactive: THREE.Texture | null = null): THREE.Texture {
     camera.updateMatrixWorld();
     camera.matrixWorld.decompose(this.pos, this.quat, _scale);
     if (this.valid && (this.pos.distanceTo(this.prevPos) > CUT_DISTANCE || this.quat.angleTo(this.prevQuat) > CUT_ANGLE)) {
@@ -337,6 +356,8 @@ export class TemporalAA {
     u.uHistoryValid.value = this.valid ? 1 : 0;
     u.tVelocity.value = velocity;
     u.uVelocityOn.value = velocity ? 1 : 0;
+    u.tReactive.value = reactive;
+    u.uReactiveOn.value = reactive ? 1 : 0;
     fs.draw(renderer, this.material, dst);
 
     this.prevView.copy(camera.matrixWorldInverse);

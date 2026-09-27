@@ -27,6 +27,7 @@ import { VehicleRenderer } from './render';
 import { Signals } from './signals';
 import { CarSim } from './sim';
 import { TramSim } from './trams';
+import { trackReactive } from '../../../core/motion';
 
 /** Camera height above the ground (m) above which cars stop casting shadows. */
 const CAR_SHADOW_AGL = 120;
@@ -106,6 +107,8 @@ class TrafficLayer extends LayerBase {
     const renderer = new VehicleRenderer(capacity + TRAM_SLOTS, res.parked, PARKED_STRIDE, quality);
     this.renderer = renderer;
     this.group.add(renderer.group);
+    // Moving vehicles and their lights: a reactive mask for the TAA (no trails behind cars).
+    this.onDispose(trackReactive(renderer.group));
     this.signals = new Signals(net);
     this.trams = new TramSim(net, res.tracks, renderer);
     this.cars = new CarSim(net, renderer, this.signals, { tram: this.trams.crossing }, ctx.rect, capacity);
