@@ -1179,6 +1179,20 @@ export interface DragonBondState {
   readonly behavior: string | null;
 }
 
+/**
+ * Other players' dragons (phase 26, src/dragon/remote): fed with network snapshots (src/net/snapshot.ts), drawn
+ * INTERP_DELAY_MS behind with interpolation. Service key: 'remoteDragons'.
+ */
+export interface RemoteDragonService {
+  /** A received snapshot of dragon `id` (SNAPSHOT_BYTES at `offset`); the first one adds the dragon. */
+  push(id: string, data: ArrayBuffer, offset?: number): void;
+  remove(id: string): void;
+  /** Dragons with at least one snapshot. */
+  readonly count: number;
+  /** Rendered world position of each dragon (minimap, name tags). */
+  forEach(fn: (id: string, position: THREE.Vector3, visible: boolean) => void): void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -1200,6 +1214,7 @@ export interface Services {
   hudZones: HudZonesService;
   life: LifeService;
   bond: DragonBondState;
+  remoteDragons: RemoteDragonService;
 }
 
 /* ------------------------------------------------------------------ */

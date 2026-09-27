@@ -64,6 +64,28 @@ Live at seventeenskies.com/probe since 2026-09-27; the probe objects were create
 `me` does not land in the Middle East from Istanbul. Region choice waits for Türk Telekom, Turkcell, Superonline
 and Vodafone results.
 
+### Remote dragons (done in branch claude/remote-dragons)
+
+The client side of other players, before any server (the part of phase 14 that online needs):
+
+- `src/net/snapshot.ts`: the 67-byte binary snapshot (position f32, orientation and velocity i16, mode, flags, 32 pose
+  fields as bytes, ground plane); `src/net/capture.ts` takes it from the local dragon. Codec round trip: position
+  exact, orientation 1e-5, worst pose field 0.012 rad.
+- `src/dragon/remote/`: the `remoteDragons` service. `RemoteDragonKit` builds the geometry (procedural rider, fixed
+  reins) and 1024 px textures once, on the first remote dragon; each `RemoteDragon` has its own skeleton, animator and
+  material objects, which share one compiled program (no new programs with 15 dragons). `SnapshotBuffer` draws 100 ms
+  behind the newest snapshot: Hermite position from the velocities, slerped orientation, phases the short way round,
+  up to 250 ms of coasting when the stream stalls. LOD bands by distance: animation every 1 / 2 / 4 / 8 frames up to
+  350 / 1200 / 4000 / 9000 m, shadows only in the first band, hidden beyond.
+- `?bots=N` (local builds only): N dragons replay the local dragon's own snapshots 1.5 s + 0.4 s per bot later, in
+  formation, through the codec and the buffer.
+- The local rig's geometry assembly moved to `src/dragon/model/geometry/assemble.ts` (shared with the kit).
+
+Measured with 15 bots in the nearest band (headless, shared GPU): remote-dragons CPU ~1.0 ms per frame (0.07 ms per
+dragon), +2.5–5.7 M triangles and +47–125 draw calls including shadows. Frame rates on the shared GPU were too noisy
+to judge (the same baseline ran at 46 and 20 fps); the 16-dragon 60 fps target of phase 14 needs a measurement on an
+idle machine. If the GPU cost is too high, the next step is a lighter mesh for the 350 m+ bands.
+
 ## Stage 2 — later
 
 Turnstile against bots, chat with moderation, persistent profiles (D1).

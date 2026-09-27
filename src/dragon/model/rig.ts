@@ -3,12 +3,9 @@ import type { DragonPose, DragonRig, DragonState } from '../../core/contracts';
 import { buildBoneSpecs, HEAD_FWD, JAW_HINGE, LANDMARKS, RIDER, TAIL_JOINTS } from './anatomy';
 import { DEFAULT_POSE, STANDING_ROOT_HEIGHT } from './constants';
 import { buildSkeleton, type RigSkeleton } from './skeleton';
-import { MeshBuilder, SkinAccumulator } from './geometry/buffers';
-import { BodySurface } from './geometry/body';
-import { buildFrillMembranes, buildHead, buildRictus } from './geometry/head';
-import { buildWings } from './geometry/wings';
-import { buildLegs } from './geometry/legs';
-import { buildDorsalSpikes, buildTailSpade } from './geometry/spikes';
+import { SkinAccumulator } from './geometry/buffers';
+import type { BodySurface } from './geometry/body';
+import { buildDragonGeometry } from './geometry/assemble';
 import { TextureBaker } from './materials/texture-baker';
 import { bakeScaleTextures, type ScaleTextures } from './materials/scale-textures';
 import { createBodyMaterial, type BodyMaterialUniforms } from './materials/body-material';
@@ -16,8 +13,7 @@ import { bakeMembraneTextures, type MembraneTextures } from './materials/membran
 import { createMembraneMaterial, type MembraneUniforms } from './materials/membrane-material';
 import { DragonAnimator } from './animation/animator';
 import type { SurfaceAnchor } from './animation/rider-pose';
-import { buildRider, RIDER_HIDE_POINT } from './geometry/rider';
-import { buildTack } from './geometry/tack';
+import { RIDER_HIDE_POINT } from './geometry/rider';
 import { createRiderMaterial, type RiderUniforms } from './materials/rider-material';
 import { RiderCharacter } from './rider/character';
 import { loadHumanRider, type HumanRider } from './rider/human';
@@ -149,17 +145,8 @@ export class DragonRigImpl implements DragonRig {
     this.scaleTex = bakeScaleTextures(this.baker, opts.textureSize, anisotropyFor(opts.textureSize));
     this.membraneTex = bakeMembraneTextures(this.baker, opts.textureSize, anisotropyFor(opts.textureSize));
 
-    const body = new BodySurface(this.skel);
-    const bodyBuilder = new MeshBuilder();
-    const membraneBuilder = new MeshBuilder();
-    body.build(bodyBuilder);
-    const head = buildHead(bodyBuilder, body, this.skel);
-    buildRictus(bodyBuilder, body, this.skel);
-    const wings = buildWings(body, bodyBuilder, membraneBuilder, this.skel);
-    buildFrillMembranes(membraneBuilder, head, this.skel);
-    buildLegs(bodyBuilder, this.skel);
-    buildDorsalSpikes(bodyBuilder, body);
-    buildTailSpade(bodyBuilder, body);
+    const geo = buildDragonGeometry(this.skel, { proceduralRider: !opts.newRider && !opts.humanRider, dynamicReins: !!opts.humanRider });
+    const { body, head, wings, tack } = geo;
 
     const bodyMat = createBodyMaterial(this.scaleTex);
     this.bodyMaterial = bodyMat.material;
@@ -170,30 +157,21 @@ export class DragonRigImpl implements DragonRig {
     this.membraneDepthMaterial = memMat.depthMaterial;
     this.membraneUniforms = memMat.uniforms;
 
-    const bodyMesh = makeSkinned(bodyBuilder.build(), this.bodyMaterial, this.skel, 'dragon-body');
+    const bodyMesh = makeSkinned(geo.bodyGeometry, this.bodyMaterial, this.skel, 'dragon-body');
     bodyMesh.customDepthMaterial = this.bodyDepthMaterial;
-    const memGeo = membraneBuilder.build();
-    memGeo.deleteAttribute('tangent');
-    const membraneMesh = makeSkinned(memGeo, this.membraneMaterial, this.skel, 'dragon-membrane');
+    const membraneMesh = makeSkinned(geo.membraneGeometry, this.membraneMaterial, this.skel, 'dragon-membrane');
     membraneMesh.customDepthMaterial = this.membraneDepthMaterial;
-    const riderBuilder = new MeshBuilder();
-    if (!opts.newRider && !opts.humanRider) {
-      buildRider(riderBuilder, this.skel);
-    }
-    const tack = buildTack(riderBuilder, body, this.skel, { dynamicReins: !!opts.humanRider });
     const riderMat = createRiderMaterial(RIDER_HIDE_POINT);
     this.riderMaterial = riderMat.material;
     this.riderDepthMaterial = riderMat.depthMaterial;
     this.riderUniforms = riderMat.uniforms;
-    const riderGeo = riderBuilder.build();
-    riderGeo.deleteAttribute('tangent');
-    const riderMesh = makeSkinned(riderGeo, this.riderMaterial, this.skel, 'dragon-rider');
+    const riderMesh = makeSkinned(geo.riderGeometry, this.riderMaterial, this.skel, 'dragon-rider');
     riderMesh.customDepthMaterial = this.riderDepthMaterial;
-    this.stats.riderTriangles = riderBuilder.triangleCount;
+    this.stats.riderTriangles = geo.triangles.rider;
     this.meshes.push(bodyMesh, membraneMesh, riderMesh);
     this.root.add(bodyMesh, membraneMesh, riderMesh);
-    this.stats.bodyTriangles = bodyBuilder.triangleCount;
-    this.stats.membraneTriangles = membraneBuilder.triangleCount;
+    this.stats.bodyTriangles = geo.triangles.body;
+    this.stats.membraneTriangles = geo.triangles.membrane;
 
     if (tack.reins) {
       this.reins = new DynamicReins(tack.reins, this.skel, this.root);
