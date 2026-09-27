@@ -25,6 +25,7 @@ import { Batch, box, type Builder, dressOpening, type Face, faceBar, faceBox, fa
 import { type HeroBuild, longestEdgeHeading } from './pier1926';
 import { propDef } from '../props';
 import { HeroWeather, repairPatches, sillStreaks, streakAt, type WxProfile } from './weather';
+import { HERO_MEASURES } from '../../../../src/world/osm/buildings/surveyed';
 
 /**
  * Weathering of the pre-2021 market hall (c04, context/haldun-taner-kiosks-2013): grey city grime over the salmon
@@ -62,7 +63,7 @@ const RANGE_TOP = 6.45;
 const UF_SILL = 6.55;
 const UF_SPRING = 8.3;
 const CORNICE = [9.9, 10.35] as const;
-const PARAPET = 11.05;
+const PARAPET = HERO_MEASURES.haldunTaner.wallTop;
 const STEP = 0.52;
 const CLERESTORY_V = 7.6;
 const CLERESTORY = [8.45, 9.85] as const;

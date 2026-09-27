@@ -47,6 +47,7 @@ import {
   type WindowStyle,
 } from './kit';
 import { HeroWeather, repairPatches, sillStreaks, type WxProfile } from './weather';
+import { HERO_MEASURES } from '../../../../src/world/osm/buildings/surveyed';
 
 /**
  * Weathering of the restored (2022–23) pier: light grime with patchy variation, splash and damp above the stone
@@ -76,7 +77,7 @@ const LOGGIA = { v0: -6.5, v1: 2.9, eastU: 18.9, westU: -17.7 };
 const PLINTH = 0.35;
 const STRING = [4.7, 4.95] as const;
 const CORNICE = 8.75;
-const EAVE = 9.1;
+const EAVE = HERO_MEASURES.pier1926.wallTop;
 const OVERHANG = 1.1;
 const PITCH = 22;
 const PAV_TOP = 10.6;

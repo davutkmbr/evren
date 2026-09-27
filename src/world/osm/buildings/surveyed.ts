@@ -67,6 +67,32 @@ export const SURVEYED: Readonly<Record<number, SpecRow>> = {
   694715138: { typ: 'T1', storeys: [3, 4] },
 };
 
+/**
+ * Hand-made hero buildings (tools/world-compiler/src/hero): the wall top (m above the entrance floor) and roof of the
+ * massing the flight-scale layer draws for them. The hero builders take the same numbers, so the block seen from the
+ * air meets the hero up close.
+ */
+export interface MeasuredRow {
+  wallTop: number;
+  roof: 'hipped' | 'flat';
+}
+
+export const HERO_MEASURES = {
+  /** The 1926 pier (hero/pier1926.ts): eaves 9.1 m under a hipped roof. */
+  pier1926: { wallTop: 9.1, roof: 'hipped' },
+  /** The new pier (hero/new-pier.ts): the land block's parapet, the tallest wall of its three parts. */
+  newPier: { wallTop: 8.6, roof: 'flat' },
+  /** Haldun Taner Sahnesi (hero/haldun-taner.ts): the end pavilions' parapet. */
+  haldunTaner: { wallTop: 11.05, roof: 'flat' },
+} as const satisfies Record<string, MeasuredRow>;
+
+/** Hero measures by OSM id. */
+export const MEASURED: Readonly<Record<number, MeasuredRow>> = {
+  102190096: HERO_MEASURES.pier1926,
+  560203763: HERO_MEASURES.newPier,
+  102190100: HERO_MEASURES.haldunTaner,
+};
+
 /** Hash in [0, 1) of a seed and a salt (the façade kit's per-building variation). */
 export function h01(seed: number, salt: number): number {
   const s = Math.sin(seed * 12.9898 + salt * 78.233 + 0.5) * 43758.5453;
