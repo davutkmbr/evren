@@ -85,11 +85,14 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   | `run_roll.fbx` | a forward dive roll while running | landing fast while running |
   | `run_slide.fbx` | Running Slide | crouch pressed while running |
   | `idle_look_2.fbx` | Looking Around (another) | an idle variation |
-  | `walk_start.fbx`, `walk_turn_left.fbx`, `run_turn_right.fbx`, `crouch_to_stand.fbx` | Start Walking, Walking Left Turn, Running Right Turn, Crouch Turn To Stand | retargeted, not used yet |
+  | `walk_start.fbx` | Start Walking | setting off ahead after standing a while |
+  | `walk_turn_left.fbx`, `run_turn_right.fbx` | Walking Left Turn, Running Right Turn | a sharp turn on the move (walking left, running right; the other sides steer) |
+  | `crouch_to_stand.fbx` | Crouch Turn To Stand | standing up from a crouch to go the other way |
 
   Turning clips have their heading change taken out and recorded (`turn`, `turn_curve` in clips.json; the controller
   turns the body by it); take-off clips lose their own rise in the air (the jump physics carries the body) and record
-  their flight time (`air`), which the controller stretches over the physical one. A clip that starts facing well off
+  their flight time (`air`), which the controller stretches over the physical one. Travelling clips record their ground
+  speed over time (`speed_curve`): the first steps and the turns on the move travel at it. A clip that starts facing well off
   to the side (the roll) is turned to face ahead, and the roll skips its lead-in steps (`start`).
 
 ## US-risky moment pieces (full attribution)
