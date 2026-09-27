@@ -21,9 +21,10 @@ void main() {
   float radius = type > 2.5 ? 0.9 : type > 1.5 ? 0.55 : 0.42;
   float pxScale = projectionMatrix[1][1] * uResolution.y * 0.5;
   float px = radius * pxScale / dist;
-  float size = max(px, 1.6);
-  float energy = pow(px / size, 1.6);
-  float intensity = (type > 2.5 ? 34.0 : type > 1.5 ? 20.0 : 16.0) * lightsOn * blink * mix(0.35, 1.0, energy);
+  float look = max(px, 1.6);
+  float size = max(look, lightSplatMinSize(2.2, 9.0));
+  float energy = pow(px / look, 1.6);
+  float intensity = (type > 2.5 ? 34.0 : type > 1.5 ? 20.0 : 16.0) * lightsOn * blink * mix(0.35, 1.0, energy) * lightSplatEnergy(look, size);
   vec3 col = pow(aLamp.rgb / 255.0, vec3(2.2));
   vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
   vLampColor = col * intensity * atmoTransmittance(wp);

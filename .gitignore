@@ -18,3 +18,4 @@ data/osm-src/
 assets-src/
 
 __pycache__/
+.venv-audio/
