@@ -108,6 +108,16 @@ const GAIT = ['idle', 'walk', 'jog', 'run', 'crouch_idle', 'crouch_walk'] as con
 const ONE_SHOT = ['run_stop', 'jump_start', 'jump_land'] as const;
 const AIR = ['jump_rise', 'jump_fall'] as const;
 
+/** Turns on the move (captured one way only; the other side steers as usual). */
+const MOVING_TURNS = ['walk_turn_left', 'run_turn_right'];
+
+/** A curve of even steps over 0..1, linearly interpolated. */
+function curveAt(c: number[], u: number): number {
+  const x = THREE.MathUtils.clamp(u, 0, 1) * (c.length - 1);
+  const i = Math.min(c.length - 2, Math.floor(x));
+  return THREE.MathUtils.lerp(c[i], c[i + 1], x - i);
+}
+
 const smoothstep = THREE.MathUtils.smoothstep;
 const clamp = THREE.MathUtils.clamp;
 const _v = new THREE.Vector2();
@@ -173,8 +183,9 @@ export class LocomotionController {
   private stopClip = 'run_stop';
   private stopBrake = STOP_BRAKE;
   /** The current `act`: its clip, heading at the start and the scale of the clip's own turn, the speed it entered
-   * with and the exponent of its braking curve (speed = v0·(1 - t/T)^p, matched to the clip's travel). */
-  private act = { clip: '', yaw0: 0, turnScale: 0, v0: 0, p: 1, exit: 0.85, ik: false, t0: 0 };
+   * with and the exponent of its braking curve (speed = v0·(1 - t/T)^p, matched to the clip's travel), or (curve > 0)
+   * the clip's own speed curve times `curve`; the heading asked for. */
+  private act = { clip: '', yaw0: 0, turnScale: 0, v0: 0, p: 1, exit: 0.85, ik: false, t0: 0, curve: 0, want: 0 };
   private prevCrouchIn = false;
   private landClipName = 'jump_land';
 
@@ -464,6 +475,28 @@ export class LocomotionController {
     const want = Math.atan2(input.move.x, input.move.y);
     let d = want - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.act.want = want;
+    // Crouched, standing up to go the other way: rises turning (it turns to the left, the long way round for a sharp
+    // right).
+    if (this.crouch > 0.25 && !input.crouch && sp < 0.3 && this.actions.has('crouch_to_stand') && (d > 1.2 || Math.abs(d) > 2.4)) {
+      this.crouch = 0;
+      this.beginAct('crouch_to_stand', d);
+      return;
+    }
+    // Sharp turns on the move: walking to the left, running to the right (the captured ones; the other sides steer).
+    if (!input.run && this.crouch < 0.1 && sp > 1.0 && sp < 2.6 && d > 0.45 && d < 1.2 && this.actions.has('walk_turn_left')) {
+      this.beginAct('walk_turn_left', d);
+      return;
+    }
+    if (sp > 4.0 && d < -0.45 && d > -1.2 && this.actions.has('run_turn_right')) {
+      this.beginAct('run_turn_right', d);
+      return;
+    }
+    // Setting off from standing a while, ahead: the first steps.
+    if (!input.run && this.crouch < 0.1 && sp < 0.1 && this.still > 0.5 && Math.abs(d) < LOCO.pivotAngle && this.actions.has('walk_start')) {
+      this.beginAct('walk_start', 0);
+      return;
+    }
     if (sp > LOCO.runTurnMin && Math.cos(d) < LOCO.runTurnDot && this.actions.has('run_turn_180')) {
       this.beginAct('run_turn_180', d);
       return;
@@ -499,7 +532,7 @@ export class LocomotionController {
       if (Math.sign(d) !== Math.sign(c.turn) && Math.abs(d) > 2.4) {
         d -= Math.sign(d) * 2 * Math.PI;
       }
-      a.turnScale = Math.sign(d) === Math.sign(c.turn) ? clamp(d / c.turn, 0.6, 1.3) : 1;
+      a.turnScale = Math.sign(d) === Math.sign(c.turn) ? clamp(d / c.turn, 0.6, MOVING_TURNS.includes(clip) ? 1.8 : 1.3) : 1;
     }
     a.v0 = this.speed;
     a.t0 = c.start ?? 0;
@@ -508,6 +541,12 @@ export class LocomotionController {
     // speed = v0·(1 - u)^p covers v0·T/(p + 1): p so the distance matches the clip's travel (its share after t0).
     a.p = travel > 0.2 && a.v0 > 0.1 ? clamp((a.v0 * T) / (travel * (T / c.duration)) - 1, 0, 6) : 6;
     a.exit = clip.includes('turn') ? 0.8 : 0.88;
+    // Moving on the clip's own speed curve: the first steps as they are, a turn on the move scaled to the speed it
+    // entered with.
+    a.curve = 0;
+    if (c.speed_curve && (clip === 'walk_start' || MOVING_TURNS.includes(clip))) {
+      a.curve = clip === 'walk_start' ? 1 : clamp(a.v0 / Math.max(0.3, curveAt(c.speed_curve, 0)), 0.6, 1.6);
+    }
     // The feet stay on uneven ground in a pivot; a slide or roll rides the body.
     a.ik = clip.includes('turn');
     this.enter('act');
@@ -519,16 +558,23 @@ export class LocomotionController {
     const c = CLIPS[a.clip];
     const u = Math.min(1, this.stateTime / (c.duration - a.t0));
     if (c.turn_curve && a.turnScale) {
-      const n = c.turn_curve.length - 1;
-      const x = u * n;
-      const i = Math.min(n - 1, Math.floor(x));
-      const h = THREE.MathUtils.lerp(c.turn_curve[i], c.turn_curve[i + 1], x - i);
-      this.yaw = a.yaw0 + h * a.turnScale;
+      this.yaw = a.yaw0 + curveAt(c.turn_curve, (a.t0 + this.stateTime) / c.duration) * a.turnScale;
     }
-    const s = a.v0 * Math.pow(1 - u, a.p);
+    const clipU = (a.t0 + this.stateTime) / c.duration;
+    const s = a.curve > 0 && c.speed_curve ? curveAt(c.speed_curve, clipU) * a.curve : a.v0 * Math.pow(1 - u, a.p);
     this.velocity.set(Math.sin(this.yaw) * s, Math.cos(this.yaw) * s);
-    // Ends near the clip's end (blending into the gait); a slide or roll can be broken off late by moving.
-    if (u >= a.exit || (u > 0.6 && m > 0.2 && !c.turn)) {
+    let d = a.want - this.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    const onTheMove = a.clip === 'walk_start' || MOVING_TURNS.includes(a.clip);
+    // Ends near the clip's end (blending into the gait); a slide or roll can be broken off late by moving. On the move:
+    // letting go ends it, a turn once it faces the way asked, the first steps once up to a walk.
+    if (
+      u >= a.exit ||
+      (u > 0.6 && m > 0.2 && !c.turn && !onTheMove) ||
+      (onTheMove && m < 0.2) ||
+      (MOVING_TURNS.includes(a.clip) && u > 0.45 && Math.abs(d) < 0.2) ||
+      (a.clip === 'walk_start' && u > 0.25 && s > 0.85)
+    ) {
       this.enter('ground');
     }
     void dt;

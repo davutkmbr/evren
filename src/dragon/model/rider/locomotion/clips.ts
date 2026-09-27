@@ -17,6 +17,8 @@ export interface ClipInfo {
   /** Captured turns: the heading change (rad, + = to the left) and its curve over the clip (24 even steps). */
   turn?: number;
   turn_curve?: number[];
+  /** Captured travelling clips: the ground speed over the clip (m/s, 24 even steps). */
+  speed_curve?: number[];
   /** What the retarget measured (tools/humans/mixamo.py): travel (m) and more. */
   measured?: { travel: number };
 }
