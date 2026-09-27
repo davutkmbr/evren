@@ -138,10 +138,20 @@ function buildBand(builder: MeshBuilder, body: BodySurface, s: number, width: nu
 export interface TackParts {
   /** Saddle seat height (rig y) at the rider. */
   seatY: number;
+  /**
+   * With dynamic reins: per side, where the rein leaves the neck (rig rest position and its skin influences) and its
+   * path through the fist (rest positions: entry under the little finger … exit between index and thumb).
+   */
+  reins?: Record<Side, { anchor: THREE.Vector3; skin: { bones: number[]; weights: number[] }; fist: THREE.Vector3[] }>;
+}
+
+export interface TackOptions {
+  /** Leave the reins' free spans (neck → fist, the bight between the fists) to a simulated rope. */
+  dynamicReins?: boolean;
 }
 
 /** Saddle, blanket, girth straps, stirrups, bridle and reins. */
-export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkeleton): TackParts {
+export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkeleton, opts: TackOptions = {}): TackParts {
   const chestBone = rig.id('chest');
   const chestSkin = (_s: number, _t: number, acc: SkinAccumulator): void => {
     acc.add(chestBone, 1);
@@ -263,6 +273,7 @@ export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkele
   // The right rein's fist end rides on its own grip bone so it can pass to the left fist (one-handed riding).
   const handBones = { R: rig.id('riderReinR'), L: rig.id('riderHandL') };
   const reinExits: Record<Side, THREE.Vector3> = { R: new THREE.Vector3(), L: new THREE.Vector3() };
+  const dynamic: TackParts['reins'] = opts.dynamicReins ? ({} as NonNullable<TackParts['reins']>) : undefined;
   for (const side of SIDES) {
     const sgn = sideSign(side);
     const cheek: THREE.Vector3[] = [];
@@ -331,11 +342,19 @@ export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkele
       fist.channel.clone().addScaledVector(fist.up, 0.062).addScaledVector(fist.fwd, -0.012),
     );
     reinExits[side] = pts[pts.length - 1].clone();
+    if (dynamic) {
+      // The simulated rope takes over from the last point on the neck.
+      const anchor = pts[lastBody].clone();
+      const acc = new SkinAccumulator();
+      body.skinForSurface(body.sAtZ(anchor.z), 0.5 * sgn, acc);
+      dynamic[side] = { anchor, skin: { bones: [...acc.bones], weights: [...acc.weights] }, fist: pts.slice(lastBody + 1).map((p) => p.clone()) };
+      pts.length = lastBody + 1;
+    }
     const reinPath = new PathSampler(pts, { type: 'centripetal', samples: 600 });
     const L = reinPath.length;
     const knots = reinPath.knotLengths;
     const sBody = knots[lastBody];
-    const sHand = knots[lastBody + 1];
+    const sHand = knots[lastBody + 1] ?? Number.POSITIVE_INFINITY;
     const tmp = new SkinAccumulator();
     const pos = new THREE.Vector3();
     buildTube(builder, {
@@ -371,6 +390,10 @@ export function buildTack(builder: MeshBuilder, body: BodySurface, rig: RigSkele
         acc.addScaled(tmp, 1);
       },
     });
+  }
+  const seatPoint = body.surfacePoint(body.sAtZ(-2.55), 0);
+  if (dynamic) {
+    return { seatY: seatPoint.y + 0.095 + SADDLE_LIFT, reins: dynamic };
   }
   // The rein ends are buckled together: a slack bight hangs between the fists.
   const eR = reinExits.R;

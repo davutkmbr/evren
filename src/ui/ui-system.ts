@@ -1,3 +1,4 @@
+import { RiderPanel } from './menu/rider-panel';
 import * as THREE from 'three';
 import type { CameraMode, EngineContext, PerchPoint, System } from '../core/contracts';
 import { UpdateOrder } from '../core/contracts';
@@ -169,11 +170,12 @@ export class UiSystem implements System {
       onOpenMap: () => this.openModal('map'),
     });
     this.momentsPanel = new MomentsPanel();
+    const riderPanel = new RiderPanel(ctx);
     const controlsView = new ControlsView({ untried: (group, keys) => this.tutorial.untried(group, keys) });
     this.album = new PhotoAlbum(ctx, this.toasts, new IdbPhotoStore(), () => this.click());
     this.sourceSheet = new SourceSheet({ onClose: () => this.closeModal(), onClick: () => this.click() });
     this.pauseMenu = new PauseMenu({
-      panels: { teleport: teleportPanel, controls: controlsView, settings: this.settings, moments: this.momentsPanel, album: this.album.panel },
+      panels: { teleport: teleportPanel, controls: controlsView, settings: this.settings, rider: riderPanel, moments: this.momentsPanel, album: this.album.panel },
       onResume: () => this.closeModal(),
       onTabOpen: (tab) => {
         if (tab === 'settings') {

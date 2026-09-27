@@ -2,7 +2,7 @@ import { interactive, prompt, stat } from '../components';
 import { BRAND } from '../brand';
 import { el } from '../dom';
 
-export type MenuTab = 'teleport' | 'controls' | 'settings' | 'moments' | 'album';
+export type MenuTab = 'teleport' | 'controls' | 'settings' | 'rider' | 'moments' | 'album';
 
 /** A tab's content. `handleKey` gets the keys the menu does not use itself (Esc / P close it). */
 export interface MenuPanel {
@@ -24,6 +24,7 @@ const TABS: ReadonlyArray<{ id: MenuTab; title: string }> = [
   { id: 'teleport', title: 'Işınlan' },
   { id: 'controls', title: 'Kontroller' },
   { id: 'settings', title: 'Ayarlar' },
+  { id: 'rider', title: 'Binici' },
   { id: 'moments', title: 'Anlar' },
   { id: 'album', title: 'Albüm' },
 ];

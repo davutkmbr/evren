@@ -9,6 +9,7 @@ import { createWaterSystem } from '../src/world/water';
 import { createDragonModelSystem } from '../src/dragon/model';
 import { createFlightSystem } from '../src/dragon/flight';
 import { createCameraSystem } from '../src/camera';
+import { createOnFootSystem } from '../src/dragon/model/rider/onfoot-system';
 
 void startSandbox({
   pipeline: createRenderPipeline,
@@ -19,6 +20,7 @@ void startSandbox({
     createWaterSystem(),
     createDragonModelSystem(),
     createFlightSystem(),
+    createOnFootSystem(),
     createCameraSystem(),
   ],
   cameraPosition: new THREE.Vector3(0, 300, 500),

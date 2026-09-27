@@ -63,13 +63,14 @@ export type ButtonName =
   | 'slot2'
   | 'slot3'
   | 'slot4'
-  | 'slot5';
+  | 'slot5'
+  | 'dismount';
 
 /** Hotbar slot buttons in slot order (number keys 1..5). */
 export const HOTBAR_BUTTONS: readonly ButtonName[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5'];
 
 /** Buttons that only exist as edges (never reported as held). */
-const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'encourage', ...HOTBAR_BUTTONS]);
+const EDGE_ONLY: ReadonlySet<ButtonName> = new Set<ButtonName>(['camera', 'pause', 'map', 'help', 'photo', 'hud', 'weather', 'source', 'encourage', 'dismount', ...HOTBAR_BUTTONS]);
 
 const KEY_BUTTONS: Record<string, ButtonName> = {
   Space: 'flap',
@@ -115,10 +116,11 @@ const KEY_BUTTONS: Record<string, ButtonName> = {
   Numpad3: 'slot3',
   Numpad4: 'slot4',
   Numpad5: 'slot5',
+  KeyZ: 'dismount',
 };
 
 /** Groups of the key list (pause menu → Kontroller, H overlay). */
-export type ControlGroup = 'flight' | 'hover' | 'ground' | 'water' | 'tricks' | 'dragon' | 'camera' | 'perch' | 'game';
+export type ControlGroup = 'flight' | 'hover' | 'ground' | 'water' | 'tricks' | 'dragon' | 'onfoot' | 'camera' | 'perch' | 'game';
 
 /**
  * The key list shown in the pause menu (Kontroller) and the H overlay. `keys` is parsed by the UI: "A / B" are
@@ -170,6 +172,14 @@ export const CONTROL_HELP: Array<{ keys: string; action: string; group: ControlG
   { keys: 'G', action: 'Ejderhayı sev (basılı tut)', group: 'dragon' },
   { keys: 'T', action: 'Eyerde ayağa kalk / otur', group: 'dragon' },
   { keys: 'V', action: 'Ejderhayı yüreklendir: boynunu sıvazla, ona seslen', group: 'dragon' },
+  // The rider on foot (phase 24): leaving the saddle, the wind wings, walking, mounting again.
+  { keys: 'Z', action: 'Ejderhadan in (uçarken: eyerden atla); yanındayken: ejderhaya bin', group: 'onfoot' },
+  { keys: 'W / A / S / D', action: 'Yürü (kameraya göre)', group: 'onfoot' },
+  { keys: 'Shift', action: 'Koş', group: 'onfoot' },
+  { keys: 'Ctrl / X', action: 'Çömel', group: 'onfoot' },
+  { keys: 'Space', action: 'Zıpla', group: 'onfoot' },
+  { keys: 'Space', action: 'Havada basılı tut: rüzgâr kanatlarını aç, süzül (A / D ile dön)', group: 'onfoot' },
+  { keys: 'Sağ tık', action: 'Etrafa bak (fare ile kamerayı çevir, tekerlekle yaklaş)', group: 'onfoot' },
   { keys: 'Sağ tık', action: 'Etrafa bak (basılı tut)', group: 'camera' },
   { keys: 'C', action: 'Kamera: 3. şahıs, binici, sinematik', group: 'camera' },
   { keys: 'O', action: 'Fotoğraf modu', group: 'camera' },
