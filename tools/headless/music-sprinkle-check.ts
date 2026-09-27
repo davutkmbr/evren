@@ -27,9 +27,11 @@ import { seededRandom, MusicDirector, DEFAULT_DIRECTOR, type DirectorCommand } f
 import {
   SprinkleDirector,
   SPRINKLE_DEFAULTS,
+  ROTATION_DEFAULTS,
   sprinkleContext,
   pickPhrase,
   phraseFits,
+  phraseWeight,
   type SprinkleCommand,
   type SprinkleConfig,
   type SprinkleContext,
@@ -592,6 +594,49 @@ function mAdvance(s: { d: MomentMusicDirector; w: FakeMomentWorld; t: number }, 
   check(near(sh.d.view.endsAt!, e0 + 5), 'shift moves the piece end');
   // Sprinkles hold while a moment (and so its piece) plays: covered by the moment hold above.
   check(ctxOf(inp({ moment: true })).hold === 'moment', 'sprinkles hold during moments');
+}
+
+/* ------------------------------------------------------------------ */
+/* 5b. Free flight: the shared pool (sprinkle phrases + moment pieces)   */
+/* ------------------------------------------------------------------ */
+section('free-flight pool');
+{
+  const day = mkCtx(['day', 'calm']);
+  const night = mkCtx(['night', 'calm']);
+  const gece = PIECES.find((p) => p.id === 'an-siir-gece')!;
+  check(phraseFits(gece, day) && !phraseFits(PHRASES[2], day), 'a moment piece fits any time; a timed sprinkle phrase does not');
+  check(phraseWeight(gece, night) > phraseWeight(gece, day), 'its time tags still weigh the pick (a night piece is likelier at night)');
+  const pool = [...PHRASES, ...PIECES];
+  const pieceIds = new Set(PIECES.map((p) => p.id));
+  const byId = (id: string): MusicPhraseDef => pool.find((p) => p.id === id)!;
+
+  // "Sürekli" without loop sets: the rotation plays the pool back to back.
+  const r = sim(31, pool, ROTATION_DEFAULTS);
+  advance(r, 2 * 3600, calmDay);
+  const plays = r.w.plays();
+  const gaps = gapsOf(r.w);
+  check(plays[0].at >= ROTATION_DEFAULTS.firstGapMinSec && plays[0].at <= ROTATION_DEFAULTS.firstGapMaxSec + 0.3, `rotation: first piece after ${plays[0].at.toFixed(1)} s (5..15)`);
+  check(gaps.every((g) => g >= ROTATION_DEFAULTS.gapMinSec - 0.01 && g <= ROTATION_DEFAULTS.gapMaxSec + 0.3), `rotation: gaps within 8..25 s (min ${Math.min(...gaps).toFixed(1)}, max ${Math.max(...gaps).toFixed(1)})`);
+  const music = plays.reduce((a, p) => a + p.duration, 0) / (2 * 3600);
+  check(music > 0.55, `rotation: music sounds ${(music * 100).toFixed(0)} % of the time`);
+  check(plays.slice(1).every((p, k) => p.phraseId !== plays[k].phraseId), 'rotation: no immediate repeat');
+  check(plays.some((p) => p.phraseId === 'an-siir-gece'), 'rotation: a night-tagged moment piece plays by day too');
+  check(plays.every((p) => near(p.duration, byId(p.phraseId).durationSec)), 'rotation: every piece plays its full length');
+
+  // "Seyrek": the same pool, mostly silence.
+  const sp = sim(32, pool);
+  advance(sp, 4 * 3600, calmDay);
+  const sPlays = sp.w.plays();
+  const sGaps = gapsOf(sp.w);
+  check(sPlays.some((p) => pieceIds.has(p.phraseId)) && sPlays.some((p) => !pieceIds.has(p.phraseId)), 'sparse: moment pieces and sprinkle phrases share the pool');
+  check(sGaps.every((g) => g >= SPRINKLE_DEFAULTS.gapFloorSec - 0.01), `sparse: at least ${SPRINKLE_DEFAULTS.gapFloorSec} s of silence between pieces (min ${Math.min(...sGaps).toFixed(1)})`);
+
+  // A moment (or a race) fades the rotation out.
+  const h = sim(33, PIECES, ROTATION_DEFAULTS);
+  advance(h, 40, calmDay);
+  check(h.d.view.phase === 'playing', 'rotation: a piece plays after 40 s');
+  advance(h, 5, inp({ overWater: true, agl: 80, moment: true }));
+  check(h.w.stops().length === 1 && h.d.view.phase !== 'playing', 'rotation: a moment stops the free piece');
 }
 
 /* ------------------------------------------------------------------ */

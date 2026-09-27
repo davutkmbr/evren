@@ -336,7 +336,7 @@ export class SettingsPanel {
         settingSection('Ses', [
           settingRow('Ana ses', undefined, this.volume.root),
           settingRow('Müzik', undefined, this.musicVolume.root),
-          settingRow('Müzik tarzı', 'Seyrek: çoğu zaman sessizlik, arada tek çalgıdan kısa bir ezgi. Sürekli: parçalar döngüyle çalar', this.musicStyle.root),
+          settingRow('Müzik tarzı', 'Seyrek: çoğu zaman sessizlik, arada eski bir taş plak ya da kısa bir ezgi. Sürekli: parçalar kısa aralarla art arda çalar', this.musicStyle.root),
           settingRow('Uyarlanabilir müzik', 'Müzik uçuşuna göre katman katman değişir; kapalıyken parçalar tam haliyle çalar', this.adaptiveMusic.root),
         ]),
       ],

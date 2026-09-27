@@ -108,7 +108,7 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
 | Hezarfen Ahmed Çelebi (#3) | no | needs the ghost glider model, animations and sound |
 | Gull and simit on a ferry (#4) | yes | procedural gull flock and simit pieces at the ferries in service; CC0 gull calls |
 | Galata Bridge anglers (#4) | no | needs the angler models, animations and sound |
-| Aya Yorgi challenge (#5) | no | needs the knight statue model, animations and sound (and the hilltop point confirmed) |
+| Aya Yorgi challenge (#5) | yes | procedural knight statue, its three animations and armour creak; the point follows the OSM monastery (`ready`) |
 | Lagari Hasan Çelebi (#7) | no | needs the rocket model, animations and sound |
 | Ships over land, 1453 (#8) | no | needs the galley model, animations and sound |
 | Kız Kulesi legend (#9) | no | needs the snake model, animations and sound |

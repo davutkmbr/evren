@@ -159,9 +159,12 @@ console.log('2. playability');
   check(ps.playable && !ps.soundFallback, `the storks play now (ready, procedural flock and synthesised sound, no ambience fallback) ${ps.reason ?? ''}`);
   const gp = momentPlayability(gull);
   check(gull.status === 'ready' && gp.playable && !gp.soundFallback, `the ferry gull moment plays now (ready; procedural flock, its own gull calls, no ambience fallback) ${gp.reason ?? ''}`);
+  const yorgi = ALL_MOMENTS.find((m) => m.id === 'aya-yorgi-challenge')!;
+  const yp = momentPlayability(yorgi);
+  check(yorgi.status === 'ready' && yp.playable && !yp.soundFallback, `Aya Yorgi plays now (ready; procedural knight statue, its animations and creak) ${yp.reason ?? ''}`);
   // The literary moments (backlog 16) are covered in section 8.
   for (const m of ALL_MOMENTS) {
-    if (m === poem || m === storks || m === gull || LITERATURE.includes(m)) continue;
+    if (m === poem || m === storks || m === gull || m === yorgi || LITERATURE.includes(m)) continue;
     const p = momentPlayability(m);
     check(!p.playable && !!p.reason, `${m.id} waits (${p.reason})`);
   }

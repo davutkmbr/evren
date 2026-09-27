@@ -11,17 +11,22 @@
 export const PROCEDURAL_ACTORS: Readonly<Record<string, string>> = {
   'moments/white-stork-flock': 'src/moments/storks (instanced white storks, kettle / glide flock simulation)',
   'moments/ferry-gull-flock': 'src/moments/gull-simit (instanced gulls and simit pieces behind a ferry in service, stern flock simulation)',
+  'moments/aya-yorgi-knight-statue': 'src/moments/aya-yorgi (original weathered bronze knight on a stone plinth, jointed spear arm, shield arm, shoulders and head)',
 };
 
 /** Procedural animations (vertex-shader wing poses driven by the flock simulation). */
 export const PROCEDURAL_ANIMATIONS: Readonly<Record<string, string>> = {
   'moments/stork-soar-circle': 'src/moments/storks: soaring pose (wings spread flat, fingers fanned and curled up), circling in the kettle',
   'moments/stork-glide': 'src/moments/storks: gliding pose (hands swept back, fingers closed), occasional deep flaps',
+  'moments/knight-raise-spear': 'src/moments/aya-yorgi/pose.ts: the spear arm swings up, the spear points at the dragon and trembles',
+  'moments/knight-lower-spear': 'src/moments/aya-yorgi/pose.ts: the spear comes down in two rusty jerks and stays drooping',
+  'moments/knight-shrug': 'src/moments/aya-yorgi/pose.ts: shoulders up, shield arm open, head tilted, and back',
 };
 
 /** Procedural (synthesised) sounds. */
 export const PROCEDURAL_SOUNDS: Readonly<Record<string, string>> = {
   'moments/stork-bill-clatter': 'src/audio/sfx/storks.ts: bill clatter, soft wing beats and air rush of passing storks; src/audio/voices/moment.ts: soft wind bed',
+  'moments/knight-armour-creak': 'src/audio/sfx/knight.ts: rusty joint creak (stick-slip train on metal resonances) at each of the statue\'s moves',
   'moments/gull-call': "the approved CC0 gull calls (public/audio/gull/calls, already in the game's ambience) and src/audio/sfx/bird-flap.ts: soft gull wing beats",
 };
 
