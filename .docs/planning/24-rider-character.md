@@ -123,6 +123,29 @@ for them now, and every motion must be smooth, weighty and pleasant to watch.
    - Tuning of timing and weight (anticipation, follow-through, settle).
    - Then the default switches to the new rider in game.
 
+## Progress (2026-09-27)
+
+- Done, A (riding):
+  - `retarget.ts` drives the human from the rig's rider bones: every old cue plays; fists sit on the rope channel with
+    curled fingers; feet in the stirrups; the head collapses in first person.
+  - The face reacts to the cues.
+  - Wind chains on the skirt and the sash.
+  - The Akıncı is the game's default rider (`public/models/rider/akinci.glb`, 3 MB).
+- Done, B:
+  - Clips: idle, walk, run, run_stop, crouch_idle, crouch_walk, jump_start / rise / fall / land, glide.
+  - `locomotion/controller.ts`: phase-synced gait blend, the stop skid, jump sequence, crouch, glide with the wings,
+    lean into acceleration and turns, head looking into turns.
+  - `sandbox/human.html` with keyboard control and scripted sequences.
+- Done, C: face units as morphs, eye bones, blinks, saccades, expressions.
+- Done: Hezarfen's wind wings (stowed in a case on the back, spring-deployed for the glide).
+- CPU: retarget + wind + face ≈ 0.2 ms per frame (measured in the software-rendered test container).
+- Next:
+  - Dynamic reins (slack / tension).
+  - Leaving and mounting the dragon (launch API, leap and mount clips).
+  - Idle variations, turning in place.
+  - Foot IK on uneven ground.
+  - Customisation (D).
+
 ## Acceptance criteria
 
 - On the dragon:
