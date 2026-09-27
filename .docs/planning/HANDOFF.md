@@ -136,8 +136,9 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
      perches x 3 cameras at 16:00; one failure: `camlica-camii-kubbe` rider, 20 % of the view within 60 m blocked by
      its own minarets. The Istanbul Sapphire rider view is mostly the dragon's neck.
    - OSM feature kits (`.shots/osm-kits/2026-09-27/sheet.jpg`, 300 / 80 / 25 m): stadium pitch, fuel canopy,
-     playground equipment, motorway verge and shop signs read well. **Defects:** Karacaahmet cemetery and Salı Pazarı
-     (marketplace) draw as bare, blotchy ground (no graves / stalls); Eyüp cemetery shows trees only.
+     playground equipment, motorway verge and shop signs read well. Karacaahmet drew as bare ground: fixed (the far
+     bake kept one ring per multipolygon; headstone / stall budgets now spread evenly; `.shots/osm-kits/cemetery/`).
+     Open: Salı Pazarı lies outside every region, and the far layer has no market kit (an open lot from afar).
    - Regions performance near Kadıköy (150 m, `dynres=0`, headless M-series): regions on 33 fps (p95 50 ms), heap
      2.09 GB, 19.3 M triangles, 593 draws; `osmregions=0` 60 fps, 1.09 GB, 7.3 M, 363. Regions still cost ~1 GB and
      ~12 M triangles there (item 3). Region takeover flight (`flicker-audit --scene kadikoy-handover --animate
