@@ -26,90 +26,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SRC_DIR = os.environ.get("RIDER_MIXAMO_DIR", os.path.join(ROOT, "private-assets", "mixamo"))
 OUT_DIR = os.environ.get("RIDER_MIXAMO_OUT", os.path.join(ROOT, "private-assets", "build", "rider"))
 
-# Our clip name: loop, root motion (strip the travel and measure the speed).
-CLIPS = {
-    "idle": (True, False),
-    "idle_look": (False, False),
-    "idle_warrior": (False, False),
-    "walk": (True, True),
-    "run": (True, True),
-    "run_stop": (False, True),
-    "crouch_idle": (True, False),
-    "crouch_walk": (True, True),
-    "jump_start": (False, False),
-    "jump_fall": (True, False),
-    "jump_land": (False, False),
-    "jump_land_hard": (False, False),
-    "run_jump": (False, True),
-    "turn_left": (False, False),
-    "turn_right": (False, False),
-}
-
-# Mixamo titles (normalised: lowercase letters and digits only) of our clips, so files can keep their download names.
-ALIASES = {
-    "breathingidle": "idle",
-    "idle": "idle",
-    "lookingaround": "idle_look",
-    "warrioridle": "idle_warrior",
-    "walking": "walk",
-    "running": "run",
-    "runtostop": "run_stop",
-    "crouchingidle": "crouch_idle",
-    "crouchedwalking": "crouch_walk",
-    "jumpingup": "jump_start",
-    "fallingidle": "jump_fall",
-    "fallingtolanding": "jump_land",
-    "hardlanding": "jump_land_hard",
-    "runningjump": "run_jump",
-    "leftturn": "turn_left",
-    "rightturn": "turn_right",
-}
-# Guessed category of an extra clip, from words in its name (first match wins).
-CATEGORIES = (
-    ("combat", ("sword", "slash", "attack", "punch", "kick", "block", "parry", "stab", "strike", "shield", "combo",
-                "draw", "sheath", "fight", "boxing", "spear", "bow", "arrow", "archer", "cast", "melee")),
-    ("hit", ("hit", "death", "dying", "knock", "stun", "reaction", "impact")),
-    ("dodge", ("dodge", "roll", "evade", "slide", "dive", "flip", "vault")),
-    ("air", ("jump", "fall", "land", "fly", "flying", "glide", "skydiv", "hang")),
-    ("climb", ("climb", "ledge", "ladder", "wall")),
-    ("swim", ("swim", "tread", "water")),
-    ("sit", ("sit", "kneel", "sitting", "seated", "ride", "riding", "horse", "mount")),
-    ("gesture", ("wave", "salute", "bow", "point", "cheer", "clap", "talk", "yell", "shout", "greet", "look", "thinking",
-                 "pray", "praying", "victory", "taunt", "nod", "shake")),
-    ("crouch", ("crouch", "sneak", "stealth")),
-    ("run", ("run", "sprint", "jog")),
-    ("walk", ("walk", "strafe", "stroll")),
-    ("turn", ("turn",)),
-    ("idle", ("idle", "stand", "breath")),
-    ("dance", ("dance", "dancing", "samba", "salsa", "hip hop")),
-)
-
-
-def _norm(s):
-    return "".join(ch for ch in s.lower() if ch.isalnum())
-
-
-def _slug(stem):
-    import re
-    stem = re.sub(r"\s*\(\d+\)$", "", stem.strip())
-    return re.sub(r"[^a-z0-9]+", "_", stem.lower()).strip("_") or "clip"
-
-
-def resolve(stem):
-    """Our clip name for a file stem: a clip name, a Mixamo title of one, else None (an extra)."""
-    import re
-    stem = re.sub(r"\s*\(\d+\)$", "", stem.strip())
-    if stem in CLIPS:
-        return stem
-    return ALIASES.get(_norm(stem))
-
-
-def category(name):
-    words = " " + name.replace("_", " ").lower() + " "
-    for cat, keys in CATEGORIES:
-        if any(k in words for k in keys):
-            return cat
-    return "other"
+from mixamo_names import CLIPS, category, resolve, slug  # noqa: E402  (bpy-free: also a command-line renamer)
 
 
 def _rot(m):
@@ -274,7 +191,7 @@ def sources():
             loop, rm = CLIPS[name]
             ours.append((name, path, loop, rm))
             continue
-        x = "x_" + _slug(stem)
+        x = "x_" + slug(stem)
         base, n = x, 2
         while x in taken:
             x = f"{base}_{n}"

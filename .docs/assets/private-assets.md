@@ -39,8 +39,10 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   server or build, e.g. for a build that is published openly.
 - **MetaHuman.** Exported runtime files under `build/` (per runtime), wired when that pipeline lands.
 - **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/` (subfolders
-  allowed; FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off). A file
-  may keep its Mixamo title ("Breathing Idle.fbx", "Breathing Idle (1).fbx") or take our name (`idle.fbx`). Any other
+  allowed; FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off).
+  `python3 tools/humans/mixamo_names.py` renames the downloads to lowercase snake_case: our clip name for ours
+  ("Breathing Idle (1).fbx" -> `idle.fbx`), the title otherwise ("Great Sword Slash.fbx" -> `great_sword_slash.fbx`);
+  the retarget also accepts the Mixamo titles unrenamed. Any other
   FBX is retargeted too, as an extra clip `x_<slug>` (loop and travel measured) with a category guessed from its name;
   `private-assets/build/rider/report.md` lists every clip with its measurements, to decide where the extras go in the
   game (the bench plays any of them: `sandbox/human.html?clip=x_<slug>`).
