@@ -5,7 +5,8 @@
  *   npx tsx tools/headless/aya-yorgi-check.ts
  */
 import * as THREE from 'three';
-import { buildKnightStatue, FOUNDATION_DEPTH, plinthBase, PLINTH_HALF, STATUE_HEIGHT } from '../../src/moments/aya-yorgi/statue-model';
+import { readFileSync } from 'node:fs';
+import { FigureJoint, FIGURE_SCALE, FOUNDATION_DEPTH, plinthBase, PLINTH_H, PLINTH_HALF, STATUE_HEIGHT, statueFromScene } from '../../src/moments/aya-yorgi/statue-model';
 import { AyaYorgiStatueActor, RESIDENT_HIDE, RESIDENT_SHOW } from '../../src/moments/aya-yorgi/actor';
 import { latLonToLocal } from '../../src/core/geo-coords';
 import type { EngineContext } from '../../src/core/contracts';
@@ -23,26 +24,54 @@ function check(cond: boolean, what: string): void {
   }
 }
 
-const s = buildKnightStatue();
-s.root.updateMatrixWorld(true);
-const box = new THREE.Box3().setFromObject(s.root);
-let finite = true;
-let tris = 0;
-s.root.traverse((o) => {
-  if (o instanceof THREE.Mesh) {
-    const a = o.geometry.getAttribute('position').array as Float32Array;
-    finite &&= a.every(Number.isFinite);
-    tris += (o.geometry.getIndex()?.count ?? 0) / 3;
-    check(!!o.geometry.getAttribute('color') && !!o.geometry.getAttribute('normal'), `${o.name}: vertex colours and normals`);
-  }
-});
-check(finite, 'every vertex is finite');
-check(tris > 500 && tris < 6000, `a light model (${tris} triangles)`);
-const height = box.max.y;
-check(Math.abs(box.min.y + FOUNDATION_DEPTH) < 0.01, `a foundation reaches ${FOUNDATION_DEPTH} m below the base`);
-check(STATUE_HEIGHT > 8 && STATUE_HEIGHT < 11, `the figure's head at ${STATUE_HEIGHT.toFixed(1)} m: taller than the standing dragon (4.4 m), not a tower`);
-check(height > STATUE_HEIGHT && height < STATUE_HEIGHT + 3.5, `${height.toFixed(1)} m to the tip of the upright spear`);
-check(Math.max(box.max.x - box.min.x, box.max.z - box.min.z) < 6, 'footprint within 6 m');
+// --- The exported model (public/models/moments/aya-yorgi-statue.glb, built by tools/moments/knight_statue.py).
+const GLB = 'public/models/moments/aya-yorgi-statue.glb';
+{
+  const buf = readFileSync(GLB);
+  const jsonLen = buf.readUInt32LE(12);
+  const gltf = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
+  const names = new Set<string>((gltf.nodes ?? []).map((n: { name?: string }) => (n.name ?? '').replace(/^mixamorig:?/, '')));
+  check(buf.length < 12e6, `the model is ${(buf.length / 1e6).toFixed(1)} MB (< 12 MB)`);
+  check(['Hips', 'RightArm', 'LeftArm', 'LeftShoulder', 'RightShoulder', 'Head'].every((n) => names.has(n)), 'the skeleton has the animated joints');
+  check((gltf.skins ?? []).length === 1 && (gltf.meshes ?? []).length === 2, 'one skinned bronze mesh and the plinth');
+  const mats = gltf.materials ?? [];
+  check(mats.length === 2 && mats.every((m: Record<string, unknown>) => {
+    const pbr = m.pbrMetallicRoughness as Record<string, unknown> | undefined;
+    return !!pbr?.baseColorTexture && !!pbr?.metallicRoughnessTexture && !!m.normalTexture && !!m.occlusionTexture;
+  }), 'bronze and stone each carry albedo, ORM and normal maps (no flat material)');
+  check((gltf.extensionsUsed ?? []).includes('KHR_draco_mesh_compression') && (gltf.extensionsUsed ?? []).includes('EXT_texture_webp'), 'Draco mesh and WebP textures');
+  const plinth = (gltf.meshes as { name: string; primitives: { attributes: { POSITION: number } }[] }[]).find((m) => /plinth/i.test(m.name));
+  const acc = plinth ? gltf.accessors[plinth.primitives[0].attributes.POSITION] : null;
+  const h = acc ? acc.max[1] - acc.min[1] : 0;
+  check(!!acc && Math.abs(h * FIGURE_SCALE - (PLINTH_H + FOUNDATION_DEPTH)) < 0.3, `the plinth stands ${(PLINTH_H).toFixed(2)} m over a ${FOUNDATION_DEPTH.toFixed(2)} m foundation (${(h * FIGURE_SCALE).toFixed(2)} m)`);
+  check(!!acc && Math.max(acc.max[0] - acc.min[0], acc.max[2] - acc.min[2]) * FIGURE_SCALE < 6, 'plinth footprint within 6 m');
+  check(STATUE_HEIGHT > 8 && STATUE_HEIGHT < 11, `the figure's head at ${STATUE_HEIGHT.toFixed(1)} m: taller than the standing dragon (4.4 m), not a tower`);
+}
+
+// --- Figure joints: a turn about the figure's -X swings a hanging arm forward (+Z), whatever the bone's rest frame.
+{
+  const figure = new THREE.Group();
+  const arm = new THREE.Bone();
+  arm.quaternion.setFromEuler(new THREE.Euler(0.7, -1.1, 0.4));
+  figure.add(arm);
+  const hand = new THREE.Bone();
+  arm.add(hand);
+  // place the hand 0.3 below the shoulder in the figure's frame
+  figure.updateWorldMatrix(true, true);
+  hand.position.copy(arm.worldToLocal(new THREE.Vector3(0, -0.3, 0)));
+  const j = new FigureJoint(arm, figure);
+  j.set(-1.0);
+  figure.updateWorldMatrix(true, true);
+  const p = hand.getWorldPosition(new THREE.Vector3());
+  check(p.z > 0.2 && p.y > -0.2, `the spear arm swings forward and up (hand at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`);
+  j.set(0, 0, 0.5);
+  figure.updateWorldMatrix(true, true);
+  const q = hand.getWorldPosition(new THREE.Vector3());
+  check(q.x > 0.1 && Math.abs(q.z) < 1e-6, `a turn about the figure's Z opens the arm sideways (+X, hand at ${q.x.toFixed(2)})`);
+  j.set(0);
+  check(arm.quaternion.angleTo(j.rest) < 1e-9, 'zero turns give the rest pose back');
+}
+
 // On a slope the base takes the lowest ground under the footprint: no corner hangs in the air.
 const slope = (x: number, z: number): number => 170 + 0.3 * x - 0.2 * z;
 const pb = plinthBase(slope, 10, 20);
@@ -72,10 +101,26 @@ for (let t = 0; t < 16; t += 1 / 60) {
   jump = Math.max(jump, Math.abs(knightPose(t + 1 / 60).spear - knightPose(t).spear));
 }
 check(jump < 0.05, `no jump between frames (max ${jump.toFixed(3)} rad at 60 fps)`);
-s.dispose();
 
 // Resident: the statue stands in the world near the camera before its moment, turns to the dragon when it starts.
-{
+/** A stand-in for the glTF scene: a rig with the animated joints and a plinth box. */
+function standIn(): THREE.Object3D {
+  const scene = new THREE.Group();
+  const rig = new THREE.Object3D();
+  scene.add(rig);
+  const hips = new THREE.Bone();
+  hips.name = 'mixamorig:Hips';
+  rig.add(hips);
+  for (const n of ['LeftShoulder', 'RightShoulder', 'LeftArm', 'RightArm', 'Head']) {
+    const b = new THREE.Bone();
+    b.name = 'mixamorig:' + n;
+    hips.add(b);
+  }
+  scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+  return scene;
+}
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+async function residency(): Promise<void> {
   const site = latLonToLocal(yorgi.content.waypoints!.find((w) => w.id === 'statue')!.lat, yorgi.content.waypoints!.find((w) => w.id === 'statue')!.lon);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
@@ -87,22 +132,31 @@ s.dispose();
     camera.position.set(site.x + d, 200, site.z);
     camera.updateMatrixWorld(true);
   };
-  const a = new AyaYorgiStatueActor();
+  let loads = 0;
+  const statue = statueFromScene(standIn());
+  const a = new AyaYorgiStatueActor(async () => {
+    loads++;
+    return statue;
+  });
   at(RESIDENT_SHOW + 300);
   a.resident(yorgi, ctx, true);
-  check(!a.active, 'far away (beyond RESIDENT_SHOW): the statue is not in the scene');
+  await flush();
+  check(!a.active && loads === 0, 'far away (beyond RESIDENT_SHOW): nothing loads, the statue is not in the scene');
   at(RESIDENT_SHOW - 200);
   a.resident(yorgi, ctx, true);
-  check(a.active && scene.children.length === 1, 'within RESIDENT_SHOW it stands there before the moment');
+  a.resident(yorgi, ctx, true);
+  await flush();
+  check(a.active && scene.children.length === 1 && loads === 1, 'within RESIDENT_SHOW the model loads once and stands there before the moment');
   const root = scene.children[0];
-  check(Math.abs(root.position.y - 189.895) < 0.01, `the base sits on the lowest ground under the footprint (${root.position.y.toFixed(3)})`);
+  const expectY = plinthBase(geo.heightAt, site.x, site.z).y;
+  check(Math.abs(root.position.y - expectY) < 1e-6, `the base sits on the lowest ground under the footprint (${root.position.y.toFixed(3)})`);
   at(RESIDENT_SHOW + 100);
   a.resident(yorgi, ctx, true);
   check(a.active, 'between SHOW and HIDE it stays (no flicker at the edge)');
   at(300);
   a.start(yorgi, ctx);
   for (let i = 0; i < 60 * 16; i++) a.update(1 / 60, ctx);
-  const fig = root.children.find((c) => c.type === 'Group')!;
+  const fig = statue.figure;
   const want = Math.atan2(dragon.position.x - root.position.x, dragon.position.z - root.position.z) - root.rotation.y;
   check(Math.abs(Math.atan2(Math.sin(fig.rotation.y - want), Math.cos(fig.rotation.y - want))) < 0.02, 'the figure turned to face the dragon');
   a.end('complete');
@@ -113,11 +167,13 @@ s.dispose();
   check(!a.active, 'beyond RESIDENT_HIDE it leaves the scene');
   at(100);
   a.resident(yorgi, ctx, true);
-  check(a.active && Math.abs(fig.rotation.y - want) < 0.05, 'back near: it stands again, still facing where it turned');
+  check(a.active && Math.abs(fig.rotation.y - want) < 0.05 && loads === 1, 'back near: it stands again (no reload), still facing where it turned');
   a.resident(yorgi, ctx, false);
   check(!a.active, 'moments (or legends) switched off: the statue goes');
   a.dispose();
 }
+
+await residency();
 
 console.log(`aya-yorgi-check: ${passes} passed, ${failures} failed`);
 if (failures > 0) {

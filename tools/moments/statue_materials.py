@@ -1,5 +1,6 @@
 """
-Materials of the Aya Yorgi statue, baked into texture atlases (Cycles, CPU):
+Materials of the Aya Yorgi statue, baked into texture atlases (Cycles, on the GPU when
+there is one):
 
 - Bronze: a cast figure a century outdoors: a dark brown oxide patina over the metal, bright bronze where hands and
   weather wear the high edges, verdigris gathering in the hollows, in rain streaks down the vertical faces and on the
@@ -118,37 +119,47 @@ def bronze_material():
     coords = N.n("ShaderNodeTexCoord").outputs["Object"]
     part = N.n("ShaderNodeAttribute", _attribute_name="part", _attribute_type="GEOMETRY").outputs["Fac"]
     ao = N.n("ShaderNodeAmbientOcclusion", _samples=16, _only_local=True, Distance=0.035)
-    cavity = N.ramp(N.math("SUBTRACT", 1.0, ao.outputs["AO"]), 0.08, 0.55)
-    edges = N.ramp(geo.outputs["Pointiness"], 0.515, 0.56)
+    cavity = N.ramp(N.math("SUBTRACT", 1.0, ao.outputs["AO"]), 0.3, 0.65)
+    # convex edges: where the normal turns away from its rounded (bevelled) neighbourhood, and nothing occludes
+    bevel = N.n("ShaderNodeBevel", _samples=8, Radius=0.006)
+    dot = N.n("ShaderNodeVectorMath", _operation="DOT_PRODUCT")
+    N.set(dot, 0, geo.outputs["Normal"])
+    N.set(dot, 1, bevel.outputs["Normal"])
+    turn = N.math("SUBTRACT", 1.0, dot.outputs["Value"])
+    edges = N.math("MULTIPLY", N.ramp(turn, 0.004, 0.06), N.ramp(ao.outputs["AO"], 0.85, 0.98))
     nz = N.n("ShaderNodeSeparateXYZ")
     N.set(nz, 0, geo.outputs["Normal"])
-    up = N.ramp(nz.outputs["Z"], 0.35, 0.9)
+    up = N.ramp(nz.outputs["Z"], 0.5, 0.95)
     vertical = N.math("SUBTRACT", 1.0, N.ramp(N.math("ABSOLUTE", nz.outputs["Z"]), 0.3, 0.8))
-    # rain streaks: noise stretched down the height
+    # rain streaks: thin runs of noise stretched down the height
     streak_vec = N.n("ShaderNodeVectorMath", _operation="MULTIPLY")
     N.set(streak_vec, 0, coords)
-    N.set(streak_vec, 1, (70.0, 70.0, 3.5))
-    streaks = N.ramp(N.noise(streak_vec, 1.0, detail=3.0), 0.52, 0.68)
+    N.set(streak_vec, 1, (120.0, 120.0, 2.5))
+    streaks = N.ramp(N.noise(streak_vec, 1.0, detail=3.0), 0.58, 0.7)
     big = N.noise(coords, 3.5, detail=5.0)
     mid = N.noise(coords, 18.0, detail=6.0)
-    # verdigris amount
-    v1 = N.math("MULTIPLY", cavity, 1.3)
-    v2 = N.math("MULTIPLY", N.math("MULTIPLY", streaks, vertical), 0.8)
-    v3 = N.math("MULTIPLY", N.math("MULTIPLY", up, N.ramp(big, 0.4, 0.62)), 0.9)
+    fine = N.noise(coords, 140.0, detail=4.0)
+    # verdigris: mostly in the hollows, thin runs down the vertical faces, a little on the top faces
+    v1 = N.math("MULTIPLY", cavity, 1.1)
+    v2 = N.math("MULTIPLY", N.math("MULTIPLY", streaks, vertical), 0.6)
+    v3 = N.math("MULTIPLY", N.math("MULTIPLY", up, N.ramp(big, 0.5, 0.7)), 0.5)
     verd = N.math("ADD", N.math("ADD", v1, v2), v3)
-    verd = N.math("MULTIPLY", verd, N.ramp(mid, 0.3, 0.7))
-    verd = N.ramp(verd, 0.18, 0.7)
+    verd = N.math("MULTIPLY", verd, N.ramp(mid, 0.25, 0.65))
+    verd = N.ramp(verd, 0.25, 0.8)
     # worn bright bronze on the high edges (not where the verdigris sits)
-    worn = N.math("MULTIPLY", N.ramp(N.math("ADD", edges, N.math("MULTIPLY", N.ramp(mid, 0.55, 0.75), 0.4)), 0.35, 0.9), N.math("SUBTRACT", 1.0, verd), clamp=True)
-    bronze = (0.62, 0.40, 0.2, 1.0)
-    patina = N.mix(N.ramp(big, 0.3, 0.7), (0.085, 0.056, 0.036, 1.0), (0.16, 0.1, 0.058, 1.0))
-    verd_col = N.mix(N.ramp(mid, 0.35, 0.65), (0.2, 0.36, 0.3, 1.0), (0.36, 0.55, 0.44, 1.0))
+    worn = N.math("MULTIPLY", N.ramp(N.math("ADD", edges, N.math("MULTIPLY", N.ramp(fine, 0.6, 0.8), 0.25)), 0.3, 0.85), N.math("SUBTRACT", 1.0, verd), clamp=True)
+    bronze = (0.55, 0.37, 0.2, 1.0)
+    patina = N.mix(N.ramp(big, 0.3, 0.7), (0.075, 0.05, 0.032, 1.0), (0.15, 0.095, 0.055, 1.0))
+    patina = N.mix(N.math("MULTIPLY", N.ramp(fine, 0.45, 0.75), 0.35), patina, (0.07, 0.05, 0.035, 1.0))
+    verd_col = N.mix(N.ramp(mid, 0.35, 0.65), (0.06, 0.14, 0.11, 1.0), (0.13, 0.25, 0.19, 1.0))
     col = N.mix(worn, patina, bronze)
     col = N.mix(verd, col, verd_col)
-    rough = N.mixf(worn, 0.5, 0.26)
-    rough = N.mixf(verd, rough, 0.88)
-    metal = N.mixf(worn, 0.72, 1.0)
-    metal = N.mixf(verd, metal, 0.05)
+    # an outdoor bronze is satin, not polished: the oxide is half dielectric; only the worn edges shine
+    rough = N.mixf(N.ramp(mid, 0.3, 0.7), 0.55, 0.68)
+    rough = N.mixf(worn, rough, 0.36)
+    rough = N.mixf(verd, rough, 0.86)
+    metal = N.mixf(worn, 0.5, 0.95)
+    metal = N.mixf(verd, metal, 0.0)
     # surface work (bump heights)
     grain = N.math("MULTIPLY", N.noise(coords, 900.0, detail=2.0), 0.25)
     hair = N.math("MULTIPLY", N.is_part(part, PART["hair"]), N.n("ShaderNodeTexWave", _wave_type="BANDS", _bands_direction="X", Scale=180.0, Distortion=6.0, Detail=3.0).outputs["Fac"])
@@ -189,16 +200,16 @@ def stone_material():
     cavity = N.ramp(N.math("SUBTRACT", 1.0, ao.outputs["AO"]), 0.05, 0.5)
     big = N.noise(coords, 2.5, detail=6.0)
     fine = N.noise(coords, 60.0, detail=8.0)
-    base = N.mix(N.ramp(big, 0.35, 0.65), (0.6, 0.56, 0.48, 1.0), (0.72, 0.68, 0.59, 1.0))
-    base = N.mix(N.math("MULTIPLY", N.ramp(fine, 0.45, 0.75), 0.35), base, (0.52, 0.49, 0.43, 1.0))
+    base = N.mix(N.ramp(big, 0.35, 0.65), (0.44, 0.41, 0.35, 1.0), (0.55, 0.52, 0.45, 1.0))
+    base = N.mix(N.math("MULTIPLY", N.ramp(fine, 0.45, 0.75), 0.35), base, (0.38, 0.36, 0.31, 1.0))
     # grime: at the foot and in the hollows; streaks below the cornice
-    foot = N.ramp(pos.outputs["Z"], 0.25, -0.02)
+    foot = N.ramp(pos.outputs["Z"], 0.35, -0.02)
     sv = N.n("ShaderNodeVectorMath", _operation="MULTIPLY")
     N.set(sv, 0, coords)
     N.set(sv, 1, (40.0, 40.0, 2.0))
     streaks = N.math("MULTIPLY", N.ramp(N.noise(sv, 1.0, detail=3.0), 0.5, 0.7), N.math("SUBTRACT", 1.0, N.ramp(N.math("ABSOLUTE", nz.outputs["Z"]), 0.3, 0.8)))
     grime = N.ramp(N.math("ADD", N.math("ADD", N.math("MULTIPLY", foot, 0.8), N.math("MULTIPLY", cavity, 0.9)), N.math("MULTIPLY", streaks, 0.6)), 0.1, 0.9)
-    col = N.mix(N.math("MULTIPLY", grime, 0.8), base, (0.3, 0.28, 0.24, 1.0))
+    col = N.mix(N.math("MULTIPLY", grime, 0.9), base, (0.2, 0.19, 0.16, 1.0))
     # lichen on the top faces
     lichen = N.math("MULTIPLY", N.ramp(nz.outputs["Z"], 0.6, 0.95), N.ramp(N.noise(coords, 14.0, detail=4.0), 0.62, 0.7))
     col = N.mix(N.math("MULTIPLY", lichen, 0.85), col, (0.52, 0.5, 0.3, 1.0))
@@ -220,6 +231,28 @@ def stone_material():
 
 
 # ------------------------------------------------------------------ baking
+
+
+def use_gpu(scene):
+    """Cycles on the GPU (Metal on macOS, else CUDA / OptiX / HIP) when one is present; otherwise the CPU."""
+    try:
+        prefs = bpy.context.preferences.addons["cycles"].preferences
+        for kind in ("METAL", "OPTIX", "CUDA", "HIP"):
+            try:
+                prefs.compute_device_type = kind
+            except TypeError:
+                continue
+            prefs.get_devices()
+            gpus = [d for d in prefs.devices if d.type != "CPU"]
+            if gpus:
+                for d in prefs.devices:
+                    d.use = d.type != "CPU"
+                scene.cycles.device = "GPU"
+                return kind
+    except Exception as e:  # noqa: BLE001
+        print("[statue] no GPU:", e, flush=True)
+    scene.cycles.device = "CPU"
+    return "CPU"
 
 
 def unwrap(obj, margin=0.002):
@@ -248,9 +281,9 @@ def bake(obj, mat, handles, size, prefix, samples=24):
     N, bsdf, metal, rough = handles
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
-    scene.cycles.device = "CPU"
+    print("[statue] bake on", use_gpu(scene), size, flush=True)
     scene.cycles.samples = samples
-    scene.render.bake.margin = 8
+    scene.render.bake.margin = max(8, size // 256)
     obj.data.materials.clear()
     obj.data.materials.append(mat)
     bpy.ops.object.select_all(action="DESELECT")

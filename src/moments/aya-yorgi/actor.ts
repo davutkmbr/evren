@@ -7,7 +7,8 @@
  * follows the dragon while it is near.
  *
  * The plinth sits on the lowest ground under its footprint with a buried foundation (plinthBase), so it never hangs in
- * the air on the slope. Switching the moment's category (or moments) off removes the statue.
+ * the air on the slope. Switching the moment's category (or moments) off removes the statue. The model (a glTF, see
+ * ./statue-model.ts) loads the first time the camera comes within RESIDENT_SHOW.
  */
 import * as THREE from 'three';
 import type { EngineContext } from '../../core/contracts';
@@ -15,7 +16,7 @@ import { latLonToLocal } from '../../core/geo-coords';
 import type { MomentActor } from '../actors';
 import type { MomentEndReason } from '../runtime';
 import type { Moment } from '../types';
-import { buildKnightStatue, plinthBase, PLINTH_H, FIGURE_SCALE, type KnightStatue } from './statue-model';
+import { loadKnightStatue, plinthBase, PLINTH_H, FIGURE_SCALE, type KnightStatue } from './statue-model';
 import { CREAKS, knightPose, REST_POSE, type KnightPose } from './pose';
 
 /** The statue is in the scene while the camera is within RESIDENT_SHOW (m), and leaves beyond RESIDENT_HIDE. */
@@ -29,9 +30,16 @@ const HEAD_RATE = 2.5;
 const TURN_RATE = 1.6;
 /** Resting facing: north, down the walking track (the statue's front is +Z). */
 const REST_YAW = Math.PI;
+/** The spear arm swings forward this far per radian of the timeline's spear angle; the shrug lifts the shoulders (rad). */
+const ARM_SWING = 0.95;
+const SHRUG_ANGLE = 3;
 
 export class AyaYorgiStatueActor implements MomentActor {
   private statue: KnightStatue | null = null;
+  private loading = false;
+  private disposed = false;
+  /** Placement asked for while the model was still loading. */
+  private pending: { moment: Moment; ctx: EngineContext } | null = null;
   /** Seconds since the performance started (negative before it: the rest pose). */
   private t = -1;
   private performed = false;
@@ -44,6 +52,9 @@ export class AyaYorgiStatueActor implements MomentActor {
   private readonly pose: KnightPose = { ...REST_POSE };
   private readonly cam = new THREE.Vector3();
   private readonly cue = { x: 0, y: 0, z: 0 };
+
+  /** `load`: the model loader (checks pass a small stand-in). */
+  constructor(private readonly load: () => Promise<KnightStatue> = () => loadKnightStatue()) {}
 
   get active(): boolean {
     return this.statue?.root.parent != null;
@@ -138,7 +149,25 @@ export class AyaYorgiStatueActor implements MomentActor {
     if (!geo || !site) {
       return;
     }
-    this.statue ??= buildKnightStatue();
+    if (!this.statue) {
+      this.pending = { moment, ctx };
+      if (!this.loading) {
+        this.loading = true;
+        this.load()
+          .then((s) => {
+            if (this.disposed) {
+              s.dispose();
+              return;
+            }
+            this.statue = s;
+            const p = this.pending;
+            this.pending = null;
+            if (p) this.place(p.moment, p.ctx);
+          })
+          .catch((e: unknown) => console.warn('[moments] aya-yorgi statue failed to load', e));
+      }
+      return;
+    }
     const root = this.statue.root;
     root.position.set(site.x, plinthBase((x, z) => geo.heightAt(x, z), site.x, site.z).y, site.z);
     root.rotation.y = REST_YAW;
@@ -156,10 +185,12 @@ export class AyaYorgiStatueActor implements MomentActor {
     const s = this.statue!;
     const p = this.pose;
     s.figure.rotation.y = this.figureYaw;
-    s.spearArm.rotation.x = p.spear;
-    s.shieldArm.rotation.z = p.shieldOut;
-    s.shoulders.position.y = 1.47 + p.shrug;
-    s.head.rotation.set(0, this.headYaw, p.headTilt, 'YXZ');
+    // the arm hangs down: a turn about the figure's -X swings it forward and up, tipping the spear at the challenger
+    s.spearArm.set(-p.spear * ARM_SWING);
+    s.shieldArm.set(0, 0, p.shieldOut);
+    s.shoulders[0].set(0, 0, p.shrug * SHRUG_ANGLE);
+    s.shoulders[1].set(0, 0, -p.shrug * SHRUG_ANGLE);
+    s.head.set(0, this.headYaw, p.headTilt);
   }
 
   private creaks(ctx: EngineContext): void {
@@ -180,10 +211,13 @@ export class AyaYorgiStatueActor implements MomentActor {
 
   private remove(): void {
     this.statue?.root.removeFromParent();
+    this.pending = null;
     this.playing = false;
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.pending = null;
     this.remove();
     this.statue?.dispose();
     this.statue = null;

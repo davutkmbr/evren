@@ -34,3 +34,14 @@ clips are Seventeen Skies' own procedural work. The garment surface textures it 
 | Eyes (high-poly, brown), eyebrow008, eyelashes01, teeth, tongue01 and their textures | MakeHuman system assets | MakeHuman team | CC0-1.0 |
 | Skin `middleage_caucasian_male` (texture `middleage_lightskinned_male_diffuse`) | MakeHuman system assets / [skins pack 01](https://static.makehumancommunity.org/assets/assetpacks/skins01.html) | MakeHuman community | CC0-1.0 |
 | Face units (ARKit-style expression targets, kept as morph targets) | [face units 01](https://static.makehumancommunity.org/assets/assetpacks/faceunits01.html) | MakeHuman team | CC0-1.0 |
+
+## Moment models
+
+`moments/aya-yorgi-statue.glb` (the knight statue of the Aya Yorgi moment) is built by `tools/moments/knight_statue.py`
+(Blender 5.2 + MPFB 2 as tools) on a body from the approved CC0 MakeHuman system assets; the pose, armour, dress,
+arms, plinth and every texture (the bronze patina and the limestone, baked from procedural materials) are Seventeen
+Skies' own work under the repository licence.
+
+| Part | Source | Author | Licence |
+| --- | --- | --- | --- |
+| Base mesh, body targets, Mixamo-named game rig, eyes | [MakeHuman system assets](https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html) | MakeHuman team | CC0-1.0 |
