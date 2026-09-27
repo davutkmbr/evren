@@ -19,10 +19,15 @@
     "bindings": [
       // Latency probe (worker/probe.ts): echo objects per location hint and the result log.
       { "name": "PROBE", "class_name": "LatencyProbe" },
-      { "name": "PROBE_LOG", "class_name": "ProbeLog" }
+      { "name": "PROBE_LOG", "class_name": "ProbeLog" },
+      // Game servers (worker/rooms.ts): one room per named server.
+      { "name": "ROOMS", "class_name": "ServerRoom" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LatencyProbe", "ProbeLog"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["LatencyProbe", "ProbeLog"] },
+    { "tag": "v2", "new_sqlite_classes": ["ServerRoom"] }
+  ],
   "observability": { "enabled": true },
   "routes": [
     { "pattern": "seventeenskies.com", "custom_domain": true },

@@ -32,8 +32,12 @@ export class SnapshotBuffer {
     return this.items[this.items.length - 1];
   }
 
-  /** Adds a snapshot (copied); out-of-order arrivals are inserted in place. */
+  /** Adds a snapshot (copied); out-of-order arrivals are inserted in place. A teleport starts the buffer over. */
   push(s: DragonSnapshot): void {
+    if (s.teleport && this.items.length && s.t > this.items[this.items.length - 1].t) {
+      this.items.length = 0;
+      this.renderT = Number.NaN;
+    }
     if (Number.isFinite(this.renderT) && s.t <= this.renderT - EXTRAPOLATE_MS) {
       this.late++;
       return;
@@ -99,6 +103,7 @@ function copySnapshot(s: DragonSnapshot, out: DragonSnapshot): void {
   out.mode = s.mode;
   out.firing = s.firing;
   out.riderless = s.riderless;
+  out.teleport = s.teleport;
   out.pose.set(s.pose);
   out.groundY = s.groundY;
   out.groundNx = s.groundNx;

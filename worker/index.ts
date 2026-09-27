@@ -1,11 +1,14 @@
 /**
  * Seventeen Skies Worker (wrangler.jsonc). Static assets are served without it; this script runs only for the
- * `assets.run_worker_first` paths: the geo-gated private music and the /api/ endpoints.
+ * `assets.run_worker_first` paths: the geo-gated private music and the /api/ endpoints
+ * (latency probe, game servers).
  */
 import { MUSIC_PRIVATE_PREFIX, serveGatedMusic } from './music-gate';
 import { handleProbe } from './probe';
+import { handleRooms } from './rooms';
 
 export { LatencyProbe, ProbeLog } from './probe';
+export { ServerRoom } from './rooms';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -15,6 +18,9 @@ export default {
     }
     if (path.startsWith('/api/probe/')) {
       return handleProbe(request, env, path);
+    }
+    if (path === '/api/servers' || path.startsWith('/api/servers/')) {
+      return handleRooms(request, env, path);
     }
     return env.ASSETS.fetch(request);
   },

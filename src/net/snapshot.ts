@@ -8,10 +8,13 @@
  *   i16 qx..qw     orientation (unit quaternion * 32767)
  *   i16 vx, vy, vz velocity (0.1 m/s)
  *   u8  mode       FlightMode index
- *   u8  flags      bit 0 firing, bit 1 riderless, bit 2 ground plane valid
+ *   u8  flags      bit 0 firing, bit 1 riderless, bit 2 ground plane valid, bit 3 teleport
  *   u8  pose[..]   POSE_FIELDS quantized over their range (phases wrap)
  */
 import type { DragonPose, FlightMode } from '../core/contracts';
+import { FLAG_FIRING, FLAG_GROUND, FLAG_RIDERLESS, FLAG_TELEPORT, SNAPSHOT_BYTES } from './protocol';
+
+export { SNAPSHOT_BYTES };
 
 export const FLIGHT_MODES: readonly FlightMode[] = ['flying', 'gliding', 'diving', 'hovering', 'stalling', 'landing', 'grounded', 'takeoff', 'swimming', 'underwater'];
 
@@ -58,7 +61,9 @@ export const POSE_FIELDS: readonly PoseField[] = [
 /** Ground plane: height below the dragon (m, 0.1 m steps) and the normal's x / z. */
 const GROUND_BYTES = 3;
 const HEADER_BYTES = 4 + 12 + 8 + 6 + 2;
-export const SNAPSHOT_BYTES = HEADER_BYTES + POSE_FIELDS.length + GROUND_BYTES;
+if (HEADER_BYTES + POSE_FIELDS.length + GROUND_BYTES !== SNAPSHOT_BYTES) {
+  throw new Error('snapshot layout does not match protocol.SNAPSHOT_BYTES');
+}
 
 export interface DragonSnapshot {
   /** Sender clock (ms). */
@@ -69,6 +74,8 @@ export interface DragonSnapshot {
   mode: FlightMode;
   firing: boolean;
   riderless: boolean;
+  /** Placed somewhere new: receivers snap to it instead of interpolating. */
+  teleport: boolean;
   /** POSE_FIELDS values in order. */
   pose: Float32Array;
   /** World height of the ground under the dragon, or NaN (no ground plane: the default standing plane). */
@@ -86,6 +93,7 @@ export function createSnapshot(): DragonSnapshot {
     mode: 'flying',
     firing: false,
     riderless: false,
+    teleport: false,
     pose: new Float32Array(POSE_FIELDS.length),
     groundY: Number.NaN,
     groundNx: 0,
@@ -158,7 +166,7 @@ export function encodeSnapshot(s: DragonSnapshot, out = new ArrayBuffer(SNAPSHOT
   }
   v.setUint8(o++, Math.max(0, FLIGHT_MODES.indexOf(s.mode)));
   const ground = Number.isFinite(s.groundY);
-  v.setUint8(o++, (s.firing ? 1 : 0) | (s.riderless ? 2 : 0) | (ground ? 4 : 0));
+  v.setUint8(o++, (s.firing ? FLAG_FIRING : 0) | (s.riderless ? FLAG_RIDERLESS : 0) | (ground ? FLAG_GROUND : 0) | (s.teleport ? FLAG_TELEPORT : 0));
   POSE_FIELDS.forEach((f, i) => v.setUint8(o++, quantize(f, s.pose[i])));
   const dy = ground ? clamp(Math.round((s.groundY - s.position[1]) * 10), -127, 127) : 0;
   v.setInt8(o++, dy);
@@ -189,13 +197,14 @@ export function decodeSnapshot(buf: ArrayBuffer, offset = 0, out = createSnapsho
   }
   out.mode = FLIGHT_MODES[v.getUint8(o++)] ?? 'flying';
   const flags = v.getUint8(o++);
-  out.firing = (flags & 1) !== 0;
-  out.riderless = (flags & 2) !== 0;
+  out.firing = (flags & FLAG_FIRING) !== 0;
+  out.riderless = (flags & FLAG_RIDERLESS) !== 0;
+  out.teleport = (flags & FLAG_TELEPORT) !== 0;
   POSE_FIELDS.forEach((f, i) => {
     out.pose[i] = dequantize(f, v.getUint8(o++));
   });
   const dy = v.getInt8(o++);
-  out.groundY = flags & 4 ? out.position[1] + dy / 10 : Number.NaN;
+  out.groundY = flags & FLAG_GROUND ? out.position[1] + dy / 10 : Number.NaN;
   out.groundNx = v.getInt8(o++) / 127;
   out.groundNz = v.getInt8(o++) / 127;
   return out;
