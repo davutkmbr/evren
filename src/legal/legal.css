@@ -1,0 +1,101 @@
+/* Legal pages (/legal/privacy, /legal/terms): the game's tokens on a plain reading page. */
+:root {
+  --night: #070a12;
+  --gok: #14223a;
+  --ink: #f3eee5;
+  --ink-2: rgba(243, 238, 229, 0.72);
+  --ink-3: rgba(243, 238, 229, 0.5);
+  --accent: #e8b872;
+  --accent-2: #f3d3a0;
+  --line: rgba(255, 255, 255, 0.085);
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: radial-gradient(120% 60% at 50% 0%, var(--gok) 0%, var(--night) 60%) fixed, var(--night);
+  color: var(--ink-2);
+  font: 15px/1.65 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.legal {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 56px 16px 80px;
+}
+
+.legal-brand {
+  margin: 0 0 8px;
+  font: 600 12px/1 var(--font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.legal-brand a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+.legal h1 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font: 650 30px/1.2 var(--font-display);
+  text-wrap: balance;
+}
+
+.legal-date {
+  margin: 0 0 32px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.legal h2 {
+  margin: 36px 0 10px;
+  color: var(--ink);
+  font: 600 18px/1.3 var(--font-display);
+}
+
+.legal p,
+.legal li {
+  text-wrap: pretty;
+}
+
+.legal ul {
+  padding-left: 20px;
+}
+
+.legal li + li {
+  margin-top: 6px;
+}
+
+.legal strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.legal a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+.legal a:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.legal-foot {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 13px;
+}

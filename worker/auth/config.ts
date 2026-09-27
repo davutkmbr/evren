@@ -3,15 +3,32 @@
  * nickname (anonymous plugin), which "Google ile kaydet" links to Google later, keeping the profile. Google sign-in
  * is on once GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. Endpoints under /api/auth/* (Better Auth's own).
  *
- * The real name and e-mail Google returns stay in the account tables; other players only ever see the profile's
- * nickname (worker/account.ts).
+ * Data kept to what the game uses (KVKK, and what /legal/privacy says): the e-mail identifies a Google account; the
+ * real name, the photo and Google's tokens are dropped before they are written (the game never calls Google), as are
+ * IP addresses and user agents. Other players only ever see the profile's nickname (worker/account).
  */
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { anonymous } from 'better-auth/plugins';
+import { moveProfile } from '../account/profiles';
 
 /** Guest accounts get a placeholder e-mail on this domain (never mailed). */
 const GUEST_EMAIL_DOMAIN = 'guest.seventeenskies.com';
 const DAY_S = 24 * 60 * 60;
+/** Stands in for the provider's real name, which the game does not keep (the nickname lives in the profile). */
+const PLACEHOLDER_NAME = 'player';
+const NO_TOKENS = { accessToken: null, refreshToken: null, idToken: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null };
+
+/** A user update without the provider's name or photo (sign-in may refresh them). */
+function stripIdentity<T extends Record<string, unknown>>(user: T): T {
+  const out = { ...user };
+  if ('name' in out) {
+    (out as Record<string, unknown>).name = PLACEHOLDER_NAME;
+  }
+  if ('image' in out) {
+    (out as Record<string, unknown>).image = null;
+  }
+  return out;
+}
 
 export function authOptions(env: Env): BetterAuthOptions {
   const baseURL = env.BETTER_AUTH_URL;
@@ -28,6 +45,14 @@ export function authOptions(env: Env): BetterAuthOptions {
     // No IP addresses or user agents in the session rows (KVKK: store only what the game needs).
     advanced: { ipAddress: { disableIpTracking: true } },
     databaseHooks: {
+      user: {
+        create: { before: async (user) => ({ data: { ...user, name: PLACEHOLDER_NAME, image: null } }) },
+        update: { before: async (user) => ({ data: stripIdentity(user) }) },
+      },
+      account: {
+        create: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
+        update: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
+      },
       session: {
         create: { before: async (session) => ({ data: { ...session, ipAddress: null, userAgent: null } }) },
         update: { before: async (session) => ({ data: { ...session, ipAddress: null, userAgent: null } }) },
@@ -40,9 +65,7 @@ export function authOptions(env: Env): BetterAuthOptions {
         emailDomainName: GUEST_EMAIL_DOMAIN,
         // The guest's profile moves to the account it is linked to, unless that account already has one.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
-          await env.DB.prepare('UPDATE profile SET user_id = ?1 WHERE user_id = ?2 AND NOT EXISTS (SELECT 1 FROM profile WHERE user_id = ?1)')
-            .bind(newUser.user.id, anonymousUser.user.id)
-            .run();
+          await moveProfile(env.DB, anonymousUser.user.id, newUser.user.id);
         },
       }),
     ],
@@ -56,19 +79,4 @@ let cached: Auth | null = null;
 export function getAuth(env: Env): Auth {
   cached ??= betterAuth(authOptions(env));
   return cached;
-}
-
-/** The only origin whose pages may call the API with the session cookie. */
-export function siteOrigin(env: Env): string {
-  return new URL(env.BETTER_AUTH_URL).origin;
-}
-
-/** The signed-in user of a request, or null. */
-export async function sessionUser(request: Request, env: Env): Promise<{ id: string; isAnonymous: boolean; email: string } | null> {
-  const session = await getAuth(env).api.getSession({ headers: request.headers });
-  if (!session) {
-    return null;
-  }
-  const u = session.user as { id: string; email: string; isAnonymous?: boolean | null };
-  return { id: u.id, isAnonymous: !!u.isAnonymous, email: u.email };
 }

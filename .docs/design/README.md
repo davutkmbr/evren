@@ -113,6 +113,9 @@ stamina, the next gate).
   the bottom cluster and the minimap fade out: only the zones remain (the perch title, the viewing hint line, toasts).
 - **Small sheets (a moment's sources):** the same sheet look at ≈760 px wide, one column that scrolls, a top bar with
   the state ("Kaynak · oyun duraklatıldı") and "[Esc] Kapat".
+- **Start screen online sheet (`src/ui/loading/online-panel.ts`):** a small sheet (≈460 px) in place of the start
+  prompts, bottom centre; the title fades while it is open. Steps replace its body (nickname, server list, joining,
+  "[Enter] Uçmaya başla"); errors are one line under the body in `--warn` text; legal links are quiet underlined text.
 - **Sheets (pause menu, race picker):** centred, ≈1220 × 760 at 1440 × 900, top bar with title/tabs and the close
   prompt; content in two columns (list left, detail right). Scales down under 1440 × 820. A tab whose content is a
   gallery (Albüm) uses one column instead: the thumb grid with a header line and a key/option footer, and one item

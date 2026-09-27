@@ -112,7 +112,7 @@ Open: a hidden tab stops `requestAnimationFrame`, so its dragon freezes for the 
 state or leaving after a timeout); the start screen's server list and nickname input (the UI step); name tags and
 players on the minimap.
 
-### Accounts (done in branch feat/accounts)
+### Accounts (done, branch feat/accounts)
 
 Decision (2026-09-27): no forced login. "Online oyna" makes a guest account with a nickname; "Google ile kaydet"
 links it to Google later and keeps the profile. Achievements, quests and other progress tables are planned separately
@@ -143,6 +143,33 @@ Before production: `npx wrangler d1 migrations apply seventeen-skies --remote`, 
 BETTER_AUTH_SECRET`, and for Google a Google Cloud OAuth client (redirect URI
 `https://seventeenskies.com/api/auth/callback/google`) with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` as secrets. A
 privacy notice (aydınlatma metni) and the account deletion button in the UI come with the start screen.
+
+### Start screen, account settings, legal pages (done in branch feat/online-start-screen)
+
+- Start screen (`src/ui/loading`): "[Enter] Tek başına uç" and "[O] Online uç". The online sheet (`online-panel.ts`)
+  takes the start prompts' place and the title steps back: nickname (a guest account on the way, or "Google ile
+  giriş"), the server list (arrow keys, 5 s refresh, "[G] Google ile kaydet" for a guest), joining, then "[Enter]
+  Uçmaya başla" (the key press is the gesture pointer lock and audio need). A Google redirect reopens the sheet. Hidden
+  on hosts without the API.
+- Ayarlar → Hesap (`src/ui/menu/account-settings.ts`): nickname, account kind, "Google ile kaydet", sign-out, delete
+  (two presses), the privacy notice and terms; while online, the server and "Sunucudan çık".
+- `/legal/privacy` (KVKK aydınlatma metni) and `/legal/terms` (kullanım koşulları), static pages in `legal/`. They
+  describe exactly what the code stores; any change in stored data updates them.
+- Worker structure: one Hono app (`worker/index.ts`) composed from feature modules (`auth`, `account`, `rooms`,
+  `probe`, `music`), shared middleware in `worker/lib` (session, same-origin, rate limits, error format), request
+  bodies validated with Zod, every SQL query of a table in one repository module (`account/profiles.ts`).
+- Abuse limits (Workers rate limit bindings): 10 sign-ins per IP per minute (the IP is only the counter's key), 20
+  profile writes per account per minute. Better Auth also drops the Google name, photo and tokens before storage.
+- `npm run test:online` (`scripts/net/online-api-test.mts`): 26 checks against `wrangler dev`: accounts, profiles,
+  origin and session rules, room relay and checks, capacity, flood, the sign-in limit, deletion.
+- Google OAuth client: the Web client's JSON lives in the main checkout's `.secrets/` (gitignored and in
+  `.git/info/exclude`); locally its id and secret are in `.dev.vars`. It allows only
+  `https://seventeenskies.com/api/auth/callback/google`, so Google sign-in is tested after deploy (or add
+  `http://127.0.0.1:8799/api/auth/callback/google` to the client for local tests).
+
+Before production: `npx wrangler d1 migrations apply seventeen-skies --remote`, the secrets `BETTER_AUTH_SECRET`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (`npx wrangler secret put`), and a legal review of `/legal/privacy`
+(cross-border transfer basis under KVKK article 9) before Google sign-in is announced.
 
 ## Stage 2 — later
 

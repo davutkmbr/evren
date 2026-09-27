@@ -118,7 +118,16 @@ export class UiSystem implements System {
     applyZoneBands(ctx.uiRoot, ctx.uiRoot.clientWidth || window.innerWidth, ctx.uiRoot.clientHeight || window.innerHeight);
     ctx.services.provide('hudZones', this.zones);
 
-    this.loading = new LoadingScreen(this.root, { autoStart: this.autoStart, onStart: () => this.onStart() });
+    this.loading = new LoadingScreen(this.root, {
+      autoStart: this.autoStart,
+      onStart: () => this.onStart(),
+      online: () => {
+        const account = ctx.services.tryGet('account');
+        const net = ctx.services.tryGet('net');
+        // Hidden on hosts without the API (the account check never answered).
+        return account && net && account.status !== 'unknown' ? { account, net } : null;
+      },
+    });
 
     this.tracker = new DiscoveryTracker(ctx);
     this.hud = new Hud(new Minimap(this.raster), this.tracker.card, this.hoverHints, this.shotCaption, this.zones);

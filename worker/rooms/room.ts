@@ -1,18 +1,14 @@
 /**
- * Game servers (phase 26 stage 1): one ServerRoom Durable Object per named server, a relay with checks rather than an
- * authoritative simulation. Players send their dragon's snapshot at SEND_RATE_HZ; the room keeps the latest one per
- * player and broadcasts them in one batch every BROADCAST_MS while anything changed. Protocol: src/net/protocol.ts.
- *
- *   GET /api/servers              the server list with player counts
- *   GET /api/servers/<id>/ws      WebSocket into that server's room: signed in (worker/auth.ts) with a profile; the
- *                                 Worker passes the account and nickname to the room, the client never names itself
+ * One game server's room (phase 26 stage 1): a relay with checks rather than an authoritative simulation. Players send
+ * their dragon's snapshot at SEND_RATE_HZ; the room keeps the latest one per player and broadcasts them in one batch
+ * every BROADCAST_MS while anything changed. Protocol: src/net/protocol.ts. The Worker (./routes.ts) has checked the
+ * session and passes the account and nickname in the seat headers (./seat.ts); the client never names itself.
  *
  * WebSocket hibernation: an idle room (no messages) is evicted from memory and costs nothing; each socket carries its
- * seat (id, name) as its attachment, so the room rebuilds its player list when it wakes.
+ * seat as its attachment, so the room rebuilds its player list when it wakes.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { sessionUser, siteOrigin } from './auth';
-import { loadProfile } from './account';
+import { SEAT_NAME, SEAT_USER } from './seat';
 import {
   BATCH_ENTRY_HEADER_BYTES,
   BATCH_HEADER_BYTES,
@@ -30,17 +26,7 @@ import {
   WORLD_LIMITS,
   type ServerErrorCode,
   type ServerText,
-} from '../src/net/protocol';
-
-/** The servers players choose from. Names are shown in the game (Turkish). */
-export const SERVERS = [
-  { id: 'bogazici', name: 'Boğaziçi' },
-  { id: 'halic', name: 'Haliç' },
-  { id: 'adalar', name: 'Adalar' },
-] as const;
-
-/** Where the rooms are created (the latency probe: eeur landed in Frankfurt, 49 ms from Istanbul). */
-const REGION: DurableObjectLocationHint = 'eeur';
+} from '../../src/net/protocol';
 
 /** Messages per second a client may send (twice the send rate) and the burst it may bank. */
 const RATE_PER_S = SEND_RATE_HZ * 2;
@@ -49,10 +35,6 @@ const RATE_BURST = SEND_RATE_HZ * 4;
 const MAX_STRIKES = 200;
 /** Extra distance (m) allowed between two snapshots on top of MAX_SPEED (network jitter, rounding). */
 const DISTANCE_SLACK = 30;
-
-/** Headers the Worker sets on the room request after checking the session (never taken from the client). */
-const SEAT_USER = 'X-Seat-User';
-const SEAT_NAME = 'X-Seat-Name';
 
 /** A socket's attachment: the account from the upgrade, and the player id once the hello is done (0 before). */
 interface Seat {
@@ -292,47 +274,4 @@ function send(ws: WebSocket, msg: ServerText): void {
   } catch {
     // The socket is gone; its close handler cleans up.
   }
-}
-
-function room(env: Env, id: string): DurableObjectStub<ServerRoom> {
-  return env.ROOMS.get(env.ROOMS.idFromName(`room-v1-${id}`), { locationHint: REGION });
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
-}
-
-export async function handleRooms(request: Request, env: Env, path: string): Promise<Response> {
-  if (path === '/api/servers' && request.method === 'GET') {
-    const servers = await Promise.all(
-      SERVERS.map(async (s) => ({ id: s.id, name: s.name, players: await room(env, s.id).count(), max: MAX_PLAYERS })),
-    );
-    return json({ servers, protocol: PROTOCOL_VERSION });
-  }
-  const m = /^\/api\/servers\/([a-z0-9-]+)\/ws$/.exec(path);
-  if (m) {
-    if (!SERVERS.some((s) => s.id === m[1])) {
-      return json({ error: 'unknown server' }, 404);
-    }
-    // The session cookie goes with any WebSocket to this host, so only the game's own pages may open one.
-    if (request.headers.get('Origin') !== siteOrigin(env)) {
-      return json({ error: 'origin' }, 403);
-    }
-    const user = await sessionUser(request, env);
-    if (!user) {
-      return json({ error: 'signed-out' }, 401);
-    }
-    const profile = await loadProfile(env, user.id);
-    if (!profile) {
-      return json({ error: 'no-profile' }, 403);
-    }
-    const headers = new Headers(request.headers);
-    headers.set(SEAT_USER, user.id);
-    headers.set(SEAT_NAME, encodeURIComponent(profile.nickname));
-    return room(env, m[1]).fetch(new Request(request, { headers }));
-  }
-  return json({ error: 'not found' }, 404);
 }
