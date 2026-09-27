@@ -9,7 +9,7 @@
  *   (trace: path of a Chrome trace JSON recorded from the eval through the settle window; open in Perfetto)
  *   (result: path of a JSON file the eval's (awaited) return value is written to, e.g. in-page measurements)
  *   (transparent: PNG without the page background, e.g. the brand logos; --transparent for a single shot)
- *   (publicDir / --public <dir>: /data/ and /world/ requests served from that checkout's public/ below the server root, e.g. a
+ *   (publicDir / --public <dir>: /data/, /world/ and /models/ requests served from that checkout's public/ below the server root, e.g. a
  *   worktree's re-baked data; SNAP_SERVER_ROOT overrides the root, default: three levels above this checkout)
  *
  * Waits for window.__evren.ready and __evren.pending() === 0 (or --timeout), then --settle ms more.
@@ -112,15 +112,16 @@ async function shoot(browser, job) {
     if (r.status() >= 400 && !r.url().endsWith('/favicon.ico')) errors.push(`HTTP ${r.status()} ${r.url()}`);
   });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
-  // publicDir: serve /data/ and /world/ from another checkout's public/ (a worktree below the server root, e.g. its re-baked data;
+  // publicDir: serve /data/, /world/ and /models/ from another checkout's public/ (a worktree below the server root, e.g. its
+  // re-baked data or new models;
   // the page's own code comes from a shim page, see flicker-audit.mjs --worktree).
   const publicDir = job.publicDir ?? opt('public');
   if (publicDir) {
     const prefix = '/' + relative(process.env.SNAP_SERVER_ROOT ?? resolve(ROOT, '../../..'), resolve(publicDir)).split('\\').join('/');
     // A file the checkout does not have (e.g. gitignored street tiles) falls back to the server's own.
-    await page.route(/\/(data|world)\//, async (route) => {
+    await page.route(/\/(data|world|models)\//, async (route) => {
       const u = new URL(route.request().url());
-      if (!u.pathname.startsWith('/data/') && !u.pathname.startsWith('/world/')) return route.continue();
+      if (!/^\/(data|world|models)\//.test(u.pathname)) return route.continue();
       u.pathname = prefix + u.pathname;
       const res = await route.fetch({ url: u.toString() }).catch(() => null);
       if (!res || res.status() === 404) return route.continue();

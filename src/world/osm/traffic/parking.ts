@@ -78,7 +78,7 @@ export function parkKerbside(edges: readonly Edge[], keepClear: Map<number, numb
   // Shared stand rule (placement/stand.ts): parked cars stay on the OSM ground, on land (network edges run past it).
   const land = osmStandGround(surface, footprints);
   for (const e of edges) {
-    if (e.deck || e.r.tunnel) {
+    if (e.deck || e.r.tunnel || e.electric) {
       continue;
     }
     const occ = OCCUPANCY[e.r.kind] ?? 0.4;

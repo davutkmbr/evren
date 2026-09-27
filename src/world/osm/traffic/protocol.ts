@@ -52,6 +52,8 @@ export const LaneFlag = {
   Sink: 32,
   /** Two-way street too narrow for two cars side by side (parked cars): one direction at a time. */
   Narrow: 64,
+  /** In a car-free zone (life/traffic/car-free.ts): only the zone's electric vehicles, few and slow. */
+  Electric: 128,
 } as const;
 
 export const StopKind = {

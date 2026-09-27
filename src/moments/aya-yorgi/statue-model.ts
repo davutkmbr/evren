@@ -1,22 +1,26 @@
 /**
- * The knight statue of "Aya Yorgi'nin Meydan Okuması" (actor 'moments/aya-yorgi-knight-statue'): an original prop, a
- * weathered bronze knight with a spear and a shield on a stepped stone plinth, built from primitives with vertex colours
- * (verdigris bronze, darker in the folds, rust on the spear head). It is a little taller than the standing dragon.
+ * The knight statue of "Aya Yorgi'nin Meydan Okuması" (actor 'moments/aya-yorgi-knight-statue'): an original bronze
+ * statue of a soldier saint on a limestone plinth, built in Blender (tools/moments/knight_statue.py) from the approved
+ * CC0 MakeHuman body and exported as public/models/moments/aya-yorgi-statue.glb: one skinned bronze mesh (baked
+ * patina albedo, ORM and normal maps) on a Mixamo-named skeleton, and the plinth.
  *
- * Joints (THREE.Group pivots) for the three animations (./pose.ts): the spear arm at the right shoulder, the shield arm
- * at the left, the shoulders (shrug) and the head (it follows the dragon). Model space: +Z is the statue's front (so its
- * right hand is at -X), the origin is the plinth's foot on the ground.
+ * Joints for the three animations (./pose.ts) are the skeleton's own bones: the spear arm (RightArm), the shield arm
+ * (LeftArm), the shoulders (the shrug), the head (it follows the dragon); `figure` turns the whole figure on its
+ * plinth. Model space: +Z the statue's front, +X its left, the origin at the plinth's foot.
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
-/** Plinth height and the figure's scale (a 1.8-unit figure → about 6.5 m). */
-export const PLINTH_H = 2.6;
-export const FIGURE_SCALE = 3.6;
-export const STATUE_HEIGHT = PLINTH_H + FIGURE_SCALE * 1.9;
+/** The figure's scale (the model is built at human scale, 1.93 m tall) and the plinth's height in the game (m). */
+export const FIGURE_SCALE = 3.4;
+export const PLINTH_H = 0.76 * FIGURE_SCALE;
+export const STATUE_HEIGHT = PLINTH_H + FIGURE_SCALE * 1.93;
 /** Half the plinth's footprint (m) and the depth of its buried foundation (m). */
-export const PLINTH_HALF = 2.1;
-export const FOUNDATION_DEPTH = 2.5;
+export const PLINTH_HALF = 0.76 * FIGURE_SCALE;
+export const FOUNDATION_DEPTH = 0.85 * FIGURE_SCALE;
+const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+export const STATUE_URL = `${BASE}models/moments/aya-yorgi-statue.glb`;
 
 /**
  * Where the plinth sits on sloping ground (pure): the lowest terrain under its footprint (centre, corners, edge
@@ -38,196 +42,110 @@ export function plinthBase(heightAt: (x: number, z: number) => number, x: number
   return Number.isFinite(lo) ? { y: lo, spread: hi - lo } : { y: 0, spread: 0 };
 }
 
-const BRONZE = new THREE.Color('#5d8a78');
-const BRONZE_DARK = new THREE.Color('#3b5c50');
-const BRONZE_WORN = new THREE.Color('#8a7a52');
-const RUST = new THREE.Color('#7a4a2a');
-const STONE = new THREE.Color('#a8a296');
-const STONE_DARK = new THREE.Color('#8a857a');
+/** A bone turned about the axes of the figure's own frame, on top of its rest rotation. */
+export class FigureJoint {
+  readonly rest: THREE.Quaternion;
+  /** The figure's X, Y and Z axes in the bone's local frame (at rest). */
+  private readonly axes: THREE.Vector3[];
+  private readonly q = new THREE.Quaternion();
+
+  constructor(
+    readonly bone: THREE.Bone,
+    figure: THREE.Object3D,
+  ) {
+    this.rest = bone.quaternion.clone();
+    figure.updateWorldMatrix(true, true);
+    const boneInFigure = figure.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(bone.getWorldQuaternion(new THREE.Quaternion()));
+    const toBone = boneInFigure.invert();
+    this.axes = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)].map((a) => a.applyQuaternion(toBone));
+  }
+
+  /** Rest rotation, then turns about the figure's X, Y and Z axes (radians). */
+  set(x: number, y = 0, z = 0): void {
+    const b = this.bone.quaternion.copy(this.rest);
+    if (x) b.multiply(this.q.setFromAxisAngle(this.axes[0], x));
+    if (y) b.multiply(this.q.setFromAxisAngle(this.axes[1], y));
+    if (z) b.multiply(this.q.setFromAxisAngle(this.axes[2], z));
+  }
+}
 
 export interface KnightStatue {
   root: THREE.Group;
-  /** Right shoulder pivot: rotation.x > 0 swings the arm up and tips the spear forward toward the challenger. */
-  spearArm: THREE.Group;
-  /** Left shoulder pivot (shield arm): rotation.z > 0 opens it outward in the shrug. */
-  shieldArm: THREE.Group;
-  /** The figure on the plinth: rotation.y turns it toward the challenger (the plinth stays). */
-  figure: THREE.Group;
-  /** Shoulders: position.y raises them in the shrug. */
-  shoulders: THREE.Group;
-  head: THREE.Group;
-  materials: THREE.Material[];
+  /** The figure (the skeleton's root): rotation.y turns it toward the challenger; the plinth stays. */
+  figure: THREE.Object3D;
+  spearArm: FigureJoint;
+  shieldArm: FigureJoint;
+  shoulders: [FigureJoint, FigureJoint];
+  head: FigureJoint;
   dispose(): void;
 }
 
-function part(g: THREE.BufferGeometry, color: THREE.Color, at: [number, number, number], rot: [number, number, number] = [0, 0, 0], shade = 0): THREE.BufferGeometry {
-  const geo = g;
-  geo.rotateX(rot[0]).rotateY(rot[1]).rotateZ(rot[2]);
-  geo.translate(at[0], at[1], at[2]);
-  const pos = geo.getAttribute('position');
-  const nrm = geo.getAttribute('normal');
-  const col = new Float32Array(pos.count * 3);
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    // Verdigris gathers in the downward-facing folds; upward faces stay a little browner (rain-washed).
-    const ny = nrm.getY(i);
-    c.copy(color);
-    if (shade > 0) {
-      c.lerp(ny < 0 ? BRONZE_DARK : BRONZE_WORN, shade * Math.abs(ny) * 0.6);
-    }
-    col[i * 3] = c.r;
-    col[i * 3 + 1] = c.g;
-    col[i * 3 + 2] = c.b;
+let gltfLoader: GLTFLoader | undefined;
+function loader(): GLTFLoader {
+  if (!gltfLoader) {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(`${BASE}draco/`);
+    gltfLoader = new GLTFLoader().setDRACOLoader(draco);
   }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.deleteAttribute('uv');
-  return geo;
+  return gltfLoader;
 }
 
-function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const g = mergeGeometries(parts, false)!;
-  for (const p of parts) {
-    p.dispose();
-  }
-  g.computeBoundingSphere();
-  return g;
-}
-
-const cyl = (rt: number, rb: number, h: number, seg = 12): THREE.BufferGeometry => new THREE.CylinderGeometry(rt, rb, h, seg);
-const box = (w: number, h: number, d: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d);
-const ball = (r: number, w = 12, h = 8): THREE.BufferGeometry => new THREE.SphereGeometry(r, w, h);
-
-/** The plinth: a buried foundation, a stepped base, the shaft and a cornice (world metres). */
-function plinthGeometry(): THREE.BufferGeometry {
-  return merged([
-    part(box(4.2, FOUNDATION_DEPTH, 4.2), STONE_DARK, [0, -FOUNDATION_DEPTH / 2, 0]),
-    part(box(4.2, 0.45, 4.2), STONE_DARK, [0, 0.225, 0]),
-    part(box(3.5, 0.35, 3.5), STONE, [0, 0.625, 0]),
-    part(box(2.9, 1.35, 2.9), STONE, [0, 1.475, 0]),
-    part(box(3.2, 0.3, 3.2), STONE_DARK, [0, 2.3, 0]),
-    part(box(3.0, 0.15, 3.0), STONE, [0, 2.525, 0]),
-  ]);
-}
-
-/** Legs, hips, torso and skirt of mail (figure units, 1.8 ≈ a person; feet at y = 0). */
-function bodyGeometry(): THREE.BufferGeometry {
-  const s = 0.9;
-  return merged([
-    // Feet and greaves, the right foot a half step forward.
-    part(box(0.13, 0.08, 0.28), BRONZE, [0.12, 0.04, 0.05], [0, 0, 0], s),
-    part(box(0.13, 0.08, 0.28), BRONZE, [-0.12, 0.04, 0.12], [0, 0, 0], s),
-    part(cyl(0.075, 0.065, 0.48), BRONZE, [0.12, 0.32, 0.0], [0, 0, 0], s),
-    part(cyl(0.075, 0.065, 0.48), BRONZE, [-0.12, 0.32, 0.06], [0.08, 0, 0], s),
-    part(cyl(0.095, 0.08, 0.42), BRONZE, [0.12, 0.76, 0.0], [0, 0, 0], s),
-    part(cyl(0.095, 0.08, 0.42), BRONZE, [-0.12, 0.76, 0.04], [0.06, 0, 0], s),
-    // Skirt of mail, belt, breastplate.
-    part(cyl(0.2, 0.3, 0.34, 16), BRONZE, [0, 0.9, 0], [0, 0, 0], s),
-    part(cyl(0.205, 0.205, 0.05, 16), BRONZE_WORN, [0, 1.08, 0], [0, 0, 0], s),
-    part(cyl(0.23, 0.2, 0.38, 16), BRONZE, [0, 1.28, 0], [0, 0, 0], s),
-    part(box(0.2, 0.26, 0.08), BRONZE_WORN, [0, 1.3, 0.17], [0, 0, 0], s),
-    // A cloak falling down the back.
-    part(box(0.46, 0.9, 0.05), BRONZE_DARK, [0, 1.02, -0.2], [-0.1, 0, 0], s),
-  ]);
-}
-
-/** Pauldrons and the gorget (moves with the shoulders), in the shoulders' frame (origin at y = 1.47). */
-function shoulderGeometry(): THREE.BufferGeometry {
-  return merged([
-    part(ball(0.11, 10, 6), BRONZE, [-0.25, 0, 0], [0, 0, 0], 0.9),
-    part(ball(0.11, 10, 6), BRONZE, [0.25, 0, 0], [0, 0, 0], 0.9),
-    part(cyl(0.12, 0.2, 0.08, 16), BRONZE_WORN, [0, 0.02, 0], [0, 0, 0], 0.9),
-  ]);
-}
-
-/** Helmet with a crest, visor slit and nose guard, in the head's frame (origin at the neck). */
-function headGeometry(): THREE.BufferGeometry {
-  return merged([
-    part(cyl(0.06, 0.07, 0.08), BRONZE_DARK, [0, 0.04, 0]),
-    part(ball(0.12, 14, 10), BRONZE, [0, 0.18, 0], [0, 0, 0], 0.9),
-    part(cyl(0.125, 0.13, 0.12, 14), BRONZE, [0, 0.15, 0], [0, 0, 0], 0.9),
-    part(box(0.2, 0.02, 0.03), BRONZE_DARK, [0, 0.17, 0.115]),
-    part(box(0.025, 0.1, 0.02), BRONZE_WORN, [0, 0.13, 0.13]),
-    part(box(0.03, 0.08, 0.24), BRONZE_WORN, [0, 0.33, -0.01], [0, 0, 0], 0.9),
-  ]);
-}
-
-/** The spear arm and the spear, in the right shoulder's frame: arm down, spear upright in the fist. */
-function spearArmGeometry(): THREE.BufferGeometry {
-  return merged([
-    part(cyl(0.055, 0.05, 0.3), BRONZE, [0, -0.16, 0], [0, 0, 0], 0.9),
-    part(cyl(0.05, 0.045, 0.28), BRONZE, [0, -0.36, 0.1], [-0.9, 0, 0], 0.9),
-    part(ball(0.06, 8, 6), BRONZE_WORN, [0, -0.44, 0.22]),
-    // The spear: shaft, collar and a rusty leaf-shaped head.
-    part(cyl(0.022, 0.022, 2.3, 8), BRONZE_DARK, [0, -0.2, 0.22]),
-    part(cyl(0.035, 0.035, 0.05, 8), BRONZE_WORN, [0, 0.96, 0.22]),
-    part(new THREE.ConeGeometry(0.05, 0.24, 8), RUST, [0, 1.1, 0.22]),
-  ]);
-}
-
-/** The shield arm and a kite shield with a cross in relief, in the left shoulder's frame. */
-function shieldArmGeometry(): THREE.BufferGeometry {
-  return merged([
-    part(cyl(0.055, 0.05, 0.3), BRONZE, [0, -0.16, 0], [0, 0, 0], 0.9),
-    part(cyl(0.05, 0.045, 0.28), BRONZE, [0, -0.36, 0.08], [-0.6, 0, 0], 0.9),
-    part(cyl(0.26, 0.26, 0.04, 20), BRONZE, [0.07, -0.36, 0.12], [0, 0, Math.PI / 2], 0.9),
-    part(box(0.03, 0.4, 0.06), BRONZE_WORN, [0.1, -0.36, 0.12]),
-    part(box(0.03, 0.06, 0.34), BRONZE_WORN, [0.1, -0.33, 0.12]),
-  ]);
-}
-
-/** Builds the statue (one merged mesh per joint, two materials). */
-export function buildKnightStatue(): KnightStatue {
-  const bronze = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.62 });
-  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0, roughness: 0.92 });
+/** Wraps a loaded statue scene (the glTF scene: the rig with the skinned bronze mesh, and the plinth). */
+export function statueFromScene(scene: THREE.Object3D): KnightStatue {
   const root = new THREE.Group();
   root.name = 'moment-aya-yorgi-statue';
-  const mesh = (g: THREE.BufferGeometry, m: THREE.Material, name: string): THREE.Mesh => {
-    const x = new THREE.Mesh(g, m);
-    x.name = name;
-    x.castShadow = true;
-    x.receiveShadow = true;
-    return x;
-  };
-  root.add(mesh(plinthGeometry(), stone, 'plinth'));
+  scene.scale.setScalar(FIGURE_SCALE);
+  root.add(scene);
+  const bones = new Map<string, THREE.Bone>();
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+      // The figure moves a little around its bind pose; its bounds are not recomputed per frame.
+      m.frustumCulled = !(m as THREE.SkinnedMesh).isSkinnedMesh;
+    }
+    const b = o as THREE.Bone;
+    if (b.isBone) {
+      bones.set(b.name.replace(/^mixamorig:?/, ''), b);
+    }
+  });
+  // The figure turns on its plinth about a pivot in the model's own frame (+Y up, +Z front), whatever transform the
+  // exported skeleton node carries.
+  const rigNode = bones.get('Hips')?.parent ?? scene;
   const figure = new THREE.Group();
-  figure.position.y = PLINTH_H;
-  figure.scale.setScalar(FIGURE_SCALE);
-  root.add(figure);
-  figure.add(mesh(bodyGeometry(), bronze, 'body'));
-  const shoulders = new THREE.Group();
-  shoulders.position.y = 1.47;
-  figure.add(shoulders);
-  shoulders.add(mesh(shoulderGeometry(), bronze, 'shoulders'));
-  const head = new THREE.Group();
-  head.position.y = 0.06;
-  shoulders.add(head);
-  head.add(mesh(headGeometry(), bronze, 'head'));
-  const spearArm = new THREE.Group();
-  spearArm.position.set(-0.27, -0.02, 0);
-  shoulders.add(spearArm);
-  spearArm.add(mesh(spearArmGeometry(), bronze, 'spear-arm'));
-  const shieldArm = new THREE.Group();
-  shieldArm.position.set(0.27, -0.02, 0);
-  shoulders.add(shieldArm);
-  shieldArm.add(mesh(shieldArmGeometry(), bronze, 'shield-arm'));
-  const materials = [bronze, stone];
+  figure.name = 'figure';
+  scene.add(figure);
+  scene.updateWorldMatrix(true, true);
+  figure.attach(rigNode);
+  const joint = (name: string): FigureJoint => {
+    const b = bones.get(name);
+    if (!b) throw new Error(`aya-yorgi statue: bone ${name} missing`);
+    return new FigureJoint(b, figure);
+  };
   return {
     root,
     figure,
-    spearArm,
-    shieldArm,
-    shoulders,
-    head,
-    materials,
+    spearArm: joint('RightArm'),
+    shieldArm: joint('LeftArm'),
+    shoulders: [joint('LeftShoulder'), joint('RightShoulder')],
+    head: joint('Head'),
     dispose() {
       root.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
+        const m = o as THREE.Mesh;
+        if (m.isMesh) {
+          m.geometry.dispose();
+          const mat = m.material as THREE.MeshStandardMaterial;
+          for (const t of new Set([mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap, mat.aoMap])) t?.dispose();
+          mat.dispose();
         }
       });
-      for (const m of materials) {
-        m.dispose();
-      }
     },
   };
+}
+
+/** Loads the statue (Draco mesh, WebP maps). */
+export async function loadKnightStatue(url = STATUE_URL): Promise<KnightStatue> {
+  const gltf = await loader().loadAsync(url);
+  return statueFromScene(gltf.scene);
 }
