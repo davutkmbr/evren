@@ -1,18 +1,35 @@
 /**
  * Machine-wide queue for headless GPU browsers, shared by scripts/snap.mjs and scripts/walk-test.mjs (parallel agents
- * share one GPU while the user plays). Slots are lock directories under .shots/.snap-slots holding the owner's pid;
- * stale slots of dead processes are reclaimed. At most SNAP_MAX_CONCURRENT (default 1: the user plays on the same GPU) GPU jobs run at once.
+ * share one GPU while the user plays). Slots are lock directories under the main checkout's .shots/.snap-slots (found
+ * through git, so every worktree of the repository shares one queue; SNAP_LOCK_ROOT overrides) holding the owner's
+ * pid; stale slots of dead processes are reclaimed. At most SNAP_MAX_CONCURRENT (default 1: the user plays on the same GPU) GPU jobs run at once.
  *
  *   import { chromium } from 'playwright-core';
  *   import { launchGpuBrowser, releaseSlot } from './lib/gpu-slot.mjs';
  *   const browser = await launchGpuBrowser(chromium);   // waits for a slot
  *   try { ... } finally { await browser.close(); releaseSlot(); }
  */
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MAX_CONCURRENT = Number(process.env.SNAP_MAX_CONCURRENT ?? 1);
-export const LOCK_ROOT = fileURLToPath(new URL('../../.shots/.snap-slots', import.meta.url));
+export const LOCK_ROOT = lockRoot();
+
+/** The main checkout's lock folder: worktrees share the git common dir (<main>/.git), so they share the queue. */
+function lockRoot() {
+  if (process.env.SNAP_LOCK_ROOT) {
+    return process.env.SNAP_LOCK_ROOT;
+  }
+  const here = dirname(fileURLToPath(import.meta.url));
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: here, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return join(dirname(common), '.shots', '.snap-slots');
+  } catch {
+    return join(here, '..', '..', '.shots', '.snap-slots');
+  }
+}
 /** Headless system Chrome on the Metal ANGLE backend (real GPU). */
 export const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'];
 
