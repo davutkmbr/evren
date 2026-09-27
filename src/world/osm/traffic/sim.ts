@@ -250,6 +250,10 @@ export class CarSim {
    */
   private rebalance(cam: { x: number; z: number; frustum: THREE.Frustum | null }): void {
     const net = this.net;
+    // A region without lanes (a car-free zone) has nothing to rebalance.
+    if (!net.lanePath.length) {
+      return;
+    }
     const scale = this.target / Math.max(1, this.fullTarget);
     const lane = this.pickLane(this.spawnCum, this.fullTarget);
     const len = this.pathLen(net.lanePath[lane]);
