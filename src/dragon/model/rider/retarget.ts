@@ -24,7 +24,7 @@ const HUMAN_SIDE: Record<Side, string> = { L: 'Left', R: 'Right' };
 /** Old rider finger joint A's angle when the hand is fully open (rad), see rider-pose.ts OPEN_FINGERS. */
 const OPEN_A = 0.6;
 /** Fist: curl per finger joint (rad, base to tip) around the rein; the little finger closes a little more. */
-const CURL = [1.45, 1.65, 1.0];
+const CURL = [1.55, 1.75, 1.1];
 const PINKY_EXTRA = 0.12;
 /** Thumb: curl per joint over the index (rad). */
 const THUMB_CURL = [0.55, 0.7, 0.5];
@@ -33,6 +33,8 @@ const THUMB_CURL = [0.55, 0.7, 0.5];
 const CHANNEL_ALONG = 0.95;
 const CHANNEL_PALM = 0.03;
 const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb'];
+/** Largest turn of the hand away from the forearm's line (rad). */
+const WRIST_MAX = 0.95;
 
 interface Limb {
   upper: THREE.Bone;
@@ -51,11 +53,15 @@ interface Limb {
 interface Hand {
   side: Side;
   arm: Limb;
-  /** Hand-local axes: along the metacarpals, toward the palm; the rope channel's offset from the wrist. */
+  /** Hand-local axes: along the metacarpals, toward the palm, across (little finger → index); the rope channel's offset
+   * from the wrist. */
   dir: THREE.Vector3;
   palm: THREE.Vector3;
+  across: THREE.Vector3;
   channel: THREE.Vector3;
   fist: FistFrame;
+  /** The hand's local rotation in the riding pose (straight on the forearm). */
+  handBase: THREE.Quaternion;
   fingers: { bones: THREE.Bone[]; bind: THREE.Quaternion[]; thumb: boolean; pinky: boolean; axis: THREE.Vector3 }[];
   oldFingerA: THREE.Bone;
 }
@@ -206,7 +212,7 @@ export class RiderRetarget {
         const axis = new THREE.Vector3().crossVectors(fdir, palm).normalize();
         fingers.push({ bones: list, bind, thumb: f === 'Thumb', pinky: f === 'Pinky', axis });
       }
-      this.hands.push({ side: s, arm, dir, palm, channel, fist: fistFrame(s), fingers, oldFingerA: o(`riderFingerA${s}`) });
+      this.hands.push({ side: s, arm, dir, palm, across: across.clone(), channel, fist: fistFrame(s), handBase: arm.end.quaternion.clone(), fingers, oldFingerA: o(`riderFingerA${s}`) });
     }
   }
 
@@ -223,6 +229,32 @@ export class RiderRetarget {
       q.multiply(rot(b));
     }
     return p;
+  }
+
+  /**
+   * The rein's path through a fist (world): in under the little finger from the front, up the grip, out between index
+   * and thumb, on the human hand as posed this frame. Side 'L' | 'R' (the rig's sides).
+   */
+  fistPath(side: 'L' | 'R', out: THREE.Vector3[]): THREE.Vector3[] {
+    const hd = this.hands.find((h) => h.side === side);
+    out.length = 0;
+    if (!hd) {
+      return out;
+    }
+    const hand = hd.arm.end;
+    hand.updateWorldMatrix(true, false);
+    const steps: [number, number][] = [
+      [-0.075, 0.03],
+      [-0.035, 0.0],
+      [0, 0],
+      [0.035, 0],
+      [0.058, -0.012],
+    ];
+    for (const [u, f] of steps) {
+      const p = hd.channel.clone().addScaledVector(hd.across, u).addScaledVector(hd.dir, f);
+      out.push(p.applyMatrix4(hand.matrixWorld));
+    }
+    return out;
   }
 
   /** First person: the head (and the helmet on it) collapses so the camera at the eyes sees out. */
@@ -276,6 +308,15 @@ export class RiderRetarget {
       rigTransform(l.oldMid, root, _pole, _qa);
       _pole.add(l.midOffset);
       this.solveLimb(l, _target, _pole);
+      // The wrist bends only so far: beyond WRIST_MAX from the forearm's own line the hand turns with the forearm
+      // (no candy-wrapper twist when the arm is thrown far forward).
+      rigTransform(l.lower, this.rigRoot, _p, _qa);
+      _qb.copy(_qa).multiply(hd.handBase);
+      const dot = Math.min(1, Math.abs(_qb.dot(_qd)));
+      const ang = 2 * Math.acos(dot);
+      if (ang > WRIST_MAX) {
+        _qd.copy(_qb.slerp(_qd, WRIST_MAX / ang));
+      }
       this.setRig(l.end, null, _qd);
       this.curlFingers(hd);
     }
