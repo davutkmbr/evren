@@ -5,6 +5,7 @@ import { StreetSurface } from '../shared/street-surface';
 import { serveWorker } from '../shared/worker';
 import { rng32 } from './catalog';
 import { buildNetwork, laneDensity } from './network';
+import { BuildingObstacles } from './obstacles';
 import { parkKerbside, parkLots, ParkedBuffer } from './parking';
 import type { TrafficNet, TrafficRequest, TrafficResult } from './protocol';
 import { buildTracks, mapTramCrossings } from './rails';
@@ -13,7 +14,7 @@ serveWorker<TrafficRequest, TrafficResult>((req) => {
   const t0 = performance.now();
   const surface = new StreetSurface(req.base);
   const rng = rng32(req.seed);
-  const b = buildNetwork(req.data, surface, req.base.rect, req.decks);
+  const b = buildNetwork(req.data, surface, req.base.rect, req.decks, new BuildingObstacles(req.data.buildings));
   const t1 = performance.now();
   const tb = buildTracks(req.data, b.pool, req.base.rect, req.decks);
   const footprints = new FootprintIndex(req.data.buildings);

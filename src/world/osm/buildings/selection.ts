@@ -17,10 +17,7 @@
 import { ringTouchesLineBody, type LandmarkClaims } from '../../landmarks/claim-shapes';
 import { nearStructure, prismHitsStructure } from '../../landmarks/structure-volumes';
 
-/** building=* values that are not solid buildings. */
-export const NON_SOLID_KINDS: ReadonlySet<string> = new Set(['ruins', 'collapsed', 'bridge', 'construction', 'no']);
-/** building=* values drawn as canopies up close and left out from the air. */
-export const CANOPY_KINDS: ReadonlySet<string> = new Set(['roof', 'carport']);
+export { CANOPY_KINDS, NON_SOLID_KINDS } from './kinds';
 /** A building with more than this fraction of its outline vertices (and centroid) on a landmark pad is the landmark's. */
 export const PAD_COVER_MAX = 0.5;
 

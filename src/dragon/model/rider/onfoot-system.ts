@@ -58,7 +58,7 @@ export function createOnFootSystem(): System {
     dragon.riderless = true;
     ctx.events.emit('maneuver', { id: 'dismount', label: grounded ? 'Ejderhadan indin' : 'Eyerden atladın' });
     if (!grounded) {
-      ctx.events.emit('toast', { text: 'Rüzgâr kanatlarını açmak için [Space] basılı tut' });
+      ctx.events.emit('toast', { text: 'Havada [Space]: rüzgâr kanatlarını aç, süzül' });
     }
   }
 
@@ -137,7 +137,10 @@ export function createOnFootSystem(): System {
       input.run = inp.enabled && inp.isHeld('dive');
       input.crouch = inp.enabled && inp.isHeld('brake');
       input.jump = inp.enabled && inp.wasPressed('flap');
-      input.glide = inp.enabled && inp.isHeld('flap');
+      // In the air a press of Space opens the wings (the jump's own press does not: it is spent on the take-off).
+      input.glide = inp.enabled && inp.wasPressed('flap') && (walker.state === 'air' || walker.state === 'glide');
+      // Gliding: W / S pitch, A / D bank, Space flaps, Ctrl / X folds the wings.
+      input.flight = { pitch: f, roll: r, flap: input.jump, fold: input.crouch };
       walker.update(dt, input);
       // Walls: the body (a sphere at the waist) is pushed out of buildings sideways, and runs no further into them.
       const col = ctx.services.tryGet('collision');

@@ -165,13 +165,14 @@ function scripted(t: number, input: LocomotionInput): void {
       // Standing, turns to face left, then right.
       input.faceYaw = t < 1 ? 0 : t < 3 ? Math.PI / 2 : -Math.PI / 2;
       break;
-    case 'glide':
-      // Starts high (?alt=): falls a moment, spreads the wings, glides and turns left, lands.
+    case 'glide': {
+      // Starts high (?alt=): falls a moment, spreads the wings, dives, flaps twice, banks left, lands.
       input.glide = t > 0.4;
-      if (t > 2.5 && t < 5) {
-        input.move.set(-1, 0.3);
-      }
+      const dive = t > 1.6 && t < 2.6 ? 1 : 0;
+      const flap = (t > 3.0 && t < 3.0 + 1 / 60) || (t > 3.9 && t < 3.9 + 1 / 60);
+      input.flight = { pitch: dive, roll: t > 4.6 && t < 7 ? -1 : 0, flap, fold: false };
       break;
+    }
     case 'circle': {
       const a = t * 0.9;
       input.move.set(Math.sin(a), Math.cos(a));
@@ -279,7 +280,8 @@ const bench: System = {
           input.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
           input.crouch = keys.has('KeyC');
           input.jump = jumpQueued;
-          input.glide = keys.has('KeyG');
+          input.glide = keys.has('KeyG') || (jumpQueued && controller.state === 'air');
+          input.flight = { pitch: f, roll: r, flap: input.jump, fold: input.crouch };
           jumpQueued = false;
         }
         controller.update(h, input);

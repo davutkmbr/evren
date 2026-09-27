@@ -146,7 +146,7 @@ interface Run {
   towers: { t: WallTower; s: number; ring: V2[] }[];
 }
 
-const metaKey = (m: WallMeta): string => JSON.stringify([m.h ?? 0, m.thick ?? 0, m.ruined ?? 0, m.mat ?? '', m.era ?? '', m.castle ?? 0, m.src ?? '']);
+const metaKey = (m: WallMeta): string => JSON.stringify([m.h ?? 0, m.thick ?? 0, m.ruined ?? 0, m.mat ?? '', m.era ?? '', m.castle ?? 0, m.plain ?? 0, m.src ?? '']);
 
 /* ------------------------------------------------------------------ line preparation (step 2) */
 
@@ -752,7 +752,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
       height,
       thickness,
       batter: spec.batter,
-      merlonsKept: spec.merlonsKept,
+      merlonsKept: r.meta.plain ? 0 : spec.merlonsKept,
       style,
       weather: 0.75,
       merlons: r.cls === 'castle' || style === 'ashlar' ? { w: 1.1, gap: 0.8, h: 1.3, depth: 0.7, cap: 0.45 } : undefined,
@@ -993,7 +993,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
         }
         const ends = [at(r.pts, r.cum, A.b).p, at(r.pts, r.cum, B.a).p];
         const gated = data.gates.some((g) => ends.some((e) => Math.hypot(g.x - e[0], g.z - e[1]) < GATE_REACH)) || r.towers.some((t) => t.t.gate && ends.some((e) => Math.hypot(t.t.x - e[0], t.t.z - e[1]) < GATE_REACH));
-        if (!gated) {
+        if (!gated || r.meta.plain) {
           continue;
         }
         const tw = spec.tower;
@@ -1025,7 +1025,7 @@ export function planWalls(data: WallData, site: Site, fp: Footprints | null = nu
           }
         }
       }
-      if (spec.spacing > 0) {
+      if (spec.spacing > 0 && !r.meta.plain) {
         const sp = spec.spacing;
         for (const span of spans) {
           const off = hash(seed, Math.round(span.a)) * sp * 0.5;

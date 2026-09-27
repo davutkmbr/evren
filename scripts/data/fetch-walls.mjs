@@ -250,6 +250,8 @@ function lineMeta(t) {
   const y = year(t.start_date);
   if (y !== undefined) m.year = y;
   if (t.wall === 'castle_wall' || t.historic === 'castle_wall' || (t.barrier === 'wall' && !t.historic)) m.castle = 1;
+  // historic=wall: a historic wall, not a fortification (e.g. the Hippodrome's sphendone): no towers, no merlons.
+  if (t.historic === 'wall') m.plain = 1;
   if (t.name) m.name = t.name;
   return m;
 }

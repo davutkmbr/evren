@@ -135,5 +135,21 @@
   ],
   "motion": "fly:1.5",
   "frames": 48
+ },
+ "kadikoy-handover": {
+  "note": "flying east over the sea toward Kadıköy across the region takeover distance (1.2 km from the kadikoy-4 rect): far OSM layer -> region hand-over and fade",
+  "query": {
+   "t": "14"
+  },
+  "pose": [
+   -2110,
+   200,
+   5700,
+   90,
+   -8,
+   60
+  ],
+  "motion": "fly:8",
+  "frames": 60
  }
 }
