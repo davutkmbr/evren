@@ -10,7 +10,7 @@
  *   node scripts/heap-audit.mjs --snapshot .shots/heap/spawn/heap.heapsnapshot --name spawn-again  # re-analyse
  *
  * Options: --url, --name (default: the view param), --out <dir> (default .shots/heap/<name>/), --settle <ms>
- * (after ready + pending() === 0, default 25000), --timeout <ms> (ready wait, default 90000), --keep (keep the raw
+ * (after ready + pending() === 0, default 25000), --eval <js> (run once ready, before the settle), --timeout <ms> (ready wait, default 90000), --keep (keep the raw
  * .heapsnapshot, often > 1 GB), --top N (retained owners, default 40), --all-owners (also list pass-through owners).
  * Output: <out>/summary.json and a markdown report on stdout.
  *
@@ -94,6 +94,10 @@ async function capture(url, snapPath) {
         .catch(() => ({ ready: false, pending: -1 }));
       if (s.ready && s.pending === 0) break;
       await page.waitForTimeout(250);
+    }
+    // --eval <js>: run in the page once ready (e.g. move the camera: `__evren.shot(x, y, z, heading, pitch, fov)`).
+    if (opt('eval')) {
+      await page.evaluate(opt('eval'));
     }
     const settle = Number(opt('settle', 25000));
     log(`ready=${s.ready} pending=${s.pending} after ${Date.now() - t0} ms; settling ${settle} ms`);
