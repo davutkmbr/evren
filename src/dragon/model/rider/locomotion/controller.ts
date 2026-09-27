@@ -123,6 +123,8 @@ export class LocomotionController {
   private variantIndex = 0;
   /** Turning on the spot (rad/s, smoothed): drives stepping feet. */
   private spin = 0;
+  /** In the air after our own take-off (not a fall or a leap off the dragon): the take-off clip plays on. */
+  private launched = false;
 
   constructor(
     private readonly human: HumanRider,
@@ -252,9 +254,10 @@ export class LocomotionController {
         this.enter('takeoff');
       }
     }
-    if (this.state === 'takeoff' && this.stateTime >= CLIPS.jump_start.duration) {
+    if (this.state === 'takeoff' && this.stateTime >= (CLIPS.jump_start.takeoff ?? CLIPS.jump_start.duration)) {
       this.vy = LOCO.jumpSpeed;
       this.enter('air');
+      this.launched = true;
     }
     if (this.state === 'air' && input.glide && this.vy < 2 && this.human.wings.present) {
       this.enter('glide');
@@ -283,7 +286,9 @@ export class LocomotionController {
       }
     } else {
       pos.y = ground;
-      if (this.state === 'land' && this.stateTime >= CLIPS.jump_land.duration * (0.55 + 0.45 * this.landDepth)) {
+      const land = this.landClip();
+      const landLeft = CLIPS[land].duration - (CLIPS[land].contact ?? 0);
+      if (this.state === 'land' && this.stateTime >= landLeft * (0.55 + 0.45 * this.landDepth)) {
         this.enter('ground');
       }
     }
@@ -328,6 +333,9 @@ export class LocomotionController {
   }
 
   private enter(s: LocoState): void {
+    if (s === 'air' || s === 'glide') {
+      this.launched = false;
+    }
     this.state = s;
     this.stateTime = 0;
   }
@@ -383,10 +391,17 @@ export class LocomotionController {
         break;
       case 'air': {
         const fall = smoothstep(-this.vy, -1.5, 2.5);
-        t.set('jump_rise', 1 - fall);
+        const takeoff = CLIPS.jump_start.takeoff;
+        if (takeoff !== undefined && this.launched) {
+          // A captured jump: the take-off clip carries the rise past its take-off moment, the fall loop takes over.
+          t.set('jump_start', 1 - fall);
+          this.setTime('jump_start', takeoff + this.stateTime);
+        } else {
+          t.set('jump_rise', 1 - fall);
+          this.setTime('jump_rise', this.stateTime % CLIPS.jump_rise.duration);
+        }
         t.set('jump_fall', fall);
         gaitShare = 0;
-        this.setTime('jump_rise', this.stateTime % CLIPS.jump_rise.duration);
         this.setTime('jump_fall', this.stateTime % CLIPS.jump_fall.duration);
         break;
       }
@@ -394,10 +409,11 @@ export class LocomotionController {
         // Deep landings play the whole absorb; a running landing runs on after the first dip.
         const runOn = smoothstep(sp, 1.5, 4.0);
         const k = this.landDepth * (1 - 0.6 * runOn);
-        t.set('jump_land', k);
+        const land = this.landClip();
+        t.set(land, k);
         gaitShare = 1 - k;
         fast = true;
-        this.setTime('jump_land', this.stateTime);
+        this.setTime(land, (CLIPS[land].contact ?? 0) + this.stateTime);
         break;
       }
       default:
@@ -409,7 +425,7 @@ export class LocomotionController {
     if (!standing) {
       this.variant = null;
     } else if (!this.variant && this.still > this.nextVariant) {
-      const names = ['idle_look', 'idle_shoulders'].filter((n) => this.actions.has(n));
+      const names = ['idle_look', 'idle_warrior', 'idle_shoulders'].filter((n) => this.actions.has(n));
       if (names.length) {
         this.variant = names[this.variantIndex++ % names.length];
         this.variantTime = 0;
@@ -476,6 +492,11 @@ export class LocomotionController {
     }
     void ONE_SHOT;
     void AIR;
+  }
+
+  /** The landing clip: the hard one (when there is one) for a deep landing. */
+  private landClip(): string {
+    return this.landDepth > 0.75 && this.actions.has('jump_land_hard') ? 'jump_land_hard' : 'jump_land';
   }
 
   private setTime(name: string, time: number): void {
