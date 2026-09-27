@@ -1202,6 +1202,8 @@ export interface RemoteDragonService {
   readonly count: number;
   /** Rendered world position of each dragon (minimap, name tags). */
   forEach(fn: (id: string, position: THREE.Vector3, visible: boolean) => void): void;
+  /** One dragon's rendered position and compass heading (degrees), or null when unknown. */
+  pose(id: string): { x: number; y: number; z: number; headingDeg: number } | null;
 }
 
 /** A game server as listed by /api/servers. */
@@ -1214,6 +1216,15 @@ export interface GameServerInfo {
 }
 
 export type NetStatus = 'offline' | 'connecting' | 'online';
+
+/** Another player on the server, placed where their dragon is drawn now. */
+export interface NetPeer {
+  id: number;
+  name: string;
+  x: number;
+  z: number;
+  headingDeg: number;
+}
 
 /** Result of setting a nickname: `invalid` breaks the rules (2–16 letters, digits, space, _ . -), `taken` is in use. */
 export type NicknameResult = 'ok' | 'invalid' | 'taken' | 'error';
@@ -1257,6 +1268,8 @@ export interface NetService {
    */
   readonly lastError: string | null;
   listServers(): Promise<GameServerInfo[]>;
+  /** The other players with where their dragons are drawn now (the map); empty when offline. */
+  peers(): NetPeer[];
   /** Joins as the account's profile (AccountService); fails with lastError 'no-profile' without one. */
   join(server: GameServerInfo): void;
   leave(): void;

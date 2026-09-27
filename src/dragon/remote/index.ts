@@ -15,6 +15,7 @@ import { SnapshotBots } from './bots';
 
 const _eye = new THREE.Vector3();
 const _light = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
 
 export function createRemoteDragonSystem(): System {
   const dragons = new Map<string, RemoteDragon>();
@@ -49,6 +50,17 @@ export function createRemoteDragonSystem(): System {
       for (const [id, d] of dragons) {
         fn(id, d.object.position, d.object.visible);
       }
+    },
+    pose(id) {
+      const d = dragons.get(id);
+      if (!d || !d.buffer.size) {
+        return null;
+      }
+      const { x, y, z } = d.object.position;
+      // Compass heading of the body's forward (-Z) on the ground.
+      _fwd.set(0, 0, -1).applyQuaternion(d.object.quaternion);
+      const headingDeg = ((Math.atan2(_fwd.x, -_fwd.z) * 180) / Math.PI + 360) % 360;
+      return { x, y, z, headingDeg };
     },
   };
 
