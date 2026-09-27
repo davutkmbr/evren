@@ -22,6 +22,7 @@ import { createRiderMaterial, type RiderUniforms } from './materials/rider-mater
 import { RiderCharacter } from './rider/character';
 import { loadHumanRider, type HumanRider } from './rider/human';
 import { RiderRetarget } from './rider/retarget';
+import { DynamicReins } from './rider/reins';
 import type { RiderAppearance } from './rider/appearance';
 
 export interface RigBuildOptions {
@@ -81,6 +82,10 @@ function makeSkinned(geometry: THREE.BufferGeometry, material: THREE.Material, s
 /** The procedural dragon + rider: skinned meshes sharing one skeleton, animated procedurally from DragonPose. */
 const _airflowWorld = new THREE.Vector3();
 const _dragonHead = new THREE.Vector3();
+const _ga = new THREE.Vector3();
+const _gb = new THREE.Vector3();
+const _gc = new THREE.Vector3();
+const _gd = new THREE.Vector3();
 
 export class DragonRigImpl implements DragonRig {
   readonly root = new THREE.Group();
@@ -116,6 +121,8 @@ export class DragonRigImpl implements DragonRig {
   human?: HumanRider;
   /** Drives the human rider from the procedural rider bones. */
   riderRetarget?: RiderRetarget;
+  /** The reins' free spans, simulated (with the human rider). */
+  reins?: DynamicReins;
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
@@ -167,7 +174,7 @@ export class DragonRigImpl implements DragonRig {
     if (!opts.newRider && !opts.humanRider) {
       buildRider(riderBuilder, this.skel);
     }
-    buildTack(riderBuilder, body, this.skel);
+    const tack = buildTack(riderBuilder, body, this.skel, { dynamicReins: !!opts.humanRider });
     const riderMat = createRiderMaterial(RIDER_HIDE_POINT);
     this.riderMaterial = riderMat.material;
     this.riderDepthMaterial = riderMat.depthMaterial;
@@ -182,6 +189,9 @@ export class DragonRigImpl implements DragonRig {
     this.stats.bodyTriangles = bodyBuilder.triangleCount;
     this.stats.membraneTriangles = membraneBuilder.triangleCount;
 
+    if (tack.reins) {
+      this.reins = new DynamicReins(tack.reins, this.skel, this.root);
+    }
     if (opts.humanRider) {
       this.humanLoading = loadHumanRider(opts.humanRider, this.skel.bone('chest'), LANDMARKS.chest).then((h) => {
         console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes, ${h.wind.chains.length} wind chains`);
@@ -189,6 +199,26 @@ export class DragonRigImpl implements DragonRig {
         this.root.updateMatrixWorld(true);
         this.riderRetarget = new RiderRetarget(this.skel, h.bones, this.root, h.bindLocal);
         this.riderRetarget.setFirstPerson(this.firstPerson);
+        if (this.reins) {
+          const rt = this.riderRetarget;
+          const skel = this.skel;
+          const left: THREE.Vector3[] = [];
+          this.reins.fistPath = (side, out) => {
+            rt.fistPath(side, out);
+            if (side === 'R') {
+              // The right rein goes to the left fist while the right hand is busy (the rig moves its grip bone there).
+              skel.bone('riderReinR').getWorldPosition(_ga);
+              skel.bone('riderHandR').getWorldPosition(_gb);
+              skel.bone('riderHandL').getWorldPosition(_gc);
+              const busy = THREE.MathUtils.clamp(_ga.distanceTo(_gb) / Math.max(_gb.distanceTo(_gc), 1e-3), 0, 1);
+              if (busy > 1e-3) {
+                rt.fistPath('L', left);
+                out.forEach((p, i) => p.lerp(left[i].clone().add(_gd.set(0, 0.012, 0)), busy));
+              }
+            }
+            return out;
+          };
+        }
         return h;
       });
     }
@@ -298,8 +328,11 @@ export class DragonRigImpl implements DragonRig {
     }
     this.riderUniforms.uAirspeed.value = o.airspeed;
     this.riderUniforms.uAirflow.value.copy(o.airflow);
-    if (this.human) {
+    if (!this.human) {
+      this.reins?.update(dt);
+    } else {
       this.riderRetarget?.update();
+      this.reins?.update(dt);
       // Face: laughs with the dragon, shouts with the roar, set jaw in a tuck, a soft smile while petting; meets the
       // dragon's eyes when it looks back.
       const pose = this.pose;
@@ -353,6 +386,7 @@ export class DragonRigImpl implements DragonRig {
     this.membraneDepthMaterial.dispose();
     this.riderMaterial.dispose();
     this.character?.dispose();
+    this.reins?.dispose();
     this.riderDepthMaterial.dispose();
     for (const rt of [...this.scaleTex.targets, ...this.membraneTex.targets]) {
       rt.dispose();
