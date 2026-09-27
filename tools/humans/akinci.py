@@ -24,7 +24,8 @@ COL = {
     "metal": (0.75, 0.55, 0.25),
     "fur": (0.2, 0.14, 0.09),
     "feather": (0.8, 0.76, 0.66),
-    "wing": (0.78, 0.7, 0.55),
+    "wing": (0.74, 0.66, 0.5),
+    "wood": (0.3, 0.17, 0.08),
 }
 
 
@@ -507,7 +508,7 @@ def build(rig, body, colliders):
         parts.append(pp)
         weights[pp] = aventail_weights
 
-    # Hezarfen's wind wings, stowed in their case on the back (wings.py).
+    # Hezarfen's wind wings, folded on the back (wings.py).
     import wings
     wparts, wweights = wings.build(rig, j, COL)
     parts += wparts
