@@ -20,6 +20,7 @@ import { Dolphins } from './dolphins/dolphins';
 
 const TRAFFIC_DENSITY: Record<string, number> = { low: 0.35, medium: 0.6, high: 1.0, ultra: 1.25 };
 import { buildStraitLanes, placeBerths, type Berth, type StraitLanes } from './vessels/routes';
+import { exposeDebug } from '../../core/dev-tools';
 
 /** Debug handle: window.__life */
 export interface LifeDebug {
@@ -99,7 +100,7 @@ export class LifeSystem implements System {
     } finally {
       this.jobs--;
     }
-    (window as unknown as { __life: LifeDebug }).__life = { system: this };
+    exposeDebug('__life', { system: this });
   }
 
   private rebuildTraffic(s: QualitySettings): void {

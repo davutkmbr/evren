@@ -26,6 +26,7 @@ import { clearEscortRecords, ESCORT_ROUTES, escortedRouteCount, loadEscortRecord
 import { escortShortcut } from './shortcut';
 import { ESCORT_TEXT, formatEscortDuration } from './text';
 import { EscortView } from './view';
+import { exposeDebug } from '../../core/dev-tools';
 
 /** Flight modes without an escort offer (on the ground or in the water). */
 const GROUND_MODES: ReadonlySet<DragonState['mode']> = new Set(['grounded', 'landing', 'swimming']);
@@ -244,7 +245,7 @@ export function createEscortSystem(): System {
       routes: () => ESCORT_ROUTES.slice(),
       clearRecords: (): void => clearEscortRecords(),
     };
-    (window as unknown as { __evrenEscort?: typeof hook }).__evrenEscort = hook;
+    exposeDebug('__evrenEscort', hook);
     disposers.push(() => {
       const w = window as unknown as { __evrenEscort?: typeof hook };
       if (w.__evrenEscort === hook) {

@@ -21,6 +21,7 @@ import { FlightSim } from './sim';
 import { createTestControl, installFlightTestHook } from './test-hook';
 import type { PilotCommand, SimEvent } from './types';
 import { clearOverrides, clearPilotEdges, copyPilotCommand, createPilotCommand, latchPilotEdges, PILOT_EDGES } from './types';
+import { DEV_TOOLS } from '../../core/dev-tools';
 
 /** Burst spray over water: below this foot clearance (m), every `spacing` m, splash strength at full push and feel. */
 const BURST_SPRAY = { height: 9, spacing: 5, strength: 0.22, wakeBack: 9 } as const;
@@ -378,7 +379,7 @@ export function createFlightSystem(): System {
         removeFlowDebug = mountFlowDebug(sim.flow);
       }
       // Test/diagnostics hook: dev server, sandboxes and ?flighttest=1 only.
-      if (!import.meta.env.DEV && !ctx.sandbox && !ctx.debug.params.has('flighttest')) {
+      if (!DEV_TOOLS || (!import.meta.env.DEV && !ctx.sandbox && !ctx.debug.params.has('flighttest'))) {
         return;
       }
       // window.__evren.hardLanding(variant?, speed?, sink?): the same trigger as __flightTest.hardLanding.

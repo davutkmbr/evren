@@ -41,6 +41,7 @@ import './styles/menu.css';
 
 const NO_MOVES: readonly string[] = [];
 import './styles/overlays.css';
+import { exposeDebug } from '../core/dev-tools';
 
 type Modal = 'none' | 'pause' | 'map' | 'source';
 export type UiDebugTarget = MenuTab | 'pause' | 'map' | 'help' | 'photo';
@@ -676,6 +677,6 @@ export class UiSystem implements System {
         mapRaster: this.raster.image ? `${this.raster.image.width}x${this.raster.image.height}` : this.raster.pending ? 'building' : 'none',
       }),
     };
-    (window as unknown as { __evrenUi: typeof hook }).__evrenUi = hook;
+    exposeDebug('__evrenUi', hook);
   }
 }
