@@ -4,7 +4,8 @@
  *   ?clip=<name> plays one clip in a loop (&rate=1), &t=<s> holds it at that time
  *   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
  *   Without ?clip: the locomotion controller (keyboard: WASD relative to the camera, Shift run, C crouch, Space jump;
- *   drag to orbit, wheel to zoom), or a scripted input ?script=walk|run|runstop|jump|runjump|crouch|circle with
+ *   G held in the air: glide; drag to orbit, wheel to zoom), or a scripted input
+ *   ?script=walk|run|runstop|jump|runjump|crouch|circle|glide (glide: with ?alt=m) with
  *   &at=<s> to hold the simulation at that time (deterministic screenshots of transitions).
  * window.__human = { model, controller }.
  */
@@ -146,6 +147,13 @@ function scripted(t: number, input: LocomotionInput): void {
         fwd(1);
       }
       break;
+    case 'glide':
+      // Starts high (?alt=): falls a moment, spreads the wings, glides and turns left, lands.
+      input.glide = t > 0.4;
+      if (t > 2.5 && t < 5) {
+        input.move.set(-1, 0.3);
+      }
+      break;
     case 'circle': {
       const a = t * 0.9;
       input.move.set(Math.sin(a), Math.cos(a));
@@ -210,6 +218,10 @@ const bench: System = {
       if (play) {
         controller = new LocomotionController(m, holder);
         controller.layers = params.get('layers') !== '0';
+        if (params.has('alt')) {
+          holder.position.y = Number(params.get('alt'));
+          controller.state = 'air';
+        }
       }
       m.mixer.update(0);
       m.wind.captureRest();
@@ -243,6 +255,7 @@ const bench: System = {
           input.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
           input.crouch = keys.has('KeyC');
           input.jump = jumpQueued;
+          input.glide = keys.has('KeyG');
           jumpQueued = false;
         }
         controller.update(h, input);

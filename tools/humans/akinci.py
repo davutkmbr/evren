@@ -24,6 +24,7 @@ COL = {
     "metal": (0.75, 0.55, 0.25),
     "fur": (0.2, 0.14, 0.09),
     "feather": (0.8, 0.76, 0.66),
+    "wing": (0.78, 0.7, 0.55),
 }
 
 
@@ -506,6 +507,11 @@ def build(rig, body, colliders):
         parts.append(pp)
         weights[pp] = aventail_weights
 
+    # Hezarfen's wind wings, stowed in their case on the back (wings.py).
+    import wings
+    wparts, wweights = wings.build(rig, j, COL)
+    parts += wparts
+    weights.update(wweights)
     head_parts = [o for o in parts if o.name.startswith(("helmet", "sorguc")) and o not in weights]
     for o in head_parts:
         weights[o] = lambda co: {"Head": 1.0}

@@ -23,9 +23,11 @@ export interface LocomotionInput {
   crouch: boolean;
   /** Pressed this frame. */
   jump: boolean;
+  /** Held: spread the wings and glide (in the air). */
+  glide?: boolean;
 }
 
-export type LocoState = 'ground' | 'stop' | 'takeoff' | 'air' | 'land';
+export type LocoState = 'ground' | 'stop' | 'takeoff' | 'air' | 'glide' | 'land';
 
 /** Tunables (SI units). */
 export const LOCO = {
@@ -53,6 +55,14 @@ export const LOCO = {
   leanAccel: 0.022,
   leanTurn: 0.045,
   leanMax: 0.32,
+  /** Gliding: airspeed it settles at (m/s), sink rate (m/s), turn rate (rad/s), body pitch into the flight line (rad),
+   * bank per rad/s of turning, how fast the wings unfurl (spring Hz). */
+  glideSpeed: 12,
+  glideSink: 1.7,
+  glideTurn: 1.1,
+  glidePitch: 1.2,
+  glideBank: 0.45,
+  wingHz: 2.6,
 };
 
 const GAIT = ['idle', 'walk', 'run', 'crouch_idle', 'crouch_walk'] as const;
@@ -95,6 +105,11 @@ export class LocomotionController {
   /** The layered bones' rotations as the clips left them: restored before each mixer update (the mixer only writes
    * values that changed, so a layer would otherwise compound). */
   private readonly layered: [THREE.Bone, THREE.Quaternion][] = [];
+  /** Glide: body pitch and bank (rad), wing spread spring (value, velocity). */
+  private pitch = 0;
+  private bank = 0;
+  private wing = 0;
+  private wingVel = 0;
 
   constructor(
     private readonly human: HumanRider,
@@ -139,7 +154,7 @@ export class LocomotionController {
   update(dt: number, input: LocomotionInput): void {
     dt = Math.min(dt, 1 / 20);
     this.stateTime += dt;
-    const grounded = this.state !== 'air' && this.state !== 'takeoff';
+    const grounded = this.state !== 'air' && this.state !== 'takeoff' && this.state !== 'glide';
     // --- crouch ---
     const wantCrouch = input.crouch && grounded && !input.run ? 1 : 0;
     this.crouch += clamp(wantCrouch - this.crouch, -dt / LOCO.crouchTime, dt / LOCO.crouchTime);
@@ -160,6 +175,12 @@ export class LocomotionController {
       if (this.stateTime >= CLIPS.run_stop.duration * 0.8 || m > 0.2) {
         this.enter('ground');
       }
+    } else if (this.state === 'glide') {
+      // Gliding: the wings carry the body forward along its heading at the glide speed; the stick turns it.
+      const fwdX = Math.sin(this.yaw);
+      const fwdZ = Math.cos(this.yaw);
+      _want.set(fwdX, fwdZ).multiplyScalar(LOCO.glideSpeed);
+      this.approach(_want, 4, dt);
     } else if (this.state === 'land' || this.state === 'takeoff') {
       // Planted: little steering, the landing absorbs.
       this.approach(_want, (this.state === 'land' ? 0.5 : 0.2) * LOCO.decel, dt);
@@ -174,7 +195,16 @@ export class LocomotionController {
     }
     // --- facing: turn toward the travel ---
     const sp = this.speed;
-    if (sp > 0.15 && this.state !== 'stop') {
+    if (this.state === 'glide') {
+      let turn = 0;
+      if (m > 0.1) {
+        let d = Math.atan2(input.move.x, input.move.y) - this.yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        turn = clamp(d * 2, -1, 1) * LOCO.glideTurn;
+      }
+      this.yaw += turn * dt;
+      this.bank += (clamp(-turn * LOCO.glideBank, -0.7, 0.7) - this.bank) * (1 - Math.exp(-3 * dt));
+    } else if (sp > 0.15 && this.state !== 'stop') {
       const want = Math.atan2(this.velocity.x, this.velocity.y);
       let d = want - this.yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -193,7 +223,22 @@ export class LocomotionController {
       this.vy = LOCO.jumpSpeed;
       this.enter('air');
     }
-    if (this.state === 'air') {
+    if (this.state === 'air' && input.glide && this.vy < 2 && this.human.wings.present) {
+      this.enter('glide');
+    } else if (this.state === 'glide' && !input.glide) {
+      this.enter('air');
+    }
+    if (this.state === 'glide') {
+      // Lift holds the sink near the glide rate (a stall's worth of drop first if it was falling fast).
+      this.vy += (-LOCO.glideSink - this.vy) * (1 - Math.exp(-2.2 * dt));
+      pos.y += this.vy * dt;
+      if (pos.y <= ground) {
+        pos.y = ground;
+        this.landDepth = clamp((-this.vy - 1.0) / 4 + 0.35, 0.3, 1);
+        this.vy = 0;
+        this.enter('land');
+      }
+    } else if (this.state === 'air') {
       this.vy -= LOCO.gravity * dt;
       pos.y += this.vy * dt;
       if (pos.y <= ground && this.vy < 0) {
@@ -211,7 +256,19 @@ export class LocomotionController {
     }
     pos.x += this.velocity.x * dt;
     pos.z += this.velocity.y * dt;
-    this.object.rotation.y = this.yaw;
+    // Body pitched into the flight line and banked while gliding, upright otherwise (fast on landing).
+    const gl = this.state === 'glide';
+    const pk = 1 - Math.exp(-(gl ? 2.5 : this.state === 'land' ? 14 : 5) * dt);
+    this.pitch += ((gl ? LOCO.glidePitch : 0) - this.pitch) * pk;
+    if (!gl) {
+      this.bank += (0 - this.bank) * pk;
+    }
+    this.object.rotation.set(this.pitch, this.yaw, this.bank, 'YXZ');
+    // Wings: a spring toward spread (gliding) or stowed; overshoots a little as they snap open.
+    const w0 = 2 * Math.PI * LOCO.wingHz;
+    const wantWing = gl ? 1 : 0;
+    this.wingVel += ((wantWing - this.wing) * w0 * w0 - 2 * 0.45 * w0 * this.wingVel) * dt;
+    this.wing = clamp(this.wing + this.wingVel * dt, 0, 1.12);
     this.animate(dt, sp);
     this.prevVel.copy(this.velocity);
     this.prevYaw = this.yaw;
@@ -267,6 +324,11 @@ export class LocomotionController {
         fast = true;
         this.setTime('jump_start', this.stateTime);
         break;
+      case 'glide':
+        t.set('glide', 1);
+        gaitShare = 0;
+        this.setTime('glide', this.stateTime % CLIPS.glide.duration);
+        break;
       case 'air': {
         const fall = smoothstep(-this.vy, -1.5, 2.5);
         t.set('jump_rise', 1 - fall);
@@ -317,6 +379,8 @@ export class LocomotionController {
       bone.quaternion.copy(q);
     }
     this.human.mixer.update(0);
+    // After the mixer (the clips key every bone's scale at 1).
+    this.human.wings.set(this.wing);
     for (const [bone, q] of this.layered) {
       q.copy(bone.quaternion);
     }
