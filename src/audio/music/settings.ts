@@ -38,8 +38,9 @@ export function saveAdaptiveMusic(on: boolean): void {
 }
 
 /**
- * "Müzik tarzı": `sparse` ("Seyrek") = mostly silence with a short phrase now and then (sprinkle mode, ./sprinkle.ts);
- * `continuous` ("Sürekli") = the looping stem sets. Unset = automatic: sparse when the manifest has sprinkle phrases,
+ * "Müzik tarzı": `sparse` ("Seyrek") = mostly silence with a phrase or a historic record now and then (sprinkle mode,
+ * ./sprinkle.ts); `continuous` ("Sürekli") = the looping stem sets, or, while none is approved, the same pool one piece
+ * after another. Unset = automatic: sparse when the free-flight pool (sprinkle phrases and moment pieces) is not empty,
  * continuous otherwise.
  */
 export type MusicStyle = 'sparse' | 'continuous';
@@ -55,7 +56,7 @@ export function saveMusicStyle(style: MusicStyle): void {
   write(STYLE_KEY, style);
 }
 
-/** The style in effect: the stored choice, else sparse when sprinkle phrases exist. */
+/** The style in effect: the stored choice, else sparse when the free-flight pool has pieces. */
 export function effectiveMusicStyle(stored: MusicStyle | null, hasPhrases: boolean): MusicStyle {
   return stored ?? (hasPhrases ? 'sparse' : 'continuous');
 }
