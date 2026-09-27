@@ -14,6 +14,29 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 export const PLINTH_H = 2.6;
 export const FIGURE_SCALE = 3.6;
 export const STATUE_HEIGHT = PLINTH_H + FIGURE_SCALE * 1.9;
+/** Half the plinth's footprint (m) and the depth of its buried foundation (m). */
+export const PLINTH_HALF = 2.1;
+export const FOUNDATION_DEPTH = 2.5;
+
+/**
+ * Where the plinth sits on sloping ground (pure): the lowest terrain under its footprint (centre, corners, edge
+ * midpoints), so no corner hangs in the air; the uphill side buries its lower steps. `spread` is the rise across the
+ * footprint (the foundation hides up to FOUNDATION_DEPTH below the base).
+ */
+export function plinthBase(heightAt: (x: number, z: number) => number, x: number, z: number, half = PLINTH_HALF): { y: number; spread: number } {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const i of [-1, 0, 1]) {
+    for (const j of [-1, 0, 1]) {
+      const h = heightAt(x + i * half, z + j * half);
+      if (Number.isFinite(h)) {
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+    }
+  }
+  return Number.isFinite(lo) ? { y: lo, spread: hi - lo } : { y: 0, spread: 0 };
+}
 
 const BRONZE = new THREE.Color('#5d8a78');
 const BRONZE_DARK = new THREE.Color('#3b5c50');
@@ -28,6 +51,8 @@ export interface KnightStatue {
   spearArm: THREE.Group;
   /** Left shoulder pivot (shield arm): rotation.z > 0 opens it outward in the shrug. */
   shieldArm: THREE.Group;
+  /** The figure on the plinth: rotation.y turns it toward the challenger (the plinth stays). */
+  figure: THREE.Group;
   /** Shoulders: position.y raises them in the shrug. */
   shoulders: THREE.Group;
   head: THREE.Group;
@@ -72,9 +97,10 @@ const cyl = (rt: number, rb: number, h: number, seg = 12): THREE.BufferGeometry 
 const box = (w: number, h: number, d: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d);
 const ball = (r: number, w = 12, h = 8): THREE.BufferGeometry => new THREE.SphereGeometry(r, w, h);
 
-/** The plinth: a stepped base, the shaft and a cornice (world metres). */
+/** The plinth: a buried foundation, a stepped base, the shaft and a cornice (world metres). */
 function plinthGeometry(): THREE.BufferGeometry {
   return merged([
+    part(box(4.2, FOUNDATION_DEPTH, 4.2), STONE_DARK, [0, -FOUNDATION_DEPTH / 2, 0]),
     part(box(4.2, 0.45, 4.2), STONE_DARK, [0, 0.225, 0]),
     part(box(3.5, 0.35, 3.5), STONE, [0, 0.625, 0]),
     part(box(2.9, 1.35, 2.9), STONE, [0, 1.475, 0]),
@@ -187,6 +213,7 @@ export function buildKnightStatue(): KnightStatue {
   const materials = [bronze, stone];
   return {
     root,
+    figure,
     spearArm,
     shieldArm,
     shoulders,
