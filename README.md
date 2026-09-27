@@ -6,8 +6,7 @@
 A realistic, open-world flight game in the browser: ride the flying creatures of Turkic myth over a real, living
 Istanbul. Every building, cloud, wave, sound and even the dragon itself is generated in code at runtime.
 
-[**▶ Play the live demo**](https://davutkmbr.github.io/evren/) ·
-[seventeenskies.com](https://seventeenskies.com) ·
+[**▶ Play at seventeenskies.com**](https://seventeenskies.com) ·
 [Roadmap](.docs/planning/README.md) ·
 [Architecture](#architecture) ·
 [Run locally](#getting-started)
