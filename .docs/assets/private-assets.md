@@ -89,7 +89,8 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
 
   Turning clips have their heading change taken out and recorded (`turn`, `turn_curve` in clips.json; the controller
   turns the body by it); take-off clips lose their own rise in the air (the jump physics carries the body) and record
-  their flight time (`air`), which the controller stretches over the physical one.
+  their flight time (`air`), which the controller stretches over the physical one. A clip that starts facing well off
+  to the side (the roll) is turned to face ahead, and the roll skips its lead-in steps (`start`).
 
 ## US-risky moment pieces (full attribution)
 

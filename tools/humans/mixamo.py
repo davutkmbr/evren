@@ -89,6 +89,13 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
         samples.append((rots, hp))
     # Turning clips: the body's heading change (the hips' yaw) is taken out, so the clip plays facing ahead and the game
     # turns the character by the recorded curve; the hips' travel is then measured in the body's own frame.
+    # A clip that starts facing off to the side (some Mixamo clips do) is turned to face ahead.
+    y0 = _yaw(samples[0][0]["Hips"]) if "Hips" in samples[0][0] else 0.0
+    if abs(y0) > 1.2:
+        q0 = Matrix.Rotation(-y0, 3, "Z")
+        p0 = samples[0][1]
+        samples = [({n: q0 @ r for n, r in rots.items()}, p0 + q0 @ (hp - p0)) for rots, hp in samples]
+        print("MIXAMO", name, "faces ahead (turned by", round(-y0, 3), "rad)")
     turn_curve = None
     if name.startswith(TURNING):
         samples, turn_curve = _unturn(samples)
@@ -112,6 +119,11 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
     if name.startswith("jump_land"):
         dv = [vz[i + 1] - vz[i] for i in range(len(vz) - 1)] or [0.0]
         events["contact"] = max(range(len(dv)), key=lambda i: dv[i]) / fps
+    if name == "run_roll":
+        # The roll proper starts where the hips drop (the clip leads in with steps): a little before they are down.
+        low = min(hz)
+        i = next((i for i, h in enumerate(hz) if h < hz[0] + 0.35 * (low - hz[0])), 0)
+        events["start"] = max(0.0, i / fps - 0.2)
     if "takeoff" in events:
         # In the air the game's jump physics carries the body: the hips' own rise and fall from take-off until they are
         # back at take-off height is taken out, and that flight time is kept (the game plays it over its own).

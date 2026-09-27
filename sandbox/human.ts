@@ -276,6 +276,10 @@ const bench: System = {
         if (params.has('alt')) {
           holder.position.y = Number(params.get('alt'));
           controller.state = 'air';
+          if (script === 'drop' && params.get('move') === '1') {
+            // Off a height at a run: comes down into a roll.
+            controller.launch(new THREE.Vector3(0, 0, 5.5));
+          }
         }
       }
       m.mixer.update(0);

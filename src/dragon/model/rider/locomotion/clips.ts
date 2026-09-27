@@ -10,6 +10,8 @@ export interface ClipInfo {
   takeoff?: number;
   /** Captured landings: when the feet meet the ground (s). */
   contact?: number;
+  /** Where a one-shot starts playing (s; the lead-in before it is skipped). */
+  start?: number;
   /** Captured jumps: the flight time after take-off (s; the game stretches it over its own). */
   air?: number;
   /** Captured turns: the heading change (rad, + = to the left) and its curve over the clip (24 even steps). */
