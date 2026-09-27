@@ -107,7 +107,7 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
     hz = [s[1].z * k for s in samples]
     vz = [(hz[i + 1] - hz[i]) * fps for i in range(len(hz) - 1)] or [0.0]
     events = {}
-    if name in ("jump_start", "run_jump", "run_flip", "run_flip_2"):
+    if name in ("jump_start", "run_jump", "run_flip"):
         events["takeoff"] = max(range(len(vz)), key=lambda i: vz[i]) / fps
     if name.startswith("jump_land"):
         dv = [vz[i + 1] - vz[i] for i in range(len(vz) - 1)] or [0.0]

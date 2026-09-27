@@ -42,7 +42,7 @@ CLIPS = {
     "fall_flail": (True, False),
     "jump_land_heavy": (False, False),
     "run_flip": (False, True),
-    "run_flip_2": (False, True),
+    "run_roll": (False, True),
     "run_slide": (False, True),
     "turn_left_wary": (False, False),
     "turn_right_wary": (False, False),

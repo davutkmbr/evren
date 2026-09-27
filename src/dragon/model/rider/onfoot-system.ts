@@ -137,6 +137,8 @@ export function createOnFootSystem(): System {
       input.run = inp.enabled && inp.isHeld('dive');
       input.crouch = inp.enabled && inp.isHeld('brake');
       input.jump = inp.enabled && inp.wasPressed('flap');
+      // F (the dragon's fire key) running: a forward flip.
+      input.trick = inp.enabled && inp.wasPressed('fire');
       // In the air a press of Space opens the wings (the jump's own press does not: it is spent on the take-off).
       input.glide = inp.enabled && inp.wasPressed('flap') && (walker.state === 'air' || walker.state === 'glide');
       // Gliding: W / S pitch, A / D bank, Space flaps, Ctrl / X folds the wings.
