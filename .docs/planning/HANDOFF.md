@@ -129,8 +129,8 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 7. **Local runs owed by PR #62 (done 2026-09-27):** `npm run compile:walls` on current main: tiles unchanged against
    the bake in the main checkout (breach-flank towers 4, overlap / road checks 0); the wall-tower perch candidates
    (`walls/data/towers.json`) re-baked and committed (90 of 312 changed). Swimming pools: already in the region data
-   since 827c128 (677 pool areas); a fresh re-fetch changes only metadata. Open question for the owner: the
-   Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
+   since 827c128 (677 pool areas); a fresh re-fetch changes only metadata. The Hippodrome sphendone (OSM 321386212,
+   barrier=city_wall + historic=wall) now draws as a plain wall: historic=wall lines get no towers or merlons.
 8. **Shot locally (2026-09-27):**
    - Perch audit (`node scripts/perch-audit.mjs --page <worktree shim>`, `.shots/perches/audit/2026-09-27/`): 9
      perches x 3 cameras at 16:00; one failure: `camlica-camii-kubbe` rider, 20 % of the view within 60 m blocked by
@@ -138,7 +138,8 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    - OSM feature kits (`.shots/osm-kits/2026-09-27/sheet.jpg`, 300 / 80 / 25 m): stadium pitch, fuel canopy,
      playground equipment, motorway verge and shop signs read well. Karacaahmet drew as bare ground: fixed (the far
      bake kept one ring per multipolygon; headstone / stall budgets now spread evenly; `.shots/osm-kits/cemetery/`).
-     Open: Salı Pazarı lies outside every region, and the far layer has no market kit (an open lot from afar).
+     Salı Pazarı (outside every region): marketplaces are now open paved ground in the far land use; stalls only in
+     regions.
    - Regions performance near Kadıköy (150 m, `dynres=0`, headless M-series): regions on 33 fps (p95 50 ms), heap
      2.09 GB, 19.3 M triangles, 593 draws; `osmregions=0` 60 fps, 1.09 GB, 7.3 M, 363. Regions still cost ~1 GB and
      ~12 M triangles there (item 3). Region takeover flight (`flicker-audit --scene kadikoy-handover --animate
