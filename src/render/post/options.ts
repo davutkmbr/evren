@@ -14,6 +14,8 @@ export interface PostOverrides {
   antialias: AntialiasMode | null;
   /** ?msaa=0|2|4 */
   msaa: number | null;
+  /** ?taa=0|1 temporal antialiasing (phase 25; stage 1 is opt-in). */
+  taa: boolean | null;
   /** ?scale=0.5..1 pins the render scale (disables dynamic resolution). */
   fixedScale: number | null;
   /** ?dynres=0 disables dynamic resolution (renders at maxRenderScale). */
@@ -52,6 +54,7 @@ export function parsePostOverrides(params: URLSearchParams): PostOverrides {
     toneMapper: tm === 'aces' || tm === 'neutral' ? tm : 'agx',
     antialias: aa === 'none' || aa === 'fxaa' || aa === 'smaa' ? aa : null,
     msaa: num(params, 'msaa'),
+    taa: params.has('taa') ? params.get('taa') !== '0' : null,
     fixedScale: num(params, 'scale'),
     dynamicResolution: params.get('dynres') !== '0',
     bloom: bloom === null ? null : bloom !== '0',
@@ -67,6 +70,8 @@ export function parsePostOverrides(params: URLSearchParams): PostOverrides {
 /** Effective settings resolved from the quality preset + overrides. */
 export interface ResolvedPostSettings {
   antialias: AntialiasMode;
+  /** Temporal antialiasing: replaces MSAA and the spatial AA pass. */
+  taa: boolean;
   msaaSamples: number;
   bloom: boolean;
   minScale: number;
@@ -80,9 +85,13 @@ export function resolvePostSettings(q: QualitySettings, o: PostOverrides, maxSam
   // M2 Max at 1600x900: 2x is nearly free, 4x adds ~1.2-1.7 ms and ~70 MB to the scene pass, so only ultra uses 4x
   // (high = 2x MSAA + SMAA).
   const presetMsaa = q.preset === 'ultra' ? 4 : q.preset === 'high' || q.preset === 'medium' ? 2 : 0;
-  const msaa = Math.max(0, Math.min(maxSamples, Math.round(o.msaa ?? presetMsaa)));
+  // TAA (opt-in until its later stages): the resolve needs the jittered per-pixel samples, so no MSAA and no spatial AA
+  // pass (?msaa= / ?aa= still override for comparisons).
+  const taa = o.taa ?? false;
+  const msaa = Math.max(0, Math.min(maxSamples, Math.round(o.msaa ?? (taa ? 0 : presetMsaa))));
   return {
-    antialias: o.antialias ?? q.antialias,
+    antialias: o.antialias ?? (taa ? 'none' : q.antialias),
+    taa,
     msaaSamples: msaa >= 2 ? msaa : 0,
     bloom: o.bloom ?? q.bloom,
     minScale: q.minRenderScale,

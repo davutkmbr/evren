@@ -13,6 +13,7 @@ import { SunFlare } from './lens-flare';
 import { parsePostOverrides, resolvePostSettings, type AntialiasMode, type PostDebugView, type PostOverrides, type ResolvedPostSettings } from './options';
 import { OutputPass } from './output-pass';
 import { createColorTarget, createSceneTarget } from './targets';
+import { TemporalAA } from './taa';
 
 /** Bloom mip used as the exposure meter source (1/8 internal resolution, already box-filtered). */
 const METER_MIP = 2;
@@ -23,6 +24,8 @@ const GPU_WINDOW = 40;
 const STALE_FRAME_MS = 250;
 /** Metered share of exactly black HDR texels that counts as a black frame (diagnostics only). */
 const BLACK_FRAME_FRACTION = 0.97;
+/** HDR passes up to this order (the clouds, 100) run before the TAA resolve; later ones (weather 110, particles 150) after. */
+const TAA_ORDER = 105;
 /** Minimum wall time between two warnings of the same kind (black frame, invalid camera), ms. */
 const WARN_INTERVAL_MS = 5000;
 
@@ -85,6 +88,8 @@ export class PostPipeline implements RenderPipeline {
   };
   private readonly timer: GpuTimer;
   private antialias: AntialiasPass | null = null;
+  /** Temporal antialiasing (phase 25), null while off. */
+  private taa: TemporalAA | null = null;
   private antialiasMode: AntialiasMode = 'none';
 
   private readonly composite: CompositePass;
@@ -170,6 +175,7 @@ export class PostPipeline implements RenderPipeline {
     };
 
     this.setAntialias(this.settings.antialias);
+    this.setTaa(this.settings.taa);
     this.warmUpPrograms();
 
     this.unsubscribers.push(
@@ -177,6 +183,8 @@ export class PostPipeline implements RenderPipeline {
         const next = resolvePostSettings(q, this.overrides, maxSamples);
         this.settings = next;
         this.setAntialias(next.antialias);
+        this.setTaa(next.taa);
+        this.taa?.reset();
         if (next.msaaSamples !== this.msaaSamples) {
           this.msaaSamples = next.msaaSamples;
           this.rebuildSceneTarget();
@@ -186,6 +194,7 @@ export class PostPipeline implements RenderPipeline {
       }),
       ctx.events.on('teleport', () => {
         this.exposureCtl.snap();
+        this.taa?.reset();
         this.lastTeleportFrame = ctx.time.frame;
       }),
       ctx.events.on('time-of-day', ({ hours }) => {
@@ -291,7 +300,12 @@ export class PostPipeline implements RenderPipeline {
     if (this.profileMode === 'scene') {
       this.timer.begin();
     }
-    renderer.render(ctx.scene, camera);
+    this.taa?.jitter(camera, ctx.time.frame, this.internalWidth, this.internalHeight);
+    try {
+      renderer.render(ctx.scene, camera);
+    } finally {
+      this.taa?.unjitter(camera);
+    }
     if (this.profileMode === 'scene') {
       this.timer.end();
     }
@@ -452,9 +466,17 @@ export class PostPipeline implements RenderPipeline {
   private runHdrPasses(ctx: EngineContext, depth: THREE.DepthTexture): THREE.Texture {
     let src: THREE.Texture = this.sceneTarget.texture;
     let out = this.pingA;
-    for (let i = 0; i < this.passes.length; i++) {
+    let resolved = !this.taa;
+    for (let i = 0; i <= this.passes.length; i++) {
       const pass = this.passes[i];
-      if (!pass.enabled) {
+      // TAA runs after the passes that composite over the scene by its depth into the image itself (the clouds: their
+      // mask along the skyline follows the jittered depth, and would flicker over a resolved image), before the ones
+      // that must not leave trails (rain, particles, race rings).
+      if (!resolved && (!pass || pass.order > TAA_ORDER)) {
+        resolved = true;
+        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight);
+      }
+      if (!pass || !pass.enabled) {
         continue;
       }
       this.hdrInputs.color = src;
@@ -529,6 +551,14 @@ export class PostPipeline implements RenderPipeline {
     this.antialias?.warmUp(this.renderer, this.fs, this.ldrA, this.ldrB);
   }
 
+  private setTaa(on: boolean): void {
+    if (on === !!this.taa) {
+      return;
+    }
+    this.taa?.dispose();
+    this.taa = on ? new TemporalAA() : null;
+  }
+
   private rebuildSceneTarget(): void {
     this.sceneTarget.dispose();
     this.sceneTarget = createSceneTarget(this.internalWidth, this.internalHeight, this.msaaSamples);
@@ -573,6 +603,7 @@ export class PostPipeline implements RenderPipeline {
     this.exposureCtl.dispose();
     this.flare.dispose();
     this.antialias?.dispose();
+    this.taa?.dispose();
     this.composite.dispose();
     this.output.dispose();
     this.timer.dispose();

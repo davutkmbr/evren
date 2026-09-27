@@ -37,7 +37,7 @@ which shows how much of the remaining flicker a temporal resolve can remove with
 
 ### 1. Where the pass sits
 
-TAA runs on the HDR scene colour, after the scene render and **before** the HDR passes. Clouds keep their own temporal
+TAA runs on the HDR scene colour after the scene render and the clouds (HDR passes up to order 105) and **before** weather and particles (see the stage 1 result). Clouds keep their own temporal
 path, and rain / particles / race rings are drawn after TAA, so they never ghost. Bloom, exposure metering, flare and
 the output pass read the resolved image. SMAA / FXAA are skipped while TAA is on; MSAA drops to off (TRAANode requires
 this too: the resolve needs the per-pixel jittered samples, and it saves 1–1.7 ms at 2x on high).
@@ -100,6 +100,32 @@ MSAA off. The settings menu gets no new control in this phase.
    net on high.
 5. *(Later, separate phase)* **Temporal upscaling** (TAAU): with the history in place, dynamic resolution can render
    at a lower internal size and resolve to display size (the `TAAUNode` approach), which would pay for TAA many times.
+
+## Stage 1 result (2026-09-27, `?taa=1`, opt-in)
+
+`src/render/post/taa.ts`, wired in `post/pipeline.ts`. Flicker audit, all / land per mille, `taa=0` → `taa=1`:
+
+| scene | all | land |
+|---|---|---|
+| `night-hisar` | 0.20 → 0.05 | 0.42 → 0.07 |
+| `night-hisar-fly` | 0.23 → 0.07 | 0.48 → 0.13 |
+| `peninsula-day` | 0.05 → 0.01 | 0.93 → 0.16 |
+| `peninsula-photo` | 0.05 → 0.02 | 0.21 → 0.05 |
+| `sea-dusk` | 0.14 → 0.07 | 0.71 → 0.24 |
+| `peninsula-day-fly` | 0.05 → 0.01 | 1.23 → 0.14 |
+
+Still camera: 0.01 (noise floor). Frame time at `?view=bogaz&t=16&dynres=0`: 20.9 → 18.4 ms (MSAA off pays for the
+resolve). Two corrections to the design found by the audit:
+
+- **Disocclusion by range, not by surface.** Comparing the stored distance with one reprojected surface (TRAANode's
+  approach, 2 % tolerance) rejected static pixels of distant, grazing ground every frame (still camera 6 per mille);
+  the history is now valid when its distance lies within the current 3x3 neighbourhood's distances as the previous
+  camera sees them.
+- **After the clouds, not before all HDR passes.** The clouds composite over the scene by its (jittered) depth: their
+  mask along the skyline flipped with the jitter over a resolved image. The resolve now runs after the passes up to
+  order 105 (clouds 100) and before weather and particles.
+
+Not in stage 1: moving objects (the dragon ghosts in the chase camera; stage 2), which is why TAA stays opt-in.
 
 ## Measurement
 
