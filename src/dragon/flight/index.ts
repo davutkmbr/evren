@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { DragonRig, DragonState, EngineContext, System } from '../../core/contracts';
 import { UpdateOrder } from '../../core/contracts';
+import { trackMotion } from '../../core/motion';
 import { VIEW_PRESETS } from '../../core/debug';
 import { headingToYaw, yawToHeading } from '../../core/geo-coords';
 import { clamp, smoothstep } from '../../core/math/noise';
@@ -34,6 +35,7 @@ export function createFlightSystem(): System {
   sim.flow.burstScale = BURST.freeFlightScale;
   const object = new THREE.Group();
   object.name = 'dragon';
+  let untrackMotion: (() => void) | null = null;
   const state: DragonState = {
     object,
     position: object.position,
@@ -340,6 +342,8 @@ export function createFlightSystem(): System {
     init(ctx) {
       ctxRef = ctx;
       ctx.scene.add(object);
+      // The dragon and its rider move on their own (and with the chase camera): TAA needs their velocity.
+      untrackMotion = trackMotion(object);
       sim.world.collision = ctx.services.get('collision');
       sim.world.geo = ctx.services.tryGet('geo');
       sim.world.env = ctx.services.tryGet('env');
@@ -462,6 +466,7 @@ export function createFlightSystem(): System {
     },
 
     dispose() {
+      untrackMotion?.();
       unsubscribe.forEach((u) => u());
       removeTestHook?.();
       removeTestHook = null;

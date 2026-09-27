@@ -14,6 +14,8 @@ import { parsePostOverrides, resolvePostSettings, type AntialiasMode, type PostD
 import { OutputPass } from './output-pass';
 import { createColorTarget, createSceneTarget } from './targets';
 import { TemporalAA } from './taa';
+import { ObjectVelocity } from './velocity';
+import { motionRoots } from '../../core/motion';
 
 /** Bloom mip used as the exposure meter source (1/8 internal resolution, already box-filtered). */
 const METER_MIP = 2;
@@ -90,6 +92,10 @@ export class PostPipeline implements RenderPipeline {
   private antialias: AntialiasPass | null = null;
   /** Temporal antialiasing (phase 25), null while off. */
   private taa: TemporalAA | null = null;
+  /** Velocity of the tracked moving objects for the TAA resolve (created with TAA). */
+  private velocity: ObjectVelocity | null = null;
+  private readonly viewProj = new THREE.Matrix4();
+  private readonly velocityAllowed: boolean;
   private antialiasMode: AntialiasMode = 'none';
 
   private readonly composite: CompositePass;
@@ -133,6 +139,7 @@ export class PostPipeline implements RenderPipeline {
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.gl = ctx.renderer.getContext() as WebGL2RenderingContext;
     this.overrides = parsePostOverrides(ctx.debug.params);
+    this.velocityAllowed = ctx.debug.params.get('taavel') !== '0';
     const prof = ctx.debug.params.get('postprof');
     this.profileMode = prof === 'scene' ? 'scene' : prof === '1' || ctx.debug.params.has('postbench') ? 'post' : 'frame';
     this.benchIterations = Math.max(1, Math.min(64, Math.round(Number(ctx.debug.params.get('postbench') ?? 1)) || 1));
@@ -303,6 +310,11 @@ export class PostPipeline implements RenderPipeline {
     this.taa?.jitter(camera, ctx.time.frame, this.internalWidth, this.internalHeight);
     try {
       renderer.render(ctx.scene, camera);
+      if (this.taa && this.velocity && motionRoots.size > 0) {
+        this.velocity.render(renderer, camera, this.taa.viewProjection(camera, this.viewProj), this.taa.previousViewProjection, this.internalWidth, this.internalHeight);
+      } else if (this.velocity) {
+        this.velocity.active = false;
+      }
     } finally {
       this.taa?.unjitter(camera);
     }
@@ -474,7 +486,7 @@ export class PostPipeline implements RenderPipeline {
       // that must not leave trails (rain, particles, race rings).
       if (!resolved && (!pass || pass.order > TAA_ORDER)) {
         resolved = true;
-        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight);
+        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight, this.velocity?.active ? this.velocity.target.texture : null);
       }
       if (!pass || !pass.enabled) {
         continue;
@@ -556,7 +568,10 @@ export class PostPipeline implements RenderPipeline {
       return;
     }
     this.taa?.dispose();
+    this.velocity?.dispose();
     this.taa = on ? new TemporalAA() : null;
+    // ?taavel=0: TAA without the objects' velocity (stage 1 behaviour, for A/B comparisons).
+    this.velocity = on && this.velocityAllowed ? new ObjectVelocity() : null;
   }
 
   private rebuildSceneTarget(): void {
@@ -604,6 +619,7 @@ export class PostPipeline implements RenderPipeline {
     this.flare.dispose();
     this.antialias?.dispose();
     this.taa?.dispose();
+    this.velocity?.dispose();
     this.composite.dispose();
     this.output.dispose();
     this.timer.dispose();
