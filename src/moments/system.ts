@@ -6,6 +6,8 @@
  *
  * Moments with a scene actor (./actors.ts, e.g. the stork flock) spawn it when they start; the actor is updated every
  * running frame while it is alive and may outlive its lines. With no actor alive nothing is simulated or drawn.
+ * Resident actors (fixed props such as the Aya Yorgi statue) are created up front for playable moments and stand in
+ * the world near the camera before and after their moment.
  *
  * Debug / discoverability: `?moment=<id>` puts the dragon at the moment's start waypoint once the game starts and plays
  * that moment once, whatever the conditions (e.g. `?moment=orhan-veli-istanbulu-dinliyorum`,
@@ -26,7 +28,7 @@ import { hasWorldSource, MusicSourceResolver } from './music-source';
 import { momentAllowed } from './prefs';
 import type { Moment } from './types';
 import { UpdateOrder } from '../core/contracts';
-import { createMomentActor, type MomentActor } from './actors';
+import { createMomentActor, RESIDENT_ACTORS, type MomentActor } from './actors';
 import { AnchorFeed, ferryShortcut } from './anchors';
 import { ALL_MOMENTS } from './data';
 import { loadMomentPrefs, onMomentPrefsChange, type MomentPrefs } from './prefs';
@@ -98,6 +100,8 @@ export function createMomentSystem(): System {
   };
   const runner = new MomentRunner(ALL_MOMENTS, sink);
   sourced = runner.playable.filter(hasWorldSource);
+  /** Playable moments whose actor is a resident prop. */
+  const residents = runner.playable.filter((m) => !!m.content.actorId && RESIDENT_ACTORS.has(m.content.actorId));
   const sources = new SourcePromptController();
   const anchorFeed = new AnchorFeed();
   let forceAnchor: number | undefined;
@@ -274,6 +278,16 @@ export function createMomentSystem(): System {
       frame.racing = zones?.hasContext ? zones.hasContext('race') : racingByEvents;
       runner.update(dt, frame);
       updateMusicSources(ctx, dragon);
+      for (const m of residents) {
+        let actor = actors.get(m.id);
+        if (!actor) {
+          const created = createMomentActor(m.content.actorId);
+          if (!created) continue;
+          actor = created;
+          actors.set(m.id, actor);
+        }
+        actor.resident?.(m, ctx, momentAllowed(prefs, m.category));
+      }
       for (const actor of actors.values()) {
         if (actor.active) {
           actor.update(dt, ctx);

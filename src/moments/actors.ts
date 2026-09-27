@@ -20,6 +20,12 @@ export interface MomentActor {
   end(reason: MomentEndReason): void;
   /** Called every running frame while active (dt > 0). */
   update(dt: number, ctx: EngineContext): void;
+  /**
+   * Resident actors only (a fixed prop, e.g. the Aya Yorgi statue): called every running frame while the moment is
+   * playable, before and after it plays, so the prop can stand in the world near the camera instead of appearing when
+   * the moment starts. `allowed`: the player's settings allow the moment's category.
+   */
+  resident?(moment: Moment, ctx: EngineContext, allowed: boolean): void;
   dispose(): void;
 }
 
@@ -28,6 +34,9 @@ const FACTORIES: Readonly<Record<string, () => MomentActor>> = {
   'moments/ferry-gull-flock': () => new GullSimitActor(),
   'moments/aya-yorgi-knight-statue': () => new AyaYorgiStatueActor(),
 };
+
+/** Actors that stand in the world before their moment (the system creates them up front and calls `resident`). */
+export const RESIDENT_ACTORS: ReadonlySet<string> = new Set(['moments/aya-yorgi-knight-statue']);
 
 /** A new actor for `actorId`, or null when the id has no scene implementation (subtitle-only moments). */
 export function createMomentActor(actorId: string | undefined): MomentActor | null {

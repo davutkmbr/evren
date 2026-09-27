@@ -7,6 +7,8 @@
  *   node scripts/perch-audit.mjs --hours 16,19.5 --modes orbit,fixed --perch galata-kulesi,kiz-kulesi
  *   node scripts/perch-audit.mjs --out .shots/perches/audit/after --sheet-only
  *   EVREN_CHROME=<chromium> node scripts/perch-audit.mjs --timeout 420000   # software rendering (no GPU)
+ *   node scripts/perch-audit.mjs --page /.claude/worktrees/<name>/.shots/wt/index.html   # a worktree's src/ (see
+ *                                                                  # flicker-audit.mjs --worktree for the shim page)
  *
  * Writes <out>/<perch>-<mode>-<hour>.jpg + .json, <out>/audit.md (table) and <out>/sheet-<hour>.jpg (contact sheet:
  * one row per perch, one column per camera). Perch ids come from src/world/perches/data.ts unless given.
@@ -19,6 +21,7 @@ import { perchMeasure } from './lib/perch-measure.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : def);
+const PAGE = opt('page', '/');
 const OUT = resolve(opt('out', '.shots/perches/audit/latest'));
 const HOURS = opt('hours', '16').split(',').map(Number);
 const MODES = opt('modes', 'orbit,fixed,rider').split(',');
@@ -47,7 +50,7 @@ function runShots(ids) {
     for (const h of HOURS) {
       for (const m of MODES) {
         const base = join(OUT, `${id}-${m}-${h}`);
-        jobs.push({ url: `/?autostart=1&t=${h}`, w: 1280, h: 720, settle: 700, timeout: TIMEOUT, eval: `(${fn})(${JSON.stringify(id)}, ${JSON.stringify(m)}, ${h})`, out: `${base}.jpg`, result: `${base}.json` });
+        jobs.push({ url: `${PAGE}?autostart=1&t=${h}`, w: 1280, h: 720, settle: 700, timeout: TIMEOUT, eval: `(${fn})(${JSON.stringify(id)}, ${JSON.stringify(m)}, ${h})`, out: `${base}.jpg`, result: `${base}.json` });
       }
     }
   }
