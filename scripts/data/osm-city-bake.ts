@@ -279,7 +279,13 @@ const cellOf = (x: number, z: number): number => {
   return i < 0 || j < 0 || i >= N || j >= N ? -1 : j * N + i;
 };
 const footprint = new Float64Array(N * N);
-const landSeen = new Set<number>();
+/**
+ * Land polygons already taken, by OSM id and outer ring: a multipolygon relation keeps its id on every outer ring
+ * (fetch-osm.mjs writes one area per outer), so the id alone kept only the first ring of a relation and dropped the
+ * rest (Karacaahmet's 42 ha main part was urban land); a polygon repeated by neighbouring blocks is skipped.
+ */
+const landSeen = new Set<string>();
+const landKey = (a: OsmArea): string => `${a.id}:${a.ring.length}:${a.ring[0]},${a.ring[1]}`;
 const land: { cls: LandClass; rings: number[][] }[] = [];
 let osmBase: string | null = null;
 for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
@@ -295,14 +301,14 @@ for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
       }
     }
     for (const a of data.areas as OsmArea[]) {
-      if (landSeen.has(a.id)) {
+      if (landSeen.has(landKey(a))) {
         continue;
       }
       const cls = LAND_CLASSES.find(([, re]) => re.test(a.kind))?.[0];
       if (cls === undefined) {
         continue;
       }
-      landSeen.add(a.id);
+      landSeen.add(landKey(a));
       land.push({ cls, rings: [a.ring, ...(a.holes ?? [])] });
     }
   }
