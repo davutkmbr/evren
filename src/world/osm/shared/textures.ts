@@ -3,6 +3,7 @@
  * single maps, full PBR bindings and packed texture arrays (albedo + roughness, normal).
  */
 import * as THREE from 'three';
+import { releaseAfterUpload } from './three';
 
 export type TextureSet = 'plaster' | 'plaster_painted' | 'stone' | 'concrete' | 'brick' | 'roof_tiles' | 'asphalt' | 'cobble' | 'sidewalk' | 'granite' | 'yard';
 export type TextureMap = 'albedo' | 'normal' | 'rough';
@@ -161,7 +162,9 @@ async function buildPbrArrays(sets: readonly TextureSet[], size: number, anisotr
     t.anisotropy = anisotropy;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.needsUpdate = true;
-    return t;
+    // Shared and reference-counted (share()): the last dispose frees the GPU copy and the next request rebuilds it,
+    // so the pixels are never needed again after the upload.
+    return releaseAfterUpload(t);
   };
   return [make(alb, true), make(nrm, false)];
 }

@@ -16,6 +16,7 @@ import { SURFACES_GLSL } from '../../heritage/render/glsl/surfaces.glsl';
 import { Surf } from '../../heritage/build/surfaces';
 import { WALL_FOLIAGE } from '../kit/detail';
 import { loadImage, maxAnisotropy, pixels } from '../../../osm/shared/textures';
+import { releaseAfterUpload } from '../../../osm/shared/three';
 
 const BASE = `${import.meta.env?.BASE_URL ?? "/"}textures/`;
 /** Texture array layers: 0 facing, 1 brick, 2 core. */
@@ -467,7 +468,8 @@ async function loadWallArrays(aniso: number): Promise<{ alb: THREE.DataArrayText
     t.anisotropy = aniso;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.needsUpdate = true;
-    return t;
+    // Owned by one material and never updated: the pixels are not needed after the upload.
+    return releaseAfterUpload(t);
   };
   return { alb: make(alb, true), nrm: make(nrm, false), mean };
 }

@@ -28,7 +28,10 @@ export function collectTransferables(value: unknown, out: Set<ArrayBuffer> = new
 
 export interface WorkerJob<Res> {
   readonly promise: Promise<Res>;
-  /** Terminates the worker; the promise rejects with "cancelled". */
+  /**
+   * Terminates the worker; the promise rejects with "cancelled". Register it as `onDispose(job.cancel)`: a closure
+   * over `job` would keep `job.promise` and with it the whole result alive.
+   */
   cancel(): void;
 }
 
@@ -37,11 +40,20 @@ export interface WorkerJob<Res> {
  * `transfer` lists buffers the main thread gives away (never shared data such as OsmContext.base, which is cloned).
  */
 export function runWorker<Req, Res>(worker: Worker, request: Req, transfer: Transferable[] = []): WorkerJob<Res> {
-  let reject: (e: Error) => void = () => undefined;
+  // `cancel` outlives the job (layers keep it until dispose): once settled it must not reach the promise, whose
+  // resolved value (every array of the worker result) would otherwise stay alive until the layer is disposed.
+  let reject: ((e: Error) => void) | null = null;
   const promise = new Promise<Res>((res, rej) => {
     reject = rej;
-    worker.onmessage = (e: MessageEvent<{ ok: boolean; res?: Res; error?: string }>) => {
+    const settle = (): void => {
       worker.terminate();
+      // The worker object stays reachable from `cancel`; its handlers hold `res` / `rej` and through them the promise.
+      worker.onmessage = null;
+      worker.onerror = null;
+      reject = null;
+    };
+    worker.onmessage = (e: MessageEvent<{ ok: boolean; res?: Res; error?: string }>) => {
+      settle();
       if (e.data.ok) {
         res(e.data.res as Res);
       } else {
@@ -49,7 +61,7 @@ export function runWorker<Req, Res>(worker: Worker, request: Req, transfer: Tran
       }
     };
     worker.onerror = (e) => {
-      worker.terminate();
+      settle();
       rej(new Error(e.message || 'worker error'));
     };
     worker.postMessage(request, transfer);
@@ -58,7 +70,8 @@ export function runWorker<Req, Res>(worker: Worker, request: Req, transfer: Tran
     promise,
     cancel: () => {
       worker.terminate();
-      reject(new Error('cancelled'));
+      reject?.(new Error('cancelled'));
+      reject = null;
     },
   };
 }
