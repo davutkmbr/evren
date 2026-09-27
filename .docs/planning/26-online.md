@@ -22,9 +22,13 @@ workers/static-assets/billing-and-limitations, workers/platform/limits.
 ## Stage 0 — static deploy (done in this branch)
 
 - `wrangler.jsonc`: assets-only Worker `seventeen-skies`, custom domains seventeenskies.com and www.
-- `npm run build:web`: public build (`EVREN_PRIVATE_ASSETS=0`, no MetaHuman/Mixamo/US-risky music), then
+- `npm run build:web`: public build with the private assets (`EVREN_PRIVATE_DIR` points a worktree at the main
+  checkout's `private-assets/`), then
   `scripts/deploy/stage.mjs` copies the shipping street layer (world/index.json, the areas it lists, `_shared`, `walls`;
   experiment folders never ship), removes `sandbox/` and checks the Workers limits.
+- `worker/index.ts` runs only for `/audio/music/private/*` (`run_worker_first`): the US-risky historic recordings get
+  451 for the US and its territories, unknown country and Tor, and `Cache-Control: private` elsewhere. The game then
+  keeps its mood music. Every other file is served as a static asset without the Worker.
 - `public/_headers`: hashed `/assets/*` cached immutable; everything else revalidates (world files keep stable names).
 - No overrides in production: the public build compiles `DEV_TOOLS` (`src/core/dev-tools.ts`) to false. Every URL
   override reads through `devParams()` / `parseDebugFlags()` and gets no parameters; every `window.__*` debug hook goes
@@ -32,7 +36,7 @@ workers/static-assets/billing-and-limitations, workers/platform/limits.
   for screenshot and performance tooling. Dev server, sandboxes and plain `npm run build` keep all tools. Client checks
   only stop casual tampering; online cheats are stopped by the server (stage 1 validation).
 - `npm run deploy`: build:web + `wrangler deploy`. Needs `npx wrangler login` once and the seventeenskies.com zone in
-  the same Cloudflare account. From a worktree: `EVREN_WORLD_DIR=<main checkout>/public/world npm run deploy`.
+  the same Cloudflare account. From a worktree: `EVREN_WORLD_DIR=<main>/public/world EVREN_PRIVATE_DIR=<main>/private-assets npm run deploy`.
 
 Measured: 4 919 files, 587 MiB; served by `wrangler dev`, the game and the Galata street tiles load with no errors
 beyond the two absent private manifests.

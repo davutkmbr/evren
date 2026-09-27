@@ -1,12 +1,16 @@
-// Seventeen Skies on Cloudflare Workers: an assets-only Worker serving the web build (npm run build:web -> dist/).
-// Static asset requests are free and unmetered; see .docs/planning/26-online.md.
+// Seventeen Skies on Cloudflare Workers: the web build (npm run build:web -> dist/) as static assets, free and
+// unmetered. worker/index.ts runs only for run_worker_first paths; see .docs/planning/26-online.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "seventeen-skies",
   "compatibility_date": "2026-09-27",
+  "main": "worker/index.ts",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    // US-risky historic recordings: geo-gated by the Worker.
+    "run_worker_first": ["/audio/music/private/*"]
   },
   "routes": [
     { "pattern": "seventeenskies.com", "custom_domain": true },
