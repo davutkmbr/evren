@@ -27,6 +27,8 @@ const TARGET: Record<number, LandUse | null> = {
   [LandClass.Farm]: LandUse.Farmland,
   [LandClass.Industrial]: LandUse.Industrial,
   [LandClass.Residential]: LandUse.Urban,
+  // Market squares: reserved, paved, unbuilt ground (the land use has no plaza class of its own).
+  [LandClass.Market]: LandUse.Landmark,
   [LandClass.Water]: null,
 };
 /** Stamping order (lower first). */
@@ -39,6 +41,7 @@ const ORDER: Record<number, number> = {
   [LandClass.Grass]: 2,
   [LandClass.Pitch]: 3,
   [LandClass.Cemetery]: 3,
+  [LandClass.Market]: 3,
   [LandClass.Water]: 9,
 };
 const KEEP = new Set<number>([LandUse.Water, LandUse.Road, LandUse.Landmark, LandUse.Airport, LandUse.Beach]);

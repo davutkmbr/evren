@@ -67,7 +67,7 @@ export const FLAG = {
 } as const;
 
 /** OSM land-use classes of land.bin.gz (the geo build maps them to its LandUse). */
-export const LandClass = { Park: 0, Grass: 1, Forest: 2, Cemetery: 3, Farm: 4, Water: 5, Industrial: 6, Residential: 7, Pitch: 8 } as const;
+export const LandClass = { Park: 0, Grass: 1, Forest: 2, Cemetery: 3, Farm: 4, Water: 5, Industrial: 6, Residential: 7, Pitch: 8, Market: 9 } as const;
 export type LandClass = (typeof LandClass)[keyof typeof LandClass];
 
 export interface BakeTile {
