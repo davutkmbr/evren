@@ -152,6 +152,18 @@ frame, and falls back to the static range test (silhouette pixels take the objec
 Left for stage 3: wing-membrane flutter is not in the velocity (thin strips of the membrane fall back to the current
 frame), traffic, vessels and other movers still use camera reprojection.
 
+## Stage 3 status (2026-09-27, in progress, opt-in)
+
+Reactive mask: traffic (OSM and procedural), crowd, birds and dolphins register with `trackReactive`
+(`core/motion.ts`); `post/velocity.ts` draws them once more with their own materials into a depth mask (the scene's
+child list swapped for the lights and the reactive roots: 0.21 ms CPU instead of 0.9 ms for a full scene walk); the
+resolve raises the current-frame weight to 0.5 there. `?taareact=0` for A/B. Vessels stay on camera reprojection: they
+are slow and come out clean, while the mask made ferries aliased. Pedestrians on the quays, which the plain resolve
+erased, stay visible with the mask.
+
+Open: the `traffic-night` scene looks at buildings, not the road (fix the pose); masked pixels raised the harbour
+land flicker 0.21 → 0.64 per mille (lower the weight, or mask only fast movers). Then stage 4.
+
 ## Measurement
 
 - The flicker audit already reprojects and scores; with TAA the scenes need a warm-up of 16+ frames (history) before
