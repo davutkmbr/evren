@@ -21,7 +21,7 @@ const JITTER_PHASES = 8;
 /** Weight of the current frame in steady state. */
 const CURRENT_WEIGHT = 0.1;
 /** Weight of the current frame on reactive movers (traffic, vessels, crowd): trails shorter than a frame or two. */
-const REACTIVE_WEIGHT = 0.5;
+const REACTIVE_WEIGHT = 0.25;
 /** A camera jump beyond this (m) or turn beyond this (rad) in one frame drops the history (cuts, teleports). */
 const CUT_DISTANCE = 60;
 const CUT_ANGLE = 0.5;

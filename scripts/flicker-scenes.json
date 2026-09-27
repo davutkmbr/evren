@@ -162,16 +162,16 @@
   "frames": 48
  },
  "traffic-night": {
-  "note": "Beşiktaş coast road at night from 60 m, traffic and lights running (--animate): TAA reactive mask check",
+  "note": "Beşiktaş at night from 45 m, looking up Barbaros Bulvarı with traffic and lights running (--animate): TAA reactive mask check",
   "query": {
    "view": "bogaz",
    "t": "21"
   },
   "latlon": [
-   41.0435,
-   29.009,
-   60,
-   200,
+   41.0405,
+   29.0065,
+   45,
+   20,
    -18,
    50
   ],
