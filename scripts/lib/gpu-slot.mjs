@@ -10,7 +10,7 @@
  *   try { ... } finally { await browser.close(); releaseSlot(); }
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,29 +57,54 @@ function alive(pid) {
   }
 }
 
+/**
+ * Waiters queue first-come first-served: each takes a ticket (queue/<time>-<pid>) and only the oldest live ticket may
+ * take a free slot. Without it an agent that submits job after job re-takes the slot the moment it frees, and the
+ * others wait for as long as it keeps going.
+ */
+function oldestTicket(queue) {
+  for (const t of readdirSync(queue).sort()) {
+    const pid = Number(t.split('-')[1]);
+    if (Number.isFinite(pid) && pid > 0 && alive(pid)) {
+      return t;
+    }
+    rmSync(`${queue}/${t}`, { force: true });
+  }
+  return null;
+}
+
 export async function acquireSlot() {
-  mkdirSync(LOCK_ROOT, { recursive: true });
-  for (;;) {
-    for (let i = 0; i < MAX_CONCURRENT; i++) {
-      const dir = `${LOCK_ROOT}/slot-${i}`;
-      try {
-        mkdirSync(dir);
-        writeFileSync(`${dir}/pid`, String(process.pid));
-        heldSlot = dir;
-        return;
-      } catch {
-        let owner = NaN;
-        try {
-          owner = Number(readFileSync(`${dir}/pid`, 'utf8'));
-        } catch {
-          /* being created */
-        }
-        if (Number.isFinite(owner) && owner > 0 && !alive(owner)) {
-          rmSync(dir, { recursive: true, force: true });
+  const queue = `${LOCK_ROOT}/queue`;
+  mkdirSync(queue, { recursive: true });
+  const ticket = `${String(Date.now()).padStart(15, '0')}-${process.pid}`;
+  writeFileSync(`${queue}/${ticket}`, '');
+  try {
+    for (;;) {
+      if (oldestTicket(queue) === ticket) {
+        for (let i = 0; i < MAX_CONCURRENT; i++) {
+          const dir = `${LOCK_ROOT}/slot-${i}`;
+          try {
+            mkdirSync(dir);
+            writeFileSync(`${dir}/pid`, String(process.pid));
+            heldSlot = dir;
+            return;
+          } catch {
+            let owner = NaN;
+            try {
+              owner = Number(readFileSync(`${dir}/pid`, 'utf8'));
+            } catch {
+              /* being created */
+            }
+            if (Number.isFinite(owner) && owner > 0 && !alive(owner)) {
+              rmSync(dir, { recursive: true, force: true });
+            }
+          }
         }
       }
+      await new Promise((r) => setTimeout(r, 1000));
     }
-    await new Promise((r) => setTimeout(r, 1000));
+  } finally {
+    rmSync(`${queue}/${ticket}`, { force: true });
   }
 }
 
