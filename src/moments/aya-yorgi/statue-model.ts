@@ -18,7 +18,7 @@ export const PLINTH_H = 0.76 * FIGURE_SCALE;
 export const STATUE_HEIGHT = PLINTH_H + FIGURE_SCALE * 1.93;
 /** Half the plinth's footprint (m) and the depth of its buried foundation (m). */
 export const PLINTH_HALF = 0.76 * FIGURE_SCALE;
-export const FOUNDATION_DEPTH = 0.75 * FIGURE_SCALE;
+export const FOUNDATION_DEPTH = 0.85 * FIGURE_SCALE;
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 export const STATUE_URL = `${BASE}models/moments/aya-yorgi-statue.glb`;
 
