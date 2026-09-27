@@ -458,41 +458,37 @@
     0.0,
     90.0
    ],
-   "noiseRegion": [
-    0.15,
-    0.5
-   ],
+   "noiseRegion": null,
    "hum": null,
-   "clicksRepaired": 23,
+   "clicksRepaired": 41,
    "metrics": {
     "raw": {
      "music_db": -16.21,
-     "noise_db": -120.0,
-     "snr_db": 103.79,
+     "noise_db": null,
+     "snr_db": null,
      "flatness_quiet": 0.0762,
      "clicks_per_s": 0.24
     },
     "denoised": {
      "music_db": -16.21,
-     "noise_db": -120.0,
-     "snr_db": 103.79,
+     "noise_db": null,
+     "snr_db": null,
      "flatness_quiet": 0.0763,
-     "clicks_per_s": 0.16
+     "clicks_per_s": 0.17
     },
     "compare": {
-     "band_change_db": -0.0,
+     "band_change_db": 0.0,
      "hf_change_db": 0.0,
      "band_change_vs_raw_db": -0.0,
      "hf_change_vs_raw_db": -0.0,
-     "hiss_change_db": 0.0,
-     "kurtosis_ratio": 5.853
+     "hiss_change_db": -0.07,
+     "kurtosis_ratio": 0.0
     },
-    "snrGainDb": 0.0
+    "snrGainDb": null
    },
    "autoVariant": "raw",
    "autoReasons": [
-    "SNR gain 0.0 dB < 3 dB",
-    "kurtosis ratio 5.853 > 1 (musical-noise risk)"
+    "no groove noise in the transfer (gated to digital silence): nothing to denoise"
    ],
    "variant": "raw",
    "variants": {

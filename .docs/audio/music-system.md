@@ -318,7 +318,10 @@ SNR (music p70 minus groove), clicks per second, spectral flatness of the quiete
 power-spectrum kurtosis ratio (musical noise), and the change of the music's own power in 300 Hz–3 kHz and 3–6 kHz
 after the dehiss stage. The default version is `denoised` only when the SNR gain is at least 3 dB, the kurtosis ratio
 stays under 1, the music band moves less than 1.5 dB and the 3–6 kHz band loses less than 3 dB; otherwise `raw`
-(a piece may force one with `"variant"`). The numbers go to `tools/assets/moment-pieces.report.json` and the table in
+(a piece may force one with `"variant"`). The noise profile skips a transfer's gated head (digital silence, under
+−55 dB) and needs at least 0.3 s of run-in quieter than the music, else the quietest second is used; when even that is
+not steady groove noise (frame-level spread over 9 dB: a transfer gated at both ends, e.g. `resadiye-marsi-1910`), the
+piece gets no hiss reduction, no SNR, and `raw`. The numbers go to `tools/assets/moment-pieces.report.json` and the table in
 `archive-78rpm.md`, and the script writes the manifest entry.
 
 **Choosing by ear.** The manifest entry holds the default in `src` / `lufs` / `variant` and both versions in
