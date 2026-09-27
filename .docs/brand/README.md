@@ -120,9 +120,8 @@ npm run brand:png    # every PNG / JPG above, plus brand-sheet.jpg (snap.mjs, de
 The share image and the banner use game shots from `.docs/media/`, cropped so the HUD stays out of frame; replace
 them with HUD-less captures (`?nohud=1`) when those exist.
 
-## Domain setup (to do)
+## Domain
 
-The game is still deployed to GitHub Pages under the repository path (`/evren/`). To serve it from
-seventeenskies.com: point the domain's DNS at GitHub Pages, set the custom domain in the repository's Pages
-settings, and build with `--base=/` in `.github/workflows/deploy.yml`. The Open Graph tags in `index.html` already
-use `https://seventeenskies.com/`.
+The game is served at seventeenskies.com from Cloudflare Workers (`npm run deploy`, `wrangler.jsonc`,
+[.docs/planning/26-online.md](../planning/26-online.md)); www redirects to the apex. The Open Graph tags in
+`index.html` use `https://seventeenskies.com/`.

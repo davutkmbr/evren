@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DragonPose, DragonState, EngineContext } from '../../../core/contracts';
 import type { DragonRigImpl } from '../rig';
+import { exposeDebug } from '../../../core/dev-tools';
 
 /** Pose fields the debug handle can force (all rider cues, including the ones flight and the bond write). */
 const CUE_KEYS = [
@@ -99,7 +100,7 @@ export class RiderBehavior {
         },
         state: () => ({ pet: this.petT, petting: this.petting, stand: this.standT, wantStand: this.wantStand, gaze: this.gazeLevel() }),
       };
-      (window as unknown as { __riderDebug?: RiderDebugHandle }).__riderDebug = this.handle;
+      exposeDebug('__riderDebug', this.handle);
     }
   }
 

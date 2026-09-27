@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import type { CollisionWorld, ColliderInfo } from './collision';
 import { type System, UpdateOrder } from './contracts';
+import { exposeDebug } from './dev-tools';
 
 const COLOURS: Record<string, number> = {
   building: 0xff3355,
@@ -119,12 +120,12 @@ export function createColliderOverlaySystem(): System {
       if (enabled || import.meta.env.DEV) {
         const col = collision;
         const v = new THREE.Vector3();
-        (window as unknown as { __colliders?: unknown }).__colliders = {
+        exposeDebug('__colliders', {
           probe: (x: number, y: number, z: number, r = 1): ReturnType<CollisionWorld['debugSphere']> => col.debugSphere(v.set(x, y, z), r),
           near: (x: number, z: number, r = 10): ColliderInfo[] => col.debugEntries(x - r, z - r, x + r, z + r),
           collider: (id: number) => col.debugCollider(id),
           surfaceSource: (x: number, z: number) => col.debugCollider(col.surfaceSource(x, z))?.info ?? null,
-        };
+        });
       }
       if (!enabled) {
         return;

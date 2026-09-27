@@ -31,6 +31,7 @@ import { DragonWaves } from './particles/dragon-waves';
 import { createWaveSplatUniforms, WaveSplatGpu } from './particles/splat-gpu';
 import { WaveParticles } from './particles/wave-particles';
 import { FoamController, foamQualityFor } from './foam';
+import { exposeDebug } from '../../core/dev-tools';
 
 /** Debug handle (sandbox / console): window.__water */
 export interface WaterDebug {
@@ -248,7 +249,7 @@ export function createWaterSystem(): System {
         })
         .catch((err) => console.error('[water] region bake failed', err));
 
-      (window as unknown as { __water: WaterDebug }).__water = {
+      exposeDebug('__water', {
         sea,
         waves,
         uniforms,
@@ -261,7 +262,7 @@ export function createWaterSystem(): System {
         particleQuality: () => particleQuality,
         foam,
         regionStats: () => regionStats,
-      };
+      });
     },
 
     update(dt: number, ctx: EngineContext) {

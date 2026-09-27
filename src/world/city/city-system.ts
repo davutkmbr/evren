@@ -18,6 +18,7 @@ import { osmBuiltMask } from './osm/mask';
 import { fetchJson } from '../../street/format';
 import { CityStreamer, type CityLodParams, type StreamStats } from './streamer';
 import { CityWorkerPool } from './worker-pool';
+import { exposeDebug } from '../../core/dev-tools';
 
 const WORLD_HALF = 24000;
 const COLLIDER_TILE = LEVEL_SIZES[0];
@@ -187,7 +188,7 @@ export class CitySystem implements System {
     if (debugParam) {
       this.materials.debugView.value = Number(debugParam);
     }
-    (window as unknown as { __city?: CityDebugApi }).__city = api;
+    exposeDebug('__city', api);
     console.info(`[city] ready: ${this.pool.size} workers, setup ${Math.round(performance.now() - t0)} ms`);
   }
 

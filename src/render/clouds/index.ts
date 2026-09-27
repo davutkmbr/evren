@@ -19,6 +19,7 @@ import { FullscreenQuad } from './fullscreen';
 import { CloudLighting, type CloudLightInputs } from './lighting';
 import { CloudShadowMap } from './shadow-map';
 import { bakeCloudTextures, type CloudTextures } from './textures';
+import { exposeDebug } from '../../core/dev-tools';
 
 /** Lattice period (m) of a 3-4-5 rotated lookup of a texture tiling every `period` meters. */
 const rotatedPeriod = (period: number): number => period * 5;
@@ -144,7 +145,7 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
 
       const debugMode = ctx.debug.params.get('clouddebug');
       if (debugMode) {
-        (window as unknown as { __cloudsDebug?: CloudDebugHandle }).__cloudsDebug = handle;
+        exposeDebug('__cloudsDebug', handle);
         for (const name of debugMode.split(',')) {
           if (name && name !== '1') {
             pass.setDebugDefine(name);

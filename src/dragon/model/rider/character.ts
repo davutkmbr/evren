@@ -9,6 +9,7 @@ import { buildRiderParts, buildRiderSculpt, type RiderDetail } from './build';
 import { meshSculpt } from './sdf/mesher';
 import { mergeRiderGeometry } from './parts';
 import { applyRiderColours, createRiderMaterial, createRiderOutlineMaterial, type RiderMaterialUniforms } from './material';
+import { devParams } from '../../../core/dev-tools';
 
 export interface RiderCharacterOptions {
   /** Bone the rider's hips hang from, and its rig-space rest position. */
@@ -70,7 +71,7 @@ export class RiderCharacter {
     this.mesh.bind(skel.skeleton, new THREE.Matrix4());
     this.mesh.frustumCulled = false;
     this.opts.meshParent.add(this.mesh);
-    const noOutline = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('outline') === '0';
+    const noOutline = devParams().get('outline') === '0';
     if (this.opts.outline !== false && !noOutline) {
       this.outline = new THREE.SkinnedMesh(geo, this.outlineMaterial);
       this.outline.name = 'rider-outline';

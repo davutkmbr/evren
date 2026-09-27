@@ -8,7 +8,7 @@
   "homepage": "https://seventeenskies.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/davutkmbr/evren.git"
+    "url": "git+https://github.com/davutkmbr/seventeenskies.git"
   },
   "keywords": [
     "threejs",
@@ -28,7 +28,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "build:web": "EVREN_PUBLIC=1 npm run build && node scripts/deploy/stage.mjs",
+    "deploy": "tsc -p worker && npm run build:web && wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc -p worker",
     "preview": "vite preview",
     "snap": "node scripts/snap.mjs",
     "brand": "tsx scripts/brand/build-brand.ts",
@@ -46,7 +48,8 @@
     "audit:city": "tsx scripts/data/osm-city-audit.ts",
     "bake:city": "tsx scripts/data/osm-city-bake.ts",
     "bake:structures": "tsx scripts/data/structure-volumes.ts",
-    "blender": "node scripts/blender-run.mjs"
+    "blender": "node scripts/blender-run.mjs",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts"
   },
   "dependencies": {
     "three": "^0.186.0"
@@ -65,6 +68,7 @@
     "sharp": "^0.35.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "wrangler": "^4.141.0"
   }
 }
