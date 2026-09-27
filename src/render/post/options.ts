@@ -88,6 +88,8 @@ export function resolvePostSettings(q: QualitySettings, o: PostOverrides, maxSam
     minScale: q.minRenderScale,
     maxScale: q.maxRenderScale,
     targetFrameMs: q.targetFrameMs,
-    sharpen: o.sharpen ?? 0.2,
+    // No sharpening by default: without temporal AA, CAS roughly doubles the contrast of pixel-sized detail, which is
+    // the aliasing that flickers as the view moves (flicker audit: -56 % unstable land pixels by day, -25 % at night).
+    sharpen: o.sharpen ?? 0,
   };
 }

@@ -186,9 +186,10 @@ void main() {
     size = 0.15;
   }
   float pix = dist * uPixelAngle;
-  float s = max(size, pix * 1.3);
-  float k = size / s;
-  col *= k * k * atmoTransmittance(P);
+  float look = max(size, pix * 1.3);
+  float s = max(look, pix * lightSplatMinSize(6.0, 14.4));
+  float k = size / look;
+  col *= k * k * lightSplatEnergy(look, s) * atmoTransmittance(P);
   vCol = col;
   if (dot(col, vec3(1.0)) < 1e-4) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);

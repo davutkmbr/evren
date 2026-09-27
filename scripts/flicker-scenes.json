@@ -1,0 +1,139 @@
+{
+ "night-hisar": {
+  "note": "Bosphorus at Rumeli Hisarı at night: window lights, headlights, bridge, sea; the preset's chase camera with the dragon in view",
+  "query": {
+   "view": "rumelihisari",
+   "t": "21"
+  },
+  "motion": "yaw:0.15",
+  "frames": 48
+ },
+ "night-hisar-fly": {
+  "note": "same place, straight fly-through along the view",
+  "query": {
+   "view": "rumelihisari",
+   "t": "21"
+  },
+  "motion": "fly:1.5",
+  "frames": 48
+ },
+ "peninsula-day": {
+  "note": "historic peninsula and the sea by day, sun ahead (from off Üsküdar looking WSW)",
+  "query": {
+   "view": "kizkulesi",
+   "t": "16"
+  },
+  "latlon": [
+   41.018,
+   29.0,
+   90,
+   245,
+   -5,
+   60
+  ],
+  "motion": "yaw:0.15",
+  "frames": 48
+ },
+ "peninsula-photo": {
+  "note": "the same view zoomed in (photo mode: free camera, paused, fov 20)",
+  "query": {
+   "view": "kizkulesi",
+   "t": "16"
+  },
+  "latlon": [
+   41.018,
+   29.0,
+   90,
+   245,
+   -3,
+   20
+  ],
+  "motion": "yaw:0.05",
+  "frames": 48
+ },
+ "sea-dusk": {
+  "note": "slow turn over the sea at dusk",
+  "query": {
+   "view": "bogaz",
+   "t": "19"
+  },
+  "latlon": [
+   41.03,
+   29.015,
+   60,
+   230,
+   -6,
+   60
+  ],
+  "motion": "yaw:0.1",
+  "frames": 48
+ },
+ "peninsula-day-fly": {
+  "note": "flying toward the historic peninsula over the sea by day, sun ahead",
+  "query": {
+   "view": "kizkulesi",
+   "t": "16"
+  },
+  "latlon": [
+   41.018,
+   29.0,
+   60,
+   245,
+   -4,
+   60
+  ],
+  "motion": "fly:1.5",
+  "frames": 48
+ },
+ "sea-dusk-fly": {
+  "note": "flying low over the sea at dusk",
+  "query": {
+   "view": "bogaz",
+   "t": "19"
+  },
+  "latlon": [
+   41.03,
+   29.015,
+   60,
+   230,
+   -6,
+   60
+  ],
+  "motion": "fly:1.5",
+  "frames": 48
+ },
+ "bosphorus-day-fly": {
+  "note": "flying up the Bosphorus past Rumeli Hisarı by day with the sun ahead (OSM regions on both shores)",
+  "query": {
+   "view": "rumelihisari",
+   "t": "16"
+  },
+  "latlon": [
+   41.075,
+   29.052,
+   80,
+   225,
+   -5,
+   60
+  ],
+  "motion": "fly:1.5",
+  "frames": 48
+ },
+ "seawalls-day-fly": {
+  "note": "flying west along the Marmara sea walls of the historic peninsula by day, sun ahead",
+  "query": {
+   "view": "sultanahmet",
+   "t": "16"
+  },
+  "latlon": [
+   41.0015,
+   28.985,
+   50,
+   250,
+   -5,
+   60
+  ],
+  "motion": "fly:1.5",
+  "frames": 48
+ }
+}

@@ -51,7 +51,7 @@ uniform sampler2D uReflTex;
 uniform sampler2D uReflDepth;
 uniform mat4 uReflMatrix;
 uniform mat4 uReflInvProj;
-uniform vec4 uReflParams;             // x = planar on, y = distortion distance scale
+uniform vec4 uReflParams;             // x = planar on, y = distortion distance scale, z = 1: no edge fade (?wfade=0)
 uniform vec3 uRrs[5];
 uniform vec3 uAtten[5];
 uniform vec3 uFloorAlbedo[5];
@@ -389,6 +389,7 @@ ${DISTURBANCE_WATER_SAMPLE_GLSL}
       // Soft towards the mirror's edges (the margin beyond the view, reflection.ts MARGIN_DEG), so a ray bent past it
       // hands over to the sky reflection gradually.
       vec2 e = smoothstep(vec2(0.0), vec2(0.08), ruv) * smoothstep(vec2(1.0), vec2(0.92), ruv);
+      e = uReflParams.z > 0.5 ? step(vec2(0.0), ruv) * step(ruv, vec2(1.0)) : e;
       reflection = mix(reflection, planar, e.x * e.y);
     }
   }

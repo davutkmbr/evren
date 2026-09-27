@@ -720,9 +720,10 @@ float fAO = 1.0;
     float farMix = smoothstep(0.22, 0.6, max(fwu / bw, fwv / FH)) * upper * step(1.5, L);
     if (farMix > 0.001) {
       float wf = clamp((2.0 * halfW) * (headH - bottom) / (bw * FH), 0.05, 0.6);
-      float hCell = hash13(vec3(floor(cu / (1.0 + floor(fract(seed * 3.9) * 2.5))), row, seed * 31.0));
-      // Far cells light like the city's (and the far OSM layer's) facades, so a building keeps its night at a handover.
-      float cellLit = step(hCell, office > 0.5 ? officeOcc : occupancy);
+      // Far cells light like the city's (and the far OSM layer's) facades, so a building keeps its night at a handover;
+      // box-filtered over the pixel (night-lights.glsl.ts cityFarLit) so they do not blink as the view moves.
+      float cellW = bw * (1.0 + floor(fract(seed * 3.9) * 2.5));
+      float cellLit = lightsOn <= 0.0 ? 0.0 : cityFarLit(vec2(u / cellW, v / FH), vec2(fwu / cellW, fwv / FH), vec2(seed * 31.0, seed * 31.0 + 5.0), office > 0.5 ? officeOcc : occupancy);
       vec3 farC = mix(base, vec3(0.045, 0.05, 0.055), wf * 0.85);
       vec3 farE = cityFarWindowLight(wf, cellLit) * lightsOn;
       c = mix(c, farC, farMix);
