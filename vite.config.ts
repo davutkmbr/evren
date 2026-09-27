@@ -32,16 +32,18 @@ const WORLD_TYPES: Record<string, string> = {
  * Private assets reach builds but never the repository or public/ (CLAUDE.md, .docs/assets/private-assets.md): the
  * US-risky historic recordings in private-assets/audio/moments/ (files + manifest.json) are served at
  * /audio/music/private/ in dev and copied to dist/audio/music/private/ by `vite build` when the folder exists.
- * EVREN_PRIVATE_ASSETS=0 leaves them out (dev and build), e.g. for a build that is published openly.
+ * EVREN_PRIVATE_ASSETS=0 leaves them out (dev and build). EVREN_PRIVATE_DIR points at another checkout's
+ * private-assets/ (worktrees have none). The public web build keeps the music away from US visitors (worker/index.ts).
  */
-const PRIVATE_MUSIC_DIR = resolve(__dirname, 'private-assets/audio/moments');
+const PRIVATE_DIR = resolve(__dirname, process.env.EVREN_PRIVATE_DIR ?? 'private-assets');
+const PRIVATE_MUSIC_DIR = join(PRIVATE_DIR, 'audio/moments');
 const PRIVATE_MUSIC_MOUNT = '/audio/music/private';
 const withPrivateAssets = process.env.EVREN_PRIVATE_ASSETS !== '0';
 if (withPrivateAssets && existsSync(PRIVATE_MUSIC_DIR)) {
   STATIC_DIRS[PRIVATE_MUSIC_MOUNT] = PRIVATE_MUSIC_DIR;
 }
 /** The rider's captured clips (Mixamo, retargeted by tools/humans/mixamo.py): served and copied the same way. */
-const PRIVATE_RIDER_DIR = resolve(__dirname, 'private-assets/build/rider');
+const PRIVATE_RIDER_DIR = join(PRIVATE_DIR, 'build/rider');
 const PRIVATE_RIDER_MOUNT = '/private/rider';
 if (withPrivateAssets && existsSync(PRIVATE_RIDER_DIR)) {
   STATIC_DIRS[PRIVATE_RIDER_MOUNT] = PRIVATE_RIDER_DIR;

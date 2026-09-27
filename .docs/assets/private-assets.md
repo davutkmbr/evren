@@ -36,7 +36,8 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   `src/audio/music/manifest.ts`: only `private/…` files, never replacing a public id; the public manifest rejects
   `public-domain-tr` pieces and `private/` paths). A checkout or build without the folder simply lacks those pieces: a
   moment that names one (`musicId`) falls back to the mood choice. `EVREN_PRIVATE_ASSETS=0` leaves them out of a dev
-  server or build, e.g. for a build that is published openly.
+  server or build. On seventeenskies.com `worker/index.ts` answers 451 to the US and its territories (and to unknown
+  country and Tor), so the recordings are not distributed there.
 - **MetaHuman.** Exported runtime files under `build/` (per runtime), wired when that pipeline lands.
 - **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/<name>.fbx`
   (FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off).

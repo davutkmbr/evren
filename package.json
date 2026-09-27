@@ -28,7 +28,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:web": "EVREN_PUBLIC=1 EVREN_PRIVATE_ASSETS=0 npm run build && node scripts/deploy/stage.mjs",
+    "build:web": "EVREN_PUBLIC=1 npm run build && node scripts/deploy/stage.mjs",
     "deploy": "npm run build:web && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",

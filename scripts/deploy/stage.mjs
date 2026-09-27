@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
  * Stages dist/ for the public web deploy (wrangler.jsonc, Cloudflare Workers static assets) after a public build
- * (EVREN_PRIVATE_ASSETS=0 vite build, see npm run build:web):
+ * (EVREN_PUBLIC=1 vite build, see npm run build:web):
  *
  *   - dist/world/ gets exactly the shipping street layer: world/index.json, the areas it lists, _shared/ and walls/.
  *     Experiment folders (s1-hero, kadikoy-facade, ...) never ship. public/world/ is gitignored and compiled locally,
  *     so the source folder is EVREN_WORLD_DIR (default public/world/; a worktree points it at the main checkout).
- *   - dist/sandbox/ (dev test pages) and any private asset folder are removed.
+ *   - dist/sandbox/ (dev test pages) is removed. Private assets (rider clips, US-risky music) stay; worker/index.ts
+ *     keeps the music away from US visitors.
  *   - Checks the Workers limits (25 MiB per file, 20 000 files on the free plan) and fails before a deploy would.
  *
  *   node scripts/deploy/stage.mjs
@@ -21,7 +22,7 @@ const WORLD_SRC = resolve(ROOT, process.env.EVREN_WORLD_DIR ?? 'public/world');
 const MAX_FILE = 25 * 1024 * 1024;
 const MAX_FILES = 20_000;
 const WORLD_EXTRA = ['_shared', 'walls'];
-const REMOVE = ['sandbox', 'private', 'audio/music/private'];
+const REMOVE = ['sandbox'];
 
 function fail(msg) {
   console.error(`[stage] ${msg}`);
