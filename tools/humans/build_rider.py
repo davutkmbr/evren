@@ -113,6 +113,7 @@ def preview(tag_prefix=""):
     views = os.environ.get("RIDER_VIEWS", "front,side").split(",")
     shots = {
         "front": ((0, -5, 0.8), (90, 0, 0), 2.0),
+        "wide": ((0, 6, 1.0), (90, 0, 180), 6.6),
         "side": ((5, 0, 0.8), (90, 0, 90), 2.0),
         "back": ((0, 5, 0.9), (90, 0, 180), 2.0),
         "hand": ((hand.x + 2, hand.y, hand.z), (90, 0, 90), 0.35),
