@@ -1,7 +1,8 @@
 /**
  * Worker side of the traffic layer: the routable lane graph built from the OSM highways.
  *
- * - Drivable ways (carriageway classes, no access=no/private, no parking aisles) are clipped to the build rect and
+ * - Drivable ways (carriageway classes, no access=no/private/psv/bus/permit/emergency, no parking aisles, none in a
+ *   car-free zone, life/traffic/car-free.ts) are clipped to the build rect and
  *   split at every vertex shared with another drivable way (the `refs` junction ids of data.ts) into edges.
  * - Every edge gets right-hand lanes per direction (oneway, lanes, lanes:forward/backward, width; kerbside parking
  *   strips narrow the moving part), trimmed back from junctions by the width of the crossing streets.
@@ -20,6 +21,7 @@ import type { OsmData, OsmPoint, OsmRoad } from '../data';
 import { Surf } from '../shared/street-field';
 import type { StreetSurface } from '../shared/street-surface';
 import { clipPolyline, hermite, offsetPolyline, PathFlag, PathPool, pointAt, polyLength, project, reversePolyline, subPolyline } from './paths';
+import { carFree } from '../../life/traffic/car-free';
 import type { BuildingObstacles } from './obstacles';
 import { LaneFlag, MAX_GROUPS, StopKind, type DeckSpec } from './protocol';
 
@@ -72,7 +74,8 @@ const DENSITY: Record<string, number> = {
 };
 
 const BUS_KINDS = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link']);
-const NO_ACCESS = new Set(['no', 'private']);
+/** motor_vehicle / vehicle / access values that shut out private cars (public transport, permit and emergency ways). */
+const NO_ACCESS = new Set(['no', 'private', 'psv', 'bus', 'permit', 'emergency']);
 const LIMITED_ACCESS = new Set(['destination', 'delivery', 'customers', 'limited']);
 const NO_PARKING = new Set(['no', 'no_parking', 'no_stopping', 'separate', 'fire_lane']);
 
@@ -94,7 +97,7 @@ export function drivable(r: OsmRoad): boolean {
   if (r.kind === 'service' && (r.service === 'parking_aisle' || r.service === 'driveway' || r.service === 'drive-through')) {
     return false;
   }
-  return true;
+  return !carFree(r.pts[0], r.pts[1]);
 }
 
 export interface Edge {
