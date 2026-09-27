@@ -16,6 +16,7 @@ import type { TileContext } from '../registry';
 import { Batch, box, Builder, dressOpening, Face, faceBox, faceBoxC, Frame, hippedRoof, hpoly, lathe, type Opening, outline, shape, span, type V2, wall, type WindowStyle } from './kit';
 import { type HeroBuild, longestEdgeHeading } from './pier1926';
 import { HeroWeather, rng, sillStreaks, streakAt, type WxProfile } from './weather';
+import { HERO_MEASURES } from '../../../../src/world/osm/buildings/surveyed';
 
 /**
  * Weathering of the 2005–08 cladding (c03): light grime with patchy variation, splash and damp over the deck, streaks
@@ -96,7 +97,7 @@ const HALF_L = 41.15;
 const HALF_W = 9.0;
 const SEA = { u0: -HALF_L, u1: -20.85, h: 4.2 };
 const PAV = { u0: -20.85, u1: 6.15, eave: 8.0 };
-const LAND = { u0: 6.15, u1: HALF_L, h: 8.6 };
+const LAND = { u0: 6.15, u1: HALF_L, h: HERO_MEASURES.newPier.wallTop };
 const WALL = 'hero_panel_cream';
 const TRIM = 'hero_panel_trim';
 

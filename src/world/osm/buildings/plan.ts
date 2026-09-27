@@ -9,7 +9,7 @@ import { hash } from '../shared/geometry';
 import { Arch, ARCHETYPES, Balcony, Head, Layer } from './archetypes';
 import { districtAt, type DistrictProfile, pickColour, pickWeighted } from './districts';
 import { osmColour } from '../shared/colour';
-import { resolveSurveyed, SURVEYED, type SurveyedPlan } from './surveyed';
+import { MEASURED, resolveSurveyed, SURVEYED, type SurveyedPlan } from './surveyed';
 
 export type RoofShape = 'flat' | 'hipped' | 'gabled' | 'pyramidal' | 'skillion' | 'dome' | 'domes';
 /** Roof covering (roof material: tiles / lead / metal; flat roofs: slab finishes, see materials.ts). */
@@ -240,7 +240,12 @@ export function planBuilding(b: OsmBuilding, f: FootprintInfo, seedId: number): 
   const kind = b.kind === 'yes' && (b.amenity === 'restaurant' || b.amenity === 'cafe' || b.shop) ? 'commercial' : b.kind;
   const district = districtAt(f.cx, f.cz, H(1));
   const row = SURVEYED[b.id];
-  const surveyed: SurveyedPlan | null = row ? resolveSurveyed(row, b.id, b.roofShape, f.area) : null;
+  const measured = MEASURED[b.id];
+  const surveyed: Pick<SurveyedPlan, 'storeys' | 'roof' | 'wallTop'> | null = row
+    ? resolveSurveyed(row, b.id, b.roofShape, f.area)
+    : measured
+      ? { storeys: Math.max(1, Math.round(measured.wallTop / 4)), roof: measured.roof, wallTop: measured.wallTop }
+      : null;
 
   let arch = taggedArch(b, kind, H(2));
   if (arch === null) {
