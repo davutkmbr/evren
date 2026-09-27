@@ -23,6 +23,7 @@ import { RiderCharacter } from './rider/character';
 import { loadHumanRider, type HumanRider } from './rider/human';
 import { RiderRetarget } from './rider/retarget';
 import { DynamicReins } from './rider/reins';
+import { LocomotionController } from './rider/locomotion/controller';
 import type { RiderAppearance } from './rider/appearance';
 
 export interface RigBuildOptions {
@@ -123,6 +124,8 @@ export class DragonRigImpl implements DragonRig {
   riderRetarget?: RiderRetarget;
   /** The reins' free spans, simulated (with the human rider). */
   reins?: DynamicReins;
+  /** The rider on foot (or in the air) after leaving the saddle; the caller drives it. */
+  onFoot?: LocomotionController;
   private readonly meshes: THREE.SkinnedMesh[] = [];
   private firstPerson = false;
   private textureSize: number;
@@ -296,6 +299,31 @@ export class DragonRigImpl implements DragonRig {
     this.riderRetarget?.setFirstPerson(enabled);
   }
 
+  /**
+   * The rider leaves the saddle: the character keeps its pose, moves under `parent` (the world), faces the dragon's
+   * heading and flies off with `velocity` (world m/s: the dragon's own plus the leap) under a locomotion controller,
+   * returned for the caller to drive (input: glide to spread the wings). The reins stay on the saddle.
+   */
+  leaveSaddle(parent: THREE.Object3D, velocity: THREE.Vector3, ground?: (x: number, z: number) => number): LocomotionController | undefined {
+    const h = this.human;
+    if (!h || !this.riderRetarget || this.onFoot) {
+      return this.onFoot;
+    }
+    this.riderRetarget.enabled = false;
+    if (this.reins) {
+      this.reins.fistPath = undefined;
+    }
+    parent.attach(h.root);
+    const q = h.root.getWorldQuaternion(new THREE.Quaternion());
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const yaw = Math.atan2(fwd.x, fwd.z);
+    h.root.rotation.set(0, yaw, 0, 'YXZ');
+    h.mixer.stopAllAction();
+    this.onFoot = new LocomotionController(h, h.root, ground);
+    this.onFoot.launch(velocity, yaw);
+    return this.onFoot;
+  }
+
   get isFirstPerson(): boolean {
     return this.firstPerson;
   }
@@ -328,7 +356,7 @@ export class DragonRigImpl implements DragonRig {
     }
     this.riderUniforms.uAirspeed.value = o.airspeed;
     this.riderUniforms.uAirflow.value.copy(o.airflow);
-    if (!this.human) {
+    if (!this.human || this.onFoot) {
       this.reins?.update(dt);
     } else {
       this.riderRetarget?.update();
