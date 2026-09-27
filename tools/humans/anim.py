@@ -487,7 +487,7 @@ def air_pose(b, t, falling):
         if falling:
             ankle = Vector((sg * 0.15, b.ankle0[side].y - 0.06 * sg, b.ankle_h + 0.08))
             b.leg(side, sg, ankle, pitch=0.35, knee_out=0.15)
-            b.arm(side, sg, swing=0.3 + 0.05 * w, raise_=1.25, out=0.1, elbow=0.5)
+            b.arm(side, sg, swing=0.55 + 0.05 * w, raise_=0.75, out=0.1, elbow=0.7)
         else:
             ankle = Vector((sg * 0.14, b.ankle0[side].y + 0.12 + (0.1 if side == "Left" else -0.05), b.ankle_h + 0.32 + 0.08 * sg))
             b.leg(side, sg, ankle, pitch=0.45, knee_out=0.1)

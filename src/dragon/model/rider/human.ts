@@ -29,6 +29,8 @@ export interface HumanRider {
   wings: Wings;
   /** The game's garment materials by id (primary, secondary, accent, leather, darkLeather, mail, iron, metal, ...). */
   garments?: Map<string, THREE.MeshPhysicalMaterial[]>;
+  /** On a dragon: the bone the character hangs from and its root's place there (to mount again). */
+  saddle?: { anchor: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion };
 }
 
 let gltfLoader: GLTFLoader | undefined;
@@ -138,6 +140,7 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
   const turned = hipsPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   root.position.copy(SEAT_HIPS).sub(turned).sub(anchorRest);
   anchor.add(root);
+  rider.saddle = { anchor, position: root.position.clone(), quaternion: root.quaternion.clone() };
   rider.wind.captureRest();
   return rider;
 }
