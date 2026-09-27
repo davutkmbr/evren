@@ -32,6 +32,8 @@ CLIPS = {
     "jump_fall": (1.0, True, 0.0),
     "jump_land": (0.55, False, 0.0),
     "glide": (2.4, True, 0.0),
+    "idle_look": (5.0, False, 0.0),
+    "idle_shoulders": (4.0, False, 0.0),
 }
 
 X = Vector((1, 0, 0))
@@ -527,6 +529,46 @@ def glide_pose(b, t):
     b.fingers(0.9, 0.6)
 
 
+def idle_look_pose(b, t):
+    """Standing, looks over the left shoulder (the chest turning with the head), holds, then to the right, and back:
+    each turn eased, the weight shifting onto the foot it turns toward."""
+    T = CLIPS["idle_look"][0]
+    # Keys (s → look yaw, + = left): 0 → 0, 0.9 → 0.75, 1.9 → 0.75, 2.8 → -0.6, 3.8 → -0.6, 4.7 → 0.
+    keys = [(0.0, 0.0), (0.9, 0.75), (1.9, 0.72), (2.8, -0.6), (3.8, -0.62), (4.7, 0.0), (T, 0.0)]
+    look = 0.0
+    for (t0, v0), (t1, v1) in zip(keys, keys[1:]):
+        if t0 <= t <= t1:
+            look = lerp(v0, v1, ease((t - t0) / max(t1 - t0, 1e-6)))
+            break
+    breath = math.sin(2 * math.pi * t / 1.6)
+    b.start()
+    b.pelvis(Vector((0.015 * look, 0.0, -0.02 + 0.004 * breath)), yaw=0.12 * look, roll=0.02 * look, pitch=0.05)
+    b.trunk(pitch=0.03 + 0.01 * breath, yaw=0.35 * look)
+    b.shoulders(lift=0.02 + 0.01 * breath)
+    b.head_level(pitch=0.02, yaw=look * 0.9, roll=-0.05 * look)
+    for side, sg in SIDES:
+        b.foot_on_ground(side, sg, along=0.03 * sg, width=0.035, yaw=sg * 0.12)
+        b.arm(side, sg, swing=0.05 + 0.04 * look * sg, out=0.12, elbow=0.22)
+    b.fingers(0.35, 0.25)
+
+
+def idle_shoulders_pose(b, t):
+    """Standing, rolls the shoulders back twice, tilts the head to each side (a stretch), flexes the hands."""
+    T = CLIPS["idle_shoulders"][0]
+    roll = math.sin(2 * math.pi * min(1.0, t / 1.6) * 2) * ease(t / 0.3) * (1 - ease((t - 1.3) / 0.3))
+    tilt = math.sin(2 * math.pi * max(0.0, (t - 1.6)) / 2.0) * (1 - ease((t - 3.4) / 0.5)) if t > 1.6 else 0.0
+    flex = math.sin(math.pi * min(1.0, max(0.0, (t - 2.4) / 1.2)))
+    b.start()
+    b.pelvis(Vector((0.0, 0.0, -0.02)), pitch=0.05)
+    b.trunk(pitch=0.02 - 0.04 * max(0.0, roll))
+    b.shoulders(lift=0.05 + 0.06 * max(0.0, roll), fwd=-0.12 * roll)
+    b.head_level(pitch=0.03 - 0.06 * max(0.0, roll), roll=0.35 * tilt, yaw=0.08 * tilt)
+    for side, sg in SIDES:
+        b.foot_on_ground(side, sg, along=0.03 * sg, width=0.035, yaw=sg * 0.12)
+        b.arm(side, sg, swing=0.05, out=0.13 + 0.03 * max(0.0, roll), elbow=0.22 + 0.2 * flex)
+    b.fingers(0.35 + 0.5 * flex, 0.25 + 0.3 * flex)
+
+
 POSES = {
     "idle": idle_pose,
     "walk": walk_pose,
@@ -539,6 +581,8 @@ POSES = {
     "jump_fall": lambda b, t: air_pose(b, t, True),
     "jump_land": jump_land_pose,
     "glide": glide_pose,
+    "idle_look": idle_look_pose,
+    "idle_shoulders": idle_shoulders_pose,
 }
 
 

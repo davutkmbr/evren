@@ -25,6 +25,8 @@ export interface LocomotionInput {
   jump: boolean;
   /** Held: spread the wings and glide (in the air). */
   glide?: boolean;
+  /** Standing: turn to face this heading (rad about +Y, 0 = +Z); the feet step round. */
+  faceYaw?: number;
 }
 
 export type LocoState = 'ground' | 'stop' | 'takeoff' | 'air' | 'glide' | 'land';
@@ -110,6 +112,14 @@ export class LocomotionController {
   private bank = 0;
   private wing = 0;
   private wingVel = 0;
+  /** Standing still: time so far, the idle variation playing (if any) and its time, when the next one comes. */
+  private still = 0;
+  private variant: string | null = null;
+  private variantTime = 0;
+  private nextVariant = 7;
+  private variantIndex = 0;
+  /** Turning on the spot (rad/s, smoothed): drives stepping feet. */
+  private spin = 0;
 
   constructor(
     private readonly human: HumanRider,
@@ -195,6 +205,13 @@ export class LocomotionController {
     }
     // --- facing: turn toward the travel ---
     const sp = this.speed;
+    if (this.state === 'ground' && sp <= 0.15 && input.faceYaw !== undefined) {
+      // Turning on the spot toward a heading: at most 3 rad/s, eased.
+      let d = input.faceYaw - this.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      const turn = clamp(d * 4, -3, 3) * dt;
+      this.yaw += turn;
+    }
     if (this.state === 'glide') {
       let turn = 0;
       if (m > 0.1) {
@@ -274,6 +291,15 @@ export class LocomotionController {
     this.prevYaw = this.yaw;
   }
 
+  /** Leaves the ground (or the saddle) with this velocity (world, m/s): into the air, e.g. to glide. */
+  launch(velocity: THREE.Vector3, yaw = this.yaw): void {
+    this.velocity.set(velocity.x, velocity.z);
+    this.vy = velocity.y;
+    this.yaw = yaw;
+    this.prevYaw = yaw;
+    this.enter('air');
+  }
+
   private approach(want: THREE.Vector2, rate: number, dt: number): void {
     _v.subVectors(want, this.velocity);
     const len = _v.length();
@@ -301,8 +327,18 @@ export class LocomotionController {
     const stand = 1 - this.crouch;
     const gait = { idle: (1 - walkIn) * stand, walk: walkIn * (1 - runIn) * stand, run: walkIn * runIn * stand, crouch_idle: (1 - walkIn) * this.crouch, crouch_walk: walkIn * this.crouch };
     // The shared phase advances by distance over the blended cycle length.
+    // Turning on the spot: the feet step round (the walk, a little, its phase driven by the turn).
+    let dyawStep = this.yaw - this.prevYaw;
+    dyawStep = Math.atan2(Math.sin(dyawStep), Math.cos(dyawStep));
+    this.spin += (Math.abs(dyawStep) / Math.max(dt, 1e-4) - this.spin) * (1 - Math.exp(-10 * dt));
+    const stepIn = this.state === 'ground' && sp < 0.3 ? smoothstep(this.spin, 0.4, 1.6) * 0.7 : 0;
+    if (stepIn > 1e-3) {
+      gait.walk += gait.idle * stepIn;
+      gait.idle *= 1 - stepIn;
+      this.phase = (this.phase + (this.spin * 0.28 * dt) / cycleLength('walk')) % 1;
+    }
     const moving = gait.walk + gait.run + gait.crouch_walk;
-    if (moving > 1e-3) {
+    if (moving > 1e-3 && stepIn < 1e-3) {
       const len = (gait.walk * cycleLength('walk') + gait.run * cycleLength('run') + gait.crouch_walk * cycleLength('crouch_walk')) / moving;
       this.phase = (this.phase + (sp * dt) / len) % 1;
     }
@@ -350,6 +386,31 @@ export class LocomotionController {
       }
       default:
         break;
+    }
+    // Idle variations: standing still a while, one plays (looking around, a shoulder roll), then idle again.
+    const standing = this.state === 'ground' && sp < 0.05 && this.crouch < 0.1 && stepIn < 0.05;
+    this.still = standing ? this.still + dt : 0;
+    if (!standing) {
+      this.variant = null;
+    } else if (!this.variant && this.still > this.nextVariant) {
+      const names = ['idle_look', 'idle_shoulders'].filter((n) => this.actions.has(n));
+      if (names.length) {
+        this.variant = names[this.variantIndex++ % names.length];
+        this.variantTime = 0;
+      }
+    }
+    if (this.variant) {
+      this.variantTime += dt;
+      const dur = CLIPS[this.variant].duration;
+      const k = smoothstep(this.variantTime, 0, 0.45) * (1 - smoothstep(this.variantTime, dur - 0.6, dur));
+      t.set(this.variant, k * gaitShare);
+      this.setTime(this.variant, this.variantTime);
+      gait.idle *= 1 - k;
+      if (this.variantTime >= dur) {
+        this.variant = null;
+        this.still = 0;
+        this.nextVariant = 8 + ((this.variantIndex * 5.3) % 7);
+      }
     }
     for (const [k, w] of Object.entries(gait)) {
       t.set(k, w * gaitShare);
