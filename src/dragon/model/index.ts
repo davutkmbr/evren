@@ -8,9 +8,19 @@ import { DragonRigImpl } from './rig';
 import { DEFAULT_APPEARANCE, sanitizeAppearance } from './rider/appearance';
 import { RIDER_SIZE } from './rider/skeleton';
 
-/** Work-in-progress Blender-pipeline rider: `?riderUrl=<glb url>`. */
+/**
+ * The rider character built by tools/humans/ (public/models/rider/akinci.glb); `?riderUrl=<glb url>` loads another
+ * build, `?rider=old` keeps the procedural rider of the rig, `?rider=new` the SDF experiment.
+ */
 function humanRiderFlag(): string | undefined {
-  return typeof window === 'undefined' ? undefined : (new URLSearchParams(window.location.search).get('riderUrl') ?? undefined);
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('rider') === 'old' || q.get('rider') === 'new') {
+    return undefined;
+  }
+  return q.get('riderUrl') ?? `${import.meta.env.BASE_URL}models/rider/akinci.glb`;
 }
 
 /** Work-in-progress rider rebuild: `?rider=new` (optionally `&look=<JSON appearance fields>`). */

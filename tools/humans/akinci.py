@@ -520,7 +520,26 @@ def build(rig, body, colliders):
         skin(p, body, rig, weights.get(p))
     # After skinning: the garments take their weights from the full body (gloves from the fingers).
     hide_covered_body(body, garments)
-    return parts
+    return join_by_material(parts)
+
+
+def join_by_material(parts):
+    """One object per material (one draw call each in the game): parts sharing a material are joined."""
+    groups = {}
+    for p in parts:
+        key = p.data.materials[0].name if p.data.materials else ""
+        groups.setdefault(key, []).append(p)
+    out = []
+    for key, objs in groups.items():
+        if len(objs) > 1:
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in objs:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = objs[0]
+            bpy.ops.object.join()
+        objs[0].name = key.replace("rider_", "outfit_") or "outfit"
+        out.append(objs[0])
+    return out
 
 
 def hull_out(obj, centre, passes=4):
