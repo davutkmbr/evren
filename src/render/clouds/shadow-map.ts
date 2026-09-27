@@ -45,6 +45,8 @@ export class CloudShadowMap {
   private readonly region = new THREE.Vector4();
   private readonly frontRegion = new THREE.Vector4();
   private readonly forward = new THREE.Vector3();
+  /** Key-light direction of the current bake. */
+  private readonly bakedDir = new THREE.Vector3(0, -1, 0);
   private readonly initialized = new WeakSet<THREE.WebGLRenderTarget>();
 
   constructor(
@@ -88,8 +90,8 @@ export class CloudShadowMap {
     this.slice = 0;
   }
 
-  private computeRegion(camera: THREE.Camera, sunDir: THREE.Vector3): void {
-    const sy = Math.max(sunDir.y, 0.05);
+  private computeRegion(camera: THREE.Camera, keyDir: THREE.Vector3): void {
+    const sy = Math.max(keyDir.y, 0.05);
     const cx = camera.matrixWorld.elements[12];
     const cz = camera.matrixWorld.elements[14];
     camera.getWorldDirection(this.forward);
@@ -97,8 +99,8 @@ export class CloudShadowMap {
     if (this.forward.lengthSq() > 1e-6) {
       this.forward.normalize();
     }
-    let ox = (sunDir.x / sy) * CLOUD_SHADOW_REF_HEIGHT;
-    let oz = (sunDir.z / sy) * CLOUD_SHADOW_REF_HEIGHT;
+    let ox = (keyDir.x / sy) * CLOUD_SHADOW_REF_HEIGHT;
+    let oz = (keyDir.z / sy) * CLOUD_SHADOW_REF_HEIGHT;
     const maxOffset = this.extent * 0.3;
     const len = Math.hypot(ox, oz);
     if (len > maxOffset) {
@@ -130,12 +132,18 @@ export class CloudShadowMap {
     return last;
   }
 
-  update(renderer: THREE.WebGLRenderer, camera: THREE.Camera, sunDir: THREE.Vector3, night: number): void {
+  /** `keyDir`: toward the key light (sun by day, moon at night; render/sky uKeyLightDir). */
+  update(renderer: THREE.WebGLRenderer, camera: THREE.Camera, keyDir: THREE.Vector3): void {
     const targets = this.targets;
     if (!this.enabled || !targets) {
       return;
     }
-    const strength = (1 - THREE.MathUtils.smoothstep(night, 0.75, 0.98)) * THREE.MathUtils.smoothstep(sunDir.y, -0.01, 0.03);
+    // The key light switches from the sun to the moon at dusk: bake the new direction at once instead of in slices.
+    if (this.bakedDir.dot(keyDir) < 0.995) {
+      this.bakedDir.copy(keyDir);
+      this.restart();
+    }
+    const strength = THREE.MathUtils.smoothstep(keyDir.y, -0.01, 0.03);
     const xform = this.globals.xform.value;
     if (strength <= 0) {
       xform.w = 0;
@@ -145,7 +153,7 @@ export class CloudShadowMap {
     const prev = renderer.getRenderTarget();
     if (!this.hasFront) {
       // First bake (or after a reset): complete it in one frame so shadows never pop in late.
-      this.computeRegion(camera, sunDir);
+      this.computeRegion(camera, keyDir);
       const rt = targets[this.front];
       for (let i = 0; i < SLICES; i++) {
         this.bakeSlice(renderer, rt, i, SLICES);
@@ -155,7 +163,7 @@ export class CloudShadowMap {
       this.slice = 0;
     } else {
       if (this.slice === 0) {
-        this.computeRegion(camera, sunDir);
+        this.computeRegion(camera, keyDir);
       }
       const back = targets[1 - this.front];
       if (this.bakeSlice(renderer, back, this.slice, SLICES)) {
