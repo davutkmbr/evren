@@ -58,11 +58,10 @@ def process(piece: dict, rec: dict) -> dict:
     x, sr = sf.read(src, always_2d=True)
     x = R.to_mono_48k(x, sr)
     t0, t1 = piece['segment']
-    # Noise profile: the run-in groove before the music, or the quietest second when the transfer has none.
-    if piece.get('noise', 'leadin') == 'leadin':
-        g0, g1 = R.find_leadin(x)
-    else:
-        g0, g1 = R.quietest_region(x, 1.0)
+    # Noise profile: the run-in groove before the music, or the quietest second of groove noise when the transfer has
+    # none (it is gated to digital silence or starts on the music).
+    lead = R.find_leadin(x) if piece.get('noise', 'leadin') == 'leadin' else None
+    g0, g1 = lead or R.quietest_region(x, 1.0)
     if 'noiseRegion' in piece:
         g0, g1 = piece['noiseRegion']
     gs = slice(int(g0 * R.SR), int(g1 * R.SR))
@@ -78,13 +77,20 @@ def process(piece: dict, rec: dict) -> dict:
         den = R.notch_hum(den, hum)
     den, n_clicks = R.declick(den)
     pre_hiss = den.copy()
-    den = R.dehiss(den, den[rel(g0, g1)], piece.get('propDecrease', R.PROP_DECREASE))
+    # No steady groove noise anywhere (a gated transfer): nothing to profile, so no hiss reduction and no SNR.
+    groove = R.is_groove_noise(raw[rel(g0, g1)])
+    if groove:
+        den = R.dehiss(den, den[rel(g0, g1)], piece.get('propDecrease', R.PROP_DECREASE))
 
     seg = rel(t0, t1)
     m_raw = R.segment_metrics(raw[seg], raw[rel(g0, g1)])
     m_den = R.segment_metrics(den[seg], den[rel(g0, g1)])
     cmp = R.compare(raw[seg], pre_hiss[seg], den[seg], raw[rel(g0, g1)], pre_hiss[rel(g0, g1)], den[rel(g0, g1)])
     auto, why = R.verdict(m_raw, m_den, cmp)
+    if not groove:
+        for m in (m_raw, m_den):
+            m['noise_db'] = m['snr_db'] = None
+        auto, why = 'raw', ['no groove noise in the transfer (gated to digital silence): nothing to denoise']
     default = piece.get('variant', auto)
 
     target = TARGETS[piece['target']]
@@ -106,8 +112,9 @@ def process(piece: dict, rec: dict) -> dict:
             }
     return {
         'id': piece['id'], 'recording': rec['id'], 'file': piece['file'], 'segment': [t0, t1],
-        'noiseRegion': [round(g0, 2), round(g1, 2)], 'hum': hum, 'clicksRepaired': n_clicks,
-        'metrics': {'raw': m_raw, 'denoised': m_den, 'compare': cmp, 'snrGainDb': round(m_den['snr_db'] - m_raw['snr_db'], 2)},
+        'noiseRegion': [round(g0, 2), round(g1, 2)] if groove else None, 'hum': hum, 'clicksRepaired': n_clicks,
+        'metrics': {'raw': m_raw, 'denoised': m_den, 'compare': cmp,
+                    'snrGainDb': round(m_den['snr_db'] - m_raw['snr_db'], 2) if groove else None},
         'autoVariant': auto, 'autoReasons': why, 'variant': default, 'variants': variants,
     }
 
