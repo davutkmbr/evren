@@ -1,7 +1,8 @@
 /**
  * Worker side of the traffic layer: the routable lane graph built from the OSM highways.
  *
- * - Drivable ways (carriageway classes, no access=no/private, no parking aisles) are clipped to the build rect and
+ * - Drivable ways (carriageway classes, no access=no/private/psv/bus/permit/emergency, no parking aisles, none in a
+ *   car-free zone, life/traffic/car-free.ts) are clipped to the build rect and
  *   split at every vertex shared with another drivable way (the `refs` junction ids of data.ts) into edges.
  * - Every edge gets right-hand lanes per direction (oneway, lanes, lanes:forward/backward, width; kerbside parking
  *   strips narrow the moving part), trimmed back from junctions by the width of the crossing streets.
@@ -10,6 +11,9 @@
  * - Traffic signal nodes become signal heads grouped into controllers (phase group per approach axis), pedestrian
  *   crossings, tram crossings and bus stops become stops along the lanes.
  * - Bridge ways on a rendered deck (DeckSpec) follow the deck's lanes instead of the OSM geometry.
+ * - No lane or connector runs through a building (obstacles.ts), whatever the OSM geometry: a lane that would is pulled
+ *   halfway to the centreline or left out, a connector tightens its curve, goes straight or is left out (tunnels and
+ *   decks excepted). A lane left without a way on becomes a sink.
  * OSM carries no turn restriction relations in the slice data (schema v2), so every legal-looking turn is allowed.
  */
 import type { WorldBounds } from '../../../core/contracts';
@@ -17,6 +21,8 @@ import type { OsmData, OsmPoint, OsmRoad } from '../data';
 import { Surf } from '../shared/street-field';
 import type { StreetSurface } from '../shared/street-surface';
 import { clipPolyline, hermite, offsetPolyline, PathFlag, PathPool, pointAt, polyLength, project, reversePolyline, subPolyline } from './paths';
+import { carFree } from '../../life/traffic/car-free';
+import type { BuildingObstacles } from './obstacles';
 import { LaneFlag, MAX_GROUPS, StopKind, type DeckSpec } from './protocol';
 
 /** Priority / preference rank of highway classes. */
@@ -68,7 +74,8 @@ const DENSITY: Record<string, number> = {
 };
 
 const BUS_KINDS = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link']);
-const NO_ACCESS = new Set(['no', 'private']);
+/** motor_vehicle / vehicle / access values that shut out private cars (public transport, permit and emergency ways). */
+const NO_ACCESS = new Set(['no', 'private', 'psv', 'bus', 'permit', 'emergency']);
 const LIMITED_ACCESS = new Set(['destination', 'delivery', 'customers', 'limited']);
 const NO_PARKING = new Set(['no', 'no_parking', 'no_stopping', 'separate', 'fire_lane']);
 
@@ -90,7 +97,7 @@ export function drivable(r: OsmRoad): boolean {
   if (r.kind === 'service' && (r.service === 'parking_aisle' || r.service === 'driveway' || r.service === 'drive-through')) {
     return false;
   }
-  return true;
+  return !carFree(r.pts[0], r.pts[1]);
 }
 
 export interface Edge {
@@ -273,6 +280,7 @@ export function buildNetwork(
   surface: StreetSurface,
   rect: WorldBounds,
   decks: readonly DeckSpec[],
+  obstacles: BuildingObstacles | null = null,
 ): NetworkBuild {
   const pool = new PathPool(surface);
 
@@ -478,12 +486,25 @@ export function buildNetwork(
     const baseFlags = (e.r.tunnel ? LaneFlag.Hidden : 0) | (e.deck ? LaneFlag.Deck : 0) | (BUS_KINDS.has(r.kind) ? LaneFlag.Bus : 0) | (narrow ? LaneFlag.Narrow : 0);
     const pathFlags = (e.r.tunnel ? PathFlag.Hidden : 0) | (e.deck ? PathFlag.Deck : 0);
     const make = (forward: boolean, offsets: number[], geom: (off: number) => number[], out: number[]): void => {
-      offsets.forEach((off, k) => {
+      const t0 = forward ? e.trim0 : e.trim1;
+      const t1 = forward ? e.trim1 : e.trim0;
+      const lanePts = (off: number): number[] => {
         const full = geom(off);
         const L = polyLength(full);
-        const t0 = forward ? e.trim0 : e.trim1;
-        const t1 = forward ? e.trim1 : e.trim0;
-        const pts = subPolyline(full, Math.min(t0, L * 0.45), Math.max(L - t1, L * 0.55));
+        return subPolyline(full, Math.min(t0, L * 0.45), Math.max(L - t1, L * 0.55));
+      };
+      const kept: number[][] = [];
+      for (const off of offsets) {
+        let pts = lanePts(off);
+        if (obstacles && !e.deck && !e.r.tunnel && obstacles.blocksPath(pts)) {
+          pts = lanePts(off / 2);
+          if (obstacles.blocksPath(pts)) {
+            continue;
+          }
+        }
+        kept.push(pts);
+      }
+      kept.forEach((pts, k) => {
         const from = forward ? e.from : e.to;
         const to = forward ? e.to : e.from;
         let flags = baseFlags;
@@ -501,7 +522,7 @@ export function buildNetwork(
           to,
           forward,
           index: k,
-          count: offsets.length,
+          count: kept.length,
           flags,
           pts,
           len: polyLength(pts),
@@ -609,12 +630,23 @@ export function buildNetwork(
         const [tx, tz] = endHeading(lout.pts, false);
         const u = Math.abs(o.turn) > 2.6;
         const d = Math.hypot(qx - px, qz - pz);
-        const curve = d < 0.05 ? [px, pz, qx + tx * 0.05, qz + tz * 0.05] : hermite(px, pz, hx, hz, qx, qz, tx, tz, u ? 1.6 : 0.5 + Math.abs(o.turn) * 0.12);
+        const straight = [px, pz, qx + tx * 0.05, qz + tz * 0.05];
+        let curve = d < 0.05 ? straight : hermite(px, pz, hx, hz, qx, qz, tx, tz, u ? 1.6 : 0.5 + Math.abs(o.turn) * 0.12);
         const hidden = lin.flags & LaneFlag.Hidden && lout.flags & LaneFlag.Hidden ? PathFlag.Hidden : 0;
         const deck = (lin.flags | lout.flags) & LaneFlag.Deck ? PathFlag.Deck : 0;
+        if (obstacles && !hidden && !deck && obstacles.blocksPath(curve)) {
+          const tight = hermite(px, pz, hx, hz, qx, qz, tx, tz, 0.2);
+          curve = !obstacles.blocksPath(tight) ? tight : straight;
+          if (obstacles.blocksPath(curve)) {
+            continue;
+          }
+        }
         const id = conns.length;
         conns.push({ path: pool.add(curve, CONN_STEP, hidden | deck), from: li, to: o.target, node: ni, turn: o.turn, weight: o.weight });
         lin.conns.push(id);
+      }
+      if (!lin.conns.length && !(lin.flags & LaneFlag.Exit)) {
+        lin.flags |= LaneFlag.Sink;
       }
     }
   });

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GeoQuery, RoadDef, RoadSurfaceService, WorldBounds } from '../../../core/contracts';
 import { createRng } from '../../../core/math/noise';
+import { carFree } from './car-free';
 
 export const ROAD_TEX_WIDTH = 1024;
 /** Resampling step along every road (m). */
@@ -291,7 +292,8 @@ function snapToDeck(path: PathPoint[], deck: DeckAxis): { path: PathPoint[]; alo
  * point, hide weight and the lateral surface profile) and lays out right-hand traffic lanes with car phases.
  * Bridge decks come only from the core 'roadSurface' service: the roads are re-aligned onto the published deck
  * centre lines and take their surface heights (and lanes) from there. `hide` is 1 inside the `exclude` rectangles
- * (the OSM regions, which run their own traffic) and over the water off the bridge decks (WATER_FADE), 0 elsewhere.
+ * (the OSM regions, which run their own traffic), in the car-free zones (./car-free.ts) and over the water off the
+ * bridge decks (WATER_FADE), 0 elsewhere.
  */
 export class RoadNetwork {
   readonly tracks: RoadTrack[] = [];
@@ -310,8 +312,9 @@ export class RoadNetwork {
     const pts: number[] = [];
     const kinds: number[] = [];
     for (const def of geo.roads) {
-      // Roads wholly inside the excluded rectangles (e.g. İstiklal in the OSM slice) would only carry hidden cars.
-      if (def.points.length < 2 || def.points.every((p) => inAny(exclude, p.x, p.z))) continue;
+      // Roads wholly inside the excluded rectangles (e.g. İstiklal in the OSM slice) or a car-free zone would only carry
+      // hidden cars.
+      if (def.points.length < 2 || def.points.every((p) => inAny(exclude, p.x, p.z) || carFree(p.x, p.z))) continue;
       let path = densify(def.points);
       const crossed: DeckAxis[] = [];
       let deckLength = 0;
@@ -387,7 +390,7 @@ export class RoadNetwork {
         };
         const yc = at(0);
         const onWater = deck || join ? 0 : waterWeight(geo, x, z);
-        pts.push(x, yc + WHEEL_LIFT, z, Math.max(excludeWeight(x, z, exclude), onWater));
+        pts.push(x, yc + WHEEL_LIFT, z, carFree(x, z) ? 1 : Math.max(excludeWeight(x, z, exclude), onWater));
         pts.push(at(-side) - yc, at(side) - yc, at(-side / 2) - yc, at(side / 2) - yc);
         kinds.push(deck ? SampleKind.Deck : join ? SampleKind.Join : SampleKind.Ground);
         minX = Math.min(minX, x);
