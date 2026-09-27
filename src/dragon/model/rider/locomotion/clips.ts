@@ -6,6 +6,10 @@ export interface ClipInfo {
   duration: number;
   loop: boolean;
   speed: number;
+  /** Captured jumps: when the feet leave the ground (s). */
+  takeoff?: number;
+  /** Captured landings: when the feet meet the ground (s). */
+  contact?: number;
 }
 
 export const CLIPS: Record<string, ClipInfo> = {
@@ -31,4 +35,14 @@ export const STOP_BRAKE = 0.45;
 export function cycleLength(name: string): number {
   const c = CLIPS[name];
   return c.speed * c.duration;
+}
+
+/**
+ * Replaces or adds clips from captured motion (the private Mixamo clips, tools/humans/mixamo.py): their measured
+ * durations, speeds and event times take over from the procedural table.
+ */
+export function mergeClipInfo(info: Record<string, ClipInfo>): void {
+  for (const [name, c] of Object.entries(info)) {
+    CLIPS[name] = { ...c };
+  }
 }

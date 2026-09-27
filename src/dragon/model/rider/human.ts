@@ -10,6 +10,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { patchMaterial } from '../../../core/uniforms';
 import { WindBones } from './wind-bones';
 import { FaceLife } from './face';
+import { mergeClipInfo, type ClipInfo } from './locomotion/clips';
 
 /** Where the hips joint sits on the saddle (rig space). */
 export const SEAT_HIPS = new THREE.Vector3(0, 1.2, -2.52);
@@ -31,6 +32,29 @@ export interface HumanRider {
   garments?: Map<string, THREE.MeshPhysicalMaterial[]>;
   /** On a dragon: the bone the character hangs from and its root's place there (to mount again). */
   saddle?: { anchor: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion };
+}
+
+/**
+ * Captured clips (Mixamo, private: .docs/assets/private-assets.md) served next to the build at private/rider/ when the
+ * owner has them; they replace the procedural clips of the same name. A checkout without them keeps the procedural set.
+ */
+async function loadPrivateClips(clips: Map<string, THREE.AnimationClip>): Promise<void> {
+  const base = `${import.meta.env.BASE_URL}private/rider/`;
+  try {
+    const res = await fetch(`${base}clips.json`, { cache: 'no-cache' });
+    if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) {
+      return;
+    }
+    const info = (await res.json()) as Record<string, ClipInfo>;
+    const gltf = await loader().loadAsync(`${base}clips.glb`);
+    for (const c of gltf.animations) {
+      clips.set(c.name, c);
+    }
+    mergeClipInfo(info);
+    console.info(`[rider] captured clips: ${gltf.animations.map((c) => c.name).join(', ')}`);
+  } catch {
+    // No private clips: the procedural ones stay.
+  }
 }
 
 let gltfLoader: GLTFLoader | undefined;
@@ -84,6 +108,7 @@ export async function loadHumanModel(url: string): Promise<HumanRider> {
   }
   const mixer = new THREE.AnimationMixer(root);
   const clips = new Map(gltf.animations.map((c) => [c.name, c]));
+  await loadPrivateClips(clips);
   const human: HumanRider = { root, meshes, bones, bindLocal, mixer, clips, wind: new WindBones(bones), face: undefined as unknown as FaceLife, wings: new Wings(bones) };
   human.face = new FaceLife(human);
   applyGarmentMaterials(human);
