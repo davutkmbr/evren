@@ -26,7 +26,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SRC_DIR = os.environ.get("RIDER_MIXAMO_DIR", os.path.join(ROOT, "private-assets", "mixamo"))
 OUT_DIR = os.environ.get("RIDER_MIXAMO_OUT", os.path.join(ROOT, "private-assets", "build", "rider"))
 
-from mixamo_names import CLIPS, category, resolve, slug  # noqa: E402  (bpy-free: also a command-line renamer)
+from mixamo_names import CLIPS, TURNING, category, resolve, slug  # noqa: E402  (bpy-free: also a command-line renamer)
 
 
 def _rot(m):
@@ -87,6 +87,11 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
             rots[names[bn]] = _rot(mw @ pb.matrix) @ src_rest[bn].inverted()
         hp = (mw @ src.pose.bones[next(bn for bn in names if names[bn] == "Hips")].matrix).translation.copy()
         samples.append((rots, hp))
+    # Turning clips: the body's heading change (the hips' yaw) is taken out, so the clip plays facing ahead and the game
+    # turns the character by the recorded curve; the hips' travel is then measured in the body's own frame.
+    turn_curve = None
+    if name.startswith(TURNING):
+        samples, turn_curve = _unturn(samples)
     # Root motion: the horizontal travel from the first to the last frame is removed along a straight line (loops
     # close), its rate is the clip's speed.
     dur = (len(frames) - 1) / fps
@@ -102,11 +107,24 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
     hz = [s[1].z * k for s in samples]
     vz = [(hz[i + 1] - hz[i]) * fps for i in range(len(hz) - 1)] or [0.0]
     events = {}
-    if name in ("jump_start", "run_jump"):
+    if name in ("jump_start", "run_jump", "run_flip", "run_flip_2"):
         events["takeoff"] = max(range(len(vz)), key=lambda i: vz[i]) / fps
-    if name in ("jump_land", "jump_land_hard"):
+    if name.startswith("jump_land"):
         dv = [vz[i + 1] - vz[i] for i in range(len(vz) - 1)] or [0.0]
         events["contact"] = max(range(len(dv)), key=lambda i: dv[i]) / fps
+    if "takeoff" in events:
+        # In the air the game's jump physics carries the body: the hips' own rise and fall from take-off until they are
+        # back at take-off height is taken out, and that flight time is kept (the game plays it over its own).
+        i0 = int(round(events["takeoff"] * fps))
+        peak = max(range(i0, len(hz)), key=lambda i: hz[i])
+        i1 = next((i for i in range(peak, len(hz)) if hz[i] <= hz[i0]), len(hz) - 1)
+        z0 = samples[i0][1].z
+        for i in range(i0, i1 + 1):
+            rots, hp = samples[i]
+            hp = hp.copy()
+            hp.z = min(hp.z, z0)
+            samples[i] = (rots, hp)
+        events["air"] = (i1 - i0) / fps
     # Pass 2: pose ours and key.
     # The procedural clip of the same name (already exported with the character) makes way, or the new action would be
     # renamed "walk.001".
@@ -142,9 +160,46 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
             bpy.data.actions.remove(a)
     info = {"duration": round(dur, 4), "loop": loop, "speed": round(speed, 4)}
     info.update({k_: round(v, 4) for k_, v in events.items()})
+    if turn_curve:
+        info["turn"] = round(turn_curve[-1], 4)
+        # Heading (rad, from the start) at 24 even steps over the clip.
+        n = len(turn_curve) - 1
+        info["turn_curve"] = [round(turn_curve[min(n, round(j * n / 23))], 4) for j in range(24)]
     info["measured"] = measured
     print("MIXAMO", name, info)
     return info
+
+
+def _yaw(r):
+    """Heading (rad about world +Z) of a world rotation change: where it swings the side axis (+X) to."""
+    import math
+    v = r @ Vector((1.0, 0.0, 0.0))
+    return math.atan2(v.y, v.x)
+
+
+def _unturn(samples):
+    """Takes the heading change out of every frame: returns the samples as if facing the first frame's heading (hips
+    positions re-accumulated in the body's frame) and the heading curve (rad from the start, unwrapped)."""
+    import math
+    yaws, prev, acc = [], None, 0.0
+    for rots, _hp in samples:
+        y = _yaw(rots["Hips"]) if "Hips" in rots else 0.0
+        if prev is not None:
+            d = (y - prev + math.pi) % (2 * math.pi) - math.pi
+            acc += d
+        prev = y
+        yaws.append(acc)
+    out = []
+    pos = samples[0][1].copy()
+    for i, (rots, hp) in enumerate(samples):
+        q = Matrix.Rotation(-yaws[i], 3, "Z")
+        if i > 0:
+            step = hp - samples[i - 1][1]
+            step_z = step.z
+            step = q @ Vector((step.x, step.y, 0.0))
+            pos = pos + Vector((step.x, step.y, step_z))
+        out.append(({n: q @ r for n, r in rots.items()}, pos.copy()))
+    return out, yaws
 
 
 def _measure(samples, k, rest_hips, dur):

@@ -29,7 +29,27 @@ CLIPS = {
     "run_jump": (False, True),
     "turn_left": (False, False),
     "turn_right": (False, False),
+    # Variants and transitions (the owner's picks, 2026-09-27).
+    "idle_look_2": (False, False),
+    "jog": (True, True),
+    "walk_start": (False, True),
+    "walk_turn_left": (False, True),
+    "walk_turn_180": (False, True),
+    "run_turn_right": (False, True),
+    "run_turn_180": (False, True),
+    "run_stop_quick": (False, True),
+    "crouch_to_stand": (False, False),
+    "fall_flail": (True, False),
+    "jump_land_heavy": (False, False),
+    "run_flip": (False, True),
+    "run_flip_2": (False, True),
+    "run_slide": (False, True),
+    "turn_left_wary": (False, False),
+    "turn_right_wary": (False, False),
 }
+
+# Clips that turn the body (name prefixes): their heading change is taken out and recorded (mixamo.py _unturn).
+TURNING = ("turn_", "walk_turn_", "run_turn_", "crouch_to_stand")
 
 # Mixamo titles (normalised: lowercase letters and digits only) of our clips, so files can keep their download names.
 ALIASES = {
@@ -49,6 +69,15 @@ ALIASES = {
     "runningjump": "run_jump",
     "leftturn": "turn_left",
     "rightturn": "turn_right",
+    "startwalking": "walk_start",
+    "walkinglefturn": "walk_turn_left",
+    "walkingturn180": "walk_turn_180",
+    "runningrightturn": "run_turn_right",
+    "runningturn180": "run_turn_180",
+    "crouchturntostand": "crouch_to_stand",
+    "falling": "fall_flail",
+    "runningforwardflip": "run_flip",
+    "runningslide": "run_slide",
 }
 # Guessed category of an extra clip, from words in its name (first match wins).
 CATEGORIES = (
