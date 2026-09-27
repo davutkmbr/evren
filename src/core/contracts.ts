@@ -200,6 +200,7 @@ export type LandmarkKind =
   | 'skyscraper'
   | 'monument'
   | 'barracks'
+  | 'church'
   | 'other';
 
 export type LandmarkFootprint = 'pad' | 'cluster' | 'line' | 'polygon' | 'slope' | 'none';
