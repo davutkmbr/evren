@@ -56,7 +56,10 @@ export function detailGeometry(kind: DetailKind): THREE.BufferGeometry {
 
 interface KindStream {
   kind: DetailKind;
-  mesh: THREE.InstancedMesh;
+  /** Sized to the instances in range (grown on demand, never to the whole region). */
+  mesh: THREE.InstancedMesh | null;
+  geometry: THREE.BufferGeometry;
+  material: BuildingMaterials['details'][DetailKind];
   /** Precomputed instance matrices / colours of every record (tile order). */
   matrices: Float32Array;
   colours: Float32Array;
@@ -67,13 +70,16 @@ interface KindStream {
   tiles: number[];
 }
 
+/** Headroom when an instance buffer grows, so a camera drifting at the edge of a dense block does not regrow it. */
+const GROW = 1.5;
+
 export class DetailLod {
   private readonly kinds: KindStream[] = [];
   private readonly last = new THREE.Vector3(Infinity, 0, Infinity);
   private scale = 1;
 
   constructor(
-    group: THREE.Object3D,
+    private readonly group: THREE.Object3D,
     streams: Partial<Record<DetailKind, DetailStream>>,
     private readonly tiles: DetailTiles,
     materials: BuildingMaterials,
@@ -87,20 +93,10 @@ export class DetailLod {
         continue;
       }
       const mat = materials.details[kind];
-      const mesh = new THREE.InstancedMesh(detailGeometry(kind), mat.material, n);
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-      mesh.customDepthMaterial = mat.depth;
-      mesh.count = 0;
-      mesh.name = `osm-detail-${kind}`;
-      mesh.frustumCulled = false;
-      mesh.castShadow = SHADOW_KINDS.has(kind);
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      mesh.layers.set(RenderLayers.NoReflection);
-      group.add(mesh);
-      this.kinds.push({ kind, mesh, matrices, colours, ranges: stream.ranges, radius: DETAIL_RADIUS[kind], fade: mat.fade, tiles: [] });
+      const k: KindStream = { kind, mesh: null, geometry: detailGeometry(kind), material: mat, matrices, colours, ranges: stream.ranges, radius: DETAIL_RADIUS[kind], fade: mat.fade, tiles: [] };
+      this.kinds.push(k);
+      // A small mesh from the start, so its program is linked with the region, not when the first details stream in.
+      this.meshFor(k, 0);
     }
     this.applyFade();
   }
@@ -115,10 +111,46 @@ export class DetailLod {
     for (const k of this.kinds) {
       const r = k.radius * this.scale;
       k.fade.value.set(r * 0.8, r);
-      if (k.mesh.castShadow) {
-        setShadowGate(k.mesh, { below: THIN_SHADOW.has(k.kind) ? Math.min(r, THIN_SHADOW_DEPTH * this.scale) : r });
+      if (k.mesh) {
+        this.gateShadow(k, k.mesh);
       }
     }
+  }
+
+  private gateShadow(k: KindStream, mesh: THREE.InstancedMesh): void {
+    if (mesh.castShadow) {
+      const r = k.radius * this.scale;
+      setShadowGate(mesh, { below: THIN_SHADOW.has(k.kind) ? Math.min(r, THIN_SHADOW_DEPTH * this.scale) : r });
+    }
+  }
+
+  /** The kind's mesh with room for `count` instances: replaced by a larger one (the old buffers freed) when too small. */
+  private meshFor(k: KindStream, count: number): THREE.InstancedMesh {
+    if (k.mesh && k.mesh.instanceMatrix.count >= count) {
+      return k.mesh;
+    }
+    const cap = Math.min(k.colours.length / 3, Math.max(count, Math.ceil(count * GROW), 256));
+    const mesh = new THREE.InstancedMesh(k.geometry, k.material.material, cap);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    mesh.customDepthMaterial = k.material.depth;
+    mesh.count = 0;
+    mesh.name = `osm-detail-${k.kind}`;
+    mesh.frustumCulled = false;
+    mesh.castShadow = SHADOW_KINDS.has(k.kind);
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.layers.set(RenderLayers.NoReflection);
+    this.gateShadow(k, mesh);
+    if (k.mesh) {
+      this.group.remove(k.mesh);
+      // Frees the old instance buffers on the GPU (the geometry is shared and stays).
+      k.mesh.dispose();
+    }
+    this.group.add(mesh);
+    k.mesh = mesh;
+    return mesh;
   }
 
   /**
@@ -157,7 +189,11 @@ export class DetailLod {
         continue;
       }
       k.tiles = tiles;
-      const mesh = k.mesh;
+      let total = 0;
+      for (const tile of tiles) {
+        total += k.ranges[tile * 2 + 1];
+      }
+      const mesh = this.meshFor(k, total);
       const dst = mesh.instanceMatrix.array as Float32Array;
       const dstC = mesh.instanceColor!.array as Float32Array;
       let n = 0;
@@ -183,6 +219,6 @@ export class DetailLod {
 
   /** Live instance counts per kind (debug). */
   counts(): Record<string, number> {
-    return Object.fromEntries(this.kinds.map((k) => [k.kind, k.mesh.count]));
+    return Object.fromEntries(this.kinds.map((k) => [k.kind, k.mesh?.count ?? 0]));
   }
 }

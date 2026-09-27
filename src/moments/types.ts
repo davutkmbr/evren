@@ -9,6 +9,9 @@
  * Player-facing strings are Turkish; everything else (ids, notes) is English.
  */
 import type { FlightMode, WeatherPreset } from '../core/contracts';
+import type { MusicSourceKind } from '../audio/music/moment-source';
+
+export type { MusicSourceKind } from '../audio/music/moment-source';
 
 /**
  * 'draft' until every referenced model, animation and sound exists and is approved. 'ready' moments play; a 'draft'
@@ -17,7 +20,10 @@ import type { FlightMode, WeatherPreset } from '../core/contracts';
  */
 export type MomentStatus = 'draft' | 'ready';
 
-/** Player-facing groups; each can be switched off in the settings (see prefs.ts). */
+/**
+ * Player-facing groups; each can be switched off in the settings (see prefs.ts). 'poem' covers every quoted literary
+ * text (poems, songs, inscriptions, prose, travel writing, shadow theatre); the settings call it "Şiir ve edebiyat".
+ */
 export type MomentCategory = 'legend' | 'city-life' | 'poem';
 
 export interface LatLon {
@@ -108,6 +114,12 @@ export interface MomentTrigger {
   dateRange?: DateRange;
   /** Allowed weather presets; omitted = any weather. A 'custom' weather never matches a list. */
   weather?: readonly WeatherPreset[];
+  /**
+   * Amount 0..1 of the fog layer lying on the sea (src/render/weather/sea-fog.ts: the foggy mornings of about a third
+   * of the game days, and fog weather), read from WeatherService.seaFog. Independent of `weather`: a foggy morning
+   * usually comes with the 'clear' or 'haze' preset.
+   */
+  seaFog?: { min?: number; max?: number };
   repeat: MomentRepeat;
 }
 
@@ -121,6 +133,36 @@ export interface SubtitleLine {
   text: string;
   /** Turkish speaker label shown before the line ("Oltacı"); omitted = narrator / no label. */
   speaker?: string;
+}
+
+/** A point of a music source: real coordinates, a height above the ground, and what the headless check verifies. */
+export interface MusicSourcePoint extends LatLon {
+  /** Height above the ground (m): a first-floor balcony ≈ 6, a street-level window ≈ 3. Default per kind. */
+  height?: number;
+  /** English note ("coffeehouse on the shore road between Şemsi Paşa and the İskele square"). */
+  note: string;
+  /** Checked headlessly against the real geography, like a waypoint. */
+  expect?: 'land' | 'water';
+  /** Landmark id the point must lie near (≤ 150 m from its centre). */
+  nearLandmark?: string;
+}
+
+/**
+ * Where a moment's music plays from. World kinds need `at` (a fixed place) or `anchor` (the moving anchor the moment
+ * started at, e.g. the ferry's deck radio); `memory` may name `from`, the moment's subject the memory comes from.
+ */
+export interface MomentMusicSource {
+  kind: MusicSourceKind;
+  /** World kinds: the place of the gramophone, the coffeehouse, the tent. */
+  at?: MusicSourcePoint;
+  /** World kinds: follow this moving anchor (the record's `trigger.place.anchor`, e.g. 'ferry'). */
+  anchor?: string;
+  /** Anchor sources: height of the speaker above the water (m). Default per kind. */
+  height?: number;
+  /** Memory: the direction of the moment's subject (a landmark); omitted = centred and diffuse. */
+  from?: MusicSourcePoint;
+  /** Multiplies the kind's reach (0.25..2, default 1), e.g. a gramophone over a quiet island night. */
+  reachScale?: number;
 }
 
 /** Camera suggestion for the moment; the camera system may ignore it and never takes control away from the player. */
@@ -146,10 +188,22 @@ export interface MomentContent {
   /** Placeholder id of the sound cue (not yet recorded or approved). */
   soundId?: string;
   /**
-   * Id of an approved music set (public/audio/music/manifest.json) that plays as the moment's own bed; without it
-   * (or while that set does not exist) the adaptive music only ducks under the moment.
+   * Id of an approved moment piece (a `role: "moment"` phrase in public/audio/music/manifest.json) or music set that
+   * plays under the moment. Without it a moment piece is chosen by the category and `musicMood`; when none matches
+   * the adaptive music only ducks under the moment (.docs/audio/music-system.md, Moment music).
    */
   musicId?: string;
+  /**
+   * Mood tags for choosing the moment piece when `musicId` is not set, e.g. ['nostalgic', 'sea'] or
+   * ['history', 'solemn'] (MOMENT_MUSIC_TAGS in src/audio/music/manifest.ts; the category counts as a tag too).
+   */
+  musicMood?: readonly string[];
+  /**
+   * Where the moment's music comes from (.docs/audio/music-system.md, Moment music sources): a place in the world
+   * (gramophone, venue, live, ferry) or a memory. Omitted = `{ kind: 'memory' }`, centred and diffuse: moment music
+   * is never heard "directly".
+   */
+  musicSource?: MomentMusicSource;
   subtitles: readonly SubtitleLine[];
   camera?: CameraHint;
   card?: DiscoveryCard;
@@ -175,7 +229,7 @@ export interface ExternalMedia {
  * a public-domain source (legend, chronicle, a poem whose author died more than 70 years ago) is named explicitly.
  */
 export interface TextProvenance {
-  /** Which text this entry covers: 'subtitles', 'card', or 'subtitles:3' for a single line. */
+  /** Which text this entry covers: 'subtitles', 'card', or 'subtitles:3' for a single line (1-based, as on screen). */
   covers: string;
   kind: 'original' | 'public-domain';
   /** 'MIT' for our own writing, 'public domain' for PD works. */

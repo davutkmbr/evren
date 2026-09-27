@@ -13,10 +13,11 @@ import {
 } from './aero';
 import { integrateOrientation } from './body';
 import { enterRunOut } from './ground-moves';
+import { isHardImpact, startHardLanding } from './hard-landing';
 import { enterGrounded, enterSwimming } from './locomotion';
 import { skimKiss, updateSkim } from './skim';
 import { tryPlunge } from './underwater';
-import { BODY, ENVELOPE, FLAP, GRAVITY, LANDING_STYLE, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, SKIM, TRICKS, WATER_DENSITY, WING } from './params';
+import { BODY, ENVELOPE, FLAP, GRAVITY, HARD_LANDING, LANDING_STYLE, MASS, MOMENTS, PROXIMITY, RUNOUT, SEA_LEVEL_DENSITY, SKIM, TRICKS, WATER_DENSITY, WING } from './params';
 import type { FlightSim } from './sim';
 import type { PilotCommand } from './types';
 import { maxAmplitudeForClearance } from './wingtip';
@@ -220,8 +221,20 @@ export function stepAirborne(sim: FlightSim, cmd: PilotCommand, h: number): void
     // A deliberate roll (and the reversals' half rolls) spins faster than the tumble limit that keeps collisions sane.
     const kind = sim.maneuvers.kind;
     const maxSpin = kind === 'roll' || kind === 'splits' || kind === 'immelmann' ? TRICKS.rollMaxSpin : MOMENTS.maxAngularSpeed;
+    const vx0 = v.x;
+    const vy0 = v.y;
+    const vz0 = v.z;
     sim.contacts.resolveAirborne(b, collision, sim.invInertia, MASS, sim.impact, maxSpin);
     const n = sim.impact.normal;
+    // Belly, chest or head meeting the ground (or a roof) too fast: a hard landing takes over (hard-landing.ts).
+    if (
+      sim.impact.touched &&
+      n.y > HARD_LANDING.floorNormal &&
+      isHardImpact(Math.max(-vy0, 0), sim.impact.speed, Math.hypot(vx0, vz0), false) &&
+      startHardLanding(sim, vx0, vy0, vz0, sim.impact.speed)
+    ) {
+      return;
+    }
     if (sim.impact.speed > 4 && Math.abs(n.y) < 0.7) {
       // Bounced off a wall: remember a heading that leads away from it (mirror of the approach).
       const fx = axes.forward.x;
@@ -354,6 +367,10 @@ function checkTouchdown(sim: FlightSim, h: number): void {
   const b = sim.body;
   const v = b.velocity;
   const horizontal = Math.hypot(v.x, v.z);
+  // The feet meeting the ground sinking faster than the legs take: a hard landing (hard-landing.ts).
+  if (isHardImpact(-v.y, -v.y, horizontal, true) && startHardLanding(sim, v.x, v.y, v.z, -v.y)) {
+    return;
+  }
   if (v.y < -9) {
     return;
   }

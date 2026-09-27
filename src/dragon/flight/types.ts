@@ -78,6 +78,8 @@ export type ManeuverId =
   | 'wingover'
   | 'immelmann'
   | 'splits'
+  /** A hard landing (hard-landing.ts): the dragon met the ground too fast and tumbles. */
+  | 'hardland'
   /** A "Kusursuz" flow moment (flow/flow.ts; the label names the term that peaked). */
   | 'flow'
   | 'hint';

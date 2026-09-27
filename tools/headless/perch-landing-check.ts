@@ -18,14 +18,16 @@
  *   - an approach aborted with the stick returns to free flight at once;
  *   - Space leaves the perch with the drop take-off: airborne and controllable within 2 s, clear of the structure
  *     (spheres and skinned mesh) until 14 m away;
- *   - the perch camera (src/camera/modes/perch-rig.ts) orbits 60 s in both styles without the eye entering geometry;
- * plus the prompt state machine on synthetic states (reach / cone / speed / height, hysteresis).
+ *   - the perch camera (src/camera/modes/perch-rig.ts) runs 100 s in both styles: the eye never in geometry, the
+ *     dragon visible and framed in the lower part of the frame, the view open from the searched placement;
+ * plus the prompt state machine on synthetic states (reach / cone / speed / height, hysteresis), and no run ever turning
+ * into a hard landing (phase 04).
  */
 import * as THREE from 'three';
 import type { CollisionWorld } from '../../src/core/collision';
 import type { PerchPoint } from '../../src/core/contracts';
 import { CameraCollision } from '../../src/camera/obstruction';
-import { PerchCameraRig } from '../../src/camera/modes/perch-rig';
+import { PERCH_CAMERA, PerchCameraRig } from '../../src/camera/modes/perch-rig';
 import { createPose } from '../../src/camera/types';
 import { DEG } from '../../src/dragon/flight/params';
 import { perchStance, perchTouchdown, visitPerchSpheres } from '../../src/dragon/flight/perch';
@@ -49,6 +51,9 @@ const only = args.includes('--perch') ? args[args.indexOf('--perch') + 1] : null
 const dump = args.includes('--dump') ? [Number(args[args.indexOf('--dump') + 1]), Number(args[args.indexOf('--dump') + 2])] : null;
 
 const failures: string[] = [];
+/** Hard landings over every simulated run (phase 04: a perch landing never is one). */
+let hardLandings = 0;
+let hardRuns = 0;
 const f2 = (v: number): string => (Number.isFinite(v) ? v.toFixed(2) : 'n/a');
 const f1 = (v: number): string => (Number.isFinite(v) ? v.toFixed(1) : 'n/a');
 
@@ -109,6 +114,8 @@ async function simulate(scene: PerchScene, world: CollisionWorld, place: (rt: Po
   logState();
   run.records = records;
   run.meshes = collectMeshes(rig.root, run.boneNames);
+  hardLandings += rt.sim.hard.count;
+  hardRuns++;
   return run;
 }
 
@@ -345,6 +352,8 @@ function cameraRun(scene: PerchScene, p: PerchPoint): void {
   collision.bindDirect(world, null);
   const anchor = perchTouchdown(p, 1.8, new THREE.Vector3());
   const yaw = -p.headingDeg * DEG;
+  const cam = new THREE.PerspectiveCamera(PERCH_CAMERA.fov, 16 / 9, 0.3, 20000);
+  const ndc = new THREE.Vector3();
   for (const style of ['orbit', 'fixed'] as const) {
     const rig = new PerchCameraRig();
     const pose = createPose();
@@ -353,11 +362,17 @@ function cameraRun(scene: PerchScene, p: PerchPoint): void {
     let inside = 0;
     let minDist = Infinity;
     let blocked = 0;
+    let frames = 0;
+    let offFrame = 0;
+    let lowY = Infinity;
+    let highY = -Infinity;
+    let maxX = 0;
     const dt = 1 / 30;
-    for (let t = 0; t < 60; t += dt) {
+    for (let t = 0; t < 100; t += dt) {
       // A little mouse look now and then.
       const look = Math.sin(t * 0.3) > 0.97 ? 0.01 : 0;
       rig.update(dt, anchor, yaw, collision, look, 0, pose);
+      frames++;
       if (collision.blocked(pose.position, 0.2)) {
         inside++;
       }
@@ -365,8 +380,27 @@ function cameraRun(scene: PerchScene, p: PerchPoint): void {
       if (!collision.lineOfSight(pose.position, anchor, 3)) {
         blocked++;
       }
+      // Composition: the dragon's centre on screen (lower third, inside the frame).
+      cam.position.copy(pose.position);
+      cam.quaternion.copy(pose.quaternion);
+      cam.updateMatrixWorld();
+      ndc.copy(anchor).project(cam);
+      lowY = Math.min(lowY, ndc.y);
+      highY = Math.max(highY, ndc.y);
+      maxX = Math.max(maxX, Math.abs(ndc.x));
+      if (Math.abs(ndc.x) > 0.8 || ndc.y < -0.8 || ndc.y > 0) {
+        offFrame++;
+      }
     }
-    check(inside === 0, `${p.id} camera ${style}: 60 s without the eye in geometry (${inside} frames inside, closest ${f1(minDist)} m, dragon hidden ${((blocked / 1800) * 100).toFixed(0)}%)`);
+    const l = rig.last;
+    const tag = `${p.id} camera ${style}`;
+    if (verbose) {
+      console.log(`  ${tag}: placement az ${f1(l.az / DEG)}° el ${f1(l.el / DEG)}° open ${f2(l.open)} boom ${f2(l.clearBoom)} visible ${l.visible}; dragon y ${f2(lowY)}..${f2(highY)} |x| <= ${f2(maxX)}`);
+    }
+    check(inside === 0, `${tag}: 100 s without the eye in geometry (${inside} frames inside, closest ${f1(minDist)} m)`);
+    check(blocked / frames < 0.02, `${tag}: dragon visible (hidden ${((blocked / frames) * 100).toFixed(0)}% of the frames)`);
+    check(offFrame === 0, `${tag}: dragon framed in the lower part of the frame (y ${f2(lowY)}..${f2(highY)}, |x| <= ${f2(maxX)}, ${offFrame} frames off)`);
+    check(l.open > 0.9, `${tag}: view open from the placement (${f2(l.open)})`);
   }
 }
 
@@ -435,6 +469,7 @@ async function main(): Promise<void> {
     }
     cameraRun(scene, p);
   }
+  check(hardLandings === 0, `no perch run turns into a hard landing (${hardLandings} in ${hardRuns} runs)`);
   console.log(`\n${failures.length} failure(s) (${Math.round((performance.now() - t0) / 1000)} s)`);
   for (const f of failures) {
     console.log(`FAIL ${f}`);

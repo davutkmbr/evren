@@ -130,13 +130,34 @@ export interface BuildInput {
   reservedDiscs: { x: number; z: number; radius: number }[];
   reservedLines: { pts: Float64Array; halfWidth: number }[];
   reservedPolygons: FlatRing[];
-  roads: { pts: Float64Array; halfWidth: number; overWater: boolean }[];
+  /**
+   * Bridge volumes (landmarks/structure-volumes.ts, `structureStride` floats per box): the terrain is capped under
+   * their decks, piers and anchorages (height.ts capUnderStructures).
+   */
+  structureCaps: Float32Array;
+  structureStride: number;
+  /**
+   * Road corridors; `highway`: the name of a motorway or ring road (its sections share it): their verges and the
+   * junction pockets between two different highways turn green (landuse.ts).
+   */
+  roads: { pts: Float64Array; halfWidth: number; overWater: boolean; highway?: string }[];
   /** Breakwater centerlines (already part of landRings); painted as paved, non-buildable ground. */
   breakwaters: { pts: Float64Array; halfWidth: number }[];
   districts: { x: number; z: number; reach: number; side: number; density: number; historic: boolean }[];
   /** Landmark mosques: neighbourhood mosque sites keep clear of them. */
   landmarkMosques: { x: number; z: number; radius: number }[];
   mosqueTarget: number;
+  /**
+   * Rects where the real OSM map is drawn (osm/regions.ts osmStaticExclusion): no neighbourhood mosque site may reach
+   * into them, so a procedural mosque never replaces mapped buildings (the OSM mosques are drawn there instead).
+   */
+  siteExclusion: { minX: number; maxX: number; minZ: number; maxZ: number }[];
+  /**
+   * The far OSM layer's coverage mask (city/osm/mask.ts; 1 = the baked OSM buildings stand there): no neighbourhood
+   * mosque site reaches into those cells (the real mosques stand there), and the OSM land use is stamped only there
+   * (osm-land.ts).
+   */
+  siteMask: Uint8Array;
 }
 
 export interface MosqueSite {

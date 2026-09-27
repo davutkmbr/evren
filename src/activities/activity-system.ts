@@ -1198,7 +1198,8 @@ export function createActivitySystem(): System {
       lastPos.z = p.z;
       lastPos.valid = true;
       const mode = dragon.mode;
-      const grounded = mode === 'grounded' || mode === 'landing' || mode === 'swimming';
+      // A hard landing is no landing of the player's: it only costs its time (phase 04).
+      const grounded = (mode === 'grounded' || mode === 'landing' || mode === 'swimming') && !dragon.hardLanding;
       handle(session.update(dt, p, grounded));
       if (session.phase === 'running') {
         if (dt > 0) {

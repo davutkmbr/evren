@@ -15,8 +15,56 @@ import { propTemplates, type PropKind } from './models';
 const RULES: Partial<Record<PropKind, StandRule>> = {
   mooring: { shore: 0.3, building: false },
   lifebuoy: { shore: 0.3, building: false },
+  // Indoor pools (inside a building outline) and rooftop pools are left to the buildings.
+  poolWater: { offRoad: true },
+  poolRound: { offRoad: true },
+  poolEdge: { offRoad: true },
 };
 const DEFAULT_RULE: StandRule = { building: false };
+
+/**
+ * Feature kits the compiled street tiles have no twin for (props/features.ts): stamped into `kits`, which is drawn
+ * through the street layer's hole, so they stand in the landing spots too. Shopfront kits (awnings, pharmacy signs,
+ * ATMs, market stalls) stay with `mesh`: the compiled façades carry their own.
+ */
+export const THROUGH_HOLE: ReadonlySet<PropKind> = new Set<PropKind>([
+  'fuelCanopy',
+  'fuelPump',
+  'fuelShop',
+  'fuelSign',
+  'goal',
+  'basketHoop',
+  'swing',
+  'slide',
+  'climber',
+  'shrub',
+  'flowers',
+  'rock',
+  'cesme',
+  'fountainBasin',
+  'statue',
+  'hydrant',
+  'tombstone',
+  'fitness',
+  'hedge',
+  'telescope',
+  'recycling',
+  'bikeRack',
+  'metroEntrance',
+  'taxiStand',
+  'gsmMast',
+  'latticeTower',
+  'sunbed',
+  'beachUmbrella',
+  'poolWater',
+  'poolRound',
+  'poolEdge',
+  'picnicTable',
+  'kameriye',
+  'streetClock',
+  'infoBoard',
+  'billboard',
+]);
 
 interface Template {
   pos: Float32Array;
@@ -41,6 +89,8 @@ function flatten(g: THREE.BufferGeometry): Template {
 export class PropStamper {
   private readonly templates: Record<PropKind, Template>;
   readonly mesh = new MeshBuf({ position: 3, normal: 3, color: 3, aGlow: 1 });
+  /** The THROUGH_HOLE kits. */
+  readonly kits = new MeshBuf({ position: 3, normal: 3, color: 3, aGlow: 1 });
   readonly counts: Partial<Record<PropKind, number>> = {};
   /** Stand outcomes per kind (build stats). */
   readonly log = new StandLog();
@@ -58,7 +108,8 @@ export class PropStamper {
    * Places one prop: base at (x, y, z), front (+Z) turned to yaw (world direction (sin yaw, cos yaw)), uniform
    * `scale` (vertical `sy` when given). White template vertices take `tint` (parasol canopies).
    */
-  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale): boolean {
+  /** `scale` is the uniform size (x and z unless `sz` is given), `sy` the height scale. */
+  add(kind: PropKind, x: number, y: number, z: number, yaw: number, scale = 1, tint?: [number, number, number], sy = scale, sz = scale): boolean {
     if (this.ground) {
       const fault = standFault(this.ground, x, z, RULES[kind] ?? DEFAULT_RULE, y);
       this.log.note(kind, fault ?? 'kept');
@@ -69,12 +120,12 @@ export class PropStamper {
     const t = this.templates[kind];
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    const m = this.mesh;
+    const m = THROUGH_HOLE.has(kind) ? this.kits : this.mesh;
     for (let v = 0; v < t.count; v++) {
       const o = v * 3;
       const px = t.pos[o] * scale;
       const py = t.pos[o + 1] * sy;
-      const pz = t.pos[o + 2] * scale;
+      const pz = t.pos[o + 2] * sz;
       const nx = t.nrm[o];
       const ny = t.nrm[o + 1];
       const nz = t.nrm[o + 2];
@@ -96,5 +147,9 @@ export class PropStamper {
 
   take(): MeshArrays | null {
     return this.mesh.count ? this.mesh.take('color') : null;
+  }
+
+  takeKits(): MeshArrays | null {
+    return this.kits.count ? this.kits.take('color') : null;
   }
 }

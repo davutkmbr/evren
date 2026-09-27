@@ -59,11 +59,14 @@ export function ringHeading(ring: readonly V2[]): number {
  * (land rings are counter-clockwise).
  */
 export function coastRuns(ctx: SiteContext, cx: number, cz: number, radius: number): V2[][] {
+  // Coastline vertices can lie hundreds of metres apart: resample every segment (COAST_STEP) before clipping to the
+  // circle, so a quay follows the shore across the whole radius.
+  const COAST_STEP = 6;
   const runs: V2[][] = [];
   const r2 = radius * radius;
   for (const line of ctx.coastlines) {
     let run: V2[] = [];
-    for (const p of line) {
+    const visit = (p: V2): void => {
       if ((p[0] - cx) ** 2 + (p[1] - cz) ** 2 <= r2) {
         run.push(p);
       } else if (run.length) {
@@ -71,6 +74,18 @@ export function coastRuns(ctx: SiteContext, cx: number, cz: number, radius: numb
           runs.push(run);
         }
         run = [];
+      }
+    };
+    for (let i = 0; i < line.length; i++) {
+      const a = line[i];
+      visit(a);
+      const b = line[i + 1];
+      if (!b) {
+        break;
+      }
+      const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / COAST_STEP);
+      for (let k = 1; k < n; k++) {
+        visit([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
       }
     }
     if (run.length > 1) {
@@ -281,4 +296,35 @@ export function minaret(ctx: SiteContext, x: number, z: number, g: number, h: nu
     alem(mb, x, z, g + h - 0.1, 1.2, M.gold);
   }
   ctx.collider({ kind: 'cylinder', x, y: g - 1, z, r: r * 1.3, h: h + 1 });
+}
+
+/**
+ * The two front corners of a footprint facing `dir`: the ends of the side of its oriented bounding box whose outward
+ * normal is closest to `dir` (rounded or chamfered corners in the outline do not matter), each snapped to the nearest
+ * outline vertex (the box corner of an irregular footprint can lie outside it), pulled `inset` m in along that side.
+ */
+export function frontCorners(ring: readonly V2[], dir: V2, inset = 0): [V2, V2] {
+  const b = obb(ring);
+  const ax: V2 = [Math.cos(b.angle), Math.sin(b.angle)];
+  const sd: V2 = [-ax[1], ax[0]];
+  const sides: { n: V2; t: V2; depth: number; half: number }[] = [
+    { n: ax, t: sd, depth: b.len / 2, half: b.wid / 2 },
+    { n: [-ax[0], -ax[1]], t: sd, depth: b.len / 2, half: b.wid / 2 },
+    { n: sd, t: ax, depth: b.wid / 2, half: b.len / 2 },
+    { n: [-sd[0], -sd[1]], t: ax, depth: b.wid / 2, half: b.len / 2 },
+  ];
+  const f = sides.reduce((best, s) => (s.n[0] * dir[0] + s.n[1] * dir[1] > best.n[0] * dir[0] + best.n[1] * dir[1] ? s : best));
+  const mx = b.cx + f.n[0] * f.depth;
+  const mz = b.cz + f.n[1] * f.depth;
+  const snap = (x: number, z: number): V2 => ring.reduce((best, p) => (Math.hypot(p[0] - x, p[1] - z) < Math.hypot(best[0] - x, best[1] - z) ? p : best));
+  const h = f.half;
+  const p0 = snap(mx - f.t[0] * h, mz - f.t[1] * h);
+  const p1 = snap(mx + f.t[0] * h, mz + f.t[1] * h);
+  const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+  const ux = (p1[0] - p0[0]) / len;
+  const uz = (p1[1] - p0[1]) / len;
+  return [
+    [p0[0] + ux * inset, p0[1] + uz * inset],
+    [p1[0] - ux * inset, p1[1] - uz * inset],
+  ];
 }

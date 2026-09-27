@@ -144,13 +144,13 @@ const GAZE_PET_TILT = 0.16;
  *  - body wave: the side-to-side undulation runs from the shoulders (root, lumbar, pelvis, each later in phase) into a
  *    travelling wave down the tail (per-bone yaw growing toward the tip, tailLag rad of phase per bone); the body rolls
  *    into each wing's power stroke, the chest and neck undo part of the swing so the head keeps to the course;
- *  - wings as paddles, a dog paddle with the wing-arms: each wing strokes once per cycle, the left one's catch at
- *    swimPhase 0, the right one's at pi. The wrist runs a round loop beside the shoulder (IK, the elbow folded up and
- *    back along the flank as on the ground): reaching forward at the catch, scooping down and back just under the
- *    surface through the power stroke (paddleLow; the hand webbing opens like a duck's foot and trails back along the
- *    flank), then drawn in and forward just above the water with the fingers folded flat along the forearm (paddleHigh;
- *    nothing is raised into the air). paddlePower is the share of the cycle in the power stroke (via a smooth phase
- *    warp). The loop grows with the stroke strength; floating idle it shrinks to a lazy scull;
+ *  - wings as oars, open on the water (not folded): each wing strokes once per cycle, the left one's catch at swimPhase
+ *    0, the right one's at pi. The half-open wing lies on the surface and sweeps around the shoulder: reaching forward
+ *    at the catch, sweeping back through the power stroke with the arm stretched, the leading edge dipped and the
+ *    membrane pitched to push water back (paddleDip, paddleFeather), then lifted a little off the water, flattened and
+ *    drawn half in as it swings forward again (paddleLift, the recovery folds). paddlePower is the share of the cycle in
+ *    the power stroke (via a smooth phase warp). The sweep grows with the stroke strength; floating idle the wings rest
+ *    half open on the water with a lazy scull;
  *  - surge: the chest lifts (bob, m) and the nose rises (surgePitch) at each power stroke, the lower neck rises
  *    (neckSurge) and the head counters it, nodding along a moment later (headNod); idle the body breathes (breathBob at
  *    breathHz);
@@ -192,28 +192,30 @@ const SWIM_RIG = {
   neckSurge: 0.06,
   breathBob: 0.05,
   breathHz: 0.2,
-  /* Wing paddle (right side; x out, y up, z back, relative to the shoulder; the waterline is ~0.15 below it). */
-  paddleCenter: [1.55, -0.05, -0.7],
-  paddleReach: 1.55,
-  paddleLow: 0.4,
-  paddleHigh: 0.42,
-  paddleOut: 0.4,
+  /* Wing oar (right wing's joint angles, wing-pose conventions: x twist, y sweep + = forward, z elevation + = up). */
+  /** Humerus sweep: centre and swing (cos of the stroke: forward at the catch, back at the end of the power stroke). */
+  paddleSweep: -0.08,
+  paddleSwing: 0.55,
+  /** Humerus elevation: resting on the water, dipped in the power stroke, lifted in the recovery. */
+  paddleElev: 0.04,
+  paddleDip: 0.1,
+  paddleLift: 0.14,
+  /** Humerus twist through the power stroke (the membrane pitched to push water back); flat in the recovery. */
+  paddleFeather: 0.16,
   paddlePower: 0.45,
-  /** Elbow pole (IK, from the shoulder): up and back along the flank, as the folded wing sits on the ground. */
-  paddlePole: [1.1, 1.0, 1.8],
-  /** Hand direction through the power stroke (out, down, back; unnormalised): the webbing trailing back, just under water. */
-  paddleHandOut: 0.55,
-  paddleHandDown: 0.25,
-  paddleHandBack: 0.85,
-  /** Hand direction through the recovery (out, down, back): folded flat back along the forearm, never pointing up. */
-  paddleRecoverOut: 0.12,
-  paddleRecoverDown: 0.12,
-  /** Loop size at idle (share of the full loop) and how far the idle wing unfolds toward the paddle pose. */
-  paddleIdle: 0.4,
-  paddleIdleOpen: 0.45,
-  /** Membrane fan in the power stroke (0 = open fan, 0.97 = closed) and the outer finger joints opening (0..1). */
-  paddleFan: 0.4,
-  paddleFingerOpen: 0.2,
+  /** Forearm and hand fold (0 = stretched, as in flight): stretched in the power stroke, half in through the recovery. */
+  paddleForePower: 0.12,
+  paddleForeRecover: 0.55,
+  paddleHandPower: 0.1,
+  paddleHandRecover: 0.4,
+  /** Floating idle: loop size (share of the full sweep) and the relaxed fold of the resting wing. */
+  paddleIdle: 0.35,
+  paddleForeIdle: 0.5,
+  paddleHandIdle: 0.35,
+  /** Finger fan closing (0 = open as in flight) in the power stroke and the recovery, and the tips' droop onto the water. */
+  paddleFanPower: 0.0,
+  paddleFanRecover: 0.3,
+  paddleTipDroop: 0.06,
   turnRef: 0.6,
   turnCurve: 0.1,
   turnBoost: 0.45,
@@ -254,9 +256,6 @@ const BOND_SHAKE = [0.2, 0.25, 0.3];
 const _gazeDir = new THREE.Vector3();
 const _gazeUp = new THREE.Vector3();
 const _gazeAxis = new THREE.Vector3();
-const _sp = new THREE.Vector3();
-const _sq = new THREE.Quaternion();
-const _shoulder = new THREE.Vector3();
 
 /** bone.quaternion = slerp(from, bone.quaternion, t). */
 function blendFrom(bone: THREE.Object3D, from: THREE.Quaternion, t: number): void {
@@ -290,6 +289,8 @@ export class DragonAnimator {
   private readonly rider: RiderAnimator;
   private readonly rootRest: THREE.Vector3;
   private readonly wingAngles = createWingAngles();
+  /** Swimming: the rowing wing's joint angles (SWIM_RIG). */
+  private readonly swimWing = createWingAngles();
 
   // Rest geometry for IK.
   private readonly legRest: Record<Side, { thigh: THREE.Vector3; shin: THREE.Vector3; meta: THREE.Vector3; l1: number; l2: number; metaLen: number }>;
@@ -590,7 +591,8 @@ export class DragonAnimator {
     this.outputs.flutter = (0.006 + 0.022 * q) * this.smoothSpread;
     this.outputs.flutterFreq = 14 + 16 * q;
     const folded = 1 - THREE.MathUtils.clamp(this.smoothSpread, 0, 1);
-    this.outputs.foldSlack = 0.16 * folded * folded;
+    // Swimming the wings are open on the water: no fold slack in the membrane.
+    this.outputs.foldSlack = 0.16 * folded * folded * (1 - this.swimW);
   }
 
   private wind: THREE.Vector3 | null = null;
@@ -797,35 +799,35 @@ export class DragonAnimator {
       blendFrom(bones.fingerA[f], _stash[8 + f], e);
       blendFrom(bones.fingerB[f], _stash[12 + f], e);
     }
-    // Swimming: the folded wings become paddles.
+    // Swimming: the wings open onto the water and row.
     if (this.swimW > 0.001) {
       this.applySwimPaddle(side, e * this.swimW);
     }
   }
 
   /**
-   * Swimming: one wing paddles (SWIM_RIG). The wrist runs its loop around the shoulder (IK, elbow up and back): the
-   * catch forward and out, the power stroke back along the waterline with the membrane half open and facing back, the
-   * recovery lifted, folded and swung forward through the air. Blended over the folded wing by `weight` and by how far
-   * the stroke strength unfolds it (a lazy scull when floating idle); the outer wing of a turn strokes harder.
+   * Swimming: one wing rows (SWIM_RIG): the half-open wing lies on the water and sweeps around the shoulder, forward at
+   * the catch, back through the power stroke stretched and dipped with the membrane pitched against the water, then
+   * lifted, flattened and half drawn in as it swings forward again. Blended over the folded wing by `weight`; floating
+   * idle the wing rests half open with a small scull; the outer wing of a turn strokes harder.
    */
   private applySwimPaddle(side: Side, weight: number): void {
-    const R = SWIM_RIG;
-    const rel = Math.min(1.2, this.swimStroke / Math.max(this.swimW, 1e-3));
-    const open = (R.paddleIdleOpen + (1 - R.paddleIdleOpen) * THREE.MathUtils.smoothstep(rel, 0.22, 0.6)) * weight;
-    if (open < 0.001) {
+    if (weight < 0.001) {
       return;
     }
+    const R = SWIM_RIG;
     const sgn = sideSign(side);
     const bones = this.wings[side];
-    const rest = this.wingRest[side];
     _stash[0].copy(bones.humerus.quaternion);
     _stash[1].copy(bones.forearm.quaternion);
     _stash[2].copy(bones.hand.quaternion);
+    _stash[3].copy(bones.thumb.quaternion);
     for (let f = 0; f < FINGERS.length; f++) {
       _stash[8 + f].copy(bones.fingerA[f].quaternion);
       _stash[12 + f].copy(bones.fingerB[f].quaternion);
     }
+    const rel = Math.min(1.2, this.swimStroke / Math.max(this.swimW, 1e-3));
+    const stroke = THREE.MathUtils.smoothstep(rel, 0.15, 0.6);
     const turn = 1 + R.turnBoost * this.swimTurn * sgn;
     const loop = (R.paddleIdle + (1 - R.paddleIdle) * THREE.MathUtils.clamp((rel - 0.22) / 0.78, 0, 1.2)) * THREE.MathUtils.clamp(turn, 0.4, 1.6);
     // Warped stroke phase: 0 = catch, pi = end of the power stroke (paddlePower of the cycle), 2 pi = the next catch.
@@ -833,38 +835,40 @@ export class DragonAnimator {
     const a = theta + PADDLE_WARP * (1 - Math.cos(theta));
     const sa = Math.sin(a);
     const power = THREE.MathUtils.smoothstep(sa, -0.15, 0.35);
-    rigTransform(this.chest, this.rigRoot, _sp, _sq);
-    const shoulder = _shoulder.copy(bones.humerus.position).applyQuaternion(_sq).add(_sp);
-    const c = R.paddleCenter;
-    _target.set(
-      (c[0] + R.paddleOut * sa * loop) * sgn,
-      c[1] - (sa > 0 ? R.paddleLow : R.paddleHigh) * sa * loop,
-      c[2] - R.paddleReach * Math.cos(a) * loop,
-    ).add(shoulder);
-    const pole = R.paddlePole;
-    _pole.copy(shoulder).add(_dir.set(pole[0] * sgn, pole[1], pole[2]));
-    solveTwoBone(shoulder, _target, rest.l1, rest.l2, _pole, _mid, _end);
-    _restUp.set(0, 1, 0);
-    _up.set(0.2 * sgn, 1, 0.3);
-    aimBoneUp(bones.humerus, _sq, rest.upper, _restUp, _dir.subVectors(_mid, shoulder), _up, _qa);
-    aimBoneUp(bones.forearm, _qa, rest.fore, _restUp, _dir.subVectors(_end, _mid), _up, _qb);
-    // Hand: back, a little out and down into the water with the webbing facing back through the power stroke; folded
-    // flat back along the forearm through the recovery.
-    _dir.set(R.paddleRecoverOut * sgn, -R.paddleRecoverDown, 1).lerp(_dir2.set(R.paddleHandOut * sgn, -R.paddleHandDown, R.paddleHandBack), power).normalize();
-    _up.set(0.3 * sgn, 1, 0).lerp(_dir2.set(0.2 * sgn, 0.7, 0.6), power).normalize();
-    aimBoneUp(bones.hand, _qb, rest.hand, _restUp, _dir, _up, _qc);
-    const fan = 0.97 - (0.97 - R.paddleFan) * power;
-    const fingerOpen = R.paddleFingerOpen * power;
+    const lerp = THREE.MathUtils.lerp;
+    const w = this.swimWing;
+    w.humerus.x = R.paddleFeather * power * loop;
+    w.humerus.y = R.paddleSweep + R.paddleSwing * Math.cos(a) * loop;
+    w.humerus.z = R.paddleElev - (sa > 0 ? R.paddleDip : R.paddleLift) * sa * loop;
+    const fore = lerp(R.paddleForeIdle, lerp(R.paddleForeRecover, R.paddleForePower, power), stroke);
+    const hand = lerp(R.paddleHandIdle, lerp(R.paddleHandRecover, R.paddleHandPower, power), stroke);
+    w.forearm.x = -0.02;
+    w.forearm.y = fore;
+    w.forearm.z = -0.04;
+    w.hand.x = -0.03;
+    w.hand.y = -hand;
+    w.hand.z = -0.03;
+    w.thumb.x = 0;
+    w.thumb.y = 0.1;
+    w.thumb.z = 0;
+    const fan = lerp(R.paddleFanRecover, R.paddleFanPower, power);
     for (let f = 0; f < FINGERS.length; f++) {
-      setEuler(bones.fingerA[f], 0, (FINGERS[f].angle - FAN_MID) * sgn * fan, 0, 'YZX');
-      bones.fingerB[f].quaternion.copy(_stash[12 + f]).slerp(_q3.identity(), fingerOpen);
+      const k = f / (FINGERS.length - 1);
+      w.fingerA[f].x = 0;
+      w.fingerA[f].y = (FINGERS[f].angle - FAN_MID) * fan;
+      w.fingerA[f].z = -R.paddleTipDroop * 0.5;
+      w.fingerB[f].x = 0;
+      w.fingerB[f].y = 0;
+      w.fingerB[f].z = -R.paddleTipDroop * (0.6 + 0.4 * k);
     }
-    blendFrom(bones.humerus, _stash[0], open);
-    blendFrom(bones.forearm, _stash[1], open);
-    blendFrom(bones.hand, _stash[2], open);
+    this.applyWing(side, w);
+    blendFrom(bones.humerus, _stash[0], weight);
+    blendFrom(bones.forearm, _stash[1], weight);
+    blendFrom(bones.hand, _stash[2], weight);
+    blendFrom(bones.thumb, _stash[3], weight);
     for (let f = 0; f < FINGERS.length; f++) {
-      blendFrom(bones.fingerA[f], _stash[8 + f], open);
-      blendFrom(bones.fingerB[f], _stash[12 + f], open);
+      blendFrom(bones.fingerA[f], _stash[8 + f], weight);
+      blendFrom(bones.fingerB[f], _stash[12 + f], weight);
     }
   }
 

@@ -1,5 +1,6 @@
 /** Static world data held by each city worker: roads, coastlines, districts and coarse grids with spatial indices. */
 import type { CityInitMessage, DistrictMsg, GridSpecMsg, RoadMsg } from '../protocol';
+import type { OsmSource } from './osm-blocks';
 
 const INDEX_CELL = 500;
 const WORLD_HALF = 24000;
@@ -75,6 +76,8 @@ export class WorldData {
   readonly roads: SegmentIndex = new SegmentIndex();
   readonly coasts: SegmentIndex = new SegmentIndex();
   readonly districts: DistrictMsg[];
+  /** Far OSM layer bake (worker/osm-blocks.ts), null when the procedural city draws everything. */
+  readonly osm: OsmSource | null;
   readonly landUseSpec: GridSpecMsg;
   readonly heightSpec: GridSpecMsg;
   private readonly districtGrid: Uint8Array;
@@ -83,6 +86,7 @@ export class WorldData {
   private readonly hcSpec: GridSpecMsg;
 
   constructor(msg: CityInitMessage) {
+    this.osm = msg.osm ? { base: msg.osm.base, blocks: new Set(msg.osm.blocks) } : null;
     this.districts = msg.districts;
     this.landUseSpec = msg.landUse;
     this.heightSpec = msg.height;

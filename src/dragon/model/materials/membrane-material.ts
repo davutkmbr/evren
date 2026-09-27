@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { keepThroughOccluderFade } from '../../../core/occluder-fade';
 import { patchMaterial } from '../../../core/uniforms';
 import type { MembraneTextures } from './membrane-textures';
 
@@ -133,6 +134,7 @@ export function createMembraneMaterial(tex: MembraneTextures): {
     normalMap: tex.normal,
     normalScale: new THREE.Vector2(0.55, 0.55),
   });
+  keepThroughOccluderFade(material);
   patchMaterial(material, 'dragon-membrane-v2', (shader) => {
     bindDeformUniforms(shader, uniforms);
     shader.uniforms.uKeyLightDir = uniforms.uKeyLightDir;

@@ -43,6 +43,8 @@ export interface MomentContext {
   /** Day of year 1..365. */
   dayOfYear: number;
   weather: WeatherPreset | 'custom';
+  /** Sea fog amount 0..1 (WeatherService.seaFog); required by moments with `seaFog` (missing = no sea fog). */
+  seaFog?: number;
   /** Current positions of moving anchors by name (e.g. 'ferry'). */
   anchors?: Readonly<Record<string, readonly AnchorPoint[]>>;
   session: MomentSession;
@@ -74,6 +76,7 @@ export type RejectReason =
   | 'season'
   | 'date'
   | 'weather'
+  | 'sea-fog'
   | 'once'
   | 'cooldown';
 
@@ -250,6 +253,7 @@ export function rejectReason(moment: Moment, ctx: MomentContext, opts: EvaluateO
   if (t.seasons && !t.seasons.includes(seasonOfDay(ctx.dayOfYear))) return 'season';
   if (t.dateRange && !inDateRange(ctx.dayOfYear, t.dateRange)) return 'date';
   if (t.weather && (ctx.weather === 'custom' || !t.weather.includes(ctx.weather))) return 'weather';
+  if (t.seaFog && !inBand(ctx.seaFog ?? 0, t.seaFog.min, t.seaFog.max)) return 'sea-fog';
   if (placeDistance(t, ctx) === Infinity) return 'place';
   return null;
 }

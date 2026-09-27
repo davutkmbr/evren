@@ -2,6 +2,7 @@
  * The strip compiled at full detail (format 1). Sources, first match wins:
  * 1. `--strip minX,minZ,maxX,maxZ` (local metres) or `--strip none` (every tile greybox);
  * 2. the district profile's `strip` (district.ts), in its own order:
+ *    0. `area`: the whole compiled area (every tile full; Kadıköy, like Eminönü and the landing spots);
  *    a. `rect`;
  *    b. `cameras` (Kadıköy: tools/world-compiler/s1/cameras.json): `strip.rect` / `strip.bounds` / `strip.bbox` as
  *       {minX, minZ, maxX, maxZ} or [minX, minZ, maxX, maxZ], or `strip.polygon` / `strip.corners` as [[x, z], ...]
@@ -39,7 +40,7 @@ function fromValue(v: unknown): Bounds2 | null {
   return null;
 }
 
-export function readStrip(cli: string | null): { rect: Bounds2; source: string } | null {
+export function readStrip(cli: string | null, area: Bounds2): { rect: Bounds2; source: string } | null {
   if (cli === 'none') {
     return null;
   }
@@ -53,6 +54,9 @@ export function readStrip(cli: string | null): { rect: Bounds2; source: string }
   const prof = district().strip;
   if (!prof) {
     return null;
+  }
+  if (prof.area) {
+    return { rect: area, source: `district:${district().id} (whole area)` };
   }
   if (prof.rect) {
     return { rect: prof.rect, source: `district:${district().id}` };

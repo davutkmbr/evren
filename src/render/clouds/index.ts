@@ -210,7 +210,7 @@ export function createCloudSystemWithHandle(): { system: System; handle: CloudDe
       if (!shadowMap || !pass?.enabled) {
         return;
       }
-      shadowMap.update(ctx.renderer, ctx.camera, globalUniforms.uSunDir.value as THREE.Vector3, lightInputs.night);
+      shadowMap.update(ctx.renderer, ctx.camera, globalUniforms.uKeyLightDir.value as THREE.Vector3);
     },
 
     pending() {

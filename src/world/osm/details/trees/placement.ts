@@ -3,6 +3,7 @@
  * parks, dense woods, cypress cemeteries, courtyard trees in enclosed garden lots and the plane / cypress rings of
  * mosque yards. Never inside buildings, on carriageways, sidewalks, park paths or water.
  */
+import { discHitsStructure } from '../../../landmarks/structure-volumes';
 import type { OsmArea, OsmData, OsmPoint } from '../../data';
 import { FloatBuf } from '../../shared/buffers';
 import { BoxGrid, hash, pointInRing } from '../../shared/geometry';
@@ -13,6 +14,7 @@ import { CoverChannel, LotHint, LotStyle, isGreenArea, streetClearance, vnoise, 
 import { decodeSdf } from '../raster';
 import { TREE_SPECIES, type TreeSpecies } from './species';
 import { onLineBody } from '../../../landmarks/claim-shapes';
+import { inClearing } from '../../../perches/clearing-test';
 
 interface Planter {
   surface: StreetSurface;
@@ -27,7 +29,15 @@ interface Planter {
   lines: readonly number[];
   /** Mosque pads (x, z, radius): their yards get a loose ring of cypresses and planes. */
   mosques: readonly number[];
+  /** Perch clearings (perches/clearings.ts): no crown over a perch. */
+  clearings?: readonly number[];
+  /** Bridge volumes (landmarks/structure-volumes.ts): no tree grows into a tower, pier or low deck. */
+  structures?: ArrayLike<number>;
 }
+
+/** Crown radius and top (m) a planted tree is tested with against the bridge volumes. */
+const STRUCTURE_TREE_RADIUS = 3;
+const STRUCTURE_TREE_TOP = 20;
 
 /** Model heights (m) at scale 1 (trees/models.ts). */
 const BASE_HEIGHT: Record<TreeSpecies, number> = { plane: 14, cypress: 13, pine: 13, palm: 9 };
@@ -106,6 +116,9 @@ class Forest {
     if (onLineBody(this.p.lines, x, z, 2)) {
       return true;
     }
+    if (this.p.structures?.length && discHitsStructure(x, z, STRUCTURE_TREE_RADIUS, 0, STRUCTURE_TREE_TOP, this.p.structures)) {
+      return true;
+    }
     const p = this.p.pads;
     for (let k = 0; k < p.length; k += 3) {
       const r = p[k + 2] * 0.75;
@@ -126,6 +139,10 @@ class Forest {
     const y = this.p.surface.heightAt(x, z) - 0.15;
     const hs = scale * (0.85 + 0.3 * h);
     const vs = scale * (0.85 + 0.3 * h2);
+    // No tree grows over a perch (perches/clearings.ts).
+    if (this.p.clearings && inClearing(this.p.clearings, x, z, y + BASE_HEIGHT[species] * vs)) {
+      return;
+    }
     let r = 1;
     let g = 1;
     let b = 1;

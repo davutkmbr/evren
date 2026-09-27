@@ -3,8 +3,9 @@
  * drives the pure GullFlock (./flock.ts), draws the gulls (the ambient bird shader, one instanced mesh) and the simit
  * pieces (a second instanced mesh), and places the gull calls and close wing beats at the birds.
  *
- * Built when the moment starts and disposed when it is over, so it costs nothing otherwise. It takes over the ferry's
- * ambient gulls (no bird pops in) and hands them back at the end; extra gulls fly in from out of view and leave again.
+ * Built when the moment starts (or the ferry escort begins, src/activities/escort) and disposed when it is over, so it
+ * costs nothing otherwise. It takes over the ferry's ambient gulls (no bird pops in) and hands them back at the end;
+ * extra gulls fly in from out of view and leave again. One scene per ferry, shared through FerryGullHold.
  */
 import * as THREE from 'three';
 import type { EngineContext, VesselPose } from '../../core/contracts';
@@ -53,47 +54,137 @@ interface GullScene {
   dispose(): void;
 }
 
+/** One ferry's gull scene, shared by everyone who wants those gulls (the moment and the ferry escort). */
+interface SharedScene {
+  scene: GullScene;
+  holds: Set<FerryGullHold>;
+  /** Frame the scene was last stepped in (several holders update it; it steps once per frame). */
+  frame: number;
+}
+
+const SHARED = new Map<number, SharedScene>();
+
 /**
- * The scene actor of 'moments/ferry-gull-flock' (./actors.ts): builds the scene at the ferry the moment started at,
- * lets it linger after the lines while the dragon stays near, and removes it once it has wound down.
+ * A claim on the gull flock of one ferry (its anchor id). The first claim builds the scene (taking over the ferry's
+ * ambient gulls), later claims on the same ferry share it, so the ferry escort (src/activities/escort) and the
+ * gull-and-simit moment never borrow the same ambient flock twice. The scene plays while any holder `playing`; once
+ * none does it winds down by itself (at once when every holder asks to `hurry`). Call update() every running frame
+ * while `active`, and release() when done (the last release disposes the scene).
  */
-export class GullSimitActor implements MomentActor {
-  private scene: GullScene | null = null;
-  private playing = false;
-  private hurry = false;
+export class FerryGullHold {
+  /** The holder wants the gulls around the ferry. */
+  playing = true;
+  /** Once no holder plays: wind down at once instead of lingering near the dragon. */
+  hurry = false;
+  private entry: SharedScene | null = null;
 
+  constructor(
+    private readonly ctx: EngineContext,
+    readonly anchorId: number,
+  ) {
+    this.acquire();
+  }
+
+  /** The scene exists (building it fails without the 'life' service or when the ferry is gone). */
   get active(): boolean {
-    return this.scene !== null;
+    return this.entry !== null;
   }
 
-  start(_moment: Moment, ctx: EngineContext, _forced: boolean, anchorId?: number): void {
-    this.scene?.dispose();
-    this.scene = createGullScene(ctx, anchorId);
-    this.playing = true;
-    this.hurry = false;
-  }
-
-  end(reason: MomentEndReason): void {
-    this.playing = false;
-    // A race or the settings end it: wind down at once instead of lingering.
-    this.hurry = reason === 'race' || reason === 'disabled';
+  private acquire(): void {
+    let e = SHARED.get(this.anchorId);
+    if (!e) {
+      const scene = createGullScene(this.ctx, this.anchorId);
+      if (!scene) {
+        return;
+      }
+      e = { scene, holds: new Set(), frame: -1 };
+      SHARED.set(this.anchorId, e);
+    }
+    e.holds.add(this);
+    this.entry = e;
   }
 
   update(dt: number): void {
-    const scene = this.scene;
-    if (!scene) {
+    if (!this.entry && this.playing) {
+      // The flock this holder joined was already winding down and has left: a fresh one flies in.
+      this.acquire();
+    }
+    const e = this.entry;
+    if (!e || e.frame === this.ctx.time.frame) {
       return;
     }
-    scene.update(dt, this.playing, this.hurry);
-    if (scene.done) {
-      scene.dispose();
-      this.scene = null;
+    e.frame = this.ctx.time.frame;
+    let playing = false;
+    let hurry = true;
+    for (const h of e.holds) {
+      playing ||= h.playing;
+      hurry &&= h.hurry;
+    }
+    e.scene.update(dt, playing, !playing && hurry);
+    if (e.scene.done) {
+      e.scene.dispose();
+      SHARED.delete(this.anchorId);
+      for (const h of e.holds) {
+        h.entry = null;
+      }
+    }
+  }
+
+  release(): void {
+    const e = this.entry;
+    if (!e) {
+      return;
+    }
+    this.entry = null;
+    e.holds.delete(this);
+    if (e.holds.size === 0) {
+      e.scene.dispose();
+      SHARED.delete(this.anchorId);
+    }
+  }
+}
+
+/**
+ * The scene actor of 'moments/ferry-gull-flock' (./actors.ts): builds the scene at the ferry the moment started at
+ * (or joins the one the ferry escort already has there), lets it linger after the lines while the dragon stays near,
+ * and removes it once it has wound down.
+ */
+export class GullSimitActor implements MomentActor {
+  private hold: FerryGullHold | null = null;
+
+  get active(): boolean {
+    return this.hold?.active ?? false;
+  }
+
+  start(_moment: Moment, ctx: EngineContext, _forced: boolean, anchorId?: number): void {
+    this.hold?.release();
+    this.hold = anchorId === undefined ? null : new FerryGullHold(ctx, anchorId);
+  }
+
+  end(reason: MomentEndReason): void {
+    if (!this.hold) {
+      return;
+    }
+    this.hold.playing = false;
+    // A race or the settings end it: wind down at once instead of lingering.
+    this.hold.hurry = reason === 'race' || reason === 'disabled';
+  }
+
+  update(dt: number): void {
+    const hold = this.hold;
+    if (!hold) {
+      return;
+    }
+    hold.update(dt);
+    if (!hold.active) {
+      hold.release();
+      this.hold = null;
     }
   }
 
   dispose(): void {
-    this.scene?.dispose();
-    this.scene = null;
+    this.hold?.release();
+    this.hold = null;
   }
 }
 
@@ -269,8 +360,9 @@ function createGullScene(ctx: EngineContext, anchorId: number | undefined): Gull
         dragonP.y = dragon.position.y;
         dragonP.z = dragon.position.z;
       }
-      if (playing && !momentPlaying) {
-        playing = false;
+      if (!flock.released) {
+        // Shared scenes: another holder (the ferry escort) may keep the flock playing after the moment's lines.
+        playing = momentPlaying;
       }
       if (!playing && !flock.released) {
         const near = dragon ? Math.hypot(dragonP.x - ferry.x, dragonP.z - ferry.z) < GULL_ACTOR_TUNING.lingerRadius : false;

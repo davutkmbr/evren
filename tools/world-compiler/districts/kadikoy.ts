@@ -55,7 +55,11 @@ function inMarket(x: number, z: number): boolean {
 export const KADIKOY: DistrictProfile = {
   id: 'kadikoy',
   label: 'Kadıköy',
-  strip: { cameras: 'tools/world-compiler/s1/cameras.json', spec: '.docs/street/s1-strip.md', route: 'rihtim-carsi' },
+  // The whole area at full detail, like Eminönü: the S1 strip (the Rıhtım–çarşı walk fitted to the reference photos,
+  // tools/world-compiler/s1/cameras.json strip.rect) left ~88 % of the area greybox, flat blocks that replaced the
+  // flight-scale city's facades whenever the dragon came down. The hand-authored steps still cover the S1 strip only.
+  // Compile just the S1 strip with `--strip 150,5728,472,6240`.
+  strip: { area: true },
   cameras: 'tools/world-compiler/s1/cameras.json',
   handAuthored: { heroes: true, soul: true, precinct: true, interiors: true },
   buildings: {

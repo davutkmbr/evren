@@ -11,7 +11,7 @@ import { CHUNK, ImpostorPool } from './render/impostor-pool';
 import type { NearBands } from './render/near-pools';
 import { NearPools } from './render/near-pools';
 import { SPECIES_COUNT, SPECIES_SHAPES } from './species';
-import { onOsmExclusionChange, osmActiveExclusion } from '../osm/regions';
+import { onOsmTreesChange, osmActiveExclusion } from '../osm/regions';
 import { buildPlacementInit } from './stream/geo-window';
 import type { VegTile } from './stream/tile-streamer';
 import { TileState, TileStreamer } from './stream/tile-streamer';
@@ -103,7 +103,8 @@ export class VegetationSystem implements System {
     const crown = SPECIES_SHAPES.map((s) => s.crownWidth * 0.5);
     const init = buildPlacementInit(geo, this.assets.species, crown);
     this.streamer = new TileStreamer(geo, init, TILE_SIZE, (t) => this.releaseTile(t), undefined, osmActiveExclusion());
-    this.unsubscribeOsm = onOsmExclusionChange((rect) => this.streamer?.invalidate(rect));
+    // At the ends of an OSM region's handover, not when it becomes active (osm/fade.ts): no treeless gap meanwhile.
+    this.unsubscribeOsm = onOsmTreesChange((rect) => this.streamer?.invalidate(rect));
     this.colliders = new TreeColliders(this.ctx.services.get('collision'));
     this.initJobs = 0;
   }

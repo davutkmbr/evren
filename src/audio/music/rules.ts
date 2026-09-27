@@ -50,6 +50,12 @@ export interface MusicInput {
   momentMusic: string | null;
   /** A menu, the map or the start screen covers the game. */
   menu: boolean;
+  /** Photo mode is on (it also pauses the game, so `menu` is set too; kept apart for the sprinkle hold reason). */
+  photo: boolean;
+  /** Local time of day, hours [0, 24) (sprinkle `dawn` / `dusk` tags). */
+  hour: number;
+  /** 0..1 the flow chain burst's push (a boost: no new sprinkle phrase). */
+  burst: number;
 }
 
 export function idleInput(): MusicInput {
@@ -71,6 +77,9 @@ export function idleInput(): MusicInput {
     moment: false,
     momentMusic: null,
     menu: false,
+    photo: false,
+    hour: 12,
+    burst: 0,
   };
 }
 

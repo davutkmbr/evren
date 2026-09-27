@@ -50,10 +50,14 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
      (`.shots/walls/debug/`, input lines by source, openings, placed pieces: positions match the real course — the
      owner's "wrong place" report was the aqueduct), walk-test --dragon kumkapi (0 phantoms, no city-wall collider
      blocks a street), perf (`.shots/walls/perf/`: +7 draw calls, +58k triangles at 300 m over the land walls, walls
-     CPU < 0.01 ms), worktree typecheck clean. Data issues left: OSM tags the Hippodrome sphendone (321386212) and two
-     Dolmabahçe garden walls (castle_wall) as walls; mapped land-wall gate openings are 11+ m (breaches, no gate
-     pieces); street lamps / OSM trees are not kept out of the walls. Compiled street areas need a recompile to drop
+     CPU < 0.01 ms), worktree typecheck clean. Data issues left: OSM tags the Hippodrome sphendone (321386212) as a
+     wall (it is outside the Hipodrom site's radius; left as is). Compiled street areas need a recompile to drop
      wall-owned buildings.
+     **Done (cloud session, PR #62):** walls mostly inside a modelled palace site are left to the palace (Dolmabahçe's
+     two castle_wall ways); a tower flanks each end of a 10–60 m road / rail breach at a mapped gate
+     (`towers.breachFlank`); no prop, lamp, parked car or OSM tree stands inside the wall bodies (stand fault
+     `structure`, `walls/data/bodies.ts` from corridors.json). Needs a local `npm run compile:walls` (the baked tiles
+     are gitignored) and an in-game look.
    - Roads (owner report: supplement walls stood in the Kennedy Cd median): carriageways (with their width + 0.5 m),
      rail / tram beds and the medians of divided major roads (< 35 m) are now obstacles like buildings (`buildings.ts`
      road quads, `fit.ts`); supplement (OHM) traces are snapped to the land side of major roads within 40 m before
@@ -71,6 +75,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    the aqueduct material reads flat grey/plastic — reuse the city-wall kit's stone/brick material and weathering;
    11 heritage landmarks still have no builder (Topkapı, Dolmabahçe, Çırağan, Rumeli/Anadolu Hisarı, Yedikule,
    Haydarpaşa, Selimiye, Kuleli, Sirkeci, Hipodrom) — their OSM buildings show instead; model them one by one.
+   **Done (cloud session, PR #30):** all 11 have site builders (`heritage/build/sites/*`, checked by
+   `tools/headless/heritage-sites-check.ts`); Topkapı from the shipped OSM footprints (`scripts/data/heritage-footprints.ts`
+   → `heritage/data/topkapi.ts`); Yedikule / Anadolu Hisarı draw only their towers / keep, the walls bake leaves those
+   spots free (`HERITAGE_FORTRESS_TOWERS`); the aqueduct and the fortresses use the city-wall material
+   (`WALL_MATERIAL_SITES`). Anadolu Hisarı's landmark point moved onto the keep. Needs an in-game look (proportions,
+   Dolmabahçe / Selimiye claim discs dropping neighbouring OSM buildings).
 4. **Perches** (owner report): many perch points are hidden by trees and have bad camera angles. Rule: perches only on
    elevated structures (Galata Tower, bridge towers, Kız Kulesi, Beyazıt/Çamlıca towers, wall towers), never ground or
    bare hilltops; clear the tallest neighbour within ~40 m; perch camera frames the dragon in the lower third against
@@ -81,6 +91,10 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    `src/ui/menu/places.ts`, `scripts/perch-audit.mjs` + `scripts/lib/perch-measure.mjs`, headless perch checks.
    Before shots in `.shots/perches/audit/before`. Continue: `git merge wip/perches` into main (or cherry-pick),
    rerun the audit (`node scripts/perch-audit.mjs`), finish the camera composition and occluder fade, verify shots.
+   **Done (cloud session, PR #30):** view-cone and front-only own-structure rules; occluder fade
+   (`src/core/occluder-fade.ts`); city-wall tower perches picked by rule from the walls bake (`perches/walls.ts`,
+   `walls/data/towers.json`); no tree grows over a perch (`perches/clearings.ts`). Not perches (documented in
+   `perches/data.ts`): tower galleries / terraces, Beyazıt and Çamlıca Kulesi (the dragon's rig does not fit).
 5. Owner wants bigger race payoffs from chains (15–25 %, felt bursts, perceived-speed effects) — given to the cloud
    session as a prompt; not ours.
 - Not ours, never commit: `scripts/blender/*`. Scratch, never commit: `data/osm/fatih-scratch.json`.
@@ -88,14 +102,36 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
 ## Next, in order (agreed with the owner)
 
 1. Recompile all 28 spots in format 1.2 (`npm run compile:world -- --area <id> --landmarks none --web`).
-2. Fatih as one OSM region + compiled tiles (data from the local extract, not Overpass).
+2. Fatih compiled street tiles (local extract, not Overpass). The "one OSM region" half is covered by phase 24: the
+   far OSM layer draws Fatih's real buildings everywhere.
 3. Generic performance: hierarchical LOD / screen-space-error budgets (regions add +1–1.4 GB heap with 8 loaded and
-   +4–7 ms near Kadıköy — over budget; lower `MAX_LOADED`, drop base raster copy, merge far regions).
-4. OSM feature kits first batch (pitches, pools, bus stops, fuel stations) — extend the fetch to keep those tags.
-5. Small open items: bridge joints re-refined when later regions load (`structure-system.ts`); Haydarpaşa port and
-   Hazine Kapısı as landmarks; generic "no vehicles on water" rule in life traffic; street layer test rerun on a quiet
-   machine (`node scripts/street-layer-test.mjs`); street-layer-test gpu scenario errors with `THREE.Color: Unknown color kiremit` (find the named colour and
-   map it); flip/pass/gpu need a rerun on a quiet machine; sea flicker (not reproduced — needs the owner's view/time/weather).
+   +4–7 ms near Kadıköy — over budget). **First step done (cloud session):** regions load at 1.8 km, unload at
+   2.4 km, at most 5; facade detail buffers sized to what is in range; details result freed after upload; crowd
+   stepped only near; one shared foliage atlas. Second step: prop / tree buffers sized to their radius, cover pixels
+   freed after upload, a region takes over from the far layer only inside 1.2 km (hidden and not streamed between
+   1.2 and 1.8 km). Needs a heap / ms re-measure on the reference machine. Next: free the street raster (`ctx.base`)
+   beyond the near range (StreetSurface and traffic read it).
+4. OSM feature kits: built in PR #30 (plan 23). Swimming pools: kit, rule and fetch tag done; the regions need a
+   re-fetch from the local extract before they show.
+5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe
+   model; "port" unclear — ask); street layer test rerun on a quiet machine (`node scripts/street-layer-test.mjs`);
+   flip/pass/gpu need a rerun on a quiet machine.
+   **Done (cloud session, PR #30):** bridge joints re-refined when later regions start drawing; no vehicles on the
+   water (`tools/headless/traffic-water-check.ts`); OSM colour tags incl. Turkish words (`osm/shared/colour.ts`, fixes
+   `Unknown color kiremit`).
+   Phase 24 (far OSM layer) is merged; items 1, 2 and the pool re-fetch are local runs.
+6. **Flicker while moving (owner report):** audited and fixed, see `.docs/planning/flicker-audit.md` (tool
+   `scripts/flicker-audit.mjs`, scenes `scripts/flicker-scenes.json`). Causes fixed with generic rules: non-finite
+   texels in the water mirror spread by its mips (the hard sea patches), light splats narrower than a pixel, far
+   window lights point-sampled, cloud shadows that ignored the moon (the dragon's moon shadow under clouds), and the
+   final CAS sharpening. Scores -38 to -76 % over 9 scenes. Open: the facade material's NaN in the mirror's view
+   (made harmless), remaining sub-pixel geometry aliasing (needs TAA), near-sea glitter bands (radial grid).
+7. **Local runs owed by PR #62:** `npm run compile:walls` (baked wall tiles are gitignored: palace walls left to
+   Dolmabahçe, towers flanking gate breaches); the region re-fetch for swimming pools. Open question for the owner:
+   the Hippodrome sphendone (OSM 321386212) is drawn by the wall kit — keep it or draw it as a plain ruin.
+8. **Never shot in the cloud (no GPU there):** the perch audit (`node scripts/perch-audit.mjs`), the OSM feature
+   kits (fuel stations, pitches, playgrounds, cemeteries, markets, shopfronts, motorway verges) and the region
+   performance steps of PRs #60 / #62 (heap and `--perf` near Kadıköy, region fade-in at ~1.2 km).
 
 ## Working notes
 

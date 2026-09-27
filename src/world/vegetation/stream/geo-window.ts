@@ -1,6 +1,7 @@
 /** Main-thread side of the placement data flow: the one-off init payload and per-tile geo windows. */
 import { LandUse, type GeoQuery, type GridData, type RoadKind, type WorldBounds } from '../../../core/contracts';
 import { OSM_OWNS_PARK_TREES } from '../../osm/area';
+import { perchClearings } from '../../perches/clearings';
 import type { SpeciesInfo } from '../assets';
 import type { GridWindow, MosqueRingSite, PlacementInitMessage, TileRequestMessage } from './protocol';
 
@@ -29,6 +30,7 @@ export function buildPlacementInit(geo: GeoQuery, species: SpeciesInfo[], crownR
     }),
     crownRadius,
     height: species.map((s) => s.height),
+    clearings: perchClearings(geo),
   };
 }
 

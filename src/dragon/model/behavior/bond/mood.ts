@@ -8,6 +8,8 @@ export interface MoodDrives {
   curiosity: number;
   excitement: number;
   playfulness: number;
+  /** A hard landing (phase 04): set at the impact, gone within seconds. */
+  embarrassment: number;
 }
 
 const AIRBORNE = new Set(['flying', 'gliding', 'hovering', 'diving', 'stalling', 'landing', 'takeoff']);
@@ -20,7 +22,7 @@ const AIRBORNE = new Set(['flying', 'gliding', 'hovering', 'diving', 'stalling',
  * switches sooner). Content is the resting state.
  */
 export class MoodModel {
-  readonly drives: MoodDrives = { fatigue: 0.1, affection: 0.35, curiosity: 0.3, excitement: 0.05, playfulness: 0.25 };
+  readonly drives: MoodDrives = { fatigue: 0.1, affection: 0.35, curiosity: 0.3, excitement: 0.05, playfulness: 0.25, embarrassment: 0 };
   mood: DragonMood = 'content';
   private held = 0;
   private challenger: DragonMood | null = null;
@@ -36,9 +38,26 @@ export class MoodModel {
     this.drives[drive] = clamp(this.drives[drive] + amount, 0, 1);
   }
 
+  /**
+   * A hard landing: embarrassed at once (no hysteresis), for at least BOND.mood.embarrassHold s; the drive decays
+   * with BOND.mood.embarrassDecay and the usual selection takes the mood back afterwards.
+   */
+  embarrass(): void {
+    this.drives.embarrassment = 1;
+    if (this.mood !== 'embarrassed') {
+      this.mood = 'embarrassed';
+      this.switches++;
+    }
+    this.held = 0;
+    this.challenger = null;
+    this.challengeTime = 0;
+  }
+
   score(m: DragonMood): number {
     const d = this.drives;
     switch (m) {
+      case 'embarrassed':
+        return d.embarrassment;
       case 'tired':
         return d.fatigue;
       case 'excited':
@@ -101,6 +120,9 @@ export class MoodModel {
     const playTarget = clamp((0.25 + 0.45 * d.affection + 0.3 * d.excitement + 0.18 * dayPart) * (1 - d.fatigue), 0, 1);
     d.playfulness = approach(d.playfulness, playTarget, 1 / (playTarget > d.playfulness ? c.playRise : c.playDecay), dt);
 
+    // Embarrassment: only a hard landing sets it; it fades within seconds.
+    d.embarrassment = approach(d.embarrassment, 0, 1 / c.embarrassDecay, dt);
+
     this.select(dt);
   }
 
@@ -128,7 +150,8 @@ export class MoodModel {
     this.challengeTime += dt;
     const strongExcitement = best === 'excited' && bestScore > 0.75;
     const dwell = best === 'excited' ? c.dwellExcited : c.dwell;
-    if (this.challengeTime >= dwell && (this.held >= c.minHold || strongExcitement)) {
+    const minHold = this.mood === 'embarrassed' ? c.embarrassHold : c.minHold;
+    if (this.challengeTime >= dwell && (this.held >= minHold || strongExcitement)) {
       this.mood = best;
       this.held = 0;
       this.challenger = null;
@@ -145,4 +168,5 @@ export const MOOD_LINES: Record<DragonMood, string> = {
   playful: 'Evren oyun havasında.',
   tired: 'Evren yorgun, dinlenmek istiyor.',
   excited: 'Evren heyecanlı.',
+  embarrassed: 'Evren sert inişten biraz mahcup, silkinip toparlanıyor.',
 };

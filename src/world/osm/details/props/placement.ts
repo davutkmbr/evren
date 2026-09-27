@@ -14,6 +14,7 @@ import { Pose } from '../protocol';
 import { decodeSdf } from '../raster';
 import type { PropStamper } from './stamp';
 import { onLineBody } from '../../../landmarks/claim-shapes';
+import { placeFeatures } from './features';
 
 export interface PlaceContext {
   surface: StreetSurface;
@@ -687,6 +688,8 @@ export function placeFurniture(pl: Placer, data: Pick<OsmData, 'points' | 'roads
   placeBollards(pl, data);
   placeQuay(pl, data, quayAnchors);
   placeConstruction(pl, data);
+  // Feature kits last: they fill the room the street furniture leaves (props/features.ts).
+  placeFeatures(pl, data);
   return {
     standers: Float32Array.from(pl.standers),
     flags: Float32Array.from(pl.flags),

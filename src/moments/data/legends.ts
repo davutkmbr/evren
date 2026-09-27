@@ -4,6 +4,7 @@
  */
 import type { Moment } from '../types';
 import { EVLIYA, original } from './provenance';
+import { MUSIC_HUZZAM_TAKSIM, MUSIC_NAFPLIOTIS } from './music-sources';
 
 export const hezarfen: Moment = {
   id: 'hezarfen-galata-uskudar',
@@ -20,6 +21,10 @@ export const hezarfen: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.02563, lon: 28.97421, height: 50, note: 'Galata Tower, where the flight began', nearLandmark: 'galata-kulesi' },
+    },
     actorId: 'moments/hezarfen-ghost-glider',
     animationIds: ['moments/hezarfen-leap', 'moments/hezarfen-glide', 'moments/hezarfen-wave'],
     soundId: 'moments/hezarfen-wing-cloth',
@@ -62,6 +67,10 @@ export const lagari: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.0165, lon: 28.986, height: 20, note: 'Tip of Sarayburnu, where the rocket rose', expect: 'land' },
+    },
     actorId: 'moments/lagari-rocket',
     animationIds: ['moments/lagari-launch', 'moments/lagari-wings-open', 'moments/lagari-splash'],
     soundId: 'moments/lagari-fuse-whoosh',
@@ -106,6 +115,12 @@ export const kizKulesi: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Reşad Bey, Hüzzam Taksim (Pathé, c. 1927-1928), private piece (US-risky): a lament-like violin.
+    musicId: 'huzzam-taksim-resad-bey',
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.02111, lon: 29.0041, height: 15, note: 'Kız Kulesi', nearLandmark: 'kiz-kulesi' },
+    },
     actorId: 'moments/kiz-kulesi-snake',
     animationIds: ['moments/snake-idle', 'moments/snake-peek', 'moments/snake-hide'],
     soundId: 'moments/kiz-kulesi-night-sea',
@@ -127,6 +142,7 @@ export const kizKulesi: Moment = {
   },
   provenance: [original('subtitles', 'Istanbul folk legend of Kız Kulesi (anonymous, traditional), public domain'), original('card', 'Istanbul folk legend of Kız Kulesi (anonymous, traditional), public domain')],
   needs: ['model', 'animation', 'sound'],
+  sources: [MUSIC_HUZZAM_TAKSIM],
   notes: 'Folk legend with many variants (grapes or a fruit basket; sometimes the princess survives). The snake is a small, friendly character.',
 };
 
@@ -143,6 +159,12 @@ export const ayaYorgi: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // The saint's own apolytikion, chanted by Iakovos Nafpliotis (Orfeon, 1913-1918).
+    musicId: 'aya-yorgi-apolitikiyonu-nafpliotis',
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 40.8468, lon: 29.1196, height: 10, note: 'Aya Yorgi monastery on Yücetepe', expect: 'land' },
+    },
     actorId: 'moments/aya-yorgi-knight-statue',
     animationIds: ['moments/knight-raise-spear', 'moments/knight-lower-spear', 'moments/knight-shrug'],
     soundId: 'moments/knight-armour-creak',
@@ -166,6 +188,7 @@ export const ayaYorgi: Moment = {
     original('card', 'Aya Yorgi monastery on Yücetepe, Büyükada; feast day 23 April', 'Confirm the monastery point on the hill in game (no landmark record yet).'),
   ],
   needs: ['model', 'animation', 'sound'],
+  sources: [MUSIC_NAFPLIOTIS],
   notes:
     'The knight statue is an original prop, not a real statue at the site. Keep the tone gentle: the saint is venerated by many ' +
     'visitors of all faiths; the joke is on the dragon and the rusty spear, never on belief.',
@@ -194,6 +217,10 @@ export const shipsOverLand: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    musicSource: {
+      kind: 'memory',
+      from: { lat: 41.0355, lon: 28.979, height: 20, note: 'Beyoğlu ridge, where the galleys crossed', expect: 'land' },
+    },
     actorId: 'moments/ghost-galley',
     animationIds: ['moments/galley-slide', 'moments/galley-oars-fade'],
     soundId: 'moments/ships-wood-creak',

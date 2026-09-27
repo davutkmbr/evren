@@ -13,7 +13,8 @@
  */
 import type { WorldBounds } from '../../../core/contracts';
 import { GeoSampler } from './geo';
-import { GROUND_LIFT, GROUND_STEP, GroundGrid } from './ground';
+import { GROUND_STEP, GroundGrid } from './ground';
+import { quayRaise } from './ground-height';
 import { MASK_RANGE, SIDEWALK_MAX, type OsmWorkerBase, type StreetRaster } from './protocol';
 import { BUILDING_RANGE, decodeSigned, FLAG_KERBED, FLAG_PEDESTRIAN, FLAG_TRACK_BED, FLAG_TRAM, Ground, PATH_RANGE, PLATFORM_HEIGHT, Surf, SURF_MASK } from './street-field';
 
@@ -40,28 +41,8 @@ export const BARE_FRONTAGE = 4.5;
 export const BARE_WIDEN = 0.5;
 /** The OSM ground ends in a vertical stone quay wall at this coast distance (m, geo coast field, positive on land). */
 export const QUAY_EDGE = 1;
-/** Quay top above the water (m): lower coastal ground is raised to it (the terrain slopes into the sea there). */
-export const QUAY_TOP = 0.95;
-/** The quay raise holds up to QUAY_FLAT m from the coast and fades out by QUAY_FADE m. */
-const QUAY_FLAT = 14;
-const QUAY_FADE = 32;
-
-/**
- * Height of the OSM ground before kerb lifts (carriageways) from the geo terrain height and signed coast distance at a
- * point: terrain + GROUND_LIFT, coastal ground below QUAY_TOP raised towards it (quayGridValues() per grid vertex).
- * Other modules use it to meet the drawn street exactly (bridge abutments, structures standing in the slice).
- */
-export function osmGroundHeight(terrain: number, coast: number): number {
-  return terrain + GROUND_LIFT + quayRaise(terrain + GROUND_LIFT, coast);
-}
-
-function quayRaise(y: number, coast: number): number {
-  if (coast >= QUAY_FADE || y >= QUAY_TOP) {
-    return 0;
-  }
-  const t = Math.min(1, Math.max(0, (QUAY_FADE - coast) / (QUAY_FADE - QUAY_FLAT)));
-  return (QUAY_TOP - y) * t * t * (3 - 2 * t);
-}
+// The OSM ground height (quay raise) lives in ground-height.ts, small enough for the city workers to import.
+export { osmGroundHeight, QUAY_TOP } from './ground-height';
 
 const PEDESTRIAN_GROUND = new Set<number>([Ground.Plaza, Ground.Platform, Ground.Quay, Ground.Worship]);
 

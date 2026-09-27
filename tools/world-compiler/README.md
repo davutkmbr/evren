@@ -27,7 +27,7 @@ id; areas without their own profile use the generic one.
 | `--all-props` | off | processes every registered prop, also those no tile places (inspection, Blender) |
 | `--no-validate` | off | skips the glTF-Validator |
 | `--no-compress` | off | format 1: writes plain float glbs instead of quantized, meshopt-compressed ones |
-| `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); manifest records stay |
+| `--landmarks block\|none` | `block` | `none`: landmark buildings (worship, tombs, fountains, hamams, the profile's list) get no geometry and keep their ground, for a runtime that draws its own models (the flight game); so do the buildings on the ground claim of a landmark the game models itself (class `pad`: mostly inside its pad or touching a line landmark's body; `src/world/landmarks/claims.ts`, `src/world/osm/buildings/selection.ts`), exactly those the flight-scale OSM layer leaves to that model; manifest records stay |
 | `--min-walk-share <0..1>` | `0.9` | walk-graph connectivity threshold |
 | `--jobs N\|auto` | `auto` | tile worker threads ([Parallel and incremental compiles](#parallel-and-incremental-compiles)); `auto` = cores − 1, capped by memory and tile count; `1` compiles in the main thread |
 | `--cache strict\|local\|off` | `strict` | incremental compile: area stamp, per-step tile effects and assembled tiles; `local` keys tiles on nearby OSM features only |
@@ -150,6 +150,7 @@ The types are in `src/format.ts` (`TileManifest`). All positions are in world me
 |---|---|
 | `bounds`, `origin`, `content` | Nominal square, glb node translation, and the world AABB of the geometry. Buildings overhang their tile: each building belongs to the tile of its footprint centroid. |
 | `buildings[]` | `id` (`w<way>` / `r<relation>`, with a `-k` suffix for further polygons of the same relation), `osmId`, `kind`, `part`, `name` (OSM, data only), `footprint` (flat `[x, z, ...]`, positive shoelace area, for colliders), `holes`, `groundY`, `bottomY`, `topY`, `height`, `heightSource` (`height` \| `levels` \| `default`), `levels`, `doors` (ids) and, format 1, `landmark` ([District profiles](#district-profiles)). |
+| `keep[]` | Buildings on the area's edge that no tile compiles (footprint centroid outside the tile grid) and that reach into this tile: `id`, `footprint`, `landmark`. The game leaves their flight-scale twin (or its landmark model) standing instead of cutting it at the tile edge (`src/edge-keeps.ts`). Absent when none. |
 | `doors[]` | `id` (`<building>/d<k>`), `building`, `position` (centre of the opening at threshold height, on the façade plane), `normal` (outward), `width`, `height`, `depth`, `inferred`, `entrance` (the `entrance=*` value, or `shop`) and `pois` (ids). |
 | `pois[]` | `id` (`p<index of the point in the data file>`), `kind` (`shop=*`, `craft=*`, `amenity=*` places, `tourism=*`), `osmName` (data only: the businesses shown in the game are fictional), `position`, `building` and `door`. A POI belongs to its building's tile. |
 | `lamps[]` | `position` (foot of the post or bracket), `kind` (`arm`, `armLow`, `double`, `lantern`, `wall`), `heading`, `light` (`sodium`, `led`, `warm`) and `inferred`. OSM maps no lamps in Kadıköy or Eminönü, so every lamp there comes from the street lighting rules. |
@@ -250,6 +251,26 @@ images) and `UNUSED_OBJECT` (TEXCOORD_1 until bakes use it). The summary printed
 triangles, byte sizes, doors, kerb-step lengths, graph sizes and connectivity, and in format 1 the strip, LODs,
 lightmap densities, materials, textures (and skipped sets), props (and skipped ones), instances, lights by source,
 asset credits, per-step times, validator totals by message code and timings.
+
+### One map at every distance (`npm run check:map`)
+
+In the flight game the street tiles replace the flight-scale OSM layer (`src/world/osm`, public/data/osm/**) close to
+the ground, and that layer is what the player sees from the air. Both must show the same buildings and parks; only
+the detail may differ. The shared rule is `src/world/osm/buildings/selection.ts`: which OSM records are drawn,
+non-solid kinds, canopies (near-only detail) and the ground claims the game's own landmark models own
+(`src/world/landmarks/claims.ts`: pads and line bodies). There is one further
+rule: the flight layer invents nothing inside a street area (`src/world/osm/street-areas.ts`: no infill parcels; no
+neighbourhood mosque site reaches into an OSM region). `npm run check:map`
+(`tools/headless/map-consistency-check.ts`) runs the real flight-scale building pipeline over every region under a
+street area and compares it with this compiler's rule. It also checks the following:
+
+- the tile rects;
+- region coverage;
+- that the street data (`fetch-osm.mjs --area`) and the region data (`fetch-osm.mjs --region`) agree on building and
+  green-area ids and places.
+
+Snapshot drift in that last check goes away when both are fetched from the same local extract (`--source local`, the
+default). Run the check after changing either side or re-fetching data.
 
 ## Placement rules
 
@@ -481,13 +502,14 @@ Sets that are not downloaded yet are skipped the same way.
 
 The strip is the rect compiled at full detail (`detail: "full"`); every other tile is greybox (format 0 geometry,
 textured materials, LOD0 = LOD1). The rect comes from `--strip minX,minZ,maxX,maxZ`, else from the district profile's
-`strip`: its `rect` (Eminönü), else a camera file (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
-`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres; Kadıköy:
-`tools/world-compiler/s1/cameras.json`), else a spec file (the first line naming a `rect` followed by four numbers;
-Kadıköy: `.docs/street/s1-strip.md`), else the bbox of a walk route of `src/street/routes.ts` grown by 30 m (Kadıköy:
-`rihtim-carsi`). A profile without a strip (the generic one) and `--strip none` make every tile greybox. Tiles whose
-square intersects the rect are full-detail. `index.strip.source` says which source won (`cli`, `district:<id>`, a
-file or `route:<id>`).
+`strip`: `area: true` for the whole compiled area (Kadıköy), else its `rect` (Eminönü; landing spots use their
+square), else a camera file (`strip.rect` / `bounds` / `bbox` as `{minX, minZ, maxX, maxZ}` or
+`[minX, minZ, maxX, maxZ]`, or `strip.polygon` / `corners` as `[[x, z], ...]`, local metres), else a spec file (the
+first line naming a `rect` followed by four numbers), else the bbox of a walk route of `src/street/routes.ts` grown by
+30 m. A profile without a strip (the generic one) and `--strip none` make every tile greybox. Tiles whose square
+intersects the rect are full-detail. `index.strip.source` says which source won (`cli`, `district:<id>`,
+`district:<id> (whole area)`, a file or `route:<id>`). Kadıköy's S1 strip alone (the photo-fitted Rıhtım–çarşı walk):
+`--strip 150,5728,472,6240`.
 
 ## District profiles
 
