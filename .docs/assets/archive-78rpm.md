@@ -89,7 +89,7 @@ Both versions ship; `?music=raw` / `?music=denoised` plays the other one.
 | `huseyni-taksim-hafiz-kemal` | `gallica-pathe-huseyni-taksim-saz-semaisi` | 0.0–87.2 s | private | 17.07 → 21.48 dB (+4.41) | 0.01 → 0.01 | 0.3393 → 0.3246 | -0.115 | -1.5 / -2.63 | -4.79 | **denoised** |
 | `huzzam-taksim-resad-bey` | `gallica-pathe-huseyni-huzzam-taksim` | 0.4–81.0 s | private | 8.73 → 12.44 dB (+3.71) | 0.0 → 0.0 | 0.4384 → 0.4451 | -0.028 | -1.54 / -2.03 | -4.8 | **raw** (music 300 Hz-3 kHz changed -1.54 dB (> 1.5 dB)) |
 | `isfahan-gazeli-cemil-bey` | `commons-isfahan-gazel-cemil-bey` | 0.0–100.0 s | public | 13.5 → 13.92 dB (+0.42) | 0.96 → 0.76 | 0.0417 → 0.0449 | 0.302 | -2.87 / -1.37 | -1.79 | **raw** (SNR gain 0.4 dB < 3 dB; music 300 Hz-3 kHz changed -2.87 dB (> 1.5 dB)) |
-| `resadiye-marsi-1910` | `commons-odeon-54745-resadiye-marsi` | 0.0–90.0 s | public | 103.79 → 103.79 dB (+0.0) | 0.24 → 0.16 | 0.0762 → 0.0763 | 5.853 | -0.0 / 0.0 | 0.0 | **raw** (SNR gain 0.0 dB < 3 dB; kurtosis ratio 5.853 > 1 (musical-noise risk)) |
+| `resadiye-marsi-1910` | `commons-odeon-54745-resadiye-marsi` | 0.0–90.0 s | public | no groove noise | 0.24 → 0.17 | 0.0762 → 0.0763 | 0.0 | 0.0 / 0.0 | -0.07 | **raw** (no groove noise in the transfer (gated to digital silence): nothing to denoise) |
 
 ## Checks made on specific recordings
 

@@ -6,6 +6,7 @@
  *
  * Exits non-zero on any failure. Warnings (placeholders, pending rights) are printed but do not fail.
  */
+import { FOUNDATION_DEPTH, plinthBase } from '../../src/moments/aya-yorgi/statue-model';
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
 import { MOMENT_MUSIC_TAGS } from '../../src/audio/music/manifest';
 import { MUSIC_SOURCE_KINDS, WORLD_CHAINS } from '../../src/audio/music/moment-source';
@@ -373,6 +374,14 @@ function checkGeo(): void {
     const q = local(yorgi);
     expect(geo.districtAt(q.x, q.z)?.name === 'Büyükada', 'aya yorgi', `district is ${geo.districtAt(q.x, q.z)?.name}, expected Büyükada`);
     expect(geo.heightAt(q.x, q.z) > 120, 'aya yorgi', `monastery hilltop only ${geo.heightAt(q.x, q.z).toFixed(0)} m high (Yücetepe ≈ 200 m)`);
+    // The statue stands in front of the monastery (OSM way 746217504, centre 40.84858, 29.11901), on the summit.
+    const st = byId.get('aya-yorgi-challenge')?.content.waypoints?.find((w) => w.id === 'statue');
+    const s = st ? local(st) : null;
+    const mon = local({ lat: 40.84858, lon: 29.11901 });
+    expect(!!s && Math.hypot(s.x - mon.x, s.z - mon.z) < 120, 'aya yorgi', 'the statue should stand within 120 m of the monastery');
+    expect(!!s && !geo.isWater(s.x, s.z) && geo.heightAt(s.x, s.z) > 150, 'aya yorgi', `the statue's hilltop is only ${s ? geo.heightAt(s.x, s.z).toFixed(0) : '?'} m high`);
+    const pb = s ? plinthBase((x, z) => geo.heightAt(x, z), s.x, s.z) : null;
+    expect(!!pb && pb.spread < FOUNDATION_DEPTH, 'aya yorgi', `the ground rises ${pb?.spread.toFixed(2)} m across the plinth, more than its buried foundation (${FOUNDATION_DEPTH} m)`);
   }
   const corridor = BOSPHORUS_CORRIDOR.map(local);
   for (const id of ['bogazici-koprusu', 'fsm-koprusu', 'kiz-kulesi', 'rumeli-hisari', 'anadolu-hisari', 'yss-koprusu']) {

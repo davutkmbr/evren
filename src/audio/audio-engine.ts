@@ -17,6 +17,7 @@ import { playThunder } from './sfx/weather';
 import { playFerryHorn, playGull } from './sfx/ambient';
 import { playBirdFlap } from './sfx/bird-flap';
 import { playStorkClatter, playStorkPass, playStorkWingbeat } from './sfx/storks';
+import { playKnightCreak } from './sfx/knight';
 import { playDolphinSample } from './sfx/dolphins';
 import { placement, type Placement, type SfxEnv, type VoiceStats } from './sfx/voice';
 import type { SampleBank } from './samples';
@@ -200,6 +201,7 @@ export const MIX = {
   storkClatter: 0.7,
   storkWing: 0.75,
   storkPass: 0.6,
+  knightCreak: 0.55,
   momentBed: 1.0,
   /**
    * Dolphins (world/life/dolphins, recorded sounds pending approval): whistles are faint above the water (they are
@@ -295,6 +297,8 @@ const SWIM_BODY: PlaceOptions = { refDistance: 26, reverb: 0.12, size: 16, delay
 const PADDLE_POINT: PlaceOptions = { refDistance: 26, reverb: 0.15, size: 6, delayAbove: 120 };
 /** A stork (2 m wingspan) as a sound source: small, heard only up close. */
 const STORK_POINT: PlaceOptions = { refDistance: 8, reverb: 0.12, size: 2, delayAbove: 80 };
+/** The knight statue: a big bronze figure on an open hilltop, heard from a little farther than a stork. */
+const KNIGHT_POINT: PlaceOptions = { refDistance: 14, reverb: 0.18, size: 4, delayAbove: 80 };
 /** Shortest gap (s) between two moment cues of the same kind. */
 /**
  * Bond sounds (phase 06): level per cue and the shortest gap between two of the same kind (s). They sit at the head
@@ -327,7 +331,7 @@ const DOLPHIN_POINT: PlaceOptions = { refDistance: 14, reverb: 0.14, size: 3, de
 const DOLPHIN_SPACING: Record<DolphinAudioCue, number> = { whistle: 1.2, breath: 0.25, splash: 0.2 };
 /** Longest phrase per cue (s). */
 const DOLPHIN_MAX: Record<DolphinAudioCue, number> = { whistle: 3.5, breath: 1.2, splash: 2.2 };
-const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5, 'ferry-horn': 8 };
+const MOMENT_CUE_SPACING: Record<MomentAudioCue, number> = { 'stork-clatter': 2.5, 'stork-wingbeat': 0.18, 'stork-pass': 0.5, 'gull-call': 0.9, 'gull-wingbeat': 0.5, 'ferry-horn': 8, 'knight-creak': 0.4 };
 /** A vapur's whistle as a sound source: a big ship, heard far, with the hills' echo. */
 const FERRY_HORN_POINT: PlaceOptions = { refDistance: 90, reverb: 0.35, size: 20, delayAbove: 200 };
 /** The escort's arrival horn is softer than the ambience's distant horns at the same distance. */
@@ -411,7 +415,7 @@ export class AudioEngine {
   private momentBedLevel = 0;
   private readonly lastBond: Partial<Record<BondAudioCue, number>> = {};
   private readonly lastDolphin: Record<DolphinAudioCue, number> = { whistle: -1e9, breath: -1e9, splash: -1e9 };
-  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9, 'ferry-horn': -1e9 };
+  private readonly lastCue: Record<MomentAudioCue, number> = { 'stork-clatter': -1e9, 'stork-wingbeat': -1e9, 'stork-pass': -1e9, 'gull-call': -1e9, 'gull-wingbeat': -1e9, 'ferry-horn': -1e9, 'knight-creak': -1e9 };
   private nextSnort = 0;
   private readonly mouthOpts: PlaceOptions = { ...DRAGON_MOUTH };
   private readonly flapOpts: PlaceOptions = { ...DRAGON_BODY };
@@ -758,7 +762,7 @@ export class AudioEngine {
       return;
     }
     this.lastCue[cue] = now;
-    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : cue === 'ferry-horn' ? FERRY_HORN_POINT : STORK_POINT, this.place);
+    const pl = placeSource(this.frame.listener, position, cue === 'gull-call' ? GULL_POINT : cue === 'gull-wingbeat' ? GULL_WING_POINT : cue === 'ferry-horn' ? FERRY_HORN_POINT : cue === 'knight-creak' ? KNIGHT_POINT : STORK_POINT, this.place);
     const vol = clamp(finiteOr(volume, 1), 0, 1.5);
     switch (cue) {
       case 'stork-clatter':
@@ -786,6 +790,10 @@ export class AudioEngine {
         // On the ambience bus, like the distant horns of the harbour.
         pl.gain *= FERRY_HORN_MIX * Math.min(1, vol);
         playFerryHorn(this.amb, now, pl);
+        break;
+      case 'knight-creak':
+        pl.gain *= MIX.knightCreak;
+        playKnightCreak(this.sfx, now, vol, pl);
         break;
     }
   }

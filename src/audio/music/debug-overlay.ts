@@ -57,9 +57,9 @@ export class MusicDebugOverlay {
     lines.push(`note   ${s.note}`);
     const sp = s.sprinkle;
     lines.push(`style  ${s.style} (${s.styleSource})`);
-    if (s.style === 'sparse') {
+    if (sp.kind !== 'off') {
       const next = sp.phase === 'playing' ? `playing ${sp.current}` : sp.nextIn !== null ? `next in ${sp.nextIn.toFixed(0)} s${sp.next ? ` (${sp.next})` : ''}` : '—';
-      lines.push(`sprnk  ${next}  last ${sp.last ?? '—'}  played ${sp.played}`);
+      lines.push(`${sp.kind === 'rotation' ? 'rotat ' : 'sprnk '} ${next}  last ${sp.last ?? '—'}  played ${sp.played}`);
       lines.push(`hold   ${sp.hold ?? (sp.busy ? `busy: ${sp.busy}` : '—')}  ${sp.note}`);
       lines.push(`ctx    ${sp.tags.join(' ') || '—'}`);
       lines.push(`phrs   ${sp.phrases.join(', ') || 'none (manifest has no phrases — try ?music=test)'}`);

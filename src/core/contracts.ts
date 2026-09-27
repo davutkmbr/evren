@@ -336,6 +336,11 @@ export interface DragonState {
   /** Body-frame angular velocity rad/s (x = pitch rate, y = yaw rate, z = roll rate). */
   readonly angularVelocity: THREE.Vector3;
   mode: FlightMode;
+  /**
+   * The rider has left the saddle (on foot or gliding): the player's keys drive the rider, not the dragon. Flying, the
+   * dragon comes down and lands on its own; on the ground it waits. Set by the on-foot system.
+   */
+  riderless?: boolean;
   /** True airspeed m/s. */
   airspeed: number;
   /** Altitude above sea level (m). */
@@ -698,9 +703,10 @@ export type DolphinAudioCue = 'whistle' | 'breath' | 'splash';
  * Positional sound cues of moment creatures: the storks' (synthesised, src/audio/sfx/storks.ts) and the ferry gulls'
  * ('gull-call' one recorded CC0 gull call, 'gull-wingbeat' a few soft synthesised wing beats; src/moments/gull-simit),
  * and 'ferry-horn', a soft vapur whistle at a ferry (the synthesised ambience horn, src/audio/sfx/ambient.ts; the
- * ferry escort plays it on arrival, src/activities/escort).
+ * ferry escort plays it on arrival, src/activities/escort), and 'knight-creak', the rusty joints of the Aya Yorgi knight
+ * statue (src/audio/sfx/knight.ts).
  */
-export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat' | 'ferry-horn';
+export type MomentAudioCue = 'stork-clatter' | 'stork-wingbeat' | 'stork-pass' | 'gull-call' | 'gull-wingbeat' | 'ferry-horn' | 'knight-creak';
 
 /**
  * Elevated road surfaces built by landmark modules (bridge decks, approach viaducts).

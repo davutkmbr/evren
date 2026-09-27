@@ -52,7 +52,9 @@ not map (user approval 2026-09-26, `.docs/assets/candidates/sea-walls-data.md`),
 castle_brick_broken_06, Rocks025 and LeafSet029 (user approval 2026-09-26, `.docs/assets/candidates/wall-scans.md`),
 and historic 78 rpm recordings (user approval 2026-09-26, `.docs/assets/candidates/moment-music.md`): every candidate is
 archived with its source (`.docs/assets/archive-78rpm.md`); public-domain-clean ones ship from `public/`, US-risky ones
-(free in Turkey, not yet in the US) stay private-only (`private-assets/`, builds) with full attribution.
+(free in Turkey, not yet in the US) stay private-only (`private-assets/`, builds) with full attribution, and the CC0
+MakeHuman system assets, skins pack 01 and face units 01 as the human base for riders (user approval 2026-09-26,
+`.docs/assets/candidates/rider-humans.md`; built with Blender + MPFB 2 as tools).
 
 **Private assets.** Assets whose licence allows use in the game but not redistribution of the raw files (MetaHuman,
 Mixamo) live only in `private-assets/` (gitignored) and reach players only inside builds. Never commit them, never copy

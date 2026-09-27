@@ -62,23 +62,54 @@ def db(x: np.ndarray) -> float:
     return float(10 * np.log10(np.mean(x ** 2) + 1e-12))
 
 
-def find_leadin(x: np.ndarray, max_s: float = 12.0) -> tuple[float, float]:
-    """The run-in groove before the music: from 0.15 s to the first frame 10 dB over the quiet start."""
+DIGITAL_SILENCE_DB = -55.0
+MIN_LEADIN_S = 0.3
+
+
+def find_leadin(x: np.ndarray, max_s: float = 12.0) -> tuple[float, float] | None:
+    """The run-in groove before the music: from the first frame of groove noise to the first frame 10 dB over it.
+
+    A transfer's gated head (digital silence) is skipped, since it holds no noise to profile. None when no run-in of
+    at least MIN_LEADIN_S is left (the transfer starts on the music): the caller falls back to quietest_region.
+    """
     r = frame_rms_db(x[: int(max_s * SR)])
-    base = np.percentile(r[3:40], 20) if len(r) > 40 else np.min(r)
-    loud = np.nonzero(r > base + 10)[0]
-    end = (loud[0] * 0.05 - 0.15) if len(loud) else 1.0
-    return 0.15, max(0.4, end)
+    live = np.nonzero(r > DIGITAL_SILENCE_DB)[0]
+    if not len(live):
+        return None
+    i0 = max(int(live[0]), 3)
+    head = r[i0: i0 + 37]
+    head = head[head > DIGITAL_SILENCE_DB]
+    if not len(head):
+        return None
+    base = np.percentile(head, 20)
+    loud = np.nonzero(r[i0:] > base + 10)[0]
+    if not len(loud):  # nothing 10 dB louder follows: the "run-in" is the music itself
+        return None
+    start, end = i0 * 0.05, (i0 + loud[0]) * 0.05 - 0.15
+    if end - start < MIN_LEADIN_S:
+        return None
+    return start, end
 
 
 def quietest_region(x: np.ndarray, length: float = 1.0) -> tuple[float, float]:
     """The quietest stretch of groove noise: digital silence (a transfer's gated head or tail) does not count."""
     r = frame_rms_db(x)
-    r = np.where(r < -55, 0.0, r)
+    r = np.where(r < DIGITAL_SILENCE_DB, 0.0, r)
     k = int(length / 0.05)
     s = np.convolve(r, np.ones(k) / k, mode='valid')
     i = int(np.argmin(s))
     return i * 0.05, i * 0.05 + length
+
+
+GROOVE_STEADY_DB = 9.0
+
+
+def is_groove_noise(x: np.ndarray) -> bool:
+    """Groove noise is steady (frame level std <= GROOVE_STEADY_DB); a transfer gated at both ends has no such region,
+    and its quietest second is a decaying chord or a fade whose level swings by 20-40 dB."""
+    r = frame_rms_db(x)
+    r = r[r > DIGITAL_SILENCE_DB]
+    return len(r) >= 4 and float(np.std(r)) <= GROOVE_STEADY_DB
 
 
 # ------------------------------------------------------------------ hum
