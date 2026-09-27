@@ -313,4 +313,4 @@ Before opening a pull request, run `npm run typecheck` and `npm run build` and c
 - Built with [three.js](https://threejs.org/).
 - The Seventeen Skies name and logo are the project's brand; see [.docs/brand](.docs/brand/README.md) for usage.
 - Textures, sounds, music and the historic 78 rpm recordings under the moments: see [CREDITS.md](CREDITS.md).
-  Rights holders can request corrections or removal at `<contact-email>`.
+  Rights holders can request corrections or removal at `davutkmbr@gmail.com`.

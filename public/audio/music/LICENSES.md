@@ -19,7 +19,7 @@ improvised by people who died more than 70 years ago, so free in Turkey). Approv
 and the rights reasoning: [`.docs/assets/archive-78rpm.md`](../../../.docs/assets/archive-78rpm.md). Each piece exists
 twice: `moments/<id>.opus` / `.m4a` (conservatively denoised: declick, gentle hiss reduction) and
 `moments/<id>.raw.opus` / `.raw.m4a` (only trimmed, faded and loudness-matched, with the record's crackle); the
-manifest's `variant` names the default. Rights holders' requests: `<contact-email>`.
+manifest's `variant` names the default. Rights holders' requests: `davutkmbr@gmail.com`.
 
 | Piece id | Recording | Performers | Label, catalogue | Year | Excerpt | Source | Licence | Approved |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
