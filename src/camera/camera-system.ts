@@ -7,6 +7,7 @@ import { clamp, smoothstep } from './math/scalar';
 import { ChaseController } from './modes/chase';
 import { CinematicController } from './modes/cinematic';
 import { FreeController } from './modes/free';
+import { OnFootCamera, type OnFootSubject } from './modes/onfoot';
 import { PovController } from './modes/pov';
 import { CameraCollision } from './obstruction';
 import { CameraRigService, type CameraDebugInfo, type CameraRigHost } from './rig-service';
@@ -67,6 +68,8 @@ export class CameraSystem implements System, CameraRigHost {
     free: this.free,
   };
   private readonly service = new CameraRigService(this);
+  /** The rider on foot (off the dragon): its own follow camera takes over whatever the mode. */
+  private readonly onFoot = new OnFootCamera();
 
   /** Mode requested by the player/UI. */
   private requested: CameraMode = 'third';
@@ -229,6 +232,28 @@ export class CameraSystem implements System, CameraRigHost {
     if (this.requested !== 'free' && !this.tracker.available) {
       return;
     }
+    const walker = this.onFootSubject();
+    if (walker && this.requested !== 'free') {
+      if (!this.onFoot.active) {
+        this.blend.cancel();
+        this.onFoot.enter(walker, this.lastPose);
+        this.tracker.rig?.setFirstPerson(false);
+        this.firstPersonApplied = false;
+      }
+      this.onFoot.update(frame, walker, this.pose);
+      copyPose(this.finalPose, this.pose);
+      copyPose(this.lastPose, this.finalPose);
+      this.applyShake(ctx);
+      this.writeCamera(ctx);
+      ctx.pipeline.speedEffect = clamp(this.finalPose.speedEffect, 0, 1);
+      return;
+    }
+    if (this.onFoot.active) {
+      // Back in the saddle: the mode's camera glides back in from the on-foot view.
+      this.onFoot.exit();
+      this.controllers[this.active].enter(frame, this.lastPose);
+      this.blend.begin(this.lastPose, this.active, this.active, this.tracker);
+    }
 
     if (!this.started) {
       this.active = this.requested;
@@ -270,6 +295,26 @@ export class CameraSystem implements System, CameraRigHost {
   pending(): number {
     return 0;
   }
+
+  /** The rider on foot, when they have left the saddle (the rig's locomotion controller). */
+  private onFootSubject(): OnFootSubject | null {
+    const rig = this.tracker.rig as unknown as { onFoot?: OnFootSubject & { state: string }; human?: { root: THREE.Object3D; bones: Map<string, THREE.Object3D> } } | null;
+    const loco = rig?.onFoot;
+    if (!loco || !rig?.human) {
+      return null;
+    }
+    const s = this.walker;
+    s.root = rig.human.root;
+    s.hips = rig.human.bones.get('Hips');
+    s.velocity = loco.velocity;
+    s.vy = loco.vy;
+    s.yaw = loco.yaw;
+    s.state = loco.state;
+    s.crouch = loco.crouch;
+    return s;
+  }
+
+  private readonly walker: OnFootSubject = { root: new THREE.Object3D(), velocity: new THREE.Vector2(), vy: 0, yaw: 0, state: 'ground', crouch: 0 };
 
   dispose(): void {
     for (const off of this.unsubscribe) {

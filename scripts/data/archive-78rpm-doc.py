@@ -90,7 +90,8 @@ def main():
         rp = recipes.get(pid, {})
         pieces.append(' | '.join([
             f'`{pid}`', f"`{res['recording']}`", f"{res['segment'][0]}–{res['segment'][1]} s", rp.get('target', ''),
-            f"{m['raw']['snr_db']} → {m['denoised']['snr_db']} dB (+{m['snrGainDb']})",
+            f"{m['raw']['snr_db']} → {m['denoised']['snr_db']} dB (+{m['snrGainDb']})" if m['snrGainDb'] is not None
+            else 'no groove noise',
             f"{m['raw']['clicks_per_s']} → {m['denoised']['clicks_per_s']}",
             f"{m['raw']['flatness_quiet']} → {m['denoised']['flatness_quiet']}",
             f"{c['kurtosis_ratio']}", f"{c['band_change_db']} / {c['hf_change_db']}", f"{c['hiss_change_db']}",

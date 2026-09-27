@@ -18,7 +18,9 @@
  * smoothed mix to the player.
  *
  * Styles: `sparse` plays sprinkles and keeps the loops only for races (race-tagged sets) and a moment's own set;
- * `continuous` plays the loop cycle and no sprinkles. Moment pieces play in both.
+ * `continuous` plays the loop cycle and no sprinkles, or, while no loop set is approved, the rotation: the same pool one
+ * piece after another. The free-flight pool is the sprinkle phrases plus the historic moment pieces (shared for now);
+ * moments play their pieces in both styles.
  *
  * Debug: `?music=debug` overlay, `?music=test` procedural test sets and phrases (combine: `?music=test,debug`),
  * `?music=sparse` / `?music=continuous` force the style for the session, `?music=off` no music, `?music=raw` /
@@ -57,7 +59,7 @@ import { smoothstep } from '../dsp/math';
 import { MusicPlayer } from './player';
 import { idleInput, MUSIC_CONDITIONS, MUSIC_RULES, MusicRulesEngine, type MusicInput, type MusicPolicy, type MusicTarget, type StemMix } from './rules';
 import { effectiveMusicStyle, loadAdaptiveMusic, loadMusicStyle, loadMusicVolume, saveAdaptiveMusic, saveMusicStyle, saveMusicVolume, type MusicStyle } from './settings';
-import { SprinkleDirector, sprinkleContext, TIME_TAGS, type SprinkleCommand, type SprinkleContext } from './sprinkle';
+import { ROTATION_DEFAULTS, SprinkleDirector, sprinkleContext, TIME_TAGS, type SprinkleCommand, type SprinkleContext } from './sprinkle';
 import type { MusicDebugOverlay } from './debug-overlay';
 
 export interface MusicSnapshot {
@@ -87,6 +89,8 @@ export interface MusicSnapshot {
   style: MusicStyle;
   styleSource: 'setting' | 'auto' | 'url';
   sprinkle: {
+    /** Which director feeds these lines: sprinkles (sparse), the rotation (continuous without loop sets) or none. */
+    kind: 'sparse' | 'rotation' | 'off';
     phase: string;
     current: string | null;
     /** Seconds until the gap is over (null while playing). */
@@ -174,11 +178,14 @@ export class MusicController {
   private readonly rules = new MusicRulesEngine();
   private readonly director = new MusicDirector(DEFAULT_DIRECTOR);
   private readonly sprinkles = new SprinkleDirector();
+  /** "Sürekli" without loop sets: the free-flight pool back to back (voice owner 'r'). */
+  private readonly rotation = new SprinkleDirector(ROTATION_DEFAULTS);
   private readonly momentMusic = new MomentMusicDirector();
   private sets: MusicSetDef[] = [];
   /** Every phrase of the manifest (sprinkles and moment pieces). */
   private phrases: MusicPhraseDef[] = [];
-  private sprinklePhrases: MusicPhraseDef[] = [];
+  /** The free-flight pool: sprinkle phrases and moment pieces. */
+  private freePhrases: MusicPhraseDef[] = [];
   private storedStyle: MusicStyle | null = loadMusicStyle();
   private urlStyle: MusicStyle | null = null;
   /** `?music=raw` / `?music=denoised`: the version of the restored historic pieces to play (null = each piece's default). */
@@ -272,7 +279,7 @@ export class MusicController {
 
   /** "Müzik tarzı" in effect. */
   get musicStyle(): MusicStyle {
-    return this.urlStyle ?? effectiveMusicStyle(this.storedStyle, this.sprinklePhrases.length > 0);
+    return this.urlStyle ?? effectiveMusicStyle(this.storedStyle, this.freePhrases.length > 0);
   }
 
   setMusicStyle(style: MusicStyle): void {
@@ -283,7 +290,7 @@ export class MusicController {
 
   private setPhrases(list: readonly MusicPhraseDef[]): void {
     this.phrases = [...list];
-    this.sprinklePhrases = this.phrases.filter((p) => roleOf(p) === 'sprinkle');
+    this.freePhrases = this.phrases.filter((p) => roleOf(p) === 'sprinkle' || roleOf(p) === 'moment');
   }
 
   /* ---------------- lifecycle ---------------- */
@@ -393,7 +400,9 @@ export class MusicController {
     this.director.stopNow(this.audio?.currentTime ?? 0, 0);
     this.player?.stopAll(0.5);
     this.player?.stopVoices('s', 0.5);
+    this.player?.stopVoices('r', 0.5);
     this.sprinkles.stopNow(this.audio?.currentTime ?? 0);
+    this.rotation.stopNow(this.audio?.currentTime ?? 0);
     this.sets = [...mod.TEST_SETS];
     this.setPhrases([...mod.TEST_PHRASES, ...mod.TEST_MOMENT_PIECES]);
     this.manifestLoaded = true;
@@ -530,9 +539,15 @@ export class MusicController {
         this.run(this.director.cue(kind, now), target);
       }
       const phraseReady = (id: string): boolean => player.isPhraseReady(id);
+      const phrases = this.freePhrases.filter((p) => !player.hasPhraseFailed(p.id));
       if (sparse && (audible || this.sprinkles.view.phase === 'playing')) {
-        const phrases = this.sprinklePhrases.filter((p) => !player.hasPhraseFailed(p.id));
         this.runOneShots('s', this.sprinkles.tick(now, sctx, { phrases, isReady: phraseReady }), 'main');
+      }
+      const rotating = !sparse && !this.hasFreeLoops();
+      if (rotating && (audible || this.rotation.view.phase === 'playing')) {
+        this.runOneShots('r', this.rotation.tick(now, sctx, { phrases, isReady: phraseReady }), 'main');
+      } else if (!rotating && this.rotation.view.phase === 'playing') {
+        this.runOneShots('r', this.rotation.stopNow(now), 'main');
       }
       this.momentReq.time = [...sctx.tags].filter((t) => TIME_TAGS.includes(t));
       if (audible || this.momentMusic.playing) {
@@ -623,8 +638,15 @@ export class MusicController {
     }
     if (style === 'continuous') {
       this.runOneShots('s', this.sprinkles.stopNow(now), 'main');
+    } else {
+      this.runOneShots('r', this.rotation.stopNow(now), 'main');
     }
     console.info(`[music] style: ${style}`);
+  }
+
+  /** A loop set the continuous style can play in free flight (not only for a moment or a race). */
+  private hasFreeLoops(): boolean {
+    return this.sets.some((x) => !x.momentOnly && !x.tags.includes('race'));
   }
 
   private runOneShots(owner: string, cmds: readonly SprinkleCommand[], bus: 'main' | 'moment'): void {
@@ -654,12 +676,14 @@ export class MusicController {
     } else if (v.playUntil !== null) {
       next = `window ${Math.max(0, v.playUntil - now).toFixed(0)} s left`;
     }
-    const sv = this.sprinkles.view;
+    const kind = this.musicStyle === 'sparse' ? 'sparse' : this.hasFreeLoops() ? 'off' : 'rotation';
+    const sv = kind === 'rotation' ? this.rotation.view : this.sprinkles.view;
     const mv = this.momentMusic.view;
     return {
       style: this.musicStyle,
       styleSource: this.urlStyle ? 'url' : this.storedStyle ? 'setting' : 'auto',
       sprinkle: {
+        kind,
         phase: sv.phase,
         current: sv.current,
         nextIn: sv.phase === 'waiting' && Number.isFinite(sv.dueAt) ? Math.max(0, sv.dueAt - now) : null,
@@ -670,7 +694,7 @@ export class MusicController {
         tags: this.sprinkleCtx ? [...this.sprinkleCtx.tags] : [],
         note: sv.note,
         played: sv.played,
-        phrases: this.sprinklePhrases.map((p) => p.id),
+        phrases: this.freePhrases.map((p) => p.id),
       },
       moment: { current: mv.current, pending: mv.pending, last: mv.last, note: mv.note, pieces: this.phrases.filter((p) => roleOf(p) === 'moment').map((p) => p.id) },
       source:
@@ -747,7 +771,8 @@ export class MusicController {
       phrases: () => this.phrases.map((p) => p.id),
       sprinkle: (phraseId?: string) => {
         const now = this.audio?.currentTime ?? 0;
-        this.sprinkles.dueIn(now, 0, this.sprinklePhrases.find((p) => p.id === phraseId) ?? null);
+        const d = this.musicStyle === 'sparse' ? this.sprinkles : this.rotation;
+        d.dueIn(now, 0, this.freePhrases.find((p) => p.id === phraseId) ?? null);
       },
       setStyle: (style: MusicStyle) => this.setMusicStyle(style),
       moment: (info?: MomentMusicInfo & { musicId?: string }) => {
@@ -764,6 +789,7 @@ export class MusicController {
         if (dt > 0) {
           this.director.shift(dt);
           this.sprinkles.shift(dt);
+          this.rotation.shift(dt);
           this.momentMusic.shift(dt);
         }
       },
