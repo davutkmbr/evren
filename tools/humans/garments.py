@@ -233,7 +233,7 @@ def skin(obj, body, rig, weights=None):
                 if w <= 0:
                     continue
                 # Skeleton bones are named without their "mixamorig:" prefix; the added wind chains by full name.
-                g = groups.get(bone) or obj.vertex_groups.new(name=bone if bone.startswith("wind_") else "mixamorig:" + bone)
+                g = groups.get(bone) or obj.vertex_groups.new(name=bone if bone.startswith(("wind_", "wing_")) else "mixamorig:" + bone)
                 groups[bone] = g
                 g.add([v.index], w / tot, "REPLACE")
         arm = obj.modifiers.new("Armature", "ARMATURE")
