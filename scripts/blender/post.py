@@ -159,6 +159,41 @@ def haze_image(w, h, columns):
     return _float_image('evren_post_haze', np.repeat(row[None, :, :], h, axis=0), colorspace='Linear Rec.709')
 
 
+def depth_image(raw_exr):
+    """The raw depth pass with stray background pixels repaired, or None (no depth pass, or nothing to repair).
+    A camera ray that scatters in a Cycles fog volume (atmosphere.py) before it reaches a surface leaves its pixel at
+    the background depth (1e10), so the haze skips that pixel: dark specks all over a hazy frame (c10 by day). A
+    background pixel with at most 2 background neighbours takes the nearest depth of its 3x3 neighbourhood; real sky
+    (larger areas, the skyline) keeps its depth."""
+    try:
+        import OpenImageIO as oiio
+    except ImportError:
+        return None
+    z = None
+    probe = oiio.ImageBuf(raw_exr)
+    for sub in range(max(probe.nsubimages, 1)):
+        buf = oiio.ImageBuf(raw_exr, sub, 0)
+        names = list(buf.spec().channelnames)
+        k = next((i for i, n in enumerate(names) if n.endswith('Depth.Z') or n.endswith('Depth.V') or n == 'Z'), None)
+        if k is not None:
+            z = np.asarray(buf.get_pixels(oiio.FLOAT)).reshape(buf.spec().height, buf.spec().width, len(names))[:, :, k]
+            break
+    if z is None:
+        return None
+    h, w = z.shape
+    sky = z >= SKY_DEPTH
+    pad_sky = np.pad(sky, 1, constant_values=True)
+    pad_z = np.pad(np.where(sky, np.inf, z), 1, constant_values=np.inf)
+    count = sum(pad_sky[dy:dy + h, dx:dx + w].astype(np.int32) for dy in range(3) for dx in range(3))
+    nearest = np.min(np.stack([pad_z[dy:dy + h, dx:dx + w] for dy in range(3) for dx in range(3)]), axis=0)
+    stray = sky & (count <= 3) & np.isfinite(nearest)
+    if not stray.any():
+        return None
+    fixed = np.where(stray, nearest, z).astype(np.float32)[::-1]  # Blender images run bottom to top
+    log(f'{os.path.basename(raw_exr)}: {int(stray.sum())} stray background pixels in the depth pass repaired')
+    return _float_image('evren_post_depth', np.repeat(fixed[:, :, None], 3, axis=2))
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # The compositor scene
 
@@ -353,14 +388,20 @@ def _relink(t, sock, src):
         t.links.new(src, sock)
 
 
-def _bind(sc, raw_img):
-    """Points the chain at a raw EXR: its image, depth and position z. Returns (has depth, has position)."""
+def _bind(sc, raw_img, depth_img=None):
+    """Points the chain at a raw EXR: its image, depth (or `depth_img`, the repaired depth of depth_image()) and
+    position z. Returns (has depth, has position)."""
     t = sc.compositing_node_group
     src = t.nodes['raw']
     src.image = raw_img
     image = src.outputs.get('Combined') or src.outputs['Image']
     _relink(t, t.nodes['haze'].inputs['B'], image)
     depth = next((o for o in src.outputs if o.name in ('Depth', 'Z')), None)
+    if depth is not None and depth_img is not None:
+        fixed = t.nodes.get('haze_depth_fixed') or t.nodes.new('CompositorNodeImage')
+        fixed.name = 'haze_depth_fixed'
+        fixed.image = depth_img
+        depth = fixed.outputs['Image']
     _relink(t, t.nodes['haze_depth'].inputs[0], depth)
     t.nodes['haze_depth'].inputs[1].default_value = 0.0 if depth is not None else 1e9
     pos = src.outputs.get('Position')
@@ -478,7 +519,7 @@ def run(raw_exr, out_png, params, view, photo=None, match=MATCH, vfov_deg=50.0, 
     main = bpy.context.scene
     raw = bpy.data.images.load(raw_exr, check_existing=False)
     try:
-        has_depth, has_position = _bind(sc, raw)
+        has_depth, has_position = _bind(sc, raw, depth_image(raw_exr))
         w, h = size or tuple(raw.size)
         sc.render.resolution_x, sc.render.resolution_y = w, h
         vs = sc.view_settings
