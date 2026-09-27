@@ -142,7 +142,7 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 4000,
     rollupOptions: {
-      input: { main: resolve(__dirname, 'index.html'), ...sandboxPages },
+      input: { main: resolve(__dirname, 'index.html'), probe: resolve(__dirname, 'probe.html'), ...sandboxPages },
     },
   },
 });
