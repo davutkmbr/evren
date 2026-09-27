@@ -5,7 +5,8 @@
  *   ?view=side|front|back|q|close|feet|top   ?sky=1&t=hours (real sky + post)   ?wind=m/s (air past the body, from the front)
  *   Without ?clip: the locomotion controller (keyboard: WASD relative to the camera, Shift run, C crouch, Space jump;
  *   G held in the air: glide; drag to orbit, wheel to zoom), or a scripted input
- *   ?script=walk|run|runstop|jump|runjump|crouch|circle|glide (glide: with ?alt=m) with
+ *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide (glide: with ?alt=m; anything else stands, and
+ *   idles) with
  *   &at=<s> to hold the simulation at that time (deterministic screenshots of transitions).
  * window.__human = { model, controller }.
  */
@@ -147,6 +148,10 @@ function scripted(t: number, input: LocomotionInput): void {
         fwd(1);
       }
       break;
+    case 'turn':
+      // Standing, turns to face left, then right.
+      input.faceYaw = t < 1 ? 0 : t < 3 ? Math.PI / 2 : -Math.PI / 2;
+      break;
     case 'glide':
       // Starts high (?alt=): falls a moment, spreads the wings, glides and turns left, lands.
       input.glide = t > 0.4;
@@ -268,6 +273,7 @@ const bench: System = {
       c.lookAt(cam.target);
     } else {
       model.mixer.update(fixedT !== undefined ? 0 : dt * rate);
+      model.wings.set(clipName === 'glide' ? 1 : 0);
     }
     model.root.updateMatrixWorld(true);
     if (controller) {

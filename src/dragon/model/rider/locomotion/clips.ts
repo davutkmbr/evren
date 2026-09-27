@@ -20,6 +20,8 @@ export const CLIPS: Record<string, ClipInfo> = {
   jump_fall: { duration: 1.0, loop: true, speed: 0 },
   jump_land: { duration: 0.55, loop: false, speed: 0 },
   glide: { duration: 2.4, loop: true, speed: 0 },
+  idle_look: { duration: 5.0, loop: false, speed: 0 },
+  idle_shoulders: { duration: 4.0, loop: false, speed: 0 },
 };
 
 /** run_stop: the body brakes from the run's speed to rest in this time (s), speed falling as (1 - t/T)². */

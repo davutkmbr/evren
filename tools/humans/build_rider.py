@@ -193,10 +193,12 @@ LEG_POLE = (0.5, -0.9, 0.15)
 
 bpy.context.view_layer.objects.active = rig
 bpy.ops.object.mode_set(mode="POSE")
+# Rotations stay quaternions: the glTF exporter reads every action through the bones' current rotation mode, so an
+# Euler bone here would export the quaternion-keyed on-foot clips as the rest pose.
 for name, deg in SPINE.items():
     pb = rig.pose.bones["mixamorig:" + name]
-    pb.rotation_mode = "XYZ"
-    pb.rotation_euler = Euler((math.radians(deg), 0, 0), "XYZ")
+    pb.rotation_mode = "QUATERNION"
+    pb.rotation_quaternion = Euler((math.radians(deg), 0, 0), "XYZ").to_quaternion()
 bpy.context.view_layer.update()
 hips = rig.matrix_world @ rig.pose.bones["mixamorig:Hips"].head
 
@@ -234,10 +236,10 @@ for side in ("Left", "Right"):
             pb = rig.pose.bones.get(f"mixamorig:{side}Hand{finger}{k + 1}")
             if pb is None:
                 continue
-            pb.rotation_mode = "XYZ"
+            pb.rotation_mode = "QUATERNION"
             e = [0.0, 0.0, 0.0]
             e["XYZ".index(CURL_AXIS[-1])] = math.radians(deg) * (-1 if CURL_AXIS.startswith("-") else 1)
-            pb.rotation_euler = Euler(e, "XYZ")
+            pb.rotation_quaternion = Euler(e, "XYZ").to_quaternion()
 key_clip("ride")
 bpy.ops.object.mode_set(mode="OBJECT")
 bpy.context.view_layer.update()
