@@ -38,8 +38,12 @@ moment pieces are rebuilt with `python3 scripts/audio/prep-moment-music.py` (tar
   moment that names one (`musicId`) falls back to the mood choice. `EVREN_PRIVATE_ASSETS=0` leaves them out of a dev
   server or build, e.g. for a build that is published openly.
 - **MetaHuman.** Exported runtime files under `build/` (per runtime), wired when that pipeline lands.
-- **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/<name>.fbx`
-  (FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off).
+- **Mixamo (the rider's body clips).** The owner downloads the clips below into `private-assets/mixamo/` (subfolders
+  allowed; FBX Binary, "Without Skin", 30 fps, no keyframe reduction; the travelling clips with "In Place" off). A file
+  may keep its Mixamo title ("Breathing Idle.fbx", "Breathing Idle (1).fbx") or take our name (`idle.fbx`). Any other
+  FBX is retargeted too, as an extra clip `x_<slug>` (loop and travel measured) with a category guessed from its name;
+  `private-assets/build/rider/report.md` lists every clip with its measurements, to decide where the extras go in the
+  game (the bench plays any of them: `sandbox/human.html?clip=x_<slug>`).
   `tools/humans/build_rider.py` retargets them onto the rider skeleton (`tools/humans/mixamo.py`: world rotation changes
   from each rest pose, hips travel scaled by leg length, root motion measured and removed) and writes
   `private-assets/build/rider/clips.glb` + `clips.json` (durations, speeds, take-off and landing times). `vite.config.ts`
