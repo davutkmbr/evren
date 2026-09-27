@@ -6,6 +6,7 @@
  *
  * Exits non-zero on any failure. Warnings (placeholders, pending rights) are printed but do not fail.
  */
+import { FOUNDATION_DEPTH, plinthBase } from '../../src/moments/aya-yorgi/statue-model';
 import { latLonToLocal, WORLD_BOUNDS } from '../../src/core/geo-coords';
 import { MOMENT_MUSIC_TAGS } from '../../src/audio/music/manifest';
 import { MUSIC_SOURCE_KINDS, WORLD_CHAINS } from '../../src/audio/music/moment-source';
@@ -379,6 +380,8 @@ function checkGeo(): void {
     const mon = local({ lat: 40.84858, lon: 29.11901 });
     expect(!!s && Math.hypot(s.x - mon.x, s.z - mon.z) < 120, 'aya yorgi', 'the statue should stand within 120 m of the monastery');
     expect(!!s && !geo.isWater(s.x, s.z) && geo.heightAt(s.x, s.z) > 150, 'aya yorgi', `the statue's hilltop is only ${s ? geo.heightAt(s.x, s.z).toFixed(0) : '?'} m high`);
+    const pb = s ? plinthBase((x, z) => geo.heightAt(x, z), s.x, s.z) : null;
+    expect(!!pb && pb.spread < FOUNDATION_DEPTH, 'aya yorgi', `the ground rises ${pb?.spread.toFixed(2)} m across the plinth, more than its buried foundation (${FOUNDATION_DEPTH} m)`);
   }
   const corridor = BOSPHORUS_CORRIDOR.map(local);
   for (const id of ['bogazici-koprusu', 'fsm-koprusu', 'kiz-kulesi', 'rumeli-hisari', 'anadolu-hisari', 'yss-koprusu']) {
