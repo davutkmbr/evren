@@ -32,6 +32,8 @@ export interface QualitySettings {
   cloudQuality: 0 | 1 | 2 | 3;
   bloom: boolean;
   antialias: 'none' | 'fxaa' | 'smaa';
+  /** Temporal antialiasing (phase 25): replaces MSAA and the spatial AA pass. */
+  taa: boolean;
   particleBudget: number;
   birdCount: number;
   shipCount: number;
@@ -57,6 +59,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
     cloudQuality: 1,
     bloom: false,
     antialias: 'fxaa',
+    taa: false,
     particleBudget: 4000,
     birdCount: 60,
     shipCount: 25,
@@ -80,6 +83,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
     cloudQuality: 2,
     bloom: true,
     antialias: 'fxaa',
+    taa: true,
     particleBudget: 8000,
     birdCount: 150,
     shipCount: 45,
@@ -103,6 +107,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
     cloudQuality: 2,
     bloom: true,
     antialias: 'smaa',
+    taa: true,
     particleBudget: 16000,
     birdCount: 300,
     shipCount: 70,
@@ -126,6 +131,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
     cloudQuality: 3,
     bloom: true,
     antialias: 'smaa',
+    taa: true,
     particleBudget: 32000,
     birdCount: 500,
     shipCount: 100,
