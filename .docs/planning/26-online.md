@@ -64,7 +64,7 @@ Live at seventeenskies.com/probe since 2026-09-27; the probe objects were create
 `me` does not land in the Middle East from Istanbul. Region choice waits for Türk Telekom, Turkcell, Superonline
 and Vodafone results.
 
-### Remote dragons (done in branch claude/remote-dragons)
+### Remote dragons (done)
 
 The client side of other players, before any server (the part of phase 14 that online needs):
 
@@ -85,6 +85,32 @@ Measured with 15 bots in the nearest band (headless, shared GPU): remote-dragons
 dragon), +2.5–5.7 M triangles and +47–125 draw calls including shadows. Frame rates on the shared GPU were too noisy
 to judge (the same baseline ran at 46 and 20 fps); the 16-dragon 60 fps target of phase 14 needs a measurement on an
 idle machine. If the GPU cost is too high, the next step is a lighter mesh for the 350 m+ bands.
+
+### Game servers (done in branch feat/game-servers)
+
+- `src/net/protocol.ts`: the shared protocol (no imports; the Worker type-checks it too). Text `hello` / `welcome` /
+  `join` / `leave` / `error`, binary snapshots up, one binary batch per 100 ms down (`u8 type, u16 count, count ×
+  (u16 id, snapshot)`). Nicknames: 2–16 letters, digits, space, `_ . -`.
+- `worker/rooms.ts`: `ServerRoom` Durable Object per named server (Boğaziçi, Haliç, Adalar), created with the `eeur`
+  hint, WebSocket hibernation (seats rebuilt from socket attachments). Relay with checks, not a simulation: 50 seats,
+  a token bucket (20 messages/s, 40 burst), world bounds, a speed limit between snapshots (160 m/s + 30 m); a
+  teleport-flagged jump passes once per 5 s. 200 rejected messages close the socket (4001). The room keeps the
+  latest snapshot per player and broadcasts every 100 ms while something changed, so a receiver gets ~8–10 per
+  second per player. `GET /api/servers` lists the servers with their player counts.
+- `src/net/client.ts` + `src/net/system.ts`: the `net` service (`listServers`, `join(server, name)`, `leave`, players,
+  status, last error). While online the local snapshot goes out at 10 Hz on average whatever the frame rate
+  (accumulated pacing), teleports are flagged (the `teleport` event or a jump over 300 m) and receivers restart their
+  buffer instead of flying across the map; relayed snapshots go to `remoteDragons`. Dropped connections retry after
+  1, 3 and 8 s; a refusal does not. `?server=<id>&name=<nick>` joins on start (local builds only).
+
+Tested against `wrangler dev`: welcome / join / leave, relay, speed jump dropped, teleport accepted once, second
+teleport inside the cooldown dropped, out-of-world dropped, bad name and old version refused (4000), 51st player
+refused (`full`), a 300-message flood closed with 4001, server list counts. End to end: the game joined a server and
+drew a second player (a Node client mirroring it through the room) 35 m beside it.
+
+Open: a hidden tab stops `requestAnimationFrame`, so its dragon freezes for the others until it returns (an "away"
+state or leaving after a timeout); the start screen's server list and nickname input (the UI step); name tags and
+players on the minimap.
 
 ## Stage 2 — later
 

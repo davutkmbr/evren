@@ -1193,6 +1193,35 @@ export interface RemoteDragonService {
   forEach(fn: (id: string, position: THREE.Vector3, visible: boolean) => void): void;
 }
 
+/** A game server as listed by /api/servers. */
+export interface GameServerInfo {
+  id: string;
+  /** Shown in the game (Turkish). */
+  name: string;
+  players: number;
+  max: number;
+}
+
+export type NetStatus = 'offline' | 'connecting' | 'online';
+
+/**
+ * Online play (phase 26, src/net): the server list, joining one server with a nickname, the players on it. While
+ * online the local dragon's snapshots go out and the other players arrive through 'remoteDragons'. Service key: 'net'.
+ */
+export interface NetService {
+  readonly status: NetStatus;
+  readonly server: GameServerInfo | null;
+  /** Other players on the server (not the local one). */
+  readonly players: ReadonlyMap<number, string>;
+  /** Why the last connection ended, if the server refused it or it dropped ('full', 'name', 'version', 'lost'). */
+  readonly lastError: string | null;
+  listServers(): Promise<GameServerInfo[]>;
+  join(server: GameServerInfo, name: string): void;
+  leave(): void;
+  /** Status, player list or error changed. */
+  onChange(fn: () => void): () => void;
+}
+
 /** Typed service map. Use ctx.services.get('geo') etc. */
 export interface Services {
   geo: GeoQuery;
@@ -1215,6 +1244,7 @@ export interface Services {
   life: LifeService;
   bond: DragonBondState;
   remoteDragons: RemoteDragonService;
+  net: NetService;
 }
 
 /* ------------------------------------------------------------------ */
