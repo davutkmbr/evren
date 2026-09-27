@@ -104,7 +104,7 @@ From the phase doc and `CLAUDE.md`; check every item before a moment becomes `re
 | 8 | `ships-over-land-1453` | Karadan Yürüyen Gemiler | draft | Translucent galley model, slide/fade animations, wood-creak sound |
 | 9 | `kiz-kulesi-legend` | Kız Kulesi Efsanesi | draft | Small snake character and fruit basket, idle/peek/hide animations, night-sea sound |
 | 14 | `orhan-veli-istanbulu-dinliyorum` | İstanbul'u Dinliyorum | draft | Soft shore ambience (first stanza in place) |
-| 16 | ten literary records (`src/moments/data/literature.ts`) | Nedim, Sinan's inscription, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Haşim, Kuyrukluyıldız, Prokopios, De Amicis | 8 ready, 2 draft | The drafts (`sinan-turbe-kitabesi`, `hasim-bir-gunun-sonunda-arzu`) wait for the owner's text check; see `.docs/planning/19-moments.md`, "Literary moments" |
+| 16 | ten literary records (`src/moments/data/literature.ts`) | Nedim, Sinan's inscription, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Haşim, Kuyrukluyıldız, Prokopios, De Amicis | 10 ready | Sinan's inscription and Haşim follow scholarly editions (owner approved, 2026-09-27); see `.docs/planning/19-moments.md`, "Literary moments" |
 
 No record uses `media`; film and series items (backlog 6 and 11) wait for the user's choices and official links.
 
