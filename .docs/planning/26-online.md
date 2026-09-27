@@ -86,7 +86,7 @@ dragon), +2.5–5.7 M triangles and +47–125 draw calls including shadows. Fram
 to judge (the same baseline ran at 46 and 20 fps); the 16-dragon 60 fps target of phase 14 needs a measurement on an
 idle machine. If the GPU cost is too high, the next step is a lighter mesh for the 350 m+ bands.
 
-### Game servers (done in branch feat/game-servers)
+### Game servers (done, branch feat/game-servers)
 
 - `src/net/protocol.ts`: the shared protocol (no imports; the Worker type-checks it too). Text `hello` / `welcome` /
   `join` / `leave` / `error`, binary snapshots up, one binary batch per 100 ms down (`u8 type, u16 count, count ×
@@ -111,6 +111,38 @@ drew a second player (a Node client mirroring it through the room) 35 m beside i
 Open: a hidden tab stops `requestAnimationFrame`, so its dragon freezes for the others until it returns (an "away"
 state or leaving after a timeout); the start screen's server list and nickname input (the UI step); name tags and
 players on the minimap.
+
+### Accounts (done in branch feat/accounts)
+
+Decision (2026-09-27): no forced login. "Online oyna" makes a guest account with a nickname; "Google ile kaydet"
+links it to Google later and keeps the profile. Achievements, quests and other progress tables are planned separately
+before they reach the database.
+
+- D1 database `seventeen-skies` (created in eeur), schema in `migrations/` (`0001_accounts.sql`: Better Auth's tables
+  from `scripts/db/auth-schema.mts` plus `profile`). Local: `npx wrangler d1 migrations apply seventeen-skies --local`.
+- `worker/auth.ts`: Better Auth 1.7 on D1 (native binding), anonymous plugin (guest e-mails on
+  `guest.seventeenskies.com`, never mailed), Google when `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are set, 90-day
+  sessions, telemetry off. Session rows keep no IP address or user agent (a database hook; `disableIpTracking` alone
+  still stored them). Linking a guest to Google moves the guest's profile unless the Google account has one.
+- `worker/account.ts`: `GET /api/me` (user or null, profile, whether Google is offered), `PUT /api/me/profile`
+  (nickname rules from the protocol, unique regardless of case with Turkish folding: Işıl = ışıl), `DELETE /api/me`
+  (user, sessions, Google link and profile by cascade; KVKK). Writes need the site's own Origin.
+- Rooms: the WebSocket upgrade needs the site's Origin (no cross-site socket riding the cookie), a session (401) and a
+  profile (403); the Worker passes the account and nickname to the room in headers it sets itself, so a client cannot
+  name itself. Protocol v2: the hello carries only the version. One seat per account: joining again replaces the old
+  seat (`replaced`).
+- Client: `src/net/account.ts` provides the `account` service with plain fetch calls (no auth library in the game
+  bundle): status, user, nickname, `playAsGuest`, `setNickname`, `signInWithGoogle` (redirect), `signOut`,
+  `deleteAccount`. `net.join(server)` uses the profile.
+
+Tested against `wrangler dev --local-upstream 127.0.0.1:8799` (without it wrangler rewrites Host and Origin to the
+production route): every rule above, including the cascade delete and empty IP / user agent columns; the game signed
+in as a guest, took the nickname and joined a server.
+
+Before production: `npx wrangler d1 migrations apply seventeen-skies --remote`, `npx wrangler secret put
+BETTER_AUTH_SECRET`, and for Google a Google Cloud OAuth client (redirect URI
+`https://seventeenskies.com/api/auth/callback/google`) with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` as secrets. A
+privacy notice (aydınlatma metni) and the account deletion button in the UI come with the start screen.
 
 ## Stage 2 — later
 

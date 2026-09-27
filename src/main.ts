@@ -27,6 +27,7 @@ const SYSTEMS: readonly { name: string; load: () => Promise<() => System> }[] = 
   { name: 'dragon-model', load: () => import('./dragon/model').then((m) => m.createDragonModelSystem) },
   { name: 'flight', load: () => import('./dragon/flight').then((m) => m.createFlightSystem) },
   { name: 'remote-dragons', load: () => import('./dragon/remote').then((m) => m.createRemoteDragonSystem) },
+  { name: 'account', load: () => import('./net/account').then((m) => m.createAccountSystem) },
   { name: 'net', load: () => import('./net/system').then((m) => m.createNetSystem) },
   { name: 'rider-on-foot', load: () => import('./dragon/model/rider/onfoot-system').then((m) => m.createOnFootSystem) },
   { name: 'camera', load: () => import('./camera').then((m) => m.createCameraSystem) },

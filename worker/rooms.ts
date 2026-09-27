@@ -4,17 +4,19 @@
  * player and broadcasts them in one batch every BROADCAST_MS while anything changed. Protocol: src/net/protocol.ts.
  *
  *   GET /api/servers              the server list with player counts
- *   GET /api/servers/<id>/ws      WebSocket into that server's room
+ *   GET /api/servers/<id>/ws      WebSocket into that server's room: signed in (worker/auth.ts) with a profile; the
+ *                                 Worker passes the account and nickname to the room, the client never names itself
  *
  * WebSocket hibernation: an idle room (no messages) is evicted from memory and costs nothing; each socket carries its
  * seat (id, name) as its attachment, so the room rebuilds its player list when it wakes.
  */
 import { DurableObject } from 'cloudflare:workers';
+import { sessionUser, siteOrigin } from './auth';
+import { loadProfile } from './account';
 import {
   BATCH_ENTRY_HEADER_BYTES,
   BATCH_HEADER_BYTES,
   BROADCAST_MS,
-  cleanName,
   FLAG_TELEPORT,
   MAX_PLAYERS,
   MAX_SPEED,
@@ -48,8 +50,14 @@ const MAX_STRIKES = 200;
 /** Extra distance (m) allowed between two snapshots on top of MAX_SPEED (network jitter, rounding). */
 const DISTANCE_SLACK = 30;
 
+/** Headers the Worker sets on the room request after checking the session (never taken from the client). */
+const SEAT_USER = 'X-Seat-User';
+const SEAT_NAME = 'X-Seat-Name';
+
+/** A socket's attachment: the account from the upgrade, and the player id once the hello is done (0 before). */
 interface Seat {
   id: number;
+  userId: string;
   name: string;
 }
 
@@ -76,7 +84,7 @@ export class ServerRoom extends DurableObject<Env> {
     // After hibernation: rebuild the seats from the sockets' attachments.
     for (const ws of ctx.getWebSockets()) {
       const seat = ws.deserializeAttachment() as Seat | null;
-      if (seat) {
+      if (seat?.id) {
         this.seats.set(ws, fresh(seat));
       }
     }
@@ -91,8 +99,14 @@ export class ServerRoom extends DurableObject<Env> {
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected a WebSocket', { status: 426 });
     }
+    const userId = request.headers.get(SEAT_USER);
+    const name = request.headers.get(SEAT_NAME);
+    if (!userId || !name) {
+      return new Response('Unauthorized', { status: 401 });
+    }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ id: 0, userId, name: decodeURIComponent(name) } satisfies Seat);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -124,9 +138,9 @@ export class ServerRoom extends DurableObject<Env> {
   }
 
   private hello(ws: WebSocket, text: string): void {
-    let msg: { type?: unknown; name?: unknown; v?: unknown } | null;
+    let msg: { type?: unknown; v?: unknown } | null;
     try {
-      msg = JSON.parse(text) as { type?: unknown; name?: unknown; v?: unknown } | null;
+      msg = JSON.parse(text) as { type?: unknown; v?: unknown } | null;
     } catch {
       msg = null;
     }
@@ -136,9 +150,16 @@ export class ServerRoom extends DurableObject<Env> {
     if (msg.v !== PROTOCOL_VERSION) {
       return this.reject(ws, 'version');
     }
-    const name = cleanName(msg.name);
-    if (!name) {
-      return this.reject(ws, 'name');
+    const pending = ws.deserializeAttachment() as Seat | null;
+    if (!pending) {
+      return this.reject(ws, 'hello');
+    }
+    // One seat per account: joining again (another tab or device) replaces the old seat.
+    for (const [other, s] of this.seats) {
+      if (s.userId === pending.userId) {
+        this.reject(other, 'replaced');
+        this.leave(other);
+      }
     }
     if (this.seats.size >= MAX_PLAYERS) {
       return this.reject(ws, 'full');
@@ -148,7 +169,8 @@ export class ServerRoom extends DurableObject<Env> {
     while (used.has(id)) {
       id++;
     }
-    const seat: Seat = { id, name };
+    const seat: Seat = { id, userId: pending.userId, name: pending.name };
+    const name = seat.name;
     ws.serializeAttachment(seat);
     const others = [...this.seats.values()].map((s) => ({ id: s.id, name: s.name }));
     this.seats.set(ws, fresh(seat));
@@ -295,7 +317,22 @@ export async function handleRooms(request: Request, env: Env, path: string): Pro
     if (!SERVERS.some((s) => s.id === m[1])) {
       return json({ error: 'unknown server' }, 404);
     }
-    return room(env, m[1]).fetch(request);
+    // The session cookie goes with any WebSocket to this host, so only the game's own pages may open one.
+    if (request.headers.get('Origin') !== siteOrigin(env)) {
+      return json({ error: 'origin' }, 403);
+    }
+    const user = await sessionUser(request, env);
+    if (!user) {
+      return json({ error: 'signed-out' }, 401);
+    }
+    const profile = await loadProfile(env, user.id);
+    if (!profile) {
+      return json({ error: 'no-profile' }, 403);
+    }
+    const headers = new Headers(request.headers);
+    headers.set(SEAT_USER, user.id);
+    headers.set(SEAT_NAME, encodeURIComponent(profile.nickname));
+    return room(env, m[1]).fetch(new Request(request, { headers }));
   }
   return json({ error: 'not found' }, 404);
 }

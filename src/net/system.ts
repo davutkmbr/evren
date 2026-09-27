@@ -3,9 +3,11 @@
  * server at SEND_RATE_HZ and every relayed snapshot of another player goes to 'remoteDragons'. A dropped connection is
  * retried a few times with a growing delay; a refusal from the server (full, bad name) is not.
  *
- * Local test (DEV_TOOLS only): `?server=bogazici&name=Evren` joins on start.
+ * Joining needs a signed-in account with a nickname (the 'account' service); the server takes the name from the
+ * profile. Local test (DEV_TOOLS only): `?server=bogazici&name=Evren` signs in as a guest with that nickname if
+ * needed and joins on start.
  */
-import { UpdateOrder, type GameServerInfo, type NetService, type NetStatus, type RemoteDragonService, type System } from '../core/contracts';
+import { UpdateOrder, type AccountService, type GameServerInfo, type NetService, type NetStatus, type RemoteDragonService, type System } from '../core/contracts';
 import { devParams, exposeDebug } from '../core/dev-tools';
 import { NetClient } from './client';
 import { captureSnapshot } from './capture';
@@ -21,7 +23,6 @@ const remoteId = (id: number) => `p${id}`;
 export function createNetSystem(): System {
   let status: NetStatus = 'offline';
   let server: GameServerInfo | null = null;
-  let name = '';
   let lastError: string | null = null;
   let client: NetClient | null = null;
   let selfId = 0;
@@ -35,6 +36,7 @@ export function createNetSystem(): System {
   const snap = createSnapshot();
   const out = new ArrayBuffer(SNAPSHOT_BYTES);
   let remotes: RemoteDragonService | undefined;
+  let account: AccountService | undefined;
 
   const changed = () => listeners.forEach((fn) => fn());
 
@@ -49,10 +51,17 @@ export function createNetSystem(): System {
     if (!server) {
       return;
     }
+    if (!account?.nickname) {
+      lastError = account?.status === 'signed-in' ? 'no-profile' : 'signed-out';
+      server = null;
+      status = 'offline';
+      changed();
+      return;
+    }
     status = 'connecting';
     changed();
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const c = new NetClient(`${proto}//${location.host}/api/servers/${server.id}/ws`, name, {
+    const c = new NetClient(`${proto}//${location.host}/api/servers/${server.id}/ws`, {
       welcome(id, list) {
         selfId = id;
         retries = 0;
@@ -79,17 +88,19 @@ export function createNetSystem(): System {
           remotes?.push(remoteId(id), data, offset);
         }
       },
-      closed(error) {
+      closed(error, opened) {
         if (client !== c) {
           return;
         }
         client = null;
         selfId = 0;
         clearRemotes();
-        if (error) {
-          lastError = error;
+        if (error || (!opened && retries === 0)) {
+          // Refused by the room, or the upgrade itself was refused (signed out, no profile): no retry.
+          lastError = error ?? (account?.status === 'signed-in' ? 'no-profile' : 'signed-out');
           status = 'offline';
           server = null;
+          void account?.refresh();
         } else if (server && retries < RETRY_DELAYS_MS.length) {
           lastError = 'lost';
           status = 'connecting';
@@ -123,10 +134,9 @@ export function createNetSystem(): System {
       }
       return ((await res.json()) as { servers: GameServerInfo[] }).servers;
     },
-    join(target, playerName) {
+    join(target) {
       service.leave();
       server = target;
-      name = playerName;
       retries = 0;
       lastError = null;
       connect();
@@ -163,13 +173,24 @@ export function createNetSystem(): System {
       void ctx.services.when('remoteDragons').then((r) => {
         remotes = r;
       });
+      const accountReady = ctx.services.when('account').then((a) => {
+        account = a;
+        return a;
+      });
       unsubscribe = ctx.events.on('teleport', () => {
         teleported = true;
       });
       const q = devParams();
       const auto = q.get('server');
       if (auto) {
-        service.join({ id: auto, name: auto, players: 0, max: 0 }, q.get('name') ?? `Test ${Math.floor(Math.random() * 900 + 100)}`);
+        void accountReady.then(async (a) => {
+          await a.refresh();
+          if (!a.nickname) {
+            const result = await a.playAsGuest(q.get('name') ?? `Test ${Math.floor(Math.random() * 900 + 100)}`);
+            console.info(`[net] guest sign-in: ${result}`);
+          }
+          service.join({ id: auto, name: auto, players: 0, max: 0 });
+        });
       }
       exposeDebug('__net', service);
     },

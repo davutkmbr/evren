@@ -1,0 +1,7 @@
+# Local secrets for `wrangler dev` (copy to .dev.vars). Production: `npx wrangler secret put <NAME>`.
+BETTER_AUTH_URL=http://127.0.0.1:8799
+# Any random 32+ byte string: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+BETTER_AUTH_SECRET=
+# Google OAuth client (Google Cloud Console → APIs & Services → Credentials); empty = Google sign-in off.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

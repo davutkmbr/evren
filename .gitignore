@@ -20,3 +20,6 @@ assets-src/
 __pycache__/
 .venv-audio/
 .wrangler/
+
+# Local Worker secrets (wrangler dev)
+.dev.vars

@@ -19,8 +19,8 @@ export interface NetClientHandlers {
   leave(id: number): void;
   /** One player's snapshot inside a received batch (SNAPSHOT_BYTES at `offset`). */
   snapshot(id: number, data: ArrayBuffer, offset: number): void;
-  /** The socket closed; `error` when the server refused us. */
-  closed(error?: ServerErrorCode): void;
+  /** The socket closed; `error` when the server refused us, `opened` false when the upgrade itself failed. */
+  closed(error: ServerErrorCode | undefined, opened: boolean): void;
 }
 
 export class NetClient {
@@ -28,18 +28,20 @@ export class NetClient {
   private error?: ServerErrorCode;
   private open = false;
 
-  constructor(url: string, name: string, private readonly on: NetClientHandlers) {
+  constructor(url: string, private readonly on: NetClientHandlers) {
     this.ws = new WebSocket(url);
     this.ws.binaryType = 'arraybuffer';
     this.ws.onopen = () => {
       this.open = true;
-      const hello: ClientHello = { type: 'hello', name, v: PROTOCOL_VERSION };
+      const hello: ClientHello = { type: 'hello', v: PROTOCOL_VERSION };
       this.ws.send(JSON.stringify(hello));
     };
     this.ws.onmessage = (e) => this.receive(e.data as string | ArrayBuffer);
+    let opened = false;
+    this.ws.addEventListener('open', () => (opened = true));
     this.ws.onclose = () => {
       this.open = false;
-      this.on.closed(this.error);
+      this.on.closed(this.error, opened);
     };
   }
 

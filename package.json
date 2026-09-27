@@ -52,6 +52,7 @@
     "cf-typegen": "wrangler types worker/worker-configuration.d.ts"
   },
   "dependencies": {
+    "better-auth": "^1.7.6",
     "three": "^0.186.0"
   },
   "devDependencies": {

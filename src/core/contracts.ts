@@ -1204,8 +1204,35 @@ export interface GameServerInfo {
 
 export type NetStatus = 'offline' | 'connecting' | 'online';
 
+/** Result of setting a nickname: `invalid` breaks the rules (2–16 letters, digits, space, _ . -), `taken` is in use. */
+export type NicknameResult = 'ok' | 'invalid' | 'taken' | 'error';
+
 /**
- * Online play (phase 26, src/net): the server list, joining one server with a nickname, the players on it. While
+ * The player's account (phase 26, src/net/account.ts): a guest account with a nickname, optionally linked to Google.
+ * Signing in with Google leaves the page and comes back signed in. Service key: 'account'.
+ */
+export interface AccountService {
+  /** `unknown` until the first check with the server answers. */
+  readonly status: 'unknown' | 'signed-out' | 'signed-in';
+  readonly user: { id: string; guest: boolean; email?: string } | null;
+  /** The public profile; null until a nickname is set. */
+  readonly nickname: string | null;
+  /** Whether Google sign-in is configured on the server. */
+  readonly googleAvailable: boolean;
+  refresh(): Promise<void>;
+  /** Signs in as a guest when signed out, then sets the nickname. */
+  playAsGuest(nickname: string): Promise<NicknameResult>;
+  setNickname(nickname: string): Promise<NicknameResult>;
+  /** Google sign-in (links a guest account, keeping its profile); navigates away and back. */
+  signInWithGoogle(): Promise<void>;
+  signOut(): Promise<void>;
+  /** Deletes the account and its profile. */
+  deleteAccount(): Promise<boolean>;
+  onChange(fn: () => void): () => void;
+}
+
+/**
+ * Online play (phase 26, src/net): the server list, joining one server as the signed-in profile, the players on it. While
  * online the local dragon's snapshots go out and the other players arrive through 'remoteDragons'. Service key: 'net'.
  */
 export interface NetService {
@@ -1213,10 +1240,14 @@ export interface NetService {
   readonly server: GameServerInfo | null;
   /** Other players on the server (not the local one). */
   readonly players: ReadonlyMap<number, string>;
-  /** Why the last connection ended, if the server refused it or it dropped ('full', 'name', 'version', 'lost'). */
+  /**
+   * Why the last connection ended: refused ('full', 'version', 'replaced'), not allowed ('signed-out', 'no-profile':
+   * sign in and set a nickname first) or dropped ('lost').
+   */
   readonly lastError: string | null;
   listServers(): Promise<GameServerInfo[]>;
-  join(server: GameServerInfo, name: string): void;
+  /** Joins as the account's profile (AccountService); fails with lastError 'no-profile' without one. */
+  join(server: GameServerInfo): void;
   leave(): void;
   /** Status, player list or error changed. */
   onChange(fn: () => void): () => void;
@@ -1245,6 +1276,7 @@ export interface Services {
   bond: DragonBondState;
   remoteDragons: RemoteDragonService;
   net: NetService;
+  account: AccountService;
 }
 
 /* ------------------------------------------------------------------ */
