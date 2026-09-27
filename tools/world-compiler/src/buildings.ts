@@ -110,14 +110,15 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
     cz /= n;
     let heightSource: BuildingRec['heightSource'] = 'default';
     let h: number;
+    const flight = flightTops?.get(b.id);
     if (b.height) {
       h = b.height;
       heightSource = 'height';
     } else if (b.levels) {
-      h = (b.levels + (b.roofLevels ?? 0)) * LEVEL_HEIGHT;
+      // The flight-scale layer's storey heights, so the tagged storeys stand as tall up close as from the air.
+      h = flight !== undefined ? Math.max(LEVEL_HEIGHT, flight - groundY) : (b.levels + (b.roofLevels ?? 0)) * LEVEL_HEIGHT;
       heightSource = 'levels';
     } else {
-      const flight = flightTops?.get(b.id);
       h = b.kind === 'roof' ? 4 : flight !== undefined ? Math.max(LEVEL_HEIGHT, flight - groundY) : defaultLevels(b, area) * LEVEL_HEIGHT;
       // Historic mosque settings (landmarks/monument-setting.ts): untagged buildings stay low around the monument.
       const sites = settingSites();

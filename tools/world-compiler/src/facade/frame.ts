@@ -377,10 +377,7 @@ export function mix(a: RGBA, b: RGBA, t: number): RGBA {
 }
 
 /** Deterministic hash in [0, 1) of a seed and a salt. */
-export function h01(seed: number, salt: number): number {
-  const s = Math.sin(seed * 12.9898 + salt * 78.233 + 0.5) * 43758.5453;
-  return s - Math.floor(s);
-}
+export { h01 } from '../../../../src/world/osm/buildings/surveyed';
 
 export function pick<T>(list: readonly T[], u: number): T {
   return list[Math.min(list.length - 1, Math.floor(u * list.length))];
