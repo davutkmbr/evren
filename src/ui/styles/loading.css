@@ -259,3 +259,164 @@
     animation: none;
   }
 }
+
+/* Start choice: "[Enter] Tek başına uç" (gold, breathing) and "[O] Online uç" side by side. */
+.ejd-loading .ld-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 34px;
+}
+
+.ejd-loading .ld-cta-online .ui-keycap {
+  animation: none;
+}
+
+.ejd-loading.is-online {
+  cursor: default;
+}
+
+/* The online sheet: sits where the start prompts were, the scene stays visible above it. */
+.ejd-loading .ld-online {
+  position: absolute;
+  left: 50%;
+  bottom: max(40px, 7vh);
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 2 * max(40px, 7vh));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px 22px;
+  border-radius: 20px;
+  background: rgba(17, 19, 24, 0.95);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.055) inset, 0 18px 48px rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  cursor: default;
+  animation: ld-online-in 240ms var(--ease-out);
+}
+
+@keyframes ld-online-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+.ejd-loading .ld-online-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ejd-loading .ld-online-title {
+  margin: 0;
+  font: 600 20px/1.2 var(--font-display);
+}
+
+.ejd-loading .ld-online-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ejd-loading .ld-online-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.ejd-loading .ld-online-lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.ejd-loading .ld-online-lede b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ejd-loading .ld-online-note,
+.ejd-loading .ld-online-legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.ejd-loading .ld-online-note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ejd-loading .ld-online-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ejd-loading .ld-online-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+}
+
+.ejd-loading .ld-online-msg {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.ejd-loading .ld-online-msg.is-warn {
+  color: #ffb89c;
+}
+
+.ejd-loading .ld-online .ld-cta {
+  text-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ejd-loading .ld-online {
+    animation: none;
+  }
+}
+
+/* While the online sheet is open it has the stage: the title steps back. */
+.ejd-loading .ld-title {
+  transition: opacity 280ms var(--ease-out);
+}
+
+.ejd-loading.is-online .ld-title {
+  opacity: 0;
+}
+
+/* Legal links under the nickname: quiet text links, not prompts' full height. */
+.ejd-loading .ld-online-legal .ui-prompt {
+  min-height: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.ejd-loading .ld-online-legal .ui-prompt-label {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: rgba(243, 238, 229, 0.3);
+  text-underline-offset: 3px;
+}
+
+.ejd-loading .ld-online-legal .ui-prompt:hover .ui-prompt-label {
+  color: var(--ink);
+}

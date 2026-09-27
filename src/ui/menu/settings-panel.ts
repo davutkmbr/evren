@@ -8,8 +8,9 @@ import { loadMomentPrefs, saveMomentPrefs, type MomentPrefs } from '../../moment
 import { effectiveMusicStyle, loadAdaptiveMusic, loadMusicStyle, loadMusicVolume, type MusicStyle } from '../../audio/music/settings';
 import type { MomentCategory } from '../../moments/types';
 import { interactive, prompt, segmented, setRowsEnabled, settingDisclosure, settingRow, settingSection, slider, toggle, type Control } from '../components';
+import { AccountSettings } from './account-settings';
 
-type SettingsPage = 'display' | 'world' | 'controls' | 'sound' | 'game';
+type SettingsPage = 'display' | 'world' | 'controls' | 'sound' | 'game' | 'account';
 
 const PAGES: ReadonlyArray<{ id: SettingsPage; label: string }> = [
   { id: 'display', label: 'Görüntü' },
@@ -17,6 +18,7 @@ const PAGES: ReadonlyArray<{ id: SettingsPage; label: string }> = [
   { id: 'controls', label: 'Kontrol' },
   { id: 'sound', label: 'Ses' },
   { id: 'game', label: 'Oyun' },
+  { id: 'account', label: 'Hesap' },
 ];
 
 /** Tooltip on the moment category rows while the Anlar master switch is off. */
@@ -42,7 +44,7 @@ export interface SettingsPanelOptions {
 }
 
 /**
- * Ayarlar, split into pages (Görüntü · Hava ve zaman · Kontrol · Ses · Oyun) listed on the left so each page stays
+ * Ayarlar, split into pages (Görüntü · Hava ve zaman · Kontrol · Ses · Oyun · Hesap) listed on the left so each page stays
  * short; the last page is remembered. Advanced weather sliders sit under a disclosure.
  */
 export class SettingsPanel {
@@ -69,10 +71,14 @@ export class SettingsPanel {
   private readonly pages = new Map<SettingsPage, HTMLElement>();
   private readonly tabs = new Map<SettingsPage, HTMLButtonElement>();
   private page: SettingsPage = 'display';
+  private readonly accountSettings: AccountSettings;
 
   constructor(private readonly options: SettingsPanelOptions) {
     const { ctx, prefs } = options;
     const save = (): void => options.savePrefs();
+    this.accountSettings = new AccountSettings();
+    void ctx.services.when('account').then((a) => this.accountSettings.setAccount(a));
+    void ctx.services.when('net').then((n) => this.accountSettings.setNet(n));
 
     this.quality = segmented<QualityPreset>(
       'Grafik kalitesi',
@@ -349,6 +355,7 @@ export class SettingsPanel {
         ...tipsSection,
         settingSection('İlerleme', [settingRow('Keşifleri sıfırla', 'Keşfedilen simge yapılar listesini temizler', reset.root)]),
       ],
+      account: [this.accountSettings.root],
     };
 
     const nav = el(

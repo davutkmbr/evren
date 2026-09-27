@@ -189,7 +189,8 @@ export function createNetSystem(): System {
             const result = await a.playAsGuest(q.get('name') ?? `Test ${Math.floor(Math.random() * 900 + 100)}`);
             console.info(`[net] guest sign-in: ${result}`);
           }
-          service.join({ id: auto, name: auto, players: 0, max: 0 });
+          const listed = await service.listServers().catch(() => []);
+          service.join(listed.find((s) => s.id === auto) ?? { id: auto, name: auto, players: 0, max: 0 });
         });
       }
       exposeDebug('__net', service);

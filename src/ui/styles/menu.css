@@ -942,3 +942,29 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* Ayarlar → Hesap: its wrappers leave the sections to the page's own spacing. */
+.set-account,
+.set-account-main,
+.set-account-online {
+  display: contents;
+}
+
+/* The nickname field and its save prompt on one line; the row title labels the field. */
+.set-account-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.set-account-name .ui-field {
+  width: 220px;
+}
+
+.set-account-name .ui-field-label {
+  display: none;
+}
+
+.set-account-name .ui-prompt {
+  min-height: 38px;
+}
