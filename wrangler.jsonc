@@ -9,9 +9,18 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    // US-risky historic recordings: geo-gated by the Worker.
-    "run_worker_first": ["/audio/music/private/*"]
+    // US-risky historic recordings (geo-gated) and the API.
+    "run_worker_first": ["/audio/music/private/*", "/api/*"]
   },
+  "durable_objects": {
+    "bindings": [
+      // Latency probe (worker/probe.ts): echo objects per location hint and the result log.
+      { "name": "PROBE", "class_name": "LatencyProbe" },
+      { "name": "PROBE_LOG", "class_name": "ProbeLog" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LatencyProbe", "ProbeLog"] }],
+  "observability": { "enabled": true },
   "routes": [
     { "pattern": "seventeenskies.com", "custom_domain": true },
     { "pattern": "www.seventeenskies.com", "custom_domain": true }

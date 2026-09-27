@@ -29,8 +29,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:web": "EVREN_PUBLIC=1 npm run build && node scripts/deploy/stage.mjs",
-    "deploy": "npm run build:web && wrangler deploy",
-    "typecheck": "tsc --noEmit",
+    "deploy": "tsc -p worker && npm run build:web && wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc -p worker",
     "preview": "vite preview",
     "snap": "node scripts/snap.mjs",
     "brand": "tsx scripts/brand/build-brand.ts",
@@ -45,7 +45,8 @@
     "audit:city": "tsx scripts/data/osm-city-audit.ts",
     "bake:city": "tsx scripts/data/osm-city-bake.ts",
     "bake:structures": "tsx scripts/data/structure-volumes.ts",
-    "blender": "node scripts/blender-run.mjs"
+    "blender": "node scripts/blender-run.mjs",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts"
   },
   "dependencies": {
     "three": "^0.186.0"

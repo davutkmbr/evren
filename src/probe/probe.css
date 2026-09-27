@@ -1,0 +1,239 @@
+:root {
+  --night: #070a12;
+  --gok: #14223a;
+  --ink: #f3eee5;
+  --ink-2: rgba(243, 238, 229, 0.7);
+  --ink-3: rgba(243, 238, 229, 0.48);
+  --accent: #e8b872;
+  --accent-2: #f3d3a0;
+  --good: #a3dcb4;
+  --warn: #ff9168;
+  --line: rgba(255, 255, 255, 0.085);
+  --line-2: rgba(255, 255, 255, 0.15);
+  --panel: rgba(15, 17, 22, 0.72);
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: radial-gradient(120% 80% at 50% 0%, var(--gok) 0%, var(--night) 62%) fixed, var(--night);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.probe {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 56px 16px 64px;
+}
+
+.probe-brand {
+  margin: 0 0 6px;
+  color: var(--accent-2);
+  font: 600 12px/1 var(--font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.probe h1 {
+  margin: 0 0 10px;
+  font: 650 30px/1.15 var(--font-display);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.probe-lead {
+  margin: 0 0 28px;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.probe-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.055) inset, 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+
+.probe-card + .probe-card {
+  margin-top: 14px;
+}
+
+.probe-net {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.probe-net b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.probe-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.probe-button {
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 18px;
+  background: var(--accent);
+  color: #1a1206;
+  font: 650 15px/1 var(--font-display);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out);
+}
+
+.probe-button:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
+.probe-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.probe-button:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+}
+
+.probe-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.probe-status {
+  color: var(--ink-3);
+  font-size: 14px;
+}
+
+.probe-rows {
+  display: grid;
+  gap: 14px;
+}
+
+.probe-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+
+.probe-region {
+  font-weight: 600;
+}
+
+.probe-where {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.probe-ms {
+  font: 650 18px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 5.5ch;
+}
+
+.probe-ms small {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font: 400 12px/1 var(--font-ui);
+}
+
+.probe-ms[data-tier='good'] {
+  color: var(--good);
+}
+
+.probe-ms[data-tier='ok'] {
+  color: var(--accent);
+}
+
+.probe-ms[data-tier='bad'] {
+  color: var(--warn);
+}
+
+.probe-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.probe-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 200ms var(--ease-out);
+}
+
+.probe-summary h2 {
+  margin: 0 0 12px;
+  font: 600 16px/1.2 var(--font-display);
+}
+
+.probe-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.probe-table th {
+  color: var(--ink-3);
+  font-weight: 500;
+  text-align: left;
+  padding: 0 8px 8px 0;
+}
+
+.probe-table td {
+  border-top: 1px solid var(--line);
+  padding: 8px 8px 8px 0;
+}
+
+.probe-table td:nth-child(n + 3),
+.probe-table th:nth-child(n + 3) {
+  text-align: right;
+  padding-left: 16px;
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+.probe-scroll {
+  overflow-x: auto;
+}
+
+.probe-note {
+  margin: 18px 2px 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .probe-bar i,
+  .probe-button {
+    transition: none;
+  }
+}
