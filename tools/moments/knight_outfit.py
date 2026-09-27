@@ -182,6 +182,146 @@ def fitted_shell(name, fit, target, zs, seg, offset, smooth=3, keep_face=None, s
     return o
 
 
+def _eased(keys, a):
+    """Cosine interpolation in a closed table of (angle in degrees, value)."""
+    a %= 360
+    for (a0, v0), (a1, v1) in zip(keys, keys[1:]):
+        if a0 <= a <= a1:
+            t = (a - a0) / (a1 - a0)
+            return v0 + (v1 - v0) * (1 - math.cos(math.pi * t)) / 2
+    return keys[-1][1]
+
+
+def helmet_shell(head_obj, frame, pts, offset=0.018, seg=112, rows=34):
+    """
+    An Attic helmet as one shell, built in the head's frame (origin at the head joint; local Z up the skull, -Y out of
+    the face, so a tilted or turned head wears it straight): a dome of `seg` columns (angle 0 = +X, 90 = back,
+    270 = front) from a pole over the crown down to the outline edge(angle), wrapped onto the head at `offset`, the neck
+    guard flared out, relaxed (the offset leaves room for the relaxing) and thickened inward. `pts` are the head's points in that frame.
+    """
+    origin, R = frame
+    top = max(p_.z for p_ in pts)
+    brow_z = top * 0.6
+    c, ex, ey = body_extent(pts, brow_z, band=0.015)
+    ear, nape, cheek, brow = brow_z + 0.006, -0.07, -0.02, brow_z + 0.016
+    keys = [(0, ear), (28, nape + 0.03), (90, nape), (152, nape + 0.03), (180, ear), (204, cheek), (228, cheek),
+            (246, brow), (294, brow), (312, cheek), (336, cheek), (360, ear)]
+    crown = top + 0.03
+    world = lambda x, y, z: origin + R @ Vector((x, y, z))  # noqa: E731
+    bm = bmesh.new()
+    pole = bm.verts.new(world(c.x, c.y, crown))
+    grid = []
+    for q in range(seg):
+        a = 2 * math.pi * q / seg
+        lo = _eased(keys, math.degrees(a))
+        col = []
+        for r in range(1, rows + 1):
+            z = crown - (crown - lo) * r / rows
+            s = math.sqrt(max(0.0, 1 - ((z - brow_z) / (crown - brow_z)) ** 2)) if z > brow_z else 1.0
+            col.append(bm.verts.new(world(c.x + math.cos(a) * ex * s, c.y + math.sin(a) * ey * s, z)))
+        grid.append(col)
+    for q in range(seg):
+        a_, b_ = grid[q], grid[(q + 1) % seg]
+        bm.faces.new((pole, b_[0], a_[0]))
+        for r in range(rows - 1):
+            bm.faces.new((a_[r], b_[r], b_[r + 1], a_[r + 1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("helmet")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("helmet", me)
+    bpy.context.scene.collection.objects.link(o)
+    sw = o.modifiers.new("wrap", "SHRINKWRAP")
+    sw.target = head_obj
+    sw.wrap_method = "NEAREST_SURFACEPOINT"
+    sw.wrap_mode = "OUTSIDE_SURFACE"
+    sw.offset = offset
+    G.apply_all(o)
+    # the neck guard flares out over the nape; the cheek guards stand a little off the jaw like hinged plates
+    Rt = R.transposed()
+    for v in o.data.vertices:
+        loc = Rt @ (v.co - origin)
+        rel = Vector((loc.x - c.x, loc.y - c.y, 0))
+        if rel.length < 1e-6:
+            continue
+        back = max(0.0, rel.normalized().y)
+        drop = max(0.0, 0.01 - loc.z)
+        v.co += R @ (rel.normalized() * (drop * (0.9 * back + 0.25 * (1 - back))))
+    sm = o.modifiers.new("relax", "SMOOTH")
+    sm.factor = 0.7
+    sm.iterations = 12
+    sd = o.modifiers.new("subd", "SUBSURF")
+    sd.levels = 1
+    so = o.modifiers.new("thick", "SOLIDIFY")
+    so.thickness = 0.006
+    so.offset = -1
+    G.apply_all(o)
+    G.smooth_shade(o)
+    return o, (c, brow_z)
+
+
+def helmet_midline(helmet, frame, c, brow_z, n=40):
+    """(point, outward normal) pairs along the helmet's midline in the head's frame, from above the brow over the
+    crown to the nape."""
+    origin, R = frame
+    out = []
+    for k in range(n):
+        th = math.radians(-58 + 150 * k / (n - 1))  # 0 = straight up the skull, - toward the brow, + toward the nape
+        d = R @ Vector((0.0, math.sin(th), math.cos(th)))
+        start = origin + R @ Vector((c.x, c.y, brow_z)) + d * 0.5
+        ok, hit, nrm, _ = helmet.ray_cast(start, -d)
+        if ok:
+            out.append((hit, nrm.normalized()))
+    pts = smooth_path([p_ for p_, _ in out], 2)
+    return [(p_, nr) for p_, (_, nr) in zip(pts, out)]
+
+
+def crest_strands(arc, side, count=320, seed=11):
+    """
+    The horsehair crest: `count` tapering strands rooted along the holder, standing up tallest over the crown and
+    sweeping back, the last ones falling down the back of the neck as a tail. One curve object, converted to mesh.
+    """
+    import random
+    rnd = random.Random(seed)
+    cu = bpy.data.curves.new("crest", "CURVE")
+    cu.dimensions = "3D"
+    cu.bevel_depth = 1.0
+    cu.bevel_resolution = 1
+    cu.use_fill_caps = True
+    n = len(arc)
+    for s in range(count):
+        u = rnd.random() ** 0.9
+        i = min(n - 1, int(u * (n - 1)))
+        q, nr = arc[i]
+        tang = (arc[min(i + 1, n - 1)][0] - arc[max(i - 1, 0)][0]).normalized()
+        root = q + nr * 0.018 + side * rnd.uniform(-0.013, 0.013)
+        h = 0.05 + 0.085 * math.sin(math.pi * min(1.0, 0.12 + 0.95 * u)) * rnd.uniform(0.92, 1.03)
+        tail = max(0.0, (u - 0.62) / 0.38)
+        lean = 0.35 + 0.5 * u
+        fan = side * rnd.uniform(-0.012, 0.012)
+        pts = []
+        for k in range(12):
+            t = k / 11
+            p_ = root + nr * (h * math.sin(t * math.pi / 2) * (1 - 0.6 * tail)) + tang * (h * lean * t * t) + fan * t
+            p_ += Vector((0, 0.05 * tail * t, -0.26 * tail * t ** 1.6))
+            pts.append(p_)
+        sp = cu.splines.new("POLY")
+        sp.points.add(len(pts) - 1)
+        r0 = rnd.uniform(0.005, 0.0072)
+        for k, p_ in enumerate(pts):
+            sp.points[k].co = (p_.x, p_.y, p_.z, 1.0)
+            sp.points[k].radius = r0 * (1.0 - 0.75 * (k / 11) ** 1.5)
+    co = bpy.data.objects.new("crest_curve", cu)
+    bpy.context.scene.collection.objects.link(co)
+    deps = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(co.evaluated_get(deps))
+    o = bpy.data.objects.new("crest", me)
+    bpy.context.scene.collection.objects.link(o)
+    bpy.data.objects.remove(co, do_unlink=True)
+    G.smooth_shade(o)
+    return o
+
+
 def temp_region(body, name, bones, B, extra=None):
     """A copy of the body faces whose vertices are dominated by `bones` (a shrinkwrap target)."""
     return G.region(body, name, lambda co, w, i: dominant(w) in bones and (extra is None or extra(co)))
@@ -392,109 +532,25 @@ def build(rig, body):
     G.grow(greaves, 0.02, 0.006, smooth=8, loose=8, subdiv=2, rim=True)
     parts += [greaves] + G.piping(greaves, 0.005, "bronze")
 
-    # --- Helmet (Attic type): a bowl fitted to the skull, a flaring neck guard, cheek guards leaving the face open, a
-    # brow ridge, and a horsehair crest on a low holder from the brow to the nape.
+    # --- Helmet (Attic type): one shell raised over the skull, its lower edge cut in the Attic outline (a brow band over
+    # the eyes, cheek guards down to the jaw leaving the face open, open over the ears, a neck guard flaring over the
+    # nape) with a rolled rim; a horsehair crest in a low holder from the brow to the nape.
     head_ids = [i for i in range(len(verts)) if dominant(B.w[i]) == "Head"]
     head_pts = [verts[i] for i in head_ids]
     head_obj = temp_region(body, "head_fit", ("Head", "Neck"), B)
-    top_z = max(p_.z for p_ in head_pts)
-    base_z = head.z
-    brow_z = base_z + (top_z - base_z) * 0.6
-    front_y = min(p_.y for p_ in head_pts if abs(p_.z - brow_z) < 0.01)
-
-    def angle_of(k, seg_):
-        return math.degrees(2 * math.pi * k / seg_) % 360  # 0 = +X (left), 90 = +Y (back), 270 = -Y (front)
-
-    zs = [brow_z + (top_z - 0.004 - brow_z) * t / 16 for t in range(17)]
-    bowl = fitted_shell("helmet", head_pts, head_obj, zs, 64, 0.02, smooth=5)
-    bm = bmesh.new()
-    bm.from_mesh(bowl.data)
-    bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary and sum(v.co.z for v in e.verts) / 2 > top_z - 0.03], sides=64)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bm.to_mesh(bowl.data)
-    bm.free()
-    # neck guard: the back half continues down past the nape and flares out
-    nz = [base_z - 0.035 + (brow_z + 0.004 - (base_z - 0.035)) * t / 8 for t in range(9)]
-    guard = fitted_shell("helmet_neck", head_pts + [verts[i] for i in range(len(verts)) if dominant(B.w[i]) == "Neck"], head_obj, nz, 64, 0.02, smooth=3,
-                         keep_face=lambda i, k: 20 <= angle_of(k + 0.5, 64) <= 160)
-    for v in guard.data.vertices:
-        drop = max(0.0, brow_z - v.co.z)
-        rel = Vector((v.co.x - head.x, v.co.y - head.y, 0))
-        if rel.length > 1e-6:
-            v.co += rel.normalized() * drop * 0.25
-    # cheek guards
-    cz = [base_z + 0.035 + (brow_z + 0.004 - base_z - 0.035) * t / 8 for t in range(9)]
-    cheeks = []
-    for lo_, hi_ in ((305, 350), (190, 235)):
-        ch = fitted_shell("helmet_cheek", head_pts, head_obj, cz, 64, 0.018, smooth=3, keep_face=lambda i, k, lo_=lo_, hi_=hi_: lo_ <= angle_of(k + 0.5, 64) <= hi_ and not (i < 3 and abs(angle_of(k + 0.5, 64) - (lo_ + hi_) / 2) > 18))
-        cheeks.append(ch)
-    helmet_parts = [bowl, guard] + cheeks
-    for o in helmet_parts:
-        so = o.modifiers.new("thick", "SOLIDIFY")
-        so.thickness = 0.006
-        so.offset = -1
-        G.apply_all(o)
-        G.smooth_shade(o)
-        parts += [o] + G.piping(o, 0.006, "bronze")
-    # brow ridge over the eyes
-    ridge = []
-    for k in range(25):
-        a_ = math.radians(215 + 110 * k / 24)
-        p_ = Vector((head.x + math.cos(a_) * 0.2, head.y + math.sin(a_) * 0.2, brow_z + 0.012))
-        ok, hit, nrm, _ = bowl.closest_point_on_mesh(p_)
-        if ok:
-            ridge.append(hit + nrm * 0.004)
-    parts.append(tube("helmet_brow", smooth_path(ridge, 2), 0, profile=(0.012, 0.022)))
-    # crest: holder and horsehair along the midline, overhanging the nape
-    arc = []
-    for k in range(33):
-        t = k / 32
-        p_ = Vector((head.x, front_y + 0.035 + t * 0.22, top_z + 0.2))
-        hit_ok, hit, nrm, _ = bowl.closest_point_on_mesh(Vector((p_.x, p_.y, top_z + 0.05)))
-        cand = None
-        # cast straight down onto the bowl
-        res = bowl.ray_cast(Vector((p_.x, p_.y, top_z + 0.3)), Vector((0, 0, -1)))
-        if res[0]:
-            cand = res[1]
-        elif hit_ok:
-            cand = hit
-        if cand is not None:
-            arc.append(cand)
-    arc = smooth_path(arc, 2)
-    holder = tube("crest_holder", [q + Vector((0, 0, 0.012)) for q in arc], 0, profile=(0.02, 0.03))
-    parts.append(holder)
-    n = len(arc)
-    bm = bmesh.new()
-    prev = None
-    for k, q in enumerate(arc):
-        t = k / (n - 1)
-        tang = (arc[min(k + 1, n - 1)] - arc[max(k - 1, 0)]).normalized()
-        upv = Vector((1, 0, 0)).cross(tang).normalized()
-        if upv.z < 0:
-            upv = -upv
-        h_ = 0.03 + 0.075 * math.sin(math.pi * (0.1 + 0.8 * t)) + (0.02 * (t - 0.8) / 0.2 if t > 0.8 else 0.0)
-        w_ = 0.016 + 0.006 * math.sin(math.pi * t)
-        base = q + upv * 0.024
-        prof = [(-w_, 0.0), (-w_ * 1.1, h_ * 0.5), (-w_ * 0.7, h_ * 0.92), (0.0, h_), (w_ * 0.7, h_ * 0.92), (w_ * 1.1, h_ * 0.5), (w_, 0.0)]
-        ring = [bm.verts.new(base + Vector((px, 0, 0)) + upv * py) for px, py in prof]
-        if prev:
-            for i in range(len(prof) - 1):
-                bm.faces.new((prev[i], prev[i + 1], ring[i + 1], ring[i]))
-        else:
-            bm.faces.new(ring)
-        prev = ring
-    bm.faces.new(list(reversed(prev)))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    me = bpy.data.meshes.new("crest")
-    bm.to_mesh(me)
-    bm.free()
-    crest = bpy.data.objects.new("crest", me)
-    bpy.context.scene.collection.objects.link(crest)
-    sd = crest.modifiers.new("subd", "SUBSURF")
-    sd.levels = 1
-    G.apply_all(crest)
-    G.smooth_shade(crest)
-    parts.append(crest)
+    # the head's frame: up the head bone, -Y toward the nose tip (the head point furthest in front)
+    up = (rig.matrix_world.to_3x3() @ rig.pose.bones["mixamorig:Head"].matrix.to_3x3()).col[1].normalized()
+    nose = min(head_pts, key=lambda p_: p_.y)
+    fwd = nose - head
+    fwd = (fwd - up * fwd.dot(up)).normalized()
+    R = Matrix(((-fwd).cross(up), -fwd, up)).transposed()
+    frame = (head.copy(), R)
+    local = [R.transposed() @ (p_ - head) for p_ in head_pts]
+    helmet, (c_head, brow_z) = helmet_shell(head_obj, frame, local)
+    parts += [helmet] + G.piping(helmet, 0.0065, "bronze")
+    crest_arc = helmet_midline(helmet, frame, c_head, brow_z)
+    parts.append(tube("crest_holder", [q + nr * 0.01 for q, nr in crest_arc], 0, profile=(0.022, 0.026)))
+    parts.append(crest_strands(crest_arc, R.col[0].copy()))
     for o in (trunk_obj, head_obj):
         bpy.data.objects.remove(o, do_unlink=True)
 
@@ -526,27 +582,26 @@ def build(rig, body):
     parts += shield_parts
 
     # --- Spear: upright in the right fist, the butt on the plinth by the right foot, a leaf blade above the head.
-    knuckles = [j[f"RightHand{f}1"] for f in ("Index", "Middle", "Ring", "Pinky") if f"RightHand{f}1" in j]
-    rh = j["RightHand"]
-    fist = (rh + sum(knuckles, Vector()) / max(1, len(knuckles))) / 2
-    # the palm faces the thigh: the shaft passes just inside the curled fingers
-    palm = (Vector((j["Hips"].x, j["Hips"].y, fist.z)) - fist)
-    palm.z = 0
-    fist += palm.normalized() * 0.012
-    base = Vector((fist.x, fist.y, 0.0))
+    # The shaft runs through the fist's tunnel: between the knuckles and the curled middle joints, along the knuckle
+    # line (the pose stands it upright), down to the plinth.
+    fingers = [f for f in ("Index", "Middle", "Ring", "Pinky") if f"RightHand{f}3" in j]
+    k1 = sum((j[f"RightHand{f}1"] for f in fingers), Vector()) / len(fingers)
+    k3 = sum((j[f"RightHand{f}3"] for f in fingers), Vector()) / len(fingers)
+    fist = (k1 + k3) / 2
+    axis = (j["RightHandIndex1"] - j["RightHandPinky1"]).normalized()
+    if axis.z < 0:
+        axis = -axis
+    base = fist - axis * (fist.z / axis.z)
     shaft_top = 2.55
     spear = [
-        revolve("spear_shaft", [(0.0, 0.0), (0.017, 0.0), (0.016, shaft_top * 0.5), (0.0145, shaft_top), (0.0, shaft_top)], seg=14, axis_loc=base),
-        revolve("spear_ferrule", [(0.0, -0.02), (0.02, 0.0), (0.02, 0.1), (0.017, 0.12), (0.0, 0.12)], seg=14, axis_loc=base),
-        revolve("spear_socket", [(0.0, shaft_top - 0.05), (0.02, shaft_top - 0.05), (0.018, shaft_top + 0.06), (0.012, shaft_top + 0.1), (0.0, shaft_top + 0.1)], seg=14, axis_loc=base),
+        revolve("spear_shaft", [(0.0, 0.0), (0.017, 0.0), (0.016, shaft_top * 0.5), (0.0145, shaft_top), (0.0, shaft_top)], seg=14, axis_loc=base, axis=axis),
+        revolve("spear_ferrule", [(0.0, -0.02), (0.02, 0.0), (0.02, 0.1), (0.017, 0.12), (0.0, 0.12)], seg=14, axis_loc=base, axis=axis),
+        revolve("spear_socket", [(0.0, shaft_top - 0.05), (0.02, shaft_top - 0.05), (0.018, shaft_top + 0.06), (0.012, shaft_top + 0.1), (0.0, shaft_top + 0.1)], seg=14, axis_loc=base, axis=axis),
     ]
-    blade = revolve("spear_blade", [(0.0, 0.0), (0.012, 0.0), (0.045, 0.08), (0.05, 0.13), (0.035, 0.22), (0.0, 0.34)], seg=4, axis_loc=base + Vector((0, 0, shaft_top + 0.09)))
-    blade.scale = (1, 0.22, 1)
-    bpy.context.view_layer.objects.active = blade
-    blade.data.transform(Matrix.Translation(-(base + Vector((0, 0, shaft_top + 0.09)))))
+    # the leaf blade, flattened across the figure's front, then stood on the shaft's axis
+    blade = revolve("spear_blade", [(0.0, 0.0), (0.012, 0.0), (0.045, 0.08), (0.05, 0.13), (0.035, 0.22), (0.0, 0.34)], seg=4)
     blade.data.transform(Matrix.Diagonal((1, 0.22, 1, 1)))
-    blade.data.transform(Matrix.Translation(base + Vector((0, 0, shaft_top + 0.09))))
-    blade.scale = (1, 1, 1)
+    blade.data.transform(Matrix.Translation(base + axis * (shaft_top + 0.09)) @ Vector((0, 0, 1)).rotation_difference(axis).to_matrix().to_4x4())
     spear.append(blade)
     for o in spear:
         rigid[o] = "RightHand"
@@ -559,7 +614,7 @@ def build(rig, body):
     ctr = (sh_l + sh_r) / 2
     top_z = ctr.z + 0.06
     c_sh, ex_sh, ey_sh = body_extent(trunk + verts, ctr.z - 0.02, band=0.03)
-    ra, rb = ex_sh + 0.07, ey_sh + 0.09
+    ra, rb = ex_sh + 0.025, ey_sh + 0.06
     cols, rws = 56, 46
     length = top_z - (j["LeftLeg"].z - 0.05)
     bm = bmesh.new()
@@ -568,10 +623,10 @@ def build(rig, body):
         t = r / rws
         row = []
         for q in range(cols + 1):
-            # angle from the left side (+X, 0) round the back (+Y, 90 deg) to the right side (-X, 180 deg), and a
-            # little past each side over the shoulders
-            a = math.radians(-5 + 190 * q / cols)
-            spread = 1.0 + 0.12 * t  # the cloak widens a little as it falls
+            # angle from the left shoulder (+X side, 14 deg) round the back (+Y, 90 deg) to the right shoulder (166 deg):
+            # the cloak lies on the shoulders and the back, not out beside the arms
+            a = math.radians(14 + 152 * q / cols)
+            spread = 1.0 + 0.05 * t  # the cloak widens a little as it falls
             p_ = Vector((c_sh.x + math.cos(a) * ra * spread, c_sh.y + math.sin(a) * rb * spread + 0.03, top_z - t * length))
             row.append(bm.verts.new(p_))
         grid.append(row)
