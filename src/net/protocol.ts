@@ -3,17 +3,17 @@
  * imports: the Worker type-checks it without three.js or the DOM.
  *
  * Client → server
- *   text    {"type":"hello","name":"…","v":PROTOCOL_VERSION}   first message, once
+ *   text    {"type":"hello","v":PROTOCOL_VERSION}   first message, once (the name comes from the account's profile)
  *   binary  one snapshot (SNAPSHOT_BYTES, src/net/snapshot.ts), at SEND_RATE_HZ
  *
  * Server → client
  *   text    {"type":"welcome","id":n,"players":[{"id":n,"name":"…"}],"rate":SEND_RATE_HZ}
  *   text    {"type":"join","id":n,"name":"…"} / {"type":"leave","id":n}
- *   text    {"type":"error","code":"full"|"version"|"name"|"hello"}   then the socket closes
+ *   text    {"type":"error","code":"full"|"version"|"hello"|"replaced"}   then the socket closes
  *   binary  MSG_SNAPSHOTS: u8 type, u16 count, count × (u16 player id, snapshot), one batch per BROADCAST_MS
  */
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const SEND_RATE_HZ = 10;
 export const BROADCAST_MS = 100;
 export const MAX_PLAYERS = 50;
@@ -33,7 +33,8 @@ export const FLAG_GROUND = 4;
 /** The dragon was placed somewhere new (map, perch or moment teleport): receivers snap instead of interpolating. */
 export const FLAG_TELEPORT = 8;
 
-export type ServerErrorCode = 'full' | 'version' | 'name' | 'hello';
+/** `replaced`: the same account joined again elsewhere (another tab or device). */
+export type ServerErrorCode = 'full' | 'version' | 'hello' | 'replaced';
 
 export type ServerText =
   | { type: 'welcome'; id: number; players: { id: number; name: string }[]; rate: number }
@@ -43,7 +44,6 @@ export type ServerText =
 
 export interface ClientHello {
   type: 'hello';
-  name: string;
   v: number;
 }
 

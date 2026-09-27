@@ -28,6 +28,13 @@
     { "tag": "v1", "new_sqlite_classes": ["LatencyProbe", "ProbeLog"] },
     { "tag": "v2", "new_sqlite_classes": ["ServerRoom"] }
   ],
+  // Accounts and profiles (worker/auth.ts, worker/account.ts); schema in migrations/.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "seventeen-skies", "database_id": "0ab10fb3-8136-4d12-a40a-8eb0cc51f952", "migrations_dir": "migrations" }
+  ],
+  // Public settings; secrets (BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) via `wrangler secret put`,
+  // locally in .dev.vars.
+  "vars": { "BETTER_AUTH_URL": "https://seventeenskies.com" },
   "observability": { "enabled": true },
   "routes": [
     { "pattern": "seventeenskies.com", "custom_domain": true },
