@@ -378,6 +378,8 @@ export class UiSystem implements System {
     }
     this.started = true;
     this.root.classList.remove('is-prestart');
+    // Hides the static site footer of index.html (what the site is, the policies).
+    document.documentElement.classList.add('game-started');
     if (!this.autoStart) {
       // The start click/key is the user gesture: unlock audio and take the pointer (the UI owns pointer lock).
       this.ctx.services.tryGet('audio')?.unlock?.();

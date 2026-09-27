@@ -142,7 +142,7 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 4000,
     rollupOptions: {
-      input: { main: resolve(__dirname, 'index.html'), probe: resolve(__dirname, 'probe.html'), 'legal/privacy': resolve(__dirname, 'legal/privacy.html'), 'legal/terms': resolve(__dirname, 'legal/terms.html'), ...sandboxPages },
+      input: { main: resolve(__dirname, 'index.html'), probe: resolve(__dirname, 'probe.html'), about: resolve(__dirname, 'about.html'), 'legal/privacy': resolve(__dirname, 'legal/privacy.html'), 'legal/terms': resolve(__dirname, 'legal/terms.html'), ...sandboxPages },
     },
   },
 });
