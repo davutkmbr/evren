@@ -139,12 +139,12 @@ from the subtitles.
 | # | id | Title | Place | Mood (`musicMood` or inferred) | Category | Status |
 |---|---|---|---|---|---|---|
 | 1 | `nedim-bu-sehr-i-sitanbul` | Bu Şehr-i Sıtanbûl | High over Sarayburnu, 7–11 h | solemn, history | poem | ready |
-| 2 | `sinan-turbe-kitabesi` | Pîr-i Mi'mârân Sinan | Sinan's tomb, Süleymaniye, dusk | solemn, tender, history | poem | draft |
+| 2 | `sinan-turbe-kitabesi` | Pîr-i Mi'mârân Sinan | Sinan's tomb, Süleymaniye, dusk | solemn, tender, history | poem | ready |
 | 3 | `katibim-uskudar-yagmur` | Kâtibim | Üsküdar shore and square, rain | joyful, tender | poem | ready |
 | 4 | `ati-alan-uskudari-gecti` | Atı Alan Üsküdar'ı Geçti | Üsküdar crossing | joyful, sea | legend | ready |
 | 5 | `karagoz-sehzadebasi` | Perde: Karagöz ile Hacivat | Şehzadebaşı (Direklerarası), 20–24 h | joyful, history | poem | ready |
 | 6 | `fikret-yagmur-asiyan` | Yağmur | Aşiyan above Rumelihisarı, rain | nostalgic, tender | poem | ready |
-| 7 | `hasim-bir-gunun-sonunda-arzu` | Bir Günün Sonunda Arzu | Bosphorus off the Göksu mouth, sunset | nostalgic, tender, mystic | poem | draft |
+| 7 | `hasim-bir-gunun-sonunda-arzu` | Bir Günün Sonunda Arzu | Bosphorus off the Göksu mouth, sunset | nostalgic, tender, mystic | poem | ready |
 | 8 | `huseyin-rahmi-kuyrukluyildiz` | Kuyrukluyıldız | High over Heybeliada, night | joyful, mystic | poem | ready |
 | 9 | `prokopios-gokten-asili-kubbe` | Gökten Asılı Kubbe | Around the Hagia Sophia dome | solemn, mystic, history | poem | ready |
 | 10 | `de-amicis-sis-kalkinca` | Sis Kalkınca | Marmara approach south of Sarayburnu, morning | solemn, sea, history | poem | ready |

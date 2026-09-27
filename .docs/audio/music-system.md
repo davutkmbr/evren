@@ -341,8 +341,8 @@ that folder at `audio/music/private/` in dev and copies it into builds, and the 
 | `resadiye-marsi-1910` | Kuyrukluyıldız (gramophone at the writer's house) | `?music=debug&moment=huseyin-rahmi-kuyrukluyildiz` | raw (the transfer is already clean) |
 | `aya-yorgi-apolitikiyonu-nafpliotis` | Aya Yorgi (draft: waits for its model) | console: `__evrenMusic.moment({ musicId: 'aya-yorgi-apolitikiyonu-nafpliotis' })` | raw (the transfer is already clean) |
 | `katibim-safiye-ayla-1949` (private) | Kâtibim (coffeehouse venue) | `?music=debug&moment=katibim-uskudar-yagmur` | raw |
-| `huseyni-taksim-hafiz-kemal` (private) | Sinan (draft: text approval) | console: `__evrenMusic.moment({ musicId: 'huseyni-taksim-hafiz-kemal' })` | denoised |
-| `huzzam-taksim-resad-bey` (private) | Haşim (draft: text approval), Kız Kulesi (draft: model) | console: `__evrenMusic.moment({ musicId: 'huzzam-taksim-resad-bey' })` | raw |
+| `huseyni-taksim-hafiz-kemal` (private) | Sinan's inscription | `?music=debug&moment=sinan-turbe-kitabesi` | denoised |
+| `huzzam-taksim-resad-bey` (private) | Haşim; Kız Kulesi (draft: model) | `?music=debug&moment=hasim-bir-gunun-sonunda-arzu` | raw |
 
 A draft moment that cannot play yet cannot be forced with `?moment=` either; the console call plays its piece as a centred memory (`.endMoment()` stops it; put `raw` or `denoised` in `?music=` first). Credits: every piece carries `credit.attribution` (performer,
 label, year, archive), and each moment lists its recording in the source sheet ("Kaynağa bak" → "Müzik: …",

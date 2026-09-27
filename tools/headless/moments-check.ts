@@ -533,12 +533,12 @@ function testTriggers(): void {
 /** Intended state of each literary record: 'playable' now, or 'pending' (a quoted text waits for the owner's check). */
 const LITERARY_STATUS: Readonly<Record<string, 'playable' | 'pending'>> = {
   'nedim-bu-sehr-i-sitanbul': 'playable',
-  'sinan-turbe-kitabesi': 'pending',
+  'sinan-turbe-kitabesi': 'playable',
   'katibim-uskudar-yagmur': 'playable',
   'ati-alan-uskudari-gecti': 'playable',
   'karagoz-sehzadebasi': 'playable',
   'fikret-yagmur-asiyan': 'playable',
-  'hasim-bir-gunun-sonunda-arzu': 'pending',
+  'hasim-bir-gunun-sonunda-arzu': 'playable',
   'huseyin-rahmi-kuyrukluyildiz': 'playable',
   'prokopios-gokten-asili-kubbe': 'playable',
   'de-amicis-sis-kalkinca': 'playable',

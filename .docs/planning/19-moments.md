@@ -112,8 +112,7 @@ system, registered in `src/main.ts`), `src/moments/view.ts` + `moments.css` (sub
 | Lagari Hasan Çelebi (#7) | no | needs the rocket model, animations and sound |
 | Ships over land, 1453 (#8) | no | needs the galley model, animations and sound |
 | Kız Kulesi legend (#9) | no | needs the snake model, animations and sound |
-| Literary moments (#16): Nedim, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Kuyrukluyıldız, Prokopios, De Amicis | yes | subtitle-only, text confirmed or ours (`ready`) |
-| Literary moments (#16): Sinan's tomb inscription, Ahmet Haşim | no | text provenance pending: the owner checks the wording |
+| Literary moments (#16): Nedim, Sinan's tomb inscription, Kâtibim, Atı alan Üsküdar'ı geçti, Karagöz, Yağmur, Ahmet Haşim, Kuyrukluyıldız, Prokopios, De Amicis | yes | subtitle-only, text confirmed or ours (`ready`) |
 
 ### Gull and simit on a ferry (built 26 September 2026)
 
@@ -187,20 +186,22 @@ and time and for a low rights risk. Records: `src/moments/data/literature.ts`; s
 - **Rare.** Every one plays once per session, only in its place and in a narrow time or weather window, and the global
   3-minute gap applies.
 - **Text gate.** Traditional texts, our retelling and our translations (MIT, PD original named) play now. A quoted
-  public-domain Turkish text plays only when two independent sources gave the same wording; the two that did not
-  (Sinan's inscription, Haşim) stay drafts with `pending` provenance and `text-approval`. Quotations are verbatim.
+  public-domain Turkish text plays only when two independent sources gave the same wording. Sinan's inscription and
+  Haşim first failed that test (the online copies disagreed); on 2026-09-27 the owner approved readings taken from
+  scholarly editions (Yakıt 2021 and Serdaroğlu 2007 for the inscription; Enginün–Kerman 1987 for Haşim), each
+  reading and its source in the record's `provenance`. Quotations are verbatim.
 - **New condition.** `seaFog: { min?, max? }` (0..1, the sea fog layer of `src/render/weather/sea-fog.ts`), for De
   Amicis's arrival in the fog on the foggy mornings of about 30 % of game days.
 
 | Moment | `?moment=` | Where and when | Plays? |
 |---|---|---|---|
 | Bu Şehr-i Sıtanbûl (Nedim) | `nedim-bu-sehr-i-sitanbul` | 250–600 m ASL over Sarayburnu, 07–11 h, clear or haze | yes |
-| Pîr-i Mi'mârân Sinan (Sâî) | `sinan-turbe-kitabesi` | at Sinan's tomb by the Süleymaniye, ≤ 90 m AGL, 16:30–20:30, clear or haze | pending |
+| Pîr-i Mi'mârân Sinan (Sâî) | `sinan-turbe-kitabesi` | at Sinan's tomb by the Süleymaniye, ≤ 90 m AGL, 16:30–20:30, clear or haze | yes |
 | Kâtibim | `katibim-uskudar-yagmur` | ≤ 80 m AGL over Üsküdar square and shore, in rain | yes |
 | Atı Alan Üsküdar'ı Geçti | `ati-alan-uskudari-gecti` | diving over the strait mouth between Sarayburnu and Üsküdar, 06–21 h | yes |
 | Perde: Karagöz ile Hacivat | `karagoz-sehzadebasi` | ≤ 60 m AGL over Şehzadebaşı, 20–24 h | yes |
 | Yağmur (Tevfik Fikret) | `fikret-yagmur-asiyan` | at Aşiyan above Rumelihisarı, ≤ 80 m AGL, in rain | yes |
-| Bir Günün Sonunda Arzu (Haşim) | `hasim-bir-gunun-sonunda-arzu` | gliding ≤ 35 m AGL off the Göksu mouth, 17–20:30 h (Göksu fallback: Küçükçekmece Lake is at the map edge and not water in the game) | pending |
+| Bir Günün Sonunda Arzu (Haşim) | `hasim-bir-gunun-sonunda-arzu` | gliding ≤ 35 m AGL off the Göksu mouth, 17–20:30 h (Göksu fallback: Küçükçekmece Lake is at the map edge and not water in the game) | yes |
 | Kuyrukluyıldız (Hüseyin Rahmi) | `huseyin-rahmi-kuyrukluyildiz` | 150–900 m ASL over Heybeliada, 22–04 h, clear | yes |
 | Gökten Asılı Kubbe (Prokopios) | `prokopios-gokten-asili-kubbe` | gliding or flying 150–450 m ASL around the Hagia Sophia dome, 10–16 h | yes |
 | Sis Kalkınca (De Amicis) | `de-amicis-sis-kalkinca` | ≤ 90 m AGL over the Marmara south of Sarayburnu, 05–11 h, on a foggy morning | yes |
