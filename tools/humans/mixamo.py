@@ -172,6 +172,20 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
             bpy.data.actions.remove(a)
     info = {"duration": round(dur, 4), "loop": loop, "speed": round(speed, 4)}
     info.update({k_: round(v, 4) for k_, v in events.items()})
+    if root_motion and len(samples) > 2:
+        # Ground speed over the clip (m/s, the hips' horizontal travel in the body's frame, smoothed), 24 even steps:
+        # the game moves one-shots at this speed so the feet stay put.
+        sp = []
+        for i in range(len(samples)):
+            a, b_ = max(0, i - 2), min(len(samples) - 1, i + 2)
+            d = (samples[b_][1] - samples[a][1]) * k
+            sp.append(Vector((d.x, d.y)).length * fps / max(1, b_ - a))
+        n = len(sp) - 1
+        info["speed_curve"] = [round(sp[min(n, round(j * n / 23))], 3) for j in range(24)]
+        if name == "walk_start":
+            # The start proper: where the body begins to move (the clip leads in standing).
+            i = next((i for i, v in enumerate(sp) if v > 0.2), 0)
+            info["start"] = round(max(0.0, i / fps - 0.1), 4)
     if turn_curve:
         info["turn"] = round(turn_curve[-1], 4)
         # Heading (rad, from the start) at 24 even steps over the clip.
