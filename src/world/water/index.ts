@@ -200,6 +200,7 @@ export function createWaterSystem(): System {
       const forcedU10 = Number(ctx.debug.params.get('wu10'));
       sea.forcedU10 = forcedU10 > 0 ? forcedU10 : null;
       forceSky = ctx.debug.params.get('wrefl') === 'sky';
+      const noEdgeFade = ctx.debug.params.get('wfade') === '0';
       quality = waterQualityFor(ctx.quality.settings.preset, reflectionsOf(ctx.quality.settings));
       const b = geo.bounds;
       reflection = new PlanarReflection(anisotropy, quality.reflectionSamples);
@@ -221,6 +222,7 @@ export function createWaterSystem(): System {
         foam.uniforms,
       );
       foam.attach(uniforms);
+      uniforms.uReflParams.value.z = noEdgeFade ? 1 : 0;
       const debugViews = ['off', 'region', 'flow', 'depth', 'rough', 'shore', 'nan', 'foam'];
       material = createWaterMaterial(uniforms, quality.bands, Math.max(0, debugViews.indexOf(ctx.debug.params.get('wdebug') ?? 'off')));
       mesh = new THREE.Mesh(buildRadialGrid(quality.segments, GRID_INNER_RADIUS, GRID_EXTENT), material);
