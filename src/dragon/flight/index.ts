@@ -144,6 +144,8 @@ export function createFlightSystem(): System {
     return true;
   }
 
+  let riderlessLandTimer = 0;
+
   function gatherCommand(ctx: EngineContext): PilotCommand {
     if (testControl.command) {
       copyPilotCommand(testControl.command, frameCmd);
@@ -159,6 +161,20 @@ export function createFlightSystem(): System {
       } else if (ctx.debug.autopilot) {
         autopilot.reset();
       }
+    }
+    if (state.riderless && !testControl.command) {
+      // No rider: no stick, no buttons. Airborne it asks to land (hovering first, then down), so it waits on the
+      // ground for the rider to come back.
+      const pc = createPilotCommand();
+      copyPilotCommand(pc, frameCmd);
+      clearOverrides(sim.overrides);
+      riderlessLandTimer -= ctx.time.dt;
+      const airborne = state.mode !== 'grounded' && state.mode !== 'swimming' && state.mode !== 'underwater' && state.mode !== 'landing';
+      if (airborne && riderlessLandTimer <= 0) {
+        frameCmd.landPressed = true;
+        riderlessLandTimer = 1.5;
+      }
+      return frameCmd;
     }
     if (fireBurstLeft > 0) {
       frameCmd.fire = true;

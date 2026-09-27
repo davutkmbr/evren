@@ -7,6 +7,8 @@
  *   Rider cues: window.__riderDebug.force({ riderStand: 1, gazeRider: 1, gazeSide: -1, urgePhase: 0.5, ... }) / .clear()
  *   ?sun=azimuthDeg,elevationDeg   ?env=0   ?ground=0   ?fp=1 (first person hide)   ?sky=1&t=hours (real sky + post)
  *   ?alt=m (flight altitude of the rig origin, default 9)
+ *   ?leap=s: the rider leaves the saddle at that time and glides down (view=leap follows the glide line); with
+ *   pose=idle a hop down beside the dragon, and ?mount=s climbs back on
  */
 import * as THREE from 'three';
 import { startSandbox } from '../src/core/sandbox';
@@ -19,6 +21,8 @@ import { createSkySystem } from '../src/render/sky';
 import { createRenderPipeline } from '../src/render/post';
 import { SHARED_GLSL } from '../src/render/shaders';
 import { registerGlobalUniform } from '../src/core/uniforms';
+import type { DragonRigImpl } from '../src/dragon/model/rig';
+import type { LocomotionController } from '../src/dragon/model/rider/locomotion/controller';
 
 /** Binds a neutral texture to every shared sampler uniform whose owner system is not part of this sandbox. */
 function bindMissingSharedSamplers(): void {
@@ -101,6 +105,9 @@ const VIEWS: Record<string, ViewDef> = {
   shouldertop: { pos: [3.0, 3.4, 1.5], target: [1.4, 0.8, -0.8] },
   riderfront: { pos: [1.1, 2.2, -4.5], target: [0, 1.72, -2.72] },
   hands: { pos: [0.55, 1.85, -3.75], target: [0.05, 1.5, -3.1] },
+  fistR: { pos: [0.55, 1.7, -3.5], target: [0.17, 1.56, -3.2] },
+  fistL: { pos: [-0.55, 1.7, -3.5], target: [-0.17, 1.56, -3.2] },
+  fistTop: { pos: [0.3, 2.1, -3.0], target: [0.17, 1.56, -3.2] },
   face: { pos: [0.35, 2.0, -3.45], target: [0, 1.92, -2.75] },
   goggles: { pos: [0.1, 1.97, -3.02], target: [0, 1.94, -2.8] },
   mouth: { pos: [1.3, 0.1, -9.0], target: [0, 0.8, -7.5] },
@@ -109,6 +116,10 @@ const VIEWS: Record<string, ViewDef> = {
   gazeleft: { pos: [0.55, 2.45, -1.7], target: [-1.6, 1.7, -4.3] },
   gazeright: { pos: [-0.55, 2.45, -1.7], target: [1.6, 1.7, -4.3] },
   standside: { pos: [2.4, 2.4, -2.2], target: [0, 1.75, -2.6] },
+  // The rider leaving the saddle (?leap=s): a wide side view along the glide.
+  leap: { pos: [34, 2, -16], target: [0, -3, -16] },
+  // Hopping down beside the dragon on the ground and climbing back on (?pose=idle&leap=&mount=).
+  mountside: { pos: [8.5, 2.2, 3.5], target: [2.2, -0.4, -2.4] },
 };
 const view = VIEWS[viewName] ?? VIEWS['three-quarter'];
 
@@ -180,11 +191,20 @@ void main(){
 
 let rig: DragonRig | undefined;
 let elapsed = 0;
+/** ?leap=s: the rider leaves the saddle at that time, spreads the wings and glides down (G glides in the game). */
+const leapAt = params.has('leap') ? Number(params.get('leap')) : undefined;
+let onFoot: LocomotionController | undefined;
+/** ?mount=s: back into the saddle at that time (after ?leap on the ground). */
+const mountAt = params.has('mount') ? Number(params.get('mount')) : undefined;
+let mounted = false;
+let ctxScene: THREE.Scene | undefined;
+let leapTime = 0;
 
 const driver: System = {
   name: 'dragon-sandbox-driver',
   order: UpdateOrder.Physics,
   init(ctx) {
+    ctxScene = ctx.scene;
     bindMissingSharedSamplers();
     ctx.scene.add(dragonObject);
     ctx.services.provide('dragon', fakeState);
@@ -236,6 +256,30 @@ const driver: System = {
     }
     rig?.setPose(pose);
     fakeState.flapEffort = pose.flapAmplitude ?? 0;
+    if (rig && leapAt !== undefined && elapsed >= leapAt && !onFoot && !mounted) {
+      // Up and out to the right of the dragon (the sandbox dragon holds still; in flight add its velocity). On the
+      // ground (pose=idle|walk) a hop down beside it.
+      const hop = grounded ? new THREE.Vector3(4.2, 3.0, 0.3) : new THREE.Vector3(3.5, 4.5, -1);
+      onFoot = (rig as unknown as DragonRigImpl).leaveSaddle(ctxScene!, hop);
+    }
+    if (rig && onFoot && mountAt !== undefined && elapsed >= mountAt) {
+      (rig as unknown as DragonRigImpl).mountRider();
+      onFoot = undefined;
+      mounted = true;
+    }
+    // The rig owns the on-foot controller (mountRider() ends it).
+    onFoot = rig ? (rig as unknown as DragonRigImpl).onFoot : undefined;
+    if (onFoot) {
+      leapTime += dt;
+      onFoot.update(dt, { move: grounded ? new THREE.Vector2() : new THREE.Vector2(0, -1), run: false, crouch: false, jump: false, glide: !grounded && leapTime > 0.45 });
+      const h = (rig as unknown as DragonRigImpl).human!;
+      h.root.updateMatrixWorld(true);
+      h.face.update(dt, { effort: onFoot.state === 'glide' ? 0.5 : 0.8 });
+      h.wind.captureRest();
+      const v = new THREE.Vector3(-onFoot.velocity.x, -onFoot.vy, -onFoot.velocity.y);
+      const sp = v.length();
+      h.wind.update(dt, sp, sp > 1e-3 ? v.normalize() : new THREE.Vector3(0, 0, 1));
+    }
   },
 };
 
@@ -243,6 +287,14 @@ const povCamera: System = {
   name: 'dragon-sandbox-pov',
   order: UpdateOrder.Camera,
   update(_dt, ctx) {
+    if (onFoot && rig && viewName === 'leap') {
+      // Follow the rider off the saddle: beside and a little behind, the dragon in the background.
+      const h = (rig as unknown as DragonRigImpl).human!;
+      const p = h.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1.0, 0));
+      ctx.camera.position.copy(p).add(new THREE.Vector3(5.5, 1.6, 4.5));
+      ctx.camera.lookAt(p);
+      return;
+    }
     if (viewName === 'pov' && rig) {
       rig.riderHead.updateWorldMatrix(true, false);
       rig.riderHead.getWorldPosition(ctx.camera.position);
@@ -262,7 +314,7 @@ systems.push(createDragonModelSystem(), driver, povCamera);
 void startSandbox({
   systems,
   pipeline: useSky ? createRenderPipeline : undefined,
-  orbit: viewName !== 'pov',
+  orbit: viewName !== 'pov' && viewName !== 'leap',
   basicLighting: !useSky,
   cameraPosition: new THREE.Vector3(view.pos[0], view.pos[1] + rootHeight, view.pos[2]),
   orbitTarget: new THREE.Vector3(view.target[0], view.target[1] + rootHeight, view.target[2]),

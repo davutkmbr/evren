@@ -20,3 +20,17 @@ Approved models placed as props in the compiled street output (`public/world/<ar
 | `street_lamp_02` | [Street Lamp 02](https://polyhaven.com/a/street_lamp_02) (polyhaven) | Josh Dean | CC0-1.0 | – | prop:street_lamp_02 |
 
 <!-- /GENERATED:street-assets -->
+
+## Rider character
+
+`rider/akinci.glb` is built by `tools/humans/build_rider.py` (Blender 4.5 + MPFB 2 as tools) from the approved CC0
+MakeHuman assets (CLAUDE.md, `.docs/assets/candidates/rider-humans.md`); the outfit, wings, skeleton additions and
+clips are Seventeen Skies' own procedural work. The garment surface textures it references at runtime are listed in
+`public/textures/LICENSES.md` (Rider garment textures).
+
+| Part | Source | Author | Licence |
+| --- | --- | --- | --- |
+| Base mesh, body and face targets, Mixamo-named game rig | [MakeHuman system assets](https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html) | MakeHuman team | CC0-1.0 |
+| Eyes (high-poly, brown), eyebrow008, eyelashes01, teeth, tongue01 and their textures | MakeHuman system assets | MakeHuman team | CC0-1.0 |
+| Skin `middleage_caucasian_male` (texture `middleage_lightskinned_male_diffuse`) | MakeHuman system assets / [skins pack 01](https://static.makehumancommunity.org/assets/assetpacks/skins01.html) | MakeHuman community | CC0-1.0 |
+| Face units (ARKit-style expression targets, kept as morph targets) | [face units 01](https://static.makehumancommunity.org/assets/assetpacks/faceunits01.html) | MakeHuman team | CC0-1.0 |
