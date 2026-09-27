@@ -174,7 +174,7 @@ export class LocomotionController {
   private stopBrake = STOP_BRAKE;
   /** The current `act`: its clip, heading at the start and the scale of the clip's own turn, the speed it entered
    * with and the exponent of its braking curve (speed = v0·(1 - t/T)^p, matched to the clip's travel). */
-  private act = { clip: '', yaw0: 0, turnScale: 0, v0: 0, p: 1, exit: 0.85, ik: false };
+  private act = { clip: '', yaw0: 0, turnScale: 0, v0: 0, p: 1, exit: 0.85, ik: false, t0: 0 };
   private prevCrouchIn = false;
   private landClipName = 'jump_land';
 
@@ -502,9 +502,11 @@ export class LocomotionController {
       a.turnScale = Math.sign(d) === Math.sign(c.turn) ? clamp(d / c.turn, 0.6, 1.3) : 1;
     }
     a.v0 = this.speed;
+    a.t0 = c.start ?? 0;
     const travel = c.measured?.travel ?? 0;
-    // speed = v0·(1 - u)^p covers v0·T/(p + 1): p so the distance matches the clip's travel.
-    a.p = travel > 0.2 && a.v0 > 0.1 ? clamp((a.v0 * c.duration) / travel - 1, 0, 6) : 6;
+    const T = c.duration - a.t0;
+    // speed = v0·(1 - u)^p covers v0·T/(p + 1): p so the distance matches the clip's travel (its share after t0).
+    a.p = travel > 0.2 && a.v0 > 0.1 ? clamp((a.v0 * T) / (travel * (T / c.duration)) - 1, 0, 6) : 6;
     a.exit = clip.includes('turn') ? 0.8 : 0.88;
     // The feet stay on uneven ground in a pivot; a slide or roll rides the body.
     a.ik = clip.includes('turn');
@@ -515,7 +517,7 @@ export class LocomotionController {
   private acting(dt: number, m: number): void {
     const a = this.act;
     const c = CLIPS[a.clip];
-    const u = Math.min(1, this.stateTime / c.duration);
+    const u = Math.min(1, this.stateTime / (c.duration - a.t0));
     if (c.turn_curve && a.turnScale) {
       const n = c.turn_curve.length - 1;
       const x = u * n;
@@ -605,11 +607,12 @@ export class LocomotionController {
       }
       case 'act': {
         const c = CLIPS[this.act.clip];
-        const k = 1 - smoothstep(this.stateTime, c.duration * (this.act.exit - 0.12), c.duration * this.act.exit);
+        const T = c.duration - this.act.t0;
+        const k = 1 - smoothstep(this.stateTime, T * (this.act.exit - 0.12), T * this.act.exit);
         t.set(this.act.clip, k);
         gaitShare = 1 - k;
         fast = true;
-        this.setTime(this.act.clip, this.stateTime);
+        this.setTime(this.act.clip, this.act.t0 + this.stateTime);
         break;
       }
       case 'takeoff':
