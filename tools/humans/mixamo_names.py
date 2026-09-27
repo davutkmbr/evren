@@ -46,7 +46,12 @@ CLIPS = {
     "run_slide": (False, True),
     "turn_left_wary": (False, False),
     "turn_right_wary": (False, False),
+    "walk_turn_right": (False, True),
+    "run_turn_left": (False, True),
 }
+
+# Clips made by mirroring another when their own file is missing (mixamo.py): name -> the clip mirrored.
+MIRRORED = {"walk_turn_right": "walk_turn_left", "run_turn_left": "run_turn_right"}
 
 # Clips that turn the body (name prefixes): their heading change is taken out and recorded (mixamo.py _unturn).
 TURNING = ("turn_", "walk_turn_", "run_turn_", "crouch_to_stand")
@@ -73,6 +78,8 @@ ALIASES = {
     "walkinglefturn": "walk_turn_left",
     "walkingturn180": "walk_turn_180",
     "runningrightturn": "run_turn_right",
+    "walkingrightturn": "walk_turn_right",
+    "runninglefturn": "run_turn_left",
     "runningturn180": "run_turn_180",
     "crouchturntostand": "crouch_to_stand",
     "falling": "fall_flail",

@@ -108,8 +108,8 @@ const GAIT = ['idle', 'walk', 'jog', 'run', 'crouch_idle', 'crouch_walk'] as con
 const ONE_SHOT = ['run_stop', 'jump_start', 'jump_land'] as const;
 const AIR = ['jump_rise', 'jump_fall'] as const;
 
-/** Turns on the move (captured one way only; the other side steers as usual). */
-const MOVING_TURNS = ['walk_turn_left', 'run_turn_right'];
+/** Turns on the move (the other side of each is the captured one mirrored, tools/humans/mixamo.py). */
+const MOVING_TURNS = ['walk_turn_left', 'walk_turn_right', 'run_turn_left', 'run_turn_right'];
 
 /** A curve of even steps over 0..1, linearly interpolated. */
 function curveAt(c: number[], u: number): number {
@@ -483,13 +483,15 @@ export class LocomotionController {
       this.beginAct('crouch_to_stand', d);
       return;
     }
-    // Sharp turns on the move: walking to the left, running to the right (the captured ones; the other sides steer).
-    if (!input.run && this.crouch < 0.1 && sp > 1.0 && sp < 2.6 && d > 0.45 && d < 1.2 && this.actions.has('walk_turn_left')) {
-      this.beginAct('walk_turn_left', d);
+    // Sharp turns on the move, walking or running, to either side (a side without its clip steers as usual).
+    const sharp = Math.abs(d) > 0.45 && Math.abs(d) < 1.2;
+    const side = d > 0 ? 'left' : 'right';
+    if (sharp && !input.run && this.crouch < 0.1 && sp > 1.0 && sp < 2.6 && this.actions.has(`walk_turn_${side}`)) {
+      this.beginAct(`walk_turn_${side}`, d);
       return;
     }
-    if (sp > 4.0 && d < -0.45 && d > -1.2 && this.actions.has('run_turn_right')) {
-      this.beginAct('run_turn_right', d);
+    if (sharp && sp > 4.0 && this.actions.has(`run_turn_${side}`)) {
+      this.beginAct(`run_turn_${side}`, d);
       return;
     }
     // Setting off from standing a while, ahead: the first steps.

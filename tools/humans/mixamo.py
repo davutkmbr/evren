@@ -26,7 +26,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SRC_DIR = os.environ.get("RIDER_MIXAMO_DIR", os.path.join(ROOT, "private-assets", "mixamo"))
 OUT_DIR = os.environ.get("RIDER_MIXAMO_OUT", os.path.join(ROOT, "private-assets", "build", "rider"))
 
-from mixamo_names import CLIPS, TURNING, category, resolve, slug  # noqa: E402  (bpy-free: also a command-line renamer)
+from mixamo_names import CLIPS, MIRRORED, TURNING, category, resolve, slug  # noqa: E402  (bpy-free: also a command-line renamer)
 
 
 def _rot(m):
@@ -51,9 +51,14 @@ def _bone_map(src):
     return out
 
 
-def retarget(rig, path, name, loop, root_motion, fps, src=None):
+def _swap_side(n):
+    return n.replace("Left", "\0").replace("Right", "Left").replace("\0", "Right")
+
+
+def retarget(rig, path, name, loop, root_motion, fps, src=None, mirror=False):
     """Bakes one FBX (or an armature already in the scene, `src`) onto `rig` as action `name`; returns its clip info.
-    `loop` / `root_motion` None: measured (an extra clip)."""
+    `loop` / `root_motion` None: measured (an extra clip). `mirror`: the clip mirrored left for right (a turn the
+    other way)."""
     new_objs = []
     if src is None:
         src, new_objs = _import(path)
@@ -87,6 +92,15 @@ def retarget(rig, path, name, loop, root_motion, fps, src=None):
             rots[names[bn]] = _rot(mw @ pb.matrix) @ src_rest[bn].inverted()
         hp = (mw @ src.pose.bones[next(bn for bn in names if names[bn] == "Hips")].matrix).translation.copy()
         samples.append((rots, hp))
+    if mirror:
+        # Reflect across the body's midplane (normal: the source's hip line) and swap the sides: R' = M·R·M.
+        lat = next((mw @ b_.matrix_local).translation for bn, b_ in src.data.bones.items() if names[bn] == "RightUpLeg") - \
+            next((mw @ b_.matrix_local).translation for bn, b_ in src.data.bones.items() if names[bn] == "LeftUpLeg")
+        lat.z = 0.0
+        lat.normalize()
+        M = Matrix.Identity(3) - 2.0 * Matrix((lat * lat.x, lat * lat.y, lat * lat.z)).transposed()
+        samples = [({_swap_side(n): M @ r @ M for n, r in rots.items()}, src_rest_hips + M @ (hp - src_rest_hips))
+                   for rots, hp in samples]
     # Turning clips: the body's heading change (the hips' yaw) is taken out, so the clip plays facing ahead and the game
     # turns the character by the recorded curve; the hips' travel is then measured in the body's own frame.
     # A clip that starts facing off to the side (some Mixamo clips do) is turned to face ahead.
@@ -255,7 +269,8 @@ def _measure(samples, k, rest_hips, dur):
 
 
 def sources():
-    """(name, path, loop, root_motion) for every FBX found: our clips first, then the extras."""
+    """(name, path, loop, root_motion, mirror) for every FBX found: our clips first (with the mirrored turns), then the
+    extras."""
     if not os.path.isdir(SRC_DIR):
         return []
     files = []
@@ -270,7 +285,7 @@ def sources():
         if name and name not in taken:
             taken.add(name)
             loop, rm = CLIPS[name]
-            ours.append((name, path, loop, rm))
+            ours.append((name, path, loop, rm, False))
             continue
         x = "x_" + slug(stem)
         base, n = x, 2
@@ -278,7 +293,13 @@ def sources():
             x = f"{base}_{n}"
             n += 1
         taken.add(x)
-        extras.append((x, path, None, None))
+        extras.append((x, path, None, None, False))
+    # Turns captured one way only: the other way is the same clip mirrored.
+    by_name = {o[0]: o for o in ours}
+    for name, src_name in MIRRORED.items():
+        if name not in by_name and src_name in by_name:
+            loop, rm = CLIPS[name]
+            ours.append((name, by_name[src_name][1], loop, rm, True))
     return ours + extras
 
 
@@ -289,14 +310,14 @@ def author(rig, fps=30):
         return {}
     bpy.context.scene.render.fps = fps
     out = {}
-    for name, path, loop, root_motion in found:
+    for name, path, loop, root_motion, mirror in found:
         try:
-            info = retarget(rig, path, name, loop, root_motion, fps)
+            info = retarget(rig, path, name, loop, root_motion, fps, mirror=mirror)
         except Exception as e:  # one bad file must not stop the rest
             print("MIXAMO FAIL", path, e)
             continue
         if info:
-            info["source"] = os.path.relpath(path, SRC_DIR)
+            info["source"] = os.path.relpath(path, SRC_DIR) + (" (mirrored)" if mirror else "")
             if name.startswith("x_"):
                 info["extra"] = True
                 info["category"] = category(name[2:])
