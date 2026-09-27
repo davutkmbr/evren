@@ -27,6 +27,10 @@
   touch-action: none;
 }
 
+.map-live {
+  pointer-events: none;
+}
+
 .map-vignette {
   position: absolute;
   inset: 0;

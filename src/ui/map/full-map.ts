@@ -1,5 +1,5 @@
 import { COURSES } from '../../activities/courses';
-import type { GeoQuery, LandmarkDef, PerchPoint } from '../../core/contracts';
+import type { GeoQuery, LandmarkDef, NetPeer, PerchPoint } from '../../core/contracts';
 import type { ViewPreset } from '../../core/debug';
 import { latLonToLocal, WORLD_HALF_SIZE } from '../../core/geo-coords';
 import { hintLine, hoverCard, layerGroup, layerToggle, prompt, scaleBar, zoomCluster, type LayerToggle } from '../components';
@@ -27,6 +27,8 @@ export interface FullMapOptions {
   onPerch(perch: PerchPoint): void;
   /** Current perch points (the 'perches' service), read when the map opens. */
   perches(): readonly PerchPoint[] | undefined;
+  /** Other players online (the 'net' service), read on every live refresh; none offline. */
+  peers?(): readonly NetPeer[];
   onClose(): void;
 }
 
@@ -52,6 +54,10 @@ const DRAG_THRESHOLD_PX = 5;
 const HIT_RADIUS_PX = 14;
 const GOLD = '#e8b872';
 const PIN_RING = '#111318';
+/** Live layer refresh while the map is open: the player's arrow and the other players move (≈15 per second). */
+const LIVE_MS = 66;
+/** The "where" line under the title follows the player once a second. */
+const WHERE_MS = 1000;
 const RACE_COLOR = '#7fd1c0';
 const ATTRIBUTION = '© OpenStreetMap katkıcıları (ODbL) · NASA SRTM';
 
@@ -89,6 +95,11 @@ export class FullMap {
   readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
+  /** Live layer over the map: the player's arrow and the other players, redrawn on its own (the map itself only on pan, zoom or hover). */
+  private readonly live: HTMLCanvasElement;
+  private readonly liveCtx: CanvasRenderingContext2D;
+  private lastLive = 0;
+  private lastWhere = 0;
   private readonly where: HTMLElement;
   private readonly card = hoverCard();
   private readonly scaleIndicator = scaleBar(ATTRIBUTION);
@@ -120,6 +131,8 @@ export class FullMap {
   ) {
     this.canvas = el('canvas', 'map-canvas');
     this.ctx = this.canvas.getContext('2d', { alpha: false })!;
+    this.live = el('canvas', 'map-canvas map-live');
+    this.liveCtx = this.live.getContext('2d')!;
 
     this.where = el('span', 'map-where');
     const close = prompt('Kapat', 'M', 'secondary', () => this.options.onClose());
@@ -157,6 +170,7 @@ export class FullMap {
       'ejd-map ejd-interactive',
       [
         this.canvas,
+        this.live,
         el('div', 'map-vignette'),
         el('div', 'map-title', [el('span', 'map-city', 'İstanbul'), this.where]),
         el('div', 'map-close', [close.root]),
@@ -230,8 +244,8 @@ export class FullMap {
     this.width = Math.max(1, this.root.clientWidth);
     this.height = Math.max(1, this.root.clientHeight);
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
+    this.canvas.width = this.live.width = Math.round(this.width * this.dpr);
+    this.canvas.height = this.live.height = Math.round(this.height * this.dpr);
     this.scale = Math.min(MAX_SCALE, Math.max(this.minScale(), this.scale));
     this.invalidate();
   }
@@ -614,7 +628,7 @@ export class FullMap {
     this.placePins();
     this.drawNames(ctx, boxes);
     this.drawPins(ctx);
-    this.drawPlayer(ctx);
+    this.drawLive();
     this.scaleIndicator.set(this.scale);
     if (this.hovered) {
       const pos = this.screenPos.get(this.hovered.id);
@@ -754,6 +768,70 @@ export class FullMap {
     if (this.hovered && this.screenPos.has(this.hovered.id)) {
       draw(this.hovered);
     }
+  }
+
+  /**
+   * While open, called every frame: refreshes the live layer (the player and the other players move while the map is
+   * open online, where the game does not pause) and the "where" line, at their own low rates.
+   */
+  tick(now: number): void {
+    if (!this.isOpen) {
+      return;
+    }
+    if (now - this.lastLive >= LIVE_MS) {
+      this.lastLive = now;
+      this.drawLive();
+    }
+    if (this.player && now - this.lastWhere >= WHERE_MS) {
+      this.lastWhere = now;
+      this.where.textContent = this.whereText(this.player);
+    }
+  }
+
+  private drawLive(): void {
+    const ctx = this.liveCtx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, this.width, this.height);
+    const peers = this.options.peers?.() ?? [];
+    for (const p of peers) {
+      this.drawPeer(ctx, p);
+    }
+    this.drawPlayer(ctx);
+  }
+
+  /** Another player: a smaller, quieter arrow than the player's own, with the nickname under it. */
+  private drawPeer(ctx: CanvasRenderingContext2D, p: NetPeer): void {
+    const x = this.toScreenX(p.x);
+    const y = this.toScreenY(p.z);
+    if (x < -40 || y < -40 || x > this.width + 40 || y > this.height + 40) {
+      return;
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((p.headingDeg * Math.PI) / 180);
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(5.5, 6.5);
+    ctx.lineTo(0, 3);
+    ctx.lineTo(-5.5, 6.5);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(246, 241, 231, 0.7)';
+    ctx.fill();
+    ctx.lineWidth = 1.25;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = PIN_RING;
+    ctx.stroke();
+    ctx.restore();
+    ctx.font = '500 12px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(8, 10, 14, 0.55)';
+    ctx.strokeText(p.name, x, y + 11);
+    ctx.fillStyle = 'rgba(243, 238, 229, 0.78)';
+    ctx.fillText(p.name, x, y + 11);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   }
 
   /** White arrow in the heading direction with a soft view cone ahead of it. */

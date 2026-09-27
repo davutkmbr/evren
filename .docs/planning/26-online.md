@@ -171,7 +171,7 @@ Before production: `npx wrangler d1 migrations apply seventeen-skies --remote`, 
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (`npx wrangler secret put`), and a legal review of `/legal/privacy`
 (cross-border transfer basis under KVKK article 9) before Google sign-in is announced.
 
-### Online never pauses (done in branch fix/online-never-pause)
+### Online never pauses (done)
 
 Rule: while online nobody's game stops, whatever the player opens.
 
@@ -187,6 +187,15 @@ Rule: while online nobody's game stops, whatever the player opens.
   flagged as a jump), so nobody sees it snap. Measured end to end: back after 8 s, 0.55 m from the circle the watcher
   computed, no teleport flag. `npm run test:loiter` covers the circle and the buffer hand-over (no jump over 1 m per
   frame through away and back).
+
+### Live map (done in branch feat/live-map-players)
+
+- The full map draws on two canvases: the map itself (raster, coasts, roads, pins, names) only on pan, zoom or hover,
+  and a transparent live layer over it with the player's arrow and the other players, refreshed ≈15 times a second
+  while the map is open (`FullMap.tick`, called by the UI every frame). Online, where the map no longer pauses the
+  game, the player's arrow moves; the "where" line under the title follows once a second.
+- Other players (`net.peers()`: names from the room, positions and headings from `remoteDragons.pose()`) are a
+  smaller, quieter arrow than the player's own with the nickname under it; no new colour.
 
 ## Stage 2 — later
 

@@ -171,6 +171,7 @@ export class UiSystem implements System {
       onTeleport: (target) => this.teleport(target),
       onPerch: perchAt,
       perches: () => ctx.services.tryGet('perches')?.points,
+      peers: () => ctx.services.tryGet('net')?.peers() ?? [],
       onClose: () => this.closeModal(),
     });
     const teleportPanel = new TeleportPanel({
@@ -305,6 +306,9 @@ export class UiSystem implements System {
     }
     if (hudVisible && this.snapshot.valid) {
       this.hud.update(this.snapshot, realDt);
+    }
+    if (this.modal === 'map') {
+      this.fullMap.tick(performance.now());
     }
     // Move hints only in plain flight with the HUD up (not perched: the viewing mode fades the HUD to its zones).
     this.tutorial.update(ctx, hudVisible && !this.perchView.viewing);

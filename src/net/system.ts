@@ -7,7 +7,7 @@
  * profile. Local test (DEV_TOOLS only): `?server=bogazici&name=Evren` signs in as a guest with that nickname if
  * needed and joins on start.
  */
-import { UpdateOrder, type AccountService, type GameServerInfo, type NetService, type NetStatus, type RemoteDragonService, type System } from '../core/contracts';
+import { UpdateOrder, type AccountService, type GameServerInfo, type NetPeer, type NetService, type NetStatus, type RemoteDragonService, type System } from '../core/contracts';
 import { devParams, exposeDebug } from '../core/dev-tools';
 import { NetClient } from './client';
 import { captureSnapshot } from './capture';
@@ -134,6 +134,19 @@ export function createNetSystem(): System {
         throw new Error(`server list: HTTP ${res.status}`);
       }
       return ((await res.json()) as { servers: GameServerInfo[] }).servers;
+    },
+    peers() {
+      const out: NetPeer[] = [];
+      if (status !== 'online' || !remotes) {
+        return out;
+      }
+      for (const [id, name] of players) {
+        const p = remotes.pose(remoteId(id));
+        if (p) {
+          out.push({ id, name, x: p.x, z: p.z, headingDeg: p.headingDeg });
+        }
+      }
+      return out;
     },
     join(target) {
       service.leave();
