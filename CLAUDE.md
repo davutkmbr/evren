@@ -18,7 +18,9 @@ harness or default that adds attribution.
   `user.email` in every clone, `private-assets/` included, before committing.
 - **Messages:** no `Co-Authored-By` or other trailers, no session or tool links, no "Generated with …" lines. No
   assistant, agent or tool names in commit messages, tags, PR titles, PR descriptions or review comments.
-- **Branch names:** name the work (`rider/mixamo-turns`, `docs/authorship`), never a tool or agent prefix.
+- **Branch names:** a type prefix, then the work in kebab-case: `feat/` a new feature or content (`feat/mixamo-turns`),
+  `fix/` a bug fix, `docs/` documentation only, `chore/` tooling, build, data or maintenance. Never a tool or agent
+  prefix.
 - **Footers:** if a tool appends an attribution footer to a PR or comment anyway, edit it out before finishing.
 
 ## Language
