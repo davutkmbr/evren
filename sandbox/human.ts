@@ -134,6 +134,9 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
+/** walkturn / runturn: &side= flips the turn (walkturn goes left, runturn right by default). */
+const sideSign = params.get('side') === (script === 'runturn' ? 'left' : 'right') ? -1 : 1;
+
 /** Scripted inputs over time (s). */
 function scripted(t: number, input: LocomotionInput): void {
   const fwd = (k: number): void => {
@@ -217,13 +220,13 @@ function scripted(t: number, input: LocomotionInput): void {
       }
       break;
     case 'walkturn':
-      // Walks, then bears sharply left (~60°).
-      input.move.set(t < 2.0 ? 0 : 0.87, t < 2.0 ? 1 : 0.5);
+      // Walks, then bears sharply left (~60°; &side=right the other way).
+      input.move.set(t < 2.0 ? 0 : 0.87 * sideSign, t < 2.0 ? 1 : 0.5);
       break;
     case 'runturn':
-      // Runs, then bears sharply right (~60°).
+      // Runs, then bears sharply right (~60°; &side=left the other way).
       input.run = true;
-      input.move.set(t < 2.4 ? 0 : -0.87, t < 2.4 ? 1 : 0.5);
+      input.move.set(t < 2.4 ? 0 : -0.87 * sideSign, t < 2.4 ? 1 : 0.5);
       break;
     case 'crouchturn':
       // Crouches, then stands up to walk back the way it faced.
