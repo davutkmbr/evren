@@ -31,6 +31,7 @@ import { buildDolphinMesh, type DolphinMesh } from './dolphin-model';
 import { LaneField, type LinePoints } from './lanes';
 import { EVENT, type DolphinDragon, type DolphinEnv, type DolphinPod } from './pod-sim';
 import type { SpawnWorld } from './spawn';
+import { trackReactive } from '../../../core/motion';
 
 /** Instances per LOD (two pods of eight). */
 const CAPACITY = DOLPHIN_SPAWN.maxPods * DOLPHIN_SPAWN.podMax;
@@ -353,6 +354,14 @@ export class Dolphins {
     if (!this.inScene) {
       this.root.add(near.mesh, far.mesh);
       this.inScene = true;
+      if (!this.untrack) {
+        const a = trackReactive(near.mesh);
+        const b = trackReactive(far.mesh);
+        this.untrack = () => {
+          a();
+          b();
+        };
+      }
     }
     const under = this.ctx.services.tryGet('underwater')?.under ?? false;
     fillDolphinInstances(this.director.pods, camPos.x, camPos.y, camPos.z, under, near.target, far.target, this.stats);
@@ -381,7 +390,12 @@ export class Dolphins {
     return this.inScene;
   }
 
+  /** Removes the meshes from the TAA's reactive mask. */
+  private untrack: (() => void) | null = null;
+
   dispose(): void {
+    this.untrack?.();
+    this.untrack = null;
     for (const u of this.unsubscribe) u();
     this.unsubscribe.length = 0;
     this.hide();
