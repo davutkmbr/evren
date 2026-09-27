@@ -104,3 +104,27 @@ export function applyLook(human: HumanRider, look: RiderLook): void {
     }
   }
 }
+
+const STORAGE_KEY = 'evren.riderLook';
+
+/** The player's saved look (or the default). */
+export function loadRiderLook(): RiderLook {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<RiderLook>;
+      return { ...DEFAULT_LOOK, ...saved, palette: { ...DEFAULT_LOOK.palette, ...(saved.palette ?? {}) } };
+    }
+  } catch {
+    // Private mode or blocked storage: the default look.
+  }
+  return { ...DEFAULT_LOOK };
+}
+
+export function saveRiderLook(look: RiderLook): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(look));
+  } catch {
+    // Not persisted; the look still applies for this session.
+  }
+}

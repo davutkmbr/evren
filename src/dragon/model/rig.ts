@@ -24,7 +24,7 @@ import { loadHumanRider, type HumanRider } from './rider/human';
 import { RiderRetarget } from './rider/retarget';
 import { DynamicReins } from './rider/reins';
 import { LocomotionController } from './rider/locomotion/controller';
-import { DEFAULT_LOOK, applyLook } from './rider/look';
+import { applyLook, loadRiderLook, type RiderLook } from './rider/look';
 import type { RiderAppearance } from './rider/appearance';
 
 export interface RigBuildOptions {
@@ -125,6 +125,8 @@ export class DragonRigImpl implements DragonRig {
   riderRetarget?: RiderRetarget;
   /** The reins' free spans, simulated (with the human rider). */
   reins?: DynamicReins;
+  /** The rider's look (applied once the character has loaded; the Binici menu changes it). */
+  riderLook: RiderLook = loadRiderLook();
   /** The rider on foot (or in the air) after leaving the saddle; the caller drives it. */
   onFoot?: LocomotionController;
   private readonly meshes: THREE.SkinnedMesh[] = [];
@@ -200,7 +202,7 @@ export class DragonRigImpl implements DragonRig {
       this.humanLoading = loadHumanRider(opts.humanRider, this.skel.bone('chest'), LANDMARKS.chest).then((h) => {
         console.info(`[rider] loaded ${opts.humanRider}: ${h.meshes.length} meshes, ${h.wind.chains.length} wind chains`);
         this.human = h;
-        applyLook(h, DEFAULT_LOOK);
+        applyLook(h, this.riderLook);
         this.root.updateMatrixWorld(true);
         this.riderRetarget = new RiderRetarget(this.skel, h.bones, this.root, h.bindLocal);
         this.riderRetarget.setFirstPerson(this.firstPerson);
@@ -324,6 +326,14 @@ export class DragonRigImpl implements DragonRig {
     this.onFoot = new LocomotionController(h, h.root, ground);
     this.onFoot.launch(velocity, yaw);
     return this.onFoot;
+  }
+
+  /** Sets the rider's look (headwear, hair, face, palette ...); applies now if the character is loaded. */
+  setRiderLook(look: RiderLook): void {
+    this.riderLook = look;
+    if (this.human) {
+      applyLook(this.human, look);
+    }
   }
 
   get isFirstPerson(): boolean {

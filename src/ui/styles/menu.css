@@ -429,6 +429,18 @@
   color: var(--ink-2);
 }
 
+/* ---------------- rider ---------------- */
+
+.rider-panel {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 20px 24px;
+}
+
+.rider-panel .ui-setting-section {
+  max-width: 880px;
+}
+
 /* ---------------- teleport ---------------- */
 
 .menu-teleport {
