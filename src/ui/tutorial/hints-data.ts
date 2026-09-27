@@ -298,6 +298,17 @@ export const TUTORIAL_HINTS: readonly TutorialHintDef[] = [
     hold: 3,
     learn: onStart('land'),
   },
+  {
+    id: 'dismount',
+    keys: 'Z',
+    text: 'Ejderhadan in, yürü (uçarken: atla, süzül)',
+    when: 'on the ground (not perched) for 6 s, after the land hint',
+    trigger: (f, m) => f.mode === 'grounded' && !f.perchBusy && m.modeTime >= 6,
+    hold: 1,
+    after: ['land'],
+    learn: onStart('dismount'),
+    control: { group: 'onfoot', keys: 'Z' },
+  },
 ];
 
 /** Pacing of the whole tutorial (seconds of play: paused time, menus and photo mode do not count). */
