@@ -50,6 +50,20 @@ beyond the two absent private manifests.
 - Client: remote dragons drawn ~100 ms behind with interpolation; start screen offers "Tek başına" / "Sunucu seç".
 - First step: a probe Durable Object to measure real round-trip times from Turkish ISPs before fixing the region.
 
+### Probe results
+
+Live at seventeenskies.com/probe since 2026-09-27; the probe objects were created from Istanbul and do not move.
+
+| Region hint | Object colo | TurkNet, Istanbul (ingress IST): median / p90 |
+|---|---|---|
+| `eeur` | FRA | 49 / 49 ms |
+| `weur` | AMS | 57 / 59 ms |
+| `me` | PRG | 69 / 70 ms |
+| none (auto) | PRG | 69 / 70 ms |
+
+`me` does not land in the Middle East from Istanbul. Region choice waits for Türk Telekom, Turkcell, Superonline
+and Vodafone results.
+
 ## Stage 2 — later
 
 Turnstile against bots, chat with moderation, persistent profiles (D1).
