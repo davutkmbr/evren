@@ -10,6 +10,21 @@ Assets whose licence allows use inside the game but forbids redistributing the r
 | Mixamo (Adobe) | Body animation clips, retargeted to the MetaHuman skeleton with Unreal's IK Retargeter (batch, Python) | Mixamo FAQ: royalty-free in games; raw files must not be redistributed | Downloaded "without skin" per clip. |
 | Historic 78 rpm recordings, US-risky (Internet Archive, Gallica / BnF) | Moment pieces (music under moments) | Public domain in Turkey (published before 1956; composers and improvising performers died before 1956), **still protected in the US** (published 1926 or later, 17 U.S.C. §1401). Kept out of the public repository so it does not redistribute them; the owner accepts the residual risk (2026-09-26) | Full attribution below and in [archive-78rpm.md](archive-78rpm.md). Takedown requests: `<contact-email>`. |
 
+## One copy everywhere: the private repository
+
+`private-assets/` is a clone of the owner's private repository `davutkmbr/seventeenskies-private` (only the owner has
+access; anyone given access would receive the files, so it stays that way). Every machine and cloud session works on
+the same files, with their history as the backup:
+
+- `npm run private:pull`: the first time, turns an existing folder into a clone in place (local files are kept); then
+  fast-forwards to the repository. Run it after cloning the game repository, and in a cloud session once the private
+  repository is attached.
+- `npm run private:push -- "what changed"`: commits every change in the folder and pushes. `build/` is not pushed
+  (the tools regenerate it: `tools/humans/build_rider.py`, `scripts/audio/prep-moment-music.py`).
+- `npm run private:status`: local changes, and how far behind or ahead of the repository.
+
+`EVREN_PRIVATE_REPO` points the scripts at another repository.
+
 ## Layout
 
 ```
