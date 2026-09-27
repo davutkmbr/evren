@@ -33,6 +33,11 @@ export interface WallMeta {
   year?: number;
   /** Castle / palace enclosure wall (wall=castle_wall): lower default height. */
   castle?: 1;
+  /**
+   * historic=wall: a historic wall that is not a fortification (the Hippodrome's sphendone is mapped barrier=city_wall
+   * + historic=wall): the kit's masonry without generated towers or merlons.
+   */
+  plain?: 1;
   /** Supplementary source id when the line does not come from OSM. */
   src?: string;
 }

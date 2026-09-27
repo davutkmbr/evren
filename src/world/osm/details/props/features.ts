@@ -565,11 +565,45 @@ function fillRows(pl: Placer, a: OsmArea, seed: number, kind: 'tombstone' | 'mar
   }
 }
 
+/**
+ * Fill share of row-filled areas under a budget: the budget is spread over every area in proportion to its size
+ * instead of being spent in data order (the first cemeteries of a region took all 2000 headstones and a 40 ha one was
+ * left bare). `share` is the full density, `step` x `row` the slot size (m).
+ */
+function evenShare(pl: Placer, areas: readonly OsmArea[], budget: number, step: number, row: number, share: number): number {
+  // Area inside this layer's rect, sampled every 10 m (a region holds only part of a large cemetery).
+  const S = 10;
+  let inside = 0;
+  for (const a of areas) {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (let k = 0; k < a.ring.length; k += 2) {
+      x0 = Math.min(x0, a.ring[k]);
+      x1 = Math.max(x1, a.ring[k]);
+      z0 = Math.min(z0, a.ring[k + 1]);
+      z1 = Math.max(z1, a.ring[k + 1]);
+    }
+    for (let z = z0 + S / 2; z < z1; z += S) {
+      for (let x = x0 + S / 2; x < x1; x += S) {
+        if (pl.inArea(x, z, 0) && inArea(a, x, z)) {
+          inside += S * S;
+        }
+      }
+    }
+  }
+  const slots = (inside / (step * row)) * share;
+  return slots > budget ? (share * budget) / slots : share;
+}
+
 function placeCemeteries(pl: Placer, areas: readonly OsmArea[]): void {
   const budget = { left: BUDGET.tombstone };
+  const cemeteries = areas.filter((a) => a.kind === 'landuse=cemetery' || a.kind === 'amenity=grave_yard');
+  const share = evenShare(pl, cemeteries, BUDGET.tombstone, 1.5, 2.4, 0.55);
   areas.forEach((a, i) => {
     if (a.kind === 'landuse=cemetery' || a.kind === 'amenity=grave_yard') {
-      fillRows(pl, a, i, 'tombstone', 1.5, 2.4, 0.55, budget, (h) => {
+      fillRows(pl, a, i, 'tombstone', 1.5, 2.4, share, budget, (h) => {
         const k = 0.72 + 0.2 * hash(h * 5);
         return [k, k * 0.97, k * 0.9];
       });
@@ -579,9 +613,17 @@ function placeCemeteries(pl: Placer, areas: readonly OsmArea[]): void {
 
 function placeMarkets(pl: Placer, data: Pick<OsmData, 'points' | 'areas'>): void {
   const budget = { left: BUDGET.marketStall };
+  const share = evenShare(
+    pl,
+    data.areas.filter((a) => a.kind === 'amenity=marketplace'),
+    BUDGET.marketStall,
+    3.4,
+    4.2,
+    0.85,
+  );
   data.areas.forEach((a, i) => {
     if (a.kind === 'amenity=marketplace') {
-      fillRows(pl, a, i, 'marketStall', 3.4, 4.2, 0.85, budget, (h) => pick(AWNING_TINTS, h));
+      fillRows(pl, a, i, 'marketStall', 3.4, 4.2, share, budget, (h) => pick(AWNING_TINTS, h));
     }
   });
   data.points.forEach((p, i) => {
