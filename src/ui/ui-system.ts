@@ -42,6 +42,7 @@ import './styles/menu.css';
 const NO_MOVES: readonly string[] = [];
 import './styles/overlays.css';
 import { exposeDebug } from '../core/dev-tools';
+import { OnlineNotices } from './online-notices';
 
 type Modal = 'none' | 'pause' | 'map' | 'source';
 export type UiDebugTarget = MenuTab | 'pause' | 'map' | 'help' | 'photo';
@@ -245,6 +246,10 @@ export class UiSystem implements System {
       this.hud.minimap.setGeo(geo, this.tracker.discovered);
       this.hud.area.setGeo(geo);
       this.fullMap.setGeo(geo, this.tracker.discovered);
+    });
+    void services.when('net').then((net) => {
+      const notices = new OnlineNotices(net, this.toasts, () => this.started);
+      this.disposers.push(() => notices.dispose());
     });
     void services.when('audio').then((audio) => {
       // Older audio services do not keep the volume themselves: restore the UI's saved value into them.

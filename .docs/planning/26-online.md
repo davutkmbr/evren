@@ -188,7 +188,7 @@ Rule: while online nobody's game stops, whatever the player opens.
   computed, no teleport flag. `npm run test:loiter` covers the circle and the buffer hand-over (no jump over 1 m per
   frame through away and back).
 
-### Live map (done in branch feat/live-map-players)
+### Live map (done)
 
 - The full map draws on two canvases: the map itself (raster, coasts, roads, pins, names) only on pan, zoom or hover,
   and a transparent live layer over it with the player's arrow and the other players, refreshed ≈15 times a second
@@ -196,6 +196,20 @@ Rule: while online nobody's game stops, whatever the player opens.
   game, the player's arrow moves; the "where" line under the title follows once a second.
 - Other players (`net.peers()`: names from the room, positions and headings from `remoteDragons.pose()`) are a
   smaller, quieter arrow than the player's own with the nickname under it; no new colour.
+
+### Connection notices (done in branch fix/online-disconnect-notice)
+
+One seat per account is intended: a second tab or device with the same account takes the seat and the first one
+leaves the server. It used to leave silently. `src/ui/online-notices.ts` now toasts in game (one toast key, replaced in
+place): another tab or device took the seat, the connection dropped and is being retried, reconnected, the server
+refused or the connection ended; and other players joining ("… gökyüzüne katıldı.") and leaving. Before the game
+starts the online sheet shows these itself. Testing two players needs two accounts: a private window or another
+browser.
+
+Checked on production while debugging a "cannot see the other player" report: the room relays between two accounts
+(34 batches in 3 s), the joined client creates and updates the remote dragon (remote-dragons ≈0.07 ms per frame), and
+locally the same join flow draws it where expected. Other players are hard to find without name tags in the world and
+players on the minimap (open items).
 
 ## Stage 2 — later
 
