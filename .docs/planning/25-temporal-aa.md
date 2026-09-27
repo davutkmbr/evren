@@ -174,7 +174,33 @@ cars against the no-TAA run, `traffic-night` now looks up Barbaros Bulvarı from
 
 A weight of 0.5 made the masked pixels (quay crowd, cars) mostly the jittered current frame, which the audit counts as
 flicker; 0.25 keeps them at the unmasked level with no measurable extra trail. A tighter variance clip on masked
-pixels was worse in both scenes and was dropped. Stage 4 next.
+pixels was worse in both scenes and was dropped.
+
+## Stage 4 result (2026-09-27, on by default from medium)
+
+`QualitySettings.taa`: on for medium, high and ultra (MSAA and the spatial AA pass off there), off for low; `?taa=0`
+still switches it off. Sharpening stays off under TAA.
+
+Performance (`snap.mjs --perf`, 1600x900, `?dynres=0`, fps, two runs each; medium is at the 60 fps cap either way):
+
+| view (high) | TAA off (MSAA 2x + SMAA) | TAA on |
+|---|---|---|
+| galata t=15 | 22.7* / 43.6 | 47.2 / 41.2 |
+| bogaz t=21 | 44.7 / 39.7 | 45.0 / 46.4 |
+| sultanahmet t=16 | 44.3 / 54.3 | 46.9 / 57.1 |
+
+(*first run of the batch, still warming up.) TAA costs nothing net on high: the resolve and velocity passes are paid
+for by dropping MSAA and SMAA. Acceptance (<= +0.8 ms) met.
+
+CAS sweep (flicker audit, land per mille, still camera yaw sweep):
+
+| scene | TAA off | TAA | TAA + sharpen 0.2 | TAA + sharpen 0.35 |
+|---|---|---|---|---|
+| peninsula-day | 0.93 | **0.17** | 0.55 | 0.64 |
+| night-hisar | 0.42 | **0.08** | 0.16 | 0.16 |
+
+Sharpening brings back 2-3x the flicker TAA removed, for a small gain in crispness (`.shots/perf/cas-*`), so it stays
+off. Next (separate phase): temporal upscaling (item 5 of the plan).
 
 ## Measurement
 
