@@ -80,7 +80,7 @@ landmarks, ferries, gulls and night lights as you explore.
   Kadıköy and more, listed in `tools/world-compiler/districts/landing-spots.json`): below 80 m the flight-scale city
   cross-fades into compiled street tiles (façades, shopfronts, paving, street furniture) streamed around you, across
   neighbouring spots without seams or double drawing; textures are shared between spots, so a second landing
-  downloads mostly geometry (`?street=0` turns it off).
+  downloads mostly geometry.
 
 **Sky and water**
 - Physically based atmosphere (transmittance and sky-view LUTs), real sun and moon positions, stars, aerial perspective.
@@ -154,11 +154,17 @@ Then open <http://127.0.0.1:5199/>.
 | Command | Description |
 |---|---|
 | `npm run dev` | Development server with hot reload |
-| `npm run build` | Type-check and build to `dist/` |
+| `npm run build` | Type-check and build to `dist/` (developer tools kept) |
+| `npm run typecheck` | Type-check the game and the Cloudflare Worker |
 | `npm run preview` | Serve the production build |
+| `npm run build:web` | Public build for seventeenskies.com: URL parameters ignored, debug hooks stripped |
+| `npm run deploy` | `build:web` + deploy to Cloudflare Workers (see [Deployment](#deployment)) |
 | `npm run snap -- --url "/?view=galata"` | Render a GPU screenshot and print engine stats (see [Tooling](#tooling)) |
 
 ### URL parameters
+
+Developer overrides for the dev server and local builds only. The public build (seventeenskies.com) ignores every URL
+parameter and has no `window.__*` debug hooks (`src/core/dev-tools.ts`).
 
 | Parameter | Example | Effect |
 |---|---|---|
@@ -174,6 +180,13 @@ Then open <http://127.0.0.1:5199/>.
 | `stats` | `?stats=1` | Performance overlay |
 | `nohud` | `?nohud=1` | Hide the HUD |
 | `music` | `?music=raw` | Music debug: `raw` / `denoised` picks the version of the restored 78 rpm moment pieces, `test`, `debug`, `off`, `sparse`, `continuous` (see [.docs/audio/music-system.md](.docs/audio/music-system.md)) |
+
+### Deployment
+
+seventeenskies.com runs on Cloudflare Workers: the web build is served as static assets, and a small Worker
+(`worker/`) handles only the API and the geo-gated private music. `npm run deploy` needs `npx wrangler login` once; the
+compiled street tiles (`public/world/`) and `private-assets/` must exist locally (worktrees point `EVREN_WORLD_DIR` and
+`EVREN_PRIVATE_DIR` at the main checkout). Plan and costs: [.docs/planning/26-online.md](.docs/planning/26-online.md).
 
 ## Architecture
 
@@ -223,6 +236,7 @@ flowchart LR
 | `fx` | Particles: fire, splashes, trails, speed streaks |
 | `audio` | Sound effects and ambience: WebAudio synthesis plus the recorded CC0 sounds in `public/audio/` |
 | `ui` | Loading screen, HUD, map, discovery, menus |
+| `worker/` (Cloudflare) | Serves seventeenskies.com: API (latency probe, later game servers) and the geo-gated private music |
 
 Some technical choices worth knowing:
 
@@ -262,25 +276,25 @@ Some technical choices worth knowing:
 
 ## Roadmap
 
-The project is at an early stage. The next phases are planned in [.docs/planning](.docs/planning/README.md):
+Phases, milestones, dependencies and the current order are in [.docs/planning](.docs/planning/README.md). The main
+tracks:
 
-| # | Phase | Status |
-|---|---|---|
-| 01 | [Review, bug fixing and performance](.docs/planning/01-review-and-performance.md) | Next |
-| 02 | [Realistic relief and terrain shadows](.docs/planning/02-relief-and-terrain-shadows.md) | Planned |
-| 03 | [Viewpoints: perch on bridges, towers and hills](.docs/planning/03-viewpoints.md) | Planned |
-| 04 | [Landing and takeoff variety](.docs/planning/04-landing-takeoff-variety.md) | Planned |
-| 05 | [Flight feel: free fall, g-force, thermals](.docs/planning/05-flight-feel.md) | Planned |
-| 06 | [Bond with the dragon: gaze, petting, mood](.docs/planning/06-dragon-bond.md) | Planned |
-| 07 | [Regional and adaptive music](.docs/planning/07-regional-music.md) | Planned |
-| 08 | [Real city data from Overture / OpenStreetMap](.docs/planning/08-real-city-data.md) | Planned |
-| 09 | [Materials, street detail and traffic](.docs/planning/09-materials-traffic-detail.md) | Planned |
-| 10 | [Rider animation system](.docs/planning/10-rider-animations.md) | Planned |
-| 11 | [Attack types](.docs/planning/11-attack-types.md) | Planned |
-| 12 | [Dragon and rider variants](.docs/planning/12-dragon-rider-variants.md) | Planned |
-| 13 | [Living world: weather, seasons, events, activities](.docs/planning/13-living-world.md) | Planned |
-| 14 | [Multi-dragon foundation](.docs/planning/14-multi-dragon-foundation.md) | Planned |
-| 15 | [Multiplayer](.docs/planning/15-multiplayer.md) | Planned |
+- **Hardening and visual quality:** [01](.docs/planning/01-review-and-performance.md) review and performance,
+  [02](.docs/planning/02-relief-and-terrain-shadows.md) relief, [25](.docs/planning/25-temporal-aa.md) temporal antialiasing.
+- **Chill loop:** [03](.docs/planning/03-viewpoints.md) viewpoints, [04](.docs/planning/04-landing-takeoff-variety.md)
+  landings, [05](.docs/planning/05-flight-feel.md) flight feel, [06](.docs/planning/06-dragon-bond.md) dragon bond,
+  [07](.docs/planning/07-regional-music.md) music, [20](.docs/planning/20-movement.md) movement,
+  [21](.docs/planning/21-sea.md) the sea.
+- **Realistic city:** [08](.docs/planning/08-real-city-data.md) OSM data, [09](.docs/planning/09-materials-traffic-detail.md)
+  street detail and traffic, [16](.docs/planning/16-street-layer.md) the street layer,
+  [22](.docs/planning/22-city-walls.md) city walls, [23](.docs/planning/23-osm-feature-kits.md) feature kits,
+  [24](.docs/planning/24-far-osm-layer.md) the far map.
+- **Characters and variety:** [10](.docs/planning/10-rider-animations.md) and [24](.docs/planning/24-rider-character.md)
+  the rider, [11](.docs/planning/11-attack-types.md) attacks, [12](.docs/planning/12-dragon-rider-variants.md) variants,
+  [13](.docs/planning/13-living-world.md) living world, [19](.docs/planning/19-moments.md) moments.
+- **Online:** [26](.docs/planning/26-online.md) seventeenskies.com and servers, on the network design of
+  [14](.docs/planning/14-multi-dragon-foundation.md) and [15](.docs/planning/15-multiplayer.md);
+  [17](.docs/planning/17-hamallar-coop.md) co-op.
 
 Known issues are tracked in [phase 01](.docs/planning/01-review-and-performance.md).
 
@@ -288,7 +302,7 @@ Known issues are tracked in [phase 01](.docs/planning/01-review-and-performance.
 
 Issues and pull requests are welcome. Please read [CLAUDE.md](CLAUDE.md) for the project conventions: code, commits,
 pull requests and documentation are written in English, while everything the player sees stays in Turkish.
-Before opening a pull request, run `npm run build` and check the affected views with `scripts/snap.mjs`.
+Before opening a pull request, run `npm run typecheck` and `npm run build` and check the affected views with `scripts/snap.mjs`.
 
 ## Credits and licence
 

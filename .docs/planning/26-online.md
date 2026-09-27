@@ -1,6 +1,6 @@
 # Phase 26 — Online (seventeenskies.com and servers)
 
-Milestone: D · Online · Effort: stage 0 S, stage 1 L
+Milestone: F · Multiplayer · Effort: stage 0 S, stage 1 L · Networking design: [15 — Multiplayer](15-multiplayer.md)
 
 ## Goal
 
