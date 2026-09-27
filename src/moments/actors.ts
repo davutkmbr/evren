@@ -9,6 +9,7 @@ import type { MomentEndReason } from './runtime';
 import type { Moment } from './types';
 import { StorkFlockActor } from './storks/stork-actor';
 import { GullSimitActor } from './gull-simit/actor';
+import { AyaYorgiStatueActor } from './aya-yorgi/actor';
 
 export interface MomentActor {
   /** Alive (in the scene, simulated). */
@@ -25,6 +26,7 @@ export interface MomentActor {
 const FACTORIES: Readonly<Record<string, () => MomentActor>> = {
   'moments/white-stork-flock': () => new StorkFlockActor(),
   'moments/ferry-gull-flock': () => new GullSimitActor(),
+  'moments/aya-yorgi-knight-statue': () => new AyaYorgiStatueActor(),
 };
 
 /** A new actor for `actorId`, or null when the id has no scene implementation (subtitle-only moments). */
