@@ -40,11 +40,13 @@ ${SHARED_GLSL}
 uniform vec3 uColor;
 uniform vec2 uFog;
 uniform sampler2D tDepth;
+/* Depth texels per output pixel (the depth stays at the render size under temporal upscaling). */
+uniform vec2 uDepthScale;
 varying float vBright;
 varying float vSide;
 varying vec3 vWorld;
 void main() {
-  if (gl_FragCoord.z < texelFetch(tDepth, ivec2(gl_FragCoord.xy), 0).r) discard;
+  if (gl_FragCoord.z < texelFetch(tDepth, ivec2(gl_FragCoord.xy * uDepthScale), 0).r) discard;
   float core = 1.0 - vSide * vSide;
   // Ground fog between the camera and the channel (same exponential layer as the weather composite).
   vec3 d = vWorld - uCamPos;
@@ -95,7 +97,7 @@ export class Lightning {
   private readonly rng: () => number;
   readonly strike: LightningStrike = { ground: new THREE.Vector3(), glow: new THREE.Vector3(), distance: 0 };
 
-  constructor(depth: THREE.IUniform<THREE.Texture | null>, seed = 97531) {
+  constructor(depth: THREE.IUniform<THREE.Texture | null>, depthScale: THREE.IUniform<THREE.Vector2>, seed = 97531) {
     let s = seed >>> 0;
     this.rng = () => {
       s = (s * 1664525 + 1013904223) >>> 0;
@@ -124,6 +126,7 @@ export class Lightning {
         uColor: { value: new THREE.Color() },
         uFog: { value: new THREE.Vector2(0, 70) },
         tDepth: depth,
+        uDepthScale: depthScale,
       },
       transparent: true,
       depthWrite: false,

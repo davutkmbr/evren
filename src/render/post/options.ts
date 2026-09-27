@@ -16,6 +16,11 @@ export interface PostOverrides {
   msaa: number | null;
   /** ?taa=0|1 temporal antialiasing (phase 25; on by default from the medium preset). */
   taa: boolean | null;
+  /**
+   * ?taau=<scale> temporal upscaling (phase 25, stage 5): with TAA on, the scene renders at this fraction of the
+   * dynamic-resolution size per axis and the TAA resolve writes the display size (everything after it runs there).
+   */
+  taau: number | null;
   /** ?scale=0.5..1 pins the render scale (disables dynamic resolution). */
   fixedScale: number | null;
   /** ?dynres=0 disables dynamic resolution (renders at maxRenderScale). */
@@ -44,6 +49,10 @@ function num(params: URLSearchParams, key: string): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+function taauScale(v: number | null): number | null {
+  return v === null || v <= 0 ? null : Math.max(0.25, Math.min(1, v));
+}
+
 export function parsePostOverrides(params: URLSearchParams): PostOverrides {
   const aa = params.get('aa');
   const tm = params.get('tm');
@@ -55,6 +64,7 @@ export function parsePostOverrides(params: URLSearchParams): PostOverrides {
     antialias: aa === 'none' || aa === 'fxaa' || aa === 'smaa' ? aa : null,
     msaa: num(params, 'msaa'),
     taa: params.has('taa') ? params.get('taa') !== '0' : null,
+    taau: taauScale(num(params, 'taau')),
     fixedScale: num(params, 'scale'),
     dynamicResolution: params.get('dynres') !== '0',
     bloom: bloom === null ? null : bloom !== '0',
@@ -72,6 +82,8 @@ export interface ResolvedPostSettings {
   antialias: AntialiasMode;
   /** Temporal antialiasing: replaces MSAA and the spatial AA pass. */
   taa: boolean;
+  /** Temporal upscaling factor (internal / display per axis on top of dynamic resolution), null = off. Needs TAA. */
+  taau: number | null;
   msaaSamples: number;
   bloom: boolean;
   minScale: number;
@@ -92,6 +104,7 @@ export function resolvePostSettings(q: QualitySettings, o: PostOverrides, maxSam
   return {
     antialias: o.antialias ?? (taa ? 'none' : q.antialias),
     taa,
+    taau: taa ? o.taau : null,
     msaaSamples: msaa >= 2 ? msaa : 0,
     bloom: o.bloom ?? q.bloom,
     minScale: q.minRenderScale,

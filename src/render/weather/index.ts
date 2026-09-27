@@ -54,8 +54,8 @@ export function createWeatherSystem(): System {
   let preset: WeatherPreset | 'custom' = 'clear';
   let ctxRef: EngineContext | null = null;
   const pass = new WeatherPass();
-  const rain = new RainStreaks(pass.overlayDepth);
-  const lightning = new Lightning(pass.overlayDepth);
+  const rain = new RainStreaks(pass.overlayDepth, pass.overlayDepthScale);
+  const lightning = new Lightning(pass.overlayDepth, pass.overlayDepthScale);
   pass.overlay.add(rain.mesh, lightning.mesh);
   const thunderOut: number[] = [];
   const tmpColor = new THREE.Color();

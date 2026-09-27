@@ -64,12 +64,14 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform sampler2D tDepth;
+/* Depth texels per output pixel (the depth stays at the render size under temporal upscaling). */
+uniform vec2 uDepthScale;
 varying float vAlpha;
 varying float vSide;
 varying float vAlong;
 void main() {
   // Drawn after the weather composite without a depth buffer: occlusion against the scene depth (reversed-Z).
-  if (gl_FragCoord.z < texelFetch(tDepth, ivec2(gl_FragCoord.xy), 0).r) discard;
+  if (gl_FragCoord.z < texelFetch(tDepth, ivec2(gl_FragCoord.xy * uDepthScale), 0).r) discard;
   float a = vAlpha * uOpacity * (1.0 - vSide * vSide) * (1.0 - 0.6 * vAlong);
   if (a < 0.002) discard;
   gl_FragColor = vec4(uColor, min(a * 3.0, 0.85));
@@ -91,7 +93,7 @@ export class RainStreaks {
   private hasLast = false;
   private time = 0;
 
-  constructor(depth: THREE.IUniform<THREE.Texture | null>) {
+  constructor(depth: THREE.IUniform<THREE.Texture | null>, depthScale: THREE.IUniform<THREE.Vector2>) {
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0], 3));
     g.setAttribute('aCorner', new THREE.Float32BufferAttribute([0, -1, 1, -1, 1, 1, 0, 1], 2));
@@ -120,6 +122,7 @@ export class RainStreaks {
         uColor: { value: new THREE.Color() },
         uOpacity: { value: 1 },
         tDepth: depth,
+        uDepthScale: depthScale,
       },
       transparent: true,
       depthWrite: false,

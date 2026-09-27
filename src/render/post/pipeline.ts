@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { EngineContext, HdrPass, HdrPassInputs, RenderPipeline, TimeState } from '../../core/contracts';
-import { globalUniforms } from '../../core/uniforms';
+import { globalUniforms, textureLodBias } from '../../core/uniforms';
 import { FxaaPass, SmaaPass, smaaAvailable, type AntialiasPass } from './antialias';
 import { BloomChain } from './bloom';
 import { DynamicResolution, type DynamicResolutionInput, type DynamicResolutionStats } from './dynamic-resolution';
@@ -36,6 +36,9 @@ export interface PostDiagnostics {
   renderScale: number;
   internalWidth: number;
   internalHeight: number;
+  /** Size of the passes after the TAA resolve (the display size under temporal upscaling). */
+  postWidth: number;
+  postHeight: number;
   exposure: number;
   exposureEv: number;
   meteredLog: number;
@@ -68,8 +71,12 @@ export class PostPipeline implements RenderPipeline {
   private readonly hdrInputs: HdrPassInputs;
 
   private sceneTarget: THREE.WebGLRenderTarget;
+  /** HDR pass targets at the post size (display size under temporal upscaling, else the internal size). */
   private readonly pingA: THREE.WebGLRenderTarget;
   private readonly pingB: THREE.WebGLRenderTarget;
+  /** Temporal upscaling: targets of the HDR passes before the resolve (clouds), at the internal size. */
+  private readonly lowA: THREE.WebGLRenderTarget;
+  private readonly lowB: THREE.WebGLRenderTarget;
   private readonly ldrA: THREE.WebGLRenderTarget;
   private readonly ldrB: THREE.WebGLRenderTarget;
   private readonly bloom = new BloomChain();
@@ -107,6 +114,10 @@ export class PostPipeline implements RenderPipeline {
   private displayHeight = 1;
   private internalWidth = 1;
   private internalHeight = 1;
+  /** Size of everything after the TAA resolve: the display size under temporal upscaling, else the internal size. */
+  private postWidth = 1;
+  private postHeight = 1;
+  private readonly upscaleSize = { width: 1, height: 1 };
   private msaaSamples = 0;
   private frameStart = 0;
   private lastCpuMs = 0;
@@ -162,6 +173,8 @@ export class PostPipeline implements RenderPipeline {
     this.sceneTarget = createSceneTarget(1, 1, this.msaaSamples);
     this.pingA = createColorTarget(1, 1, { name: 'post.pingA' });
     this.pingB = createColorTarget(1, 1, { name: 'post.pingB' });
+    this.lowA = createColorTarget(1, 1, { name: 'post.lowA' });
+    this.lowB = createColorTarget(1, 1, { name: 'post.lowB' });
     // Display-encoded [0,1] colour (+ luma in alpha for FXAA): 8 bits are enough (the composite dithers).
     this.ldrA = createColorTarget(1, 1, { name: 'post.ldrA', type: THREE.UnsignedByteType });
     this.ldrB = createColorTarget(1, 1, { name: 'post.ldrB', type: THREE.UnsignedByteType });
@@ -230,11 +243,18 @@ export class PostPipeline implements RenderPipeline {
     return this.exposureCtl.exposure;
   }
 
+  /** Temporal upscaling factor in effect (internal / display per axis on top of dynamic resolution), 0 = off. */
+  private get upscaleFactor(): number {
+    return this.taa && this.settings.taau !== null ? this.settings.taau : 0;
+  }
+
   get diagnostics(): PostDiagnostics {
     return {
       renderScale: this.dynres.scale,
       internalWidth: this.internalWidth,
       internalHeight: this.internalHeight,
+      postWidth: this.postWidth,
+      postHeight: this.postHeight,
       exposure: this.exposureCtl.exposure,
       exposureEv: Math.log2(this.exposureCtl.exposure),
       meteredLog: this.exposureCtl.averageLog,
@@ -274,7 +294,7 @@ export class PostPipeline implements RenderPipeline {
     }
     this.passes.push(pass);
     this.passes.sort((a, b) => a.order - b.order);
-    pass.setSize?.(this.internalWidth, this.internalHeight);
+    this.sizePass(pass);
   }
 
   removeHdrPass(pass: HdrPass): void {
@@ -310,9 +330,13 @@ export class PostPipeline implements RenderPipeline {
     if (this.profileMode === 'scene') {
       this.timer.begin();
     }
-    this.taa?.jitter(camera, ctx.time.frame, this.internalWidth, this.internalHeight);
+    const upscaling = this.upscaleFactor > 0;
+    this.taa?.jitter(camera, ctx.time.frame, this.internalWidth, this.internalHeight, upscaling ? this.postWidth / this.internalWidth : 1);
+    // Upscaling: the scene's textures are sampled as at the display size (mip bias log2(render / display)).
+    textureLodBias.value = upscaling ? Math.log2(this.internalHeight / this.postHeight) : 0;
     try {
       renderer.render(ctx.scene, camera);
+      textureLodBias.value = 0;
       if (this.taa && this.velocity && motionRoots.size > 0) {
         this.velocity.render(renderer, camera, this.taa.viewProjection(camera, this.viewProj), this.taa.previousViewProjection, this.internalWidth, this.internalHeight);
       } else if (this.velocity) {
@@ -322,6 +346,7 @@ export class PostPipeline implements RenderPipeline {
         this.velocity.renderReactive(renderer, ctx.scene, camera, this.internalWidth, this.internalHeight);
       }
     } finally {
+      textureLodBias.value = 0;
       this.taa?.unjitter(camera);
     }
     if (this.profileMode === 'scene') {
@@ -387,7 +412,7 @@ export class PostPipeline implements RenderPipeline {
     const renderer = this.renderer;
     const exposure = this.exposureCtl.exposure;
     const bloomOn = this.settings.bloom;
-    this.bloom.downsample(renderer, this.fs, hdr, this.internalWidth, this.internalHeight, exposure / 8, bloomOn ? undefined : METER_MIP);
+    this.bloom.downsample(renderer, this.fs, hdr, this.postWidth, this.postHeight, exposure / 8, bloomOn ? undefined : METER_MIP);
     this.exposureCtl.meter(renderer, this.fs, this.bloom.mips[Math.min(METER_MIP, this.bloom.levels - 1)].texture);
     this.exposureCtl.update(ctx.time.realDt);
     if (bloomOn) {
@@ -409,8 +434,8 @@ export class PostPipeline implements RenderPipeline {
     const f = this.compositeFrame;
     f.hdr = hdr;
     f.depth = depth;
-    f.width = this.internalWidth;
-    f.height = this.internalHeight;
+    f.width = this.postWidth;
+    f.height = this.postHeight;
     f.bloomEnabled = bloomOn;
     f.exposure = this.exposureCtl.exposure * Math.pow(2, UNDERWATER_LOOK.exposureEv * this.composite.underwater);
     f.flareIntensity = this.flare.intensity;
@@ -483,7 +508,9 @@ export class PostPipeline implements RenderPipeline {
 
   private runHdrPasses(ctx: EngineContext, depth: THREE.DepthTexture): THREE.Texture {
     let src: THREE.Texture = this.sceneTarget.texture;
-    let out = this.pingA;
+    const upscaling = this.upscaleFactor > 0;
+    // Under temporal upscaling the passes before the resolve run at the internal size, the ones after at the display size.
+    let out = upscaling ? this.lowA : this.pingA;
     let resolved = !this.taa;
     for (let i = 0; i <= this.passes.length; i++) {
       const pass = this.passes[i];
@@ -492,7 +519,10 @@ export class PostPipeline implements RenderPipeline {
       // that must not leave trails (rain, particles, race rings).
       if (!resolved && (!pass || pass.order > TAA_ORDER)) {
         resolved = true;
-        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight, this.velocity?.active ? this.velocity.target.texture : null, this.velocity?.reactive ? (this.velocity.mask.depthTexture as THREE.Texture) : null);
+        this.upscaleSize.width = this.postWidth;
+        this.upscaleSize.height = this.postHeight;
+        src = this.taa!.resolve(this.renderer, this.fs, src, depth, ctx.camera, this.internalWidth, this.internalHeight, this.velocity?.active ? this.velocity.target.texture : null, this.velocity?.reactive ? (this.velocity.mask.depthTexture as THREE.Texture) : null, upscaling ? this.upscaleSize : null);
+        out = this.pingA;
       }
       if (!pass || !pass.enabled) {
         continue;
@@ -510,7 +540,7 @@ export class PostPipeline implements RenderPipeline {
         continue;
       }
       src = out.texture;
-      out = out === this.pingA ? this.pingB : this.pingA;
+      out = out === this.pingA ? this.pingB : out === this.pingB ? this.pingA : out === this.lowA ? this.lowB : this.lowA;
     }
     this.renderer.autoClear = false;
     return src;
@@ -565,7 +595,7 @@ export class PostPipeline implements RenderPipeline {
     this.antialias?.dispose();
     this.antialias = resolved === 'fxaa' ? new FxaaPass() : resolved === 'smaa' ? new SmaaPass() : null;
     this.antialiasMode = resolved;
-    this.antialias?.setSize(this.internalWidth, this.internalHeight);
+    this.antialias?.setSize(this.postWidth, this.postHeight);
     this.antialias?.warmUp(this.renderer, this.fs, this.ldrA, this.ldrB);
   }
 
@@ -586,26 +616,45 @@ export class PostPipeline implements RenderPipeline {
   }
 
   private applyInternalSize(): void {
-    const scale = this.dynres.scale;
+    const upscale = this.upscaleFactor;
+    const scale = this.dynres.scale * (upscale > 0 ? upscale : 1);
     const w = Math.max(1, Math.round(this.displayWidth * scale));
     const h = Math.max(1, Math.round(this.displayHeight * scale));
+    // Temporal upscaling: the TAA resolve writes the display size and every pass after it runs there.
+    const pw = upscale > 0 ? this.displayWidth : w;
+    const ph = upscale > 0 ? this.displayHeight : h;
     // gl_FragCoord in scene/HdrPass shaders refers to the internal target, not the canvas (the engine writes the
     // display size on resize right before calling setSize; this refines it). See contractRequests.
     (globalUniforms.uResolution.value as THREE.Vector2).set(w, h);
-    if (w === this.internalWidth && h === this.internalHeight) {
+    if (w === this.internalWidth && h === this.internalHeight && pw === this.postWidth && ph === this.postHeight) {
       return;
     }
-    this.internalWidth = w;
-    this.internalHeight = h;
-    this.rebuildSceneTarget();
-    this.pingA.setSize(w, h);
-    this.pingB.setSize(w, h);
-    this.ldrA.setSize(w, h);
-    this.ldrB.setSize(w, h);
-    this.bloom.setSize(w, h);
-    this.antialias?.setSize(w, h);
+    if (w !== this.internalWidth || h !== this.internalHeight) {
+      this.internalWidth = w;
+      this.internalHeight = h;
+      this.rebuildSceneTarget();
+    }
+    this.postWidth = pw;
+    this.postHeight = ph;
+    this.pingA.setSize(pw, ph);
+    this.pingB.setSize(pw, ph);
+    this.lowA.setSize(upscale > 0 ? w : 1, upscale > 0 ? h : 1);
+    this.lowB.setSize(upscale > 0 ? w : 1, upscale > 0 ? h : 1);
+    this.ldrA.setSize(pw, ph);
+    this.ldrB.setSize(pw, ph);
+    this.bloom.setSize(pw, ph);
+    this.antialias?.setSize(pw, ph);
     for (const pass of this.passes) {
-      pass.setSize?.(w, h);
+      this.sizePass(pass);
+    }
+  }
+
+  /** Passes before the TAA resolve run at the internal size, the ones after it at the post size. */
+  private sizePass(pass: HdrPass): void {
+    if (this.taa && pass.order <= TAA_ORDER) {
+      pass.setSize?.(this.internalWidth, this.internalHeight);
+    } else {
+      pass.setSize?.(this.postWidth, this.postHeight);
     }
   }
 
@@ -618,6 +667,8 @@ export class PostPipeline implements RenderPipeline {
     this.sceneTarget.dispose();
     this.pingA.dispose();
     this.pingB.dispose();
+    this.lowA.dispose();
+    this.lowB.dispose();
     this.ldrA.dispose();
     this.ldrB.dispose();
     this.bloom.dispose();

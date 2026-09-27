@@ -226,6 +226,8 @@ export class WeatherPass implements HdrPass {
    */
   readonly overlay = new THREE.Scene();
   readonly overlayDepth: THREE.IUniform<THREE.Texture | null> = { value: null };
+  /** Depth texels per output pixel: 1, or render / display size under temporal upscaling. */
+  readonly overlayDepthScale: THREE.IUniform<THREE.Vector2> = { value: new THREE.Vector2(1, 1) };
   /** Set by the system when rain or a bolt is visible (keeps the pass running for the overlay). */
   overlayActive = false;
 
@@ -322,6 +324,8 @@ export class WeatherPass implements HdrPass {
 
     if (this.overlayActive) {
       this.overlayDepth.value = inputs.depth;
+      const img = inputs.depth.image as { width: number; height: number };
+      this.overlayDepthScale.value.set(img.width / output.width, img.height / output.height);
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
       renderer.setRenderTarget(output);
