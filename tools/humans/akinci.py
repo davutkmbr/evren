@@ -523,12 +523,24 @@ def build(rig, body, colliders):
     return join_by_material(parts)
 
 
+SLOTS = (("head", ("helmet", "sorguc", "aventail")), ("wings", ("wing",)), ("armour", ("mail_vest", "mirror")),
+         ("arms", ("vambraces",)))
+
+
+def slot_of(name):
+    """Customisation slot of a part (the game shows or hides whole slots): head gear, wings, armour, arms, base."""
+    for slot, prefixes in SLOTS:
+        if name.startswith(prefixes):
+            return slot
+    return "base"
+
+
 def join_by_material(parts):
-    """One object per material (one draw call each in the game): parts sharing a material are joined."""
+    """One object per slot and material (a draw call each in the game, and slots stay separable)."""
     groups = {}
     for p in parts:
-        key = p.data.materials[0].name if p.data.materials else ""
-        groups.setdefault(key, []).append(p)
+        mat = p.data.materials[0].name if p.data.materials else ""
+        groups.setdefault((slot_of(p.name), mat), []).append(p)
     out = []
     for key, objs in groups.items():
         if len(objs) > 1:
@@ -537,7 +549,8 @@ def join_by_material(parts):
                 o.select_set(True)
             bpy.context.view_layer.objects.active = objs[0]
             bpy.ops.object.join()
-        objs[0].name = key.replace("rider_", "outfit_") or "outfit"
+        slot, mat = key
+        objs[0].name = f"outfit_{slot}_{mat.replace('rider_', '')}"
         out.append(objs[0])
     return out
 

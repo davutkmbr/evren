@@ -64,10 +64,17 @@ def asset(subdir, fname, atype):
         raise RuntimeError(f"asset not found: {subdir}/{fname}")
     return HumanService.add_mhclo_asset(path, basemesh, asset_type=atype, subdiv_levels=0, material_type="MAKESKIN")
 
-HAIR = os.environ.get("RIDER_HAIR", "")
+# Hair styles for customisation (one shows at a time, only without headwear): the Turkic braid, short, a topknot.
+HAIRS = [h for h in os.environ.get("RIDER_HAIR", "short02,braid01,ponytail01").split(",") if h]
 for sub, f, t in [("eyes", "high-poly.mhclo", "Eyes"), ("eyebrows", "eyebrow008.mhclo", "Eyebrows"), ("eyelashes", "eyelashes01.mhclo", "Eyelashes"),
-                  ("teeth", "teeth_base.mhclo", "Teeth"), ("tongue", "tongue01.mhclo", "Tongue")] + ([("hair", HAIR + ".mhclo", "Hair")] if HAIR else []):
+                  ("teeth", "teeth_base.mhclo", "Teeth"), ("tongue", "tongue01.mhclo", "Tongue")]:
     asset(sub, f, t)
+for h in HAIRS:
+    before = set(bpy.data.objects)
+    asset("hair", h + ".mhclo", "Hair")
+    for o in set(bpy.data.objects) - before:
+        if o.type == "MESH":
+            o.name = "hair_" + h
 skin = AssetService.find_asset_absolute_path("middleage_caucasian_male.mhmat", asset_subdir="skins")
 HumanService.set_character_skin(skin, basemesh, skin_type="MAKESKIN")
 
@@ -132,6 +139,8 @@ def preview(tag_prefix=""):
 # riding, gliding, walking and running clips.
 import face  # noqa: E402
 FACE_KEYS = face.load_units(basemesh, TargetService) if os.environ.get("RIDER_FACE", "1") == "1" else []
+if FACE_KEYS:
+    FACE_KEYS += face.add_archetypes(basemesh, TargetService, targets)
 print("FACE UNITS", len(FACE_KEYS))
 for o in bpy.data.objects:
     if o.type == "MESH":

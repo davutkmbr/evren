@@ -168,3 +168,55 @@ def add_eye_bones(rig, eyes):
         g = eyes.vertex_groups.new(name=f"mixamorig:{s}Eye")
         g.add([i for i, _ in pts], 1.0, "REPLACE")
     return list(centres)
+
+
+# Face archetypes (runtime morphs): front-of-face features only, so the helmet, hair and eyeballs still fit.
+ARCHETYPES = {
+    "face_weathered": [("cheek/l-cheek-inner-decr", 0.55), ("cheek/r-cheek-inner-decr", 0.55), ("eyes/l-eye-bag-incr", 0.7),
+                       ("eyes/r-eye-bag-incr", 0.7), ("eyebrows/eyebrows-trans-down", 0.3), ("nose/nose-hump-incr", 0.45),
+                       ("chin/chin-prominent-incr", 0.2), ("mouth/mouth-scale-horiz-decr", 0.15)],
+    "face_young": [("cheek/l-cheek-volume-incr", 0.45), ("cheek/r-cheek-volume-incr", 0.45), ("nose/nose-scale-vert-decr", 0.25),
+                   ("chin/chin-prominent-decr", 0.25), ("eyes/l-eye-bag-decr", 0.6), ("eyes/r-eye-bag-decr", 0.6),
+                   ("nose/nose-hump-decr", 0.3)],
+    "face_broad": [("cheek/l-cheek-bones-incr", 0.5), ("cheek/r-cheek-bones-incr", 0.5), ("nose/nose-flaring-incr", 0.5),
+                   ("nose/nose-scale-horiz-incr", 0.35), ("chin/chin-width-incr", 0.5), ("mouth/mouth-scale-horiz-incr", 0.3)],
+    "face_sharp": [("nose/nose-hump-incr", 0.7), ("nose/nose-point-down", 0.35), ("nose/nose-scale-vert-incr", 0.25),
+                   ("cheek/l-cheek-bones-incr", 0.35), ("cheek/r-cheek-bones-incr", 0.35), ("eyebrows/eyebrows-angle-down", 0.35),
+                   ("chin/chin-height-incr", 0.25)],
+}
+
+
+# The listed weights read as nuance at game distance; scaled so each archetype is recognisable.
+ARCHETYPE_STRENGTH = 1.6
+
+
+def add_archetypes(basemesh, target_service, targets_dir):
+    """Each archetype becomes one shape key (value 0): the weighted sum of its targets (loaded, combined, removed)."""
+    made = []
+    me = basemesh.data
+    for name, parts in ARCHETYPES.items():
+        loaded = []
+        for rel, w in parts:
+            path = os.path.join(targets_dir, rel + ".target.gz")
+            if not os.path.exists(path):
+                print("ARCHETYPE TARGET MISSING", rel)
+                continue
+            tmp = f"_arch_{len(loaded)}"
+            target_service.load_target(basemesh, path, weight=0.0, name=tmp)
+            loaded.append((tmp, w * ARCHETYPE_STRENGTH))
+        if not loaded:
+            continue
+        kb = me.shape_keys.key_blocks
+        basis = kb[0]
+        n = len(me.vertices)
+        key = basemesh.shape_key_add(name=name, from_mix=False)
+        for i in range(n):
+            d = Vector()
+            for tmp, w in loaded:
+                d += (kb[tmp].data[i].co - basis.data[i].co) * w
+            key.data[i].co = basis.data[i].co + d
+        key.value = 0.0
+        for tmp, _ in loaded:
+            basemesh.shape_key_remove(kb[tmp])
+        made.append(name)
+    return made

@@ -8,7 +8,8 @@
  *   ?script=walk|run|runstop|jump|runjump|crouch|circle|turn|glide (glide: with ?alt=m; anything else stands, and
  *   idles) with
  *   &at=<s> to hold the simulation at that time (deterministic screenshots of transitions).
- * window.__human = { model, controller }.
+ *   ?look=<JSON RiderLook fields>  ?palette=akinci|sipahi|deli|yeniceri
+ * window.__human = { model, controller, look(fields) }.
  */
 import * as THREE from 'three';
 import { startSandbox } from '../src/core/sandbox';
@@ -20,6 +21,7 @@ import { SHARED_GLSL } from '../src/render/shaders';
 import { registerGlobalUniform } from '../src/core/uniforms';
 import { loadHumanModel, type HumanRider } from '../src/dragon/model/rider/human';
 import { LocomotionController, type LocomotionInput } from '../src/dragon/model/rider/locomotion/controller';
+import { DEFAULT_LOOK, PALETTES, applyLook, type RiderLook } from '../src/dragon/model/rider/look';
 
 const params = new URLSearchParams(window.location.search);
 const url = params.get('url') ?? '/.scratch/rider.glb';
@@ -52,7 +54,7 @@ const VIEWS: Record<string, ViewDef> = {
   side: { pos: [4.2, 1.0, 0], target: [0, 0.9, 0] },
   front: { pos: [0, 1.1, 4.2], target: [0, 0.9, 0] },
   back: { pos: [0, 1.3, -4.2], target: [0, 0.9, 0] },
-  q: { pos: [3.0, 1.6, 3.0], target: [0, 0.9, 0] },
+  q: { pos: [2.2, 1.55, 2.6], target: [0, 1.0, 0] },
   close: { pos: [0.35, 1.72, 0.85], target: [0, 1.66, 0] },
   feet: { pos: [1.6, 0.35, 0.6], target: [0, 0.15, 0] },
   top: { pos: [0.01, 5, 0], target: [0, 0, 0] },
@@ -241,7 +243,13 @@ const bench: System = {
       }
       m.mixer.update(0);
       m.wind.captureRest();
-      (window as unknown as { __human: unknown }).__human = { model: m, controller };
+      // ?look=<JSON RiderLook fields>, ?palette=akinci|sipahi|deli|yeniceri
+      const look: RiderLook = { ...DEFAULT_LOOK, ...(params.has('look') ? (JSON.parse(params.get('look')!) as Partial<RiderLook>) : {}) };
+      if (params.has('palette')) {
+        look.palette = PALETTES[params.get('palette')!] ?? look.palette;
+      }
+      applyLook(m, look);
+      (window as unknown as { __human: unknown }).__human = { model: m, controller, look: (l: Partial<RiderLook>) => applyLook(m, { ...look, ...l }) };
       loading = 0;
     });
   },

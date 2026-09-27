@@ -27,6 +27,8 @@ export interface HumanRider {
   /** Blinks, gaze and expressions. */
   face: FaceLife;
   wings: Wings;
+  /** The game's garment materials by id (primary, secondary, accent, leather, darkLeather, mail, iron, metal, ...). */
+  garments?: Map<string, THREE.MeshPhysicalMaterial[]>;
 }
 
 let gltfLoader: GLTFLoader | undefined;
@@ -302,6 +304,7 @@ normal = normalize(normal + mat3(vGdRx, vGdRy, vGdRz) * gdNormalDelta() * uGdBum
 /** Swaps the file's flat garment materials for the detailed game ones (by name). */
 export function applyGarmentMaterials(rider: HumanRider): void {
   const cache = new Map<string, THREE.Material>();
+  rider.garments = new Map();
   for (const mesh of rider.meshes) {
     const src = mesh.material as THREE.MeshStandardMaterial;
     if (!src || Array.isArray(src) || !src.name.startsWith('rider_')) {
@@ -313,6 +316,10 @@ export function applyGarmentMaterials(rider: HumanRider): void {
     if (!m) {
       m = garmentMaterial(src, ao);
       cache.set(key, m);
+      const id = src.name.replace(/^rider_/, '');
+      const list = rider.garments!.get(id) ?? [];
+      list.push(m as THREE.MeshPhysicalMaterial);
+      rider.garments!.set(id, list);
     }
     mesh.material = m;
   }
