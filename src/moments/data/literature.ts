@@ -27,7 +27,15 @@ import {
   SINAN_KITABE_SOURCES,
   YAGMUR_SOURCES,
 } from './sources';
-import { MUSIC_FELEK_BANA, MUSIC_HUSEYNI_TAKSIM, MUSIC_HUZZAM_TAKSIM, MUSIC_KAGITHANE, MUSIC_KATIBIM_SAFIYE_AYLA } from './music-sources';
+import {
+  MUSIC_FELEK_BANA,
+  MUSIC_HUSEYNI_TAKSIM,
+  MUSIC_HUZZAM_TAKSIM,
+  MUSIC_ISFAHAN_GAZEL,
+  MUSIC_KAGITHANE,
+  MUSIC_KATIBIM_SAFIYE_AYLA,
+  MUSIC_RESADIYE,
+} from './music-sources';
 
 /** Backlog item of the literary moments in .docs/planning/19-moments.md. */
 const BACKLOG = 16;
@@ -558,6 +566,8 @@ export const kuyruklu: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Reşadiye Marşı, Odeon 54745 (1910): the new Sultan's march in the comet year.
+    musicId: 'resadiye-marsi-1910',
     // A horn gramophone at a window of the writer's house on Heybeliada; a quiet island night carries it far.
     musicSource: {
       kind: 'gramophone',
@@ -600,7 +610,7 @@ export const kuyruklu: Moment = {
     original('card', 'TDK edition, introduction (serialised in Sabah, 12 Nisan – 26 Mayıs 1326/1910); Halley returns in 2061'),
   ],
   needs: [],
-  sources: KUYRUKLU_SOURCES,
+  sources: [...KUYRUKLU_SOURCES, MUSIC_RESADIYE],
   notes: 'The novel is set in an İstanbul neighbourhood, not on the island; the island is where the author lived and is remembered.',
 };
 
@@ -683,6 +693,8 @@ export const deAmicis: Moment = {
     repeat: { kind: 'once-per-session' },
   },
   content: {
+    // Isfahan gazel, Hâfız Osman with Tanburi Cemil Bey (c. 1912): the city's voice as the fog lifts.
+    musicId: 'isfahan-gazeli-cemil-bey',
     musicSource: {
       kind: 'memory',
       from: { lat: 41.01243, lon: 28.98366, height: 40, note: 'Sarayburnu and the palace, where the city opens up as the fog lifts', nearLandmark: 'topkapi-sarayi' },
@@ -721,7 +733,7 @@ export const deAmicis: Moment = {
     original('card', 'De Amicis travelled to İstanbul in 1874; Costantinopoli appeared in 1877'),
   ],
   needs: [],
-  sources: DE_AMICIS_SOURCES,
+  sources: [...DE_AMICIS_SOURCES, MUSIC_ISFAHAN_GAZEL],
   notes:
     'Pairs with the foggy mornings: the sea fog forms before dawn and lifts from 08:30 to 11:30, so the lines can play ' +
     'as the layer thins. A runtime touch for later: thin the fog while the lines play.',

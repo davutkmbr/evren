@@ -337,26 +337,12 @@ that folder at `audio/music/private/` in dev and copies it into builds, and the 
 | --- | --- | --- | --- |
 | `kagithane-semaisi-1916` | Nedim, the storks | `?music=debug&moment=nedim-bu-sehr-i-sitanbul`, `?music=debug&moment=storks-bosphorus-migration` | denoised |
 | `felek-bana-1916` | Karagöz (street gramophone) | `?music=debug&moment=karagoz-sehzadebasi` | denoised |
+| `isfahan-gazeli-cemil-bey` | De Amicis (memory from Sarayburnu) | `?music=debug&moment=de-amicis-sis-kalkinca` | raw (denoising gained 0.4 dB SNR and dulled the voice) |
+| `resadiye-marsi-1910` | Kuyrukluyıldız (gramophone at the writer's house) | `?music=debug&moment=huseyin-rahmi-kuyrukluyildiz` | raw (the transfer is already clean) |
 | `aya-yorgi-apolitikiyonu-nafpliotis` | Aya Yorgi (draft: waits for its model) | console: `__evrenMusic.moment({ musicId: 'aya-yorgi-apolitikiyonu-nafpliotis' })` | raw (the transfer is already clean) |
 | `katibim-safiye-ayla-1949` (private) | Kâtibim (coffeehouse venue) | `?music=debug&moment=katibim-uskudar-yagmur` | raw |
 | `huseyni-taksim-hafiz-kemal` (private) | Sinan (draft: text approval) | console: `__evrenMusic.moment({ musicId: 'huseyni-taksim-hafiz-kemal' })` | denoised |
 | `huzzam-taksim-resad-bey` (private) | Haşim (draft: text approval), Kız Kulesi (draft: model) | console: `__evrenMusic.moment({ musicId: 'huzzam-taksim-resad-bey' })` | raw |
-
-**Pending (Commons originals not fetched yet):** the Isfahan gazel with Tanburi Cemil Bey (`isfahan-gazeli-cemil-bey`,
-De Amicis) and the Reşadiye Marşı (`resadiye-marsi-1910`, Kuyrukluyıldız). upload.wikimedia.org rate-limited the build
-container, so their `approved.json` files say "sha256 pending" and the two moments keep the mood choice (no `musicId`).
-On a machine that can reach Commons:
-
-```sh
-node scripts/data/fetch-assets.mjs --kind=recording --no-docs --write-sha   # originals + sha256 into approved.json
-FFMPEG=/path/to/ffmpeg python3 scripts/audio/prep-moment-music.py --id=isfahan-gazeli-cemil-bey,resadiye-marsi-1910
-python3 scripts/data/archive-78rpm-doc.py
-```
-
-`prep-moment-music.py` runs the `scripts/audio/restore78.py` chain and writes both variants and the manifest entries.
-Then set `musicId` on `de-amicis-sis-kalkinca` and `huseyin-rahmi-kuyrukluyildiz`, add `MUSIC_ISFAHAN_GAZEL` /
-`MUSIC_RESADIYE` (`src/moments/data/music-sources.ts`) to their `sources`, add their rows to
-`public/audio/music/LICENSES.md` and run the music check.
 
 A draft moment that cannot play yet cannot be forced with `?moment=` either; the console call plays its piece as a centred memory (`.endMoment()` stops it; put `raw` or `denoised` in `?music=` first). Credits: every piece carries `credit.attribution` (performer,
 label, year, archive), and each moment lists its recording in the source sheet ("Kaynağa bak" → "Müzik: …",
