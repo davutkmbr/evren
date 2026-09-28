@@ -58,6 +58,24 @@ const _m = new THREE.Matrix4();
 const _v4 = new THREE.Vector4();
 const _sphere = new THREE.Sphere();
 
+const modelCache = new Map<number, THREE.BufferGeometry[]>();
+
+/**
+ * The LOD geometries of one vehicle model, built once per session (10–12 ms per model) and shared by every region's
+ * VehicleRenderer: they are only CPU sources copied into the batches (BatchedMesh.addGeometry), never drawn or uploaded.
+ */
+export function vehicleGeometries(model: number): THREE.BufferGeometry[] {
+  let lods = modelCache.get(model);
+  if (!lods) {
+    lods = [];
+    for (let l = 0; l < LOD_COUNT; l++) {
+      lods.push(buildModelGeometry(model, l));
+    }
+    modelCache.set(model, lods);
+  }
+  return lods;
+}
+
 export class VehicleRenderer {
   /** Cars cast shadows (off from high up, where a car is smaller than a shadow texel). */
   setShadows(on: boolean): void {
@@ -88,14 +106,16 @@ export class VehicleRenderer {
     parkedRecords: Float32Array | null,
     parkedStride: number,
     private readonly quality: number,
+    /** Every model's LOD geometries (vehicleGeometries()), built here when not given. */
+    geometries?: THREE.BufferGeometry[][],
   ) {
     this.group.name = 'osm-traffic';
-    for (let m = 0; m < MODEL_COUNT; m++) {
-      const lods: THREE.BufferGeometry[] = [];
-      for (let l = 0; l < LOD_COUNT; l++) {
-        lods.push(buildModelGeometry(m, l));
+    if (geometries) {
+      this.geometries.push(...geometries);
+    } else {
+      for (let m = 0; m < MODEL_COUNT; m++) {
+        this.geometries.push(vehicleGeometries(m));
       }
-      this.geometries.push(lods);
     }
     this.moving = this.createBatch('osm-traffic-moving', movingCapacity, Array.from({ length: MODEL_COUNT }, (_, i) => i));
     if (parkedRecords && parkedRecords.length) {
@@ -443,11 +463,7 @@ export class VehicleRenderer {
   }
 
   dispose(): void {
-    for (const lods of this.geometries) {
-      for (const g of lods) {
-        g.dispose();
-      }
-    }
+    // this.geometries are the shared model sources (vehicleGeometries()).
     this.moving.mesh.dispose();
     this.parked?.mesh.dispose();
     this.sprites.geometry.dispose();

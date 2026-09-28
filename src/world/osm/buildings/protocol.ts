@@ -50,6 +50,13 @@ export function encodePrism(out: number[], bottom: number, top: number, rings: r
 
 /** Reads the prism records written by encodePrism. */
 export function decodePrisms(data: Float32Array, visit: (bottom: number, top: number, rings: Float32Array[], index: number) => void): void {
+  for (const p of prisms(data)) {
+    visit(p.bottom, p.top, p.rings, p.index);
+  }
+}
+
+/** The prism records written by encodePrism, one at a time (callers may pause between them). */
+export function* prisms(data: Float32Array): Generator<{ bottom: number; top: number; rings: Float32Array[]; index: number }> {
   let k = 0;
   let index = 0;
   while (k < data.length) {
@@ -63,6 +70,6 @@ export function decodePrisms(data: Float32Array, visit: (bottom: number, top: nu
       rings.push(data.slice(k, k + n * 2));
       k += n * 2;
     }
-    visit(bottom, top, rings, index++);
+    yield { bottom, top, rings, index: index++ };
   }
 }

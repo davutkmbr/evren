@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { OsmLayer } from '../types';
 import { disposeGeometries } from './three';
+import { queueOsmJob } from './jobs';
 
 export abstract class LayerBase implements OsmLayer {
   readonly group = new THREE.Group();
@@ -32,6 +33,16 @@ export abstract class LayerBase implements OsmLayer {
       .finally(() => {
         this.jobs--;
       });
+  }
+
+  /**
+   * Runs `steps` (a generator yielding between pieces of work) through the time-sliced OSM job queue (jobs.ts); the
+   * layer is pending until it ends. Dropped unfinished when the layer is disposed.
+   */
+  protected sliced(label: string, steps: Iterator<unknown>): Promise<void> {
+    const job = queueOsmJob(`${this.name}:${label}`, steps);
+    this.onDispose(job.cancel);
+    return job.done;
   }
 
   /** Runs `fn` on dispose (reverse registration order), e.g. material / collider / worker cleanup. */
