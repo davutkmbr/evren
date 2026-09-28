@@ -1,0 +1,252 @@
+# Phase 28 — Frame budget on ultra
+
+Milestone: C · Performance · Effort: measurement done, fixes M–L · Target: **ultra ≥ 60 fps at 1600x900 on the
+reference machine (M2 Max), p99 frame ≤ 20 ms, no frame over 33 ms outside the first second after a teleport.**
+
+Measured 2026-09-28 on origin/main `c9ca265` (TAA on by default, PR #109). Measurement only: no game code changed.
+
+## Summary
+
+- **Ultra is GPU-bound everywhere.** Main-thread CPU is 11–15 ms per frame, the frame is 27–40 ms. Chrome's GPU
+  process main thread is 90–94 % busy (≈ 56 % of it decoding WebGL commands, the rest waiting on Metal).
+- **Where the GPU time goes** (per frame, serialised timing, see Method): the planar water mirror 6–12 ms, the OSM
+  regions 5–13 ms (their buildings alone 5–9 ms), key-light shadows 2.5–7.5 ms, the procedural city 2–5 ms, clouds
+  1–2.5 ms. Pixel-proportional cost at 1600x900 is only 5–9 ms: resolution is not the main lever.
+- **Headroom is real:** `wrefl=sky&osmregions=0` alone gives a locked 60 fps (median 16.7 ms, p99 17.8 ms) at Galata
+  and at Kadıköy. The mirror and the regions have to get cheaper, not go away.
+- **The stutter is not GC or CPU spikes.** 88–100 % of the long frames are one synchronous GPU round trip: the
+  auto-exposure readback (`AsyncReadback.poll` → `getBufferSubData`, called from `PostPipeline.onFrameStart`) waits
+  48–60 ms (up to 99 ms near Kadıköy) for the GPU process to drain its backlog. It only hurts because the GPU is over
+  budget: under budget (the combo above) the same code runs at p99 17.8 ms. Streaming adds shader links on first use
+  (23–77 ms), worker-result handlers (91–99 ms) and unattributed JS frame bodies (~100 ms).
+- **Retina warning:** ultra allows `maxPixelRatio: 2`. At DPR 2 the same views cost **+17–20 ms** per frame
+  (measured with a forced 2x render scale). If the owner plays in a Retina window, this is the first fix.
+
+## Method
+
+Everything ran through `scripts/snap.mjs --batch` (GPU queue) against the shared dev server, serving this checkout's
+`src/` through the worktree shim page (`.shots/wt/index.html`, as `scripts/flicker-audit.mjs --worktree` does).
+Headless Chrome, Metal ANGLE, 1600x900, DPR 1, `q=ultra&dynres=0`, uncapped (`fps=0`). The machine was shared with
+other agents' GPU jobs, so every number carries noise: **±1.5 ms on serialised timings** (repeated baselines inside
+one page agree within that), ±4 ms on pipelined medians.
+
+- **Natural run** (flying, HUD on, `autostart=1`): per-frame instrumentation wraps every system's `update` /
+  `preRender` and `PostPipeline.render`; 8 s window, plus `--perf 8000` and a Chrome trace (renderer main thread,
+  GPU process, V8 GC) over the window. Kadıköy: `__evren.shotLatLon(40.990, 29.026, 150, 0, -15, 60)`, 30 s of
+  streaming inside the trace, then the window.
+- **Bisection** (frozen scene, `freeze=1&nohud=1`): the engine loop is stopped and each frame is run as
+  `engine.frame()` followed by a 1-pixel `readPixels` of the canvas, which blocks until the GPU finished that frame.
+  "Serialised ms" = CPU + GPU of one frame without pipelining (the pipelined frame is shorter, roughly 0.6–0.75x).
+  Deltas against the baseline are the cost of a feature. The GPU timer (`?postprof`) is not usable here: ANGLE's
+  Metal backend sums overlapping command buffers (see `gpu-timer.ts`).
+- In-page toggles: `castShadow` on the key light, `setActiveCascades`, the shadow tile size, HDR passes pinned off,
+  bloom off, `setFixedScale`, and hiding scene groups only during `renderer.render` (every pass: shadow, mirror,
+  main). URL toggles that only apply at init (`wrefl=sky`, `osmregions=0`, `taa=0`, `q=high`) got a page each.
+
+The scratch harness (in-page helpers, batch generator, trace analysers) is not committed; it is small enough to
+rebuild from this description, and a future `scripts/frame-budget.mjs` should do the same with the per-frame
+system breakdown built in.
+
+## 1. Frame breakdown on ultra
+
+### Natural run (flying, `--perf 8000` and the 8 s instrumented window)
+
+| View | perf fps | frame median | p99 | max | frames > 50 ms | main-thread CPU median / p99 | draws | triangles | heap |
+|---|---|---|---|---|---|---|---|---|---|
+| `galata&t=15` | 33.3 | 32.2 ms | 67.8 ms | 73.7 ms | 24 | 15.2 / 22.3 ms | 1012 | 21.8 M | 2.5 GB |
+| `bogaz&t=21` | 33.2 | 29.5 ms | 87.4 ms | 108 ms | 27 | 12.3 / 47.0 ms | 867 | 16.4 M | 1.8 GB |
+| `sultanahmet&t=16` | 35.9 | 27.4 ms | 64.7 ms | 70.8 ms | 33 | 12.7 / 18.0 ms | 1179 | 20.3 M | 2.1 GB |
+| Kadıköy 150 m | 27.3 | 23.1 ms | 93.9 ms | 111 ms | 66 | 11.2 / 13.0 ms | 1072 | 29.4 M | 2.0 GB |
+
+Frame intervals are bimodal: most frames take 16.7–33 ms, every 3rd–5th frame takes 50–70 ms (section 3). Draw calls
+and triangles include the shadow cascades, the water mirror and the main view (the frozen views below read 1214 draws
+/ 26.0 M triangles at Galata).
+
+### Main-thread CPU per system (mean / p99 / max, ms)
+
+| System | Galata | Boğaz | Sultanahmet | Kadıköy |
+|---|---|---|---|---|
+| `PostPipeline.render` (scene + post submission) | 7.9 / 11.7 / 13.1 | 7.3 / 36.7 / 69 | 6.8 / 8.8 / 37.6 | 5.5 / 6.7 / 7.0 |
+| `water:preRender` (mirror render submission) | 3.2 / 4.4 / 4.6 | 2.8 / 4.2 / 14.6 | 2.7 / 3.5 / 3.6 | 2.5 / 3.3 / 3.4 |
+| `osm` | 2.0 / 3.1 / 9.7 | 1.1 / 1.9 / 3.7 | 1.4 / 2.2 / 5.3 | 1.3 / 1.7 / 1.9 |
+| `life` | 0.8 / 1.4 / 2.1 | 0.8 / 1.3 / 1.6 | 0.6 / 1.0 / 1.2 | 0.4 / 0.8 / 1.3 |
+| `dragon-model` | 0.6 / 1.0 / 1.0 | 0.5 / 0.7 / 1.1 | 0.5 / 0.8 / 1.1 | 0.4 / 0.6 / 0.6 |
+| everything else | < 0.2 each | < 0.3 each (`flight` max 4.5) | < 0.2 each (`moments` max 8.3) | < 0.2 each |
+
+The p99/max spikes in `PostPipeline.render` (37–69 ms) are shader programs linked on first use (section 3).
+
+### CPU vs GPU (Chrome trace, 13 s windows)
+
+| View | renderer main busy | of which blocked in GPU round trips | GPU-process main busy | GPU-process `WebGL` decode | GC (minor / major, max) |
+|---|---|---|---|---|---|
+| Galata | 99 % | ≈ 2.2 s in 36 long tasks | 93 % | 7.6 s (59 %) | 24 × ≤ 0.9 ms / none |
+| Boğaz | 99 % | ≈ 2.8 s in 48 long tasks | 94 % | 7.2 s (54 %) | 27 × ≤ 1.2 ms / 1 × 4.1 ms |
+| Sultanahmet | 99 % | ≈ 2.5 s in 44 long tasks | 90 % | 7.2 s (54 %) | 25 × ≤ 0.7 ms / 1 × 4.0 ms |
+| Kadıköy (44 s incl. streaming) | 99 % | ≈ 17 s in 253 long tasks | 91 % | 22.6 s (51 %) | 94 × ≤ 3.7 ms / 4 × ≤ 4.8 ms |
+
+The renderer is never the bottleneck: its own work is 11–15 ms, the rest of each frame is waiting. The GPU process
+spends more than half its time translating WebGL commands for ANGLE, so **draw calls and state changes cost GPU-process
+time on top of GPU execution**: fewer draws helps even where triangles do not change.
+
+## 2. GPU bisection
+
+Serialised frame, frozen scene. Baselines (mean of 2–3 in-page repeats): Galata 38.8 ms, Boğaz 33.3 ms, Sultanahmet
+39.1 ms, Kadıköy 41.8 ms; CPU part ≈ 11 ms each. **Saved ms** (positive = cheaper); `≈0` = inside the ±1.5 ms noise.
+
+| Toggle | Galata | Boğaz | Sultanahmet | Kadıköy | Notes |
+|---|---|---|---|---|---|
+| `wrefl=sky` (no planar mirror) | **11.7** | **7.2** | **6.4** | **7.1** | also −1.3…−5.3 ms main-thread CPU, −180…−220 draws |
+| `osmregions=0` | **9.4** | **5.3** | **9.4** | **12.9** | −300…−400 draws, −6…−16 M tris, −0.4…−1.1 GB heap |
+| hide `osm` (regions + slice) | 10.1 | 5.0 | 11.1 | 15.0 | |
+| `shadows=0` | **6.3** | 2.5 | **7.5** | **7.4** | −420…−480 draws, −3…−8 M tris |
+| shadow cascades 4 → 3 | ≈0 (1.2) | ≈0 | ≈0 | ≈0 | only −50 draws |
+| shadow cascades 4 → 2 | ≈0 | ≈0 | ≈0 | ≈0 | |
+| shadow tile 2048 → 1024 | ≈0 | ≈0 | ≈0 | ≈0 | fill is not the shadow cost |
+| clouds pass off | 1.7 | 2.4 | 2.1 | 1.1 | ultra: half resolution, 112 steps |
+| weather pass off | ≈0 | ≈0 | ≈0 | ≈0 | |
+| `bloom=0` | ≈0 | ≈0 | ≈0 | ≈0 | |
+| `taa=0` (ultra then uses MSAA 4x + SMAA) | −0.8 | −2.2 | −4.8 | −3.3 | TAA is already cheaper than the old AA |
+| render scale 0.85 | 2.7 | ≈0 | 2.8 | 1.6 | |
+| render scale 0.7 | 4.0 | 3.6 | 4.7 | 2.3 | pixel cost at 1.0 ≈ 5–9 ms |
+| render scale 2 (= DPR 2, Retina) | **−16.7** | **−19.5** | **−18.6** | **−17.7** | cost added |
+| `q=high` instead of ultra | 12.1 | 5.9 | 6.0 | 7.7 | |
+| hide procedural `city` | 2.4 | 5.2 | 5.5 | 5.1 | ~170 tiles, each ≤ 1.6 ms |
+| hide terrain | 1.7 | 2.8 | 3.2 | 3.6 | |
+| hide water surface (mirror still rendered) | ≈0 | 3.9 | 2.9 | 2.7 | |
+| hide dragon + rider | ≈0 | 3.5 | 1.5 | 2.4 | 38 meshes, ~220 draws with shadows |
+| hide `life` | ≈0 | 3.3 | ≈0 | 2.0 | |
+| hide heritage / walls / mosques / structures | ≤ 1.9 each | | | | |
+| **`wrefl=sky` + `osmregions=0`** | **17.6** | — | — | **23.6** | pipelined: **60.0 fps, median 16.8, p99 17.8 ms** at both |
+
+### Inside the OSM regions and the mirror (serialised, saved ms)
+
+| Toggle | Galata | Kadıköy |
+|---|---|---|
+| hide the region the camera is in (`osm-galata` / `osm-kadikoy-4`, 106 / 264 meshes) | 4.4 | **10.0** |
+| hide all region **buildings** (243 / 260 meshes) | **5.4** | **8.7** |
+| … buildings not casting shadows (1712 / 1976 casters) | 0.9 | 1.5 |
+| … buildings not in the mirror | 2.4 | 2.7 |
+| hide all region **details** (props, trees, kits) | 2.2 | 3.2 |
+| hide all region **streets** | 1.8 | 2.6 |
+| hide region traffic | ≈0 | ≈0 |
+| mirror without `osm` | 2.7 | 2.8 |
+| mirror without `osm` + `city` | 3.6 | 4.7 |
+
+- Buildings are the region cost, and about half of the near region's building cost is the main view itself (LOD /
+  triangle count), a third the mirror, the rest shadows.
+- Shadow casters per scene group (castShadow off one group at a time) stayed inside the noise except OSM (−2.2 ms at
+  Kadıköy). Since cascade count and map size are free, the rest of the 6–7.5 ms shadow cost is spread: many small
+  caster draws (≈ 450 of them) plus four-cascade PCF sampling in every lit material (main view and mirror). Splitting
+  those two needs one more run (casters off with receivers on).
+- The procedural city is ~170 small tiles (0.1–1.6 ms each); its cost is draw count, not triangles.
+
+## 3. Stutter
+
+Long tasks (> 50 ms) on the renderer main thread, classified from the traces:
+
+| Cause | Galata | Boğaz | Sultanahmet | Kadıköy (incl. 30 s streaming) |
+|---|---|---|---|---|
+| Exposure readback round trip in `onFrameStart` (48–60 ms, up to 99 ms) | 36 / 36 | 48 / 56 | 44 / 45 | 253 / 275 |
+| Shader program linked on first use (`GetProgramiv` 23–77 ms inside the frame) | — | 1 | 1 | ≥ 6 |
+| Worker result handlers (`HandlePostMessage`, 91–99 ms) | — | 3 | — | 9 |
+| Frame body JS without GL waits (~95–104 ms, not attributed) | — | 1 (170 ms) | — | 4 |
+| GC | none > 5 ms | none > 5 ms | none > 5 ms | none > 5 ms |
+
+1. **GPU over budget, surfaced by the exposure readback.** `AutoExposure.meter()` queues a 64x36 float readback every
+   frame; `AsyncReadback.poll()` runs at frame start and, once a fence has signalled, calls `getBufferSubData`. In
+   Chrome that is a synchronous command-buffer round trip (`CommandBufferHelper::Finish`) that waits until the GPU
+   process has processed every command already flushed, i.e. the previous frame's whole backlog. A/B with the poll
+   disabled (5 s windows, frozen): median 29 → 19 ms (Galata), 20 → 17 ms (Kadıköy), but fps unchanged (30–33) and
+   p99 **worse** (63 → 140 ms): without that sync Chrome's own swap backpressure stalls instead, in bigger steps. So
+   the readback is the messenger; the cause is GPU time > frame time. Under budget (mirror + regions off) p99 is
+   17.8 ms with the readback still on.
+2. **Programs compiled on first sight.** New materials arriving with streamed regions (and a few others: Boğaz,
+   Sultanahmet) are linked synchronously when first drawn; three's `getProgramParameter(LINK_STATUS)` blocks
+   23–77 ms. Street layer, mosques, clouds and fx already warm up with `compileAsync`; the OSM regions do not.
+3. **Region streaming on the main thread.** Worker results are consumed in one message handler of 91–99 ms, and
+   ~100 ms frame bodies without GL waits appear while Kadıköy's regions load (JS work inside `update`, most likely
+   geometry / buffer building; the per-system timers were not active during the load, so the owner is unconfirmed).
+4. **Not causes:** GC (minor ≤ 3.7 ms, major ≤ 4.8 ms, incremental marking), the GPU timer queries, CPU spikes in
+   steady flight.
+
+## 4. Fixes, ranked by fps per effort
+
+Budget: to hold 60 fps the serialised frame must drop to ≈ 23 ms (the measured combo that runs at a locked 60 fps).
+That is **−16 ms at Galata, −10 ms at Boğaz, −16 ms at Sultanahmet, −19 ms at Kadıköy.** Expected savings are
+serialised ms from the bisection; they overlap (e.g. OSM buildings appear in the mirror and in the shadows), so they
+do not add up exactly.
+
+| # | Fix | Expected saving | Effort | Evidence |
+|---|---|---|---|---|
+| 0 | **Cap ultra's pixel ratio** (`maxPixelRatio` 2 → 1, or 1.25 with TAA upscale) if the game runs on a Retina display | up to 17–20 ms on DPR 2 screens, 0 at DPR 1 | S | render scale 2: +16.7…+19.5 ms |
+| 1 | **Mirror budget:** OSM regions, procedural city and region details on `RenderLayers.NoReflection` (keep cheap stand-ins / far layer in the mirror), mirror MSAA 4 → 2, `reflectionScale` 0.6 → 0.45 | 4–7 ms (full mirror costs 6.4–11.7) | S–M | `wrefl=sky` −6.4…−11.7; mirror without osm+city −3.6…−4.7 |
+| 2 | **OSM region building budget:** screen-space-error LOD / HLOD for region buildings (merge far blocks into per-cell proxies, drop façade detail beyond ~400 m), cap draws per region | 4–7 ms (buildings 5.4–8.7, near region 4.4–10) | M–L | hide region buildings −5.4 / −8.7 |
+| 3 | **Shadow caster budget:** gate small casters and region details out of cascades ≥ 1 (`shadowGate`), building proxies in the far cascades, refresh cascades 2–3 every other frame (static world, sun moves slowly) | 2–4 ms (shadows total 2.5–7.5) | M | `shadows=0` −6.3 / −7.5; cascades / tile size ≈0 → it is draws, not fill |
+| 4 | **Draw-call batching** for the procedural city tiles (~170 meshes) and region layers (BatchedMesh / merged per cell): relieves the GPU-process decode (54–59 % busy) and `PostPipeline.render` CPU (5.5–7.9 ms) | 2–4 ms | M–L | hide `city` −2.4…−5.5 at ≤ 1.6 ms per tile |
+| 5 | **Clouds on ultra at high's resolution** (divisor 2 → 3, steps 112 → 88) or temporal upsampling | ~1 ms (pass costs 1.1–2.4) | S | clouds off −1.1…−2.4 |
+| 6 | **Exposure without a readback:** keep the meter and the adaptation on the GPU (1x1 adapted-luminance target read by the composite), so no frame ever waits on the GPU process; alternatively poll at most every 4th frame | median 0 ms; removes the 50–60 ms spikes once under budget | S–M | section 3.1 |
+| 7 | **Frame pacing:** one fence per frame, skip the frame's GPU work (not the simulation) while 2 frames are in flight | median 0; p99 → median when slightly over budget | S | poll-off A/B: backpressure stalls reach 140 ms |
+| 8 | **Shader warm-up for streamed content:** `compileAsync` region / kit materials before they join the scene (as street layer and mosques do); share materials across regions | removes 23–77 ms hitches | S | `GetProgramiv` long tasks |
+| 9 | **Spread region streaming:** time-slice the worker-result handler and geometry uploads (≤ 2 ms per frame), transfer ready buffers instead of rebuilding on the main thread | removes 90–100 ms hitches near regions | M | `HandlePostMessage` 91–99 ms; frame bodies ~100 ms |
+| 10 | Dynamic resolution as the safety net (already there; floor 0.8 on ultra) | ≤ 3 ms | — | scale 0.7 only −2.3…−4.7 ms: cannot close the gap alone |
+
+Suggested order: 0 (if Retina) → 1 → 5 → 8 → 3 → 2 → 6/7 → 9 → 4. Fixes 1 + 2 + 3 + 5 at their expected values
+remove 11–19 ms, which reaches the ≈ 23 ms serialised target at every measured view; re-measure after each with the
+same method (serialised frame + pipelined p99, frozen and flying, all four views).
+
+## 5. Water mirror (fix 1) — results
+
+Measured 2026-09-28 on `feat/cheaper-mirror` (origin/main `76966f9`), same machine and method: pipelined `--perf 8000`
+(`fps=0&dynres=0&q=ultra`, 1600x900) and the serialised in-page A/B (frozen scene, old and new mirror settings
+switched at runtime in one page, 3 x 12 frames each). The pipelined before / after runs are hours apart on the shared
+GPU, so the serialised column is the reliable saving.
+
+**Shipped:** a mirror draw distance of 6 km (`WaterQuality.reflectionDistance`, `PlanarReflection.setCullDistance`).
+Frustum-culled leaf objects in the mirror's layers whose bounding sphere stays beyond 6 km of the camera are hidden
+for the mirror render only; sky, full-screen passes and objects without a bounding volume are always drawn. One rule
+for every system, no per-layer special case.
+
+| View | serialised saved | mirror draws | frame draws | perf fps (frame ms) before → after | mirror still costs |
+|---|---|---|---|---|---|
+| `galata&t=15` | 2.2 ms | 223 → 173 | 1214 → 1164 | 26.2 (38.2) → 35.7 (28.0) | 4.5 ms |
+| `bogaz&t=21` | 1.4 ms | 192 → 144 | 875 → 827 | 37.1 (27.0) → 41.7 (24.0) | 4.9 ms |
+| `sultanahmet&t=16` | 4.0 ms | 205 → 156 | 1156 → 1107 | 32.4 (30.8) → 37.1 (27.0) | 3.5 ms |
+| Kadıköy 150 m | 3.1 ms | 215 → 164 | 1075 → 1024 | 29.6 (33.7) → 33.3 (30.1) | 4.6 ms |
+
+- "Mirror still costs" = skipping every remaining mirror draw (serialised). The mirror's main-thread submission
+  (`PlanarReflection.render`) went from 2.4–2.8 to 2.3–2.6 ms; the extra traversal eats most of what the skipped
+  draws save on the CPU.
+- **Visual:** A/B at `bogaz&t=19`, `bogaz&t=21`, `galata&t=15` and low over Karaköy at `t=19`: mean abs difference
+  0.7–1.1 (the TAA noise floor between two identical frames is ~0.7), no visible change.
+- **Flicker audit** (sea ‰, before → after): default preset (high) `sea-dusk` 0.09 → 0.09, `night-hisar` 0.07 → 0.07,
+  `night-hisar-fly` 0.07 → 0.08; `q=ultra` `sea-dusk` 0.48 → 0.58, `night-hisar` 0.06 → 0.05, `night-hisar-fly`
+  0.08 → 0.09. The audit is deterministic (repeat runs match), so ultra `sea-dusk` +0.1 ‰ is real: new coverage edges
+  where far tiles used to fill the mirror. The NaN clean-up still catches the facade / wall NaN texels
+  (`--mirror bad` on `night-hisar-fly`: 0 unstable pixels; culprit `osm-facade-reflection`, as before).
+
+**Tried and rejected** (serialised savings on top of the draw distance):
+
+| Candidate | Saved | Why not |
+|---|---|---|
+| Mirror MSAA 4 → 2 | 0–2.5 ms | `sea-dusk` sea flicker 0.09 → 0.16 ‰ on high (bisected: restoring 4x restores 0.09) |
+| `reflectionScale` 0.6 → 0.5 on ultra | −1…+1 ms | hard-edged patches in the reflected shore glow at dusk (Bosphorus `t=19`, `t=21`). 0.45 allocates the same target as 0.5 (`setSize` ignores changes under 12 %). |
+| Draw distance 4 km | +0.3…2.6 ms | dims the reflected glow of the far shore at dusk |
+| Minimum size 1–2 mirror px | ≈ 0 | almost nothing that small is left in the mirror's layers |
+| OSM regions out of the mirror | 1.5–3.6 ms | removes the shore reflections (Karaköy, Galata quay); the regions already enter the mirror only as the ReflectionOnly far proxy |
+
+Already in place before this change: OSM near leaves, details, props, kits, streets paint / rails / wires, traffic,
+crowds, vegetation, lamps and small craft are on `NoReflection`; OSM buildings reach the mirror as one far-version
+draw per facade / roof mesh; city tiles draw a reduced range into the mirror (no fine detail, near / mid tiles only
+near the water); the mirror reuses the main camera's shadow map (no shadow pass for it).
+
+**What is left** (3.5–4.9 ms): OSM far proxies (≈ 1.3 M triangles in 3–5 draws per region, never culled because each
+spans its whole slice), 40–80 city tiles, 34–72 small heritage draws, the dragon (35 draws) and 2.3–2.6 ms of mirror
+submission CPU. Next steps, in order: draw the OSM proxy per quadtree quarter so the draw distance and the frustum
+apply to it; a coarser heritage LOD for the mirror; find why ultra's 0.6 mirror flickers at `sea-dusk` (0.48 ‰
+against 0.09 ‰ at 0.5) and why 0.5 breaks the glow into patches, then revisit the scale.
+
+## Open
+
+- Split the shadow cost into casters vs receiver sampling (castShadow off everywhere, receivers on).
+- Attribute the ~100 ms streaming frame bodies near Kadıköy (per-system timers active during the region load).
+- Repeat the headline numbers on a quiet machine (no parallel GPU jobs) and in a headed Chrome at DPR 2.
