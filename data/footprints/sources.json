@@ -1,0 +1,346 @@
+{
+ "$comment": "Pinned inputs of the building merge (scripts/data/footprints-merge.ts), written by scripts/data/fetch-footprints.mjs: what was downloaded, from where, with checksums. The raw files live in data/footprints-src/ (gitignored). Licence notes: data/footprints/LICENSE.md.",
+ "sources": {
+  "microsoft": {
+   "id": "microsoft-building-footprints",
+   "release": "2026-08-13",
+   "licence": "CDLA-Permissive-2.0",
+   "licenceStatement": "This data is licensed by Microsoft under the [CDLA Permissive 2.0](https://cdla.dev/permissive-2-0/).",
+   "licenceText": {
+    "file": "data/footprints/licences/CDLA-Permissive-2.0.txt",
+    "url": "https://cdla.dev/permissive-2-0/",
+    "fetched": "2026-09-28",
+    "md5": "c9fd4fc0f8d1507270a46df37af8e8e4",
+    "sha256": "4531a67d443284d93ffed0803df5b10634aff21c3d77e381f2d48af01d875868",
+    "bytes": 2354
+   },
+   "attribution": "Building footprints: Microsoft Global ML Building Footprints (release 2026-08-13), CDLA-Permissive-2.0",
+   "index": {
+    "url": "https://bfppub.blob.core.windows.net/%24web/2026-08-13/dataset-links.csv",
+    "file": "data/footprints-src/microsoft/2026-08-13/dataset-links.csv",
+    "bytes": 6382044,
+    "md5": "93af69bef27b83ed21c1822487053783",
+    "sha256": "de61b569b0c23c364d61173632d8c5487ea30bf20912c55b9fa1ab4a89d01148"
+   },
+   "quadkeyLevel": 9,
+   "tiles": [
+    {
+     "location": "Bulgaria",
+     "quadkey": "120322331",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Bulgaria/quadkey=120322331/part-00138-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "184.4KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Bulgaria-120322331.csv.gz",
+     "bytes": 188810,
+     "md5": "1a4c0b98d8b3081c4631ed1a20ea7ed6",
+     "sha256": "77ac46ee911717336ad70e1908ad67d752f8335d73aee46c5074e1ac0b9d29d5",
+     "contentMd5": "GkwLmNizCBxGMe0aIOp+1g=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "120322331",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=120322331/part-00125-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "225B",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-120322331.csv.gz",
+     "bytes": 225,
+     "md5": "de9792c09e0f36771499e570ce87e7e9",
+     "sha256": "19049f3dcd8dc0b2a4045d34f9b09875ad55b8e52d44eb071df7a6a80f889f01",
+     "contentMd5": "3peSwJ4PNncUmeVwzofn6Q=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120322331",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120322331/part-00041-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "3.7MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120322331.csv.gz",
+     "bytes": 3830397,
+     "md5": "03211ba79f10415c66f138e11d49519c",
+     "sha256": "638fe3d45106454c83fd8080f999489ae213fa3abeb00c6c794ef7f808752efe",
+     "contentMd5": "AyEbp58QQVxm8TjhHUlRnA=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "120322333",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=120322333/part-00069-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "13.6KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-120322333.csv.gz",
+     "bytes": 13964,
+     "md5": "f8e350ce13b29ca82fda7a1cff459da1",
+     "sha256": "81d34eb9308680887e4e476035b03460d47c7de18bc3c3bb907a9846bf085430",
+     "contentMd5": "+ONQzhOynKgv2noc/0WdoQ=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120322333",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120322333/part-00016-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "16.6MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120322333.csv.gz",
+     "bytes": 17455279,
+     "md5": "a5f33de3b30478be0c9e829badc9cc7b",
+     "sha256": "d56ef204e26a17c1945020ab805771a22a3f7941647a4d48227722c136ef45e5"
+    },
+    {
+     "location": "Europe",
+     "quadkey": "120323220",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=120323220/part-00159-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "287B",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-120323220.csv.gz",
+     "bytes": 287,
+     "md5": "370d848f86170c6fff06e63ab997e1f5",
+     "sha256": "bb0bb7a3a870f267c30bbee6f1a06c30411d0254ca688390540304e9e9a16e55",
+     "contentMd5": "Nw2Ej4YXDG//BuY6uZfh9Q=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120323220",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120323220/part-00016-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "14.5KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120323220.csv.gz",
+     "bytes": 14853,
+     "md5": "e024a2328246db69040420fcce92d2e8",
+     "sha256": "82cfc8f57979691e2ff1e3c4095af2a85c47b818673f35496feaf45e9d999e23",
+     "contentMd5": "4CSiMoJG22kEBCD8zpLS6A=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "120323222",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=120323222/part-00026-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "3.7KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-120323222.csv.gz",
+     "bytes": 3791,
+     "md5": "1c87f808ee2afd232d7f43981e1b8bb1",
+     "sha256": "15a68e084dabbdd6c126b95e8ce9c7500fcf492c88c8e828cc27ad2dca1af51f",
+     "contentMd5": "HIf4CO4q/SMtf0OYHhuLsQ=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120323222",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120323222/part-00143-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "25.4MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120323222.csv.gz",
+     "bytes": 26643017,
+     "md5": "0a01ded0a6bc838881f6236c990531a9",
+     "sha256": "afed5200b5a2dcd926c4913b9790559a0b329ae47322c221563349e4065dd748"
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120323223",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120323223/part-00092-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "40.5MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120323223.csv.gz",
+     "bytes": 42421860,
+     "md5": "5c4c357c23cf59b9de9828756ccac269",
+     "sha256": "43ac89951d5a5529727bfcdf31ab7d7e662092043a40000e1cb74a2ed1fb2cda"
+    },
+    {
+     "location": "Asia",
+     "quadkey": "120323232",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Asia/quadkey=120323232/part-00097-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "6.3KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Asia-120323232.csv.gz",
+     "bytes": 6461,
+     "md5": "b137722a5d8a61fb07dc9fb241b1f4eb",
+     "sha256": "23bd21eb86bde2b0657f189b7d93350e03b5b69cdce59be3b0f3933618f5bd06",
+     "contentMd5": "sTdyKl2KYfsH3J+yQbH06w=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "120323232",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=120323232/part-00042-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "4.1MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-120323232.csv.gz",
+     "bytes": 4325556,
+     "md5": "80853138a70880f65c7cc8aeb7b10ddb",
+     "sha256": "98d7bf51dab8557482bb5da02926b1e262e437891bb0969d4547e7298bb15b4a",
+     "contentMd5": "gIUxOKcIgPZcfMiut7EN2w=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "122100111",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=122100111/part-00154-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "11.8KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-122100111.csv.gz",
+     "bytes": 12120,
+     "md5": "8329f2fe346811a07b93abee0b09a3db",
+     "sha256": "5554f2b2d4ee18258f5200a805ca0668fa58bd9fbf28b2673f94837874bfa29a",
+     "contentMd5": "gyny/jRoEaB7k6vuCwmj2w=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "122100111",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=122100111/part-00141-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "3.2MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-122100111.csv.gz",
+     "bytes": 3383789,
+     "md5": "651c59cfa464cc9dcddae17728f9a452",
+     "sha256": "a9e6e487cedfb4916899a79033cb048eeab187d2376c7b016b91d712fe2acafa",
+     "contentMd5": "ZRxZz6RkzJ3N2uF3KPmkUg=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "122101000",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=122101000/part-00102-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "18.3KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-122101000.csv.gz",
+     "bytes": 18777,
+     "md5": "2b2b5633b8889621df1efdc5feb702e0",
+     "sha256": "f15d4ae0eb88c15a56c0681739aab6b0f4189f192930b22ffaf770b3f1d638d6",
+     "contentMd5": "KytWM7iIliHfHv3F/rcC4A=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "122101000",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=122101000/part-00007-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "1.4MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-122101000.csv.gz",
+     "bytes": 1438257,
+     "md5": "ceea99c3da7be1972a395f339e72a7e3",
+     "sha256": "ca105eacec1bdda69cbaad1ecd28b6096948ea97b38b2feb13e321207c8148f6",
+     "contentMd5": "zuqZw9p74ZcqOV8znnKn4w=="
+    },
+    {
+     "location": "Asia",
+     "quadkey": "122101001",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Asia/quadkey=122101001/part-00003-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "38.4KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Asia-122101001.csv.gz",
+     "bytes": 39319,
+     "md5": "2a4bb6cd08171f9464acedd16c718e29",
+     "sha256": "fe9ca99c499a48d443bda910c49f25352ca722192d21c49ddcd35ef931f00e28",
+     "contentMd5": "Kku2zQgXH5RkrO3RbHGOKQ=="
+    },
+    {
+     "location": "Europe",
+     "quadkey": "122101001",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Europe/quadkey=122101001/part-00054-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "2.5KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Europe-122101001.csv.gz",
+     "bytes": 2521,
+     "md5": "920ceaaf53e340ae918f0b8c7e45200c",
+     "sha256": "8f8e76856bf927773ea6a258b99c2f76a7f2324db51704013aa373331e582ff3",
+     "contentMd5": "kgzqr1PjQK6RjwuMfkUgDA=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "122101001",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=122101001/part-00073-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "32.0MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-122101001.csv.gz",
+     "bytes": 33606441,
+     "md5": "2e4686655b427fd128fedd576daf52ab",
+     "sha256": "cbc75e7ebb1178b282ed3fbd17db154a88ede07b0123de8df85a897cdf39f916"
+    },
+    {
+     "location": "Asia",
+     "quadkey": "122101010",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Asia/quadkey=122101010/part-00047-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "18.8KB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Asia-122101010.csv.gz",
+     "bytes": 19297,
+     "md5": "b87501c1042d94ed11c7729157627d9c",
+     "sha256": "dc36f2e41de82a8b3dd7384e2f64367ce8ac8373e49b35c3a2b6a43a689f4795",
+     "contentMd5": "uHUBwQQtlO0Rx3KRV2J9nA=="
+    },
+    {
+     "location": "Turkey",
+     "quadkey": "122101010",
+     "url": "https://bfppub.z5.web.core.windows.net/2026-08-13/global-buildings.geojsonl/RegionName=Turkey/quadkey=122101010/part-00073-110f5303-ff85-4c71-a2bf-c6070024fec8.c000.csv.gz",
+     "size": "20.0MB",
+     "uploaded": "2026-08-13",
+     "file": "data/footprints-src/microsoft/2026-08-13/Turkey-122101010.csv.gz",
+     "bytes": 20961026,
+     "md5": "159a75d4ea70b58c069917873e83b3a6",
+     "sha256": "45e7d849ce7d7a092fddb7bc6f132e14bea0ad3e30d0055d4c09eedbf225e1e5"
+    }
+   ]
+  },
+  "ibb": {
+   "id": "ibb-mahalle-bina-sayilari",
+   "dataset": "Neighborhood-Based Building Numbers",
+   "publisher": "Department of Earthquake Risk Management and Urban Improvement",
+   "resource": {
+    "name": "2017 Yılı Mahalle Bazlı Bina Sayıları",
+    "url": "https://data.ibb.gov.tr/dataset/be3582eb-09d7-42f8-84d3-b3817dc9ab0a/resource/cef193d5-0bd2-4e8d-8a69-275c50288875/download/2017-yl-mahalle-bazl-bina-saylar.csv",
+    "created": "2021-01-16T16:20:18.233876",
+    "lastModified": "2021-01-16T19:27:54.796674",
+    "file": "data/footprints-src/ibb/2017-yl-mahalle-bazl-bina-saylar.csv",
+    "bytes": 45235,
+    "md5": "becc8a4ea6637621ac3c4f5d57113189",
+    "sha256": "05f4a57bc578923673e8b91014727fe99b1f431b060d66d2c2c1461d5c72d7a7",
+    "encoding": "windows-1254",
+    "separator": ";"
+   },
+   "metadataModified": "2024-11-13T11:13:48.855983",
+   "licence": "IBB-Open-Data-License-1.0",
+   "licencePortal": {
+    "id": "ibb-license",
+    "title": "Istanbul Metropolitan Municipality Open Data License",
+    "url": "https://data.ibb.gov.tr/license"
+   },
+   "licenceText": {
+    "file": "data/footprints/licences/IBB-Open-Data-License-1.0.txt",
+    "url": "https://data.ibb.gov.tr/en/license",
+    "fetched": "2026-09-28",
+    "md5": "d6bd4ee37235b4eaa5a4709d4bdcd449",
+    "sha256": "1a8a4d20a52dc4b1ad81645912b63e4f2032c43f627019d5893ba35166176a3b",
+    "bytes": 5278
+   },
+   "attribution": "Contains public sector information from the İBB Açık Veri Portalı (Mahalle Bazlı Bina Sayıları), licensed under the İBB Açık Veri Lisansı (Istanbul Metropolitan Municipality Open Data Licence) 1.0"
+  },
+  "ghsl": {
+   "id": "ghs-built-h-r2023a",
+   "tile": "GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21",
+   "zip": {
+    "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_BUILT_H_GLOBE_R2023A/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100/V1-0/tiles/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21.zip",
+    "file": "data/footprints-src/ghsl/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21.zip",
+    "bytes": 8223697,
+    "md5": "060ced22fdb6ec1d1d212fd9cb256b44",
+    "sha256": "57b7c9fd950f7fdeb461c81f71bd447ccc5b8a8f0705e52b43cc36f519c765ce"
+   },
+   "tif": {
+    "file": "data/footprints-src/ghsl/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21.tif",
+    "md5": "35208105884846407b324ef93052d311",
+    "sha256": "1b40ed1d70e33040bab4ae95f45a10278204cb86ba029f1427612595465d3dd6",
+    "bytes": 7784838
+   },
+   "doi": "10.2905/85005901-3A49-48DD-9D19-6261354F56FE",
+   "licence": "CC-BY-4.0",
+   "licenceText": {
+    "file": "data/footprints/licences/GHSL-copyright.txt",
+    "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_BUILT_H_GLOBE_R2023A/copyright.txt",
+    "fetched": "2026-09-28",
+    "md5": "382c8a25b6dcc16c71b3dd6eb613df74",
+    "sha256": "e68def37e1b00a33bd6783cac458299cb21e7a976159dd8f9bbc0ec5d80501f6",
+    "bytes": 537
+   },
+   "attribution": "GHS-BUILT-H R2023A, European Commission, Joint Research Centre, CC BY 4.0, doi:10.2905/85005901-3A49-48DD-9D19-6261354F56FE, modified"
+  },
+  "urban-atlas": {
+   "id": "urban-atlas-bbh-2021",
+   "status": "pending",
+   "expected": "data/footprints-src/urban-atlas/CLMS_UA_BBH_S2021_R10m_TR012L1_ISTANBUL_03035_V02_R03_20260226.tif",
+   "reason": "The Copernicus Data Space Ecosystem requires a free account: the owner creates it, accepts its terms and places the GeoTIFF in data/footprints-src/urban-atlas/; scripts/data/fetch-footprints.mjs then records it",
+   "licence": "Copernicus-data-policy",
+   "attribution": "Generated using European Union's Copernicus Land Monitoring Service information (Urban Atlas Building Block Height 2021, doi:10.2909/c5215520-98e9-4035-be56-d28156cd4dcd), modified"
+  }
+ }
+}
