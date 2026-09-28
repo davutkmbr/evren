@@ -268,6 +268,8 @@ async function exportCharacter(rig: DragonRigImpl, h: HumanRider, files: Record<
     return true;
   };
   const parts: [string, THREE.MeshStandardMaterial][] = [];
+  // One material per slot, shared by its parts (the file then names each slot once).
+  const slots = new Map<string, THREE.MeshStandardMaterial>();
   let vertices = 0;
   let triangles = 0;
   for (const mesh of dstMeshes) {
@@ -279,7 +281,8 @@ async function exportCharacter(rig: DragonRigImpl, h: HumanRider, files: Record<
     bakeError = Math.max(bakeError, bakePose(mesh, src));
     const mat = src.material as THREE.MeshStandardMaterial;
     const slot = slotName(mat);
-    mesh.material = new THREE.MeshStandardMaterial({ name: slot });
+    if (!slots.has(slot)) slots.set(slot, new THREE.MeshStandardMaterial({ name: slot }));
+    mesh.material = slots.get(slot)!;
     parts.push([slot, mat]);
     vertices += mesh.geometry.getAttribute('position').count;
     triangles += (mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count) / 3;
