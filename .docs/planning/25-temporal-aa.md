@@ -202,6 +202,74 @@ CAS sweep (flicker audit, land per mille, still camera yaw sweep):
 Sharpening brings back 2-3x the flicker TAA removed, for a small gain in crispness (`.shots/perf/cas-*`), so it stays
 off. Next (separate phase): temporal upscaling (item 5 of the plan).
 
+## Stage 5 (TAAU) result (2026-09-28, opt-in `?taau=<scale>`)
+
+`?taau=0.67` (with TAA on) renders the scene at 0.67 x the dynamic-resolution size per axis; the TAA resolve writes
+the history and its output at the **display** size, and everything after it (weather, fx particles, race rings, bloom,
+exposure, flare, composite, output) runs there. Off by default. Implementation:
+
+- **Resolve** (`post/taa.ts`, `TAAU` variant of the same shader): per output pixel the nearest jittered input sample
+  (`floor(pIn - sampleOffset)`), its 3x3 neighbourhood for the clip box and the disocclusion range, velocity and
+  reactive lookups at that sample. The current colour is a Gaussian-weighted sum of the 9 samples by their distance to
+  the output pixel centre (`exp(-2.29 d^2)`, TAAUNode / FSR 2): distance in **output** pixels where the history is
+  valid (sharp), in input pixels where it is not or where the pixel moves fast or belongs to a tracked object (smooth,
+  no input-resolution stair steps). The still-camera current weight scales with the nearest sample's coverage of the
+  output pixel (`0.1 x (0.3 + 1.4 exp(-2 d_out^2))`), so a pixel takes new information when a sample lands near its
+  centre and keeps its history otherwise. The clip box is the neighbourhood's min / max instead of mean +- sigma:
+  the variance box pulled the upscaled detail back to the input's blur (the first cut was visibly softer than a plain
+  bilinear upscale).
+- **Jitter**: Halton(2, 3) with `ceil(8 x (display / render)^2)` phases (FSR 2): 18 at 0.67, 32 at 0.5.
+- **Pipeline** (`post/pipeline.ts`): internal size = display x dynres scale x taau; the passes up to order 105
+  (clouds) run at the internal size (own `lowA/lowB` targets), the ones after the resolve at the display size
+  (`pingA/pingB`, LDR, bloom). The passes after TAA read the internal-size depth by uv, except rain and lightning,
+  which used `texelFetch(gl_FragCoord)`; they now scale the pixel by depth / output size (`uDepthScale`).
+- **Mip bias**: `core/uniforms.ts` injects `texture2D(s, c) -> texture(s, c, uTexLodBias)` into every fragment shader
+  that goes through the global uniform injection when the page has `?taau` (`?taalod=0` leaves it out); the pipeline
+  sets `log2(render / display)` around the scene render only (mirror, shadows, bakes stay at 0). This covers three's
+  built-in materials (dragon, landmark structures, street tiles). It does **not** reach the materials that sample
+  their texture arrays with `texture()` / `textureGrad()` (OSM facades, terrain detail, streets, walls, trees): a
+  global bias there needs a per-shader change (or a shared sampling helper), so it is left out. Visible effect at
+  0.67 on the galata view: none measurable by eye (`.shots/taau/c4.png`, columns 2 and 3).
+
+Performance (`snap.mjs --perf 8000`, 1600x900, `?fps=0&dynres=0&q=ultra`, fps; three runs, the third on a quieter GPU
+queue; the scene is CPU-heavy, ~11-15 ms CPU per frame, so the GPU savings show only partly):
+
+| view | TAA 1.0 | TAAU 0.67 | TAAU 0.5 |
+|---|---|---|---|
+| galata t=15 | 34.1 / 35.7 / 41.2 | 34.2 / 39.6 / 45.1 | 38.1 / 32.2 / 47.0 |
+| bogaz t=21 | 37.0 / 35.0 / 38.8 | 36.1 / 40.0 / 42.6 | 39.9 / 38.5 / 45.4 |
+| sultanahmet t=16 | 40.5 / 36.6 / 43.4 | 42.9 / 41.9 / 46.4 | 43.9 / 39.0 / 51.5 |
+
+Run 3: +7-10 % at 0.67, +14-19 % at 0.5.
+
+Flicker (flicker audit, per mille, all / land):
+
+| scene | TAA 1.0 | TAAU 0.67 | TAAU 0.5 |
+|---|---|---|---|
+| peninsula-day | 0.01 / 0.17 | 0.01 / 0.13 | 0.01 / 0.19 |
+| night-hisar | 0.05 / 0.08 | 0.03 / 0.06 | 0.05 / 0.05 (sea 0.13) |
+| dragon-chase (fly) | 0.29 / 3.14 | 0.22 / 2.32 | 0.18 / 2.08 |
+
+No flicker regression; TAAU is as stable as TAA at scale 1 (softer images flicker less).
+
+Ghosting (`ghost-metric.py` on `dragon-chase` against `taa=0`, near the dragon / elsewhere / ratio): TAA 1.0 3.70 /
+2.50 / 1.48, TAAU 0.67 6.76 / 4.32 / 1.56, TAAU 0.5 5.92 / 4.46 / 1.33. The absolute differences grow with the lost
+resolution everywhere; the ratio (trail near the dragon) stays at the TAA level.
+
+Quality (1:1 crops, `.shots/taau/`): still, TAAU 0.67 is clearly sharper than a plain 0.67 render upscaled with
+Catmull-Rom (window grids and roof edges resolved) but softer than TAA at 1.0; 0.5 is soft but stable. In motion
+(`m-dragon.png`, `m-land.png`) the water and the dragon lose fine detail; 0.5 looks like a low-resolution render.
+Known artefacts:
+
+- Sub-pixel movers (quay crowd, distant cars) fade at 0.67 and vanish at 0.5: they are rarely sampled and the reactive
+  weight keeps little history.
+- Fast-moving, deforming silhouettes (the wing trailing edge) show input-resolution steps for a frame or two where the
+  history is rejected.
+- Texture-array materials are not mip-biased (above), so facades and terrain stay at the render resolution's mip.
+
+The owner decides on defaults. A likely next step: TAAU 0.75-0.85 as the dynamic-resolution floor on high / ultra,
+where it replaces the plain upscale.
+
 ## Measurement
 
 - The flicker audit already reprojects and scores; with TAA the scenes need a warm-up of 16+ frames (history) before

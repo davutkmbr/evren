@@ -16,7 +16,7 @@ import { createColorTarget } from './targets';
  * Reference implementation: three's TRAANode / TAAUtils (examples/jsm/tsl, WebGPU only).
  */
 
-/** Jitter sequence length (Halton 2, 3). */
+/** Jitter sequence length (Halton 2, 3) at scale 1; upscaling uses 8 x (display / render)^2 phases (FSR 2). */
 const JITTER_PHASES = 8;
 /** Weight of the current frame in steady state. */
 const CURRENT_WEIGHT = 0.1;
@@ -38,7 +38,12 @@ uniform float uVelocityOn;
 uniform sampler2D tReactive;
 uniform float uReactiveOn;
 uniform float uReactiveWeight;
+/* Input (internal, jittered) size. */
 uniform vec2 uSize;
+/* Upscaling: this frame's sample position relative to each input texel centre (input pixels), and output pixels per
+   input pixel. */
+uniform vec2 uSampleOffset;
+uniform vec2 uOutScale;
 uniform float uNear;
 uniform float uFar;
 uniform vec2 uTan;
@@ -98,8 +103,25 @@ vec4 taaHistory(vec2 uv) {
 }
 
 void main() {
+#ifdef TAAU
+  // Output pixel centre in input pixels; input texel i holds the scene at i + 0.5 + uSampleOffset (jitter), so the
+  // nearest sample is floor(pIn - uSampleOffset).
+  vec2 pIn = vUv * uSize;
+  ivec2 p = clamp(ivec2(floor(pIn - uSampleOffset)), ivec2(0), ivec2(uSize) - 1);
+  // This frame's colour at the output pixel: the 3x3 input samples weighted by their distance to the output pixel
+  // centre (Gaussian approximation of Blackman-Harris, as in three's TAAUNode / FSR 2), in the tone-mapped space.
+  vec3 cSum = vec3(0.0);
+  float wSum = 0.0;
+  // The same taps with the kernel in input pixels (TAAUNode's): smooth where the history cannot help (disocclusion,
+  // fast motion, deforming objects), where the narrow kernel would show the input's stair steps.
+  vec3 cWideSum = vec3(0.0);
+  float wWideSum = 0.0;
+  vec3 boxMin = vec3(1e9);
+  vec3 boxMax = vec3(-1e9);
+#else
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec3 center = taaFetch(p);
+#endif
 
   // Neighbourhood: variance of the tone-mapped YCoCg colours, and the closest depth (reversed-Z: largest value).
   vec3 m1 = vec3(0.0);
@@ -111,8 +133,24 @@ void main() {
   for (int j = -1; j <= 1; j++) {
     for (int i = -1; i <= 1; i++) {
       ivec2 q = p + ivec2(i, j);
-      vec3 c = taaToYCoCg(taaTonemap(taaFetch(q)));
+      vec3 tc = taaTonemap(taaFetch(q));
+#ifdef TAAU
+      // Distance in output pixels: the kernel keeps the output's sharpness; the history fills the gaps.
+      vec2 dq = (pIn - (vec2(q) + 0.5 + uSampleOffset)) * uOutScale;
+      float wq = exp(-2.29 * dot(dq, dq));
+      cSum += tc * wq;
+      wSum += wq;
+      vec2 dw = pIn - (vec2(q) + 0.5 + uSampleOffset);
+      float ww = exp(-2.29 * dot(dw, dw));
+      cWideSum += tc * ww;
+      wWideSum += ww;
+#endif
+      vec3 c = taaToYCoCg(tc);
       m1 += c;
+#ifdef TAAU
+      boxMin = min(boxMin, c);
+      boxMax = max(boxMax, c);
+#endif
       m2 += c * c;
       float d = texelFetch(tDepth, clamp(q, ivec2(0), ivec2(uSize) - 1), 0).r;
       float qd = d <= 0.0 ? uFar : postLinearDepth(d, uNear, uFar);
@@ -124,6 +162,15 @@ void main() {
       }
     }
   }
+#ifdef TAAU
+  vec3 centerSharp = cSum / max(wSum, 1e-5);
+  vec3 centerWide = cWideSum / max(wWideSum, 1e-5);
+  vec3 center = taaUntonemap(centerWide);
+  // How well this frame covers the output pixel: 1 when the nearest sample lands on its centre (distance in output
+  // pixels). Where it does not, the accumulated history carries the pixel.
+  vec2 dNear = (pIn - (vec2(p) + 0.5 + uSampleOffset)) * uOutScale;
+  float coverage = exp(-2.0 * dot(dNear, dNear));
+#endif
   vec3 mean = m1 / 9.0;
   vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3(0.0))) * uGamma;
 
@@ -191,9 +238,22 @@ void main() {
   } else {
     vec3 h = taaToYCoCg(taaTonemap(max(hist.rgb, vec3(0.0))));
     // Variance clip: move the history towards the neighbourhood mean until it lies inside mean +- sigma.
+#ifdef TAAU
+    // The neighbourhood's min / max: detail finer than the input samples lies inside their range but often outside
+    // mean +- sigma, which would pull the upscaled history back to the input's blur.
+    vec3 lo = boxMin;
+    vec3 hi = boxMax;
+    mean = 0.5 * (lo + hi);
+#else
     vec3 lo = mean - sigma;
     vec3 hi = mean + sigma;
+#endif
+#ifdef TAAU
+    float soft = object ? 1.0 : max(clamp(length(motion * uSize) / 8.0, 0.0, 1.0), reactive ? 0.5 : 0.0);
+    vec3 c = taaToYCoCg(mix(centerSharp, centerWide, soft));
+#else
     vec3 c = taaToYCoCg(taaTonemap(center));
+#endif
     vec3 toH = h - mean;
     vec3 extent = max(hi - mean, vec3(1e-5));
     vec3 unit = abs(toH / extent);
@@ -201,7 +261,12 @@ void main() {
     h = m > 1.0 && (uFlags & 1) == 0 ? mean + toH / m : h;
     // Faster convergence under motion (less blur trailing a moving camera).
     float motionPx = length(motion * uSize);
-    alpha = mix(uCurrentWeight, 0.35, clamp(motionPx / 24.0, 0.0, 1.0));
+#ifdef TAAU
+    float stillWeight = uCurrentWeight * (0.3 + 1.4 * coverage);
+#else
+    float stillWeight = uCurrentWeight;
+#endif
+    alpha = mix(stillWeight, 0.35, clamp(motionPx / 24.0, 0.0, 1.0));
     // Deforming objects (wings, rider) are only approximated by their velocity: a little more of the current frame.
     alpha = object ? max(alpha, 0.2) : alpha;
     alpha = reactive ? max(alpha, uReactiveWeight) : alpha;
@@ -239,7 +304,11 @@ function halton(index: number, base: number): number {
 export class TemporalAA {
   private readonly history: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   readonly material: THREE.ShaderMaterial;
+  /** The upscaling variant (created on first use; shares the uniforms). */
+  private upscaleMaterial: THREE.ShaderMaterial | null = null;
   private current = 0;
+  /** This frame's jitter (input pixels, the image's shift). */
+  private readonly jitterPx = new THREE.Vector2();
   private valid = false;
   private readonly prevViewProj = new THREE.Matrix4();
   private readonly prevView = new THREE.Matrix4();
@@ -265,6 +334,8 @@ export class TemporalAA {
         uReactiveOn: { value: 0 },
         uReactiveWeight: { value: REACTIVE_WEIGHT },
         uSize: { value: new THREE.Vector2(1, 1) },
+        uSampleOffset: { value: new THREE.Vector2() },
+        uOutScale: { value: new THREE.Vector2(1, 1) },
         uNear: { value: 0.1 },
         uFar: { value: 1000 },
         uTan: { value: new THREE.Vector2(1, 1) },
@@ -299,9 +370,14 @@ export class TemporalAA {
     this.valid = false;
   }
 
-  /** Shifts the projection by this frame's sub-pixel offset (call right before the scene render; undo with unjitter). */
-  jitter(camera: THREE.PerspectiveCamera, frame: number, width: number, height: number): void {
-    const k = (frame % JITTER_PHASES) + 1;
+  /**
+   * Shifts the projection by this frame's sub-pixel offset (call right before the scene render; undo with unjitter).
+   * `upscale` = display / render size per axis: the sequence grows to 8 x upscale^2 phases so every output pixel
+   * receives samples near its centre (FSR 2's recommendation).
+   */
+  jitter(camera: THREE.PerspectiveCamera, frame: number, width: number, height: number, upscale = 1): void {
+    const phases = upscale > 1.001 ? Math.ceil(JITTER_PHASES * upscale * upscale) : JITTER_PHASES;
+    const k = (frame % phases) + 1;
     const jx = halton(k, 2) - 0.5;
     const jy = halton(k, 3) - 0.5;
     const e = camera.projectionMatrix.elements;
@@ -310,6 +386,7 @@ export class TemporalAA {
     // ndc.x = (e0 x + e8 z) / -z: adding d to e8 moves the image by -d in NDC.
     e[8] -= (2 * jx) / width;
     e[9] -= (2 * jy) / height;
+    this.jitterPx.set(jx, jy);
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     this.jittered = true;
   }
@@ -327,9 +404,10 @@ export class TemporalAA {
 
   /**
    * Resolves `color` (this frame's jittered HDR scene) against the history into the next history target and returns
-   * its texture. `camera` must be unjittered again.
+   * its texture. `camera` must be unjittered again. `width` x `height` is the input (render) size; with `upscale` the
+   * history and the result have the output size `outWidth` x `outHeight` (temporal upscaling, stage 5).
    */
-  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number, velocity: THREE.Texture | null = null, reactive: THREE.Texture | null = null): THREE.Texture {
+  resolve(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, color: THREE.Texture, depth: THREE.Texture, camera: THREE.PerspectiveCamera, width: number, height: number, velocity: THREE.Texture | null = null, reactive: THREE.Texture | null = null, upscale: { width: number; height: number } | null = null): THREE.Texture {
     camera.updateMatrixWorld();
     camera.matrixWorld.decompose(this.pos, this.quat, _scale);
     if (this.valid && (this.pos.distanceTo(this.prevPos) > CUT_DISTANCE || this.quat.angleTo(this.prevQuat) > CUT_ANGLE)) {
@@ -337,11 +415,16 @@ export class TemporalAA {
     }
     const src = this.history[this.current];
     const dst = this.history[1 - this.current];
-    if (dst.width !== width || dst.height !== height) {
+    const outWidth = upscale ? upscale.width : width;
+    const outHeight = upscale ? upscale.height : height;
+    if (dst.width !== outWidth || dst.height !== outHeight) {
       // A resolution step keeps the history: it is sampled by uv, the old target just has another size.
-      dst.setSize(width, height);
+      dst.setSize(outWidth, outHeight);
     }
     const u = this.material.uniforms;
+    // The image moved by +jitter: input texel i holds the scene at i + 0.5 - jitter.
+    (u.uSampleOffset.value as THREE.Vector2).set(-this.jitterPx.x, -this.jitterPx.y);
+    (u.uOutScale.value as THREE.Vector2).set(outWidth / width, outHeight / height);
     u.tCurrent.value = color;
     u.tDepth.value = depth;
     u.tHistory.value = src.texture;
@@ -358,7 +441,7 @@ export class TemporalAA {
     u.uVelocityOn.value = velocity ? 1 : 0;
     u.tReactive.value = reactive;
     u.uReactiveOn.value = reactive ? 1 : 0;
-    fs.draw(renderer, this.material, dst);
+    fs.draw(renderer, upscale ? this.upscaler() : this.material, dst);
 
     this.prevView.copy(camera.matrixWorldInverse);
     this.prevViewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -369,10 +452,18 @@ export class TemporalAA {
     return dst.texture;
   }
 
+  private upscaler(): THREE.ShaderMaterial {
+    if (!this.upscaleMaterial) {
+      this.upscaleMaterial = createPostMaterial({ name: 'post.taauResolve', fragmentShader: RESOLVE_FRAGMENT, uniforms: this.material.uniforms, defines: { TAAU: 1 } });
+    }
+    return this.upscaleMaterial;
+  }
+
   dispose(): void {
     this.history[0].dispose();
     this.history[1].dispose();
     this.material.dispose();
+    this.upscaleMaterial?.dispose();
   }
 }
 

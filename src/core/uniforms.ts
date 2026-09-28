@@ -88,12 +88,31 @@ export function registerGlobalUniform(name: string, uniform: THREE.IUniform): TH
   return uniform;
 }
 
+/**
+ * Texture LOD bias of the main scene render (temporal upscaling, phase 25 stage 5): the pipeline sets log2(render /
+ * display size) around the scene render so textures keep the sharpness of the display resolution, 0 everywhere else
+ * (mirror, shadows, bakes). Compiled in only when the page runs with ?taau= (TEXTURE_LOD_BIAS_ON): every fragment
+ * shader that goes through the global uniform injection then samples texture2D() with this bias. Shaders that call
+ * texture() directly (the texture-array materials) are not biased.
+ */
+export const textureLodBias: THREE.IUniform<number> = { value: 0 };
+const TEXTURE_LOD_BIAS_ON = typeof location !== 'undefined' && new URLSearchParams(location.search).has('taau') && new URLSearchParams(location.search).get('taalod') !== '0';
+const TEXTURE_LOD_BIAS_GLSL = `// texture-lod-bias
+uniform float uTexLodBias;
+#undef texture2D
+#define texture2D(s, c) texture(s, c, uTexLodBias)
+`;
+
 /** Adds the global uniform references to a shader object (call from onBeforeCompile). */
-export function injectGlobalUniforms(shader: { uniforms: Record<string, THREE.IUniform> }): void {
+export function injectGlobalUniforms(shader: { uniforms: Record<string, THREE.IUniform>; fragmentShader?: string; isRawShaderMaterial?: boolean }): void {
   for (const key in globalUniforms) {
     if (!(key in shader.uniforms)) {
       shader.uniforms[key] = globalUniforms[key];
     }
+  }
+  if (TEXTURE_LOD_BIAS_ON && typeof shader.fragmentShader === 'string' && !shader.isRawShaderMaterial && !shader.fragmentShader.includes('texture-lod-bias') && !shader.fragmentShader.trimStart().startsWith('#version')) {
+    shader.uniforms.uTexLodBias = textureLodBias;
+    shader.fragmentShader = TEXTURE_LOD_BIAS_GLSL + shader.fragmentShader;
   }
 }
 
