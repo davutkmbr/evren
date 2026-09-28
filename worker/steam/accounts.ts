@@ -20,6 +20,25 @@ export interface SteamSession {
   expiresAt: Date;
 }
 
+/** Steam keeps a Web API ticket valid for 21 days unless the game cancels it. */
+const TICKET_LIFETIME_MS = 21 * 24 * 60 * 60 * 1000;
+
+/**
+ * Marks a ticket as used (Steam: "Session Tickets must only be used once"): true the first time, false for a replay
+ * of the same ticket. Only the SHA-256 of the ticket is kept, in Better Auth's verification table, for the ticket's
+ * lifetime.
+ */
+export async function claimTicket(ctx: AuthContext, ticketHex: string): Promise<boolean> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ticketHex.toLowerCase())));
+  const hash = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const identifier = `steam-ticket:${hash}`;
+  // The lookup also prunes expired rows; the reservation's primary key settles two concurrent uses of one ticket.
+  if (await ctx.internalAdapter.findVerificationValue(identifier)) {
+    return false;
+  }
+  return ctx.internalAdapter.reserveVerificationValue({ identifier, value: 'used', expiresAt: new Date(Date.now() + TICKET_LIFETIME_MS) });
+}
+
 async function findSteamUser(ctx: AuthContext, steamId: string): Promise<string | null> {
   const found = await ctx.internalAdapter.findAccountOwnerByKey({ providerId: STEAM_PROVIDER_ID, accountId: steamId });
   return found?.kind === 'owned' ? found.user.id : null;

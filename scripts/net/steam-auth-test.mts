@@ -31,6 +31,7 @@ const ALICE = '76561198000000001';
 const BOB = '76561198000000002';
 const TICKET_ALICE = 'aa11'.repeat(60);
 const TICKET_BOB = 'bb22'.repeat(60);
+const TICKET_ALICE_2 = 'aa12'.repeat(60);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Mocked Steam: tickets map to players; each test can override the next answers.
@@ -69,7 +70,7 @@ const mockSteam: typeof fetch = async (input, init) => {
   }
   const q = url.searchParams;
   if (url.pathname === '/ISteamUserAuth/AuthenticateUserTicket/v1/') {
-    const player = tickets.get(q.get('ticket') ?? '');
+    const player = tickets.get((q.get('ticket') ?? '').toLowerCase());
     if (!player || q.get('identity') !== IDENTITY || q.get('appid') !== APP_ID) {
       return json({ response: { error: { errorcode: 101, errordesc: 'Invalid ticket' } } });
     }
@@ -209,8 +210,12 @@ let aliceId = '';
   check('route: session lasts 90 days', Math.abs(Date.parse(body.expiresAt) - Date.now() - 90 * 86_400_000) < 60_000, body.expiresAt);
   token = body.token;
   aliceId = body.user.id;
-  const again = (await (await signIn(onEnv, TICKET_ALICE)).json()) as { user: { id: string }; created: boolean };
-  check('route: second sign-in finds the same account', again.user.id === aliceId && !again.created, again);
+  const replay = await signIn(onEnv, TICKET_ALICE.toUpperCase());
+  const replayBody = (await replay.json()) as { error: string };
+  check('route: the same ticket again (any case) → 401 ticket-used', replay.status === 401 && replayBody.error === 'ticket-used', [replay.status, replayBody]);
+  tickets.set(TICKET_ALICE_2, { steamId: ALICE });
+  const again = (await (await signIn(onEnv, TICKET_ALICE_2)).json()) as { user: { id: string }; created: boolean };
+  check('route: a new ticket of the same player finds the same account', again.user.id === aliceId && !again.created, again);
   const bob = (await (await signIn(onEnv, TICKET_BOB)).json()) as { user: { id: string } };
   check('route: another player gets another account', !!bob.user?.id && bob.user.id !== aliceId, bob);
 }
