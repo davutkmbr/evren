@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { AsyncReadback } from './async-readback';
 import { createPostMaterial, type FullscreenRenderer } from './fullscreen';
+import { QueryReadout } from './query-readout';
 import { createColorTarget } from './targets';
-import { METER_FRAG } from './shaders/meter.glsl';
+import { ADAPT_FRAG, EXPOSURE_BITS_FRAG, HISTOGRAM_FRAG, METER_FRAG } from './shaders/meter.glsl';
 
 const METER_W = 64;
 const METER_H = 36;
@@ -12,6 +12,12 @@ const LOG_MAX = 18;
 const KEY = 0.18;
 /** Metered log2 luminance at or below this is an exactly black texel (the meter clamps luminance to 1e-7). */
 const BLACK_LOG = -22;
+/** Frames that jump straight to the target after snap() (teleports, time jumps). */
+const SNAP_FRAMES = 3;
+/** Seconds between two CPU copies of the exposure state (weather / diagnostics only; never the image). */
+const MIRROR_INTERVAL_S = 0.25;
+/** Bits of the CPU copy (layout: EXPOSURE_BITS_FRAG). */
+const MIRROR_BITS = 30;
 
 export interface ExposureTuning {
   /** Stops of compensation (?ev=). */
@@ -37,177 +43,168 @@ export const DEFAULT_EXPOSURE_TUNING: ExposureTuning = {
   tauDown: 0.7,
 };
 
+const GLSL_DEFINES = {
+  METER_W,
+  METER_H,
+  BINS,
+  LOG_MIN: LOG_MIN.toFixed(1),
+  LOG_MAX: LOG_MAX.toFixed(1),
+  BLACK_LOG: BLACK_LOG.toFixed(1),
+  KEY: KEY.toFixed(4),
+};
+
 /**
- * Eye adaptation. The GPU writes a 64x36 log-luminance grid; it is read back asynchronously (no stall) and
- * the CPU builds a centre-weighted histogram, averages the chosen percentile band and adapts in EV space.
+ * Eye adaptation, entirely on the GPU. The meter writes a 64x36 log-luminance grid; a 128x1 pass builds the
+ * centre-weighted histogram; a 2x1 pass averages the chosen percentile band, maps it to a target EV and adapts the
+ * previous exposure toward it (ping-pong state). Bloom and composite read the exposure from that state texture, so no
+ * frame ever waits for a readback. The CPU only receives a quantized copy a few times per second through occlusion
+ * queries (QueryReadout, never blocks) for the weather's lightning and diagnostics: `exposure` (±0.3 %),
+ * `averageLog` and `blackFraction` lag the image by a few frames up to ~0.3 s.
+ *
+ * State texel 0: (exposure, ev, target ev, has measurement); texel 1: (metered log2 luminance, black fraction, 0, 1).
  */
 export class AutoExposure {
   readonly tuning: ExposureTuning = { ...DEFAULT_EXPOSURE_TUNING };
-  /** Linear exposure multiplier currently applied. */
+  /** Linear exposure multiplier of the latest CPU copy (the image uses `texture`). */
   exposure = 1;
   /** 0 = day .. 1 = night (from the environment): night is shown darker than middle grey on purpose. */
   nightFactor = 0;
   /** Log2 of the metered average scene luminance (NaN until the first measurement). */
   averageLog = Number.NaN;
-  targetEv = 0;
   fixedExposure: number | null = null;
-  /** Weighted fraction of the last measurement that was exactly black (black-frame diagnostics). */
+  /** Weighted fraction of the last copied measurement that was exactly black (black-frame diagnostics). */
   blackFraction = 0;
-  /** Number of measurements taken so far (lets callers react to each new one). */
+  /** Number of CPU copies received so far (lets callers react to each new one). */
   measurements = 0;
 
-  private ev = 0;
-  private readonly target: THREE.WebGLRenderTarget;
-  private readonly material: THREE.ShaderMaterial;
-  private readonly readback: AsyncReadback;
-  private readonly histogram = new Float32Array(BINS);
-  private readonly weights = new Float32Array(METER_W * METER_H);
-  private snapCount = 3;
-  private hasMeasurement = false;
-  private pendingMeasurement = false;
-  /** Incremented by snap(): readbacks requested before it show the view before the jump. */
-  private generation = 0;
+  private readonly meterTarget: THREE.WebGLRenderTarget;
+  private readonly histogramTarget: THREE.WebGLRenderTarget;
+  private readonly state: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
+  private current = 0;
+  private readonly meterMaterial: THREE.ShaderMaterial;
+  private readonly histogramMaterial: THREE.ShaderMaterial;
+  private readonly adaptMaterial: THREE.ShaderMaterial;
+  private readonly bitsMaterial: THREE.ShaderMaterial;
+  private readonly readout: QueryReadout;
+  private snapFrames = SNAP_FRAMES;
+  private sinceMirror = Infinity;
 
   constructor(gl: WebGL2RenderingContext) {
-    this.target = createColorTarget(METER_W, METER_H, { name: 'post.meter', filter: THREE.NearestFilter });
-    this.material = createPostMaterial({
+    this.meterTarget = createColorTarget(METER_W, METER_H, { name: 'post.meter', filter: THREE.NearestFilter });
+    this.histogramTarget = createColorTarget(BINS, 1, { name: 'post.meterHistogram', filter: THREE.NearestFilter, type: THREE.FloatType });
+    // Float32: per-frame EV steps (~1e-3) vanish in half precision and the adaptation would stall.
+    this.state = [
+      createColorTarget(2, 1, { name: 'post.exposureA', filter: THREE.NearestFilter, type: THREE.FloatType }),
+      createColorTarget(2, 1, { name: 'post.exposureB', filter: THREE.NearestFilter, type: THREE.FloatType }),
+    ];
+    this.meterMaterial = createPostMaterial({
       name: 'post.meter',
       fragmentShader: METER_FRAG,
       uniforms: { tSource: { value: null }, uFootprint: { value: new THREE.Vector2(1 / METER_W, 1 / METER_H) } },
     });
-    this.readback = new AsyncReadback(gl, METER_W, METER_H, 4);
-    for (let y = 0; y < METER_H; y++) {
-      for (let x = 0; x < METER_W; x++) {
-        const u = (x + 0.5) / METER_W - 0.5;
-        const v = (y + 0.5) / METER_H - 0.5;
-        // Centre-weighted with a slight bias toward the lower half (ground/city rather than open sky).
-        const vb = v + 0.06;
-        this.weights[y * METER_W + x] = 0.35 + Math.exp(-(u * u * 1.6 + vb * vb * 2.2) * 4.0);
-      }
-    }
+    this.histogramMaterial = createPostMaterial({
+      name: 'post.meterHistogram',
+      fragmentShader: HISTOGRAM_FRAG,
+      defines: GLSL_DEFINES,
+      uniforms: { tMeter: { value: this.meterTarget.texture } },
+    });
+    this.adaptMaterial = createPostMaterial({
+      name: 'post.exposureAdapt',
+      fragmentShader: ADAPT_FRAG,
+      defines: GLSL_DEFINES,
+      uniforms: {
+        tHistogram: { value: this.histogramTarget.texture },
+        tPrevious: { value: null },
+        uDt: { value: 0 },
+        uTauUp: { value: 1 },
+        uTauDown: { value: 1 },
+        uMinLog: { value: 0 },
+        uMaxLog: { value: 0 },
+        uLowPercent: { value: 0 },
+        uHighPercent: { value: 1 },
+        uNight: { value: 0 },
+        uEvBias: { value: 0 },
+        uSnap: { value: 0 },
+        uFixed: { value: -1 },
+      },
+    });
+    this.bitsMaterial = createPostMaterial({
+      name: 'post.exposureBits',
+      fragmentShader: EXPOSURE_BITS_FRAG,
+      uniforms: { tState: { value: null }, uBit: { value: 0 } },
+    });
+    this.readout = new QueryReadout(gl, this.bitsMaterial, MIRROR_BITS);
   }
 
   /** Jump straight to the target on the next measurements (teleports, time jumps). */
   snap(): void {
-    this.snapCount = 3;
-    this.generation++;
+    this.snapFrames = SNAP_FRAMES;
   }
 
   get meterTexture(): THREE.Texture {
-    return this.target.texture;
+    return this.meterTarget.texture;
   }
 
-  meter(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture): void {
-    this.material.uniforms.tSource.value = source;
-    fs.draw(renderer, this.material, this.target);
-    this.readback.request(renderer, this.target, this.generation);
+  /** Exposure state written by the last update(): sample texel (0, 0).r for the linear exposure. */
+  get texture(): THREE.Texture {
+    return this.state[this.current].texture;
   }
 
-  /** Collects finished readbacks. Call at the start of a frame (see AsyncReadback). */
-  poll(): void {
-    if (this.readback.poll()) {
-      this.pendingMeasurement = true;
-    }
-  }
+  /** Meters `source`, then adapts the exposure state on the GPU (call once per frame after the source exists). */
+  update(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture, realDt: number): void {
+    this.meterMaterial.uniforms.tSource.value = source;
+    fs.draw(renderer, this.meterMaterial, this.meterTarget);
+    fs.draw(renderer, this.histogramMaterial, this.histogramTarget);
 
-  update(realDt: number): void {
-    // Results requested before the last snap() still show the view before the jump: snapping to one of those would
-    // expose the new view for the old one (a dark or blown-out flash right after a teleport).
-    if (this.pendingMeasurement && this.readback.dataTag === this.generation) {
-      const averageLog = this.measure(this.readback.data);
-      this.measurements++;
-      const targetEv = this.computeTargetEv(averageLog);
-      // A meter without a single valid texel (or a non-finite input) keeps the previous target.
-      if (Number.isFinite(targetEv)) {
-        this.averageLog = averageLog;
-        this.targetEv = targetEv;
-        if (!this.hasMeasurement || this.snapCount > 0) {
-          this.ev = targetEv;
-          this.snapCount = Math.max(0, this.snapCount - 1);
-          this.hasMeasurement = true;
-        }
-      }
-    }
-    this.pendingMeasurement = false;
-    if (this.hasMeasurement) {
-      const dt = Math.min(Math.max(realDt, 0), 0.25);
-      const tau = this.targetEv > this.ev ? this.tuning.tauUp : this.tuning.tauDown;
-      this.ev += (this.targetEv - this.ev) * (1 - Math.exp(-dt / tau));
-    }
-    if (!Number.isFinite(this.ev)) {
-      this.ev = Number.isFinite(this.targetEv) ? this.targetEv : 0;
-    }
-    this.exposure = this.fixedExposure ?? Math.pow(2, this.ev);
-  }
-
-  private measure(data: Float32Array): number {
-    const hist = this.histogram;
-    hist.fill(0);
-    let total = 0;
-    let black = 0;
-    const scale = BINS / (LOG_MAX - LOG_MIN);
-    for (let i = 0, n = METER_W * METER_H; i < n; i++) {
-      const lg = data[i * 4];
-      if (!(lg === lg)) {
-        continue;
-      }
-      let bin = Math.floor((lg - LOG_MIN) * scale);
-      bin = bin < 0 ? 0 : bin >= BINS ? BINS - 1 : bin;
-      const w = this.weights[i];
-      hist[bin] += w;
-      total += w;
-      if (lg <= BLACK_LOG) {
-        black += w;
-      }
-    }
-    this.blackFraction = total > 0 ? black / total : 0;
-    if (total <= 0) {
-      return Number.NaN;
-    }
-    const lo = total * this.tuning.lowPercent;
-    const hi = total * this.tuning.highPercent;
-    let acc = 0;
-    let sum = 0;
-    let wsum = 0;
-    for (let b = 0; b < BINS; b++) {
-      const w = hist[b];
-      if (w <= 0) {
-        continue;
-      }
-      const start = acc;
-      const end = acc + w;
-      acc = end;
-      const overlap = Math.min(end, hi) - Math.max(start, lo);
-      if (overlap > 0) {
-        const center = LOG_MIN + (b + 0.5) / scale;
-        sum += center * overlap;
-        wsum += overlap;
-      }
-    }
-    return wsum > 0 ? sum / wsum : 0;
-  }
-
-  /**
-   * Maps metered log luminance to exposure EV: middle grey key, clamped adaptation range, and a
-   * perceptual compensation so dark scenes stay dark (night) and very bright ones read bright.
-   */
-  private computeTargetEv(avgLog: number): number {
     const t = this.tuning;
-    const clamped = Math.min(Math.max(avgLog, t.minLog), t.maxLog);
-    const dark = smoothstep(-1.5, -7.0, avgLog);
-    const bright = smoothstep(0.5, 3.5, avgLog);
-    const compensation = -1.6 * dark + 0.35 * bright - 1.3 * this.nightFactor;
-    return Math.log2(KEY) - clamped + compensation + t.evBias;
+    const u = this.adaptMaterial.uniforms;
+    const previous = this.state[this.current];
+    this.current = 1 - this.current;
+    u.tPrevious.value = previous.texture;
+    u.uDt.value = Math.min(Math.max(realDt, 0), 0.25);
+    u.uTauUp.value = t.tauUp;
+    u.uTauDown.value = t.tauDown;
+    u.uMinLog.value = t.minLog;
+    u.uMaxLog.value = t.maxLog;
+    u.uLowPercent.value = t.lowPercent;
+    u.uHighPercent.value = t.highPercent;
+    u.uNight.value = this.nightFactor;
+    u.uEvBias.value = t.evBias;
+    u.uSnap.value = this.snapFrames > 0 ? 1 : 0;
+    u.uFixed.value = this.fixedExposure ?? -1;
+    fs.draw(renderer, this.adaptMaterial, this.state[this.current]);
+    this.snapFrames = Math.max(0, this.snapFrames - 1);
+
+    this.sinceMirror += Math.max(realDt, 0);
+    if (this.sinceMirror >= MIRROR_INTERVAL_S && !this.readout.busy) {
+      this.bitsMaterial.uniforms.tState.value = this.state[this.current].texture;
+      this.readout.request(renderer, fs);
+      this.sinceMirror = 0;
+    }
+  }
+
+  /** Collects a finished CPU copy of the state, if one arrived (never waits). */
+  poll(): void {
+    const bits = this.readout.poll();
+    if (bits < 0) {
+      return;
+    }
+    const field = (from: number, count: number): number => Math.floor(bits / 2 ** from) % 2 ** count;
+    this.exposure = Math.pow(2, (field(0, 12) / 4095) * 32 - 16);
+    this.averageLog = field(29, 1) === 1 ? (field(12, 10) / 1023) * 48 - 24 : Number.NaN;
+    this.blackFraction = field(22, 7) / 127;
+    this.measurements++;
   }
 
   dispose(): void {
-    this.target.dispose();
-    this.material.dispose();
-    this.readback.dispose();
+    this.meterTarget.dispose();
+    this.histogramTarget.dispose();
+    this.state[0].dispose();
+    this.state[1].dispose();
+    this.meterMaterial.dispose();
+    this.histogramMaterial.dispose();
+    this.adaptMaterial.dispose();
+    this.bitsMaterial.dispose();
+    this.readout.dispose();
   }
-}
-
-function smoothstep(e0: number, e1: number, x: number): number {
-  const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
-  return t * t * (3 - 2 * t);
 }

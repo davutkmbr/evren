@@ -6,6 +6,7 @@ import { BloomChain } from './bloom';
 import { DynamicResolution, type DynamicResolutionInput, type DynamicResolutionStats } from './dynamic-resolution';
 import { AutoExposure } from './exposure';
 import { CompositePass, UNDERWATER_LOOK, type CompositeFrame } from './composite-pass';
+import { FramePacer } from './frame-pacer';
 import { FullscreenRenderer } from './fullscreen';
 import { GpuTimer } from './gpu-timer';
 import { createGradingState, updateGrading } from './grading';
@@ -30,6 +31,8 @@ const BLACK_FRAME_FRACTION = 0.97;
 const TAA_ORDER = 105;
 /** Minimum wall time between two warnings of the same kind (black frame, invalid camera), ms. */
 const WARN_INTERVAL_MS = 5000;
+/** Frames the GPU may still be working on when the next one starts (?pace=N, 0 = no pacing). */
+const DEFAULT_MAX_FRAMES_IN_FLIGHT = 2;
 
 /** Read-only diagnostics for sandboxes / debug overlays. */
 export interface PostDiagnostics {
@@ -96,6 +99,7 @@ export class PostPipeline implements RenderPipeline {
     paused: false,
   };
   private readonly timer: GpuTimer;
+  private readonly pacer: FramePacer;
   private antialias: AntialiasPass | null = null;
   /** Temporal antialiasing (phase 25), null while off. */
   private taa: TemporalAA | null = null;
@@ -164,6 +168,9 @@ export class PostPipeline implements RenderPipeline {
     this.exposureCtl = new AutoExposure(this.gl);
     this.exposureCtl.tuning.evBias = this.overrides.evBias;
     this.exposureCtl.fixedExposure = this.overrides.fixedExposure;
+    this.exposureCtl.exposure = this.overrides.fixedExposure ?? 1;
+    const pace = Number(ctx.debug.params.get('pace') ?? DEFAULT_MAX_FRAMES_IN_FLIGHT);
+    this.pacer = new FramePacer(this.gl, Number.isFinite(pace) ? Math.max(0, Math.min(8, Math.round(pace))) : DEFAULT_MAX_FRAMES_IN_FLIGHT);
     this.flare.enabled = this.overrides.flare;
     this.dynres.enabled = this.overrides.dynamicResolution && this.profileMode === 'frame';
     this.dynres.forcedScale = this.overrides.fixedScale;
@@ -188,6 +195,7 @@ export class PostPipeline implements RenderPipeline {
       height: 1,
       bloom: this.bloom,
       bloomEnabled: true,
+      exposureTexture: null,
       exposure: 1,
       grading: this.grading,
       flareIntensity: 0,
@@ -239,8 +247,32 @@ export class PostPipeline implements RenderPipeline {
     return this.dynres.stats;
   }
 
+  /** Latest CPU copy of the auto exposure (lags the image by up to ~0.3 s; the image reads it on the GPU). */
   get exposure(): number {
     return this.exposureCtl.exposure;
+  }
+
+  /**
+   * Frame pacing: true while the GPU still works on the last `maxInFlight` submitted frames. The engine then skips
+   * this animation frame instead of queueing more work behind them (which Chrome answers with 50-140 ms stalls).
+   */
+  gpuBehind(): boolean {
+    if (this.disposed || !this.pacer.behind()) {
+      return false;
+    }
+    // render() will not run this animation frame: keep the start-of-frame callback registered.
+    requestAnimationFrame(this.onFrameStart);
+    return true;
+  }
+
+  /** Frame pacing state (window.__evren.stats().pacing). */
+  get pacingStats(): { maxInFlight: number; inFlight: number; skipped: number; exposureCopies: number } {
+    return {
+      maxInFlight: this.pacer.maxInFlight,
+      inFlight: this.pacer.inFlight,
+      skipped: this.pacer.skipped,
+      exposureCopies: this.exposureCtl.measurements,
+    };
   }
 
   /** Temporal upscaling factor in effect (internal / display per axis on top of dynamic resolution), 0 = off. */
@@ -369,13 +401,14 @@ export class PostPipeline implements RenderPipeline {
     // skipped frame or the loading phase before the engine loop started).
     this.timer.end(this.profileMode === 'frame' && (ctx.time.frame !== this.timerFrame || cpuMs > STALE_FRAME_MS));
     this.lastCpuMs = cpuMs;
+    this.pacer.endFrame();
     this.checkBlackFrame(ctx);
   }
 
   /**
-   * Black-frame diagnostics from the exposure meter (already read back asynchronously every frame, so free): when a
-   * metered frame is (almost) exactly black, log the state that usually explains it. The report lags the frame by
-   * the readback latency (1-3 frames).
+   * Black-frame diagnostics from the exposure state (its CPU copy arrives a few times per second, so this is free):
+   * when a metered frame is (almost) exactly black, log the state that usually explains it. The report lags the frame
+   * by up to ~0.3 s.
    */
   private checkBlackFrame(ctx: EngineContext): void {
     const ctl = this.exposureCtl;
@@ -410,16 +443,16 @@ export class PostPipeline implements RenderPipeline {
   /** Everything after the HDR passes: bloom + metering, flare visibility, composite, AA, output. */
   private renderPost(ctx: EngineContext, hdr: THREE.Texture, depth: THREE.DepthTexture): void {
     const renderer = this.renderer;
-    const exposure = this.exposureCtl.exposure;
     const bloomOn = this.settings.bloom;
-    this.bloom.downsample(renderer, this.fs, hdr, this.postWidth, this.postHeight, exposure / 8, bloomOn ? undefined : METER_MIP);
-    this.exposureCtl.meter(renderer, this.fs, this.bloom.mips[Math.min(METER_MIP, this.bloom.levels - 1)].texture);
-    this.exposureCtl.update(ctx.time.realDt);
+    // The Karis weights use the previous frame's exposure (the meter reads this downsample).
+    this.bloom.downsample(renderer, this.fs, hdr, this.postWidth, this.postHeight, this.exposureCtl.texture, 1 / 8, bloomOn ? undefined : METER_MIP);
+    // Night factor first: the adaptation below reads it on the GPU.
+    this.updateEnvironmentDrivenState(ctx);
+    this.exposureCtl.update(renderer, this.fs, this.bloom.mips[Math.min(METER_MIP, this.bloom.levels - 1)].texture, ctx.time.realDt);
     if (bloomOn) {
       this.bloom.upsample(renderer, this.fs, 1);
     }
 
-    this.updateEnvironmentDrivenState(ctx);
     if (this.flare.intensity > 0) {
       this.flare.render(renderer, this.fs, this.sceneTarget.texture, hdr, depth);
     }
@@ -427,8 +460,7 @@ export class PostPipeline implements RenderPipeline {
     const debugView = this.overrides.debugView;
     if (debugView !== 'off') {
       const isBloom = debugView === 'bloom';
-      const debugExposure = this.exposureCtl.exposure / (isBloom ? this.bloom.levels : 1);
-      this.output.renderDebug(renderer, this.fs, debugView, isBloom ? this.bloom.result : hdr, depth, debugExposure, ctx.camera);
+      this.output.renderDebug(renderer, this.fs, debugView, isBloom ? this.bloom.result : hdr, depth, this.exposureCtl.texture, isBloom ? 1 / this.bloom.levels : 1, ctx.camera);
       return;
     }
     const f = this.compositeFrame;
@@ -437,7 +469,8 @@ export class PostPipeline implements RenderPipeline {
     f.width = this.postWidth;
     f.height = this.postHeight;
     f.bloomEnabled = bloomOn;
-    f.exposure = this.exposureCtl.exposure * Math.pow(2, UNDERWATER_LOOK.exposureEv * this.composite.underwater);
+    f.exposureTexture = this.exposureCtl.texture;
+    f.exposure = Math.pow(2, UNDERWATER_LOOK.exposureEv * this.composite.underwater);
     f.flareIntensity = this.flare.intensity;
     f.speedEffect = this.overrides.speed ?? this.speedEffect;
     f.time = globalUniforms.uTime.value as number;
@@ -501,7 +534,7 @@ export class PostPipeline implements RenderPipeline {
     renderer.clear(true, true, false);
     const hdr = this.sceneTarget.texture;
     const depth = this.sceneTarget.depthTexture as THREE.DepthTexture;
-    this.bloom.warmUp(renderer, this.fs, hdr);
+    this.bloom.warmUp(renderer, this.fs, hdr, this.exposureCtl.texture);
     this.flare.render(renderer, this.fs, hdr, hdr, depth);
     renderer.setRenderTarget(previous);
   }
@@ -680,6 +713,7 @@ export class PostPipeline implements RenderPipeline {
     this.composite.dispose();
     this.output.dispose();
     this.timer.dispose();
+    this.pacer.dispose();
     this.fs.dispose();
   }
 }

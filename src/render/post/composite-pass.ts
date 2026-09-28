@@ -48,6 +48,9 @@ export interface CompositeFrame {
   height: number;
   bloom: BloomChain;
   bloomEnabled: boolean;
+  /** Exposure state texture (AutoExposure.texture): the composite reads the adapted exposure on the GPU. */
+  exposureTexture: THREE.Texture | null;
+  /** Multiplier on top of the adapted exposure (under water). */
   exposure: number;
   grading: GradingState;
   flareIntensity: number;
@@ -87,6 +90,7 @@ export class CompositePass {
         uBloomTexel: { value: new THREE.Vector2() },
         uBloomStrength: { value: 0 },
         uBloomNorm: { value: 1 },
+        tExposure: { value: null },
         uExposure: { value: 1 },
         uWhiteBalance: { value: grading.whiteBalance },
         uLookSlope: { value: grading.lookSlope },
@@ -233,6 +237,7 @@ export class CompositePass {
     // mip 0 holds the SUM of all bloom levels: normalise it, then mix energy-conservingly.
     u.uBloomStrength.value = f.bloomEnabled ? g.bloomStrength : 0;
     u.uBloomNorm.value = 1 / f.bloom.levels;
+    u.tExposure.value = f.exposureTexture;
     u.uExposure.value = f.exposure;
     u.uLookPower.value = g.lookPower;
     u.uLookSat.value = g.lookSaturation;

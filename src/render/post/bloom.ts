@@ -21,6 +21,7 @@ export class BloomChain {
   constructor() {
     const downUniforms = (): Record<string, THREE.IUniform> => ({
       tSource: { value: null },
+      tExposure: { value: null },
       uTexel: { value: new THREE.Vector2() },
       uKarisScale: { value: 1 },
     });
@@ -71,8 +72,11 @@ export class BloomChain {
     this.levelCount = Math.max(1, this.levelCount);
   }
 
-  /** Downsamples `source` through the chain. `upToLevel` limits the work (exposure metering only needs a few). */
-  downsample(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture, sourceWidth: number, sourceHeight: number, karisScale: number, upToLevel = BLOOM_LEVELS - 1): void {
+  /**
+   * Downsamples `source` through the chain. The Karis weights of the first level use exposure (state texture, see
+   * AutoExposure) x `karisScale`. `upToLevel` limits the work (exposure metering only needs a few).
+   */
+  downsample(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture, sourceWidth: number, sourceHeight: number, exposure: THREE.Texture, karisScale: number, upToLevel = BLOOM_LEVELS - 1): void {
     const last = Math.min(upToLevel, this.levelCount - 1);
     for (let i = 0; i <= last; i++) {
       const mat = i === 0 ? this.downFirst : this.down;
@@ -81,6 +85,7 @@ export class BloomChain {
       const sh = i === 0 ? sourceHeight : this.sizes[i - 1].y;
       mat.uniforms.tSource.value = src;
       (mat.uniforms.uTexel.value as THREE.Vector2).set(1 / sw, 1 / sh);
+      mat.uniforms.tExposure.value = exposure;
       mat.uniforms.uKarisScale.value = karisScale;
       fs.draw(renderer, mat, this.mips[i]);
     }
@@ -99,8 +104,8 @@ export class BloomChain {
   }
 
   /** Draws each material once (program compilation up front; the upsample is skipped while bloom is off). */
-  warmUp(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture): void {
-    this.downsample(renderer, fs, source, 1, 1, 1, 1);
+  warmUp(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, source: THREE.Texture, exposure: THREE.Texture): void {
+    this.downsample(renderer, fs, source, 1, 1, exposure, 1, 1);
     const mat = this.up;
     mat.uniforms.tSource.value = this.mips[1].texture;
     fs.draw(renderer, mat, this.mips[0]);

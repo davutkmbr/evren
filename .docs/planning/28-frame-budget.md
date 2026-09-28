@@ -184,17 +184,115 @@ do not add up exactly.
 | 3 | **Shadow caster budget:** gate small casters and region details out of cascades ≥ 1 (`shadowGate`), building proxies in the far cascades, refresh cascades 2–3 every other frame (static world, sun moves slowly) | 2–4 ms (shadows total 2.5–7.5) | M | `shadows=0` −6.3 / −7.5; cascades / tile size ≈0 → it is draws, not fill |
 | 4 | **Draw-call batching** for the procedural city tiles (~170 meshes) and region layers (BatchedMesh / merged per cell): relieves the GPU-process decode (54–59 % busy) and `PostPipeline.render` CPU (5.5–7.9 ms) | 2–4 ms | M–L | hide `city` −2.4…−5.5 at ≤ 1.6 ms per tile |
 | 5 | **Clouds on ultra at high's resolution** (divisor 2 → 3, steps 112 → 88) or temporal upsampling | ~1 ms (pass costs 1.1–2.4) | S | clouds off −1.1…−2.4 |
-| 6 | **Exposure without a readback:** keep the meter and the adaptation on the GPU (1x1 adapted-luminance target read by the composite), so no frame ever waits on the GPU process; alternatively poll at most every 4th frame | median 0 ms; removes the 50–60 ms spikes once under budget | S–M | section 3.1 |
-| 7 | **Frame pacing:** one fence per frame, skip the frame's GPU work (not the simulation) while 2 frames are in flight | median 0; p99 → median when slightly over budget | S | poll-off A/B: backpressure stalls reach 140 ms |
-| 8 | **Shader warm-up for streamed content:** `compileAsync` region / kit materials before they join the scene (as street layer and mosques do); share materials across regions | removes 23–77 ms hitches | S | `GetProgramiv` long tasks |
-| 9 | **Spread region streaming:** time-slice the worker-result handler and geometry uploads (≤ 2 ms per frame), transfer ready buffers instead of rebuilding on the main thread | removes 90–100 ms hitches near regions | M | `HandlePostMessage` 91–99 ms; frame bodies ~100 ms |
+| 6 | **Exposure without a readback:** keep the meter and the adaptation on the GPU (1x1 adapted-luminance target read by the composite), so no frame ever waits on the GPU process; alternatively poll at most every 4th frame | median 0 ms; removes the 50–60 ms spikes once under budget | S–M | section 3.1; **done, section 5** |
+| 7 | **Frame pacing:** one fence per frame, skip the frame's GPU work (not the simulation) while 2 frames are in flight | median 0; p99 → median when slightly over budget | S | poll-off A/B: backpressure stalls reach 140 ms; **done, section 5** |
+| 8 | **Shader warm-up for streamed content:** `compileAsync` region / kit materials before they join the scene (as street layer and mosques do); share materials across regions | removes 23–77 ms hitches | S | `GetProgramiv` long tasks; **done, section 6** |
+| 9 | **Spread region streaming:** time-slice the worker-result handler and geometry uploads (≤ 2 ms per frame), transfer ready buffers instead of rebuilding on the main thread | removes 90–100 ms hitches near regions | M | `HandlePostMessage` 91–99 ms; frame bodies ~100 ms; **done, section 6** |
 | 10 | Dynamic resolution as the safety net (already there; floor 0.8 on ultra) | ≤ 3 ms | — | scale 0.7 only −2.3…−4.7 ms: cannot close the gap alone |
 
 Suggested order: 0 (if Retina) → 1 → 5 → 8 → 3 → 2 → 6/7 → 9 → 4. Fixes 1 + 2 + 3 + 5 at their expected values
 remove 11–19 ms, which reaches the ≈ 23 ms serialised target at every measured view; re-measure after each with the
 same method (serialised frame + pipelined p99, frozen and flying, all four views).
 
-## 5. Stutter: shader warm-up and streaming
+## 5. Stutter: exposure and frame pacing
+
+Fixes 6 and 7, measured 2026-09-28 on `feat/gpu-exposure` against origin/main `76966f9`. Before and after ran in the
+same `snap.mjs --batch`, interleaved per view (the baseline is a frozen copy of main's `src/` served through its own
+shim page). Flying, `q=ultra&dynres=0&fps=0&autostart=1`, 1600x900. The numbers come from the page's 8 s frame window
+(`frameTimes`, one sample per rendered frame). The same noise as above applies: repeated runs of one variant move p99 by
+one or two 16.7 ms vsync steps.
+
+### What changed
+
+- **Auto exposure runs entirely on the GPU.** Meter (64x36 log luminance, unchanged), then a 128x1 histogram pass
+  with the same centre weights, then a 2x1 float32 adaptation pass that ping-pongs the state: the percentile band
+  (35–93 %), the target EV (key 0.18, `minLog` / `maxLog` clamp, dark / bright / night compensation, `?ev=` bias),
+  and the rise / fall time constants (1.5 s / 0.7 s) with the frame's `dt`. `?exposure=` writes the fixed value, and
+  teleports and time jumps still snap for 3 frames. Composite, bloom's Karis weights and the `?postdebug` views sample
+  the exposure from that texture. There is no CPU readback on the per-frame path.
+- **The CPU copy uses occlusion queries, not a fenced readback.** The weather's lightning, `diagnostics` and the
+  black-frame log still need the value. A fenced `getBufferSubData` does not work for this in Chrome (next section).
+  4 times per second, 30 one-pixel draws encode the state bit by bit (exposure at 12 bits, about ±0.3 %; metered
+  luminance at 10 bits; black fraction at 7 bits; 1 validity bit). Each draw sits in its own `ANY_SAMPLES_PASSED` query,
+  and the results arrive asynchronously. `async-readback.ts` is gone.
+- **Frame pacing** (`?pace=N`, default 2, `0` = off). The pipeline puts a fence after every frame. At the start of an
+  animation frame, while the fences of the last N frames are all unsignalled (polled with `clientWaitSync(…, 0)`),
+  the engine skips that animation frame instead of queueing more work (at most 6 in a row). The next frame takes the
+  whole elapsed `dt`.
+
+### Why the fence alone does not help in Chrome
+
+In-page test during flight (Galata, ultra, 20 samples each): a 4x4 readback into a pixel-pack buffer, a fence, the
+fence polled each frame until signalled, then `getBufferSubData`:
+
+| Buffer | Fence polled with | `getBufferSubData` median / max |
+|---|---|---|
+| `STREAM_READ`, reused | `clientWaitSync(0)` | 81 / 95 ms |
+| `STREAM_READ`, fresh per read | `clientWaitSync(0)` | 40 / 79 ms |
+| `STREAM_READ`, reused | `getSyncParameter` | 3 / 76 ms |
+| `STREAM_COPY`, reused | `clientWaitSync(0)` | 73 / 91 ms |
+
+The call stays a synchronous command-buffer round trip that waits until the GPU process has drained its backlog,
+even after the fence signalled. Chrome's `READ`-usage shadow copy did not take effect: it logs "written again before
+being read back" and discards it. An exposure copy read this way every 0.25 s still cost 20–110 ms per read
+(first attempt on this branch). Collecting it only when every frame fence had signalled did not help either: on ultra
+the GPU never caught up, so no copy qualified. Occlusion-query results carry no such round trip.
+
+### Results
+
+| View | Variant | fps (rendered) | median | p99 | max | frames > 50 ms |
+|---|---|---|---|---|---|---|
+| `galata&t=15` | before (main) | 33.4 | 16.7 | 66.7 | 83.3 | 30 |
+| | GPU exposure, no pacing (`pace=0`) | 30.4 | 16.8 | 100.1 | 116.6 | 33 |
+| | **GPU exposure + pacing (default)** | 31.4 | 33.3 | **50.1** | **66.7** | 6 |
+| `bogaz&t=21` | before (main) | 31.4 | 33.3 | 83.4 | 133.3 | 20 |
+| | GPU exposure, no pacing | 31.3 | 33.2 | 100.1 | 100.1 | 29 |
+| | **GPU exposure + pacing** | 30.2 | 33.3 | **66.8** | 149.9 | 23 |
+| Kadıköy 150 m | before (main) | 27.1 | 33.3 | 100.0 | 133.4 | 53 |
+| | GPU exposure, no pacing | 26.8 | 33.3 | 116.7 | 116.8 | 33 |
+| | **GPU exposure + pacing** | 26.2 | 33.4 | **83.3** | **83.4** | 29 |
+
+- **The GPU exposure alone does not help.** It is the section 3.1 A/B again: without the readback's implicit sync,
+  Chrome's backpressure stalls in 100–117 ms steps.
+- **The two together fix the stutter.** p99 drops by 17 ms per view (one vsync step), and the Galata and Kadıköy
+  maxima drop by 17–50 ms. Frame times go from bimodal (16.7 ms frames plus 50–130 ms stalls) to a steady 33 ms
+  cadence. Rendered fps changes by −3…−6 %, within the noise. The Boğaz max of 150 ms is most likely a
+  shader-program link (the trace of the same view shows one, below).
+- The remaining p99 (50–83 ms) comes from pacing skipping animation frames while the GPU is over budget. The main
+  thread no longer waits: a skipped frame costs nothing. It falls toward the median once the GPU fits its budget
+  (fixes 1–5).
+- Pacing depth: `pace=1` halves throughput (Chrome reports fence completion one frame or more late: 50–67 ms median,
+  16–23 fps); `pace=3` behaves like no pacing (p99 83–100 ms). 2 is the default.
+- The `snap.mjs --perf` fps counts animation frames. With pacing it includes skipped ones (it reads 49–56 fps here),
+  so use `frameTimes.frames` for the rendered rate.
+
+### Chrome traces (renderer main thread, long tasks > 50 ms, 8 s window)
+
+| View | Before: exposure readback | Before: other | After: exposure readback | After: other | Main thread busy before → after |
+|---|---|---|---|---|---|
+| Galata | 35 (≤ 66 ms) | 0 | **0** | 0 | 99 % → 54 % |
+| Boğaz | 16 (≤ 64 ms) | 4 (2 program links, 1 worker handler, 1 frame body) | **0** | 1 program link (58 ms) | 97 % → 53 % |
+| Kadıköy (last 8 s) | 62 (≤ 113 ms) | 2 GPU round trips | **0** | 1 GPU round trip (61 ms) | 99 % → 48 % |
+
+Over the whole 38 s Kadıköy trace (with streaming), long tasks fell from 290 (272 of them the exposure readback) to 23.
+Those 23 are program links (fix 8), worker result handlers and frame bodies (fix 9), and 6 round trips from the sky's
+irradiance probe. The probe reads back through three's `readRenderTargetPixelsAsync` every 0.25 s
+(`render/sky/index.ts`), which is the same fenced-`getBufferSubData` pattern and is the next readback to move to the
+GPU or to a query readout.
+
+### Visual check
+
+- Before and after screenshots of the same views match (`galata&t=15`, `bogaz&t=21`, `?ev=1`, `?exposure=1.2`,
+  `?postdebug=hdr`).
+- The CPU copy reads the same values as main's readback: Galata EV −1.168 vs −1.170, Boğaz night −0.254 vs −0.250,
+  `?exposure=1.2` 0.262 vs 0.263 EV, and `?ev=1` +1 EV.
+- Exposure over time was probed by cutting the camera from sky to dark water and back at 19:12, then moving the clock
+  from 18:00 to 21:00 in 0.1 h steps. It tracks main within about 0.1 EV at matching phases, including the rise (τ 1.5 s:
+  −0.44 → 1.61 EV on main, −0.34 → 1.63 EV here, in 3.7 s) and the fall into night. Up to 0.25 EV appear where the
+  two probes' clocks are offset by a few hundred ms. The sky-to-water cut shows no change on either build: both stay
+  at the `minLog` clamp.
+
+## 6. Stutter: shader warm-up and streaming
 
 Fixes 8 and 9, branch `feat/region-shader-warmup`. Measured 2026-09-28 on the shared machine (other agents' GPU jobs
 running, same noise as above).
