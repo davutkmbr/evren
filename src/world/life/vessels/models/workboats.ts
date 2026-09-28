@@ -146,7 +146,9 @@ export function buildPilotBoat(o: ModelOptions): BuiltModel {
   const mh = new THREE.Vector3(0, yd + 4.2, 0.6);
   if (near) {
     b.cylinder(0, yd + 3.5, 0.6, 0.06, 0.05, 0.7, 5, white, true);
+    b.beginPart('radar', 0, yd + 3.6, -0.2);
     b.box(0, yd + 3.6, -0.2, 1.4, 0.1, 0.25, surf(0x2a2c2e, { roughness: 0.5, metalness: 0.4 }));
+    b.endPart();
     const rail = surf(0xcfd3d6, { roughness: 0.2, metalness: 0.9 });
     railing(b, edgeLine(shape, -7.6, -4.9, 4, 1, 0.1), shape.deckYAtZ(-6), rail, 0.8);
     railing(b, edgeLine(shape, -7.6, -4.9, 4, -1, 0.1), shape.deckYAtZ(-6), rail, 0.8);

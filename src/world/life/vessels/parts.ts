@@ -366,11 +366,13 @@ export function tyreFender(b: MeshBuilder, x: number, y: number, z: number, yaw:
 export function flag(b: MeshBuilder, x: number, y: number, z: number, h: number, w: number, pole: SurfaceSpec, cloth: SurfaceSpec, yaw = 0): void {
   b.cylinder(x, y, z, 0.035, 0.025, h, 5, pole, true);
   b.pushTRS(x, y + h - w * 0.35, z, yaw);
-  // Slight wave: two panels at an angle.
+  // The cloth flies from the staff (the part's pivot). Slight wave: two panels at an angle.
+  b.beginPart('flag');
   b.box(0, 0, w * 0.26, 0.02, w * 0.66, w * 0.5, cloth);
   b.pushTRS(0, 0, w * 0.5, 0.25);
   b.box(0, 0, w * 0.25, 0.02, w * 0.66, w * 0.5, cloth);
   b.pop();
+  b.endPart();
   b.pop();
 }
 
@@ -418,6 +420,7 @@ export function benchRow(b: MeshBuilder, x0: number, x1: number, z: number, y: n
  */
 export function crossedAnchors(b: MeshBuilder, x: number, y: number, z: number, yaw: number, size: number, s: SurfaceSpec): void {
   b.pushTRS(x, y, z, yaw);
+  b.beginPart('emblem');
   const k = size;
   for (const a of [0.62, -0.62]) {
     b.pushTRS(0, 0, 0, 0, 0, 0);
@@ -435,6 +438,7 @@ export function crossedAnchors(b: MeshBuilder, x: number, y: number, z: number, 
     b.box(0, k * 0.62 + Math.cos(t) * k * 0.1, Math.sin(t) * k * 0.14, 0.02, k * 0.06, k * 0.07, s);
   }
   b.box(0, k * 0.8, 0, 0.02, k * 0.08, k * 0.08, s);
+  b.endPart();
   b.pop();
 }
 

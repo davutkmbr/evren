@@ -59,6 +59,19 @@ export function surf(hex: number | THREE.Color, opts: Omit<SurfaceSpec, 'color'>
 }
 
 /**
+ * A named run of triangles that other runtimes animate or swap (flag cloth, radar scanner, funnel emblem), kept in
+ * the built geometry's `userData.parts` for exporters; the game draws the geometry as one piece.
+ */
+export interface MeshPart {
+  name: string;
+  /** Index range [start, end) into the geometry's index. */
+  start: number;
+  end: number;
+  /** The point the part turns about, in model space. */
+  pivot: [number, number, number];
+}
+
+/**
  * Accumulates indexed triangles with the attribute layout shared by every life mesh
  * (position, normal, color, aSurf = [paint, roughness, metalness, emissive class], aDetail).
  * Primitives are emitted through an optional transform stack.
@@ -70,6 +83,8 @@ export class MeshBuilder {
   private srf: number[] = [];
   private det: number[] = [];
   private idx: number[] = [];
+  private parts: MeshPart[] = [];
+  private openParts: { name: string; start: number; pivot: [number, number, number] }[] = [];
   private stack: THREE.Matrix4[] = [new THREE.Matrix4()];
   private normalStack: THREE.Matrix3[] = [new THREE.Matrix3()];
   private identity = true;
@@ -127,6 +142,22 @@ export class MeshBuilder {
 
   tri(a: number, b: number, c: number): void {
     this.idx.push(a, b, c);
+  }
+
+  /**
+   * Starts a named part (MeshPart) turning about the local point (px, py, pz); the triangles emitted until endPart()
+   * belong to it. Parts do not nest.
+   */
+  beginPart(name: string, px = 0, py = 0, pz = 0): this {
+    const p = new THREE.Vector3(px, py, pz).applyMatrix4(this.matrix);
+    this.openParts.push({ name, start: this.idx.length, pivot: [p.x, p.y, p.z] });
+    return this;
+  }
+
+  endPart(): this {
+    const p = this.openParts.pop();
+    if (p && this.idx.length > p.start) this.parts.push({ name: p.name, start: p.start, end: this.idx.length, pivot: p.pivot });
+    return this;
   }
 
   /** Quad from 4 local points (counter-clockwise seen from the front); flat normal. */
@@ -416,6 +447,7 @@ export class MeshBuilder {
     g.setIndex(count > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingBox();
     g.computeBoundingSphere();
+    if (this.parts.length) g.userData.parts = this.parts;
     return g;
   }
 }

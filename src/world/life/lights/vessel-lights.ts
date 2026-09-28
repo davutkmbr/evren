@@ -3,13 +3,14 @@ import type { NavLightKind } from '../vessels/model-types';
 import type { Vessel } from '../vessels/agents';
 import { LightPoints, Sector } from './nav-lights';
 
-interface LightStyle {
+export interface LightStyle {
   sector: number;
   color: [number, number, number];
   radius: number;
 }
 
-const STYLES: Record<NavLightKind, LightStyle> = {
+/** Sector, linear HDR colour and glow radius (m) of each navigation light kind. */
+export const STYLES: Record<NavLightKind, LightStyle> = {
   mast: { sector: Sector.Masthead, color: [16, 14.6, 12.8], radius: 0.35 },
   port: { sector: Sector.Port, color: [15, 0.9, 0.45], radius: 0.3 },
   stbd: { sector: Sector.Starboard, color: [1.2, 12, 4.8], radius: 0.3 },
@@ -19,9 +20,10 @@ const STYLES: Record<NavLightKind, LightStyle> = {
   red: { sector: Sector.AllRound, color: [14, 0.8, 0.4], radius: 0.3 },
 };
 
-const PASSENGER = new Set(['vapur', 'ferry', 'seabus', 'tour']);
+/** Passenger vessels keep their deck lights on at night, also underway. */
+export const PASSENGER = new Set(['vapur', 'ferry', 'seabus', 'tour']);
 /** Working lamps that are only lit while working (fishing boats drifting over their nets), with a smaller glow. */
-const WORK_LAMPS = new Set(['fishing', 'seiner']);
+export const WORK_LAMPS = new Set(['fishing', 'seiner']);
 
 /** Keeps every vessel's navigation / anchor / deck lights in the shared light pool, switching them by vessel mode. */
 export class VesselLights {

@@ -16,6 +16,19 @@ import { merge, part } from '../../shared/props';
 
 type Rgb = number;
 
+/** Colour sets (sRGB) of the moored boats: balık-ekmek boats (hull, trim, canopy) and kayıks (hull, stripe). */
+export const FISH_BREAD_COLOURS: readonly (readonly [Rgb, Rgb, Rgb])[] = [
+  [0x1f3f86, 0xd7a93a, 0xa3201b],
+  [0x8f1d1d, 0xe0b441, 0x1c3f7a],
+  [0x1b5a3a, 0xd9ad40, 0xa3201b],
+];
+export const KAYIK_COLOURS: readonly (readonly [Rgb, Rgb])[] = [
+  [0xe9e6de, 0x1d5fa8],
+  [0x2a7d9a, 0xe9e6de],
+  [0xe9e6de, 0x2e8a4a],
+  [0xd8b04a, 0x2b2b2b],
+];
+
 /**
  * Lofted hull: pointed bow (+Z) and a fuller stern, from the waterline region down to the keel, between heights y0
  * and y1 of the side (y = 0 is the waterline).
@@ -85,8 +98,11 @@ function deck(L: number, B: number, y: number, sternFull: number): THREE.BufferG
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 
-/** Eminönü balık-ekmek boat: ornate wooden hull, gilded rail, red canopy on carved posts, lanterns and grills. */
-function fishBreadBoat(hullCol: Rgb, trim: Rgb, canopy: Rgb): THREE.BufferGeometry {
+/**
+ * Eminönü balık-ekmek boat: ornate wooden hull, gilded rail, red canopy on carved posts, lanterns and grills. Bow
+ * towards +Z, waterline at y = 0.
+ */
+export function fishBreadBoat(hullCol: Rgb, trim: Rgb, canopy: Rgb): THREE.BufferGeometry {
   const L = 14;
   const B = 4.6;
   const parts = [
@@ -119,8 +135,8 @@ function fishBreadBoat(hullCol: Rgb, trim: Rgb, canopy: Rgb): THREE.BufferGeomet
   return merge(parts);
 }
 
-/** Small open fishing boat (kayık) with a little wheelhouse. */
-function kayik(hullCol: Rgb, stripe: Rgb): THREE.BufferGeometry {
+/** Small open fishing boat (kayık) with a little wheelhouse. Bow towards +Z, waterline at y = 0. */
+export function kayik(hullCol: Rgb, stripe: Rgb): THREE.BufferGeometry {
   const L = 7.5;
   const B = 2.4;
   return merge([
@@ -310,8 +326,8 @@ export function buildBoats(data: Pick<OsmData, 'lines' | 'roads' | 'rails' | 'ar
   const stamper = new BoatStamper();
   const blocked = structureTest(data);
   const anchors: number[] = [];
-  const fish = [fishBreadBoat(0x1f3f86, 0xd7a93a, 0xa3201b), fishBreadBoat(0x8f1d1d, 0xe0b441, 0x1c3f7a), fishBreadBoat(0x1b5a3a, 0xd9ad40, 0xa3201b)].map(flatten);
-  const small = [kayik(0xe9e6de, 0x1d5fa8), kayik(0x2a7d9a, 0xe9e6de), kayik(0xe9e6de, 0x2e8a4a), kayik(0xd8b04a, 0x2b2b2b)].map(flatten);
+  const fish = FISH_BREAD_COLOURS.map(([hull, trim, canopy]) => flatten(fishBreadBoat(hull, trim, canopy)));
+  const small = KAYIK_COLOURS.map(([hull, stripe]) => flatten(kayik(hull, stripe)));
   // Galata Bridge southern end: the fish-bread boats lie just west of it on the Eminönü side.
   const bridge = data.roads.filter((r) => r.bridge && r.name && /Galata Köprüsü/i.test(r.name));
   let south: [number, number] | null = null;

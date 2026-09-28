@@ -130,7 +130,9 @@ export function buildCargoShip(d: CargoDesign, o: ModelOptions): BuiltModel {
   const foreMast = mast(b, 0, fcTop, -L / 2 + L * 0.045, 9, 0.25, surf(0xd1a326, { roughness: 0.5 }), 0);
   if (near) {
     b.cylinder(2.2, bridgeTop, accFront + bridgeDepth * 0.5, 0.9, 0.9, 0.5, 12, mastSurf, true);
+    b.beginPart('radar', -2.4, bridgeTop + 3.5, accFront + bridgeDepth * 0.5);
     b.box(-2.4, bridgeTop + 3.5, accFront + bridgeDepth * 0.5, 3.4, 0.25, 0.4, mastSurf);
+    b.endPart();
   }
 
   // Freefall lifeboat on the stern ramp + deck floodlights on the house front.

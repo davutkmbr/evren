@@ -318,7 +318,9 @@ export function buildYacht(o: ModelOptions): BuiltModel {
   b.tube(new THREE.Vector3(-1.3, deck + 4.9, legZ0 - 0.9), new THREE.Vector3(1.3, deck + 4.9, legZ0 - 0.9), 0.15, near ? 6 : 4, archSurf);
   const mh = new THREE.Vector3(0, deck + 5.3, 3.3);
   if (near) {
+    b.beginPart('radar', 0, deck + 5.08, 3.3);
     b.box(0, deck + 5.08, 3.3, 1.4, 0.1, 0.3, surf(0x2a2c2e, { roughness: 0.5, metalness: 0.4 }));
+    b.endPart();
     b.cylinder(0.75, deck + 5.0, 3.3, 0.25, 0.22, 0.25, 10, white, true);
     const rail = surf(0xcfd3d6, { roughness: 0.2, metalness: 0.9 });
     railing(b, edgeLine(shape, -11.5, -6.8, 5, 1, 0.15), shape.deckYAtZ(-9), rail, 0.8);

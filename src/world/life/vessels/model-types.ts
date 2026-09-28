@@ -43,7 +43,15 @@ export interface VesselModel {
   lights: NavLightDef[];
 }
 
+/**
+ * 'web': the game's look, after the real Istanbul lines (Şehir Hatları vapurs and double-enders, İDO sea buses);
+ * 'generic': an invented line without any operator's colours or marks (exports for other runtimes).
+ */
+export type LiveryId = 'web' | 'generic';
+
 export interface ModelOptions {
   /** 0 = full detail, 1 = distant LOD. */
   lod: 0 | 1;
+  /** Passenger ferries only; default 'web'. */
+  livery?: LiveryId;
 }

@@ -7,7 +7,7 @@ import { srgb } from '../util/mesh-builder';
 import type { Path2 } from '../util/path';
 import { AtAnchor, LaneTransit, LoopRoute, Moored, Priority, Sidestep, Vessel, Wander, type Zone } from './agents';
 import { FleetRenderer, type FleetHandle } from './fleet-renderer';
-import { HARBOUR_ZONES, MOORINGS, SERVICE_HANDLING, SERVICE_LINES } from './fleet-data';
+import { HARBOUR_ZONES, HULL_PAINTS, MOORINGS, SERVICE_HANDLING, SERVICE_LINES } from './fleet-data';
 import type { VesselModel } from './model-types';
 import { BerthBook, FerryService } from './nav/ferry-service';
 import { planService, type ServicePlan } from './nav/ferry-plan';
@@ -20,20 +20,6 @@ import { VesselPhysics } from './physics/vessel-physics';
 
 const PLANING = new Set(['seabus', 'motorboat', 'pilot', 'yacht']);
 
-/** Hull paints by ship type (tankers mostly black / navy / red, box ships in liner blues and greys, bulkers mixed). */
-const CARGO_HULLS: Record<string, readonly number[]> = {
-  tanker: [0x1c1e21, 0x1d3150, 0x7e2620, 0x1c1e21, 0x22453a, 0x5e1c22, 0x2c3a4a],
-  container: [0x1d3150, 0x2c4b69, 0x474f57, 0x1c1e21, 0x7e2620, 0x22453a, 0x3b5f7a],
-  bulk: [0x1c1e21, 0x7e2620, 0x1d3150, 0x8f8b82, 0x9b3a1f, 0x22453a, 0x474f57],
-};
-/** Sheer-strake / trim colours of the wooden and GRP fishing boats. */
-const FISHING_TRIM = [0x2f9aa0, 0x3f7fc0, 0x1f3f7a, 0xb8322a, 0x3c8a5a, 0x2f9aa0, 0xd9a82a, 0x5aa9c9];
-/** Purse seiners: weathered pale blue / green steel is the Rumelikavağı norm, with some white, blue and red hulls. */
-const SEINER_HULLS = [0x8fb8bd, 0x9dbfae, 0x3f6f9a, 0xd8dad4, 0xa9332b, 0x7fa9b8];
-const YACHT_HULLS = [0xf7f7f5, 0xf7f7f5, 0xf5f4ef, 0x1c2842, 0x6f767b];
-/** Excursion boat stripes: Turyol blue, Dentur red, generic green/navy. */
-const TOUR_STRIPES = [0x1f4f9a, 0xb3261e, 0x1f4f9a, 0x2b6c3f, 0x1c2842];
-const MOTORBOAT_HULLS = [0xf4f4f1, 0xf4f4f1, 0x2a8a93, 0x1c2842, 0xc93a2c];
 const CARGO_KEYS = ['tanker-a', 'tanker-b', 'tanker-c', 'container-a', 'container-b', 'bulk-a', 'bulk-b'];
 
 export interface FleetPlanInput {
@@ -125,7 +111,7 @@ export class Fleet {
       for (let k = 0; k < n; k++) {
         const legIndex = Math.floor((k * plan.legs.length) / n);
         const start = k === 0 && line.vessels > 1 ? -0.5 : 0.15 + rng() * 0.6;
-        const v = add(line.model, null, line.model === 'seabus' ? 0x1d2c56 : 0xeeede7, packSeed(0, 0.05 + rng() * 0.15));
+        const v = add(line.model, null, HULL_PAINTS[model.kind][0], packSeed(0, 0.05 + rng() * 0.15));
         v.behaviour = new FerryService(plan, v.id, book, legIndex, start, new Sidestep(geo, model.beam / 2));
         this.initState(v);
       }
@@ -149,7 +135,7 @@ export class Fleet {
       const ballast = rng() < 0.4;
       return {
         key,
-        hull: pickHull(CARGO_HULLS[model.kind] ?? CARGO_HULLS.bulk),
+        hull: pickHull(HULL_PAINTS[model.kind]),
         seed: packSeed(rng() * 8, 0.15 + rng() * 0.75),
         lift: ballast ? model.draft * (0.3 + rng() * 0.15) : rng() * model.draft * 0.08,
       };
@@ -227,22 +213,22 @@ export class Fleet {
       v.state.yaw = rng() * Math.PI * 2;
       v.behaviour = new Wander(geo, zone, cruise, minClear, pauseChance, createRng(0x9e37 + v.id * 131), v.state, turnRate, craftKeepOut);
     };
-    for (let k = 0; k < nFishing; k++) spawnWander('fishing', pickZone(), FISHING_TRIM, 2.6 + rng() * 1.2, 45, 0.6, 0.22);
-    for (let k = 0; k < nSeiner; k++) spawnWander('seiner', pickZone(), SEINER_HULLS, 4.2, 70, 0.4, 0.1);
-    for (let k = 0; k < nYacht; k++) spawnWander('yacht', pickZone(), YACHT_HULLS, 6 + rng() * 5, 60, 0.15, 0.14);
-    for (let k = 0; k < nSail; k++) spawnWander('sailboat', pickZone(), [0xf6f6f3, 0xf6f6f3, 0x1d2a44, 0x2b4a3a], 2.8, 60, 0.25, 0.18);
-    for (let k = 0; k < nMotor; k++) spawnWander('motorboat', pickZone(), MOTORBOAT_HULLS, 8 + rng() * 5, 50, 0.2, 0.3);
+    for (let k = 0; k < nFishing; k++) spawnWander('fishing', pickZone(), HULL_PAINTS.fishing, 2.6 + rng() * 1.2, 45, 0.6, 0.22);
+    for (let k = 0; k < nSeiner; k++) spawnWander('seiner', pickZone(), HULL_PAINTS.seiner, 4.2, 70, 0.4, 0.1);
+    for (let k = 0; k < nYacht; k++) spawnWander('yacht', pickZone(), HULL_PAINTS.yacht, 6 + rng() * 5, 60, 0.15, 0.14);
+    for (let k = 0; k < nSail; k++) spawnWander('sailboat', pickZone(), HULL_PAINTS.sailboat, 2.8, 60, 0.25, 0.18);
+    for (let k = 0; k < nMotor; k++) spawnWander('motorboat', pickZone(), HULL_PAINTS.motorboat, 8 + rng() * 5, 50, 0.2, 0.3);
     for (let k = 0; k < nHarbour; k++) {
       const hz = HARBOUR_ZONES[k % HARBOUR_ZONES.length];
       const zone = { ...latLonToLocal(hz.lat, hz.lon), radius: hz.radius };
-      if (hz.model === 'tug') spawnWander('tug', zone, [0xb3261e, 0xb3261e, 0xd9581c], 4.5, 60, 0.35, 0.12);
-      else spawnWander('pilot', zone, [0xe0561b], 8.5, 60, 0.3, 0.2);
+      if (hz.model === 'tug') spawnWander('tug', zone, HULL_PAINTS.tug, 4.5, 60, 0.35, 0.12);
+      else spawnWander('pilot', zone, HULL_PAINTS.pilot, 8.5, 60, 0.3, 0.2);
     }
 
     // Sightseeing and excursion boats on a loop through the lower Bosphorus (~9 kn).
     for (let k = 0; k < nTour; k++) {
       const beh = new LoopRoute(this.tourLoop, 4.3 + rng() * 0.6, 0.2, (this.tourLoop.length * k) / nTour + rng() * 200, new Sidestep(geo, models.get('tour')!.beam / 2));
-      const v = add('tour', beh, TOUR_STRIPES[k % TOUR_STRIPES.length], packSeed(1, rng() * 0.3));
+      const v = add('tour', beh, HULL_PAINTS.tour[k % HULL_PAINTS.tour.length], packSeed(1, rng() * 0.3));
       this.initState(v);
     }
     return out;

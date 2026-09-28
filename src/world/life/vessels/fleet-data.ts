@@ -1,4 +1,28 @@
+import type { VesselKind } from './model-types';
 import type { ServiceLineDef } from './nav/ferry-plan';
+
+/**
+ * Hull paints (sRGB) per vessel kind: the instance colour of a design's painted surfaces, picked per vessel. Cargo:
+ * tankers mostly black / navy / red, box ships in liner blues and greys, bulkers mixed. Fishing boats: the sheer strake /
+ * trim of the wooden and GRP boats. Seiners: weathered pale blue / green steel is the Rumelikavağı norm, with some
+ * white, blue and red hulls. Tour: excursion boat stripes (Turyol blue, Dentur red, generic green / navy).
+ */
+export const HULL_PAINTS: Readonly<Record<VesselKind, readonly number[]>> = {
+  vapur: [0xeeede7],
+  ferry: [0xeeede7],
+  seabus: [0x1d2c56],
+  tour: [0x1f4f9a, 0xb3261e, 0x1f4f9a, 0x2b6c3f, 0x1c2842],
+  tanker: [0x1c1e21, 0x1d3150, 0x7e2620, 0x1c1e21, 0x22453a, 0x5e1c22, 0x2c3a4a],
+  container: [0x1d3150, 0x2c4b69, 0x474f57, 0x1c1e21, 0x7e2620, 0x22453a, 0x3b5f7a],
+  bulk: [0x1c1e21, 0x7e2620, 0x1d3150, 0x8f8b82, 0x9b3a1f, 0x22453a, 0x474f57],
+  fishing: [0x2f9aa0, 0x3f7fc0, 0x1f3f7a, 0xb8322a, 0x3c8a5a, 0x2f9aa0, 0xd9a82a, 0x5aa9c9],
+  seiner: [0x8fb8bd, 0x9dbfae, 0x3f6f9a, 0xd8dad4, 0xa9332b, 0x7fa9b8],
+  yacht: [0xf7f7f5, 0xf7f7f5, 0xf5f4ef, 0x1c2842, 0x6f767b],
+  sailboat: [0xf6f6f3, 0xf6f6f3, 0x1d2a44, 0x2b4a3a],
+  motorboat: [0xf4f4f1, 0xf4f4f1, 0x2a8a93, 0x1c2842, 0xc93a2c],
+  tug: [0xb3261e, 0xb3261e, 0xd9581c],
+  pilot: [0xe0561b],
+};
 
 /**
  * Scheduled lines. Stops are [pier id, berth index] into data/places.ts PIERS. Classic vapurs back out of the pier and

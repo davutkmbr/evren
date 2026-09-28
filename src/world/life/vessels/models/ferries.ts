@@ -33,10 +33,32 @@ export interface BuiltModel {
   airDraft: number;
 }
 
-/** Şehir Hatları livery (sRGB): white hull and houses, ochre sheer stripe and masts, black rubbing belt. */
-const SH = {
+/** A ferry line's livery (sRGB). */
+export interface FerryLivery {
+  white: number;
+  /** Stripe along the upper-deck edge, funnel bands and exhaust stacks. */
+  stripe: number;
+  mast: number;
+  black: number;
+  roof: number;
+  deck: number;
+  /** Funnel emblem, or null for a plain funnel. */
+  emblem: number | null;
+  ring: number;
+  bench: number;
+  flagRed: number;
+  /** Sea bus: the band along the bridging structure and the thin stripe over it. */
+  band: number;
+  bandStripe: number;
+}
+
+/**
+ * The game's livery, after Şehir Hatları: white hull and houses, ochre sheer stripe and masts, black rubbing belt, the
+ * red crossed-anchors funnel emblem; the sea bus after İDO: navy band (and demihulls, instance paint), red stripe.
+ */
+export const WEB_LIVERY: FerryLivery = {
   white: 0xeeede7,
-  ochre: 0xd88a1c,
+  stripe: 0xd88a1c,
   mast: 0xd99a22,
   black: 0x17181a,
   roof: 0xb4b8b3,
@@ -45,7 +67,16 @@ const SH = {
   ring: 0xe8521f,
   bench: 0x6a4a32,
   flagRed: 0xc8102e,
-} as const;
+  band: PAL.navy,
+  bandStripe: 0xc0262c,
+};
+
+/** An invented Istanbul line (no operator's colours or marks): sea-green stripe and bands, pale masts, plain funnel. */
+export const GENERIC_LIVERY: FerryLivery = { ...WEB_LIVERY, stripe: 0x2a6f66, mast: 0xd6d3c9, emblem: null, band: 0x1f3f45, bandStripe: 0x2a6f66 };
+
+function liveryOf(o: ModelOptions): FerryLivery {
+  return o.livery === 'generic' ? GENERIC_LIVERY : WEB_LIVERY;
+}
 
 /** Solid bulwark / wall strip along a polyline, following the base height y0(p) continuously (no steps). */
 export function wallStrip(b: MeshBuilder, pts: readonly P2[], y0: (p: P2) => number, h: number | ((p: P2) => number), t: number, s: SurfaceSpec): void {
@@ -91,8 +122,8 @@ export function edgeLine(shape: HullShape, z0: number, z1: number, n: number, si
 }
 
 /** Life rings along both sides of a deck edge between z0 and z1. */
-function ringsAlong(b: MeshBuilder, hb: (z: number) => number, z0: number, z1: number, y: number, pitch: number, inset: number): void {
-  const ring = surf(SH.ring, { roughness: 0.55 });
+function ringsAlong(b: MeshBuilder, hb: (z: number) => number, z0: number, z1: number, y: number, pitch: number, inset: number, color: number): void {
+  const ring = surf(color, { roughness: 0.55 });
   for (let z = z0; z <= z1; z += pitch) {
     const x = hb(z) - inset;
     lifeRing(b, x + 0.08, y, z, 0, ring, 8);
@@ -114,13 +145,15 @@ function bowAnchors(b: MeshBuilder, x: number, y: number, z: number, size: numbe
 
 /**
  * Şehir Hatları vapur (after ŞH-Kadıköy / Paşabahçe, ~72 x 13 m): white hull flush with the main-deck saloon, black
- * rubbing belt and boot-top, ochre stripe along the upper-deck edge, enclosed upper saloon forward with an open benched
- * deck and awning aft, bridge forward on the boat deck, ochre masts fore and amidships, squat white funnel with ochre
- * bands, the red crossed-anchors emblem and a black cap; life rings along the rails, open stern deck.
+ * rubbing belt and boot-top, a stripe along the upper-deck edge, enclosed upper saloon forward with an open benched
+ * deck and awning aft, bridge forward on the boat deck, masts fore and amidships, squat white funnel with bands in the
+ * stripe colour, the funnel emblem and a black cap; life rings along the rails, open stern deck. Colours and emblem
+ * come from the livery (the web's: ochre stripe, bands and masts, the red crossed anchors).
  */
 export function buildVapur(o: ModelOptions): BuiltModel {
   const b = new MeshBuilder();
   const near = o.lod === 0;
+  const pal = liveryOf(o);
   const rng = createRng(0x7a9);
   const L = 72;
   const shape = new HullShape({
@@ -148,17 +181,17 @@ export function buildVapur(o: ModelOptions): BuiltModel {
     shape,
     {
       side: surf(0xffffff, { paint: 1, roughness: 0.42, metalness: 0.05, detail: Detail.Hull }),
-      deck: surf(SH.deck, { roughness: 0.85, detail: Detail.Deck }),
+      deck: surf(pal.deck, { roughness: 0.85, detail: Detail.Deck }),
     },
     near ? 34 : 14,
     near ? 7 : 4,
   );
   const hb = (z: number): number => shape.deckHalfBreadthAtZ(z);
-  const white = surf(SH.white, { roughness: 0.5, detail: Detail.Super });
-  const ochre = surf(SH.ochre, { roughness: 0.5, detail: Detail.Super });
-  const mastS = surf(SH.mast, { roughness: 0.5 });
-  const black = surf(SH.black, { roughness: 0.65 });
-  const roof = surf(SH.roof, { roughness: 0.8, detail: Detail.Deck });
+  const white = surf(pal.white, { roughness: 0.5, detail: Detail.Super });
+  const stripe = surf(pal.stripe, { roughness: 0.5, detail: Detail.Super });
+  const mastS = surf(pal.mast, { roughness: 0.5 });
+  const black = surf(pal.black, { roughness: 0.65 });
+  const roof = surf(pal.roof, { roughness: 0.8, detail: Detail.Deck });
   const glassCabin = S.glass(Emit.Cabin);
   const glassCrew = S.glass(Emit.Crew);
   const n = near ? 20 : 8;
@@ -189,11 +222,11 @@ export function buildVapur(o: ModelOptions): BuiltModel {
   const rise = (p: P2): number => 0.95 + 0.85 * Math.pow(THREE.MathUtils.clamp((-27.5 - p.z) / 8.2, 0, 1), 2);
   wallStrip(b, bw(1), () => yUpper, rise, 0.12, white);
   wallStrip(b, bw(-1), () => yUpper, rise, 0.12, white);
-  band(b, fc, yUpper - 0.3, 0.3, ochre, 0.03);
+  band(b, fc, yUpper - 0.3, 0.3, stripe, 0.03);
 
-  // Upper deck plate: its rim is the ochre stripe.
+  // Upper deck plate: its rim is the stripe.
   const upperDeck = planform(-27.6, 33.2, (z) => hb(z) + 0.1, near ? 24 : 10);
-  slab(b, upperDeck, yUpper + 0.26, 0.3, surf(SH.deck, { roughness: 0.85, detail: Detail.Deck }), ochre, white);
+  slab(b, upperDeck, yUpper + 0.26, 0.3, surf(pal.deck, { roughness: 0.85, detail: Detail.Deck }), stripe, white);
 
   // Upper saloon (forward 60 %).
   const upper = planform(-24.5, 6.5, (z) => hb(z) - 0.55, n);
@@ -222,22 +255,22 @@ export function buildVapur(o: ModelOptions): BuiltModel {
   // Wing platforms.
   b.block(0, yB, -18.6, 13.4, 0.12, 1.6, white);
 
-  // Funnel: ochre base, white band with the emblem, ochre ring and black cap.
+  // Funnel: base in the stripe colour, white band (with the emblem), stripe-coloured ring and black cap.
   const fz = -4.5;
   const frx = 1.75;
   const frz = 2.7;
   const seg = near ? 18 : 10;
-  b.cylinder(0, yB, fz, frx, frx * 0.97, 1.3, seg, ochre, false, false, 1, frz / frx);
-  b.cylinder(0, yB + 1.3, fz, frx * 0.97, frx * 0.93, 2.1, seg, surf(SH.white, { roughness: 0.45, detail: Detail.Super }), false, false, 1, frz / frx);
-  b.cylinder(0, yB + 3.4, fz, frx * 0.93, frx * 0.92, 0.4, seg, ochre, false, false, 1, frz / frx);
+  b.cylinder(0, yB, fz, frx, frx * 0.97, 1.3, seg, stripe, false, false, 1, frz / frx);
+  b.cylinder(0, yB + 1.3, fz, frx * 0.97, frx * 0.93, 2.1, seg, surf(pal.white, { roughness: 0.45, detail: Detail.Super }), false, false, 1, frz / frx);
+  b.cylinder(0, yB + 3.4, fz, frx * 0.93, frx * 0.92, 0.4, seg, stripe, false, false, 1, frz / frx);
   b.cylinder(0, yB + 3.8, fz, frx * 0.92, frx * 0.9, 0.45, seg, black, true, false, 1, frz / frx);
-  if (near) {
-    const red = surf(SH.emblem, { roughness: 0.5 });
+  if (near && pal.emblem !== null) {
+    const red = surf(pal.emblem, { roughness: 0.5 });
     crossedAnchors(b, frx * 0.94 + 0.03, yB + 2.3, fz, 0, 1.45, red);
     crossedAnchors(b, -(frx * 0.94 + 0.03), yB + 2.3, fz, Math.PI, 1.45, red);
   }
 
-  // Masts: ochre main mast behind the bridge (radar, yards), foremast on the forecastle.
+  // Masts: main mast behind the bridge (radar, yards), foremast on the forecastle.
   const mz = -9.9;
   b.block(0, yB, mz, 1.3, 1.6, 1.3, mastS);
   const mainTop = mast(b, 0, yB + 1.6, mz, 10.2, 0.19, mastS, 0, -2);
@@ -245,13 +278,15 @@ export function buildVapur(o: ModelOptions): BuiltModel {
     b.box(0, yB + 8.2, mz + 0.3, 3.9, 0.14, 0.14, mastS);
     b.box(0, yB + 9.6, mz + 0.35, 2.4, 0.12, 0.12, mastS);
     b.box(0, yB + 5.2, mz + 0.2, 1.8, 0.1, 1.4, mastS);
+    b.beginPart('radar', 0, yB + 5.55, mz + 0.2);
     b.box(0, yB + 5.55, mz + 0.2, 2.5, 0.16, 0.34, surf(0x2a2c2e, { roughness: 0.5, metalness: 0.4 }));
+    b.endPart();
     b.cylinder(0.85, yB + 3.0, mz + 0.2, 0.28, 0.28, 0.5, 8, white, true);
   }
   const foreTop = mast(b, 0, yUpper, -31.8, 11.5, 0.14, mastS, near ? 1.6 : 0, -3);
 
   // Stern flag staff with the Turkish ensign; a small flag at the main masthead.
-  const flagRed = surf(SH.flagRed, { roughness: 0.8, detail: Detail.Fabric });
+  const flagRed = surf(pal.flagRed, { roughness: 0.8, detail: Detail.Fabric });
   if (near) {
     flag(b, 0, yUpper + 0.26, 33.0, 3.4, 1.5, surf(0xdddddd, { roughness: 0.5 }), flagRed, Math.PI);
     flag(b, 0.2, mainTop.y - 0.4, mainTop.z + 0.3, 1.0, 0.9, mastS, flagRed, Math.PI);
@@ -268,8 +303,8 @@ export function buildVapur(o: ModelOptions): BuiltModel {
     railing(b, edgeLine(shape, -27, 33, 26, 1, -0.05), yU, rail, 1.05, 1.5);
     railing(b, edgeLine(shape, -27, 33, 26, -1, -0.05), yU, rail, 1.05, 1.5);
     railing(b, [{ x: -hb(33) - 0.05, z: 33.1 }, { x: hb(33) + 0.05, z: 33.1 }], yU, rail, 1.05, 1.5);
-    ringsAlong(b, hb, 7.5, 32, yU + 0.72, 2.3, -0.05);
-    ringsAlong(b, hb, -26, -2, yU + 0.72, 3.6, -0.05);
+    ringsAlong(b, hb, 7.5, 32, yU + 0.72, 2.3, -0.05, pal.ring);
+    ringsAlong(b, hb, -26, -2, yU + 0.72, 3.6, -0.05, pal.ring);
     railing(b, boat.filter((_, i) => i % 1 === 0), yBoat + 0.2, rail, 1.0, 1.8, true);
     // Open stern on the main deck: bulwark rail, bollards, pillars under the upper deck.
     railing(b, edgeLine(shape, 25.5, 35.6, 6, 1, 0.15), yMain + 0.05, rail, 1.0, 1.4);
@@ -283,7 +318,7 @@ export function buildVapur(o: ModelOptions): BuiltModel {
     bollards(b, -2.2, yUpper, -30, black);
     b.block(0, yUpper, -33.2, 2.4, 0.75, 1.3, surf(0x3b3d40, { roughness: 0.5, metalness: 0.5 }));
     // Benches and passengers on the open upper deck; a few on the stern.
-    const bench = surf(SH.bench, { roughness: 0.75, detail: Detail.Wood });
+    const bench = surf(pal.bench, { roughness: 0.75, detail: Detail.Wood });
     for (let z = 8.5; z <= 30.5; z += 1.6) {
       const hw = hb(z) - 1.3;
       if (hw < 1.2) continue;
@@ -300,7 +335,7 @@ export function buildVapur(o: ModelOptions): BuiltModel {
       raftCanister(b, hb(z) - 1.4, yBoat + 0.62, z, raft);
       raftCanister(b, -(hb(z) - 1.4), yBoat + 0.62, z, raft);
     }
-    const rescue = surf(SH.ring, { roughness: 0.5 });
+    const rescue = surf(pal.ring, { roughness: 0.5 });
     for (const s of [-1, 1]) {
       b.ellipsoid(s * (hb(3) - 1.6), yBoat + 1.0, 2.5, 0.85, 0.45, 2.3, 10, 4, rescue);
       b.box(s * (hb(3) - 1.6), yBoat + 0.7, 1.2, 0.12, 0.9, 0.12, white);
@@ -344,12 +379,13 @@ export function buildVapur(o: ModelOptions): BuiltModel {
 
 /**
  * ŞH-Küçüksu class double-ended ferry (41.7 x 9.6 m, 2015): symmetric hull and houses with panoramic windows, open
- * ends on both decks, a wheelhouse at each end of the top deck and an ochre mast amidships. Built mirror-symmetric in z
- * so the vessel can reverse its direction at a pier by simply swapping bow and stern.
+ * ends on both decks, a wheelhouse at each end of the top deck and a mast amidships (livery colours, as the vapur).
+ * Built mirror-symmetric in z so the vessel can reverse its direction at a pier by simply swapping bow and stern.
  */
 export function buildDoubleEnder(o: ModelOptions): BuiltModel {
   const b = new MeshBuilder();
   const near = o.lod === 0;
+  const pal = liveryOf(o);
   const rng = createRng(0x51c);
   const L = 41.7;
   const shape = new HullShape({
@@ -372,13 +408,13 @@ export function buildDoubleEnder(o: ModelOptions): BuiltModel {
     camber: 0.08,
     doubleEnded: true,
   });
-  buildHull(b, shape, { side: surf(0xffffff, { paint: 1, roughness: 0.42, metalness: 0.05, detail: Detail.Hull }), deck: surf(SH.deck, { roughness: 0.85, detail: Detail.Deck }) }, near ? 26 : 12, near ? 6 : 4);
+  buildHull(b, shape, { side: surf(0xffffff, { paint: 1, roughness: 0.42, metalness: 0.05, detail: Detail.Hull }), deck: surf(pal.deck, { roughness: 0.85, detail: Detail.Deck }) }, near ? 26 : 12, near ? 6 : 4);
   const hb = (z: number): number => shape.deckHalfBreadthAtZ(z);
-  const white = surf(SH.white, { roughness: 0.5, detail: Detail.Super });
-  const ochre = surf(SH.ochre, { roughness: 0.5, detail: Detail.Super });
-  const black = surf(SH.black, { roughness: 0.65 });
-  const roof = surf(SH.roof, { roughness: 0.8, detail: Detail.Deck });
-  const mastS = surf(SH.mast, { roughness: 0.5 });
+  const white = surf(pal.white, { roughness: 0.5, detail: Detail.Super });
+  const stripe = surf(pal.stripe, { roughness: 0.5, detail: Detail.Super });
+  const black = surf(pal.black, { roughness: 0.65 });
+  const roof = surf(pal.roof, { roughness: 0.8, detail: Detail.Deck });
+  const mastS = surf(pal.mast, { roughness: 0.5 });
   const glassCabin = S.glass(Emit.Cabin);
   const glassCrew = S.glass(Emit.Crew);
   const n = near ? 14 : 6;
@@ -397,7 +433,7 @@ export function buildDoubleEnder(o: ModelOptions): BuiltModel {
     for (const side of [-1, 1]) wallStrip(b, edgeLine(shape, Math.min(z0, z1), Math.max(z0, z1), near ? 6 : 3, side, 0.05), (p) => shape.deckYAtZ(p.z) - 0.05, 1.05, 0.12, white);
   }
   const upperDeck = planform(-19.8, 19.8, (z) => hb(z) + 0.08, near ? 18 : 8);
-  slab(b, upperDeck, yUpper + 0.25, 0.28, surf(SH.deck, { roughness: 0.85, detail: Detail.Deck }), ochre, white);
+  slab(b, upperDeck, yUpper + 0.25, 0.28, surf(pal.deck, { roughness: 0.85, detail: Detail.Deck }), stripe, white);
   for (const e of [-1, 1]) {
     for (const s of [-1, 1]) b.cylinder(s * (hb(e * 17.5) - 0.6), shape.deckYAtZ(e * 17.5), e * 17.5, 0.1, 0.1, yUpper - shape.deckYAtZ(e * 17.5), 6, white, false);
   }
@@ -418,18 +454,20 @@ export function buildDoubleEnder(o: ModelOptions): BuiltModel {
   // Mast amidships with radar; two slim exhaust stacks.
   const mt = mast(b, 0, yW, 0, 8.8, 0.16, mastS, near ? 2.6 : 0);
   for (const s of [-1, 1]) {
-    b.cylinder(s * 2.1, yW, 0, 0.55, 0.52, 1.0, near ? 12 : 8, ochre, false);
+    b.cylinder(s * 2.1, yW, 0, 0.55, 0.52, 1.0, near ? 12 : 8, stripe, false);
     b.cylinder(s * 2.1, yW + 1.0, 0, 0.52, 0.5, 1.5, near ? 12 : 8, white, false);
     b.cylinder(s * 2.1, yW + 2.5, 0, 0.5, 0.49, 0.35, near ? 12 : 8, black, true);
   }
   if (near) {
+    b.beginPart('radar', 0, yW + 5.4, 0);
     b.box(0, yW + 5.4, 0, 1.9, 0.14, 0.32, surf(0x2a2c2e, { roughness: 0.5, metalness: 0.4 }));
+    b.endPart();
     const rail = surf(0xf0efe9, { roughness: 0.45 });
     railing(b, edgeLine(shape, -19.6, 19.6, 18, 1, -0.05), yU, rail, 1.05, 1.5);
     railing(b, edgeLine(shape, -19.6, 19.6, 18, -1, -0.05), yU, rail, 1.05, 1.5);
-    ringsAlong(b, hb, -19, -11, yU + 0.72, 2.4, -0.05);
-    ringsAlong(b, hb, 11.5, 19.5, yU + 0.72, 2.4, -0.05);
-    const bench = surf(SH.bench, { roughness: 0.75, detail: Detail.Wood });
+    ringsAlong(b, hb, -19, -11, yU + 0.72, 2.4, -0.05, pal.ring);
+    ringsAlong(b, hb, 11.5, 19.5, yU + 0.72, 2.4, -0.05, pal.ring);
+    const bench = surf(pal.bench, { roughness: 0.75, detail: Detail.Wood });
     for (const e of [-1, 1]) {
       for (let k = 0; k < 4; k++) {
         const z = e * (11.5 + k * 1.6);
@@ -441,7 +479,7 @@ export function buildDoubleEnder(o: ModelOptions): BuiltModel {
       crowd(b, -2.5, 2.5, Math.min(e * 16, e * 19), Math.max(e * 16, e * 19), shape.deckYAtZ(e * 17), 4, rng);
       bollards(b, 2.4, shape.deckYAtZ(e * 18.5), e * 18.5, black);
       bollards(b, -2.4, shape.deckYAtZ(e * 18.5), e * 18.5, black);
-      flag(b, 0, yW + 2.7, e * 7.6, 1.4, 0.8, surf(0xdddddd, { roughness: 0.5 }), surf(SH.flagRed, { roughness: 0.8, detail: Detail.Fabric }), e > 0 ? Math.PI : 0);
+      flag(b, 0, yW + 2.7, e * 7.6, 1.4, 0.8, surf(0xdddddd, { roughness: 0.5 }), surf(pal.flagRed, { roughness: 0.8, detail: Detail.Fabric }), e > 0 ? Math.PI : 0);
     }
     const raft = surf(0xf3f1ea, { roughness: 0.5 });
     for (const z of [-4.5, 4.5]) {
@@ -465,10 +503,14 @@ export function buildDoubleEnder(o: ModelOptions): BuiltModel {
   return { geometry: b.build(), lights, airDraft: mt.y + 0.3 };
 }
 
-/** İDO sea bus (Kvaerner-type fast catamaran, ~38.5 m): navy demihulls, white superstructure, dark window bands. */
+/**
+ * İDO sea bus (Kvaerner-type fast catamaran, ~38.5 m): painted demihulls (the web's navy), white superstructure with
+ * the livery's band and stripe (navy and red), dark window bands.
+ */
 export function buildSeabus(o: ModelOptions): BuiltModel {
   const b = new MeshBuilder();
   const near = o.lod === 0;
+  const pal = liveryOf(o);
   const demi = new HullShape({
     length: 38.5,
     beam: 2.9,
@@ -495,17 +537,17 @@ export function buildSeabus(o: ModelOptions): BuiltModel {
     b.pop();
   }
   const white = surf(0xf2f2ef, { roughness: 0.35, metalness: 0.1, detail: Detail.Super });
-  const navy = surf(PAL.navy, { roughness: 0.35, metalness: 0.1 });
-  const red = surf(0xc0262c, { roughness: 0.4 });
+  const bandS = surf(pal.band, { roughness: 0.35, metalness: 0.1 });
+  const stripeS = surf(pal.bandStripe, { roughness: 0.4 });
   const glass = surf(0x10161d, { roughness: 0.06, emit: Emit.Cabin, detail: Detail.Glass });
   const noseHalf = (z: number, zf: number, half: number, taper: number): number => half * Math.sqrt(THREE.MathUtils.clamp((z - zf) / taper, 0.02, 1));
   const n = near ? 12 : 6;
 
-  // Bridging structure (wet deck) with navy and red stripes.
+  // Bridging structure (wet deck) with the livery's band and stripe.
   const cross = planform(-16.5, 19.2, (z) => noseHalf(z, -16.5, 5.6, 6), n);
-  prism(b, cross, 1.15, 1.35, white, null, navy);
-  band(b, cross, 1.5, 0.5, navy, 0.03);
-  band(b, cross, 2.05, 0.12, red, 0.03);
+  prism(b, cross, 1.15, 1.35, white, null, bandS);
+  band(b, cross, 1.5, 0.5, bandS, 0.03);
+  band(b, cross, 2.05, 0.12, stripeS, 0.03);
 
   const cabin = planform(-14.8, 15.2, (z) => noseHalf(z, -14.8, 5.4, 6.5), n);
   prism(b, cabin, 2.5, 2.45, white, null);
@@ -528,7 +570,7 @@ export function buildSeabus(o: ModelOptions): BuiltModel {
       b.block(s * 4.15, 2.45, 17.8, 0.9, 0.5, 1.2, surf(PAL.greyDark, { roughness: 0.6 }));
       b.box(s * 5.0, 4.9, 12, 0.25, 0.1, 0.25, S.lamp());
     }
-    flag(b, 0, 5.0, 18.4, 1.6, 0.8, surf(0xdddddd, { roughness: 0.5 }), surf(SH.flagRed, { roughness: 0.8, detail: Detail.Fabric }), Math.PI);
+    flag(b, 0, 5.0, 18.4, 1.6, 0.8, surf(0xdddddd, { roughness: 0.5 }), surf(pal.flagRed, { roughness: 0.8, detail: Detail.Fabric }), Math.PI);
   }
   const lights: NavLightDef[] = [
     { kind: 'mast', x: mh.x, y: mh.y, z: mh.z },
@@ -548,6 +590,7 @@ export function buildSeabus(o: ModelOptions): BuiltModel {
 export function buildTourBoat(o: ModelOptions): BuiltModel {
   const b = new MeshBuilder();
   const near = o.lod === 0;
+  const pal = liveryOf(o);
   const rng = createRng(0x70b);
   const shape = new HullShape({
     length: 30,
@@ -606,7 +649,7 @@ export function buildTourBoat(o: ModelOptions): BuiltModel {
     const rl = edgeLine(shape, -11, 14.2, 12, 1, 0.08);
     railing(b, rl, yU, rail, 1.0);
     railing(b, rl.map((p) => ({ x: -p.x, z: p.z })), yU, rail, 1.0);
-    const ring = surf(SH.ring, { roughness: 0.55 });
+    const ring = surf(pal.ring, { roughness: 0.55 });
     for (let z = -5; z <= 13; z += 1.7) {
       lifeRing(b, hb(z) + 0.02, yU + 0.65, z, 0, ring, 8);
       lifeRing(b, -(hb(z) + 0.02), yU + 0.65, z, Math.PI, ring, 8);
@@ -627,7 +670,7 @@ export function buildTourBoat(o: ModelOptions): BuiltModel {
       b.box(hb(z) - 0.5, canopyY - 0.1, z, 0.24, 0.08, 0.24, S.lamp());
       b.box(-(hb(z) - 0.5), canopyY - 0.1, z, 0.24, 0.08, 0.24, S.lamp());
     }
-    flag(b, 0, canopyY, 13.2, 1.5, 0.9, surf(0xdddddd, { roughness: 0.5 }), surf(SH.flagRed, { roughness: 0.8, detail: Detail.Fabric }), Math.PI);
+    flag(b, 0, canopyY, 13.2, 1.5, 0.9, surf(0xdddddd, { roughness: 0.5 }), surf(pal.flagRed, { roughness: 0.8, detail: Detail.Fabric }), Math.PI);
     b.box(0, deckY + 0.02, -12.5, 1.2, 0.08, 1.2, surf(0x3b3d40, { roughness: 0.5, metalness: 0.5 }));
   }
   const lights: NavLightDef[] = [
