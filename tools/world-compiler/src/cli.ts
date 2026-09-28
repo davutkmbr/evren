@@ -47,7 +47,8 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { setBuildingData } from './building-data';
+import { buildingDataEnabled, FACADE_KIT_MATERIALS, setBuildingData } from './building-data';
+import { FACADE_PROPS } from './facade/props';
 import { claimsOf, landmarkClasses, setLandmarkBlocks, setLandmarkClaims, useDistrict } from './district';
 import { plannedWallTops } from '../../../src/world/osm/buildings/build';
 import { fillLevels } from '../../../scripts/data/lib/levels-fill.mjs';
@@ -857,6 +858,21 @@ async function main(): Promise<void> {
       credits.set(c.id, { ...c, usedBy: [user] });
     }
   };
+  // Building data: the runtime builds the façades, so it gets every façade material and prop the kit can use, placed
+  // by a tile or not (building-data.ts).
+  if (format === 1 && buildingDataEnabled()) {
+    for (const id of FACADE_KIT_MATERIALS) {
+      for (const mid of [id, ...weatherLayerMaterials(id)]) {
+        usedMaterials.add(mid);
+        if (textures && !baked.has(mid)) {
+          baked.set(mid, await timed('textures', () => textures.material(mid)));
+        }
+      }
+    }
+    for (const d of FACADE_PROPS) {
+      await props?.get(d.id);
+    }
+  }
   if (props && args.includes('--all-props')) {
     for (const set of PROP_SETS) {
       for (const d of set) {

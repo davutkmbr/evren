@@ -31,6 +31,14 @@ import type { FacadePlan } from './facade/plan';
 import { claimsOf, district } from './district';
 import { portalsOn } from './passages';
 import type { AreaContext, TileContext } from './registry';
+import { FACADE_MATERIALS } from './facade/materials';
+import { FACADE_PROP_MATERIALS } from './facade/props';
+
+/**
+ * Materials a runtime building the façades needs whatever the tiles use: the façade kit's (walls, openings, module
+ * materials), its props', and the core block materials of plain and landmark blocks.
+ */
+export const FACADE_KIT_MATERIALS: readonly string[] = [...FACADE_MATERIALS.map((d) => d.id), ...FACADE_PROP_MATERIALS.map((d) => d.id), 'wall', 'roof', 'door', 'doorInferred'];
 
 let enabled = false;
 
