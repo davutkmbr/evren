@@ -58,7 +58,8 @@ class DetailsLayer extends LayerBase {
   private readonly trees: InstanceLod[] = [];
   private props: LodTiledMesh | null = null;
   private kits: LodTiledMesh | null = null;
-  private result: DetailsResult | null = null;
+  /** What the crowd still needs from the worker result (it may start long after the upload); nothing else is kept. */
+  private result: Pick<DetailsResult, 'walk' | 'standers'> | null = null;
   private crowdOn = true;
   private readonly deck: GalataDeck | null;
   private deckWait = 0;
@@ -90,7 +91,7 @@ class DetailsLayer extends LayerBase {
       clearings: perchClearings(ctx.geo),
     };
     const job = runWorker<DetailsRequest, DetailsResult>(worker, request);
-    this.onDispose(() => job.cancel());
+    this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
       job.promise.then((res) => {
@@ -108,10 +109,11 @@ class DetailsLayer extends LayerBase {
   private upload(res: DetailsResult, workerMs: number): void {
     const t1 = performance.now();
     const ctx = this.ctx;
-    this.result = res;
+    this.result = { walk: res.walk, standers: res.standers };
     if (res.cover) {
       const cover = createCoverMaterial(ctx.engine.renderer, res.cover.raster, ctx.fade);
-      this.onDispose(() => cover.dispose());
+      // Bound, not a closure: an arrow here would share this block's context with `mesh` and keep its arrays.
+      this.onDispose(cover.dispose.bind(cover));
       const mesh = res.cover.mesh;
       this.track(
         cover.ready.then(() => {
@@ -218,7 +220,6 @@ class DetailsLayer extends LayerBase {
     this.group.add(crowd.group);
     this.onDispose(() => crowd.dispose());
     this.stats.walkers = crowd.stats.walkers;
-    // Everything the crowd needed is taken: the rest of the result (mesh arrays, tree records) may be collected.
     this.result = null;
     this.stats.standers = standers.length / STANDER_STRIDE;
     console.info(`[osm:details] ${JSON.stringify(this.stats)}, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`);

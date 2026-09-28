@@ -94,7 +94,7 @@ class BuildingsLayer extends LayerBase {
       infill: { roads: data.roads, areas: data.areas, rails: data.rails, keepOut: streetAreaRects().map((a) => a.rect) },
     };
     const job = runWorker<BuildingsRequest, BuildingsResult>(worker, request);
-    this.onDispose(() => job.cancel());
+    this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
       Promise.all([job.promise, materials.ready]).then(([res]) => {
@@ -143,8 +143,11 @@ class BuildingsLayer extends LayerBase {
 
     const collision = ctx.engine.services.get('collision');
     this.collision = collision;
+    // No closure of this method may name `res`: V8 would keep the whole worker result (every mesh array, already on
+    // the GPU) alive for as long as the dispose callback below.
+    const osmIds = res.colliderIds;
     decodePrisms(res.colliders, (bottom, top, rings, i) => {
-      this.colliderIds.push(collision.add({ kind: 'prism', rings, bottom, top }, 'building', `osm-building:${res.colliderIds[i]}`));
+      this.colliderIds.push(collision.add({ kind: 'prism', rings, bottom, top }, 'building', `osm-building:${osmIds[i]}`));
     });
     this.onDispose(() => {
       this.collision?.removeMany(this.colliderIds);

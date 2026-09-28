@@ -19,11 +19,11 @@ function releaseArray(this: THREE.BufferAttribute): void {
  * A data texture only the GPU reads drops its pixels once uploaded (same rule and `?keepGeometry=1` switch as the
  * geometry). Only for textures that are never updated again.
  */
-export function releaseAfterUpload<T extends THREE.DataTexture>(texture: T): T {
+export function releaseAfterUpload<T extends THREE.DataTexture | THREE.DataArrayTexture | THREE.Data3DTexture>(texture: T): T {
   if (!KEEP_CPU) {
     texture.onUpdate = () => {
-      const img = texture.image as { data: unknown; width: number; height: number };
-      texture.image = { data: null, width: img.width, height: img.height } as unknown as T['image'];
+      const img = texture.image as { data: unknown; width: number; height: number; depth?: number };
+      texture.image = { data: null, width: img.width, height: img.height, depth: img.depth } as unknown as T['image'];
       texture.onUpdate = null;
     };
   }
@@ -38,7 +38,70 @@ export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
   }
   g.setIndex(attr(new THREE.BufferAttribute(m.index, 1)));
   g.computeBoundingSphere();
+  if (!KEEP_CPU) {
+    notUploaded.add(g);
+    g.addEventListener('dispose', forgetUpload);
+  }
   return g;
+}
+
+/**
+ * Geometries from toGeometry() not uploaded yet. The arrays are released on upload, and three uploads on the first
+ * draw, so a mesh that is never drawn (a preloaded region still hidden, near-only kits and props far away) would keep
+ * its whole CPU copy; uploadPending() sends them to the GPU right away instead.
+ */
+const notUploaded = new Set<THREE.BufferGeometry>();
+
+function forgetUpload(this: THREE.BufferGeometry): void {
+  notUploaded.delete(this);
+}
+
+/**
+ * `source` is only ever drawn through `drawn` (same attributes and index, own draw range): upload through that one,
+ * which is disposed with its mesh, so the upload leaves no GL state behind on a geometry that is never disposed.
+ */
+export function uploadThrough(source: THREE.BufferGeometry, drawn: THREE.BufferGeometry): void {
+  if (notUploaded.delete(source)) {
+    source.removeEventListener('dispose', forgetUpload);
+    notUploaded.add(drawn);
+    drawn.addEventListener('dispose', forgetUpload);
+  }
+}
+
+let upload: { scene: THREE.Scene; camera: THREE.Camera; target: THREE.WebGLRenderTarget; material: THREE.Material } | null = null;
+
+/**
+ * Uploads every pending geometry with one draw of zero triangles each into a 1x1 target (three uploads the vertex
+ * buffers when it projects a mesh and the index when it binds it for the draw). Call once per frame before rendering.
+ */
+export function uploadPending(renderer: THREE.WebGLRenderer): void {
+  if (notUploaded.size === 0) {
+    return;
+  }
+  upload ??= {
+    scene: new THREE.Scene(),
+    camera: new THREE.OrthographicCamera(),
+    target: new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false }),
+    material: new THREE.MeshBasicMaterial(),
+  };
+  const ranges: [THREE.BufferGeometry, number, number][] = [];
+  for (const g of notUploaded) {
+    g.removeEventListener('dispose', forgetUpload);
+    ranges.push([g, g.drawRange.start, g.drawRange.count]);
+    g.setDrawRange(0, 0);
+    const mesh = new THREE.Mesh(g, upload.material);
+    mesh.frustumCulled = false;
+    upload.scene.add(mesh);
+  }
+  notUploaded.clear();
+  const previous = renderer.getRenderTarget();
+  renderer.setRenderTarget(upload.target);
+  renderer.render(upload.scene, upload.camera);
+  renderer.setRenderTarget(previous);
+  upload.scene.clear();
+  for (const [g, start, count] of ranges) {
+    g.setDrawRange(start, count);
+  }
 }
 
 export interface MeshOptions {

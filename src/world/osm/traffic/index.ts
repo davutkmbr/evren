@@ -77,7 +77,7 @@ class TrafficLayer extends LayerBase {
       seed: SEED,
     };
     const job = runWorker<TrafficRequest, TrafficResult>(worker, request);
-    this.onDispose(() => job.cancel());
+    this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
       job.promise.then((res) => {

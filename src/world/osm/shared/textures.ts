@@ -3,6 +3,7 @@
  * single maps, full PBR bindings and packed texture arrays (albedo + roughness, normal).
  */
 import * as THREE from 'three';
+import { releaseAfterUpload } from './three';
 
 export type TextureSet = 'plaster' | 'plaster_painted' | 'stone' | 'concrete' | 'brick' | 'roof_tiles' | 'asphalt' | 'cobble' | 'sidewalk' | 'granite' | 'yard';
 export type TextureMap = 'albedo' | 'normal' | 'rough';
@@ -150,8 +151,11 @@ async function buildPbrArrays(sets: readonly TextureSet[], size: number, anisotr
       }
     }),
   );
+  // Read from the pixels now: they are released after the upload (callers find it in userData.layerLuminance).
+  const luminance = layerLuminance(alb, layer, n);
   const make = (data: Uint8Array, srgb: boolean): THREE.DataArrayTexture => {
     const t = new THREE.DataArrayTexture(data, size, size, n);
+    t.userData.layerLuminance = luminance;
     t.format = THREE.RGBAFormat;
     t.type = THREE.UnsignedByteType;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -161,9 +165,27 @@ async function buildPbrArrays(sets: readonly TextureSet[], size: number, anisotr
     t.anisotropy = anisotropy;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.needsUpdate = true;
-    return t;
+    // Shared and reference-counted (share()): the last dispose frees the GPU copy and the next request rebuilds it,
+    // so the pixels are never needed again after the upload.
+    return releaseAfterUpload(t);
   };
   return [make(alb, true), make(nrm, false)];
+}
+
+/** Mean linear luminance of each layer of sRGB RGBA8 array pixels. */
+function layerLuminance(data: Uint8Array, layer: number, layers: number): number[] {
+  const out: number[] = [];
+  const lin = (c: number): number => Math.pow(c / 255, 2.2);
+  for (let l = 0; l < layers; l++) {
+    let sum = 0;
+    let n = 0;
+    for (let k = l * layer; k < (l + 1) * layer; k += 4 * 97) {
+      sum += 0.2126 * lin(data[k]) + 0.7152 * lin(data[k + 1]) + 0.0722 * lin(data[k + 2]);
+      n++;
+    }
+    out.push(Math.max(0.05, sum / Math.max(1, n)));
+  }
+  return out;
 }
 
 /** Mean linear luminance of a texture image (normalises tinted albedo to ~1). */

@@ -110,7 +110,12 @@ as PRs). Rules: CLAUDE.md; every defect gets a generic rule (compiler + runtime)
    stepped only near; one shared foliage atlas. Second step: prop / tree buffers sized to their radius, cover pixels
    freed after upload, a region takes over from the far layer only inside 1.2 km (hidden and not streamed between
    1.2 and 1.8 km). Needs a heap / ms re-measure on the reference machine. Next: free the street raster (`ctx.base`)
-   beyond the near range (StreetSurface and traffic read it).
+   beyond the near range (StreetSurface and traffic read it). Which JS objects hold the heap:
+   `node scripts/heap-audit.mjs --url "/?view=<spot>&nohud=1"` (V8 snapshot: retained owners with paths, constructors).
+   **Heap step (2026-09-28):** `usedJSHeapSize` counts ArrayBuffer backing stores, and 90 % of it was CPU copies of
+   uploaded geometry: worker results kept by `runWorker`'s cancel and by upload closures, PBR / wall texture pixels,
+   and never-drawn meshes (now uploaded right away, `uploadPending`). Spawn 1606 -> 862 MB, Kadıköy 2042 -> 946 MB.
+   Left: street rasters (`ctx.base.street` rgba + ids, ~20 MB per region), DetailLod matrices, decoded audio.
 4. OSM feature kits: built in PR #30 (plan 23). Swimming pools: kit, rule and fetch tag done; the regions need a
    re-fetch from the local extract before they show.
 5. Small open items: Haydarpaşa port and Hazine Kapısı as landmarks (Hazine Kapısı is now part of the Dolmabahçe

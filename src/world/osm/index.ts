@@ -26,6 +26,7 @@ import { wallsReady } from '../landmarks/walls/system/owned';
 import { landmarkClaims } from '../landmarks/claims';
 import { openLandmarkPassages } from './shared/landmark-passages';
 import { exposeDebug } from '../../core/dev-tools';
+import { uploadPending } from './shared/three';
 
 /**
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
@@ -444,6 +445,7 @@ class OsmSystem implements System {
     if (!engine || !this.geo) {
       return;
     }
+    uploadPending(engine.renderer);
     const cam = engine.camera.position;
     if (this.building && this.building.state !== 'loading' && this.building.pending() === 0) {
       this.building = null;

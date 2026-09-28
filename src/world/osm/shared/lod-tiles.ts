@@ -15,7 +15,7 @@ import { setShadowGate } from '../../../core/shadow-gate';
 import { LOD_RADIUS_SCALE } from './instance-lod';
 import { LOD_LEAF_STRIDE } from './mesh-tiles';
 import type { MeshArrays } from './protocol';
-import { toGeometry } from './three';
+import { toGeometry, uploadThrough } from './three';
 
 export interface LodTiledOptions {
   /** Near -> far switch distance (m) at the "high" preset, scaled with LOD_RADIUS_SCALE. */
@@ -136,6 +136,7 @@ export class LodTiledMesh {
       g.setAttribute(attrName, attr);
     }
     g.setIndex(this.shared.index);
+    uploadThrough(this.shared, g);
     g.setDrawRange(start, count);
     g.boundingSphere = bounds.getBoundingSphere(new THREE.Sphere());
     g.boundingBox = bounds.clone();

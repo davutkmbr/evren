@@ -100,7 +100,7 @@ class StreetsLayer extends LayerBase {
       data: { roads: data.roads, rails: data.rails, points: data.points, buildings: data.buildings, areas: data.areas, lines: data.lines },
     };
     const job = runWorker<StreetsRequest, StreetsResult>(worker, request);
-    this.onDispose(() => job.cancel());
+    this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
       Promise.all([job.promise, materials.ready]).then(([res]) => {
