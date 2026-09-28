@@ -20,7 +20,15 @@
  *   street extension ('street/1': entrance=* nodes linked to their building, craft=* POIs, kerb=* nodes,
  *   area:highway=* polygons, sidewalk widths and kerb tags on ways), documented in tools/world-compiler/README.md.
  *
- * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright).
+ * Building merge (scripts/data/footprints-merge.ts, when data/footprints-src/merged/ holds its output): every profile
+ * adds the merge's Microsoft ML footprints whose centroid lies in the fetched box (`source: 'ml'`) and replaces the
+ * outlines it split by their row lots (`hasParts` on the outline, the lots as parts with `source: 'lot'` and `lotOf`),
+ * and the storey fill (regions, bbox blocks) takes the merge's estimates, so every layer sees one building set with
+ * one height per building. The merge must come from the same OSM snapshot; `--osm-only` fetches without it.
+ *
+ * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright). Added footprints: Microsoft
+ * Global ML Building Footprints, CDLA-Permissive-2.0; storeys: İBB Açık Veri Portalı and GHS-BUILT-H R2023A (see
+ * data/footprints/LICENSE.md).
  *
  * The output schema (version 2) is documented as TypeScript in src/world/osm/data.ts; keep both in sync.
  * The bbox is parsed from OSM_AREAS in src/world/osm/area.ts and the projection origin from WORLD_ORIGIN in
@@ -33,6 +41,8 @@ import { dirname, resolve } from 'node:path';
 import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
 import { extractSource, overpassLocal, sourceArg } from './lib/osm-local.mjs';
 import { fillLevels } from './lib/levels-fill.mjs';
+import { openMerged } from './lib/footprints/store.mjs';
+import { buildingRecord, copyTags, flat, FOOT_HIGHWAYS, highwayWidth, isClosed, metres, num, osmId, pointInRing, polygonsOf as polygonsWith, projectAll as projectWith, projector, RAIL_KINDS, round, simplify, simplifyKeep, SKIP_HIGHWAYS } from './lib/osm-records.mjs';
 
 const args = process.argv.slice(2);
 const argOf = (name) => {
@@ -55,6 +65,10 @@ const STREET_EXTENSION = 'street/1';
 
 const BBOX = AREA.bbox;
 const ORIGIN = readOrigin();
+/* Same projection as src/core/geo-coords.ts (latLonToLocal). */
+const project = projector(ORIGIN);
+const projectAll = (geom) => projectWith(geom, project);
+const polygonsOf = (el, tol, minArea) => polygonsWith(el, tol, minArea, project);
 /**
  * Data is fetched ~75 m beyond the area so the seam band (OSM_SEAM in area.ts) is covered too. Street areas get
  * ~155 m: the compiler tiles every 100 m square that touches the area, so tiles reach up to 100 m past it.
@@ -68,41 +82,7 @@ const ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 
-/* Same projection as src/core/geo-coords.ts (latLonToLocal). */
-const DEG = Math.PI / 180;
-const M_LAT = 111_132.954 - 559.822 * Math.cos(2 * ORIGIN.lat * DEG) + 1.175 * Math.cos(4 * ORIGIN.lat * DEG);
-const M_LON = DEG * 6_378_137 * Math.cos(ORIGIN.lat * DEG);
-const project = (lat, lon) => [(lon - ORIGIN.lon) * M_LON, -(lat - ORIGIN.lat) * M_LAT];
 
-/** Default carriageway / path widths (m) per highway class when `width` is not tagged. */
-const HIGHWAY_WIDTH = {
-  motorway: 16,
-  trunk: 14,
-  primary: 12,
-  secondary: 10,
-  tertiary: 8,
-  unclassified: 6,
-  residential: 5.5,
-  living_street: 4.5,
-  pedestrian: 6,
-  motorway_link: 7,
-  trunk_link: 7,
-  primary_link: 7,
-  secondary_link: 7,
-  tertiary_link: 6,
-  service: 4,
-  busway: 7,
-  road: 6,
-  track: 3,
-  footway: 2,
-  path: 1.5,
-  steps: 2.5,
-  cycleway: 2,
-  bridleway: 2,
-};
-const FOOT_HIGHWAYS = new Set(['footway', 'path', 'steps', 'cycleway', 'bridleway']);
-const SKIP_HIGHWAYS = new Set(['proposed', 'construction', 'abandoned', 'razed', 'disused', 'corridor', 'elevator', 'platform', 'bus_stop', 'raceway', 'escape', 'services', 'rest_area']);
-const RAIL_KINDS = new Set(['tram', 'light_rail', 'funicular', 'subway', 'rail', 'narrow_gauge', 'monorail']);
 const LINE_KINDS = [
   ['barrier', new Set(['wall', 'retaining_wall', 'city_wall', 'fence', 'guard_rail', 'hedge', 'kerb', 'handrail'])],
   ['natural', new Set(['tree_row', 'coastline', 'cliff'])],
@@ -149,6 +129,8 @@ const STREET_POINT_KEYS = [['entrance', null], ...POINT_KEYS, ['craft', null], [
 const POINT_KEYS_ACTIVE = STREET ? STREET_POINT_KEYS : POINT_KEYS;
 
 const cachePath = argOf('--cache');
+/** `--osm-only`: OSM buildings only, without the building merge's footprints and lots. */
+const OSM_ONLY = args.includes('--osm-only');
 
 /** A `--bbox s,w,n,e` rectangle as an area definition (profile 'slice', written to `--out`). */
 function readBboxArg(text) {
@@ -297,27 +279,6 @@ async function query() {
 /* Tag parsing                                                         */
 /* ------------------------------------------------------------------ */
 
-function num(v) {
-  if (v == null) {
-    return undefined;
-  }
-  const n = parseFloat(String(v).replace(',', '.'));
-  return Number.isFinite(n) ? n : undefined;
-}
-
-/** Metres from values like "12", "12 m", "12.5m", "40'" (feet). */
-function metres(v) {
-  if (v == null) {
-    return undefined;
-  }
-  const s = String(v).trim();
-  const n = num(s);
-  if (n === undefined) {
-    return undefined;
-  }
-  return /'|ft/.test(s) ? n * 0.3048 : n;
-}
-
 function speed(v) {
   if (v == null) {
     return undefined;
@@ -377,194 +338,6 @@ function parkingOf(t) {
 /* Geometry                                                            */
 /* ------------------------------------------------------------------ */
 
-function perpDist(p, a, b) {
-  const dx = b[0] - a[0];
-  const dz = b[1] - a[1];
-  const l2 = dx * dx + dz * dz;
-  if (l2 < 1e-9) {
-    return Math.hypot(p[0] - a[0], p[1] - a[1]);
-  }
-  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / l2));
-  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz);
-}
-
-/** Douglas-Peucker keep flags on an open polyline of [x, z] points; `lock[i]` vertices are always kept. */
-function simplifyKeep(pts, tol, lock) {
-  const keep = new Uint8Array(pts.length);
-  if (pts.length < 3) {
-    return keep.fill(1);
-  }
-  keep[0] = keep[pts.length - 1] = 1;
-  const anchors = [0];
-  for (let i = 1; i < pts.length - 1; i++) {
-    if (lock?.[i]) {
-      keep[i] = 1;
-      anchors.push(i);
-    }
-  }
-  anchors.push(pts.length - 1);
-  const stack = [];
-  for (let a = 1; a < anchors.length; a++) {
-    stack.push([anchors[a - 1], anchors[a]]);
-  }
-  while (stack.length) {
-    const [i0, i1] = stack.pop();
-    let best = -1;
-    let bestD = tol;
-    for (let i = i0 + 1; i < i1; i++) {
-      const d = perpDist(pts[i], pts[i0], pts[i1]);
-      if (d > bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    if (best >= 0) {
-      keep[best] = 1;
-      stack.push([i0, best], [best, i1]);
-    }
-  }
-  return keep;
-}
-
-function simplify(pts, tol) {
-  const keep = simplifyKeep(pts, tol, null);
-  return pts.filter((_, i) => keep[i]);
-}
-
-function signedArea(ring) {
-  let a = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const p = ring[i];
-    const q = ring[(i + 1) % ring.length];
-    a += p[0] * q[1] - q[0] * p[1];
-  }
-  return a / 2;
-}
-
-function pointInRing(ring, x, z) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, zi] = ring[i];
-    const [xj, zj] = ring[j];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function centroid(ring) {
-  let x = 0;
-  let z = 0;
-  for (const p of ring) {
-    x += p[0];
-    z += p[1];
-  }
-  return [x / ring.length, z / ring.length];
-}
-
-/** Closed point list -> simplified ring without the duplicate, positive area when `outer`, negative for holes. */
-function cleanRing(pts, outer, tol, minArea) {
-  if (pts.length < 4) {
-    return null;
-  }
-  let ring = simplify(pts, tol);
-  if (ring.length > 1 && Math.hypot(ring[0][0] - ring.at(-1)[0], ring[0][1] - ring.at(-1)[1]) < 0.05) {
-    ring = ring.slice(0, -1);
-  }
-  if (ring.length < 3) {
-    return null;
-  }
-  const area = signedArea(ring);
-  if (Math.abs(area) < minArea) {
-    return null;
-  }
-  return area < 0 === outer ? ring.reverse() : ring;
-}
-
-const isClosed = (geom) => geom.length > 3 && geom[0].lat === geom.at(-1).lat && geom[0].lon === geom.at(-1).lon;
-const projectAll = (geom) => geom.map((g) => project(g.lat, g.lon));
-
-/** Joins member ways of a multipolygon into closed rings, separately for outer and inner roles. */
-function joinRings(members) {
-  const join = (segs) => {
-    const rings = [];
-    const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.01;
-    while (segs.length) {
-      let ring = segs.shift();
-      let grown = true;
-      while (!same(ring[0], ring.at(-1)) && grown) {
-        grown = false;
-        for (let i = 0; i < segs.length; i++) {
-          const s = segs[i];
-          if (same(ring.at(-1), s[0])) {
-            ring = ring.concat(s.slice(1));
-          } else if (same(ring.at(-1), s.at(-1))) {
-            ring = ring.concat(s.slice(0, -1).reverse());
-          } else {
-            continue;
-          }
-          segs.splice(i, 1);
-          grown = true;
-          break;
-        }
-      }
-      if (same(ring[0], ring.at(-1))) {
-        rings.push(ring);
-      }
-    }
-    return rings;
-  };
-  const ways = (members ?? []).filter((m) => m.type === 'way' && m.geometry?.length > 1 && m.geometry.every((g) => g));
-  return {
-    outer: join(ways.filter((m) => m.role !== 'inner').map((m) => projectAll(m.geometry))),
-    inner: join(ways.filter((m) => m.role === 'inner').map((m) => projectAll(m.geometry))),
-  };
-}
-
-/** Polygons ({ outer, holes }) of a closed way or a multipolygon relation, simplified and oriented. */
-function polygonsOf(el, tol, minArea) {
-  if (el.type === 'way') {
-    if (!el.geometry || !isClosed(el.geometry)) {
-      return [];
-    }
-    const outer = cleanRing(projectAll(el.geometry), true, tol, minArea);
-    return outer ? [{ outer, holes: [] }] : [];
-  }
-  if (el.type !== 'relation' || el.tags?.type !== 'multipolygon') {
-    return [];
-  }
-  const { outer, inner } = joinRings(el.members);
-  const polys = outer
-    .map((r) => cleanRing(r, true, tol, minArea))
-    .filter(Boolean)
-    .map((o) => ({ outer: o, holes: [] }));
-  for (const raw of inner) {
-    const hole = cleanRing(raw, false, tol, 1);
-    if (!hole) {
-      continue;
-    }
-    const [hx, hz] = centroid(hole);
-    polys.find((p) => pointInRing(p.outer, hx, hz))?.holes.push(hole);
-  }
-  return polys;
-}
-
-const round = (v) => Math.round(v * 10) / 10;
-const flat = (pts) => pts.flatMap((p) => [round(p[0]), round(p[1])]);
-/** Way ids positive, relation ids negative. */
-const osmId = (el) => (el.type === 'relation' ? -el.id : el.id);
-
-/** Copies the listed tags onto `rec` under new names when present (trimmed; lower-cased when `lower`). */
-function copyTags(rec, t, map, lower = false) {
-  for (const [key, name] of Object.entries(map)) {
-    const v = t[key];
-    if (v != null && v !== '') {
-      rec[name] = lower ? String(v).trim().toLowerCase() : String(v).trim();
-    }
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Records                                                             */
 /* ------------------------------------------------------------------ */
@@ -574,52 +347,6 @@ function copyTags(rec, t, map, lower = false) {
  * shows localised names): copied as given.
  */
 const IDENTITY_TAGS = { wikidata: 'wikidata', 'name:tr': 'nameTr', 'name:en': 'nameEn', 'addr:street': 'addrStreet' };
-
-function buildingRecord(el, poly, part) {
-  const t = el.tags ?? {};
-  const rec = { id: osmId(el), ring: flat(poly.outer), kind: (part ? t['building:part'] : t.building) || 'yes' };
-  if (STREET) {
-    copyTags(rec, t, IDENTITY_TAGS);
-  }
-  if (poly.holes.length) {
-    rec.holes = poly.holes.map(flat);
-  }
-  if (part) {
-    rec.part = true;
-  }
-  const height = metres(t.height);
-  const minHeight = metres(t.min_height);
-  const levels = num(t['building:levels']);
-  const minLevel = num(t['building:min_level']);
-  const roofLevels = num(t['roof:levels']);
-  const roofHeight = metres(t['roof:height']);
-  if (height && height > 1 && height < 300) {
-    rec.height = round(height);
-  }
-  if (minHeight && minHeight > 0 && minHeight < 300) {
-    rec.minHeight = round(minHeight);
-  }
-  if (levels && levels > 0 && levels < 80) {
-    rec.levels = Math.round(levels);
-  }
-  if (minLevel && minLevel > 0 && minLevel < 80) {
-    rec.minLevel = Math.round(minLevel);
-  }
-  if (roofLevels !== undefined && roofLevels >= 0 && roofLevels < 10) {
-    rec.roofLevels = Math.round(roofLevels);
-  }
-  if (roofHeight && roofHeight > 0 && roofHeight < 60) {
-    rec.roofHeight = round(roofHeight);
-  }
-  const direction = num(t['roof:direction']);
-  if (direction !== undefined) {
-    rec.roofDirection = direction;
-  }
-  copyTags(rec, t, { 'roof:shape': 'roofShape', 'roof:colour': 'roofColour', 'roof:material': 'roofMaterial', 'roof:orientation': 'roofOrientation', 'building:colour': 'colour', 'building:material': 'material' }, true);
-  copyTags(rec, t, { amenity: 'amenity', historic: 'historic', shop: 'shop', tourism: 'tourism', religion: 'religion', 'building:architecture': 'architecture', 'building:use': 'use', start_date: 'startDate' }, true);
-  copyTags(rec, t, { name: 'name' });
-  return rec;
-}
 
 function areaKind(t) {
   for (const [key, vals, needsArea] of AREA_KEYS) {
@@ -703,6 +430,50 @@ function streetPointFields(rec, node, t, owners) {
     }
   }
   copyTags(rec, t, { kerb: 'kerb' }, true);
+}
+
+/**
+ * Adds the building merge's footprints and lots (scripts/data/footprints-merge.ts) to `buildings`: the ML footprints
+ * whose centroid lies in the fetched box, and for every split outline (OSM or ML) its row lots as parts. Returns the
+ * provenance written into the data (`footprints`), or null when no merge has been built.
+ */
+function mergeFootprints(buildings, osmBase) {
+  const merged = openMerged();
+  if (!merged) {
+    console.error('[fetch-osm] no building merge (data/footprints-src/merged/): OSM buildings only');
+    return null;
+  }
+  if (merged.osmBase !== osmBase) {
+    throw new Error(`the building merge was built from OSM ${merged.osmBase}, this data is ${osmBase}: re-run npm run merge:footprints (or pass --osm-only)`);
+  }
+  const lotsOf = (parent, kind) =>
+    merged.lotsOf(parent).map((l) => ({ id: l.id, ring: l.ring, kind, part: true, source: 'lot', lotOf: parent }));
+  const added = [];
+  let splits = 0;
+  for (const b of buildings) {
+    if (!b.part && merged.isSplit(b.id)) {
+      b.hasParts = true;
+      added.push(...lotsOf(b.id, b.kind));
+      splits++;
+    }
+  }
+  const [x0, z1] = project(BBOX.south - MARGIN.lat, BBOX.west - MARGIN.lon);
+  const [x1, z0] = project(BBOX.north + MARGIN.lat, BBOX.east + MARGIN.lon);
+  let ml = 0;
+  for (const r of merged.mlIn(x0, z0, x1, z1)) {
+    const rec = { id: r.id, ring: r.ring, kind: r.kind, source: 'ml' };
+    added.push(rec);
+    ml++;
+    if (merged.isSplit(r.id)) {
+      rec.hasParts = true;
+      added.push(...lotsOf(r.id, r.kind));
+      splits++;
+    }
+  }
+  for (const b of added) {
+    buildings.push(b);
+  }
+  return { merge: merged.stamp, release: merged.header.release, ml, lots: added.length - ml, splits };
 }
 
 async function main() {
@@ -820,7 +591,7 @@ async function main() {
         stats.skippedBuildings++;
       }
       for (const poly of polys) {
-        buildings.push(buildingRecord(el, poly, part));
+        buildings.push(buildingRecord(el, poly, part, STREET ? IDENTITY_TAGS : null));
       }
       continue;
     }
@@ -847,11 +618,7 @@ async function main() {
         }
         refs = flipped;
       }
-      const lanes = num(t.lanes);
-      const tagged = metres(t.width) ?? metres(t['width:carriageway']);
-      const base = HIGHWAY_WIDTH[t.highway] ?? 6;
-      const hasTag = tagged !== undefined && tagged > 0.8 && tagged < 40;
-      const width = hasTag ? tagged : lanes && !FOOT_HIGHWAYS.has(t.highway) ? Math.max(base * 0.7, Math.min(base * 1.4, lanes * 3.3 + 1.5)) : base;
+      const { width, tagged: hasTag, lanes } = highwayWidth(t);
       const rec = { id: osmId(el), pts: flat(pts), kind: t.highway, width: round(width) };
       if (hasTag) {
         rec.widthTagged = true;
@@ -1114,18 +881,21 @@ async function main() {
     }
   }
 
-  const fill = FILL ? fillLevels(buildings) : null;
+  const osmParts = parts.length;
+  const footprints = OSM_ONLY ? null : mergeFootprints(buildings, data.osm3s?.timestamp_osm_base ?? null);
+  const fill = FILL ? fillLevels(buildings, { merge: footprints?.merge ?? null }) : null;
 
   const [x0, z1] = project(BBOX.south, BBOX.west);
   const [x1, z0] = project(BBOX.north, BBOX.east);
   const out = {
     version: SCHEMA_VERSION,
-    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})`,
+    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})${footprints ? `; building footprints: Microsoft Global ML Building Footprints ${footprints.release}, CDLA-Permissive-2.0; storeys: İBB Açık Veri Portalı (İBB Açık Veri Lisansı), GHS-BUILT-H R2023A (EC JRC, CC BY 4.0)` : ''}`,
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
     ...(STREET ? { area: AREA.id, extension: STREET_EXTENSION } : {}),
     ...(REGION ? { region: REGION } : {}),
+    ...(footprints ? { footprints } : {}),
     buildings,
     roads,
     rails,
@@ -1158,8 +928,9 @@ async function main() {
         ok: true,
         out: OUT,
         bytes: text.length,
-        buildings: buildings.length - parts.length,
-        buildingParts: parts.length,
+        buildings: buildings.filter((b) => !b.part).length,
+        buildingParts: osmParts,
+        ...(footprints ? { footprints } : {}),
         outlinesWithParts: buildings.filter((b) => b.hasParts).length,
         withHeight: buildings.filter((b) => b.height).length,
         withLevels: buildings.filter((b) => b.levels).length,

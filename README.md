@@ -310,6 +310,9 @@ Before opening a pull request, run `npm run typecheck` and `npm run build` and c
 - Geographic data in `src/world/geo/data` is derived from [OpenStreetMap](https://www.openstreetmap.org/copyright),
   © OpenStreetMap contributors, available under the [ODbL](https://opendatacommons.org/licenses/odbl/1-0/)
   (see [its licence note](src/world/geo/data/LICENSE.md)). Elevation checks use NASA SRTM data (public domain).
+- Buildings OSM does not map come from Microsoft Global ML Building Footprints (CDLA-Permissive-2.0); storeys from the
+  İBB Açık Veri Portalı (İBB Açık Veri Lisansı) and GHS-BUILT-H R2023A (EC JRC, CC BY 4.0). See
+  [data/footprints/LICENSE.md](data/footprints/LICENSE.md).
 - Built with [three.js](https://threejs.org/).
 - The Seventeen Skies name and logo are the project's brand; see [.docs/brand](.docs/brand/README.md) for usage.
 - Textures, sounds, music and the historic 78 rpm recordings under the moments: see [CREDITS.md](CREDITS.md).

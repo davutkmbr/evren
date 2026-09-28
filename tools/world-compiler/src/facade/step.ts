@@ -66,7 +66,8 @@ function prepare(a: AreaContext): void {
   const landmarks = landmarkClasses(a.data.buildings);
   for (const s of a.solids) {
     const osm = byId.get(s.rec.osmId);
-    const parent = s.rec.part && s.rec.heightSource === 'default' ? parentOf(s, a.data.buildings) : null;
+    // Row lots name their outline (data.ts lotOf); S3DB parts are matched by centroid.
+    const parent = s.rec.part && s.rec.heightSource === 'default' ? (osm?.lotOf !== undefined ? (byId.get(osm.lotOf) ?? null) : parentOf(s, a.data.buildings)) : null;
     // Building data (--buildings data): every tile's buildings are planned, the runtime builds them all in full.
     const full = buildingDataEnabled() || a.detailOf(a.tileOfSolid.get(s) ?? '') === 'full';
     const landmark = landmarks.get(s.rec.osmId) ?? null;

@@ -24,8 +24,9 @@
  * 5. Invented content: no neighbourhood mosque site (a procedural mosque whose pad removes OSM buildings) reaches into
  *    an OSM region, and no infill parcel (a building OSM does not have) reaches into a street area.
  * 6. Far layer (phase 24): the city bake (public/data/osm/city, scripts/data/osm-city-bake.ts), the regions and the
- *    street areas come from one OSM snapshot, and inside every region the bake holds exactly the buildings the region
- *    layer draws (infill included), with the same wall and bottom heights. A stale bake fails here.
+ *    street areas come from one OSM snapshot and one building merge (scripts/data/footprints-merge.ts), and inside
+ *    every region the bake holds exactly the buildings the region layer draws (infill included), with the same wall and
+ *    bottom heights. A stale or partial bake fails here.
  * 7. Real land use: the OSM parks, woods and cemeteries in the far OSM cells are green in the geo land use (the
  *    land.bin.gz stamp, geo/build/osm-land.ts), so terrain, trees and the procedural city see the real parks.
  */
@@ -505,6 +506,20 @@ console.log('6. Far layer: the city bake draws what the regions draw');
       note((d as OsmData & { osmBase?: string }).osmBase, id);
     }
     check(bases.size === 1, `one OSM snapshot for the bake, ${regions.length} regions and ${streetData.size} street areas`, [...bases].map(([b, list]) => `${b}: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` +${list.length - 6}` : ''}`));
+    // One building merge (scripts/data/footprints-merge.ts: Microsoft footprints, row lots, storeys) for all of them.
+    const merges = new Map<string, string[]>();
+    const noteMerge = (stamp: string | undefined, what: string): void => {
+      const k = stamp ?? 'none';
+      merges.set(k, [...(merges.get(k) ?? []), what]);
+    };
+    noteMerge(index.footprints, 'city bake');
+    for (const r of regions.filter((q) => existsSync(regionFile(q)))) {
+      noteMerge(dataOf(r).footprints?.merge, r.id);
+    }
+    for (const [id, d] of streetData) {
+      noteMerge(d.footprints?.merge, id);
+    }
+    check(merges.size === 1 && !index.stats.partial, `one building merge (${[...merges.keys()][0]}) for the bake, the regions and the street areas${index.stats.partial ? ' (partial bake: npm run bake:city)' : ''}`, [...merges].map(([m, list]) => `${m}: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` +${list.length - 6}` : ''}`));
 
     // Baked records by id (a list: building parts can share one); matched by id and centroid (within 1 m).
     const baked = new Map<number, { cx: number; cz: number; wallH: number; minH: number; used: boolean }[]>();

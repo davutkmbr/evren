@@ -241,6 +241,17 @@ export function recordBuildingData(t: TileContext, sh: FacadeDecisions, skip: Re
     if (s.rec.levels) {
       rec.levels = s.rec.levels;
     }
+    // The building merge's provenance: an added footprint ('ml') or row lot ('lot', of outline `lotOf`), and where an
+    // estimated storey count came from.
+    if (osm?.source) {
+      rec.source = osm.source;
+    }
+    if (osm?.lotOf !== undefined) {
+      rec.lotOf = osm.lotOf;
+    }
+    if (osm?.levelsFrom) {
+      rec.levelsFrom = osm.levelsFrom;
+    }
     if (s.rec.landmark) {
       rec.landmark = s.rec.landmark;
     }

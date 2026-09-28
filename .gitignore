@@ -14,6 +14,9 @@ private-assets/
 # OpenStreetMap source extract and its local index (node scripts/data/osm-extract.mjs all); see data/osm/LICENSE.md
 data/osm-src/
 
+# Building footprint and height sources (node scripts/data/fetch-footprints.mjs) and the merge output; see data/footprints/LICENSE.md
+data/footprints-src/
+
 # Raw approved external assets (node scripts/data/fetch-assets.mjs); the street compiler ships optimised copies
 assets-src/
 

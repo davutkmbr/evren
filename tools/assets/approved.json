@@ -1,5 +1,5 @@
 {
- "$comment": "External assets approved by the user. scripts/data/fetch-assets.mjs downloads the 'api' entries into assets-src/<kind>/<id>/ and lists the 'manual' ones in .docs/assets/manual-downloads.md. repeat_m is the real-world size of one texture tile or decal [width, height] in metres (null when the source does not state it). resolution is the requested download resolution (null when the source fixes it). Freesound sounds are fetched from their public 'hq-preview' (OGG, about 192 kbps) at download_url, because the originals need a login. Kind 'recording' (the historic 78 rpm archive, approved 2026-09-26, .docs/assets/archive-78rpm.md) lists the exact original files with their sha256 and is cached in assets-src/audio/78rpm/<id>/; risk 'us-risky' entries are public domain in Turkey but not yet in the US and may reach builds only from private-assets/.",
+ "$comment": "External assets approved by the user. scripts/data/fetch-assets.mjs downloads the 'api' entries into assets-src/<kind>/<id>/ and lists the 'manual' ones in .docs/assets/manual-downloads.md. repeat_m is the real-world size of one texture tile or decal [width, height] in metres (null when the source does not state it). resolution is the requested download resolution (null when the source fixes it). Freesound sounds are fetched from their public 'hq-preview' (OGG, about 192 kbps) at download_url, because the originals need a login. Kind 'recording' (the historic 78 rpm archive, approved 2026-09-26, .docs/assets/archive-78rpm.md) lists the exact original files with their sha256 and is cached in assets-src/audio/78rpm/<id>/; risk 'us-risky' entries are public domain in Turkey but not yet in the US and may reach builds only from private-assets/. Kind 'data' entries with download 'script' are fetched by their own scripts (scripts/data/fetch-walls.mjs, scripts/data/fetch-footprints.mjs), which refuse sources not listed here.",
  "approved": "2026-09-24",
  "decisions": [
   ".docs/assets/candidates/street-materials.md#decision-2026-09-24",
@@ -8,7 +8,8 @@
   ".docs/assets/candidates/gulls.md#decision-2026-09-24",
   ".docs/assets/candidates/sea-walls-data.md#decision-2026-09-26",
   ".docs/assets/candidates/wall-scans.md#decision-2026-09-26",
-  ".docs/assets/candidates/moment-music.md#decision-2026-09-26"
+  ".docs/assets/candidates/moment-music.md#decision-2026-09-26",
+  "seventeenskies-unreal:.docs/assets/candidates/building-footprints.md#decision-2026-09-28"
  ],
  "assets": [
   {
@@ -3785,6 +3786,91 @@
    "download": "manual",
    "shortlist": ".docs/assets/candidates/rider-humans.md",
    "conditions": []
+  },
+  {
+   "id": "microsoft-building-footprints",
+   "name": "Microsoft Global ML Building Footprints, release 2026-08-13 (the level-9 tiles over the İstanbul province)",
+   "source": "microsoft",
+   "source_id": "GlobalMLBuildingFootprints/2026-08-13",
+   "url": "https://github.com/microsoft/GlobalMLBuildingFootprints",
+   "licence": "CDLA-Permissive-2.0",
+   "licence_url": "https://cdla.dev/permissive-2-0/",
+   "author": "Microsoft (Bing Maps)",
+   "attribution": "Building footprints: Microsoft Global ML Building Footprints (release 2026-08-13), CDLA-Permissive-2.0",
+   "kind": "data",
+   "use": "Building footprints where OpenStreetMap has none: merged by the shared world compiler before the storey fill (OSM wins every overlap), for the flight-scale regions, the far city, the street areas and the Unreal city",
+   "endpoint": "https://bfppub.blob.core.windows.net/%24web/2026-08-13/dataset-links.csv",
+   "release": "2026-08-13",
+   "approved": "2026-09-28",
+   "download": "script",
+   "shortlist": "seventeenskies-unreal:.docs/assets/candidates/building-footprints.md",
+   "conditions": [
+    "Ship the CDLA-Permissive-2.0 text with the data and with every build (data/footprints/licences/CDLA-Permissive-2.0.txt, ThirdPartyNotices)",
+    "Publish the conflated additions (kept footprints with source tile and synthetic id) next to the public compiler, free, under ODbL 1.0 (ODbL 4.6)",
+    "Archive the release used with its manifest and checksums (Microsoft does not move older releases)"
+   ]
+  },
+  {
+   "id": "ibb-mahalle-bina-sayilari",
+   "name": "İBB Açık Veri Portalı: Mahalle Bazlı Bina Sayıları (2017, 959 mahalle)",
+   "source": "ibb-open-data",
+   "source_id": "mahalle-bazli-bina-analiz-verisi",
+   "url": "https://data.ibb.gov.tr/dataset/mahalle-bazli-bina-analiz-verisi",
+   "licence": "IBB-Open-Data-License-1.0",
+   "licence_url": "https://data.ibb.gov.tr/en/license",
+   "author": "İstanbul Büyükşehir Belediyesi, Deprem Risk Yönetimi ve Kentsel İyileştirme Dairesi",
+   "attribution": "Contains public sector information from the İBB Açık Veri Portalı (Mahalle Bazlı Bina Sayıları), licensed under the İBB Açık Veri Lisansı (Istanbul Metropolitan Municipality Open Data Licence) 1.0",
+   "kind": "data",
+   "use": "Storey mix and building count per mahalle: the storey class of buildings without height data and the target count when merged row outlines are split into lots",
+   "endpoint": "https://data.ibb.gov.tr/api/3/action/package_show?id=mahalle-bazli-bina-analiz-verisi",
+   "approved": "2026-09-28",
+   "download": "script",
+   "shortlist": "seventeenskies-unreal:.docs/assets/candidates/building-footprints.md",
+   "conditions": [
+    "Credit the İBB Açık Veri Portalı and link the licence; nothing may suggest endorsement by İBB",
+    "The derived per-mahalle table stays openly published with the compiler"
+   ]
+  },
+  {
+   "id": "ghs-built-h-r2023a",
+   "name": "GHS-BUILT-H R2023A, average net building height (ANBH), epoch 2018, 100 m, tile R5_C21",
+   "source": "jrc-ghsl",
+   "source_id": "GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21",
+   "url": "https://data.jrc.ec.europa.eu/dataset/85005901-3a49-48dd-9d19-6261354f56fe",
+   "licence": "CC-BY-4.0",
+   "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+   "author": "European Commission, Joint Research Centre (Pesaresi, M.; Politis, P.)",
+   "attribution": "GHS-BUILT-H R2023A, European Commission, Joint Research Centre, CC BY 4.0, doi:10.2905/85005901-3A49-48DD-9D19-6261354F56FE, modified",
+   "kind": "data",
+   "use": "Check of the estimated building heights: each 100 m cell's area-weighted mean height stays within 30 % of GHS-BUILT-H where no better height source applies",
+   "endpoint": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_BUILT_H_GLOBE_R2023A/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100/V1-0/tiles/GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100_V1_0_R5_C21.zip",
+   "approved": "2026-09-28",
+   "download": "script",
+   "shortlist": "seventeenskies-unreal:.docs/assets/candidates/building-footprints.md",
+   "conditions": [
+    "Credit with the DOI and note that the data was modified"
+   ]
+  },
+  {
+   "id": "urban-atlas-bbh-2021",
+   "name": "Copernicus Urban Atlas Building Block Height 2021, İstanbul (TR012L1), 10 m",
+   "source": "copernicus-clms",
+   "source_id": "CLMS_UA_BBH_S2021_R10m_TR012L1_ISTANBUL_03035_V02_R03_20260226",
+   "url": "https://sdi.eea.europa.eu/catalogue/srv/api/records/c5215520-98e9-4035-be56-d28156cd4dcd",
+   "licence": "Copernicus-data-policy",
+   "licence_url": "https://land.copernicus.eu/en/data-policy",
+   "author": "European Union, Copernicus Land Monitoring Service (EEA)",
+   "attribution": "Generated using European Union's Copernicus Land Monitoring Service information (Urban Atlas Building Block Height 2021, doi:10.2909/c5215520-98e9-4035-be56-d28156cd4dcd), modified",
+   "kind": "data",
+   "use": "Rooftop heights per building (75th percentile of the 10 m pixels in the footprint), the first height source after OSM tags",
+   "approved": "2026-09-28",
+   "download": "script",
+   "manual_reason": "The Copernicus Data Space Ecosystem requires a free account: the owner creates it, accepts its terms and places the GeoTIFF in data/footprints-src/urban-atlas/; scripts/data/fetch-footprints.mjs then records it",
+   "shortlist": "seventeenskies-unreal:.docs/assets/candidates/building-footprints.md",
+   "conditions": [
+    "Pending: the owner's Copernicus account; the compiler skips this source until the file is in place",
+    "Keep the Copernicus credit sentence verbatim, state the modification, imply no EU endorsement"
+   ]
   }
  ]
 }

@@ -9,6 +9,10 @@
  * pad, and not water / park / forest / cemetery land use. Parcels are only placed where the surrounding 60 m are
  * already built up (OSM building cover >= MIN_COVER), so genuinely open areas stay open.
  *
+ * Infill stands in for buildings OSM has not mapped. Where the building merge added Microsoft footprints (osm/data.ts
+ * source 'ml'), the imagery saw the block: a parcel within ML_NEAR m of one stays out, since a gap there is real
+ * (gardens, yards, empty lots).
+ *
  * No parcel reaches into a compiled street area (`keepOut`): the street tiles draw only the mapped buildings up close,
  * so the city seen from the air has to be the same there.
  */
@@ -25,6 +29,8 @@ const OPEN = /^(leisure=(park|garden|pitch|playground|sports_centre|track|dog_pa
 const FRONT = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'living_street', 'pedestrian', 'service', 'primary_link', 'secondary_link', 'tertiary_link', 'steps', 'footway']);
 const NO_BUILD_USE = new Set<number>([LandUse.Water, LandUse.Park, LandUse.Forest, LandUse.Cemetery, LandUse.Landmark]);
 const MIN_COVER = 0.26;
+/** No parcel within this distance (m) of an added Microsoft footprint's centroid (see the file header). */
+const ML_NEAR = 40;
 const ID_CELL = 3;
 const ID_HALF = 24000;
 const ID_ROW = (ID_HALF * 2) / ID_CELL;
@@ -213,6 +219,43 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
   }
 
   const freeAfterMasks = free(cells);
+  // Centroids of the added Microsoft footprints, on a grid of ML_NEAR cells.
+  const mlGrid = new Map<number, number[]>();
+  const mlKey = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
+  for (const b of buildings) {
+    if (b.source !== 'ml') {
+      continue;
+    }
+    let x = 0;
+    let z = 0;
+    const n = b.ring.length / 2;
+    for (let k = 0; k < b.ring.length; k += 2) {
+      x += b.ring[k] / n;
+      z += b.ring[k + 1] / n;
+    }
+    const key = mlKey(Math.floor(x / ML_NEAR), Math.floor(z / ML_NEAR));
+    const list = mlGrid.get(key);
+    if (list) {
+      list.push(x, z);
+    } else {
+      mlGrid.set(key, [x, z]);
+    }
+  }
+  const nearMl = (x: number, z: number): boolean => {
+    const gi = Math.floor(x / ML_NEAR);
+    const gj = Math.floor(z / ML_NEAR);
+    for (let j = gj - 1; j <= gj + 1; j++) {
+      for (let i = gi - 1; i <= gi + 1; i++) {
+        const list = mlGrid.get(mlKey(i, j));
+        for (let k = 0; list && k < list.length; k += 2) {
+          if ((list[k] - x) ** 2 + (list[k + 1] - z) ** 2 < ML_NEAR * ML_NEAR) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
   // Summed-area table of the OSM building cover.
   const sat = new Float32Array((w + 1) * (h + 1));
   for (let j = 0; j < h; j++) {
@@ -251,6 +294,7 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
   const parcels: OsmBuilding[] = [];
   let tested = 0;
   let lowCover = 0;
+  let seenByImagery = 0;
   for (const road of data.roads) {
     if (!FRONT.has(road.kind) || road.tunnel || road.bridge || road.covered) {
       continue;
@@ -291,6 +335,11 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
           tested++;
           if (cover(px + nx * (front + 8), pz + nz * (front + 8), 30) < MIN_COVER) {
             lowCover++;
+            s += f;
+            continue;
+          }
+          if (mlGrid.size && nearMl(px + nx * (front + 6), pz + nz * (front + 6))) {
+            seenByImagery++;
             s += f;
             continue;
           }
@@ -338,5 +387,5 @@ export function findInfill(buildings: readonly OsmBuilding[], data: { roads: rea
       }
     }
   }
-  return { parcels, stats: { infillParcels: parcels.length, infillTested: tested, infillLowCover: lowCover, infillFree0: freeAfterStreets, infillFree1: freeAfterMasks } };
+  return { parcels, stats: { infillParcels: parcels.length, infillTested: tested, infillLowCover: lowCover, infillNearMl: seenByImagery, infillFree0: freeAfterStreets, infillFree1: freeAfterMasks } };
 }

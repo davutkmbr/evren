@@ -167,9 +167,14 @@ export function landmarkBlocksEnabled(): boolean {
 export function landmarkClasses(buildings: readonly OsmBuilding[]): Map<number, string> {
   const out = new Map<number, string>();
   const outlines = buildings.filter((b) => b.hasParts && !b.part);
+  const byId = new Map(outlines.map((o) => [o.id, o]));
   for (const b of buildings) {
     let cls = landmarkOf(b);
-    if (!cls && b.part) {
+    if (!cls && b.lotOf !== undefined) {
+      // Row lots (data.ts lotOf) name their outline.
+      const o = byId.get(b.lotOf);
+      cls = o ? landmarkOf(o) : null;
+    } else if (!cls && b.part) {
       const n = b.ring.length / 2;
       let cx = 0;
       let cz = 0;

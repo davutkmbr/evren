@@ -2,7 +2,14 @@
  * Levels fill rule shared by the region fetch (scripts/data/fetch-osm.mjs writes `levelsFill` into the flight-scale
  * regions) and the street compiler (tools/world-compiler/src/cli.ts fills its own data the same way before it takes
  * the flight-scale layer's planned heights), so both see the same storeys for an untagged building.
+ *
+ * Data fetched with the building merge (scripts/data/footprints-merge.ts; the data's `footprints.merge` stamp) takes its
+ * storeys from that merge, by id: one estimate per building for the whole box (Urban Atlas, tagged neighbours, İBB's
+ * storey mix per mahalle, GHS-BUILT-H; rules in scripts/data/lib/footprints/rules.ts), independent of the fetched
+ * extent. Other data (no stamp, or a merge that is no longer built) keeps the neighbour median below.
  */
+import { openMerged } from './footprints/store.mjs';
+
 
 /** Kinds that are neither sampled nor filled by fillLevels (sheds, kiosks, worship, roofs...). */
 const FILL_SKIP = new Set(['roof', 'garage', 'garages', 'shed', 'kiosk', 'hut', 'container', 'carport', 'service', 'toilets', 'cabin', 'mosque', 'church', 'chapel', 'synagogue', 'cathedral', 'temple', 'shrine', 'greenhouse', 'bridge', 'ruins', 'stadium', 'grandstand', 'hangar', 'transformer_tower', 'water_tower', 'tower']);
@@ -17,7 +24,14 @@ const FILL_MAX = 24;
  * `levelsFill` (the renderer still varies ±1 floor and applies its archetype rules; src/world/osm/buildings/plan.ts).
  * Buildings with too few tagged neighbours keep none: the district profile (buildings/districts.ts) decides there.
  */
-export function fillLevels(buildings) {
+export function fillLevels(buildings, { merge = null } = {}) {
+  const merged = merge ? openMerged() : null;
+  if (merged && merged.stamp === merge) {
+    return fromMerge(buildings, merged);
+  }
+  if (merge) {
+    console.error(`[levels-fill] the data was fetched with building merge ${merge}, ${merged ? `merge ${merged.stamp} is built now` : 'no merge is built now'}: neighbour median only (re-fetch the data)`);
+  }
   const levelsOf = (b) => b.levels ?? (b.height ? Math.max(1, Math.round((b.height - (b.roofHeight ?? 0)) / 3.1)) : 0);
   const centre = (b) => {
     let x = 0;
@@ -87,4 +101,28 @@ function ringArea(r) {
     a += r[i * 2] * r[j * 2 + 1] - r[j * 2] * r[i * 2 + 1];
   }
   return a / 2;
+}
+
+/** The merge's estimate on every untagged building it knows (S3DB parts keep their own tags; row lots are estimated). */
+function fromMerge(buildings, merged) {
+  const counts = { merge: merged.stamp, tagged: 0, filled: 0, unfilled: 0, from: {} };
+  for (const b of buildings) {
+    if (b.levels || b.height) {
+      counts.tagged++;
+      continue;
+    }
+    if ((b.part && b.lotOf === undefined) || FILL_SKIP.has(b.kind)) {
+      continue;
+    }
+    const e = merged.levelsOf(b.id);
+    if (!e) {
+      counts.unfilled++;
+      continue;
+    }
+    b.levelsFill = e.levels;
+    b.levelsFrom = e.from;
+    counts.filled++;
+    counts.from[e.from] = (counts.from[e.from] ?? 0) + 1;
+  }
+  return counts;
 }

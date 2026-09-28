@@ -134,7 +134,9 @@ export function makeSolids(buildings: readonly OsmBuilding[], heights: GroundHei
     h = Math.max(h, minH + 0.3);
     const k = seen.get(b.id) ?? 0;
     seen.set(b.id, k + 1);
-    const id = `${b.id < 0 ? 'r' : 'w'}${Math.abs(b.id)}${k ? `-${k}` : ''}`;
+    // w: OSM way, r: OSM relation, m: Microsoft footprint and l: row lot of the building merge (data.ts source).
+    const prefix = b.source === 'ml' ? 'm' : b.source === 'lot' ? 'l' : b.id < 0 ? 'r' : 'w';
+    const id = `${prefix}${Math.abs(b.id)}${k ? `-${k}` : ''}`;
     const round2 = (v: number): number => Math.round(v * 100) / 100;
     const rec: BuildingRec = {
       id,

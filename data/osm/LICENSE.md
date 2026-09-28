@@ -23,3 +23,8 @@
 - The far OSM layer bake (`public/data/osm/city/`, `src/world/city/osm/mask.json`; phase 24, `npm run bake:city`) is a
   derived database of the same extract (OSM data as of 2026-09-25T01:52:55Z) and is released under the same ODbL 1.0,
   © OpenStreetMap contributors. The attribution line in the game covers it.
+- Building merge (approved 2026-09-28, `scripts/data/footprints-merge.ts`): data fetched with it also holds Microsoft
+  Global ML Building Footprints where OSM has none (`source: 'ml'`, CDLA-Permissive-2.0), row lots of merged outlines
+  (`source: 'lot'`) and storeys estimated with İBB Açık Veri Portalı and GHS-BUILT-H R2023A data (`levelsFrom`). Such
+  data stays a derived database of OSM under the same ODbL 1.0; sources, licence texts, attribution and the published
+  additions are in [`data/footprints/`](../footprints/LICENSE.md).
