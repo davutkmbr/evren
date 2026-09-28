@@ -1,5 +1,6 @@
 import { POST_COMMON_GLSL } from './common.glsl';
 import { TONEMAP_GLSL } from './tonemap.glsl';
+import { EXPOSURE_GLSL } from './meter.glsl';
 
 /**
  * HDR -> display composite at internal resolution:
@@ -10,6 +11,7 @@ import { TONEMAP_GLSL } from './tonemap.glsl';
 export const COMPOSITE_FRAG = /* glsl */ `
 ${POST_COMMON_GLSL}
 ${TONEMAP_GLSL}
+${EXPOSURE_GLSL}
 uniform sampler2D tColor;
 uniform sampler2D tDepth;
 uniform sampler2D tBloom;
@@ -18,6 +20,8 @@ uniform vec2 uTexel;
 uniform vec2 uBloomTexel;
 uniform float uBloomStrength;
 uniform float uBloomNorm;
+/* Exposure state texture (auto exposure, adapted on the GPU) and a multiplier on top of it (under water). */
+uniform sampler2D tExposure;
 uniform float uExposure;
 uniform vec3 uWhiteBalance;
 uniform vec3 uLookSlope;
@@ -319,6 +323,7 @@ vec3 dropletLayer(vec2 uv, float cells, float seed) {
 
 void main() {
   vec2 uv = vUv;
+  float exposure = postExposure(tExposure) * uExposure;
   float jitter = interleavedGradientNoise(gl_FragCoord.xy, uFrame);
   // Lens under water: which side of the waterline this pixel's near-plane point is on, and the wet band on the line.
   float underMask = 0.0;
@@ -372,13 +377,13 @@ void main() {
   // Rod (scotopic) vision when dark-adapted: whatever displays darker than ~mid grey loses saturation and
   // shifts toward blue; bright lights keep their colour.
   if (uPurkinje > 0.0) {
-    float exposedLum = postLuma(col) * uExposure;
+    float exposedLum = postLuma(col) * exposure;
     float scotopic = dot(col, vec3(0.08, 0.52, 0.40));
     float rod = uPurkinje * (1.0 - smoothstep(0.03, 0.6, exposedLum));
     col = mix(col, scotopic * vec3(0.62, 0.8, 1.12), rod);
   }
 
-  col *= uExposure * uWhiteBalance;
+  col *= exposure * uWhiteBalance;
   vec3 display = displayTransform(col, uLookSlope, uLookPower, uLookSat);
   // Split toning: warmth/coolness keyed to display luminance, so a warm key light does not turn blue sky sepia.
   float tl = dot(display, LUMA_REC709);

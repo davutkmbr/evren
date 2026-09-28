@@ -37,6 +37,7 @@ export interface EngineStats {
   renderScale: number;
   /** Dynamic resolution state: signal in use, median frame vs target, GPU timer trust, drop/raise counts. */
   dynres?: object;
+  pacing?: object;
   pending: number;
   colliders: number;
   heapMB: number;
@@ -247,6 +248,9 @@ export class Engine {
     if (this.minFrameMs > 0 && now - this.lastTime < this.minFrameMs) {
       return;
     }
+    if (this.ctx.pipeline.gpuBehind?.()) {
+      return;
+    }
     const ctx = this.ctx;
     const frameStart = performance.now();
     const realDt = Math.min(Math.max((now - this.lastTime) / 1000, 0), 0.25);
@@ -351,6 +355,7 @@ export class Engine {
       programs: info.programs?.length ?? 0,
       renderScale: this.ctx.pipeline.renderScale,
       dynres: this.ctx.pipeline.renderScaleStats,
+      pacing: this.ctx.pipeline.pacingStats,
       pending: this.pending(),
       colliders: this.ctx.services.get('collision').colliderCount,
       heapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0,

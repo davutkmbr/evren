@@ -150,8 +150,15 @@ export interface RenderPipeline {
   readonly renderScale: number;
   /** Dynamic resolution debug state (window.__evren.stats().dynres), when the pipeline has one. */
   readonly renderScaleStats?: object;
-  /** Exposure multiplier currently applied (auto exposure). */
+  /** Exposure multiplier currently applied (auto exposure; may lag the image slightly). */
   readonly exposure: number;
+  /**
+   * Frame pacing: true when the GPU is too far behind and this animation frame should be skipped (the engine then
+   * runs neither update nor render; the next frame takes the whole elapsed time).
+   */
+  gpuBehind?(): boolean;
+  /** Frame pacing debug state (window.__evren.stats().pacing), when the pipeline has one. */
+  readonly pacingStats?: object;
   /** Screen-space radial speed effect strength 0..1 (set by camera/flight). */
   speedEffect: number;
   dispose(): void;

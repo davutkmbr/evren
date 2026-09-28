@@ -1,4 +1,5 @@
 import { POST_COMMON_GLSL } from './common.glsl';
+import { EXPOSURE_GLSL } from './meter.glsl';
 
 /**
  * Output pass at display resolution: Catmull-Rom (5-tap, 2x2 anti-ringing clamp) upscale when the internal resolution differs,
@@ -93,8 +94,10 @@ void main() {
 /** Debug visualisations drawn instead of the final pass (?postdebug=...). */
 export const DEBUG_FRAG = /* glsl */ `
 ${POST_COMMON_GLSL}
+${EXPOSURE_GLSL}
 uniform sampler2D tSource;
 uniform sampler2D tDepth;
+uniform sampler2D tExposure;
 uniform int uMode;
 uniform float uExposure;
 uniform float uNear;
@@ -108,7 +111,7 @@ vec3 heat(float t) {
 
 void main() {
   if (uMode == 1) {
-    vec3 c = textureLod(tSource, vUv, 0.0).rgb * uExposure;
+    vec3 c = textureLod(tSource, vUv, 0.0).rgb * postExposure(tExposure) * uExposure;
     gl_FragColor = vec4(pow(c / (1.0 + c), vec3(1.0 / 2.2)), 1.0);
   } else if (uMode == 2) {
     float l = postLuma(textureLod(tSource, vUv, 0.0).rgb);
