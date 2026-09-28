@@ -25,6 +25,8 @@
  * descriptor table the web terrain shader blends (terrain/landuse-table.ts):
  *   R = built fabric and paved ground, G = lawn and farmland, B = tree canopy (forest, cemeteries), A = sand;
  *   the rest (1 - sum) is bare ground. Slope rock and the sea floor are left to the material (normal, height).
+ * The same weights per land-use cell are written as landuse.png (4096², one texel per 11.7 m cell of the web's land-use
+ * grid) for materials that sample land use by world position, as the web terrain shader does.
  * Quads entirely deeper than `--sea-floor` metres are dropped; a tile without any quad is not written.
  *
  * Texture sets for the terrain material come from the approved assets through the world compiler's TextureBaker
@@ -32,12 +34,14 @@
  * compiler's format, so importers share them with the street tiles.
  */
 import { createHash } from 'node:crypto';
+import { crc32, deflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as THREE from 'three';
+import { LandUse } from '../../src/core/contracts';
 import { WORLD_HALF_SIZE, WORLD_ORIGIN } from '../../src/core/geo-coords';
-import { HEIGHT_GRID } from '../../src/world/geo/build/grid';
+import { HEIGHT_GRID, LANDUSE_GRID } from '../../src/world/geo/build/grid';
 import { buildLandUseTable } from '../../src/world/terrain/landuse-table';
 import { buildHeadlessGeo } from '../headless/geo';
 import { defineMaterials, type MaterialDef } from '../world-compiler/src/materials';
@@ -126,6 +130,10 @@ function surfaceWeights(): Float32Array {
   buildLandUseTable(table);
   const out = new Float32Array(16 * 4);
   for (let c = 0; c < 16; c++) {
+    if (c === LandUse.Water) {
+      // The sea floor: no land surface (materials shade it by depth).
+      continue;
+    }
     const a = table[c * 3];
     const b = table[c * 3 + 1];
     const d = table[c * 3 + 2];
@@ -402,6 +410,47 @@ async function bakeLayers(out: string): Promise<{ defs: object[]; textures: stri
   return { defs, textures: baker.written().map((t) => `textures/${t.file}`) };
 }
 
+/**
+ * The land-use grid as surface weights (same channels as COLOR_0), one texel per land-use cell (4096², 11.7 m,
+ * texel (0, 0) = the north-west cell, u east, v south): materials sample it by world position with bilinear filtering,
+ * like the web terrain shader blends the land-use cells (terrain/glsl/landuse.glsl.ts).
+ */
+function writeLandUse(geo: Geo, weights: Float32Array, file: string): Buffer {
+  const n = LANDUSE_GRID.size;
+  const rows: Buffer[] = [];
+  for (let r = 0; r < n; r++) {
+    const row = Buffer.alloc(1 + n * 4);
+    const z = LANDUSE_GRID.origin + r * LANDUSE_GRID.cell;
+    for (let c = 0; c < n; c++) {
+      const k = geo.landUseAt(LANDUSE_GRID.origin + c * LANDUSE_GRID.cell, z) * 4;
+      for (let ch = 0; ch < 4; ch++) {
+        row[1 + c * 4 + ch] = Math.round(weights[k + ch] * 255);
+      }
+    }
+    rows.push(row);
+  }
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'ascii');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])) >>> 0, 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(n, 0);
+  ihdr.writeUInt32BE(n, 4);
+  ihdr.set([8, 6, 0, 0, 0], 8);
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.concat(rows), { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  writeFileSync(file, png);
+  return png;
+}
+
 function gitCommit(): string {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -419,6 +468,7 @@ async function main(): Promise<void> {
   const weights = surfaceWeights();
   mkdirSync(join(opts.out, 'tiles'), { recursive: true });
   const { defs, textures } = await bakeLayers(opts.out);
+  const landUsePng = writeLandUse(geo, weights, join(opts.out, 'landuse.png'));
 
   const n = (2 * WORLD_HALF_SIZE) / opts.tile;
   const first = -WORLD_HALF_SIZE / opts.tile;
@@ -521,6 +571,13 @@ async function main(): Promise<void> {
     fanTolerance: opts.fan,
     holes: { tileSize: STREET_TILE, cells: holes.cells.size, areas: holes.areas },
     colors: { r: 'built and paved', g: 'lawn and farmland', b: 'tree canopy', a: 'sand' },
+    landUse: {
+      texture: 'landuse.png',
+      size: LANDUSE_GRID.size,
+      cell: LANDUSE_GRID.cell,
+      origin: LANDUSE_GRID.origin,
+      hash: createHash('sha1').update(landUsePng).digest('hex').slice(0, 16),
+    },
     material: 'terrain',
     materialDefs: defs,
     textures,
@@ -536,7 +593,7 @@ async function main(): Promise<void> {
     hash: '',
   };
   index.hash = createHash('sha1')
-    .update(JSON.stringify([tiles.map((t) => t.hash), defs]))
+    .update(JSON.stringify([tiles.map((t) => t.hash), defs, index.landUse.hash]))
     .digest('hex')
     .slice(0, 16);
   writeFileSync(join(opts.out, 'index.json'), JSON.stringify(index, null, 1));
