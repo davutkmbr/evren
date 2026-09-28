@@ -19,11 +19,11 @@ import type { OsmData } from '../data';
 import { LayerBase } from '../shared/layer';
 import { runWorker } from '../shared/worker';
 import type { OsmContext, OsmLayer } from '../types';
-import { MODEL_WIDTH, paintOf } from './catalog';
+import { MODEL_COUNT, MODEL_WIDTH, paintOf } from './catalog';
 import { DeckHeights, deckSpecs } from './decks';
 import { PathFlag } from './paths';
 import { LaneFlag, PARKED_STRIDE, SAMPLE_STRIDE, type TrafficNet, type TrafficRequest, type TrafficResult, type TramTrack } from './protocol';
-import { VehicleRenderer } from './render';
+import { vehicleGeometries, VehicleRenderer } from './render';
 import { Signals } from './signals';
 import { CarSim } from './sim';
 import { TramSim } from './trams';
@@ -80,19 +80,17 @@ class TrafficLayer extends LayerBase {
     this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
-      job.promise.then((res) => {
-        if (!this.disposed) {
-          this.start(ctx, res, performance.now() - t0);
-        }
-      }),
+      job.promise.then((res) => (this.disposed ? undefined : this.sliced('start', this.start(ctx, res, performance.now() - t0)))),
     );
   }
 
-  private start(ctx: OsmContext, res: TrafficResult, workerMs: number): void {
+  /**
+   * Sets the traffic up from the worker result in steps (shared/jobs.ts): vehicle models, renderer, simulations. The
+   * layer's fields are assigned at the end, so update() never sees a half-built set.
+   */
+  private *start(ctx: OsmContext, res: TrafficResult, workerMs: number): Generator<string> {
     const t1 = performance.now();
     const net = res.net;
-    this.net = net;
-    this.tracks = res.tracks;
     Object.assign(this.workerStats, res.stats);
     const preset = ctx.engine.quality.settings.preset;
     const quality = QUALITY_SCALE[preset] ?? 1;
@@ -104,29 +102,42 @@ class TrafficLayer extends LayerBase {
       }
     }
     const capacity = Math.min(MOVING_CAP, Math.ceil(full * Math.max(1, this.density) * 1.1) + 16);
-    const renderer = new VehicleRenderer(capacity + TRAM_SLOTS, res.parked, PARKED_STRIDE, quality);
+    // Built once per session (shared by every region), one model per step.
+    const geometries: THREE.BufferGeometry[][] = [];
+    for (let m = 0; m < MODEL_COUNT; m++) {
+      geometries.push(vehicleGeometries(m));
+      yield 'models';
+    }
+    const renderer = new VehicleRenderer(capacity + TRAM_SLOTS, res.parked, PARKED_STRIDE, quality, geometries);
+    this.onDispose(() => renderer.dispose());
+    yield 'renderer';
+    const signals = new Signals(net);
+    const trams = new TramSim(net, res.tracks, renderer);
+    this.onDispose(() => trams.dispose());
+    yield 'trams';
+    const cars = new CarSim(net, renderer, signals, { tram: trams.crossing }, ctx.rect, capacity);
+    this.onDispose(() => cars.dispose());
+    yield 'cars';
+    this.net = net;
+    this.tracks = res.tracks;
     this.renderer = renderer;
+    this.signals = signals;
+    this.trams = trams;
+    this.cars = cars;
     this.group.add(renderer.group);
     // Moving vehicles and their lights: a reactive mask for the TAA (no trails behind cars).
     this.onDispose(trackReactive(renderer.group));
-    this.signals = new Signals(net);
-    this.trams = new TramSim(net, res.tracks, renderer);
-    this.cars = new CarSim(net, renderer, this.signals, { tram: this.trams.crossing }, ctx.rect, capacity);
-    this.onDispose(() => {
-      this.cars?.dispose();
-      this.trams?.dispose();
-      renderer.dispose();
-    });
     const road = ctx.engine.services.tryGet('roadSurface');
     if (road) {
       this.decks.useService(road);
     }
-    this.cars.setTarget(ctx.engine.time.timeOfDay, this.density);
-    this.cars.populate();
-    this.trams.populate();
-    this.signals.update(ctx.engine.time.elapsed);
+    cars.setTarget(ctx.engine.time.timeOfDay, this.density);
+    cars.populate();
+    yield 'populate';
+    trams.populate();
+    signals.update(ctx.engine.time.elapsed);
     console.info(
-      `[osm:traffic] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, ${this.cars.vehicleCount} vehicles (full ${Math.round(full)}), ${this.trams.count} trams, ${res.parked.length / PARKED_STRIDE} parked, setup ${Math.round(performance.now() - t1)} ms`,
+      `[osm:traffic] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, ${cars.vehicleCount} vehicles (full ${Math.round(full)}), ${trams.count} trams, ${res.parked.length / PARKED_STRIDE} parked, setup ${Math.round(performance.now() - t1)} ms (sliced)`,
     );
   }
 

@@ -74,8 +74,8 @@ export class LodTiledMesh {
     const levels = opt.levels ?? 3;
     const count = leaves.length / LOD_LEAF_STRIDE;
     this.isNear = new Uint8Array(count);
-    this.shared = toGeometry(arrays);
-    this.shared.boundingSphere = null;
+    // Only drawn through the per-leaf / per-node geometries, which carry their own bounds.
+    this.shared = toGeometry(arrays, { bounds: false });
     const castShadow = opt.castShadow ?? false;
     for (let k = 0; k < count; k++) {
       const o = k * LOD_LEAF_STRIDE;

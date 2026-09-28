@@ -17,6 +17,7 @@ import { InstanceLod, LOD_RADIUS_SCALE } from '../shared/instance-lod';
 import { LodTiledMesh } from '../shared/lod-tiles';
 import { addMesh, countTriangles, toGeometry } from '../shared/three';
 import { runWorker } from '../shared/worker';
+import { osmProf } from '../shared/prof';
 import type { OsmContext, OsmLayer } from '../types';
 import { createCoverMaterial } from './cover/material';
 import { Crowd, DRAW_DISTANCE as CROWD_DRAW_DISTANCE } from './crowd/crowd';
@@ -74,7 +75,10 @@ class DetailsLayer extends LayerBase {
   ) {
     super('details');
     this.onDispose(() => this.propMaterial.dispose());
-    this.deck = GalataDeck.fromGeo(ctx.geo);
+    // Only the region with the Galata Bridge waits for its deck: resolving it ray-casts the whole structures batch
+    // (~90 ms) and every streamed region used to do it once.
+    const deck = GalataDeck.fromGeo(ctx.geo);
+    this.deck = deck?.within(ctx.rect) ? deck : null;
     const worker = new Worker(new URL('./details.worker.ts', import.meta.url), { type: 'module', name: 'osm-details' });
     // Modelled landmarks' ground (landmarks/claims.ts); pads grown by 10 m for trees, furniture and walkers.
     const claims = landmarkClaims(ctx.geo);
@@ -94,11 +98,7 @@ class DetailsLayer extends LayerBase {
     this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
-      job.promise.then((res) => {
-        if (!this.disposed) {
-          this.upload(res, performance.now() - t0);
-        }
-      }),
+      job.promise.then((res) => (this.disposed ? undefined : this.sliced('upload', this.upload(res, performance.now() - t0)))),
     );
   }
 
@@ -106,7 +106,8 @@ class DetailsLayer extends LayerBase {
     return super.pending() + (this.waiting ? 1 : 0);
   }
 
-  private upload(res: DetailsResult, workerMs: number): void {
+  /** Builds the layer from the worker result in steps (shared/jobs.ts): about one mesh or tree species each. */
+  private *upload(res: DetailsResult, workerMs: number): Generator<string> {
     const t1 = performance.now();
     const ctx = this.ctx;
     this.result = { walk: res.walk, standers: res.standers };
@@ -125,6 +126,7 @@ class DetailsLayer extends LayerBase {
           }
         }),
       );
+      yield 'cover';
     }
     const atlas = acquireFoliageAtlas();
     const treeMat = createTreeMaterial(atlas.texture);
@@ -137,6 +139,7 @@ class DetailsLayer extends LayerBase {
       const records = res.trees[s];
       if (records?.length) {
         this.trees.push(new InstanceLod(this.group, `osm-tree-${s}`, records, geos[s], treeMat, { radius: Infinity, shadowRadius: TREE_SHADOW_RADIUS }));
+        yield 'tree';
       } else {
         geos[s].dispose();
       }
@@ -144,12 +147,14 @@ class DetailsLayer extends LayerBase {
     if (res.props && res.propsTiles) {
       this.props = new LodTiledMesh(this.group, 'osm-details-props', res.props, res.propsTiles, this.propMaterial, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
       this.props.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+      yield 'props';
     }
     if (res.kits && res.kitsTiles) {
       const kitMat = createPropMaterial('osm-details-kits', false, false);
       this.onDispose(() => kitMat.dispose());
       this.kits = new LodTiledMesh(this.group, 'osm-details-kits', res.kits, res.kitsTiles, kitMat, { distance: PROPS_DISTANCE, shadowDistance: PROPS_SHADOW_DEPTH, castShadow: true });
       this.kits.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
+      yield 'kits';
     }
     if (res.boats) {
       const boatMat = createPropMaterial('osm-boats', true);
@@ -170,6 +175,7 @@ class DetailsLayer extends LayerBase {
       this.onDispose(() => pigeons.dispose());
     }
     this.stats = { ...res.stats, workerMs: Math.round(workerMs), uploadMs: Math.round(performance.now() - t1) };
+    yield 'misc';
     // The crowd waits for the Galata Bridge walkway heights (anglers, deck lanes).
     if (this.deck) {
       this.waiting = true;
@@ -215,7 +221,7 @@ class DetailsLayer extends LayerBase {
       }
     }
     this.stats.deckVerts = lifted;
-    const crowd = new Crowd(res.walk, standers, CROWD_SCALE[this.ctx.engine.quality.settings.preset] ?? 1, this.ctx.engine.time.elapsed);
+    const crowd = osmProf('details:Crowd', () => new Crowd(res.walk, standers, CROWD_SCALE[this.ctx.engine.quality.settings.preset] ?? 1, this.ctx.engine.time.elapsed));
     this.crowd = crowd;
     this.group.add(crowd.group);
     this.onDispose(() => crowd.dispose());
