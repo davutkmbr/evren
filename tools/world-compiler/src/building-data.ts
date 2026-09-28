@@ -285,18 +285,30 @@ export function areaRecord(a: AreaContext, avoid: ReadonlySet<string>): Record<s
 /** Kinds of named points that are places to go to but not storefront POIs (stations, monuments, fountains, piers). */
 const PLACE_KEYS = new Set(['historic', 'man_made', 'railway', 'public_transport', 'amenity', 'tourism', 'leisure', 'memorial']);
 
-/** Named OSM ways of the streets (and steps) in the compiled rect: name, kind, OSM way and polyline (x, z). */
+/** The rect every tile of the area covers (the union of the tile squares). */
+function tileRect(a: AreaContext): { minX: number; minZ: number; maxX: number; maxZ: number } {
+  const r = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
+  for (const m of a.manifests.values()) {
+    r.minX = Math.min(r.minX, m.bounds.minX);
+    r.minZ = Math.min(r.minZ, m.bounds.minZ);
+    r.maxX = Math.max(r.maxX, m.bounds.maxX);
+    r.maxZ = Math.max(r.maxZ, m.bounds.maxZ);
+  }
+  return r;
+}
+
+/** Named OSM ways of the streets (and steps) in the compiled tiles: name, kind, OSM way and polyline (x, z). */
 function streetsOf(a: AreaContext): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  const r = a.strip?.rect;
+  const r = tileRect(a);
   for (const road of a.data.roads) {
     if (!road.name && road.kind !== 'steps') {
       continue;
     }
     const pts = road.pts;
-    let inside = !r;
+    let inside = false;
     for (let k = 0; k + 1 < pts.length && !inside; k += 2) {
-      inside = !!r && pts[k] >= r.minX && pts[k] <= r.maxX && pts[k + 1] >= r.minZ && pts[k + 1] <= r.maxZ;
+      inside = pts[k] >= r.minX && pts[k] <= r.maxX && pts[k + 1] >= r.minZ && pts[k + 1] <= r.maxZ;
     }
     if (!inside) {
       continue;
@@ -309,10 +321,10 @@ function streetsOf(a: AreaContext): Record<string, unknown>[] {
 /** Named points that are not storefront POIs (the tile manifests' `pois`): stations, monuments, fountains, piers. */
 function placesOf(a: AreaContext): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  const r = a.strip?.rect;
+  const r = tileRect(a);
   for (const p of a.data.points) {
     const key = p.kind.split('=')[0];
-    if (!p.name || !PLACE_KEYS.has(key) || isPoi(p) || (r && (p.x < r.minX || p.x > r.maxX || p.z < r.minZ || p.z > r.maxZ))) {
+    if (!p.name || !PLACE_KEYS.has(key) || isPoi(p) || p.x < r.minX || p.x > r.maxX || p.z < r.minZ || p.z > r.maxZ) {
       continue;
     }
     out.push({ kind: p.kind, name: p.name, x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, y: Math.round(a.heights.at(p.x, p.z) * 100) / 100, ...(p.osm ? { osm: p.osm } : {}), ...(p.wikidata ? { wikidata: p.wikidata } : {}), ...(p.nameEn ? { nameEn: p.nameEn } : {}) });
