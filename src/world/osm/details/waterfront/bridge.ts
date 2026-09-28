@@ -49,6 +49,22 @@ export class GalataDeck {
     return new GalataDeck({ ox, oz, ax, az, s0: Math.min(...sEnd), s1: Math.max(...sEnd), piers: [sOf(a[0]), sOf(a[1])] });
   }
 
+  /** Whether any part of the deck (both walkway bands) lies inside `r`: other regions have no bridge life to place. */
+  within(r: { minX: number; maxX: number; minZ: number; maxZ: number }): boolean {
+    const f = this.frame;
+    const steps = Math.max(1, Math.ceil((f.s1 - f.s0) / 10));
+    for (let i = 0; i <= steps; i++) {
+      const s = f.s0 + ((f.s1 - f.s0) * i) / steps;
+      for (const x of [-WALK_OUTER, WALK_OUTER]) {
+        const [px, pz] = this.point(s, x);
+        if (px >= r.minX && px <= r.maxX && pz >= r.minZ && pz <= r.maxZ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   get resolved(): boolean {
     return this.profile !== null;
   }

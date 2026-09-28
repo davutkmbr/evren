@@ -32,6 +32,7 @@ import { fetchJson, type StreetIndex, type StreetTileManifest, type StreetTileRe
 import { installLazyBufferUploads, ownsBufferArray, TileBatches } from '../../street/tile-batches';
 import { TileStreamer } from '../../street/tile-streamer';
 import { devParams } from '../../core/dev-tools';
+import { compileForScene as compileSceneObject } from '../../render/warmup';
 
 /** Root index of the compiled areas (tools/world-compiler/src/world-index.ts). */
 const WORLD_INDEX = 'world/index.json';
@@ -773,24 +774,9 @@ function assignHoleDepth(scene: THREE.Scene, done: WeakSet<THREE.Object3D>): voi
   });
 }
 
-/**
- * Compiles an object's programs in parallel for the way the pipeline draws the scene: into an HDR render target
- * (linear output, no tone mapping). Compiled against the canvas (the default), every program came out as a variant the
- * frame never uses, and the real ones were linked synchronously on first draw (12 at once when the layer switched on).
- */
-let compileTarget: THREE.WebGLRenderTarget | null = null;
-
+/** Compiles an object's programs in parallel for the way the pipeline draws the scene (render/warmup.ts). */
 function compileForScene(ctx: EngineContext, object: THREE.Object3D): Promise<unknown> {
-  compileTarget ??= new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
-  const r = ctx.renderer;
-  const previous = r.getRenderTarget();
-  r.setRenderTarget(compileTarget);
-  try {
-    // compileAsync creates the programs synchronously (with the current target) and then polls their completion.
-    return r.compileAsync(object, ctx.camera, ctx.scene);
-  } finally {
-    r.setRenderTarget(previous);
-  }
+  return compileSceneObject(ctx.renderer, ctx.scene, ctx.camera, object);
 }
 
 /** Distance (m) from an area at which the flight-scale shadow casters get their hole depth materials. */

@@ -21,7 +21,7 @@ import { DETAIL_KINDS } from './details';
 import { DetailLod } from './lod';
 import { type BuildingMaterials, createBuildingMaterials } from './materials';
 import { antennaGeometry, chimneyGeometry, dishGeometry, minaretGeometry, solarGeometry, tankGeometry } from './props';
-import { type BuildingsRequest, type BuildingsResult, decodePrisms } from './protocol';
+import { type BuildingsRequest, type BuildingsResult, prisms } from './protocol';
 import type { PropKind } from './roofs';
 import { exposeDebug } from '../../../core/dev-tools';
 
@@ -70,6 +70,8 @@ const PROP_LOD: Record<PropKind, InstanceLodOptions> = {
  * water reflection. `?osmlod=0` turns it off for A/B comparisons.
  */
 const SHELL_FAR_DISTANCE = 450;
+/** Colliders inserted per upload step (a Kadıköy region has ~10 k buildings). */
+const COLLIDER_STEP = 250;
 
 class BuildingsLayer extends LayerBase {
   private readonly shells: LodTiledMesh[] = [];
@@ -97,11 +99,9 @@ class BuildingsLayer extends LayerBase {
     this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
-      Promise.all([job.promise, materials.ready]).then(([res]) => {
-        if (!this.disposed) {
-          this.upload(ctx, res, materials, performance.now() - t0);
-        }
-      }),
+      Promise.all([job.promise, materials.ready]).then(([res]) =>
+        this.disposed ? undefined : this.sliced('upload', this.upload(ctx, res, materials, performance.now() - t0)),
+      ),
     );
     const off = ctx.engine.quality.onChange(() => this.lod?.setPreset(ctx.engine.quality.settings.preset));
     this.onDispose(off);
@@ -119,7 +119,8 @@ class BuildingsLayer extends LayerBase {
     }
   }
 
-  private upload(ctx: OsmContext, res: BuildingsResult, materials: BuildingMaterials, workerMs: number): void {
+  /** Builds the layer from the worker result in steps (shared/jobs.ts): one mesh set or COLLIDER_STEP colliders each. */
+  private *upload(ctx: OsmContext, res: BuildingsResult, materials: BuildingMaterials, workerMs: number): Generator<string> {
     const t1 = performance.now();
     const lodOn = ctx.engine.debug.params.get('osmlod') !== '0';
     for (const [name, arrays, leaves, material] of [
@@ -130,32 +131,39 @@ class BuildingsLayer extends LayerBase {
         const shell = new LodTiledMesh(this.group, name, arrays, leaves, material, { distance: SHELL_FAR_DISTANCE, castShadow: true, reflection: true });
         shell.setEnabled(lodOn);
         this.shells.push(shell);
+        yield 'shell';
       }
     }
     for (const k of Object.keys(PROP_GEOMETRY) as PropKind[]) {
       const records = res.props[k];
       if (records?.length) {
         this.props.push(new InstanceLod(this.group, `osm-${k}`, records, PROP_GEOMETRY[k](), materials.prop, PROP_LOD[k]));
+        yield 'prop';
       }
     }
     this.lod = new DetailLod(this.group, res.details, res.tiles, materials, ctx.engine.quality.settings.preset);
     this.update(0, ctx);
+    yield 'detail-lod';
 
     const collision = ctx.engine.services.get('collision');
     this.collision = collision;
     // No closure of this method may name `res`: V8 would keep the whole worker result (every mesh array, already on
     // the GPU) alive for as long as the dispose callback below.
     const osmIds = res.colliderIds;
-    decodePrisms(res.colliders, (bottom, top, rings, i) => {
-      this.colliderIds.push(collision.add({ kind: 'prism', rings, bottom, top }, 'building', `osm-building:${osmIds[i]}`));
-    });
     this.onDispose(() => {
       this.collision?.removeMany(this.colliderIds);
       this.colliderIds = [];
     });
+    let n = 0;
+    for (const p of prisms(res.colliders)) {
+      this.colliderIds.push(collision.add({ kind: 'prism', rings: p.rings, bottom: p.bottom, top: p.top }, 'building', `osm-building:${osmIds[p.index]}`));
+      if (++n % COLLIDER_STEP === 0) {
+        yield 'colliders';
+      }
+    }
     exposeDebug('__osmBuildings', { stats: res.stats, lod: () => this.lod?.counts(), shells: () => this.shells.map((s) => ({ name: s.name, ...s.counts() })) });
     console.info(
-      `[osm:buildings] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms, ${this.group.children.length} draws, ${countTriangles(this.group)} tris`,
+      `[osm:buildings] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms (sliced), ${this.group.children.length} draws, ${countTriangles(this.group)} tris`,
     );
   }
 }

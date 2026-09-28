@@ -186,8 +186,8 @@ do not add up exactly.
 | 5 | **Clouds on ultra at high's resolution** (divisor 2 → 3, steps 112 → 88) or temporal upsampling | ~1 ms (pass costs 1.1–2.4) | S | clouds off −1.1…−2.4 |
 | 6 | **Exposure without a readback:** keep the meter and the adaptation on the GPU (1x1 adapted-luminance target read by the composite), so no frame ever waits on the GPU process; alternatively poll at most every 4th frame | median 0 ms; removes the 50–60 ms spikes once under budget | S–M | section 3.1; **done, section 5** |
 | 7 | **Frame pacing:** one fence per frame, skip the frame's GPU work (not the simulation) while 2 frames are in flight | median 0; p99 → median when slightly over budget | S | poll-off A/B: backpressure stalls reach 140 ms; **done, section 5** |
-| 8 | **Shader warm-up for streamed content:** `compileAsync` region / kit materials before they join the scene (as street layer and mosques do); share materials across regions | removes 23–77 ms hitches | S | `GetProgramiv` long tasks |
-| 9 | **Spread region streaming:** time-slice the worker-result handler and geometry uploads (≤ 2 ms per frame), transfer ready buffers instead of rebuilding on the main thread | removes 90–100 ms hitches near regions | M | `HandlePostMessage` 91–99 ms; frame bodies ~100 ms |
+| 8 | **Shader warm-up for streamed content:** `compileAsync` region / kit materials before they join the scene (as street layer and mosques do); share materials across regions | removes 23–77 ms hitches | S | `GetProgramiv` long tasks; **done, section 6** |
+| 9 | **Spread region streaming:** time-slice the worker-result handler and geometry uploads (≤ 2 ms per frame), transfer ready buffers instead of rebuilding on the main thread | removes 90–100 ms hitches near regions | M | `HandlePostMessage` 91–99 ms; frame bodies ~100 ms; **done, section 6** |
 | 10 | Dynamic resolution as the safety net (already there; floor 0.8 on ultra) | ≤ 3 ms | — | scale 0.7 only −2.3…−4.7 ms: cannot close the gap alone |
 
 Suggested order: 0 (if Retina) → 1 → 5 → 8 → 3 → 2 → 6/7 → 9 → 4. Fixes 1 + 2 + 3 + 5 at their expected values
@@ -292,8 +292,82 @@ GPU or to a query readout.
   two probes' clocks are offset by a few hundred ms. The sky-to-water cut shows no change on either build: both stay
   at the `minLog` clamp.
 
+## 6. Stutter: shader warm-up and streaming
+
+Fixes 8 and 9, branch `feat/region-shader-warmup`. Measured 2026-09-28 on the shared machine (other agents' GPU jobs
+running, same noise as above).
+
+### Measurement
+
+Snap batch per run (`scripts/snap.mjs --batch`, worktree shim page): `?view=uskudar&q=ultra&dynres=0&fps=0&osmprof=1`,
+wait until idle, then an in-page probe teleports with `__evren.shotLatLon(40.990, 29.026, 150, 0, -15, 60)` and
+records every frame until the OSM regions have been idle for 6 s (25–28 s windows: kadikoy, kadikoy-4, kadikoy-5,
+moda-2 and moda-3 stream in, activate and hand over; two regions out of range are disposed). The probe wraps every
+system's `update` / `preRender`, `PostPipeline.render` and `gl.getProgramParameter(LINK_STATUS)` per frame, reads
+`renderer.info.programs` for programs created while drawing, and observes long-animation-frame entries (script
+attribution). `?osmprof=1` (new, `src/world/osm/shared/prof.ts`) times the region load path in the code and writes each
+span as a user-timing measure (`osm:<label>`), so the Chrome traces show it. Baseline = origin/main with only that
+instrumentation; two runs each, the first with a Chrome trace.
+
+### Where the long frames came from (baseline)
+
+| Owner | Frame / task | Detail |
+|---|---|---|
+| Programs linked on first draw | 64–114 ms, 5 frames per run | 3–6 region programs each (`pipeline` 57–107 ms inside `render`), 8 per run in total; the first region activation paid them |
+| `GalataDeck.resolve` in every region's details layer | 87–97 ms, once a second while a region waits | ray-casts the whole `structures.opaque` batch looking for the Galata Bridge deck, from regions that do not contain the bridge (the ~100 ms "unattributed" frame bodies) |
+| `traffic` setup (`start`) | 76–90 ms | 14 vehicle models x 3 LODs rebuilt per region (10–12 ms each) |
+| `streets` upload | 65–71 ms | ground `LodTiledMesh`: `computeBoundingSphere` over the whole shared ground buffer (≈ 50 ms), then meshes / props |
+| `details` upload | 45–52 ms | prop and kit `LodTiledMesh` (same bounding-sphere pass), trees, cover |
+| `buildings` upload | 44–46 ms | facade `LodTiledMesh` 32–34 ms (bounding sphere), props, DetailLod; colliders only 2–3 ms |
+| Layer constructors (`postMessage` structured clone of the request) | 12–46 ms | one per layer; four in one microtask burst after the foundation |
+| `uploadPending` | up to 26 ms | every pending geometry uploaded in one frame |
+
+The worker-result handlers of section 3 (`HandlePostMessage` 91–99 ms) are the upload functions above: they ran as
+promise continuations inside the message task. Collider inserts (`decodePrisms` → `collision.add`) turned out small
+(2–3 ms per region). The first frame after the teleport (250–300 ms, mirror + main render of a new view, one landmark
+program) is the teleport itself, not streaming.
+
+### What changed
+
+- **Warm-up (one rule for every OSM layer, `src/world/osm/index.ts`).** A layer's group is added hidden; once its
+  content is built and uploaded (`pending() === 0`, no geometry left for `uploadPending`), the region tags it with
+  `OSM_FADE` (streamed regions draw with that define from the fade-in on) and compiles it with
+  `compileForScene` (`src/render/warmup.ts`, shared with the street layer): `renderer.compileAsync` against the real
+  scene (lights, shadows, fog, environment), into a half-float target (linear output, no tone mapping, like every
+  pass), plus each `customDepthMaterial` as the shadow pass draws it (scene lights, no fog). The layer is shown when
+  every program reports ready; a region activates only when its buildings layer is shown. Region materials are
+  per-region but compile to the same programs: from the second region on, every lookup hits three's program cache
+  and the warm-up costs 1–5 ms of `getProgram` key building per layer.
+- **Time-sliced job queue (`src/world/osm/shared/jobs.ts`).** No scheduler existed at engine level (city, street
+  layer and mosques each budget their own queue), so the OSM system got one: generators that yield between steps, run
+  from `OsmSystem.update` for 2.5 ms per frame (at least one step). `LayerBase.sliced()` queues a layer's upload and
+  keeps the layer pending (hidden, region not activatable) until it ends; dispose cancels it. Converted: buildings
+  upload (shells, each prop kind, DetailLod, colliders 250 per step), streets upload (mask, ground, meshes, each
+  prop kind), details upload (cover, each tree species, props, kits), traffic setup (one vehicle model per step,
+  renderer, sims, populate), and the region load steps (land clip, passages, worker base, street surface, one layer
+  constructor per step). Colliders are in place before the buildings layer can be shown, i.e. before the region
+  activates.
+- **Root causes removed rather than sliced:** `GalataDeck` only in the region whose rect contains the bridge;
+  vehicle model geometries built once per session and shared by every region's batches; `LodTiledMesh` skips the
+  bounding sphere of its shared buffer (drawn only through per-leaf geometries with their own bounds);
+  `uploadPending` sends at most 8 MB per frame (at least one geometry).
+
+### Result (Kadıköy teleport, ultra, 1600x900)
+
+| | frame median | p99 | max | frames > 50 ms | frames > 100 ms | programs linked while drawing |
+|---|---|---|---|---|---|---|
+| before (2 runs) | 33.3 / 33.3 ms | 116.7 / 116.6 ms | 300 / 250 ms | 68 / 55 | 12 / 10 | 8 / 8 (in 5 frames of 64–114 ms) |
+| after (2 runs) | 33.3 / 33.3 ms | **66.7 / 66.7 ms** | **183 / 167 ms** | **46 / 42** | **1 / 1** | **0** |
+
+Chrome trace (renderer main thread, tasks > 50 ms): 132 → 105, of them > 100 ms 11 → 1 (the teleport frame). The
+remaining 50–67 ms tasks are the exposure readback frames of section 3.1 (GPU over budget), which streaming does not
+touch; the median stays at 33 ms for the same reason. The largest OSM main-thread pieces left: a layer constructor's
+`postMessage` (structured clone of the request, 11–19 ms), one streets mesh step (up to 30 ms: five `addMesh`
+bounding spheres), an 8 MB+ single geometry in `uploadPending` (up to 35 ms when one buffer alone exceeds the
+budget), crowd construction (5–8 ms). Next steps there: transfer the request data once per region instead of cloning
+it per layer, and have the workers send bounds with their meshes.
+
 ## Open
 
 - Split the shadow cost into casters vs receiver sampling (castShadow off everywhere, receivers on).
-- Attribute the ~100 ms streaming frame bodies near Kadıköy (per-system timers active during the region load).
 - Repeat the headline numbers on a quiet machine (no parallel GPU jobs) and in a headed Chrome at DPR 2.

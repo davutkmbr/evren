@@ -314,7 +314,9 @@ export class Engine {
     const parent = ctx.canvas.parentElement!;
     const w = Math.max(1, parent.clientWidth);
     const h = Math.max(1, parent.clientHeight);
-    const pr = Math.min(window.devicePixelRatio || 1, ctx.quality.settings.maxPixelRatio);
+    const q = ctx.quality.settings;
+    const budget = Math.sqrt((q.maxMegapixels * 1e6) / (w * h));
+    const pr = Math.max(Math.min(1, window.devicePixelRatio || 1), Math.min(window.devicePixelRatio || 1, q.maxPixelRatio, budget));
     ctx.renderer.setPixelRatio(pr);
     ctx.renderer.setSize(w, h, false);
     ctx.canvas.style.width = `${w}px`;

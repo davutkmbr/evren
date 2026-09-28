@@ -9,6 +9,7 @@
  *   (trace: path of a Chrome trace JSON recorded from the eval through the settle window; open in Perfetto)
  *   (result: path of a JSON file the eval's (awaited) return value is written to, e.g. in-page measurements)
  *   (transparent: PNG without the page background, e.g. the brand logos; --transparent for a single shot)
+ *   (dpr: device pixel ratio of the page, default 1, e.g. 2 for a Retina screen)
  *   (publicDir / --public <dir>: /data/, /world/ and /models/ requests served from that checkout's public/ below the server root, e.g. a
  *   worktree's re-baked data; SNAP_SERVER_ROOT overrides the root, default: three levels above this checkout)
  *
@@ -95,7 +96,7 @@ function installFrameProbe() {
 async function shoot(browser, job) {
   const w = Number(job.w ?? 1600);
   const h = Number(job.h ?? 900);
-  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: Number(job.dpr ?? 1) });
   await page.addInitScript(installFrameProbe);
   const errors = [];
   const warnings = [];
