@@ -211,6 +211,32 @@ Checked on production while debugging a "cannot see the other player" report: th
 locally the same join flow draws it where expected. Other players are hard to find without name tags in the world and
 players on the minimap (open items).
 
+### Steam sign-in (branch feat/steam-auth, off by default)
+
+For the Steam build (Unreal repository, plan P7; design in its `.docs/design/online-steam.md`). The game gets a ticket
+from `ISteamUser::GetAuthTicketForWebApi("seventeenskies")` and posts it as hex; the Worker verifies it on the partner
+host (`ISteamUserAuth/AuthenticateUserTicket/v1`, then `ISteamUser/CheckAppOwnership/v4`) and answers a normal Better
+Auth session as a bearer token. The same rooms, profiles and `/api/me` then serve Steam and web players alike.
+
+- `worker/steam/`: `config.ts` (the flag), `web-api.ts` (the two Steam calls; key in the `x-webapi-key` header, 5 s
+  timeout), `verify.ts` (policy: publisher ban refuses, VAC ban does not, ownership required, Family Sharing allowed),
+  `accounts.ts` (a `user` with a placeholder e-mail on `steam.seventeenskies.com` plus an `account` row with
+  providerId `steam` and the SteamID64), `native-session.ts` (Better Auth plugin: `Authorization: Bearer` read as the
+  session cookie, only for requests without cookies), `routes.ts` (`POST /api/auth/sign-in/steam`, under the per-IP
+  sign-in limit).
+- Origin rule: a request with neither Origin nor cookies (a native client) passes the same-origin check while Steam
+  sign-in is on; browsers always send Origin on writes and socket upgrades, so cookie sessions keep their protection.
+- `migrations/0002_account_identity_unique.sql`: one `account` row per provider identity (the race of two first
+  sign-ins).
+- `npm run test:steam` (`scripts/net/steam-auth-test.mts`): the Steam client, policy, route, bearer session, origin
+  rule and sign-out against a mocked Steam API, in-process on Better Auth's memory adapter.
+
+To turn on (owner): a Steamworks app and its App ID, a publisher Web API key (Steamworks → Users & Permissions → Manage
+Groups), `npx wrangler secret put STEAM_WEB_API_KEY`, `STEAM_APP_ID` and `STEAM_AUTH: "on"` in `wrangler.jsonc`, `npx
+wrangler d1 migrations apply seventeen-skies --remote`, and one live probe that Steam accepts requests from Workers
+(Steam refuses Workers on `steamcommunity.com/openid`; `STEAM_API_BASE` can point at a proxy if the partner host does
+too). `/legal/privacy` gains the SteamID before launch.
+
 ## Stage 2 — later
 
 Turnstile against bots, chat with moderation, persistent profiles (D1).

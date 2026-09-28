@@ -2,7 +2,8 @@
  * Seventeen Skies Worker (wrangler.jsonc). Static assets are served without it; this script runs only for the
  * `assets.run_worker_first` paths. One Hono app composed from feature modules, each owning its routes:
  *
- *   /api/auth/*               auth       Better Auth: guest and Google sign-in, sign-out, OAuth callback
+ *   /api/auth/*               auth       Better Auth: guest and Google sign-in, sign-out, OAuth callback;
+ *                             steam      Steam sign-in for the Steam build (off unless STEAM_AUTH is on)
  *   /api/me                   account    the signed-in player's account and profile
  *   /api/servers              rooms      server list and the game rooms' WebSockets
  *   /api/probe                probe      latency probe

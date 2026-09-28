@@ -49,9 +49,10 @@
     "bake:city": "tsx scripts/data/osm-city-bake.ts",
     "bake:structures": "tsx scripts/data/structure-volumes.ts",
     "blender": "node scripts/blender-run.mjs",
-    "cf-typegen": "wrangler types worker/worker-configuration.d.ts",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts --strict-vars=false",
     "test:online": "tsx scripts/net/online-api-test.mts",
-    "test:loiter": "tsx scripts/net/loiter-test.mts"
+    "test:loiter": "tsx scripts/net/loiter-test.mts",
+    "test:steam": "tsx scripts/net/steam-auth-test.mts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.9.1",

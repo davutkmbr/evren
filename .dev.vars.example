@@ -5,3 +5,6 @@ BETTER_AUTH_SECRET=
 # Google OAuth client (Google Cloud Console → APIs & Services → Credentials); empty = Google sign-in off.
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+# Steam sign-in (worker/steam/config.ts): the Steamworks publisher Web API key; empty = off. STEAM_AUTH=on and
+# STEAM_APP_ID override wrangler.jsonc's vars locally.
+STEAM_WEB_API_KEY=

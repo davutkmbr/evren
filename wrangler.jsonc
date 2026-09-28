@@ -37,9 +37,10 @@
     { "name": "SIGN_IN_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
     { "name": "PROFILE_LIMIT", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
   ],
-  // Public settings; secrets (BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) via `wrangler secret put`,
-  // locally in .dev.vars.
-  "vars": { "BETTER_AUTH_URL": "https://seventeenskies.com" },
+  // Public settings; secrets (BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, STEAM_WEB_API_KEY) via
+  // `wrangler secret put`, locally in .dev.vars. Steam sign-in (worker/steam) stays off until STEAM_AUTH is "on" with
+  // STEAM_APP_ID and the STEAM_WEB_API_KEY secret set.
+  "vars": { "BETTER_AUTH_URL": "https://seventeenskies.com", "STEAM_AUTH": "off", "STEAM_APP_ID": "" },
   "observability": { "enabled": true },
   "routes": [
     { "pattern": "seventeenskies.com", "custom_domain": true },

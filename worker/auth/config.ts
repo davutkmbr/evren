@@ -2,6 +2,7 @@
  * Accounts (phase 26): Better Auth on D1. Every online player has an account: a guest one created silently with a
  * nickname (anonymous plugin), which "Google ile kaydet" links to Google later, keeping the profile. Google sign-in
  * is on once GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. Endpoints under /api/auth/* (Better Auth's own).
+ * Steam sign-in (worker/steam) adds Steam accounts and bearer sessions for the Steam build when STEAM_AUTH is on.
  *
  * Data kept to what the game uses (KVKK, and what /legal/privacy says): the e-mail identifies a Google account; the
  * real name, the photo and Google's tokens are dropped before they are written (the game never calls Google), as are
@@ -10,6 +11,8 @@
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { anonymous } from 'better-auth/plugins';
 import { moveProfile } from '../account/profiles';
+import { steamEnabled } from '../steam/config';
+import { nativeSession } from '../steam/native-session';
 
 /** Guest accounts get a placeholder e-mail on this domain (never mailed). */
 const GUEST_EMAIL_DOMAIN = 'guest.seventeenskies.com';
@@ -68,6 +71,7 @@ export function authOptions(env: Env): BetterAuthOptions {
           await moveProfile(env.DB, anonymousUser.user.id, newUser.user.id);
         },
       }),
+      ...(steamEnabled(env) ? [nativeSession()] : []),
     ],
   };
 }
