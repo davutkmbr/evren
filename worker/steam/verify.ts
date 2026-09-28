@@ -9,8 +9,8 @@
  */
 import type { SteamWebApi } from './web-api';
 
-/** Web API tickets are a few hundred bytes; anything far larger is not a ticket. */
-const MAX_TICKET_HEX = 4096;
+/** GetTicketForWebApiResponse_t::k_nCubTicketMaxLength (Steamworks SDK isteamuser.h): 2560 bytes, hex-encoded. */
+const MAX_TICKET_HEX = 2560 * 2;
 
 export type VerifyFailure =
   /** 400: not a ticket at all. */

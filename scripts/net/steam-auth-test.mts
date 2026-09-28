@@ -113,7 +113,7 @@ for (const [name, ticket] of [
   ['empty', ''],
   ['odd length', 'abc'],
   ['not hex', 'zz'.repeat(40)],
-  ['too long', 'ab'.repeat(3000)],
+  ['longer than the SDK maximum', 'ab'.repeat(2561)],
   ['not a string', 42],
 ] as const) {
   calls.length = 0;
@@ -121,6 +121,8 @@ for (const [name, ticket] of [
   check(`verify: ${name} → invalid-ticket, Steam not called`, !r.ok && r.error === 'invalid-ticket' && calls.length === 0, r);
 }
 {
+  const longest = await verifySteamTicket(api, 'AB'.repeat(2560));
+  check('verify: an upper-case ticket of the SDK maximum (2560 bytes) reaches Steam', !longest.ok && longest.error === 'ticket-rejected', longest);
   const r = await verifySteamTicket(api, 'cc33'.repeat(60));
   check('verify: a ticket Steam does not know → ticket-rejected', !r.ok && r.error === 'ticket-rejected', r);
   const wrongIdentity = await verifySteamTicket(new SteamWebApi({ ...config, identity: 'other-game' }, mockSteam), TICKET_ALICE);

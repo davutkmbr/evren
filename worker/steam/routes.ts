@@ -27,7 +27,7 @@ const STATUS: Record<VerifyFailure, 400 | 401 | 403 | 503> = {
   'steam-unavailable': 503,
 };
 
-const body = z.object({ ticket: z.string().max(8192) });
+const body = z.object({ ticket: z.string().max(6000) });
 
 export const steamRoutes = new Hono<AppEnv>().post(
   '/sign-in/steam',
