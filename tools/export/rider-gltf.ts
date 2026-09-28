@@ -570,6 +570,8 @@ function exportSeat() {
     pommel: rel(POMMEL_GRIP),
     stirrup: rel(RIDER.ankle),
     eye: rel(RIDER.eye),
+    // The procedural rider's torso and right arm at rest: a runtime bends the character's arms like it (the elbow pole).
+    posture: { pelvis: rel(RIDER.pelvis), spine: rel(RIDER.spine), chest: rel(RIDER.chest), shoulder: rel(RIDER.shoulder), elbow: rel(RIDER.elbow) },
     facing: 'the rider faces the dragon rig -Z: its root turns half a turn about +Y',
   };
 }
