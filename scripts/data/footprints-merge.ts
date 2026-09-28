@@ -5,12 +5,14 @@
  * Unreal city) takes the same result by id. Rules: scripts/data/lib/footprints/rules.ts; research and approval:
  * seventeenskies-unreal .docs/assets/candidates/building-footprints.md (approved 2026-09-28).
  *
- *   node scripts/data/fetch-footprints.mjs all         # once: the pinned sources into data/footprints-src/
- *   npx tsx scripts/data/footprints-merge.ts           # -> data/footprints-src/merged/buildings.bin (+ summary.json)
+ *   npm run fetch:footprints       # once: the pinned sources into data/footprints-src/ (~140 MB)
+ *   npm run merge:footprints       # about a minute -> data/footprints-src/merged/buildings.bin (+ summary.json)
+ *   npm run test:footprints        # the rules' unit tests
  *
- * Then re-fetch the layers (they add the merge's footprints and lots and take its storeys): the Galata slice and the
- * street areas (fetch-osm.mjs --area), the regions (osm-regions.mjs fetch), the far-city blocks (osm-city-bake.ts
- * --refetch), recompile the street areas, `npm run check:map`.
+ * Then re-fetch every layer from the same snapshot (they add the merge's footprints and lots and take its storeys): the
+ * Galata slice and the street areas (fetch-osm.mjs --area <id>), the regions (osm-regions.mjs fetch, then index), the
+ * far-city blocks and the bake (npm run bake:city -- --refetch), recompile the street areas, then npm run check:map
+ * (one snapshot, one merge). `osm-city-bake.ts --only <blocks>` previews a few blocks without the full bake.
  *
  * Also written (committed): data/footprints/coverage.md (buildings per ilçe before and after, against İBB),
  * data/footprints/ibb-mahalle.json (the İBB table joined to the OSM mahalle) and the published additions for ODbL 4.6
