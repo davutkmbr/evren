@@ -8,6 +8,12 @@ export interface QualitySettings {
   preset: QualityPreset;
   /** Max device pixel ratio used by the renderer. */
   maxPixelRatio: number;
+  /**
+   * Render pixel budget (megapixels at render scale 1): the pixel ratio is lowered until the canvas fits it. A Retina
+   * screen at ratio 2 renders four times the pixels (+17-20 ms per frame on ultra at 1600x900 CSS), for detail that
+   * the temporal antialiasing mostly recovers at a lower ratio.
+   */
+  maxMegapixels: number;
   /** Dynamic resolution bounds (fraction of native). */
   minRenderScale: number;
   maxRenderScale: number;
@@ -44,6 +50,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
   low: {
     preset: 'low',
     maxPixelRatio: 1,
+    maxMegapixels: 1.0,
     minRenderScale: 0.6,
     maxRenderScale: 0.85,
     targetFrameMs: 16.6,
@@ -68,6 +75,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
   medium: {
     preset: 'medium',
     maxPixelRatio: 1.25,
+    maxMegapixels: 1.6,
     minRenderScale: 0.7,
     maxRenderScale: 1,
     targetFrameMs: 16.6,
@@ -92,6 +100,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
   high: {
     preset: 'high',
     maxPixelRatio: 1.5,
+    maxMegapixels: 2.2,
     minRenderScale: 0.75,
     maxRenderScale: 1,
     targetFrameMs: 16.6,
@@ -116,6 +125,7 @@ export const QUALITY_PRESETS: Record<QualityPreset, QualitySettings> = {
   ultra: {
     preset: 'ultra',
     maxPixelRatio: 2,
+    maxMegapixels: 2.8,
     minRenderScale: 0.8,
     maxRenderScale: 1,
     targetFrameMs: 16.6,
