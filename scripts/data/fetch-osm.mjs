@@ -20,7 +20,15 @@
  *   street extension ('street/1': entrance=* nodes linked to their building, craft=* POIs, kerb=* nodes,
  *   area:highway=* polygons, sidewalk widths and kerb tags on ways), documented in tools/world-compiler/README.md.
  *
- * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright).
+ * Building merge (scripts/data/footprints-merge.ts, when data/footprints-src/merged/ holds its output): every profile
+ * adds the merge's Microsoft ML footprints whose centroid lies in the fetched box (`source: 'ml'`) and replaces the
+ * outlines it split by their row lots (`hasParts` on the outline, the lots as parts with `source: 'lot'` and `lotOf`),
+ * and the storey fill (regions, bbox blocks) takes the merge's estimates, so every layer sees one building set with
+ * one height per building. The merge must come from the same OSM snapshot; `--osm-only` fetches without it.
+ *
+ * Data © OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright). Added footprints: Microsoft
+ * Global ML Building Footprints, CDLA-Permissive-2.0; storeys: İBB Açık Veri Portalı and GHS-BUILT-H R2023A (see
+ * data/footprints/LICENSE.md).
  *
  * The output schema (version 2) is documented as TypeScript in src/world/osm/data.ts; keep both in sync.
  * The bbox is parsed from OSM_AREAS in src/world/osm/area.ts and the projection origin from WORLD_ORIGIN in
@@ -33,6 +41,7 @@ import { dirname, resolve } from 'node:path';
 import { readArea, readOrigin, ROOT } from '../../tools/world-compiler/lib/areas.mjs';
 import { extractSource, overpassLocal, sourceArg } from './lib/osm-local.mjs';
 import { fillLevels } from './lib/levels-fill.mjs';
+import { openMerged } from './lib/footprints/store.mjs';
 import { buildingRecord, copyTags, flat, FOOT_HIGHWAYS, highwayWidth, isClosed, metres, num, osmId, pointInRing, polygonsOf as polygonsWith, projectAll as projectWith, projector, RAIL_KINDS, round, simplify, simplifyKeep, SKIP_HIGHWAYS } from './lib/osm-records.mjs';
 
 const args = process.argv.slice(2);
@@ -120,6 +129,8 @@ const STREET_POINT_KEYS = [['entrance', null], ...POINT_KEYS, ['craft', null], [
 const POINT_KEYS_ACTIVE = STREET ? STREET_POINT_KEYS : POINT_KEYS;
 
 const cachePath = argOf('--cache');
+/** `--osm-only`: OSM buildings only, without the building merge's footprints and lots. */
+const OSM_ONLY = args.includes('--osm-only');
 
 /** A `--bbox s,w,n,e` rectangle as an area definition (profile 'slice', written to `--out`). */
 function readBboxArg(text) {
@@ -413,6 +424,50 @@ function streetPointFields(rec, node, t, owners) {
     }
   }
   copyTags(rec, t, { kerb: 'kerb' }, true);
+}
+
+/**
+ * Adds the building merge's footprints and lots (scripts/data/footprints-merge.ts) to `buildings`: the ML footprints
+ * whose centroid lies in the fetched box, and for every split outline (OSM or ML) its row lots as parts. Returns the
+ * provenance written into the data (`footprints`), or null when no merge has been built.
+ */
+function mergeFootprints(buildings, osmBase) {
+  const merged = openMerged();
+  if (!merged) {
+    console.error('[fetch-osm] no building merge (data/footprints-src/merged/): OSM buildings only');
+    return null;
+  }
+  if (merged.osmBase !== osmBase) {
+    throw new Error(`the building merge was built from OSM ${merged.osmBase}, this data is ${osmBase}: re-run npm run merge:footprints (or pass --osm-only)`);
+  }
+  const lotsOf = (parent, kind) =>
+    merged.lotsOf(parent).map((l) => ({ id: l.id, ring: l.ring, kind, part: true, source: 'lot', lotOf: parent }));
+  const added = [];
+  let splits = 0;
+  for (const b of buildings) {
+    if (!b.part && merged.isSplit(b.id)) {
+      b.hasParts = true;
+      added.push(...lotsOf(b.id, b.kind));
+      splits++;
+    }
+  }
+  const [x0, z1] = project(BBOX.south - MARGIN.lat, BBOX.west - MARGIN.lon);
+  const [x1, z0] = project(BBOX.north + MARGIN.lat, BBOX.east + MARGIN.lon);
+  let ml = 0;
+  for (const r of merged.mlIn(x0, z0, x1, z1)) {
+    const rec = { id: r.id, ring: r.ring, kind: r.kind, source: 'ml' };
+    added.push(rec);
+    ml++;
+    if (merged.isSplit(r.id)) {
+      rec.hasParts = true;
+      added.push(...lotsOf(r.id, r.kind));
+      splits++;
+    }
+  }
+  for (const b of added) {
+    buildings.push(b);
+  }
+  return { merge: merged.stamp, release: merged.header.release, ml, lots: added.length - ml, splits };
 }
 
 async function main() {
@@ -813,18 +868,21 @@ async function main() {
     }
   }
 
-  const fill = FILL ? fillLevels(buildings) : null;
+  const osmParts = parts.length;
+  const footprints = OSM_ONLY ? null : mergeFootprints(buildings, data.osm3s?.timestamp_osm_base ?? null);
+  const fill = FILL ? fillLevels(buildings, { merge: footprints?.merge ?? null }) : null;
 
   const [x0, z1] = project(BBOX.south, BBOX.west);
   const [x1, z0] = project(BBOX.north, BBOX.east);
   const out = {
     version: SCHEMA_VERSION,
-    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})`,
+    source: `OpenStreetMap contributors, ODbL 1.0 (${SOURCE === 'local' ? extractSource() : 'Overpass API'})${footprints ? `; building footprints: Microsoft Global ML Building Footprints ${footprints.release}, CDLA-Permissive-2.0; storeys: İBB Açık Veri Portalı (İBB Açık Veri Lisansı), GHS-BUILT-H R2023A (EC JRC, CC BY 4.0)` : ''}`,
     fetched: new Date().toISOString().slice(0, 10),
     osmBase: data.osm3s?.timestamp_osm_base ?? null,
     bbox: { ...BBOX, minX: round(x0), maxX: round(x1), minZ: round(z0), maxZ: round(z1) },
     ...(STREET ? { area: AREA.id, extension: STREET_EXTENSION } : {}),
     ...(REGION ? { region: REGION } : {}),
+    ...(footprints ? { footprints } : {}),
     buildings,
     roads,
     rails,
@@ -857,8 +915,9 @@ async function main() {
         ok: true,
         out: OUT,
         bytes: text.length,
-        buildings: buildings.length - parts.length,
-        buildingParts: parts.length,
+        buildings: buildings.filter((b) => !b.part).length,
+        buildingParts: osmParts,
+        ...(footprints ? { footprints } : {}),
         outlinesWithParts: buildings.filter((b) => b.hasParts).length,
         withHeight: buildings.filter((b) => b.height).length,
         withLevels: buildings.filter((b) => b.levels).length,

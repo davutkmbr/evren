@@ -23,7 +23,9 @@
  * - wallH, minH (u16, dm): wall height and bottom height (building:part min_height) above the reference ground.
  * - rise (u8, dm): roof rise; roof (u8, RoofClass); arch (u8, buildings/archetypes.ts Arch); floors (u8);
  *   floorH (u8, m x 50); flags (u8, FLAG); tint, roofTint (u16, sRGB 565).
- * - id (i32): OSM id minus the previous record's (parts carry their own id; infill parcels a negative id from their place, buildings/infill.ts infillId).
+ * - id (i32, or f64 when a step does not fit 32 bits): the building's id minus the previous record's (OSM ids; parts carry
+ *   their own id; infill parcels a negative id from their place, buildings/infill.ts infillId; the building merge's
+ *   footprints and row lots a synthetic id below -256e6, osm/data.ts).
  * Street lights (the flight layer's own placement, osm/streets/lamps.ts buildLamps, so the far city lights the same
  * streets as the region does), sorted by 500 m tile (lampTiles): lampXZ (i16 pairs, XY_UNIT m from the block centre),
  * lampY (u16, (height + LAMP_Y0) in dm), lampCol (u8 x 4: sRGB colour, city lamp type 1 street / 2 road).
@@ -146,6 +148,8 @@ export interface CityBakeIndex {
   generated: string;
   source: string;
   osmBase: string | null;
+  /** Stamp of the building merge the block data was fetched with (scripts/data/footprints-merge.ts), if any. */
+  footprints?: string;
   block: number;
   files: { block: [number, number]; file: string; count: number; bytes: number }[];
   land: { file: string; polygons: number; bytes: number };
@@ -305,7 +309,7 @@ export function decodeBuildings(bytes: Uint8Array): DecodedBuildings {
   }
   ringStart[header.count] = r;
   start[r] = v;
-  const idDelta = arrays.id as Int32Array;
+  const idDelta = arrays.id as Int32Array | Float64Array;
   const id = new Float64Array(header.count);
   let prev = 0;
   for (let k = 0; k < header.count; k++) {

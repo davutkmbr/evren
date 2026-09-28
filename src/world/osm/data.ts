@@ -10,7 +10,9 @@
  *   shared/geometry.ts ringArea), holes a negative one.
  * - `kind` of areas, lines and points is the defining OSM tag as "key=value" (e.g. "leisure=park",
  *   "highway=street_lamp"); buildings and roads keep the bare value of building=* / highway=*.
- * - `id` is the OSM id: positive for ways, negative for relations. Useful for per-feature overrides.
+ * - `id` is the OSM id: positive for ways, negative for relations. Useful for per-feature overrides. Buildings the
+ *   building merge adds (scripts/data/footprints-merge.ts: Microsoft ML footprints, row lots of split outlines) carry
+ *   `source` and a stable synthetic id below -256e6, never an OSM or infill id.
  * - Optional string tags are trimmed; colour / material / shape style values are lower-cased.
  * - Roads and rails keep every vertex shared with another road / rail (junctions) and every vertex that is a point
  *   feature (crossing, signal, stop). Those vertices carry a compact integer `ref` (not an OSM id) in `refs`, and the
@@ -41,9 +43,19 @@ export interface OsmBuilding {
   levels?: number;
   /**
    * Streamed regions only: storeys estimated for an untagged building (no height / levels) by scripts/data/fetch-osm.mjs
-   * fillLevels: the median of its tagged neighbours. The renderer uses it in place of the district's floor range.
+   * fillLevels: the building merge's estimate, else the median of its tagged neighbours. The renderer uses it in place
+   * of the district's floor range.
    */
   levelsFill?: number;
+  /** Where `levelsFill` comes from: 'neighbours', 'ibb' (İBB storey mix of the mahalle), 'ghs' (GHS-BUILT-H), 'urban-atlas'. */
+  levelsFrom?: string;
+  /**
+   * Buildings the merge added: 'ml' a Microsoft ML footprint (no tags, no entrances; kind 'shed' under 30 m²), 'lot' a
+   * row lot of a split outline (a part of `lotOf`, which has `hasParts`). Absent for OSM buildings.
+   */
+  source?: 'ml' | 'lot';
+  /** Row lots: id of the outline they partition. */
+  lotOf?: number;
   /** building:min_level. */
   minLevel?: number;
   /** roof:levels. */
@@ -228,6 +240,8 @@ export interface OsmData {
   osmBase: string | null;
   /** Slice / region area in degrees and local metres. The data itself extends ~75 m beyond it. */
   bbox: { south: number; west: number; north: number; east: number } & WorldBounds;
+  /** The building merge the data was fetched with (scripts/data/fetch-osm.mjs mergeFootprints): stamp and counts. */
+  footprints?: { merge: string; release: string; ml: number; lots: number; splits: number };
   /** Outlines and building:part records (filter with `part` / `hasParts`). */
   buildings: OsmBuilding[];
   roads: OsmRoad[];

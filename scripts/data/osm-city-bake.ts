@@ -26,7 +26,15 @@
  * surrounded by OSM cells), when the geo map does not build on it, or when it lies in a region. Buildings in the other
  * cells are dropped: the procedural city stays there.
  *
- * Data © OpenStreetMap contributors, ODbL 1.0.
+ * `--only bi_bj,...` (preview): re-fetches and bakes only the listed 2 km blocks (and the regions reaching into them)
+ * into the existing bake; the coverage mask changes only in their cells. For looking at a few places without the full
+ * bake; the result is a partial bake (index stats `partial`), which check:map reports as stale.
+ *
+ * With the building merge (scripts/data/footprints-merge.ts) the block data carries the Microsoft footprints and row
+ * lots, so the coverage mask counts them and the procedural city stays only where neither source has buildings; the
+ * index records the merge stamp (`footprints`).
+ *
+ * Data © OpenStreetMap contributors, ODbL 1.0; building footprints: Microsoft (CDLA-Permissive-2.0).
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -35,7 +43,7 @@ import { gzipSync } from 'node:zlib';
 import * as THREE from 'three';
 import type { WorldBounds } from '../../src/core/contracts';
 import { localToLatLon } from '../../src/core/geo-coords';
-import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, decodeLand, encodeMask, FadeClass, FLAG, LAMP_Y0, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
+import { BAKE_BLOCK, BAKE_BLOCKS, BAKE_HALF, type BuildingFileHeader, CITY_BAKE_FORMAT, type CityBakeIndex, type CoverageMaskFile, decodeLand, decodeMask, encodeMask, FadeClass, FLAG, LAMP_Y0, LAND_UNIT, LandClass, type LandFileHeader, MASK_CELL, MASK_SIZE, pack565, packContainer, RoofClass, shuffle16, Usage, XY_UNIT } from '../../src/world/city/osm/format';
 import { LEVEL_SIZES } from '../../src/world/city/protocol';
 import { landmarkClaims } from '../../src/world/landmarks/claims';
 import { Arch } from '../../src/world/osm/buildings/archetypes';
@@ -64,6 +72,8 @@ import { extractSource } from './lib/osm-local.mjs';
 const args = process.argv.slice(2);
 const REFETCH = args.includes('--refetch');
 const JOBS = Number(args[args.indexOf('--jobs') + 1]) > 0 && args.includes('--jobs') ? Number(args[args.indexOf('--jobs') + 1]) : 4;
+/** `--only bi_bj,...`: a partial (preview) bake of these blocks into the existing bake. */
+const ONLY = args.includes('--only') ? new Set(args[args.indexOf('--only') + 1].split(',')) : null;
 const BLOCK_DIR = resolve(ROOT, 'data/osm-src/city-blocks');
 const OUT_DIR = resolve(ROOT, 'public/data/osm/city');
 const MASK_FILE = resolve(ROOT, 'src/world/city/osm/mask.json');
@@ -103,7 +113,7 @@ async function fetchBlocks(): Promise<void> {
   const todo: [number, number][] = [];
   for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
     for (let bi = 0; bi < BAKE_BLOCKS; bi++) {
-      if (REFETCH || !existsSync(blockFile(bi, bj))) {
+      if (REFETCH || !existsSync(blockFile(bi, bj)) || ONLY?.has(`${bi}_${bj}`)) {
         todo.push([bi, bj]);
       }
     }
@@ -290,11 +300,14 @@ const landSeen = new Set<string>();
 const landKey = (a: OsmArea): string => `${a.id}:${a.ring.length}:${a.ring[0]},${a.ring[1]}`;
 const land: { cls: LandClass; rings: number[][] }[] = [];
 let osmBase: string | null = null;
+/** Building merge stamps of the block data (one expected; a partial bake may mix the old and the new). */
+const mergeStamps = new Set<string>();
 for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
   for (let bi = 0; bi < BAKE_BLOCKS; bi++) {
     const rect = blockRect(bi, bj);
     const data = JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData & { osmBase?: string };
     osmBase ??= data.osmBase ?? null;
+    mergeStamps.add(data.footprints?.merge ?? 'none');
     for (const s of collectSolids({ buildings: data.buildings.filter((b) => !wallOwned.has(b.id)), claims: plainClaims }, rect)) {
       const r = toRec(s);
       const k = inRect(rect, r.cx, r.cz) ? cellOf(r.cx, r.cz) : -1;
@@ -371,6 +384,23 @@ for (let j = 1; j < N - 1; j++) {
     relaxed[k] = nb >= 5 ? 1 : 0;
   }
 }
+if (mergeStamps.size > 1 && !ONLY) {
+  throw new Error(`block data from ${mergeStamps.size} building merges (${[...mergeStamps].join(', ')}): re-run with --refetch`);
+}
+/** Mask cell k lies in a block of the partial bake. */
+const inOnly = (k: number): boolean => !ONLY || ONLY.has(`${Math.floor(((k % N) * MASK_CELL) / BAKE_BLOCK)}_${Math.floor((Math.floor(k / N) * MASK_CELL) / BAKE_BLOCK)}`);
+const oldMask = ONLY && existsSync(MASK_FILE) ? (JSON.parse(readFileSync(MASK_FILE, 'utf8')) as CoverageMaskFile) : null;
+if (ONLY) {
+  if (!oldMask) {
+    throw new Error('--only needs an existing bake (src/world/city/osm/mask.json)');
+  }
+  const old = decodeMask(oldMask);
+  for (let k = 0; k < N * N; k++) {
+    if (!inOnly(k)) {
+      relaxed[k] = old[k];
+    }
+  }
+}
 log(`pass A: ${relaxed.reduce((s, v) => s + v, 0)} OSM cells, ${land.length} land-use polygons`);
 const landFile = encodeLand(land);
 
@@ -424,9 +454,13 @@ const lamps: Lamp[] = [];
 // 5. Pass B: region solids (the region layer's own set and infill), then every other block with its own infill.
 const regionRecs: Rec[] = [];
 let regionInfill = 0;
+const onlyRect = (r: WorldBounds): boolean => !ONLY || [...ONLY].some((key) => {
+  const [bi, bj] = key.split('_').map(Number);
+  return overlaps(blockRect(bi, bj), r);
+});
 for (const { def, rect } of regions) {
   const file = regionFile(def.url);
-  if (!existsSync(file)) {
+  if (!existsSync(file) || !onlyRect(rect)) {
     continue;
   }
   const data = runtimeData(JSON.parse(readFileSync(file, 'utf8')) as OsmData);
@@ -448,10 +482,16 @@ for (const { def, rect } of regions) {
   }
 }
 log(`regions: ${regionRecs.length} solids (${regionInfill} infill parcels)`);
-const recs: Rec[] = regionRecs.filter((r) => inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, r.cx, r.cz));
+const inOnlyBlock = (x: number, z: number): boolean => !ONLY || ONLY.has(`${Math.floor((x + BAKE_HALF) / BAKE_BLOCK)}_${Math.floor((z + BAKE_HALF) / BAKE_BLOCK)}`);
+const recs: Rec[] = regionRecs.filter((r) => inRect({ minX: -BAKE_HALF, maxX: BAKE_HALF, minZ: -BAKE_HALF, maxZ: BAKE_HALF }, r.cx, r.cz) && inOnlyBlock(r.cx, r.cz));
 let blockInfill = 0;
+const blockMs: number[] = [];
 for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
   for (let bi = 0; bi < BAKE_BLOCKS; bi++) {
+    if (ONLY && !ONLY.has(`${bi}_${bj}`)) {
+      continue;
+    }
+    const tb = performance.now();
     const rect = blockRect(bi, bj);
     const data = runtimeData(JSON.parse(readFileSync(blockFile(bi, bj), 'utf8')) as OsmData);
     const buildings = data.buildings.filter((b) => !wallOwned.has(b.id));
@@ -475,15 +515,19 @@ for (let bj = 0; bj < BAKE_BLOCKS; bj++) {
         recs.push(r);
       }
     }
+    blockMs.push(performance.now() - tb);
   }
-  log(`block row ${bj + 1}/${BAKE_BLOCKS}: ${recs.length} solids`);
+  if (!ONLY) {
+    log(`block row ${bj + 1}/${BAKE_BLOCKS}: ${recs.length} solids`);
+  }
 }
+log(`pass B: ${blockMs.length} blocks in ${(blockMs.reduce((a, b) => a + b, 0) / 1000).toFixed(0)} s (${(blockMs.reduce((a, b) => a + b, 0) / Math.max(1, blockMs.length) / 1000).toFixed(1)} s per block)`);
 const kept = recs.filter((r) => {
   const k = cellOf(r.cx, r.cz);
   return k >= 0 && relaxed[k] === 1;
 });
 const droppedProcedural = recs.length - kept.length;
-const builtCells = new Uint8Array(N * N);
+const builtCells = ONLY ? decodeMask({ bits: oldMask!.built, size: N }).map((v, k) => (inOnly(k) ? 0 : v)) : new Uint8Array(N * N);
 for (const r of kept) {
   builtCells[cellOf(r.cx, r.cz)] = 1;
 }
@@ -541,15 +585,24 @@ const outs: Out[] = kept.map((r) => {
 
 // ---------------------------------------------------------------------------------------------------------------
 // 7. Files.
-rmSync(OUT_DIR, { recursive: true, force: true });
+const previous = ONLY ? (JSON.parse(readFileSync(resolve(OUT_DIR, 'index.json'), 'utf8')) as CityBakeIndex) : null;
+if (ONLY) {
+  for (const key of ONLY) {
+    rmSync(resolve(OUT_DIR, `blocks/${key}.bin.gz`), { force: true });
+  }
+} else {
+  rmSync(OUT_DIR, { recursive: true, force: true });
+}
 mkdirSync(resolve(OUT_DIR, 'blocks'), { recursive: true });
+const merges = [...mergeStamps].filter((m) => m !== 'none');
 const index: CityBakeIndex = {
   format: CITY_BAKE_FORMAT,
   generated: new Date().toISOString(),
-  source: `OpenStreetMap contributors, ODbL 1.0 (${extractSource()})`,
+  source: `OpenStreetMap contributors, ODbL 1.0 (${extractSource()})${merges.length ? '; building footprints: Microsoft Global ML Building Footprints (CDLA-Permissive-2.0); storeys: İBB Açık Veri Portalı, GHS-BUILT-H R2023A' : ''}`,
   osmBase,
+  ...(merges.length === 1 ? { footprints: merges[0] } : {}),
   block: BAKE_BLOCK,
-  files: [],
+  files: previous ? previous.files.filter((f) => !ONLY!.has(`${f.block[0]}_${f.block[1]}`)) : [],
   land: { file: 'land.bin.gz', polygons: 0, bytes: 0 },
   stats: {},
 };
@@ -558,7 +611,8 @@ const lampsByBlock = new Map<string, Lamp[]>();
 let lampCount = 0;
 for (const l of lamps) {
   const k = cellOf(l.x, l.z);
-  if (k < 0 || !relaxed[k]) {
+  // A partial bake writes its own blocks only (a region reaching into one also lights its neighbours).
+  if (k < 0 || !relaxed[k] || !inOnlyBlock(l.x, l.z)) {
     continue;
   }
   const key = `${Math.floor((l.x + BAKE_HALF) / BAKE_BLOCK)}_${Math.floor((l.z + BAKE_HALF) / BAKE_BLOCK)}`;
@@ -586,6 +640,7 @@ writeFileSync(resolve(OUT_DIR, 'land.bin.gz'), gzipSync(landFile.bytes, { level:
 index.land = { file: 'land.bin.gz', polygons: landFile.polygons, bytes: statSync(resolve(OUT_DIR, 'land.bin.gz')).size };
 let buildingBytes = 0;
 let longRings = 0;
+let wideIds = 0;
 for (const [key, list] of byBlock) {
   const [bi, bj] = key.split('_').map(Number);
   const ox = -BAKE_HALF + (bi + 0.5) * BAKE_BLOCK;
@@ -619,7 +674,8 @@ for (const [key, list] of byBlock) {
   const u8 = (): Uint8Array => new Uint8Array(n);
   const [rise, roof, arch, floors, floorH, flags] = [u8(), u8(), u8(), u8(), u8(), u8()];
   const [wallH, minH, tint, roofTint] = [new Uint16Array(n), new Uint16Array(n), new Uint16Array(n), new Uint16Array(n)];
-  const id = new Int32Array(n);
+  // Id steps: i32 while every step fits, else f64 (the container records the type; decodeBuildings reads either).
+  const idSteps = new Float64Array(n);
   const tiles: BuildingFileHeader['tiles'] = [];
   let v = 0;
   let ri = 0;
@@ -656,10 +712,10 @@ for (const [key, list] of byBlock) {
     tint[k] = o.tint;
     roofTint[k] = o.roofTint;
     const d = o.id - prevId;
-    if (!Number.isInteger(d) || Math.abs(d) > 2 ** 31 - 1) {
-      throw new Error(`OSM id step ${d} does not fit the i32 id blob (format.ts): widen it`);
+    if (!Number.isSafeInteger(d)) {
+      throw new Error(`id step ${d} is not an integer (format.ts id blob)`);
     }
-    id[k] = d;
+    idSteps[k] = d;
     prevId = o.id;
   });
   const blockLamps = (lampsByBlock.get(key) ?? []).map((l) => ({ l, ti: Math.floor((l.x + BAKE_HALF) / TILE0), tj: Math.floor((l.z + BAKE_HALF) / TILE0) }));
@@ -682,6 +738,8 @@ for (const [key, list] of byBlock) {
     lampCol[i * 4 + 2] = (l.col >>> 8) & 255;
     lampCol[i * 4 + 3] = l.col & 255;
   });
+  const id = idSteps.every((d) => Math.abs(d) <= 2 ** 31 - 1) ? Int32Array.from(idSteps) : idSteps;
+  wideIds += id instanceof Float64Array ? 1 : 0;
   const header: Omit<BuildingFileHeader, 'blobs'> = { format: CITY_BAKE_FORMAT, block: [bi, bj], origin: [ox, oz], count: n, vertices: verts, tiles, lampTiles, lamps: blockLamps.length };
   const bytes = gzipSync(
     packContainer<BuildingFileHeader>(header, { rings, nv, xy: shuffle16(xy), wallH: shuffle16(wallH), minH: shuffle16(minH), rise, roof, arch, floors, floorH, flags, tint: shuffle16(tint), roofTint: shuffle16(roofTint), id, lampXZ: shuffle16(lampXZ), lampY: shuffle16(lampY), lampCol }),
@@ -702,12 +760,20 @@ index.stats = {
   droppedProcedural,
   longRings,
   lamps: lampCount,
+  // Building merge (scripts/data/footprints-merge.ts): Microsoft footprints and row lots among the solids.
+  mlSolids: kept.filter((r) => r.s.b.source === 'ml').length,
+  lotSolids: kept.filter((r) => r.s.b.source === 'lot').length,
+  wideIdBlocks: wideIds,
   wallOwnedApplied: existsSync(wallsIndex) ? 1 : 0,
   buildingBytes,
   landBytes: index.land.bytes,
   maskCells: relaxed.reduce((s, v) => s + v, 0),
+  ...(ONLY ? { partial: ONLY.size } : {}),
   ms: Math.round(performance.now() - t0),
 };
+if (ONLY) {
+  index.files.sort((a, b) => a.block[1] - b.block[1] || a.block[0] - b.block[0]);
+}
 writeFileSync(resolve(OUT_DIR, 'index.json'), JSON.stringify(index) + '\n');
 const maskFile: CoverageMaskFile = {
   format: CITY_BAKE_FORMAT,

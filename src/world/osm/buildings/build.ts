@@ -143,7 +143,20 @@ function inherit(part: OsmBuilding, parent: OsmBuilding): OsmBuilding {
  */
 export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | 'extra'>, rect: WorldBounds, stats?: Record<string, number>): Solid[] {
   const parents = input.buildings.filter((b) => b.hasParts);
+  // Row lots name their outline (data.ts lotOf); S3DB parts are matched by centroid, first outline in data order.
+  const parentById = new Map<number, OsmBuilding>();
+  const parentGrid = new BoxGrid(64);
+  parents.forEach((p, i) => {
+    if (!parentById.has(p.id)) {
+      parentById.set(p.id, p);
+    }
+    const bb = bounds(p.ring);
+    parentGrid.add(i, bb.minX, bb.minZ, bb.maxX, bb.maxZ);
+  });
   const parentOf = (b: OsmBuilding): OsmBuilding | null => {
+    if (b.lotOf !== undefined) {
+      return parentById.get(b.lotOf) ?? null;
+    }
     const n = b.ring.length / 2;
     let cx = 0;
     let cz = 0;
@@ -151,7 +164,13 @@ export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | '
       cx += b.ring[i * 2];
       cz += b.ring[i * 2 + 1];
     }
-    return parents.find((p) => pointInRing(p.ring, cx / n, cz / n)) ?? null;
+    let first = -1;
+    for (const i of parentGrid.at(cx / n, cz / n)) {
+      if ((first < 0 || i < first) && pointInRing(parents[i].ring, cx / n, cz / n)) {
+        first = i;
+      }
+    }
+    return first < 0 ? null : parents[first];
   };
   const solids: Solid[] = [];
   const consider = (src: OsmBuilding, infill: boolean): void => {
@@ -203,7 +222,8 @@ export function collectSolids(input: Pick<BuildInput, 'buildings' | 'claims' | '
         }
         return h;
       });
-    const solid: Solid = { b, ring, holes, id: parent ? parent.id : b.id, infill };
+    // S3DB parts share their outline's colour seed; row lots are buildings of their own.
+    const solid: Solid = { b, ring, holes, id: parent && src.source !== 'lot' ? parent.id : b.id, infill };
     if (solidOnStructure(input.claims, solid)) {
       if (stats) {
         stats.skippedStructure = (stats.skippedStructure ?? 0) + 1;

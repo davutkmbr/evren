@@ -190,7 +190,7 @@ async function main(): Promise<void> {
   // storeys its regions carry (levels fill, scripts/data/lib/levels-fill.mjs).
   const flightTops = timedSync('setup.flightTops', () => {
     const filled = data.buildings.map((b) => ({ ...b }));
-    fillLevels(filled);
+    fillLevels(filled, { merge: data.footprints?.merge ?? null });
     return plannedWallTops(filled, claimsOf() ?? { pads: new Float32Array(0), lines: new Float32Array(0) }, (x, z) => heights.at(x, z));
   });
   const allSolids = timedSync('setup.solids', () => makeSolids(data.buildings, heights, flightTops));

@@ -1,0 +1,14 @@
+{
+ "$comment": "Aliases of the İBB 2017 table (data/footprints/ibb-mahalle.json) for the OSM join in scripts/data/footprints-merge.ts (rules.ts joinMahalle): \"ILÇE\" -> OSM ilçe name for a renamed ilçe; \"ILÇE/MAHALLE\" (İBB spelling, upper case) -> the OSM mahalle name(s) of a mahalle renamed since 2017, as \"Ilçe/Name\" when it moved to another ilçe. Only for names the generic passes cannot pair.",
+ "aliases": {
+  "EYÜP": "Eyüpsultan",
+  "BÜYÜKÇEKMECE/19 MAY": "19 Mayıs",
+  "KADIKÖY/19 MAY": "19 Mayıs",
+  "ŞİŞLİ/19 MAY": "19 Mayıs",
+  "BAŞAKŞEHİR/ŞAMLAR": "Arnavutköy/Şamlar",
+  "SULTANGAZİ/MALKOÇOĞLU": "Başakşehir/Malkoçoğlu",
+  "BEYKOZ/CUMHURİYET": "Cumhuriyetköy",
+  "ŞİLE/KIZILCA": "Kızılcaköy",
+  "BÜYÜKÇEKMECE/MİMAR SİNAN MERKEZ": "Mimarsinan"
+ }
+}
