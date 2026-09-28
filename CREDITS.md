@@ -6,6 +6,14 @@ detail, in the licence files next to it.
 - **Code:** [MIT](LICENSE) © 2026 Davut Kember.
 - **Map data:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, [ODbL](https://opendatacommons.org/licenses/odbl/1-0/)
   (see [the licence note](src/world/geo/data/LICENSE.md)); the sea-wall trace from OpenHistoricalMap (CC0).
+- **Buildings OSM does not map, and their storeys** ([`data/footprints/LICENSE.md`](data/footprints/LICENSE.md)):
+  - Building footprints: [Microsoft Global ML Building Footprints](https://github.com/microsoft/GlobalMLBuildingFootprints)
+    (release 2026-08-13), [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/); the licence text ships with the data
+    ([`data/footprints/licences/CDLA-Permissive-2.0.txt`](data/footprints/licences/CDLA-Permissive-2.0.txt)).
+  - Contains public sector information from the [İBB Açık Veri Portalı](https://data.ibb.gov.tr/dataset/mahalle-bazli-bina-analiz-verisi)
+    (Mahalle Bazlı Bina Sayıları), licensed under the [İBB Açık Veri Lisansı 1.0](https://data.ibb.gov.tr/en/license).
+  - GHS-BUILT-H R2023A, European Commission, Joint Research Centre, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+    doi:[10.2905/85005901-3A49-48DD-9D19-6261354F56FE](https://doi.org/10.2905/85005901-3A49-48DD-9D19-6261354F56FE), modified.
 - **Textures, decals, skies and models:** [`public/textures/LICENSES.md`](public/textures/LICENSES.md),
   [`public/models/LICENSES.md`](public/models/LICENSES.md) and [`.docs/assets/approved-assets.md`](.docs/assets/approved-assets.md).
 - **Sounds:** CC0 recordings from Freesound, listed in [`public/audio/LICENSES.md`](public/audio/LICENSES.md).

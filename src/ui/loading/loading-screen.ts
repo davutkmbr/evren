@@ -104,6 +104,8 @@ export class LoadingScreen {
         'Şehir, gökyüzü, yaratıklar ve sesler tarayıcıda, kodla üretilir.',
         el('br'),
         'Harita verisi © OpenStreetMap katkıcıları (ODbL) · Yükseklik: NASA SRTM',
+        el('br'),
+        'Bina tabanları: Microsoft · Kat bilgisi: İBB Açık Veri, GHSL',
       ]),
     ], { 'aria-label': `${BRAND.name} yükleniyor` });
     this.root.addEventListener('click', () => {

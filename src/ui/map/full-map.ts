@@ -59,7 +59,7 @@ const LIVE_MS = 66;
 /** The "where" line under the title follows the player once a second. */
 const WHERE_MS = 1000;
 const RACE_COLOR = '#7fd1c0';
-const ATTRIBUTION = '© OpenStreetMap katkıcıları (ODbL) · NASA SRTM';
+const ATTRIBUTION = '© OpenStreetMap katkıcıları (ODbL) · Microsoft · İBB · GHSL · NASA SRTM';
 
 /** Water body names and where they are written (drawn only where the point really is water). */
 const WATER_LABELS: ReadonlyArray<{ name: string; lat: number; lon: number }> = [
