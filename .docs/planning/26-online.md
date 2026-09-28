@@ -221,7 +221,8 @@ Auth session as a bearer token. The same rooms, profiles and `/api/me` then serv
 - `worker/steam/`: `config.ts` (the flag), `web-api.ts` (the two Steam calls; key in the `x-webapi-key` header, 5 s
   timeout), `verify.ts` (policy: publisher ban refuses, VAC ban does not, ownership required, Family Sharing allowed),
   `accounts.ts` (a `user` with a placeholder e-mail on `steam.seventeenskies.com` plus an `account` row with
-  providerId `steam` and the SteamID64), `native-session.ts` (Better Auth plugin: `Authorization: Bearer` read as the
+  providerId `steam` and the SteamID64; a ticket signs in once, its SHA-256 kept 21 days in `verification`),
+  `native-session.ts` (Better Auth plugin: `Authorization: Bearer` read as the
   session cookie, only for requests without cookies), `routes.ts` (`POST /api/auth/sign-in/steam`, under the per-IP
   sign-in limit).
 - Origin rule: a request with neither Origin nor cookies (a native client) passes the same-origin check while Steam
