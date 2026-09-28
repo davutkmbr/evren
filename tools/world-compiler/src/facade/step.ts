@@ -27,6 +27,9 @@ import { BoxGrid, bounds, pointInRing, ringArea } from '../../../../src/world/os
 import { buildFacade, classifyEdges, type Edge, type FacadeRecord, streetBase } from './build';
 import { type FacadePlan, HIPPED_RIDGE, parentOf, planFacade, planTop } from './plan';
 import { SLOTS_RECORD, SlotSink } from '../modules/slots';
+import { areaRecord, buildingDataEnabled, recordBuildingData } from '../building-data';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /** AreaContext.shared key of the Set<string> of building ids (e.g. "w102190096") the façade step must not emit. */
 export const FACADE_SKIP = 'facade:skip';
@@ -64,7 +67,8 @@ function prepare(a: AreaContext): void {
   for (const s of a.solids) {
     const osm = byId.get(s.rec.osmId);
     const parent = s.rec.part && s.rec.heightSource === 'default' ? parentOf(s, a.data.buildings) : null;
-    const full = a.detailOf(a.tileOfSolid.get(s) ?? '') === 'full';
+    // Building data (--buildings data): every tile's buildings are planned, the runtime builds them all in full.
+    const full = buildingDataEnabled() || a.detailOf(a.tileOfSolid.get(s) ?? '') === 'full';
     const landmark = landmarks.get(s.rec.osmId) ?? null;
     if (landmark && !dp.buildings.heroIds.has(s.rec.osmId)) {
       s.rec.landmark = landmark;
@@ -238,6 +242,10 @@ export const facadeStep: CompileStep = {
   formats: [0, 1],
   prepare,
   tile(t) {
+    if (t.area.format === 1 && buildingDataEnabled()) {
+      recordBuildingData(t, t.area.shared.get('facade') as Shared, t.area.shared.get(FACADE_SKIP) as Set<string> | undefined);
+      return;
+    }
     if (t.area.format === 0 || t.detail !== 'full') {
       return buildingsStep.tile!(t);
     }
@@ -316,5 +324,13 @@ export const facadeStep: CompileStep = {
       inherited: sh.inherited.filter(mine),
       ...(sh.contained.some(mine) ? { contained: sh.contained.filter(mine) } : {}),
     });
+  },
+  finish(a) {
+    if (a.format !== 1 || !buildingDataEnabled()) {
+      return;
+    }
+    const sh = a.shared.get('facade') as Shared;
+    mkdirSync(a.outDir, { recursive: true });
+    writeFileSync(resolve(a.outDir, 'buildings.json'), JSON.stringify(areaRecord(a, sh.avoid), null, 1));
   },
 };

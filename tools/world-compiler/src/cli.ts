@@ -8,6 +8,8 @@
  *            given, WebP in the shared store, gzip, root index public/world/index.json)
  *   [--landmarks block|none]  (none: landmark buildings and the buildings on the game's landmark claims get no geometry,
  *                             for runtimes with their own models)
+ *   [--buildings geometry|data]  (data: buildings leave the tiles as geometry and become records a runtime builds from,
+ *                                building-data.ts; the tiles keep ground, streets and street props)
  *                            [--tiles all|strip] [--tex-max 2048] [--all-props] [--no-validate] [--min-walk-share 0.9]
  *   [--jobs N|auto]  (tile worker threads, parallel/pool.ts; default auto = cores - 1, capped by memory)
  *   [--cache strict|local|off] [--force]  (incremental compile: cache.ts, stage-cache.ts; --force rebuilds everything)
@@ -45,6 +47,7 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
+import { setBuildingData } from './building-data';
 import { claimsOf, landmarkClasses, setLandmarkBlocks, setLandmarkClaims, useDistrict } from './district';
 import { plannedWallTops } from '../../../src/world/osm/buildings/build';
 import { fillLevels } from '../../../scripts/data/lib/levels-fill.mjs';
@@ -128,6 +131,11 @@ async function main(): Promise<void> {
   const validate = !args.includes('--no-validate');
   setCompression(format === 1 && !args.includes('--no-compress'));
   setWebProfile(format === 1 && compressionEnabled() && args.includes('--web'));
+  const buildingsMode = argOf('--buildings') ?? 'geometry';
+  if (buildingsMode !== 'geometry' && buildingsMode !== 'data') {
+    throw new Error(`--buildings must be geometry or data, got '${buildingsMode}'`);
+  }
+  setBuildingData(format === 1 && buildingsMode === 'data');
   const landmarkMode = argOf('--landmarks') ?? 'block';
   if (landmarkMode !== 'block' && landmarkMode !== 'none') {
     throw new Error(`--landmarks must be block or none, got '${landmarkMode}'`);

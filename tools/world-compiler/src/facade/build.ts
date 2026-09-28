@@ -135,7 +135,7 @@ export const AC_DEPTH = 0.55;
  * Free depth (m) in front of the wall of `s` at the point (x, z) on the wall, along the outward normal (nx, nz),
  * before another building (or another wing of this one); Infinity when nothing stands within FREE_REACH.
  */
-function gapFrom(outlines: RingIndex<number>, s: Solid, x: number, z: number, nx: number, nz: number): number {
+export function gapFrom(outlines: RingIndex<number>, s: Solid, x: number, z: number, nx: number, nz: number): number {
   for (let d = FREE_STEP; d < FREE_REACH; d += FREE_STEP) {
     const px = x + nx * d;
     const pz = z + nz * d;
