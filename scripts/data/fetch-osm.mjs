@@ -569,9 +569,18 @@ function copyTags(rec, t, map, lower = false) {
 /* Records                                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Identity tags of street-profile points and buildings (quests resolve by wikidata, then OSM id, then name; the game
+ * shows localised names): copied as given.
+ */
+const IDENTITY_TAGS = { wikidata: 'wikidata', 'name:tr': 'nameTr', 'name:en': 'nameEn', 'addr:street': 'addrStreet' };
+
 function buildingRecord(el, poly, part) {
   const t = el.tags ?? {};
   const rec = { id: osmId(el), ring: flat(poly.outer), kind: (part ? t['building:part'] : t.building) || 'yes' };
+  if (STREET) {
+    copyTags(rec, t, IDENTITY_TAGS);
+  }
   if (poly.holes.length) {
     rec.holes = poly.holes.map(flat);
   }
@@ -1006,6 +1015,10 @@ async function main() {
     const t = n.tags;
     const [x, z] = project(n.lat, n.lon);
     const rec = { kind: pointKind(t), x: round(x), z: round(z) };
+    if (STREET) {
+      // The OSM element: a stable key for POIs and entrances (array positions change with every upstream edit).
+      rec.osm = `n${n.id}`;
+    }
     const ref = refOf.get(n.id);
     if (ref !== undefined) {
       rec.ref = ref;
@@ -1017,6 +1030,9 @@ async function main() {
       }
     }
     copyTags(rec, t, { name: 'name' });
+    if (STREET) {
+      copyTags(rec, t, IDENTITY_TAGS);
+    }
     copyTags(
       rec,
       t,

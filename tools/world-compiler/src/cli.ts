@@ -320,6 +320,14 @@ async function main(): Promise<void> {
       if (p.name) {
         rec.osmName = p.name;
       }
+      if (buildingDataEnabled()) {
+        // Stable identity for runtimes that key gameplay on it (the id above is the point's index in the data file).
+        for (const k of ['osm', 'wikidata', 'nameTr', 'nameEn'] as const) {
+          if (p[k]) {
+            rec[k] = p[k];
+          }
+        }
+      }
       if (host) {
         rec.building = host.rec.id;
       }

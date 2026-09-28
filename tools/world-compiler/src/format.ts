@@ -329,6 +329,11 @@ export interface PoiRec {
   position: XYZ;
   building?: string;
   door?: string;
+  /** Building data (`--buildings data`): the OSM element and identity tags, when the data file carries them. */
+  osm?: string;
+  wikidata?: string;
+  nameTr?: string;
+  nameEn?: string;
 }
 
 export interface LampRec {

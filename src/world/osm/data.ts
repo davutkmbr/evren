@@ -72,6 +72,11 @@ export interface OsmBuilding {
   use?: string;
   startDate?: string;
   name?: string;
+  /** Street areas: identity tags (wikidata, name:tr, name:en, addr:street) as tagged. */
+  wikidata?: string;
+  nameTr?: string;
+  nameEn?: string;
+  addrStreet?: string;
 }
 
 /** Linear highway=* way (carriageways, footways, steps, paths). Oneway ways point in the travel direction. */
@@ -188,6 +193,13 @@ export interface OsmPoint {
   roads?: number[];
   rails?: number[];
   name?: string;
+  /** Street areas: the OSM element (`n<node id>`), a stable key for POIs and entrances. */
+  osm?: string;
+  /** Street areas: identity tags (wikidata, name:tr, name:en, addr:street) as tagged. */
+  wikidata?: string;
+  nameTr?: string;
+  nameEn?: string;
+  addrStreet?: string;
   /** Crossings: crossing=* ("marked", "zebra", "traffic_signals", "uncontrolled", "unmarked", ...). */
   crossing?: string;
   /** crossing:markings=* ("zebra", "lines", "no", ...). */

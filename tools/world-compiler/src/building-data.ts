@@ -30,6 +30,7 @@ import { type Edge, gapFrom } from './facade/build';
 import type { FacadePlan } from './facade/plan';
 import { claimsOf, district } from './district';
 import { portalsOn } from './passages';
+import { isPoi } from './pois';
 import type { AreaContext, TileContext } from './registry';
 import { FACADE_MATERIALS } from './facade/materials';
 import { FACADE_PROP_MATERIALS } from './facade/props';
@@ -137,7 +138,7 @@ function tagsOf(b: OsmBuilding | undefined): Record<string, string | number> | u
     return undefined;
   }
   const t: Record<string, string | number> = {};
-  const keys = ['name', 'amenity', 'historic', 'shop', 'tourism', 'religion', 'architecture', 'use', 'startDate', 'material', 'colour', 'roofShape', 'roofColour', 'roofMaterial', 'levels', 'height', 'roofLevels', 'minLevel', 'minHeight'] as const;
+  const keys = ['name', 'nameTr', 'nameEn', 'wikidata', 'addrStreet', 'amenity', 'historic', 'shop', 'tourism', 'religion', 'architecture', 'use', 'startDate', 'material', 'colour', 'roofShape', 'roofColour', 'roofMaterial', 'levels', 'height', 'roofLevels', 'minLevel', 'minHeight'] as const;
   for (const k of keys) {
     const v = b[k];
     if (v !== undefined && v !== null && v !== '') {
@@ -276,5 +277,45 @@ export function areaRecord(a: AreaContext, avoid: ReadonlySet<string>): Record<s
     buildings: { shuttered: [...dp.buildings.shuttered], wearBias: dp.buildings.wearBias },
     shops: { firstWords: dp.shops.firstWords, filler: dp.shops.filler, marketFiller: dp.shops.marketFiller, fallback: dp.shops.fallback, tradeOverrides: dp.shops.tradeOverrides },
     avoid: [...avoid].sort(),
+    streets: streetsOf(a),
+    places: placesOf(a),
   };
+}
+
+/** Kinds of named points that are places to go to but not storefront POIs (stations, monuments, fountains, piers). */
+const PLACE_KEYS = new Set(['historic', 'man_made', 'railway', 'public_transport', 'amenity', 'tourism', 'leisure', 'memorial']);
+
+/** Named OSM ways of the streets (and steps) in the compiled rect: name, kind, OSM way and polyline (x, z). */
+function streetsOf(a: AreaContext): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const r = a.strip?.rect;
+  for (const road of a.data.roads) {
+    if (!road.name && road.kind !== 'steps') {
+      continue;
+    }
+    const pts = road.pts;
+    let inside = !r;
+    for (let k = 0; k + 1 < pts.length && !inside; k += 2) {
+      inside = !!r && pts[k] >= r.minX && pts[k] <= r.maxX && pts[k + 1] >= r.minZ && pts[k + 1] <= r.maxZ;
+    }
+    if (!inside) {
+      continue;
+    }
+    out.push({ osm: `w${road.id}`, kind: `highway=${road.kind}`, ...(road.name ? { name: road.name } : {}), pts: pts.map((v) => Math.round(v * 100) / 100) });
+  }
+  return out;
+}
+
+/** Named points that are not storefront POIs (the tile manifests' `pois`): stations, monuments, fountains, piers. */
+function placesOf(a: AreaContext): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const r = a.strip?.rect;
+  for (const p of a.data.points) {
+    const key = p.kind.split('=')[0];
+    if (!p.name || !PLACE_KEYS.has(key) || isPoi(p) || (r && (p.x < r.minX || p.x > r.maxX || p.z < r.minZ || p.z > r.maxZ))) {
+      continue;
+    }
+    out.push({ kind: p.kind, name: p.name, x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, y: Math.round(a.heights.at(p.x, p.z) * 100) / 100, ...(p.osm ? { osm: p.osm } : {}), ...(p.wikidata ? { wikidata: p.wikidata } : {}), ...(p.nameEn ? { nameEn: p.nameEn } : {}) });
+  }
+  return out;
 }
