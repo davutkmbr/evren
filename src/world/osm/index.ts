@@ -26,7 +26,10 @@ import { wallsReady } from '../landmarks/walls/system/owned';
 import { landmarkClaims } from '../landmarks/claims';
 import { openLandmarkPassages } from './shared/landmark-passages';
 import { exposeDebug } from '../../core/dev-tools';
-import { uploadPending } from './shared/three';
+import { pendingUploads, uploadPending } from './shared/three';
+import { osmStep, runOsmJobs } from './shared/jobs';
+import { OSM_PROF, osmProf } from './shared/prof';
+import { compileForScene } from '../../render/warmup';
 
 /**
  * Layers load independently: a layer that fails to import or build (e.g. mid-edit during development) is
@@ -77,6 +80,8 @@ const DISTANCE_SCALE: Record<QualityPreset, number> = { low: 0.55, medium: 0.75,
 const RESELECT_STEP = 50;
 
 type RegionState = 'loading' | 'ready' | 'failed';
+/** Shader warm-up of one layer: waiting for its content, programs compiling, shown. */
+type WarmState = 'wait' | 'compiling' | 'ready';
 
 /** One loaded region: its data, foundation, context and layers. */
 class OsmRegion {
@@ -103,6 +108,15 @@ class OsmRegion {
   private readonly nearLayers = new Map<number, OsmLayer>();
   /** Near-only layers wanted (always for the fixed Galata slice). */
   private near: boolean;
+  /**
+   * Shader warm-up per layer (render/warmup.ts): a layer's group stays hidden until its content is built and uploaded
+   * and every program it draws with is linked in parallel, so nothing of a region is ever linked on its first draw (23–77 ms
+   * each). Regions build their own materials but share programs (same shaders and defines): after the first region
+   * the compile finds every program in three's cache and resolves at once.
+   */
+  private readonly warm = new Map<OsmLayer, WarmState>();
+  /** LAYER_LOADERS indices of layers queued for creation. */
+  private readonly adding = new Set<number>();
 
   constructor(
     readonly def: OsmRegionDef,
@@ -123,7 +137,7 @@ class OsmRegion {
       return;
     }
     this.fadeSlot ??= acquireOsmFade(this.def.rect);
-    tagOsmFade(this.group);
+    osmProf('tagOsmFade', () => tagOsmFade(this.group));
     this.group.visible = true;
     if (this.fadeSlot === null) {
       // No slot free: the region pops in, as before the handover existed.
@@ -208,11 +222,15 @@ class OsmRegion {
       return;
     }
     // Vehicle ways never over water (sea tunnels, reclaimed ground the flight world does not have).
-    const clip = clipWaysToLand(data, (x, z) => geo.coastDistance(x, z));
+    // Main-thread steps run one per frame inside the OSM job budget (shared/jobs.ts), never in one long task.
+    const clip = await osmStep('clip-ways', () => clipWaysToLand(data, (x, z) => geo.coastDistance(x, z)));
     // Roads OSM maps as passages under a landmark's arches are ground roads (the landmark model stands over them).
-    openLandmarkPassages(data, landmarkClaims(geo));
+    await osmStep('passages', () => openLandmarkPassages(data, landmarkClaims(geo)));
+    if (this.disposed) {
+      return;
+    }
     const t1 = performance.now();
-    const job = buildWorkerBase(geo, data, this.def.rect, this.def.area);
+    const job = await osmStep('worker-base', () => buildWorkerBase(geo, data, this.def.rect, this.def.area));
     this.cancel = job.cancel;
     const { base, ms } = await job.promise;
     this.cancel = null;
@@ -220,6 +238,10 @@ class OsmRegion {
       return;
     }
     base.fade = this.def.fade;
+    const surface = await osmStep('street-surface', () => new StreetSurface(base));
+    if (this.disposed) {
+      return;
+    }
     const ctx: OsmContext = {
       engine,
       geo,
@@ -227,7 +249,7 @@ class OsmRegion {
       rect: base.rect,
       fade: this.def.fade,
       base,
-      surface: new StreetSurface(base),
+      surface,
     };
     this.ctx = ctx;
     this.data = data;
@@ -254,8 +276,21 @@ class OsmRegion {
     if (!factory || !this.ctx || !this.data) {
       return;
     }
+    // One layer per queued step: a layer's constructor posts its worker request (a structured clone of the data).
+    this.adding.add(i);
+    void osmStep(`layer:${LAYER_LOADERS[i].name}`, () => this.createLayer(i));
+  }
+
+  private createLayer(i: number): void {
+    const factory = this.factories[i];
+    // Dropped while queued (region disposed, near-only layer no longer wanted).
+    if (!this.adding.delete(i) || !factory || !this.ctx || !this.data || this.disposed) {
+      return;
+    }
     try {
       const layer = factory(this.ctx, this.data);
+      layer.group.visible = false;
+      this.warm.set(layer, 'wait');
       this.layers.push(layer);
       this.group.add(layer.group);
       if (LAYER_LOADERS[i].nearOnly) {
@@ -280,10 +315,14 @@ class OsmRegion {
         return;
       }
       const layer = this.nearLayers.get(i);
-      if (near && !layer) {
+      if (near && !layer && !this.adding.has(i)) {
         this.addLayer(i);
-      } else if (!near && layer) {
+      } else if (!near) {
+        this.adding.delete(i);
+      }
+      if (!near && layer) {
         layer.dispose();
+        this.warm.delete(layer);
         this.nearLayers.delete(i);
         this.layers.splice(this.layers.indexOf(layer), 1);
       }
@@ -292,11 +331,37 @@ class OsmRegion {
 
   /** Outstanding jobs of this region (loading, layer workers, uploads). */
   pending(): number {
-    let n = this.state === 'loading' ? 1 : 0;
+    let n = (this.state === 'loading' ? 1 : 0) + this.adding.size;
     for (const l of this.layers) {
-      n += l.pending?.() ?? 0;
+      n += (l.pending?.() ?? 0) + (this.warm.get(l) === 'ready' ? 0 : 1);
     }
     return n;
+  }
+
+  /** Starts the warm-up of every layer whose content is complete; a layer is shown once its programs are linked. */
+  private warmLayers(): void {
+    const engine = this.ctx?.engine;
+    // Geometry still queued for upload would be uploaded by its first draw, all at once.
+    if (!engine || pendingUploads() > 0) {
+      return;
+    }
+    for (const [layer, state] of this.warm) {
+      if (state !== 'wait' || (layer.pending?.() ?? 0) > 0) {
+        continue;
+      }
+      this.warm.set(layer, 'compiling');
+      // Streamed regions draw with OSM_FADE from their fade-in on (fade.ts): compile that variant, not a throwaway one.
+      if (!this.def.fixed) {
+        tagOsmFade(layer.group);
+      }
+      const show = (): void => {
+        if (this.warm.get(layer) === 'compiling') {
+          this.warm.set(layer, 'ready');
+          layer.group.visible = true;
+        }
+      };
+      osmProf(`warmup:${layer.group.name}`, () => compileForScene(engine.renderer, engine.scene, engine.camera, layer.group)).then(show, show);
+    }
   }
 
   /** Buildings uploaded (or the buildings layer missing): the procedural city may step aside. */
@@ -305,18 +370,23 @@ class OsmRegion {
       return false;
     }
     const buildings = this.layers.find((l) => l.group.name === 'osm-buildings');
-    return buildings ? (buildings.pending?.() ?? 0) === 0 : this.pending() === 0;
+    return buildings ? this.warm.get(buildings) === 'ready' : this.pending() === 0;
   }
 
   update(dt: number): void {
     this.stepFade();
+    this.warmLayers();
     const ctx = this.ctx;
     // Built but not yet taken over from the far layer (hidden): nothing of it is drawn, so its LODs need no streaming.
     if (!ctx || !this.group.visible) {
       return;
     }
     for (const l of this.layers) {
-      l.update?.(dt, ctx);
+      if (OSM_PROF) {
+        osmProf(`update:${l.group.name}`, () => l.update?.(dt, ctx));
+      } else {
+        l.update?.(dt, ctx);
+      }
     }
   }
 
@@ -336,6 +406,7 @@ class OsmRegion {
       l.dispose();
     }
     this.layers.length = 0;
+    this.warm.clear();
     this.group.removeFromParent();
     this.ctx = null;
     this.data = null;
@@ -445,7 +516,12 @@ class OsmSystem implements System {
     if (!engine || !this.geo) {
       return;
     }
-    uploadPending(engine.renderer);
+    runOsmJobs();
+    if (OSM_PROF) {
+      osmProf('uploadPending', () => uploadPending(engine.renderer));
+    } else {
+      uploadPending(engine.renderer);
+    }
     const cam = engine.camera.position;
     if (this.building && this.building.state !== 'loading' && this.building.pending() === 0) {
       this.building = null;
@@ -470,7 +546,7 @@ class OsmSystem implements System {
     for (const r of [...this.leaving]) {
       r.update(dt);
       if (r.gone) {
-        r.dispose();
+        osmProf('region:dispose', () => r.dispose());
         this.leaving.delete(r);
       }
     }

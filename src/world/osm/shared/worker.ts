@@ -3,6 +3,7 @@
  * `new Worker(new URL('./x.worker.ts', import.meta.url), { type: 'module' })` in the layer's own file) and hands it
  * to runWorker(); the worker file calls serveWorker(build) once.
  */
+import { osmProf } from './prof';
 
 /** Every distinct ArrayBuffer behind the typed arrays in `value` (for zero-copy transfer). */
 export function collectTransferables(value: unknown, out: Set<ArrayBuffer> = new Set()): ArrayBuffer[] {
@@ -54,17 +55,19 @@ export function runWorker<Req, Res>(worker: Worker, request: Req, transfer: Tran
     };
     worker.onmessage = (e: MessageEvent<{ ok: boolean; res?: Res; error?: string }>) => {
       settle();
-      if (e.data.ok) {
-        res(e.data.res as Res);
+      // MessageEvent.data is deserialised on first access.
+      const reply = osmProf('worker:deserialize', () => e.data);
+      if (reply.ok) {
+        res(reply.res as Res);
       } else {
-        rej(new Error(e.data.error));
+        rej(new Error(reply.error));
       }
     };
     worker.onerror = (e) => {
       settle();
       rej(new Error(e.message || 'worker error'));
     };
-    worker.postMessage(request, transfer);
+    osmProf('worker:post', () => worker.postMessage(request, transfer));
   });
   return {
     promise,

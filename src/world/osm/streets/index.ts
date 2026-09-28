@@ -103,11 +103,9 @@ class StreetsLayer extends LayerBase {
     this.onDispose(job.cancel);
     const t0 = performance.now();
     this.track(
-      Promise.all([job.promise, materials.ready]).then(([res]) => {
-        if (!this.disposed) {
-          this.upload(ctx, res, materials, performance.now() - t0);
-        }
-      }),
+      Promise.all([job.promise, materials.ready]).then(([res]) =>
+        this.disposed ? undefined : this.sliced('upload', this.upload(ctx, res, materials, performance.now() - t0)),
+      ),
     );
   }
 
@@ -152,38 +150,46 @@ class StreetsLayer extends LayerBase {
     this.onDispose(() => ctx.surface.setDecks(null));
   }
 
-  private upload(ctx: OsmContext, res: StreetsResult, materials: StreetMaterials, workerMs: number): void {
+  /** Builds the layer from the worker result in steps (shared/jobs.ts): about one mesh or prop kind each. */
+  private *upload(ctx: OsmContext, res: StreetsResult, materials: StreetMaterials, workerMs: number): Generator<string> {
     const t1 = performance.now();
     materials.setStreetMask(ctx.base.street, res.pool, ctx.fade);
+    yield 'mask';
     // Flat streets barely show in the water's mirror image, but ~2 M triangles went into it every frame.
     if (res.meshes.ground?.index.length) {
       this.ground = new LodTiledMesh(this.group, 'osm-ground', res.meshes.ground, res.groundTiles, materials.ground, { distance: GROUND_FAR_DISTANCE });
       this.ground.setEnabled(ctx.engine.debug.params.get('osmlod') !== '0');
       this.ground.update(ctx.engine.camera.position, ctx.engine.quality.settings.preset);
+      yield 'ground';
     }
     addMesh(this.group, 'osm-paint', res.meshes.paint, materials.paint, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-rails', res.meshes.rails, materials.rails, { layer: RenderLayers.NoReflection });
     addMesh(this.group, 'osm-trackbed', res.meshes.inlay, materials.inlay);
     addMesh(this.group, 'osm-masonry', res.meshes.masonry, materials.masonry);
     addMesh(this.group, 'osm-wires', res.meshes.wires, materials.wire, { layer: RenderLayers.NoReflection, receiveShadow: false });
+    yield 'meshes';
     for (const kind of PROP_KINDS) {
-      this.addProps(kind, res, materials);
+      if (this.addProps(kind, res, materials)) {
+        yield 'prop';
+      }
     }
     this.addSprites(res.sprites);
     console.info(
-      `[osm:streets] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms, ${this.group.children.length} draws, ${trianglesOf(this.group)} tris`,
+      `[osm:streets] worker ${Math.round(workerMs)} ms ${JSON.stringify(res.stats)}, upload ${Math.round(performance.now() - t1)} ms (sliced), ${this.group.children.length} draws, ${trianglesOf(this.group)} tris`,
     );
   }
 
-  private addProps(kind: PropKind, res: StreetsResult, materials: StreetMaterials): void {
+  /** Adds one kind of street furniture; false when the region has none. */
+  private addProps(kind: PropKind, res: StreetsResult, materials: StreetMaterials): boolean {
     const records = res.instances[kind];
     if (!records?.length) {
-      return;
+      return false;
     }
     const lights = res.lights[kind];
     const lit = lights.length === records.length / INSTANCE_STRIDE;
     const lod = kind === 'tramCanopy' ? CANOPY_LOD : PROP_LOD;
     this.props.push(new InstanceLod(this.group, `osm-${kind}`, records, propGeometry(kind), materials.props, { ...lod, attributes: lit ? { aLight: { data: lights, itemSize: 1 } } : undefined }));
+    return true;
   }
 
   private addSprites(sprites: Float32Array): void {

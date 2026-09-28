@@ -30,14 +30,17 @@ export function releaseAfterUpload<T extends THREE.DataTexture | THREE.DataArray
   return texture;
 }
 
-export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
+/** `bounds: false` skips the bounding sphere (a pass over every vertex) for callers that set their own bounds. */
+export function toGeometry(m: MeshArrays, opt: { bounds?: boolean } = {}): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const attr = (a: THREE.BufferAttribute): THREE.BufferAttribute => (KEEP_CPU ? a : a.onUpload(releaseArray));
   for (const [name, a] of Object.entries(m.attributes)) {
     g.setAttribute(name, attr(new THREE.BufferAttribute(a.array, a.size, a.normalized ?? false)));
   }
   g.setIndex(attr(new THREE.BufferAttribute(m.index, 1)));
-  g.computeBoundingSphere();
+  if (opt.bounds !== false) {
+    g.computeBoundingSphere();
+  }
   if (!KEEP_CPU) {
     notUploaded.add(g);
     g.addEventListener('dispose', forgetUpload);
@@ -51,6 +54,11 @@ export function toGeometry(m: MeshArrays): THREE.BufferGeometry {
  * its whole CPU copy; uploadPending() sends them to the GPU right away instead.
  */
 const notUploaded = new Set<THREE.BufferGeometry>();
+
+/** Geometries still waiting for uploadPending(). */
+export function pendingUploads(): number {
+  return notUploaded.size;
+}
 
 function forgetUpload(this: THREE.BufferGeometry): void {
   notUploaded.delete(this);
@@ -71,8 +79,23 @@ export function uploadThrough(source: THREE.BufferGeometry, drawn: THREE.BufferG
 let upload: { scene: THREE.Scene; camera: THREE.Camera; target: THREE.WebGLRenderTarget; material: THREE.Material } | null = null;
 
 /**
- * Uploads every pending geometry with one draw of zero triangles each into a 1x1 target (three uploads the vertex
- * buffers when it projects a mesh and the index when it binds it for the draw). Call once per frame before rendering.
+ * Bytes of geometry uploadPending() sends per frame (at least one geometry). A region's geometry arrives as a few
+ * large shared buffers plus many small ones: sent all at once they cost up to ~15 ms of buffer copies in one frame.
+ */
+const UPLOAD_BYTES_PER_FRAME = 8 << 20;
+
+function geometryBytes(g: THREE.BufferGeometry): number {
+  let n = g.index?.array.byteLength ?? 0;
+  for (const a of Object.values(g.attributes)) {
+    n += (a as THREE.BufferAttribute).array?.byteLength ?? 0;
+  }
+  return n;
+}
+
+/**
+ * Uploads pending geometries (UPLOAD_BYTES_PER_FRAME per call) with one draw of zero triangles each into a 1x1 target
+ * (three uploads the vertex buffers when it projects a mesh and the index when it binds it for the draw). Call once
+ * per frame before rendering.
  */
 export function uploadPending(renderer: THREE.WebGLRenderer): void {
   if (notUploaded.size === 0) {
@@ -85,7 +108,13 @@ export function uploadPending(renderer: THREE.WebGLRenderer): void {
     material: new THREE.MeshBasicMaterial(),
   };
   const ranges: [THREE.BufferGeometry, number, number][] = [];
+  let bytes = 0;
   for (const g of notUploaded) {
+    if (bytes > 0 && bytes + geometryBytes(g) > UPLOAD_BYTES_PER_FRAME) {
+      continue;
+    }
+    bytes += geometryBytes(g);
+    notUploaded.delete(g);
     g.removeEventListener('dispose', forgetUpload);
     ranges.push([g, g.drawRange.start, g.drawRange.count]);
     g.setDrawRange(0, 0);
@@ -93,7 +122,6 @@ export function uploadPending(renderer: THREE.WebGLRenderer): void {
     mesh.frustumCulled = false;
     upload.scene.add(mesh);
   }
-  notUploaded.clear();
   const previous = renderer.getRenderTarget();
   renderer.setRenderTarget(upload.target);
   renderer.render(upload.scene, upload.camera);

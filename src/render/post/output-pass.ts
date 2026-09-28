@@ -30,6 +30,7 @@ export class OutputPass {
       uniforms: {
         tSource: { value: null },
         tDepth: { value: null },
+        tExposure: { value: null },
         uMode: { value: 0 },
         uExposure: { value: 1 },
         uNear: { value: 0.1 },
@@ -64,12 +65,14 @@ export class OutputPass {
     fs.draw(renderer, this.final, null);
   }
 
-  renderDebug(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, view: PostDebugView, source: THREE.Texture, depth: THREE.Texture, exposure: number, camera: THREE.PerspectiveCamera): void {
+  /** `exposure`: the exposure state texture (see AutoExposure), multiplied by `exposureScale`. */
+  renderDebug(renderer: THREE.WebGLRenderer, fs: FullscreenRenderer, view: PostDebugView, source: THREE.Texture, depth: THREE.Texture, exposure: THREE.Texture, exposureScale: number, camera: THREE.PerspectiveCamera): void {
     const u = this.debug.uniforms;
     u.tSource.value = source;
     u.tDepth.value = depth;
+    u.tExposure.value = exposure;
     u.uMode.value = DEBUG_MODE[view];
-    u.uExposure.value = exposure;
+    u.uExposure.value = exposureScale;
     u.uNear.value = camera.near;
     u.uFar.value = camera.far;
     fs.draw(renderer, this.debug, null);

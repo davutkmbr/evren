@@ -37,6 +37,7 @@ export interface EngineStats {
   renderScale: number;
   /** Dynamic resolution state: signal in use, median frame vs target, GPU timer trust, drop/raise counts. */
   dynres?: object;
+  pacing?: object;
   pending: number;
   colliders: number;
   heapMB: number;
@@ -247,6 +248,9 @@ export class Engine {
     if (this.minFrameMs > 0 && now - this.lastTime < this.minFrameMs) {
       return;
     }
+    if (this.ctx.pipeline.gpuBehind?.()) {
+      return;
+    }
     const ctx = this.ctx;
     const frameStart = performance.now();
     const realDt = Math.min(Math.max((now - this.lastTime) / 1000, 0), 0.25);
@@ -310,7 +314,9 @@ export class Engine {
     const parent = ctx.canvas.parentElement!;
     const w = Math.max(1, parent.clientWidth);
     const h = Math.max(1, parent.clientHeight);
-    const pr = Math.min(window.devicePixelRatio || 1, ctx.quality.settings.maxPixelRatio);
+    const q = ctx.quality.settings;
+    const budget = Math.sqrt((q.maxMegapixels * 1e6) / (w * h));
+    const pr = Math.max(Math.min(1, window.devicePixelRatio || 1), Math.min(window.devicePixelRatio || 1, q.maxPixelRatio, budget));
     ctx.renderer.setPixelRatio(pr);
     ctx.renderer.setSize(w, h, false);
     ctx.canvas.style.width = `${w}px`;
@@ -351,6 +357,7 @@ export class Engine {
       programs: info.programs?.length ?? 0,
       renderScale: this.ctx.pipeline.renderScale,
       dynres: this.ctx.pipeline.renderScaleStats,
+      pacing: this.ctx.pipeline.pacingStats,
       pending: this.pending(),
       colliders: this.ctx.services.get('collision').colliderCount,
       heapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0,
