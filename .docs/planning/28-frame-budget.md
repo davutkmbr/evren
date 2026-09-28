@@ -179,7 +179,7 @@ do not add up exactly.
 | # | Fix | Expected saving | Effort | Evidence |
 |---|---|---|---|---|
 | 0 | **Cap ultra's pixel ratio** (`maxPixelRatio` 2 → 1, or 1.25 with TAA upscale) if the game runs on a Retina display | up to 17–20 ms on DPR 2 screens, 0 at DPR 1 | S | render scale 2: +16.7…+19.5 ms |
-| 1 | **Mirror budget:** OSM regions, procedural city and region details on `RenderLayers.NoReflection` (keep cheap stand-ins / far layer in the mirror), mirror MSAA 4 → 2, `reflectionScale` 0.6 → 0.45 | 4–7 ms (full mirror costs 6.4–11.7) | S–M | `wrefl=sky` −6.4…−11.7; mirror without osm+city −3.6…−4.7 |
+| 1 | **Mirror budget:** OSM regions, procedural city and region details on `RenderLayers.NoReflection` (keep cheap stand-ins / far layer in the mirror), mirror MSAA 4 → 2, `reflectionScale` 0.6 → 0.45 | 4–7 ms (full mirror costs 6.4–11.7) | S–M | `wrefl=sky` −6.4…−11.7; mirror without osm+city −3.6…−4.7; **partly done (6 km mirror cull, −1.4…−4.0 ms; MSAA / scale / regions out rejected), section 7** |
 | 2 | **OSM region building budget:** screen-space-error LOD / HLOD for region buildings (merge far blocks into per-cell proxies, drop façade detail beyond ~400 m), cap draws per region | 4–7 ms (buildings 5.4–8.7, near region 4.4–10) | M–L | hide region buildings −5.4 / −8.7 |
 | 3 | **Shadow caster budget:** gate small casters and region details out of cascades ≥ 1 (`shadowGate`), building proxies in the far cascades, refresh cascades 2–3 every other frame (static world, sun moves slowly) | 2–4 ms (shadows total 2.5–7.5) | M | `shadows=0` −6.3 / −7.5; cascades / tile size ≈0 → it is draws, not fill |
 | 4 | **Draw-call batching** for the procedural city tiles (~170 meshes) and region layers (BatchedMesh / merged per cell): relieves the GPU-process decode (54–59 % busy) and `PostPipeline.render` CPU (5.5–7.9 ms) | 2–4 ms | M–L | hide `city` −2.4…−5.5 at ≤ 1.6 ms per tile |
@@ -366,6 +366,57 @@ touch; the median stays at 33 ms for the same reason. The largest OSM main-threa
 bounding spheres), an 8 MB+ single geometry in `uploadPending` (up to 35 ms when one buffer alone exceeds the
 budget), crowd construction (5–8 ms). Next steps there: transfer the request data once per region instead of cloning
 it per layer, and have the workers send bounds with their meshes.
+
+## 7. Water mirror (fix 1) — results
+
+Measured 2026-09-28 on `feat/cheaper-mirror` (origin/main `76966f9`), same machine and method: pipelined `--perf 8000`
+(`fps=0&dynres=0&q=ultra`, 1600x900) and the serialised in-page A/B (frozen scene, old and new mirror settings
+switched at runtime in one page, 3 x 12 frames each). The pipelined before / after runs are hours apart on the shared
+GPU, so the serialised column is the reliable saving.
+
+**Shipped:** a mirror draw distance of 6 km (`WaterQuality.reflectionDistance`, `PlanarReflection.setCullDistance`).
+Frustum-culled leaf objects in the mirror's layers whose bounding sphere stays beyond 6 km of the camera are hidden
+for the mirror render only; sky, full-screen passes and objects without a bounding volume are always drawn. One rule
+for every system, no per-layer special case.
+
+| View | serialised saved | mirror draws | frame draws | perf fps (frame ms) before → after | mirror still costs |
+|---|---|---|---|---|---|
+| `galata&t=15` | 2.2 ms | 223 → 173 | 1214 → 1164 | 26.2 (38.2) → 35.7 (28.0) | 4.5 ms |
+| `bogaz&t=21` | 1.4 ms | 192 → 144 | 875 → 827 | 37.1 (27.0) → 41.7 (24.0) | 4.9 ms |
+| `sultanahmet&t=16` | 4.0 ms | 205 → 156 | 1156 → 1107 | 32.4 (30.8) → 37.1 (27.0) | 3.5 ms |
+| Kadıköy 150 m | 3.1 ms | 215 → 164 | 1075 → 1024 | 29.6 (33.7) → 33.3 (30.1) | 4.6 ms |
+
+- "Mirror still costs" = skipping every remaining mirror draw (serialised). The mirror's main-thread submission
+  (`PlanarReflection.render`) went from 2.4–2.8 to 2.3–2.6 ms; the extra traversal eats most of what the skipped
+  draws save on the CPU.
+- **Visual:** A/B at `bogaz&t=19`, `bogaz&t=21`, `galata&t=15` and low over Karaköy at `t=19`: mean abs difference
+  0.7–1.1 (the TAA noise floor between two identical frames is ~0.7), no visible change.
+- **Flicker audit** (sea ‰, before → after): default preset (high) `sea-dusk` 0.09 → 0.09, `night-hisar` 0.07 → 0.07,
+  `night-hisar-fly` 0.07 → 0.08; `q=ultra` `sea-dusk` 0.48 → 0.58, `night-hisar` 0.06 → 0.05, `night-hisar-fly`
+  0.08 → 0.09. The audit is deterministic (repeat runs match), so ultra `sea-dusk` +0.1 ‰ is real: new coverage edges
+  where far tiles used to fill the mirror. The NaN clean-up still catches the facade / wall NaN texels
+  (`--mirror bad` on `night-hisar-fly`: 0 unstable pixels; culprit `osm-facade-reflection`, as before).
+
+**Tried and rejected** (serialised savings on top of the draw distance):
+
+| Candidate | Saved | Why not |
+|---|---|---|
+| Mirror MSAA 4 → 2 | 0–2.5 ms | `sea-dusk` sea flicker 0.09 → 0.16 ‰ on high (bisected: restoring 4x restores 0.09) |
+| `reflectionScale` 0.6 → 0.5 on ultra | −1…+1 ms | hard-edged patches in the reflected shore glow at dusk (Bosphorus `t=19`, `t=21`). 0.45 allocates the same target as 0.5 (`setSize` ignores changes under 12 %). |
+| Draw distance 4 km | +0.3…2.6 ms | dims the reflected glow of the far shore at dusk |
+| Minimum size 1–2 mirror px | ≈ 0 | almost nothing that small is left in the mirror's layers |
+| OSM regions out of the mirror | 1.5–3.6 ms | removes the shore reflections (Karaköy, Galata quay); the regions already enter the mirror only as the ReflectionOnly far proxy |
+
+Already in place before this change: OSM near leaves, details, props, kits, streets paint / rails / wires, traffic,
+crowds, vegetation, lamps and small craft are on `NoReflection`; OSM buildings reach the mirror as one far-version
+draw per facade / roof mesh; city tiles draw a reduced range into the mirror (no fine detail, near / mid tiles only
+near the water); the mirror reuses the main camera's shadow map (no shadow pass for it).
+
+**What is left** (3.5–4.9 ms): OSM far proxies (≈ 1.3 M triangles in 3–5 draws per region, never culled because each
+spans its whole slice), 40–80 city tiles, 34–72 small heritage draws, the dragon (35 draws) and 2.3–2.6 ms of mirror
+submission CPU. Next steps, in order: draw the OSM proxy per quadtree quarter so the draw distance and the frustum
+apply to it; a coarser heritage LOD for the mirror; find why ultra's 0.6 mirror flickers at `sea-dusk` (0.48 ‰
+against 0.09 ‰ at 0.5) and why 0.5 breaks the glow into patches, then revisit the scale.
 
 ## Open
 

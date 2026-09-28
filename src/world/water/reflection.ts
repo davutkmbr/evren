@@ -1,7 +1,9 @@
 /**
  * Planar reflection of the scene in the sea plane y = 0.
- * The mirror camera renders RenderLayers.Default only (small detail lives on NoReflection), with an oblique near
- * plane on the water (Lengyel) adapted to three's reversed-Z projection (clip z in [0, w], near -> w, far -> 0).
+ * The mirror camera renders RenderLayers.Default + ReflectionOnly (small detail lives on NoReflection), with an oblique
+ * near plane on the water (Lengyel) adapted to three's reversed-Z projection (clip z in [0, w], near -> w, far -> 0).
+ * On top of the layers the mirror has its own draw distance (setCullDistance): frustum-culled objects whose bounding
+ * sphere lies beyond it are hidden for the mirror render only (the main view is unaffected).
  * The result is mip-mapped so the water shader can blur it by the unresolved wave roughness.
  * The texture is premultiplied by geometry coverage: rgb = 0 and alpha = 0 where the mirror only saw sky (the water
  * shader composites its own sky reflection there), alpha = 1 on geometry. Coverage therefore goes through the same
@@ -28,6 +30,7 @@ const _invProjT = new THREE.Matrix4();
 const _clipPlaneClip = new THREE.Vector4();
 const _bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
 const _corner = new THREE.Vector3();
+const _sphere = new THREE.Sphere();
 const _waterNormal = new THREE.Vector3(0, 1, 0);
 const _ndc = [
   [-1, -1],
@@ -183,6 +186,13 @@ export class PlanarReflection {
   private readonly coverage = new CoverageMeshes();
   /** MSAA samples of the mirror target (antialiased silhouettes and coverage, see WaterQuality.reflectionSamples). */
   private samples: number;
+  /** Mirror draw distance (m, see setCullDistance). */
+  private cullDistance = Infinity;
+  /** Objects hidden for the current mirror render (restored after it). */
+  private readonly culled: THREE.Object3D[] = [];
+  private readonly cullStack: THREE.Object3D[] = [];
+  /** Objects left out of the last mirror render by the draw distance (debug / stats). */
+  culledCount = 0;
 
   constructor(anisotropy: number, samples = 0) {
     this.samples = samples;
@@ -260,6 +270,68 @@ export class PlanarReflection {
     this.target = this.createTarget(w, h, anisotropy);
   }
 
+  /**
+   * Mirror draw distance: frustum-culled objects in the mirror's layers whose bounding sphere stays farther than
+   * `distance` (m) from the camera are not drawn into the mirror (0 = no limit). Objects with children, without a
+   * bounding volume or with frustumCulled = false (sky, full-screen passes) are always drawn.
+   */
+  setCullDistance(distance: number): void {
+    this.cullDistance = distance > 0 ? distance : Infinity;
+  }
+
+  /** Hides (in this.culled) the objects the mirror leaves out; the caller restores them after the render. */
+  private cull(scene: THREE.Object3D, cam: THREE.PerspectiveCamera): void {
+    this.culledCount = 0;
+    const far = this.cullDistance;
+    if (far === Infinity) {
+      return;
+    }
+    const eye = cam.position;
+    const stack = this.cullStack;
+    stack.length = 0;
+    stack.push(scene);
+    while (stack.length) {
+      const o = stack.pop() as THREE.Object3D;
+      if (!o.visible) {
+        continue;
+      }
+      const children = o.children;
+      if (children.length) {
+        for (let i = 0; i < children.length; i++) {
+          stack.push(children[i]);
+        }
+        continue;
+      }
+      if (!o.frustumCulled || !o.layers.test(cam.layers)) {
+        continue;
+      }
+      // The bounding volume three's frustum test uses (instanced / batched / skinned meshes keep their own).
+      const withSphere = o as THREE.Object3D & { boundingSphere?: THREE.Sphere | null; computeBoundingSphere?: () => void; geometry?: THREE.BufferGeometry };
+      let sphere: THREE.Sphere | null | undefined;
+      if (withSphere.boundingSphere !== undefined) {
+        if (withSphere.boundingSphere === null) {
+          withSphere.computeBoundingSphere?.();
+        }
+        sphere = withSphere.boundingSphere;
+      } else if (withSphere.geometry) {
+        const g = withSphere.geometry;
+        if (g.boundingSphere === null) {
+          g.computeBoundingSphere();
+        }
+        sphere = g.boundingSphere;
+      }
+      if (!sphere || sphere.radius < 0) {
+        continue;
+      }
+      _sphere.copy(sphere).applyMatrix4(o.matrixWorld);
+      if (_sphere.center.distanceTo(eye) - _sphere.radius > far) {
+        o.visible = false;
+        this.culled.push(o);
+      }
+    }
+    this.culledCount = this.culled.length;
+  }
+
   /** Vertical field of view (degrees) of the mirror camera for a main camera of `fov`. */
   static mirrorFov(fov: number): number {
     return Math.min(fov + 2 * PlanarReflection.MARGIN_DEG, 150);
@@ -332,8 +404,9 @@ export class PlanarReflection {
     const wasVisible = hide.visible;
     hide.visible = false;
     this.coverage.prepare(renderer);
-    scene.add(this.coverage.group);
     try {
+      this.cull(scene, cam);
+      scene.add(this.coverage.group);
       renderer.autoClear = true;
       renderer.setRenderTarget(this.sceneTarget);
       renderer.state.buffers.depth.setMask(true);
@@ -347,6 +420,10 @@ export class PlanarReflection {
       renderer.render(this.sanitize, this.sanitizeCamera);
       this.valid = true;
     } finally {
+      for (const o of this.culled) {
+        o.visible = true;
+      }
+      this.culled.length = 0;
       scene.remove(this.coverage.group);
       renderer.setRenderTarget(previousTarget);
       renderer.autoClear = previousAutoClear;

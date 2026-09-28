@@ -219,26 +219,40 @@ export interface WaterQuality {
   /** Detail bands evaluated per pixel. */
   bands: number;
   planar: boolean;
-  /** Planar reflection resolution relative to the internal render size. */
+  /**
+   * Planar reflection resolution relative to the internal render size. Ultra keeps 0.6: 0.5 saved under 1 ms there
+   * and broke the reflected shore glow into hard-edged patches at dusk (Bosphorus, t=19-21).
+   */
   reflectionScale: number;
   /**
    * MSAA samples of the planar reflection. The mirror renders at a fraction of the screen resolution and is magnified
    * 2-3x on calm water, so aliased silhouettes (shore, bridge deck, towers against the sky) would show as stair steps.
+   * 2x instead of 4x saves up to 2.5 ms but nearly doubles the mirror's sea flicker (flicker audit, sea-dusk).
    */
   reflectionSamples: number;
+  /**
+   * Mirror draw distance (m): objects whose bounding sphere stays farther than this from the camera are left out of
+   * the mirror (PlanarReflection.setCullDistance). Beyond ~6 km the reflected city is a thin, roughness-blurred band
+   * at the horizon that it barely changes, while those objects (mostly far city tiles) are a quarter of the mirror's
+   * draws. 4 km already dims the reflected glow of the far shore (Bosphorus at dusk).
+   */
+  reflectionDistance: number;
 }
+
+/** See WaterQuality.reflectionDistance. */
+const MIRROR_DISTANCE = 6000;
 
 export function waterQualityFor(preset: QualityPreset, reflections: 'sky' | 'planar'): WaterQuality {
   switch (preset) {
     case 'low':
-      return { segments: 112, bands: 7, planar: reflections === 'planar', reflectionScale: 0.4, reflectionSamples: 0 };
+      return { segments: 112, bands: 7, planar: reflections === 'planar', reflectionScale: 0.4, reflectionSamples: 0, reflectionDistance: MIRROR_DISTANCE };
     case 'medium':
-      return { segments: 160, bands: 9, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 2 };
+      return { segments: 160, bands: 9, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 2, reflectionDistance: MIRROR_DISTANCE };
     case 'high':
-      return { segments: 224, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 4 };
+      return { segments: 224, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.5, reflectionSamples: 4, reflectionDistance: MIRROR_DISTANCE };
     case 'ultra':
     default:
-      return { segments: 288, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.6, reflectionSamples: 4 };
+      return { segments: 288, bands: BAND_COUNT, planar: reflections === 'planar', reflectionScale: 0.6, reflectionSamples: 4, reflectionDistance: MIRROR_DISTANCE };
   }
 }
 

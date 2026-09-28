@@ -170,6 +170,7 @@ export function createWaterSystem(): System {
     const res = globalUniforms.uResolution.value as THREE.Vector2;
     const scale = quality.reflectionScale * PlanarReflection.coverage(viewFov);
     reflection.setSize(res.x * scale, res.y * scale, anisotropy, quality.reflectionSamples);
+    reflection.setCullDistance(quality.reflectionDistance);
   }
 
   return {
