@@ -45,7 +45,7 @@ import {
   type XYZ,
 } from './format';
 import { outlineIndex, solidCover } from './cover';
-import { claimsOf, landmarkClasses, setLandmarkBlocks, setLandmarkClaims, useDistrict } from './district';
+import { claimedByModel, claimsOf, landmarkClasses, setDroppedLandmarks, setLandmarkClaims, useDistrict, type LandmarkMode } from './district';
 import { plannedWallTops } from '../../../src/world/osm/buildings/build';
 import { fillLevels } from '../../../scripts/data/lib/levels-fill.mjs';
 import { buildLandmarkDefs } from '../../../src/world/geo/prepare';
@@ -128,12 +128,11 @@ async function main(): Promise<void> {
   const validate = !args.includes('--no-validate');
   setCompression(format === 1 && !args.includes('--no-compress'));
   setWebProfile(format === 1 && compressionEnabled() && args.includes('--web'));
-  const landmarkMode = argOf('--landmarks') ?? 'block';
-  if (landmarkMode !== 'block' && landmarkMode !== 'none') {
-    throw new Error(`--landmarks must be block or none, got '${landmarkMode}'`);
+  const landmarkMode = (argOf('--landmarks') ?? 'block') as LandmarkMode;
+  if (landmarkMode !== 'block' && landmarkMode !== 'none' && landmarkMode !== 'models') {
+    throw new Error(`--landmarks must be block, none or models, got '${landmarkMode}'`);
   }
   const landmarkBlocks = landmarkMode === 'block';
-  setLandmarkBlocks(landmarkBlocks);
   // The game's own landmark models own their ground claims: the buildings the flight-scale OSM layer leaves to them go
   // too. No neighbourhood mosque site reaches into a street area (they stay out of every OSM region, geo siteExclusion).
   setLandmarkClaims(landmarkBlocks ? null : landmarkClaims({ landmarks: buildLandmarkDefs(), smallMosqueSites: [] }));
@@ -196,10 +195,14 @@ async function main(): Promise<void> {
   const allSolids = timedSync('setup.solids', () => makeSolids(data.buildings, heights, flightTops));
   const solids = allSolids.filter((s) => inRect(s.cx, s.cz));
   const landmarkOsmIds = new Set(landmarkClasses(data.buildings).keys());
+  // Landmark buildings left to the runtime's models: none (block), all (none), or those on a modelled claim (models).
+  const dropped = new Set(landmarkMode === 'block' ? [] : landmarkMode === 'none' ? landmarkOsmIds : data.buildings.filter((b) => landmarkOsmIds.has(b.id) && claimedByModel(b)).map((b) => b.id));
+  setDroppedLandmarks(dropped);
+  const drawnLandmark = (osmId: number): boolean => landmarkOsmIds.has(osmId) && !dropped.has(osmId);
   // Building passages (rule walk.passage): opened in the emitted buildings, walked by the walk network. Landmarks drawn
-  // as plain blocks (--landmarks block) keep their walls, so no passage runs through them.
+  // as plain blocks keep their walls, so no passage runs through them.
   const passages = attachPassages(
-    solids.filter((s) => !(landmarkBlocks && landmarkOsmIds.has(s.rec.osmId))),
+    solids.filter((s) => !drawnLandmark(s.rec.osmId)),
     data,
     heights,
   );
@@ -448,7 +451,7 @@ async function main(): Promise<void> {
     solids,
     tileOfSolid,
     outlines: outlineIndex(data.buildings),
-    cover: solidCover(landmarkBlocks ? solids : solids.filter((s) => !landmarkOsmIds.has(s.rec.osmId))),
+    cover: solidCover(solids.filter((s) => !dropped.has(s.rec.osmId))),
     district: profile,
     manifests,
     walk,

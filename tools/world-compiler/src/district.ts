@@ -145,18 +145,35 @@ const LANDMARK_AMENITY = new Set(['place_of_worship', 'public_bath', 'monastery'
  * Landmarks get simple stone massing instead of an apartment façade or shopfronts, and the manifest flags them so a
  * runtime that draws its own landmark models can hide them.
  */
-let landmarkBlocks = true;
-
 /**
- * `--landmarks none`: landmark buildings get no geometry at all (a runtime that draws its own landmark models, e.g. the
- * flight game's mosques and the Galata slice's buildings, shows through); their manifest records stay for colliders.
+ * How landmark buildings are drawn (`--landmarks`):
+ * - `block`: every landmark building stands as simple stone massing (no runtime models);
+ * - `none`: landmark buildings get no geometry at all (a runtime that draws its own landmark models, e.g. the flight
+ *   game's mosques and the Galata slice's buildings, shows through); their manifest records stay for colliders;
+ * - `models`: only the buildings on the ground claim of a landmark the runtime models (landmarks/claims.ts, classes of
+ *   `none`) go; the other landmark buildings (tombs, fountains, hamams, unmodelled mosques and churches) stay blocks.
+ *   For a runtime that draws the landmark models but nothing else of the landmark classes (the Unreal game).
  */
-export function setLandmarkBlocks(on: boolean): void {
-  landmarkBlocks = on;
+export type LandmarkMode = 'block' | 'none' | 'models';
+
+/** OSM ids of the landmark buildings that get no geometry (set by the CLI from the mode). */
+let droppedLandmarks: ReadonlySet<number> = new Set();
+
+export function setDroppedLandmarks(ids: ReadonlySet<number>): void {
+  droppedLandmarks = ids;
 }
 
-export function landmarkBlocksEnabled(): boolean {
-  return landmarkBlocks;
+/** Whether a landmark building is drawn as a block (false: the runtime's model shows there). */
+export function landmarkBlockDrawn(osmId: number): boolean {
+  return !droppedLandmarks.has(osmId);
+}
+
+/** Whether a building stands on the ground claim of a landmark the runtime models (claims set, any class). */
+export function claimedByModel(b: OsmBuilding): boolean {
+  if (!landmarkClaims || !b.ring) {
+    return false;
+  }
+  return onLandmarkClaim(landmarkClaims, cleanRing(b.ring)) || structureBlocks(landmarkClaims, b);
 }
 
 /**
