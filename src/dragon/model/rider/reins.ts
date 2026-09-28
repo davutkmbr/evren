@@ -15,12 +15,12 @@ type Side = 'L' | 'R';
 const SIDES: Side[] = ['L', 'R'];
 const FIST_BONE: Record<Side, string> = { R: 'riderReinR', L: 'riderHandL' };
 /** Strap section (m): width and thickness; radial segments of the section. */
-const WIDTH = 0.014;
-const THICK = 0.006;
+export const WIDTH = 0.014;
+export const THICK = 0.006;
 const RADIAL = 6;
 /** Slack at rest (share of the rest span), bight length (m). */
-const SLACK = 0.06;
-const BIGHT = 0.6;
+export const SLACK = 0.06;
+export const BIGHT = 0.6;
 /** Air drag (1/s) and velocity damping per step. */
 const DRAG = 0.15;
 const DAMP = 0.97;

@@ -68,7 +68,7 @@ const POV_GRIP = v(0.02, 0.2, -0.07);
 const POV_REIN_PULL = v(0.075, 0.16, 0.05);
 const POV_REIN_GIVE = v(-0.02, 0.08, -0.1);
 /** Hands on the pommel (tuck, pushing up to stand), dragon chest frame, rig rest coordinates. */
-const POMMEL_GRIP = v(0.075, 1.33, -2.99);
+export const POMMEL_GRIP = v(0.075, 1.33, -2.99);
 /** Standing: fists holding the reins in front of the hips, a little out for balance (rider chest frame, from the shoulder). */
 const STAND_HAND = v(0.13, -0.42, -0.3);
 /** Cheer: fist pumped up in front of the face (rider chest frame, from the shoulder; in view of the POV camera). */

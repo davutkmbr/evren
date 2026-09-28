@@ -142,14 +142,14 @@ export async function loadHumanRider(url: string, anchor: THREE.Object3D, anchor
 }
 
 /** Scanned CC0 texture sets (public/textures/rider/, see LICENSES.md) and their real size (m). */
-interface ClothSet {
+export interface ClothSet {
   base: string;
   size: number;
   ao: boolean;
   /** Ring mask (mail): the gaps between the rings are shaded dark and rough instead of cut out. */
   opacity?: boolean;
 }
-const SETS: Record<string, ClothSet> = {
+export const SETS: Record<string, ClothSet> = {
   velvet: { base: 'velour_velvet', size: 0.28, ao: true },
   linen: { base: 'rough_linen', size: 0.27, ao: true },
   leather: { base: 'brown_leather', size: 0.4, ao: true },
@@ -159,7 +159,7 @@ const SETS: Record<string, ClothSet> = {
 };
 
 /** Which set and look each exported material id gets. */
-const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number; rough?: number; metal?: number; tint?: number; bump?: number }> = {
+export const LOOKS: Record<string, { set?: string; sheen?: number; sheenRough?: number; rough?: number; metal?: number; tint?: number; bump?: number }> = {
   primary: { set: 'velvet', sheen: 1, sheenRough: 0.35, bump: 0.45 },
   secondary: { set: 'linen', sheen: 0.4, sheenRough: 0.6 },
   linen: { set: 'linen', sheen: 0.4, sheenRough: 0.6 },
